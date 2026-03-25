@@ -24,7 +24,7 @@ pub async fn list_content(
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!("Invalid list parameters: {e}"),
-                    ToolGroup::ContentStore,
+                    ToolGroup::Attachments,
                 )
                 .with_guidance(vec!["Check the parameter schema".to_string()])
                 .to_mcp_result());
@@ -39,7 +39,7 @@ pub async fn list_content(
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Prepare attachment storage failed for session {session_id}: {e}"),
-            ToolGroup::ContentStore,
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
@@ -62,7 +62,7 @@ pub async fn list_content(
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("List content failed: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec![
                 "Check database connectivity".to_string(),
@@ -162,7 +162,7 @@ pub async fn read_content(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Invalid read parameters: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
             .to_mcp_result());
@@ -177,16 +177,16 @@ pub async fn read_content(
         let storage = server.storage.lock().await;
         storage
             .get_content_session_id(&normalized_content_id)
-            .ok_or_else(|| format!("Content '{}' not found", args.content_id))
+            .ok_or_else(|| format!("Attachment '{}' not found", args.content_id))
     };
 
     let content_session_id = match content_session_id {
         Ok(id) => id,
         Err(_) => {
             return Ok(not_found_error(
-                "Content",
+                "Attachment",
                 &args.content_id,
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             ))
         }
     };
@@ -198,7 +198,7 @@ pub async fn read_content(
                 "Attachment '{}' belongs to a different session",
                 args.content_id
             ),
-            ToolGroup::ContentStore,
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Use list to see attachments in current session".to_string(),
@@ -216,9 +216,9 @@ pub async fn read_content(
         Some(item) => item,
         None => {
             return Ok(not_found_error(
-                "Content",
+                "Attachment",
                 &args.content_id,
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             ));
         }
     };
@@ -236,13 +236,13 @@ pub async fn read_content(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::OperationFailed,
-                format!("Read content failed for '{}': {}", args.content_id, e),
-                ToolGroup::ContentStore,
+                format!("Read attachment failed for '{}': {}", args.content_id, e),
+                ToolGroup::Attachments,
             )
             .with_guidance(vec![
                 "Verify the content ID is correct".to_string(),
                 "Check line range is valid".to_string(),
-                "Use list to see available content".to_string(),
+                "Use list to see available attachments".to_string(),
             ])
             .to_mcp_result());
         }
@@ -337,7 +337,7 @@ pub async fn keyword_similarity_search(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Invalid search parameters: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
             .to_mcp_result());
@@ -349,7 +349,7 @@ pub async fn keyword_similarity_search(
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Prepare attachment storage failed for session {session_id}: {e}"),
-            ToolGroup::ContentStore,
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
@@ -375,7 +375,7 @@ pub async fn keyword_similarity_search(
             return Ok(guided_error(
                 ErrorCategory::OperationFailed,
                 format!("Failed to initialize search engine: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec![
                 "Check filesystem permissions".to_string(),
@@ -397,7 +397,7 @@ pub async fn keyword_similarity_search(
                         "Search attachments failed for query '{}': {}",
                         args.query, e
                     ),
-                    ToolGroup::ContentStore,
+                    ToolGroup::Attachments,
                 )
                 .with_guidance(vec![
                     "Verify the search query is valid".to_string(),

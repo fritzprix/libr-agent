@@ -19,7 +19,7 @@ pub async fn add_content(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Invalid add parameters: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
             .to_mcp_result());
@@ -47,7 +47,7 @@ pub async fn add_content(
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("Invalid file URL: {e}"),
-                        ToolGroup::ContentStore,
+                        ToolGroup::Attachments,
                     )
                     .with_guidance(vec!["Ensure fileUrl is a valid file:// path".to_string()])
                     .to_mcp_result());
@@ -68,7 +68,7 @@ pub async fn add_content(
                     return Ok(guided_error(
                         ErrorCategory::OperationFailed,
                         format!("Parse file failed for {file_path_str}: {e}"),
-                        ToolGroup::ContentStore,
+                        ToolGroup::Attachments,
                     )
                     .with_guidance(vec![
                         "Ensure the file format is supported (PDF, HTML, markdown, code)"
@@ -84,7 +84,7 @@ pub async fn add_content(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Cannot provide both content and fileUrl. Choose one.",
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec![
                 "Provide either content OR fileUrl, not both".to_string()
@@ -94,18 +94,18 @@ pub async fn add_content(
         (Option::None, Option::None) => {
             return Ok(missing_param_error(
                 "content or fileUrl",
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             ));
         }
     };
 
     // Use passed session_id
     if let Err(e) = server.ensure_session_store(session_id).await {
-        error!("Failed to ensure content store for session {session_id}: {e}");
+        error!("Failed to ensure attachment store for session {session_id}: {e}");
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Prepare content store failed for session {session_id}: {e}"),
-            ToolGroup::ContentStore,
+            format!("Prepare attachment store failed for session {session_id}: {e}"),
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
@@ -169,8 +169,8 @@ pub async fn add_content(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
-                format!("Store content failed: {e}"),
-                ToolGroup::ContentStore,
+                format!("Store attachment failed: {e}"),
+                ToolGroup::Attachments,
             )
             .with_guidance(vec![
                 "Check database connectivity".to_string(),
@@ -276,7 +276,7 @@ pub async fn delete_content(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Invalid delete parameters: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
             .to_mcp_result());
@@ -293,9 +293,9 @@ pub async fn delete_content(
             sid
         } else {
             return Ok(not_found_error(
-                "Content",
+                "Attachment",
                 &args.content_id,
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             ));
         }
     };
@@ -307,7 +307,7 @@ pub async fn delete_content(
                 "Attachment '{}' belongs to a different session",
                 args.content_id
             ),
-            ToolGroup::ContentStore,
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Use list to see attachments in current session".to_string(),
@@ -323,7 +323,7 @@ pub async fn delete_content(
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Delete attachment failed: {e}"),
-            ToolGroup::ContentStore,
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),

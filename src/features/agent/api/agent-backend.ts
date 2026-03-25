@@ -1,6 +1,10 @@
 import { safeInvoke } from '@/lib/backend/core';
 
-import type { AddAttachmentMetadata } from '@/models/attachments';
+import {
+  isAttachmentItem,
+  type AddAttachmentMetadata,
+  type AttachmentItem,
+} from '@/models/attachments';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 
 /**
@@ -32,7 +36,7 @@ export async function saveAgentFile(
     fileUrl?: string;
     metadata?: AddAttachmentMetadata;
   },
-): Promise<unknown> {
+): Promise<AttachmentItem> {
   const response = await safeInvoke<MCPResult>('agent_add_attachment', {
     sessionId,
     args: {
@@ -44,16 +48,14 @@ export async function saveAgentFile(
     },
   });
 
-  // Unwrap structuredContent if present (std MCPResult format)
-  if (
-    response &&
-    typeof response === 'object' &&
-    'structuredContent' in response
-  ) {
-    return response.structuredContent;
+  const structuredContent = response.structuredContent;
+  if (isAttachmentItem(structuredContent)) {
+    return structuredContent;
   }
 
-  return response;
+  throw new Error(
+    'agent_add_attachment returned an invalid attachment payload',
+  );
 }
 
 export async function deleteAgentFile(

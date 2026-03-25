@@ -27,7 +27,6 @@ import {
 } from '@/context/DnDContext';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { saveAgentFile } from '@/features/agent/api/agent-backend';
-import type { AttachmentItem } from '@/models/attachments';
 import { useInputToken } from './useInputToken';
 import { useScopedSkills } from './useScopedSkills';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
@@ -497,7 +496,7 @@ export function useAgentDraftChat() {
           if (isTextFile) {
             try {
               const content = await file.text();
-              const result = (await saveAgentFile(newSessionId, file.name, {
+              const result = await saveAgentFile(newSessionId, file.name, {
                 content,
                 metadata: {
                   mimeType: file.type || 'text/plain',
@@ -505,7 +504,7 @@ export function useAgentDraftChat() {
                   uploadedAt: now.toISOString(),
                   filename: file.name,
                 },
-              })) as AttachmentItem;
+              });
 
               // Runtime validation for contentId existence
               if (
@@ -540,7 +539,7 @@ export function useAgentDraftChat() {
               const normalizedDir = workspaceDir.replace(/\\/g, '/');
               const normalizedRelative = workspacePath.replace(/\\/g, '/');
               const fileUrl = `file:///${normalizedDir.replace(/^\//, '')}/${normalizedRelative}`;
-              const result = (await saveAgentFile(newSessionId, file.name, {
+              const result = await saveAgentFile(newSessionId, file.name, {
                 fileUrl,
                 metadata: {
                   mimeType: file.type || 'application/octet-stream',
@@ -548,7 +547,7 @@ export function useAgentDraftChat() {
                   uploadedAt: now.toISOString(),
                   filename: file.name,
                 },
-              })) as AttachmentItem;
+              });
 
               // Runtime validation for contentId existence
               if (

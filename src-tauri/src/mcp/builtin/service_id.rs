@@ -29,7 +29,7 @@ pub struct BuiltinServiceEntry {
 }
 
 impl BuiltinServiceId {
-    /// Resolve any alias string (including legacy names) to a [`BuiltinServiceId`].
+    /// Resolve a supported builtin service alias to a [`BuiltinServiceId`].
     pub fn from_alias(alias: &str) -> Option<Self> {
         match alias.trim().to_lowercase().as_str() {
             "planning" => Some(Self::Planning),

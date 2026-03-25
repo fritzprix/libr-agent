@@ -14,7 +14,7 @@ export async function removeSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Delete content store artifacts for a session (backend command).
+ * Delete attachment artifacts for a session (backend command).
  * This removes SQLite rows and search index directories for the given session.
  */
 export async function deleteAttachments(sessionId: string): Promise<void> {

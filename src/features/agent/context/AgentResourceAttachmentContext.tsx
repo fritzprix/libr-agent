@@ -443,7 +443,7 @@ export function AgentResourceAttachmentProvider({
       try {
         // Use session-specific saveAgentFile instead of global server.add
         // This ensures the file is associated with the correct agent session
-        const result = (await saveAgentFile(storeId, actualFilename, {
+        const result = await saveAgentFile(storeId, actualFilename, {
           content: undefined, // Content is handled via fileUrl or direct upload
           fileUrl: fileUrl,
           metadata: {
@@ -452,7 +452,7 @@ export function AgentResourceAttachmentProvider({
             uploadedAt: new Date().toISOString(),
             filename: actualFilename,
           },
-        })) as AttachmentItem;
+        });
 
         if (!workspacePath && file) {
           try {

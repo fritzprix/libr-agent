@@ -11,6 +11,28 @@ export interface AttachmentItem {
   lastAccessedAt?: string;
 }
 
+export function isAttachmentItem(value: unknown): value is AttachmentItem {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return (
+    typeof record.sessionId === 'string' &&
+    typeof record.contentId === 'string' &&
+    typeof record.filename === 'string' &&
+    typeof record.mimeType === 'string' &&
+    typeof record.size === 'number' &&
+    typeof record.lineCount === 'number' &&
+    typeof record.preview === 'string' &&
+    typeof record.uploadedAt === 'string' &&
+    typeof record.chunkCount === 'number' &&
+    (record.lastAccessedAt === undefined ||
+      typeof record.lastAccessedAt === 'string')
+  );
+}
+
 export interface ListAttachmentsResult {
   sessionId: string;
   contents: AttachmentItem[];
