@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.19] - 2026-03-26
+
+### 🐛 Fixes
+
+- **D2Coding Font Loading**: Fixed a malformed CDN URL that prevented the D2Coding font from loading correctly.
+- **Attachments Migration**: Completed the naming migration in test files (`test_migration.rs` and `test_recent_uploads.rs`) to match the new `AttachmentsServer` and `AttachmentsStorage` types.
+
+### 🔧 Internal
+
+- **Test Suite Modernization**: Updated the attachment test suite to use the new naming conventions and verified all tests pass on the latest schema.
+
 ## [0.6.18] - 2026-03-26
 
 ### 🚀 Features
@@ -14,13 +25,11 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Fixes
 
 - **Attachments Migration**: Completed the transition from legacy `content_store` naming to the canonical `attachments` convention across the frontend, backend, and database schema.
-- **D2Coding Font Loading**: Fixed a malformed CDN URL that prevented the D2Coding font from loading correctly.
 - **Tool Naming Standardization**: Updated workspace tool references to use the new `tool__list` and `editFile` naming conventions for consistency.
 
 ### 🔧 Internal
 
 - **Built-in Service Synchronization**: Enhanced the `sync-builtin-services.cjs` script to automatically generate canonical, core, and optional service alias exports.
-- **Test Suite Modernization**: Updated the attachment test suite to use the new naming conventions and verified all tests pass on the latest schema.
 
 ## [0.6.17] - 2026-03-24
 
