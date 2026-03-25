@@ -154,6 +154,10 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     () => ({
       style: { height: 'auto', maxHeight: 'unset' },
       iframeProps: {
+        // TODO(Review): The iframe intrinsically locks to its min-height (384px) and vertically scrolls
+        // if content is taller, because it cannot automatically grow to fit its content.
+        // Future Improvement: Implement a `ResizeObserver` + `postMessage` auto-resizer inside
+        // the injected HTML to dynamically adjust this iframe height instead of locking it.
         className: 'h-auto min-h-96 max-h-none',
       },
     }),
@@ -175,9 +179,24 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     return null;
   }
 
+  // V2 UI Focus: If a UI resource is present, filter out regular text blocks
+  // to ensure the interactive UI remains the focal point without redundant markdown text.
+  const hasUIResource = renderItems.some(
+    (item) => 'type' in item && (item as { type: string }).type === 'resource',
+  );
+
+  const displayItems = hasUIResource
+    ? renderItems.filter((item) => {
+        if ('type' in item && (item as { type: string }).type === 'text') {
+          return false;
+        }
+        return true;
+      })
+    : renderItems;
+
   return (
     <div className={`flex flex-col gap-2 min-w-0 max-w-full ${className}`}>
-      {renderItems.map((item, index) => {
+      {displayItems.map((item, index) => {
         const key = `${message?.id}_${index}`;
 
         // Handle specialized tool groups

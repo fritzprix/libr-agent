@@ -280,6 +280,36 @@ pub fn latest_assistant_message_text(
     None
 }
 
+pub fn latest_tool_message_text(messages: &[Value]) -> Option<String> {
+    for message in messages {
+        let role = message.get("role").and_then(|v| v.as_str()).unwrap_or("");
+
+        // If we reach an assistant message, we've gone past the latest tool responses.
+        if role == "assistant" {
+            break;
+        }
+
+        if role != "tool" {
+            continue;
+        }
+
+        if let Some(content) = message.get("content").and_then(|v| v.as_array()) {
+            for item in content {
+                let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                if item_type == "text" {
+                    if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                        let text = text.trim();
+                        if !text.is_empty() {
+                            return Some(text.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

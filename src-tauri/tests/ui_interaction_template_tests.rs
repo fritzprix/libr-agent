@@ -67,8 +67,8 @@ async fn present_interactive_text_mode_includes_safe_default_options_array() {
     );
 
     assert!(
-        text.contains("Summary: # Report Pick a direction."),
-        "LLM-visible text should include a concise content summary"
+        text.contains("Content:\n# Report\n\nPick a direction."),
+        "LLM-visible text should include the full content"
     );
     assert!(
         text.contains("User response required: What should I do next?"),
