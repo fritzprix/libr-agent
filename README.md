@@ -91,7 +91,7 @@ For production builds, resolve dependencies and run required synchronization scr
 pnpm install && pnpm build
 ```
 
-For local development, simply run the Tauri dev server. **Never run `pnpm build` immediately beforehand** as it wastes time and is an incorrect Tauri workflow:
+For local development, simply run the Tauri dev server. **No need to run `pnpm build` before `pnpm tauri dev`** — Tauri uses the Vite dev server (`beforeDevCommand: pnpm dev`), so an extra build just slows you down:
 
 ```bash
 pnpm install
