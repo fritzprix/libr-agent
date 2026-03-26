@@ -85,10 +85,11 @@ git clone https://github.com/fritzprix/libr-agent
 cd libr-agent
 ```
 
-For production builds, resolve dependencies and run required synchronization scripts:
+For production desktop app builds (Tauri binaries/installers), resolve dependencies and run the Tauri build (which will run the frontend build via `pnpm build`):
 
 ```bash
-pnpm install && pnpm build
+pnpm install
+pnpm tauri build
 ```
 
 For local development, simply run the Tauri dev server. **No need to run `pnpm build` before `pnpm tauri dev`** — Tauri uses the Vite dev server (`beforeDevCommand: pnpm dev`), so an extra build just slows you down:
