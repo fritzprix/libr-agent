@@ -1,12 +1,11 @@
 use std::fs;
 
-use sea_orm::Database;
-use sea_orm_migration::MigratorTrait;
+mod common;
+
 use tauri_mcp_agent_lib::agent::tools::{
     spill_oversized_tool_result_messages, TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
 };
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, ServiceInfo};
-use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
     MessageRepository, SessionMetadata, SessionRepository, SessionStatus, SqliteMessageRepository,
@@ -21,12 +20,7 @@ static TEST_DB: OnceCell<sea_orm::DatabaseConnection> = OnceCell::const_new();
 async fn test_db() -> sea_orm::DatabaseConnection {
     TEST_DB
         .get_or_init(|| async {
-            let db = Database::connect("sqlite::memory:")
-                .await
-                .expect("failed to create in-memory sqlite database");
-            Migrator::up(&db, None)
-                .await
-                .expect("migrations should succeed");
+            let db = common::setup_test_db_with_migrations().await;
             set_message_repository(SqliteMessageRepository::new(db.clone()));
             db
         })

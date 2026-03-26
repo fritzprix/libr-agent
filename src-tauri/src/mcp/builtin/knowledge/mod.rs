@@ -3,10 +3,12 @@ use sea_orm::*;
 use serde_json::Value;
 use std::sync::Arc;
 
+use crate::entity::knowledge_chunk_v2;
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
 
 pub mod embed;
+pub mod extraction;
 pub mod helpers;
 pub mod operations;
 pub mod queries;
@@ -15,9 +17,7 @@ pub mod tools;
 /// Knowledge Server v2 - Local Intelligent Memory Engine
 #[derive(Debug)]
 pub struct KnowledgeServer {
-    #[allow(dead_code)]
     assistant_id: String,
-    #[allow(dead_code)]
     db: Arc<DatabaseConnection>,
 }
 
@@ -87,18 +87,25 @@ impl BuiltinMCPServer for KnowledgeServer {
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         let assistant_id = &self.assistant_id;
-
-        // Lightweight summary: count entries
-        // In a real implementation, we would cache this or use a lightweight count.
-        // For now, let's just use a static message or a simple count if easy.
+        let chunk_count = knowledge_chunk_v2::Entity::find()
+            .filter(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id))
+            .count(self.db.as_ref())
+            .await
+            .ok();
 
         ServiceContext {
             context_prompt: format!(
                 "# Knowledge Base Context (Service: knowledge)\n\
                 - **Status**: Active. Ready for Hybrid Search (FTS5 + Vector).\n\
                 - **Assistant ID**: {}\n\
-                Use `search_knowledge` to retrieve specific information, and `record_knowledge` to save new insights from this conversation.",
-                assistant_id
+                - **Stored Chunks**: {}\n\
+                - **Embedding Runtime**: {}\n\
+                Use `search_knowledge` to retrieve specific information, `record_knowledge` to save new insights, and `explore_context` to inspect extracted relationships.",
+                assistant_id,
+                chunk_count
+                    .map(|count| count.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                embed::runtime_summary()
             ),
             structured_state: None,
         }

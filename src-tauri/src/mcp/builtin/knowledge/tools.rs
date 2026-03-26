@@ -6,7 +6,7 @@ pub fn record_knowledge_tool() -> MCPTool {
     MCPTool {
         name: "record_knowledge".to_string(),
         title: Some("Record Knowledge".to_string()),
-        description: "Save a knowledge entry to the local knowledge base. The current implementation stores one chunk, generates an embedding, and can seed simple tag/entity links.".to_string(),
+        description: "Save a knowledge entry to the local knowledge base. Prefer caller-supplied entities and relationships; local heuristic extraction only fills gaps when structured graph data is missing.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -21,9 +21,69 @@ pub fn record_knowledge_tool() -> MCPTool {
                     ),
                 ),
                 (
+                    "entities".to_string(),
+                    array_schema(
+                        object_prop(
+                            vec![
+                                (
+                                    "name".to_string(),
+                                    string_prop_required("Entity name as understood by the calling agent."),
+                                ),
+                                (
+                                    "entity_type".to_string(),
+                                    string_prop(
+                                        None,
+                                        None,
+                                        Some("Optional entity type such as Project, Technology, Person, or Concept."),
+                                    ),
+                                ),
+                                (
+                                    "description".to_string(),
+                                    string_prop(
+                                        None,
+                                        None,
+                                        Some("Optional short description for the entity."),
+                                    ),
+                                ),
+                            ],
+                            vec!["name".to_string()],
+                            Some("Structured entities inferred by the calling agent."),
+                        ),
+                        Some("Optional structured entities supplied by the caller."),
+                    ),
+                ),
+                (
+                    "relationships".to_string(),
+                    array_schema(
+                        object_prop(
+                            vec![
+                                (
+                                    "source".to_string(),
+                                    string_prop_required("Source entity name."),
+                                ),
+                                (
+                                    "target".to_string(),
+                                    string_prop_required("Target entity name."),
+                                ),
+                                (
+                                    "relation_type".to_string(),
+                                    string_prop_required("Relationship type such as USES, DEPENDS_ON, or LINKS_TO."),
+                                ),
+                            ],
+                            vec![
+                                "source".to_string(),
+                                "target".to_string(),
+                                "relation_type".to_string(),
+                            ],
+                            Some("Structured relationships inferred by the calling agent."),
+                        ),
+                        Some("Optional structured relationships supplied by the caller."),
+                    ),
+                ),
+                (
                     "auto_extract".to_string(),
                     boolean_prop(
-                        Some("Whether to derive simple entity links from the provided tags. Defaults to true. Full LLM-based extraction is not implemented yet."),
+                        Some("Whether to run heuristic fallback extraction when structured entities or relationships are missing. Defaults to true."),
                     ),
                 ),
                 (
@@ -86,7 +146,7 @@ pub fn explore_context_tool() -> MCPTool {
     MCPTool {
         name: "explore_context".to_string(),
         title: Some("Explore Context".to_string()),
-        description: "Explore the graph of relationships around a specific entity.".to_string(),
+        description: "Explore the graph of relationships around a specific entity and return agent-readable graph and linked chunk summaries.".to_string(),
         input_schema: object_prop(
             vec![
                 (

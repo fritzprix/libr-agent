@@ -5,7 +5,7 @@ use crate::repositories::DbError;
 use async_trait::async_trait;
 use sea_orm::*;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[async_trait]
 pub trait KnowledgeV2Repository: Send + Sync {
@@ -328,6 +328,18 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
         target_id: i32,
         relation_type: String,
     ) -> Result<i32, DbError> {
+        if let Some(existing) = knowledge_relationship::Entity::find()
+            .filter(knowledge_relationship::Column::AssistantId.eq(&assistant_id))
+            .filter(knowledge_relationship::Column::SourceEntityId.eq(source_id))
+            .filter(knowledge_relationship::Column::TargetEntityId.eq(target_id))
+            .filter(knowledge_relationship::Column::RelationType.eq(&relation_type))
+            .one(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?
+        {
+            return Ok(existing.id);
+        }
+
         let rel = knowledge_relationship::ActiveModel {
             id: NotSet,
             assistant_id: Set(assistant_id),
@@ -454,11 +466,66 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
             })
             .collect::<Vec<_>>();
 
+        let entity_id_set = entities
+            .iter()
+            .filter_map(|entity| entity.get("id").and_then(|value| value.as_i64()))
+            .map(|id| id as i32)
+            .collect::<Vec<_>>();
+        let chunk_links = if entity_id_set.is_empty() {
+            Vec::new()
+        } else {
+            knowledge_chunk_entity::Entity::find()
+                .filter(knowledge_chunk_entity::Column::EntityId.is_in(entity_id_set))
+                .all(&self.db)
+                .await
+                .map_err(DbError::SeaOrmQueryFailed)?
+        };
+
+        let linked_chunk_ids = chunk_links
+            .iter()
+            .map(|link| link.chunk_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let linked_chunks = if linked_chunk_ids.is_empty() {
+            Vec::new()
+        } else {
+            knowledge_chunk_v2::Entity::find()
+                .filter(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id))
+                .filter(knowledge_chunk_v2::Column::Id.is_in(linked_chunk_ids))
+                .all(&self.db)
+                .await
+                .map_err(DbError::SeaOrmQueryFailed)?
+        };
+        let mut chunk_entity_ids = HashMap::<i32, Vec<i32>>::new();
+        for link in chunk_links {
+            chunk_entity_ids
+                .entry(link.chunk_id)
+                .or_default()
+                .push(link.entity_id);
+        }
+        let linked_chunk_json = linked_chunks
+            .into_iter()
+            .map(|chunk| {
+                let mut entity_ids = chunk_entity_ids.remove(&chunk.id).unwrap_or_default();
+                entity_ids.sort_unstable();
+                serde_json::json!({
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "tags": chunk.tags,
+                    "source": chunk.source,
+                    "created_at": chunk.created_at,
+                    "entity_ids": entity_ids,
+                })
+            })
+            .collect::<Vec<_>>();
+
         Ok(serde_json::json!({
             "root_entity": entity_name,
             "max_depth": depth_limit,
             "nodes": entities,
-            "edges": relationships
+            "edges": relationships,
+            "linked_chunks": linked_chunk_json
         }))
     }
 }

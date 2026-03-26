@@ -1,6 +1,6 @@
 use super::{
     embed,
-    helpers::{DEFAULT_LIMIT, MAX_LIMIT},
+    helpers::{parse_db_tags, DEFAULT_LIMIT, MAX_LIMIT},
     KnowledgeServer,
 };
 use crate::mcp::builtin::error_guidance::{
@@ -9,6 +9,7 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 use crate::repositories::KnowledgeV2Repository;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 /// Search knowledge using hybrid approach
 pub async fn search_knowledge(
@@ -74,12 +75,25 @@ pub async fn search_knowledge(
         .await
     {
         Ok(results) => {
-            let mut output_text =
-                format!("Found {} relevant knowledge entries:\n\n", results.len());
+            let mut output_text = format!(
+                "Found {} relevant knowledge entries (mode: {}):\n\n",
+                results.len(),
+                mode
+            );
             for (model, score) in &results {
+                let tags = parse_db_tags(model.tags.as_ref());
+                let source = model.source.as_deref().unwrap_or("unknown");
                 output_text.push_str(&format!(
-                    "### Chunk ID: {} (Score: {:.4})\n{}\n\n",
-                    model.id, score, model.content
+                    "### Chunk ID: {} (Score: {:.4})\nSource: {}\nTags: {}\n{}\n\n",
+                    model.id,
+                    score,
+                    source,
+                    if tags.is_empty() {
+                        "none".to_string()
+                    } else {
+                        tags.join(", ")
+                    },
+                    model.content
                 ));
             }
 
@@ -134,7 +148,7 @@ pub async fn explore_context(
                 .to_mcp_result());
             }
 
-            let summary = format!("Graph context for '{}' (Depth: {}):", entity_name, depth);
+            let summary = format_graph_context(entity_name, depth, &context);
             Ok(SuccessHint::new(summary, vec![]).to_mcp_result_with_data(Some(context)))
         }
         Err(e) => Ok(guided_error(
@@ -144,4 +158,129 @@ pub async fn explore_context(
         )
         .to_mcp_result()),
     }
+}
+
+fn format_graph_context(entity_name: &str, depth: u32, context: &Value) -> String {
+    let nodes = context
+        .get("nodes")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let edges = context
+        .get("edges")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let linked_chunks = context
+        .get("linked_chunks")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut node_names = HashMap::<i64, String>::new();
+    let mut output = format!(
+        "Graph context for '{}' (Depth: {})\n\nNodes ({}):\n",
+        entity_name,
+        depth,
+        nodes.len()
+    );
+
+    for node in &nodes {
+        let id = node
+            .get("id")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default();
+        let name = node
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let entity_type = node
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let node_depth = node
+            .get("depth")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default();
+        let description = node
+            .get("description")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+
+        node_names.insert(id, name.to_string());
+        output.push_str(&format!(
+            "- [{}] {} | type: {} | depth: {}{}\n",
+            id,
+            name,
+            entity_type,
+            node_depth,
+            if description.is_empty() {
+                String::new()
+            } else {
+                format!(" | {}", description)
+            }
+        ));
+    }
+
+    output.push_str(&format!("\nEdges ({}):\n", edges.len()));
+    if edges.is_empty() {
+        output.push_str("- none\n");
+    } else {
+        for edge in &edges {
+            let source_id = edge
+                .get("source_id")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default();
+            let target_id = edge
+                .get("target_id")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default();
+            let relation_type = edge
+                .get("type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("RELATED_TO");
+            let source_name = node_names
+                .get(&source_id)
+                .map(String::as_str)
+                .unwrap_or("unknown");
+            let target_name = node_names
+                .get(&target_id)
+                .map(String::as_str)
+                .unwrap_or("unknown");
+
+            output.push_str(&format!(
+                "- {} ({}) -[{}]-> {} ({})\n",
+                source_name, source_id, relation_type, target_name, target_id
+            ));
+        }
+    }
+
+    output.push_str(&format!(
+        "\nLinked knowledge chunks ({}):\n",
+        linked_chunks.len()
+    ));
+    if linked_chunks.is_empty() {
+        output.push_str("- none\n");
+    } else {
+        for chunk in &linked_chunks {
+            let chunk_id = chunk
+                .get("id")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default();
+            let source = chunk
+                .get("source")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            let content = chunk
+                .get("content")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            output.push_str(&format!(
+                "- Chunk {} | source: {} | {}\n",
+                chunk_id, source, content
+            ));
+        }
+    }
+
+    output
 }

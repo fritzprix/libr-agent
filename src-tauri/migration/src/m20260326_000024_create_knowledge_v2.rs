@@ -22,7 +22,11 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(KnowledgeChunksV2::AssistantId).string().not_null())
+                    .col(
+                        ColumnDef::new(KnowledgeChunksV2::AssistantId)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(KnowledgeChunksV2::Content).text().not_null())
                     .col(ColumnDef::new(KnowledgeChunksV2::Tags).text()) // JSON array
                     .col(ColumnDef::new(KnowledgeChunksV2::Source).string())
@@ -87,7 +91,11 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(KnowledgeEntities::AssistantId).string().not_null())
+                    .col(
+                        ColumnDef::new(KnowledgeEntities::AssistantId)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(KnowledgeEntities::Name).string().not_null())
                     .col(ColumnDef::new(KnowledgeEntities::EntityType).string()) // e.g., "Person", "Project"
                     .col(ColumnDef::new(KnowledgeEntities::Description).text())
@@ -121,11 +129,31 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(KnowledgeRelationships::AssistantId).string().not_null())
-                    .col(ColumnDef::new(KnowledgeRelationships::SourceEntityId).integer().not_null())
-                    .col(ColumnDef::new(KnowledgeRelationships::TargetEntityId).integer().not_null())
-                    .col(ColumnDef::new(KnowledgeRelationships::RelationType).string().not_null()) // e.g., "WORKS_ON"
-                    .col(ColumnDef::new(KnowledgeRelationships::Weight).float().default(1.0))
+                    .col(
+                        ColumnDef::new(KnowledgeRelationships::AssistantId)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KnowledgeRelationships::SourceEntityId)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KnowledgeRelationships::TargetEntityId)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KnowledgeRelationships::RelationType)
+                            .string()
+                            .not_null(),
+                    ) // e.g., "WORKS_ON"
+                    .col(
+                        ColumnDef::new(KnowledgeRelationships::Weight)
+                            .float()
+                            .default(1.0),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -136,8 +164,16 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(KnowledgeChunkEntities::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(KnowledgeChunkEntities::ChunkId).integer().not_null())
-                    .col(ColumnDef::new(KnowledgeChunkEntities::EntityId).integer().not_null())
+                    .col(
+                        ColumnDef::new(KnowledgeChunkEntities::ChunkId)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KnowledgeChunkEntities::EntityId)
+                            .integer()
+                            .not_null(),
+                    )
                     .primary_key(
                         Index::create()
                             .col(KnowledgeChunkEntities::ChunkId)
@@ -154,24 +190,44 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
 
         manager
-            .drop_table(Table::drop().table(KnowledgeChunkEntities::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(KnowledgeChunkEntities::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_table(Table::drop().table(KnowledgeRelationships::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(KnowledgeRelationships::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
             .drop_table(Table::drop().table(KnowledgeEntities::Table).to_owned())
             .await?;
-        
+
         db.execute(Statement::from_string(
             db.get_database_backend(),
             "DROP TABLE IF EXISTS knowledge_vectors;".to_owned(),
         ))
         .await?;
 
-        db.execute(Statement::from_string(db.get_database_backend(), "DROP TRIGGER IF EXISTS knowledge_chunks_fts_ad;".to_owned())).await?;
-        db.execute(Statement::from_string(db.get_database_backend(), "DROP TRIGGER IF EXISTS knowledge_chunks_fts_au;".to_owned())).await?;
-        db.execute(Statement::from_string(db.get_database_backend(), "DROP TRIGGER IF EXISTS knowledge_chunks_fts_ai;".to_owned())).await?;
+        db.execute(Statement::from_string(
+            db.get_database_backend(),
+            "DROP TRIGGER IF EXISTS knowledge_chunks_fts_ad;".to_owned(),
+        ))
+        .await?;
+        db.execute(Statement::from_string(
+            db.get_database_backend(),
+            "DROP TRIGGER IF EXISTS knowledge_chunks_fts_au;".to_owned(),
+        ))
+        .await?;
+        db.execute(Statement::from_string(
+            db.get_database_backend(),
+            "DROP TRIGGER IF EXISTS knowledge_chunks_fts_ai;".to_owned(),
+        ))
+        .await?;
 
         db.execute(Statement::from_string(
             db.get_database_backend(),

@@ -2,18 +2,12 @@
 ///
 /// These tests replace #[cfg(test)] unit tests that cannot run via `cargo test --lib`
 /// on Windows (STATUS_ENTRYPOINT_NOT_FOUND DLL issue). CI uses `cargo test --tests`.
-use sea_orm::Database;
-use sea_orm_migration::MigratorTrait;
-use tauri_mcp_agent_lib::migration::Migrator;
+mod common;
+
 use tauri_mcp_agent_lib::repositories::{MCPServerRepository, SqliteMCPServerRepository};
 
 async fn setup_repo() -> SqliteMCPServerRepository {
-    let db = Database::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create in-memory database");
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = common::setup_test_db_with_migrations().await;
     SqliteMCPServerRepository::new(db)
 }
 

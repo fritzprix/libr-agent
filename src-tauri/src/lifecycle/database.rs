@@ -233,8 +233,15 @@ pub async fn maybe_restore_quarantined_database(db_url: &str) -> DatabaseResult<
 pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
     // Register sqlite-vec extension before any database connections are opened
     unsafe {
-        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
+        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut libsqlite3_sys::sqlite3,
+                *mut *mut i8,
+                *const libsqlite3_sys::sqlite3_api_routines,
+            ) -> i32,
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
         )));
     }
 

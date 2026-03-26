@@ -11,8 +11,15 @@ fn register_sqlite_vec() {
     static REGISTER_SQLITE_VEC: Once = Once::new();
 
     REGISTER_SQLITE_VEC.call_once(|| unsafe {
-        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
+        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut libsqlite3_sys::sqlite3,
+                *mut *mut i8,
+                *const libsqlite3_sys::sqlite3_api_routines,
+            ) -> i32,
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
         )));
     });
 }
@@ -129,6 +136,8 @@ async fn knowledge_v2_graph_context_stays_scoped_to_assistant() {
     assert_eq!(graph["root_entity"], "LibrAgent");
     assert_eq!(graph["nodes"].as_array().map(Vec::len), Some(2));
     assert_eq!(graph["edges"].as_array().map(Vec::len), Some(1));
+    assert_eq!(graph["linked_chunks"].as_array().map(Vec::len), Some(1));
+    assert_eq!(graph["linked_chunks"][0]["id"], chunk_id);
 
     let links = knowledge_chunk_entity::Entity::find()
         .all(&db)

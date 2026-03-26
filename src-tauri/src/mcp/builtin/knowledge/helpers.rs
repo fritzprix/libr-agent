@@ -1,5 +1,5 @@
 /// Default limit for list and search results
-pub const DEFAULT_LIMIT: u64 = 20;
+pub const DEFAULT_LIMIT: u64 = 5;
 /// Maximum limit for list and search results
 pub const MAX_LIMIT: u64 = 100;
 /// Default snippet length for non-FTS search results (characters)
