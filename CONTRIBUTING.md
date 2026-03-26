@@ -14,10 +14,12 @@ of agent automation with persistent tool state and built-in MCP support.
 4. Install Rust:
    - Follow instructions at [rustup.rs](https://rustup.rs/) (recommended for all platforms)
    - Alternatively, on macOS/Linux: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+   - **Important**: Restart your terminal after installing Rust to ensure the `cargo` command is available in your PATH.
 5. Install system dependencies (Linux only):
    - Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y libglib2.0-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`
 6. Install dependencies: `pnpm install`
-7. Run development mode: `pnpm tauri dev`
+7. Run the Tauri dev server locally: `pnpm tauri dev`
+   - **Note**: The first time you run this command, it will compile the entire Rust backend. This process can take several minutes depending on your hardware. Subsequent runs will be much faster. Once compiled, it will automatically open the LibrAgent desktop application.
 
 **System Requirements:**
 
