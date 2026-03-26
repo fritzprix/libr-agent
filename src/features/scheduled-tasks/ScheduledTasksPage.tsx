@@ -17,6 +17,7 @@ import { useScheduledTasks } from './hooks/useScheduledTasks';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { useAssistantContext } from '@/context/AssistantContext';
+import { getDateTimeFormatter } from '@/lib/date-utils';
 
 const logger = getLogger('ScheduledTasksPage');
 
@@ -99,7 +100,7 @@ export function ScheduledTasksPage() {
   const formatNextRun = (ms: number | null): string => {
     if (!ms) return t('scheduledTasks.nextRunNone');
     const d = new Date(ms);
-    return d.toLocaleString();
+    return getDateTimeFormatter().format(d);
   };
 
   if (loading) {

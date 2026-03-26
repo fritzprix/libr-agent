@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { formatRelativeTime, formatSessionTimestamp } from '../date-utils';
+import { formatRelativeTime, formatSessionTimestamp, getDateTimeFormatter } from '../date-utils';
 
 // Lock Intl.RelativeTimeFormat to 'en' so assertions are locale-independent
 const OriginalRelativeTimeFormat = Intl.RelativeTimeFormat;
@@ -108,7 +108,7 @@ describe('date-utils', () => {
       // But standard node environment usually uses en-US or similar.
       // relative should be "2 hours ago"
       expect(result.relative).toBe('2 hours ago');
-      expect(result.tooltip).toBe(date.toLocaleString());
+      expect(result.tooltip).toBe(getDateTimeFormatter().format(date));
       expect(result.display).toContain('2 hours ago');
     });
 
