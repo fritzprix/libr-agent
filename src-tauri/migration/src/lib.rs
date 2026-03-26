@@ -25,6 +25,7 @@ mod m20260320_000020_add_viewed_and_message_timestamps_to_sessions;
 mod m20260320_000021_add_attention_timestamps_to_sessions;
 mod m20260321_000022_add_schedule_timezone_to_scheduled_tasks;
 mod m20260322_000023_add_mcp_server_verification_fields;
+mod m20260326_000024_create_knowledge_v2;
 
 pub struct Migrator;
 
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260320_000021_add_attention_timestamps_to_sessions::Migration),
             Box::new(m20260321_000022_add_schedule_timezone_to_scheduled_tasks::Migration),
             Box::new(m20260322_000023_add_mcp_server_verification_fields::Migration),
+            Box::new(m20260326_000024_create_knowledge_v2::Migration),
         ]
     }
 }

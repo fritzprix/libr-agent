@@ -231,6 +231,13 @@ pub async fn maybe_restore_quarantined_database(db_url: &str) -> DatabaseResult<
 }
 
 pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
+    // Register sqlite-vec extension before any database connections are opened
+    unsafe {
+        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        )));
+    }
+
     // Extract file path from URL (strip sqlite:// prefix and query params)
     let db_file_path = extract_db_file_path(db_url)
         .ok_or_else(|| DatabaseError::ConnectionFailed("Invalid database URL format".into()))?;

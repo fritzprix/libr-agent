@@ -2,17 +2,18 @@ use crate::lifecycle::settings::SystemSettings;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SettingsRepository, SqliteAssistantRepository, SqliteAttachmentsRepository,
-    SqliteCompactContextRepository, SqliteKnowledgeRepository, SqliteMCPServerRepository,
-    SqliteMessageRepository, SqlitePlanningRepository, SqlitePlaybookRepository,
-    SqliteScheduledTaskRepository, SqliteSessionRepository, SqliteSettingsRepository,
+    SqliteCompactContextRepository, SqliteKnowledgeRepository, SqliteKnowledgeV2Repository,
+    SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
+    SqlitePlaybookRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
+    SqliteSettingsRepository,
 };
 use crate::services;
 use crate::state::{
     set_assistant_repository, set_attachments_repository, set_compact_context_repository,
-    set_database_connection, set_knowledge_repository, set_mcp_server_repository,
-    set_mcp_service_proxy_manager, set_message_repository, set_planning_repository,
-    set_playbook_repository, set_scheduled_task_repository, set_session_repository,
-    set_settings_repository,
+    set_database_connection, set_knowledge_repository, set_knowledge_v2_repository,
+    set_mcp_server_repository, set_mcp_service_proxy_manager, set_message_repository,
+    set_planning_repository, set_playbook_repository, set_scheduled_task_repository,
+    set_session_repository, set_settings_repository,
 };
 use log::{error, info};
 use sea_orm::DatabaseConnection;
@@ -59,6 +60,7 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
     set_assistant_repository(SqliteAssistantRepository::new(db.clone()));
     set_playbook_repository(SqlitePlaybookRepository::new(db.clone()));
     set_knowledge_repository(SqliteKnowledgeRepository::new(db.clone()));
+    set_knowledge_v2_repository(SqliteKnowledgeV2Repository::new(db.clone()));
     set_planning_repository(SqlitePlanningRepository::new(db.clone()));
     set_scheduled_task_repository(SqliteScheduledTaskRepository::new(db.clone()));
     set_compact_context_repository(SqliteCompactContextRepository::new(db.clone()));

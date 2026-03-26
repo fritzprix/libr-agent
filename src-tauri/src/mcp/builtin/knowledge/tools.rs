@@ -1,47 +1,41 @@
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
-/// Save a knowledge entry to the assistant-scoped knowledge base
-pub fn save_knowledge_tool() -> MCPTool {
+/// Record new knowledge into the local vector DB and graph.
+pub fn record_knowledge_tool() -> MCPTool {
     MCPTool {
-        name: "saveKnowledge".to_string(),
-        title: Some("Save Knowledge".to_string()),
-        description: "Save a knowledge entry to the assistant-scoped knowledge base".to_string(),
+        name: "record_knowledge".to_string(),
+        title: Some("Record Knowledge".to_string()),
+        description: "Save a knowledge entry to the local knowledge base. The current implementation stores one chunk, generates an embedding, and can seed simple tag/entity links.".to_string(),
         input_schema: object_prop(
             vec![
                 (
-                    "title".to_string(),
-                    string_prop_required("Title of the knowledge entry"),
-                ),
-                (
                     "content".to_string(),
-                    string_prop_required("Content/body of the knowledge entry"),
-                ),
-                (
-                    "source".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Source origin of the knowledge (e.g. URL, filename, 'user')"),
-                    ),
+                    string_prop_required("The full text content to store in the knowledge base."),
                 ),
                 (
                     "tags".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Optional tags for categorization"),
+                        Some("Optional tags for categorization (e.g. ['tech', 'project_alpha'])."),
                     ),
                 ),
                 (
-                    "scope".to_string(),
+                    "auto_extract".to_string(),
+                    boolean_prop(
+                        Some("Whether to derive simple entity links from the provided tags. Defaults to true. Full LLM-based extraction is not implemented yet."),
+                    ),
+                ),
+                (
+                    "source".to_string(),
                     string_prop(
                         None,
                         None,
-                        Some("Scope of knowledge: 'global' (shared) or 'assistant' (private to this assistant). Defaults to 'global'."),
+                        Some("Optional source label for this knowledge entry (for example: conversation, file path, or URL)."),
                     ),
                 ),
             ],
-            vec!["title".to_string(), "content".to_string()],
+            vec!["content".to_string()],
             None,
         ),
         output_schema: None,
@@ -49,104 +43,37 @@ pub fn save_knowledge_tool() -> MCPTool {
     }
 }
 
-/// Read a specific knowledge entry by ID
-pub fn read_knowledge_tool() -> MCPTool {
-    MCPTool {
-        name: "readKnowledge".to_string(),
-        title: Some("Read Knowledge".to_string()),
-        description: "Read a specific knowledge entry by ID".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "id".to_string(),
-                    integer_prop(None, None, Some("ID of the knowledge entry to read")),
-                ),
-                (
-                    "scope".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Scope of knowledge: 'global' or 'assistant'. Defaults to 'global'."),
-                    ),
-                ),
-            ],
-            vec!["id".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Delete a specific knowledge entry by ID
-pub fn delete_knowledge_tool() -> MCPTool {
-    MCPTool {
-        name: "deleteKnowledge".to_string(),
-        title: Some("Delete Knowledge".to_string()),
-        description: "Delete a specific knowledge entry by ID".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "id".to_string(),
-                    integer_prop(None, None, Some("ID of the knowledge entry to delete")),
-                ),
-                (
-                    "scope".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Scope of knowledge: 'global' or 'assistant'. Defaults to 'global'."),
-                    ),
-                ),
-            ],
-            vec!["id".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Search the knowledge base using full-text search (FTS5) and/or tags
+/// Search the knowledge base using a hybrid approach (Keyword + Semantic).
 pub fn search_knowledge_tool() -> MCPTool {
     MCPTool {
-        name: "searchKnowledge".to_string(),
+        name: "search_knowledge".to_string(),
         title: Some("Search Knowledge".to_string()),
-        description: "Search the knowledge base using full-text search (FTS5) and/or tags"
-            .to_string(),
+        description: "Search the knowledge base using keyword, semantic, or fused hybrid ranking.".to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "query".to_string(),
-                    string_prop(None, None, Some("Search query (FTS5 full-text search)")),
-                ),
-                (
-                    "source".to_string(),
-                    string_prop(None, None, Some("Filter by source")),
-                ),
-                (
-                    "tags".to_string(),
-                    array_schema(string_prop(None, None, None), Some("Filter by tags")),
+                    string_prop_required("The natural language question or keyword to search for."),
                 ),
                 (
                     "limit".to_string(),
                     integer_prop_with_default(
-                        None,
-                        Some(100),
-                        10,
-                        Some("Maximum number of results"),
+                        Some(1),
+                        Some(50),
+                        5,
+                        Some("Maximum number of results to return (default: 5)."),
                     ),
                 ),
                 (
-                    "scope".to_string(),
+                    "mode".to_string(),
                     string_prop(
                         None,
                         None,
-                        Some("Scope of knowledge: 'global', 'assistant', or 'both'. Defaults to 'both' to search everything."),
+                        Some("Search mode: 'keyword', 'semantic', or 'hybrid'. Defaults to 'hybrid'."),
                     ),
                 ),
             ],
-            vec![],
+            vec!["query".to_string()],
             None,
         ),
         output_schema: None,
@@ -154,37 +81,61 @@ pub fn search_knowledge_tool() -> MCPTool {
     }
 }
 
-/// List all knowledge entries for this assistant (paginated)
-pub fn list_knowledge_tool() -> MCPTool {
+/// Explore relationships around a central entity.
+pub fn explore_context_tool() -> MCPTool {
     MCPTool {
-        name: "listKnowledge".to_string(),
-        title: Some("List Knowledge".to_string()),
-        description: "List all knowledge entries for this assistant (paginated)".to_string(),
+        name: "explore_context".to_string(),
+        title: Some("Explore Context".to_string()),
+        description: "Explore the graph of relationships around a specific entity.".to_string(),
         input_schema: object_prop(
             vec![
                 (
-                    "limit".to_string(),
-                    integer_prop_with_default(
-                        Some(1),
-                        Some(100),
-                        20,
-                        Some("Maximum number of entries"),
+                    "entity_name".to_string(),
+                    string_prop_required(
+                        "The name of the central entity to explore (e.g., 'LibrAgent').",
                     ),
                 ),
                 (
-                    "offset".to_string(),
-                    integer_prop_with_default(Some(0), None, 0, Some("Offset for pagination")),
-                ),
-                (
-                    "scope".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Scope of knowledge: 'global', 'assistant', or 'both'. Defaults to 'both' to list everything."),
+                    "depth".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(3),
+                        1,
+                        Some("The depth of the graph traversal. Defaults to 1."),
                     ),
                 ),
             ],
-            vec![],
+            vec!["entity_name".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Prune or manage existing knowledge.
+pub fn prune_knowledge_tool() -> MCPTool {
+    MCPTool {
+        name: "prune_knowledge".to_string(),
+        title: Some("Prune Knowledge".to_string()),
+        description: "Delete or merge knowledge entries from the database.".to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "target_ids".to_string(),
+                    array_schema(
+                        integer_prop(None, None, None),
+                        Some("List of knowledge chunk IDs to target."),
+                    ),
+                ),
+                (
+                    "action".to_string(),
+                    string_prop_required(
+                        "The action to perform: 'delete', 'update_importance', or 'merge'.",
+                    ),
+                ),
+            ],
+            vec!["target_ids".to_string(), "action".to_string()],
             None,
         ),
         output_schema: None,
@@ -195,10 +146,9 @@ pub fn list_knowledge_tool() -> MCPTool {
 /// Returns all knowledge tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
-        save_knowledge_tool(),
-        read_knowledge_tool(),
-        delete_knowledge_tool(),
+        record_knowledge_tool(),
         search_knowledge_tool(),
-        list_knowledge_tool(),
+        explore_context_tool(),
+        prune_knowledge_tool(),
     ]
 }

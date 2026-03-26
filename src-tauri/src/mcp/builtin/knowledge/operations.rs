@@ -1,173 +1,154 @@
-use serde_json::{json, Value};
-
+use super::{embed, KnowledgeServer};
 use crate::mcp::builtin::error_guidance::{
-    guided_error, invalid_input_error, missing_param_error, not_found_error, ErrorCategory,
-    SuccessHint, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::KnowledgeRepository;
+use crate::repositories::KnowledgeV2Repository;
+use serde_json::{json, Value};
 
-use super::{helpers, KnowledgeServer};
-
-/// Save knowledge to the database
-pub async fn save_knowledge(
+/// Record new knowledge into the local vector DB and graph.
+pub async fn record_knowledge(
     _server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
-    let title = match args.get("title").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        Option::None => return Ok(missing_param_error("title", ToolGroup::Knowledge)),
-    };
-
     let content = match args.get("content").and_then(|v| v.as_str()) {
         Some(v) => v,
-        Option::None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
+        None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
     };
 
+    let tags = args.get("tags").and_then(|v| {
+        if v.is_array() {
+            Some(v.to_string())
+        } else {
+            None
+        }
+    });
+
+    let auto_extract = args
+        .get("auto_extract")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let source = args
         .get("source")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    // Handle tags using helper
-    let tags_val = args.get("tags");
-    // Validate that if tags exist, they are an array (logic inside helper is lenient but Blueprint requires validation).
-    // The blueprint says "Validate inputs BEFORE operations".
-    // The original code returned `invalid_input_error` if tags wasn't an array of strings.
-    // Let's preserve that validation logic if strictness is required, or trust the helper if lenience is preferred.
-    // The original code was strict: `if !tags_arr.iter().all(|t| t.is_string()) ...`
-    // However, the helper `parse_tags` handles `Some(val)` by filtering strings.
-    // To match original strict validation behavior:
-    if let Some(val) = tags_val {
-        if !val.is_array() && !val.is_null() {
-            return Ok(invalid_input_error(
-                "Tags must be an array of strings",
+    // 1. Generate embedding
+    // In a real implementation, we might want to chunk large content first.
+    // For now, we assume reasonable sized content or handled by fastembed.
+    let embedding = match embed::generate_embedding(content) {
+        Ok(e) => e,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::InternalError,
+                format!("Failed to generate embedding: {}", e),
                 ToolGroup::Knowledge,
-            ));
+            )
+            .to_mcp_result());
         }
-        if let Some(arr) = val.as_array() {
-            if !arr.iter().all(|t| t.is_string()) {
-                return Ok(invalid_input_error(
-                    "Tags must be an array of strings",
-                    ToolGroup::Knowledge,
-                ));
-            }
-        }
-    }
-
-    let tags_str = if let Some(val) = tags_val {
-        match serde_json::to_string(val) {
-            Ok(s) => Some(s),
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    format!("Serialize tags error: {}", e),
-                    ToolGroup::Knowledge,
-                )
-                .with_guidance(vec!["Ensure tags are valid JSON".to_string()])
-                .to_mcp_result())
-            }
-        }
-    } else {
-        None
     };
 
-    let repo = crate::get_knowledge_repository();
-    let created = repo
-        .create_knowledge(
+    // 2. Save to DB via Repository
+    let repo = crate::state::get_knowledge_v2_repository();
+    match repo
+        .record_chunk(
             assistant_id.to_string(),
-            title.to_string(),
             content.to_string(),
+            tags.clone(),
             source.clone(),
-            tags_str.clone(),
+            embedding,
         )
-        .await;
+        .await
+    {
+        Ok(chunk_id) => {
+            // Current v2 behavior only derives simple entity links from explicit tags.
+            if auto_extract {
+                if let Some(tags_json) = tags {
+                    if let Ok(tags_arr) = serde_json::from_str::<Vec<String>>(&tags_json) {
+                        for tag in tags_arr {
+                            if let Ok(entity_id) = repo
+                                .upsert_entity(
+                                    assistant_id.to_string(),
+                                    tag,
+                                    Some("Tag".to_string()),
+                                    None,
+                                )
+                                .await
+                            {
+                                let _ = repo.link_chunk_to_entity(chunk_id, entity_id).await;
+                            }
+                        }
+                    }
+                }
+            }
 
-    match created {
-        Ok(model) => {
-            let id = model.id;
-
-            // Parse tags back for response
-            let tags_vec = helpers::parse_db_tags(tags_str.as_ref());
-
-            let knowledge = json!({
-                "id": id,
-                "assistant_id": assistant_id,
-                "title": title,
-                "content": content,
-                "source": source,
-                "tags": tags_vec,
-                "created_at": model.created_at,
-                "updated_at": model.updated_at
-            });
+            let mut next_steps = vec!["Use search_knowledge to query this information".to_string()];
+            if auto_extract {
+                next_steps.push(
+                    "Simple tag/entity links were seeded from the provided tags when available."
+                        .to_string(),
+                );
+            }
 
             let hint = SuccessHint::new(
-                format!("Knowledge '{}' saved (ID: {})", title, id),
-                vec![
-                    "Use searchKnowledge to find this entry later".to_string(),
-                    "Use listKnowledge to see all knowledge entries".to_string(),
-                ],
+                format!("Knowledge recorded successfully (ID: {})", chunk_id),
+                next_steps,
             );
-
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
-                "knowledge": knowledge
+                "id": chunk_id,
+                "source": source,
+                "auto_extract": auto_extract,
             }))))
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Save knowledge error: {}", e),
+            format!("Failed to save knowledge: {}", e),
             ToolGroup::Knowledge,
         )
-        .with_guidance(vec![
-            "Check database connectivity".to_string(),
-            "Verify title and content are valid".to_string(),
-            "Retry the operation".to_string(),
-        ])
         .to_mcp_result()),
     }
 }
 
-/// Delete a knowledge entry by ID
-pub async fn delete_knowledge(
+/// Prune or manage existing knowledge.
+pub async fn prune_knowledge(
     _server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
-    let id = match args.get("id").and_then(|v| v.as_i64()) {
+    let action = match args.get("action").and_then(|v| v.as_str()) {
         Some(v) => v,
-        Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
+        None => return Ok(missing_param_error("action", ToolGroup::Knowledge)),
     };
 
-    let repo = crate::get_knowledge_repository();
+    let target_ids = match args.get("target_ids").and_then(|v| v.as_array()) {
+        Some(v) => v,
+        None => return Ok(missing_param_error("target_ids", ToolGroup::Knowledge)),
+    };
 
-    // Try provided assistant_id first
-    let mut result = repo.delete_knowledge(id, assistant_id).await;
+    let repo = crate::state::get_knowledge_v2_repository();
+    let mut deleted_count = 0;
 
-    // If not found and assistant_id isn't "global", try "global"
-    if let Err(crate::repositories::DbError::NotFound(_)) = result {
-        if assistant_id != "global" {
-            result = repo.delete_knowledge(id, "global").await;
+    match action {
+        "delete" => {
+            for id_val in target_ids {
+                if let Some(id) = id_val.as_i64() {
+                    if repo.delete_chunk(id as i32, assistant_id).await.is_ok() {
+                        deleted_count += 1;
+                    }
+                }
+            }
+            Ok(SuccessHint::new(
+                format!(
+                    "Deleted {}/{} knowledge chunks.",
+                    deleted_count,
+                    target_ids.len()
+                ),
+                vec![],
+            )
+            .to_mcp_result_with_data(Some(json!({ "deleted": deleted_count }))))
         }
-    }
-
-    match result {
-        Ok(_) => {
-            let hint = SuccessHint::new(
-                format!("Knowledge entry {} deleted successfully", id),
-                vec!["Use listKnowledge to see remaining entries".to_string()],
-            );
-
-            Ok(hint.to_mcp_result_with_data(Some(json!({
-                "success": true,
-                "id": id
-            }))))
-        }
-        Err(_) => Ok(not_found_error(
-            "Knowledge entry",
-            &id.to_string(),
-            ToolGroup::Knowledge,
-        )),
+        _ => Err(format!("Action '{}' not supported yet", action)),
     }
 }

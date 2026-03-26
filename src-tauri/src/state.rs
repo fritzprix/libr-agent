@@ -9,9 +9,9 @@ use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SqliteAssistantRepository, SqliteAttachmentsRepository, SqliteCompactContextRepository,
-    SqliteKnowledgeRepository, SqliteMCPServerRepository, SqliteMessageRepository,
-    SqlitePlanningRepository, SqlitePlaybookRepository, SqliteScheduledTaskRepository,
-    SqliteSessionRepository, SqliteSettingsRepository,
+    SqliteKnowledgeRepository, SqliteKnowledgeV2Repository, SqliteMCPServerRepository,
+    SqliteMessageRepository, SqlitePlanningRepository, SqlitePlaybookRepository,
+    SqliteScheduledTaskRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -52,6 +52,9 @@ static PLAYBOOK_REPOSITORY: OnceLock<SqlitePlaybookRepository> = OnceLock::new()
 
 /// A global, thread-safe, once-initialized knowledge repository.
 static KNOWLEDGE_REPOSITORY: OnceLock<SqliteKnowledgeRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized knowledge v2 repository.
+static KNOWLEDGE_V2_REPOSITORY: OnceLock<SqliteKnowledgeV2Repository> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized planning repository.
 static PLANNING_REPOSITORY: OnceLock<SqlitePlanningRepository> = OnceLock::new();
@@ -319,6 +322,20 @@ pub fn get_knowledge_repository() -> &'static SqliteKnowledgeRepository {
     KNOWLEDGE_REPOSITORY
         .get()
         .expect("Knowledge repository not initialized. Call set_knowledge_repository() first.")
+}
+
+/// Sets the global knowledge v2 repository instance.
+pub fn set_knowledge_v2_repository(repo: SqliteKnowledgeV2Repository) {
+    KNOWLEDGE_V2_REPOSITORY
+        .set(repo)
+        .expect("Knowledge v2 repository already initialized");
+}
+
+/// Gets a reference to the global knowledge v2 repository.
+pub fn get_knowledge_v2_repository() -> &'static SqliteKnowledgeV2Repository {
+    KNOWLEDGE_V2_REPOSITORY.get().expect(
+        "Knowledge v2 repository not initialized. Call set_knowledge_v2_repository() first.",
+    )
 }
 
 /// Sets the global planning repository instance.
