@@ -4,6 +4,7 @@ pub mod compact_context_repository;
 pub mod error;
 pub mod in_memory_session_repository;
 pub mod knowledge_repository;
+pub mod knowledge_v2_repository;
 pub mod mcp_server_repository;
 pub mod message_repository;
 pub mod planning_repository;
@@ -22,6 +23,7 @@ pub use compact_context_repository::{
 pub use error::DbError;
 pub use in_memory_session_repository::InMemorySessionRepository;
 pub use knowledge_repository::{KnowledgeRepository, SqliteKnowledgeRepository};
+pub use knowledge_v2_repository::{KnowledgeV2Repository, SqliteKnowledgeV2Repository};
 pub use mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
 pub use message_repository::{MessageRepository, SqliteMessageRepository};
 pub use planning_repository::{PlanningRepository, SqlitePlanningRepository};

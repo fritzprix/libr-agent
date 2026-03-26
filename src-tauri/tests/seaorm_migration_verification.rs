@@ -6,12 +6,30 @@ use sea_orm::*;
 use sea_orm_migration::MigratorTrait;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
+use std::sync::Once;
 use tauri_mcp_agent_lib::entity::*;
 use tauri_mcp_agent_lib::migration::Migrator;
 
-#[tokio::test]
-async fn test_all_migrations_run_successfully() {
-    // Create in-memory database
+fn register_sqlite_vec() {
+    static REGISTER_SQLITE_VEC: Once = Once::new();
+
+    REGISTER_SQLITE_VEC.call_once(|| unsafe {
+        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut libsqlite3_sys::sqlite3,
+                *mut *mut i8,
+                *const libsqlite3_sys::sqlite3_api_routines,
+            ) -> i32,
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
+        )));
+    });
+}
+
+async fn setup_db() -> DatabaseConnection {
+    register_sqlite_vec();
+
     let options = SqliteConnectOptions::from_str("sqlite::memory:")
         .expect("Invalid database URL")
         .create_if_missing(true);
@@ -21,16 +39,17 @@ async fn test_all_migrations_run_successfully() {
         .await
         .expect("Failed to create test pool");
 
-    // Convert to SeaORM connection
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
 
-    // Run all migrations
-    let result = Migrator::up(&db, None).await;
-    assert!(
-        result.is_ok(),
-        "Migrations should run successfully: {:?}",
-        result
-    );
+    db
+}
+
+#[tokio::test]
+async fn test_all_migrations_run_successfully() {
+    let db = setup_db().await;
 
     // Verify all tables exist by trying to query them
 
@@ -75,24 +94,54 @@ async fn test_all_migrations_run_successfully() {
     let settings_count = settings::Entity::find().count(&db).await;
     assert!(settings_count.is_ok(), "Settings table should be queryable");
 
-    println!("✅ All 8 tables created and queryable via SeaORM");
+    let knowledge_chunk_v2_count = knowledge_chunk_v2::Entity::find().count(&db).await;
+    assert!(
+        knowledge_chunk_v2_count.is_ok(),
+        "KnowledgeChunkV2 table should be queryable"
+    );
+
+    let knowledge_entity_count = knowledge_entity::Entity::find().count(&db).await;
+    assert!(
+        knowledge_entity_count.is_ok(),
+        "KnowledgeEntity table should be queryable"
+    );
+
+    let knowledge_relationship_count = knowledge_relationship::Entity::find().count(&db).await;
+    assert!(
+        knowledge_relationship_count.is_ok(),
+        "KnowledgeRelationship table should be queryable"
+    );
+
+    let knowledge_chunk_entity_count = knowledge_chunk_entity::Entity::find().count(&db).await;
+    assert!(
+        knowledge_chunk_entity_count.is_ok(),
+        "KnowledgeChunkEntity table should be queryable"
+    );
+
+    let fts_count = db.query_one(Statement::from_string(
+        db.get_database_backend(),
+        "SELECT count(*) AS count FROM knowledge_chunks_fts;".to_string(),
+    ));
+    assert!(
+        fts_count.await.is_ok(),
+        "knowledge_chunks_fts should be queryable"
+    );
+
+    let vec_count = db.query_one(Statement::from_string(
+        db.get_database_backend(),
+        "SELECT count(*) AS count FROM knowledge_vectors;".to_string(),
+    ));
+    assert!(
+        vec_count.await.is_ok(),
+        "knowledge_vectors should be queryable"
+    );
+
+    println!("✅ Legacy and Knowledge v2 tables created and queryable");
 }
 
 #[tokio::test]
 async fn test_settings_crud_operations() {
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = setup_db().await;
 
     // Insert settings
     let setting = settings::ActiveModel {
@@ -138,19 +187,7 @@ async fn test_settings_crud_operations() {
 
 #[tokio::test]
 async fn test_knowledge_crud_operations() {
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = setup_db().await;
 
     // Insert knowledge
     let knowledge = knowledge::ActiveModel {
@@ -198,19 +235,7 @@ async fn test_knowledge_crud_operations() {
 
 #[tokio::test]
 async fn test_playbook_crud_operations() {
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = setup_db().await;
 
     // Insert playbook (ID must be provided, it's a String, not auto-increment)
     let playbook = playbook::ActiveModel {
@@ -253,19 +278,7 @@ async fn test_playbook_crud_operations() {
 
 #[tokio::test]
 async fn test_mcp_server_crud_operations() {
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = setup_db().await;
 
     // Insert MCP server with config field (JSON)
     let server_id = cuid2::create_id();
@@ -333,19 +346,7 @@ async fn test_mcp_server_crud_operations() {
 
 #[tokio::test]
 async fn test_assistant_crud_operations() {
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = setup_db().await;
 
     // Insert assistant with config field (JSON) - ID must be provided as String
     let assistant = assistant::ActiveModel {
@@ -383,19 +384,7 @@ async fn test_assistant_crud_operations() {
 
 #[tokio::test]
 async fn test_attachments_schema() {
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = setup_db().await;
 
     // Insert store
     let store = store::ActiveModel {

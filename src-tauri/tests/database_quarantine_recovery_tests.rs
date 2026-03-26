@@ -1,3 +1,5 @@
+mod common;
+
 use migration::MigratorTrait;
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sea_orm::{ConnectionTrait, DatabaseBackend, SqlxSqliteConnector, Statement};
@@ -12,6 +14,7 @@ use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url;
 
 async fn open_file_db(path: &Path) -> sea_orm::DatabaseConnection {
+    common::register_sqlite_vec();
     let url = format_sqlite_url(&path.to_string_lossy());
     let options = SqliteConnectOptions::from_str(&url)
         .expect("Invalid database URL")
