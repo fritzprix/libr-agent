@@ -386,8 +386,20 @@ export function AgentSessionListProvider({
       logger.info('Deleting agent session', { sessionId });
 
       try {
-        const response = await safeInvoke<AgentResponse>('agent_delete_session', { sessionId });
-        const deletedIds = (response?.data as string[]) || [sessionId];
+        const response = await safeInvoke<AgentResponse<string[]>>('agent_delete_session', { sessionId });
+        const data = response?.data;
+        let deletedIds: string[];
+
+        if (Array.isArray(data) && data.every((x): x is string => typeof x === 'string')) {
+          deletedIds = data;
+        } else {
+          logger.warn('agent_delete_session returned unexpected data; falling back to single id', {
+            sessionId,
+            data,
+          });
+          deletedIds = [sessionId];
+        }
+
         const idsToRemove = new Set(deletedIds);
 
         // Remove the session and ALL its descendants from the UI using the authoritative list from Rust

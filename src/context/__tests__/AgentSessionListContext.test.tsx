@@ -208,7 +208,7 @@ describe('AgentSessionListContext', () => {
                     createdAt: Date.now(),
                 }
             ]);
-            if (cmd === 'agent_delete_session') return Promise.resolve({ data: ['session-1'] });
+            if (cmd === 'agent_delete_session') return Promise.resolve({ success: true, message: 'Session deleted', data: ['session-1'] });
             return Promise.resolve();
         });
 

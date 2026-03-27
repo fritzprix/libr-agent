@@ -404,7 +404,7 @@ pub async fn agent_delete_session(
     Ok(AgentResponse {
         success: true,
         message: format!("Session deleted: {}", session_id),
-        data: Some(serde_json::to_value(deleted_ids).unwrap()),
+        data: Some(serde_json::json!(deleted_ids)),
     })
 }
 
