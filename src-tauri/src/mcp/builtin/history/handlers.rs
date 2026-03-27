@@ -82,13 +82,19 @@ pub async fn list_sessions(_server: &HistoryServer, args: Value) -> Result<MCPRe
         .map_err(|e| e.to_string())?;
     let message_counts = build_message_counts(message_repo).await?;
 
-    let filtered: Vec<HistorySessionItem> = sessions
+    let mut filtered: Vec<HistorySessionItem> = sessions
         .into_iter()
         .filter(|session| {
             session_matches_filters(session, &args.agent_id, from, to, status_filter.as_ref())
         })
         .map(|session| to_history_session_item(session, &message_counts))
         .collect();
+    filtered.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| left.session_id.cmp(&right.session_id))
+    });
 
     let paged = paginate_in_memory(filtered, page, page_size);
     let text = render_list_text(&paged);
@@ -140,11 +146,12 @@ pub async fn read_session(_server: &HistoryServer, args: Value) -> Result<MCPRes
         .get_page(&args.session_id, page, page_size)
         .await
         .map_err(|e| e.to_string())?;
-    let message_counts = build_message_counts(message_repo).await?;
+    let total_messages = message_page.total_items;
+    let messages = map_message_page(message_page);
 
     let response = HistorySessionReadResponse {
-        session: to_history_session_item(session, &message_counts),
-        messages: map_message_page(message_page),
+        session: to_history_session_item_with_count(session, total_messages),
+        messages,
     };
 
     let text = render_read_session_text(&response);
@@ -188,7 +195,7 @@ pub async fn read_message(_server: &HistoryServer, args: Value) -> Result<MCPRes
     let rendered = render_message_content(&message.content);
     let total_chars = rendered.chars().count();
     let (content_chunk, chunk_length, has_more, next_offset) =
-        slice_text_chunk(&rendered, offset_chars, max_chars);
+        slice_text_chunk(&rendered, total_chars, offset_chars, max_chars);
 
     let response = HistoryMessageReadResponse {
         message_id: message.id.clone(),
@@ -236,6 +243,25 @@ pub async fn search_history(
     let role_filter = args
         .roles
         .map(|roles| roles.into_iter().collect::<HashSet<_>>());
+    if let Some(session_id) = args.session_id.as_deref() {
+        let session_repo = get_session_repository();
+        let session_exists = session_repo
+            .get_session(session_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .is_some();
+        if !session_exists {
+            return Ok(operation_failed_error(
+                "Search History",
+                &format!("Session '{}' not found", session_id),
+                vec![
+                    "Use list() to find a valid session ID".to_string(),
+                    "Retry search() with a copied sessionId from list()".to_string(),
+                ],
+                ToolGroup::Agent,
+            ));
+        }
+    }
 
     let allowed_session_ids = resolve_allowed_session_ids(
         args.session_id.as_deref(),
@@ -305,6 +331,9 @@ pub async fn search_history(
             if !timestamp_in_range(message.created_at, from, to) {
                 return None;
             }
+            let rendered_content = render_message_content(&message.content);
+            let content_length = rendered_content.chars().count();
+            let snippet_source = item.snippet.unwrap_or_else(|| rendered_content.clone());
 
             Some(HistorySearchMatch {
                 session_id: item.session_id,
@@ -312,12 +341,8 @@ pub async fn search_history(
                 role: message.role.clone(),
                 created_at: item.created_at,
                 score: item.score,
-                snippet: bounded_snippet(
-                    item.snippet
-                        .unwrap_or_else(|| render_message_content(&message.content)),
-                    PREVIEW_CHARS,
-                ),
-                content_length: render_message_content(&message.content).chars().count(),
+                snippet: bounded_snippet(snippet_source, PREVIEW_CHARS),
+                content_length,
             })
         })
         .collect();
@@ -440,6 +465,14 @@ fn to_history_session_item(
     session: SessionMetadata,
     message_counts: &HashMap<String, u64>,
 ) -> HistorySessionItem {
+    let message_count = message_counts.get(&session.id).copied().unwrap_or(0);
+    to_history_session_item_with_count(session, message_count)
+}
+
+fn to_history_session_item_with_count(
+    session: SessionMetadata,
+    message_count: u64,
+) -> HistorySessionItem {
     HistorySessionItem {
         session_id: session.id.clone(),
         name: session.name,
@@ -450,7 +483,7 @@ fn to_history_session_item(
         created_at: session.created_at,
         updated_at: session.updated_at,
         last_message_at: session.last_message_at,
-        message_count: message_counts.get(&session.id).copied().unwrap_or(0),
+        message_count,
     }
 }
 
@@ -523,16 +556,48 @@ fn bounded_snippet(text: String, max_chars: usize) -> String {
 
 fn slice_text_chunk(
     text: &str,
+    total_chars: usize,
     offset_chars: usize,
     max_chars: usize,
 ) -> (String, usize, bool, Option<usize>) {
-    let chars: Vec<char> = text.chars().collect();
-    let safe_offset = offset_chars.min(chars.len());
-    let end = safe_offset.saturating_add(max_chars).min(chars.len());
-    let chunk: String = chars[safe_offset..end].iter().collect();
-    let chunk_length = end.saturating_sub(safe_offset);
-    let has_more = end < chars.len();
-    let next_offset = has_more.then_some(end);
+    let safe_offset = offset_chars.min(total_chars);
+
+    if max_chars == 0 {
+        let has_more = safe_offset < total_chars;
+        let next_offset = has_more.then_some(safe_offset);
+        return (String::new(), 0, has_more, next_offset);
+    }
+
+    if safe_offset == total_chars {
+        return (String::new(), 0, false, None);
+    }
+
+    let mut start_byte = text.len();
+    let mut end_byte = text.len();
+    let mut chunk_length = 0usize;
+    let mut started = false;
+
+    for (char_index, (byte_index, ch)) in text.char_indices().enumerate() {
+        if char_index == safe_offset {
+            start_byte = byte_index;
+            end_byte = byte_index;
+            started = true;
+        }
+
+        if started && chunk_length < max_chars {
+            end_byte = byte_index + ch.len_utf8();
+            chunk_length += 1;
+
+            if chunk_length == max_chars {
+                break;
+            }
+        }
+    }
+
+    let chunk = text[start_byte..end_byte].to_string();
+    let next_char_offset = safe_offset.saturating_add(chunk_length);
+    let has_more = next_char_offset < total_chars;
+    let next_offset = has_more.then_some(next_char_offset);
     (chunk, chunk_length, has_more, next_offset)
 }
 

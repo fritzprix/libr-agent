@@ -6,6 +6,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::mcp::builtin::history::HistoryServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
@@ -255,6 +256,30 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
     db
 }
 
+#[test]
+fn history_list_tool_status_filter_has_no_default() {
+    let list_tool = HistoryServer::tools_static()
+        .into_iter()
+        .find(|tool| tool.name == "list")
+        .expect("list tool should exist");
+
+    let properties = match &list_tool.input_schema.schema_type {
+        JSONSchemaType::Object {
+            properties: Some(properties),
+            ..
+        } => properties,
+        other => panic!("expected object schema, got {other:?}"),
+    };
+
+    let status_schema = properties
+        .get("status")
+        .expect("list tool should expose status filter");
+    assert!(
+        status_schema.default.is_none(),
+        "optional status filter must not imply a default value"
+    );
+}
+
 #[tokio::test]
 async fn history_list_filters_sessions_and_exposes_ids() {
     let _guard = TEST_GUARD.lock().await;
@@ -391,6 +416,53 @@ async fn history_search_returns_filtered_snippets() {
 }
 
 #[tokio::test]
+async fn history_list_is_stably_sorted_for_pagination() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = seed_history_fixture().await;
+    let server = HistoryServer::new("history-session-a".to_string(), db)
+        .await
+        .expect("server should initialize");
+
+    let first_page = server
+        .call_tool(
+            "list",
+            json!({
+                "page": 1,
+                "pageSize": 1
+            }),
+            None,
+        )
+        .await
+        .expect("first list page should succeed");
+    let first_structured = first_page
+        .structured_content
+        .expect("structured content expected");
+    assert_eq!(
+        first_structured["sessions"][0]["sessionId"],
+        "history-session-b"
+    );
+
+    let second_page = server
+        .call_tool(
+            "list",
+            json!({
+                "page": 2,
+                "pageSize": 1
+            }),
+            None,
+        )
+        .await
+        .expect("second list page should succeed");
+    let second_structured = second_page
+        .structured_content
+        .expect("structured content expected");
+    assert_eq!(
+        second_structured["sessions"][0]["sessionId"],
+        "history-session-a"
+    );
+}
+
+#[tokio::test]
 async fn history_search_handles_multibyte_snippets_without_panic() {
     let _guard = TEST_GUARD.lock().await;
     let db = seed_history_fixture().await;
@@ -432,6 +504,32 @@ async fn history_search_handles_multibyte_snippets_without_panic() {
         .as_str()
         .expect("snippet")
         .contains('낮'));
+}
+
+#[tokio::test]
+async fn history_search_reports_missing_session_as_not_found() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = seed_history_fixture().await;
+    let server = HistoryServer::new("history-session-a".to_string(), db)
+        .await
+        .expect("server should initialize");
+
+    let result = server
+        .call_tool(
+            "search",
+            json!({
+                "query": "history",
+                "sessionId": "missing-session"
+            }),
+            Some("history-session-a".to_string()),
+        )
+        .await
+        .expect("search should return an MCP error result");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(text.contains("Session 'missing-session' not found"));
+    assert!(!text.contains("did not match the provided filters"));
 }
 
 #[tokio::test]

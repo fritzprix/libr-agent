@@ -32,9 +32,8 @@ fn list_tool() -> MCPTool {
                 ),
                 (
                     "status".to_string(),
-                    enum_prop(
+                    enum_prop_optional(
                         vec!["idle", "busy", "paused", "error"],
-                        "idle",
                         Some("Optional session status filter."),
                     ),
                 ),

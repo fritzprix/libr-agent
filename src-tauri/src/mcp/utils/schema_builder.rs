@@ -202,6 +202,29 @@ pub fn enum_prop(values: Vec<&str>, default: &str, description: Option<&str>) ->
     }
 }
 
+/// Creates an optional enum property schema without a default value
+pub fn enum_prop_optional(values: Vec<&str>, description: Option<&str>) -> JSONSchema {
+    let enum_values: Vec<Value> = values
+        .iter()
+        .map(|v| Value::String(v.to_string()))
+        .collect();
+
+    JSONSchema {
+        schema_type: JSONSchemaType::String {
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            format: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: Some(enum_values),
+        const_value: None,
+    }
+}
+
 /// Creates an enum property schema with allowed values and default (required version)
 pub fn enum_prop_required(values: Vec<&str>, description: &str) -> JSONSchema {
     let enum_values: Vec<Value> = values
