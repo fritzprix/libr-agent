@@ -500,7 +500,7 @@ impl AgentSessionManager {
     /// **Cascade Philosophy:** "When a parent is deleted, its children are also deleted"
     /// - DB-level CASCADE automatically deletes child session records
     /// - We must manually delete workspace directories for all descendants before DB deletion
-    pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
+    pub async fn delete_session(&self, session_id: String) -> Result<Vec<String>, String> {
         crate::agent::lifecycle::delete_session(
             &self.session_repo,
             &self.active_sessions,

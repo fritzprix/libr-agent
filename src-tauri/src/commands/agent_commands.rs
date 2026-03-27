@@ -399,12 +399,12 @@ pub async fn agent_delete_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    manager.delete_session(session_id.clone()).await?;
+    let deleted_ids = manager.delete_session(session_id.clone()).await?;
 
     Ok(AgentResponse {
         success: true,
         message: format!("Session deleted: {}", session_id),
-        data: None,
+        data: Some(serde_json::to_value(deleted_ids).unwrap()),
     })
 }
 
