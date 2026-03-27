@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { formatRelativeTime, formatSessionTimestamp, getDateTimeFormatter } from '../date-utils';
+import { formatRelativeTime, formatSessionTimestamp } from '../date-utils';
 
-// Lock Intl.RelativeTimeFormat to 'en' so assertions are locale-independent
+// Lock Intl to 'en' so assertions are locale-independent
 const OriginalRelativeTimeFormat = Intl.RelativeTimeFormat;
+const OriginalDateTimeFormat = Intl.DateTimeFormat;
 
 describe('date-utils', () => {
   beforeAll(() => {
@@ -18,11 +19,29 @@ describe('date-utils', () => {
       writable: true,
       configurable: true,
     });
+
+    Object.defineProperty(Intl, 'DateTimeFormat', {
+      value: class extends OriginalDateTimeFormat {
+        constructor(
+          _locale?: string | string[],
+          options?: Intl.DateTimeFormatOptions,
+        ) {
+          super('en-US', options);
+        }
+      },
+      writable: true,
+      configurable: true,
+    });
   });
 
   afterAll(() => {
     Object.defineProperty(Intl, 'RelativeTimeFormat', {
       value: OriginalRelativeTimeFormat,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(Intl, 'DateTimeFormat', {
+      value: OriginalDateTimeFormat,
       writable: true,
       configurable: true,
     });
@@ -108,7 +127,17 @@ describe('date-utils', () => {
       // But standard node environment usually uses en-US or similar.
       // relative should be "2 hours ago"
       expect(result.relative).toBe('2 hours ago');
-      expect(result.tooltip).toBe(getDateTimeFormatter().format(date));
+      // Verify tooltip matches the expected locale-independent format
+      // Note: we use toLocaleString with explicit en-US and options to verify parity
+      const expectedTooltip = date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+      });
+      expect(result.tooltip).toBe(expectedTooltip);
       expect(result.display).toContain('2 hours ago');
     });
 
@@ -126,7 +155,7 @@ describe('date-utils', () => {
 
       const dateStr = '2023-01-01T10:00:00Z';
       const date = new Date(dateStr);
-      const expectedAbsolute = date.toLocaleDateString(undefined, {
+      const expectedAbsolute = date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
