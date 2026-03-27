@@ -17,7 +17,7 @@ pub async fn delete_session(
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     // 0. Collect all descendant IDs BEFORE cascade delete (so we can clean their workspaces)
     log::debug!(
         "Collecting descendants for cascade workspace cleanup: {}",
@@ -76,7 +76,11 @@ pub async fn delete_session(
         session_id,
         descendant_ids.len()
     );
-    Ok(())
+
+    let mut deleted_ids = vec![session_id];
+    deleted_ids.extend(descendant_ids);
+
+    Ok(deleted_ids)
 }
 
 /// Delete only this session, leaving children as orphaned top-level sessions.
