@@ -6,6 +6,7 @@
 // Cache formatter instances to prevent expensive re-instantiations during render loops
 let relativeTimeFormatter: Intl.RelativeTimeFormat | null = null;
 let dateFormatter: Intl.DateTimeFormat | null = null;
+let localStringFormatter: Intl.DateTimeFormat | null = null;
 
 function getRelativeTimeFormatter(): Intl.RelativeTimeFormat {
   if (!relativeTimeFormatter) {
@@ -25,6 +26,29 @@ function getDateFormatter(): Intl.DateTimeFormat {
     });
   }
   return dateFormatter;
+}
+
+function getLocalStringFormatter(): Intl.DateTimeFormat {
+  if (!localStringFormatter) {
+    localStringFormatter = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    });
+  }
+  return localStringFormatter;
+}
+
+/**
+ * Formats a date using a cached Intl.DateTimeFormat instance instead of expensive toLocaleString()
+ * @param date The date to format
+ * @returns Formatted string
+ */
+export function formatLocalString(date: Date): string {
+  return getLocalStringFormatter().format(date);
 }
 
 /**
@@ -97,7 +121,7 @@ export function formatSessionTimestamp(dateInput: Date | string | undefined): {
 
   return {
     display,
-    tooltip: date.toLocaleString(),
+    tooltip: formatLocalString(date),
     relative,
   };
 }
