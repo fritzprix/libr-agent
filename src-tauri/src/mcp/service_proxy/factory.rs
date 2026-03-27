@@ -43,6 +43,9 @@ pub(crate) async fn create_builtin_server(
                 crate::mcp::builtin::knowledge::KnowledgeServer::new(assistant_id, _db).await?,
             )))
         }
+        BuiltinServiceId::History => Ok(Some(Box::new(
+            crate::mcp::builtin::history::HistoryServer::new(_session_id, _db).await?,
+        ))),
         BuiltinServiceId::Planning => Ok(Some(Box::new(
             crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),

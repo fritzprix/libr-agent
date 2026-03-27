@@ -253,19 +253,24 @@ impl MessageSearchEngine {
             }
         }
 
-        let start_pos = match match_pos {
-            Some(pos) => pos.saturating_sub(snippet_length / 2),
+        let match_char_pos = match match_pos {
+            Some(pos) => content_lower[..pos].chars().count(),
             None => 0, // No match found, take beginning
         };
-
-        let end_pos = (start_pos + snippet_length).min(content.len());
-        let mut snippet = content[start_pos..end_pos].to_string();
+        let total_chars = content.chars().count();
+        let start_pos = match_char_pos.saturating_sub(snippet_length / 2);
+        let end_pos = (start_pos + snippet_length).min(total_chars);
+        let mut snippet: String = content
+            .chars()
+            .skip(start_pos)
+            .take(end_pos.saturating_sub(start_pos))
+            .collect();
 
         // Add ellipsis if truncated
         if start_pos > 0 {
             snippet = format!("...{snippet}");
         }
-        if end_pos < content.len() {
+        if end_pos < total_chars {
             snippet = format!("{snippet}...");
         }
 
@@ -396,6 +401,16 @@ mod tests {
         assert!(snippet.is_some());
         let s = snippet.unwrap();
         assert!(s.contains("brown fox"));
+    }
+
+    #[test]
+    fn test_snippet_extraction_with_multibyte_characters() {
+        let content = format!("{}{}", "A".repeat(100), "낮".repeat(100));
+        let snippet = MessageSearchEngine::extract_snippet(&content, "낮");
+
+        assert!(snippet.is_some());
+        let s = snippet.unwrap();
+        assert!(s.contains('낮'));
     }
 
     #[test]
