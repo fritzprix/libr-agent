@@ -98,11 +98,11 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const detailsId = `tool-call-details-${toolCall.id}`;
 
   // Adjusting State During Render: auto-expand in developer mode on error/resource transition.
-  if (!isSimpleMode) {
-    if (hasError !== prevHasError || hasResource !== prevHasResource) {
-      setPrevHasError(hasError);
-      setPrevHasResource(hasResource);
+  if (hasError !== prevHasError || hasResource !== prevHasResource) {
+    setPrevHasError(hasError);
+    setPrevHasResource(hasResource);
 
+    if (!isSimpleMode) {
       const errorBecameVisible = !prevHasError && hasError;
       const resourceBecameVisible = !prevHasResource && hasResource;
 
