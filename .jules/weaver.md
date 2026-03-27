@@ -120,3 +120,9 @@
 
 **Eradicated:** Imperative data fetching using `useState` and `useEffect` chains, including manual error and loading state management.
 **Woven:** Declarative Data Fetching with `useSWR`, extracting side-effects into `onSuccess` and `onError` configuration options, and preventing unnecessary re-renders.
+
+## 2026-03-24 - [ToolCallCompactItem] **Eradicated:** [Reading/writing refs during render phase] **Woven:** [Adjusting State During Render via useState]
+
+- Removed `useRef` based tracking of previous values during the render phase.
+- Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
+- **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
