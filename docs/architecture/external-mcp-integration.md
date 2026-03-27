@@ -994,8 +994,7 @@ curl -N -H "Accept: text/event-stream" \
 
 - [MCP Specification 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
 - [RMCP Library Docs](https://docs.rs/rmcp/latest/rmcp/)
-- [Agent V2 Architecture](./chat-feature-architecture.md)
-- [Builtin Tools Best Practices](../../builtin_tool_bp.md)
+- [Builtin Tools Best Practices](../guides/builtin_tool_bp.md)
 
 ### Code References
 

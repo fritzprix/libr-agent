@@ -797,10 +797,6 @@ Adding a new builtin server without updating the registry → test failure, not 
 **Document Version**: 1.2  
 **Related Documents**:
 
-- [idea.md](../../idea.md) - High-level architecture vision
-- [elaborated_idea.md](../../elaborated_idea.md) - Dual-track migration strategy
-- [refactoring_20241228_2330.md](../history/refactoring_20241228_2330.md) - Implementation plan
-
 **Maintainer**: @fritzprix  
 **Last Audit**: 2024-12-28  
 **Last Updated**: 2026-02-21 (Section 9 circuit breaker + registry strengths; Section 11 added)
