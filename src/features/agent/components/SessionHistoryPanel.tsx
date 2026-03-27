@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { RefreshCw, Search, History, X, Bookmark } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   buildChildrenMap,
   buildDescendantCounts,
@@ -372,16 +373,23 @@ export function SessionHistoryPanel({
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRefresh}
-            disabled={isLoading}
-            aria-label={t('sessionHistory.refreshAria', 'Refresh sessions')}
-            className="h-9 w-9"
-          >
-            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onRefresh}
+                disabled={isLoading}
+                aria-label={t('sessionHistory.refreshAria', 'Refresh sessions')}
+                className="h-9 w-9"
+              >
+                <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('sessionHistory.refreshTooltip', 'Refresh sessions')}
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         <Tabs
@@ -459,14 +467,21 @@ export function SessionHistoryPanel({
             aria-label={t('sessionHistory.searchAria', 'Search sessions')}
           />
           {searchQuery && (
-            <button
-              type="button"
-              onClick={() => onSearchQueryChange('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-sm"
-              aria-label={t('sessionHistory.clearSearchAria', 'Clear search')}
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => onSearchQueryChange('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-sm"
+                  aria-label={t('sessionHistory.clearSearchAria', 'Clear search')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('sessionHistory.clearSearchTooltip', 'Clear search')}
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         {selectedLineageId && (
