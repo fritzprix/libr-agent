@@ -526,7 +526,7 @@ async fn history_search_reports_missing_session_as_not_found() {
         .await
         .expect("search should return an MCP error result");
 
-    assert_eq!(result.is_error, Some(false));
+    assert_eq!(result.is_error, Some(true));
     let text = extract_text_content(&result);
     assert!(text.contains("Session 'missing-session' not found"));
     assert!(!text.contains("did not match the provided filters"));
