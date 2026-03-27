@@ -71,6 +71,9 @@ pub trait MessageRepository: Send + Sync {
     /// Get all distinct session IDs that have messages
     async fn get_distinct_sessions(&self) -> Result<Vec<String>, DbError>;
 
+    /// Get message counts grouped by session ID
+    async fn count_by_session(&self) -> Result<Vec<(String, u64)>, DbError>;
+
     /// Get message models (raw SeaORM models) for search indexing
     async fn get_message_models_by_session(
         &self,
@@ -442,6 +445,22 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         Ok(sessions)
+    }
+
+    async fn count_by_session(&self) -> Result<Vec<(String, u64)>, DbError> {
+        let rows: Vec<(String, i64)> = MessageEntity::find()
+            .select_only()
+            .column(message::Column::SessionId)
+            .column_as(Expr::col(message::Column::Id).count(), "message_count")
+            .group_by(message::Column::SessionId)
+            .into_tuple()
+            .all(&self.db)
+            .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(session_id, count)| (session_id, count.max(0) as u64))
+            .collect())
     }
 
     async fn get_message_models_by_session(

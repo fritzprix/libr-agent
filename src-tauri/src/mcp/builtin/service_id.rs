@@ -9,6 +9,7 @@ pub enum BuiltinServiceId {
     Scratchpad,
     Workspace,
     Knowledge,
+    History,
     Agent,
     Skills,
     Playbook,
@@ -36,6 +37,7 @@ impl BuiltinServiceId {
             "scratchpad" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
+            "history" => Some(Self::History),
             "agent" => Some(Self::Agent),
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
@@ -56,6 +58,7 @@ impl BuiltinServiceId {
             Self::Scratchpad => "scratchpad",
             Self::Workspace => "workspace",
             Self::Knowledge => "knowledge",
+            Self::History => "history",
             Self::Agent => "agent",
             Self::Skills => "skills",
             Self::Playbook => "playbook",
@@ -89,6 +92,11 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Knowledge,
         canonical: "knowledge",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        variant: BuiltinServiceId::History,
+        canonical: "history",
         optional: true,
     },
     BuiltinServiceEntry {

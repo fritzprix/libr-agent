@@ -78,7 +78,7 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
 ### Tool Naming Conventions
 
 - **Internal (Rust Module)**: Use simple names (e.g., `"echo"`, `"readFile"`). The server implementation expects these.
-- **External (Agent/Frontend via Proxy)**: Tools are exposed and called with the `builtin_{server}__{tool}` prefix (e.g., `builtin_example__echo`). The `MCPServiceProxy` handles routing and strips the prefix before invoking the internal tool.
+- **External (Agent/Frontend via Proxy)**: Tools are exposed and called with the `{server}__{tool}` format (e.g., `example__echo`). The `MCPServiceProxy` routes by the `{server}` prefix and passes the internal tool name to the built-in server.
 
 ## 🚀 Step-by-Step Guide to Adding a New MCP Server Module
 
@@ -177,22 +177,38 @@ impl BuiltinMCPServer for ExampleServer {
 }
 ```
 
-### Step 2: Register in `mod.rs`
+### Step 2: Register in the builtin registry and factory
 
 ```rust
-// src-tauri/src/mcp/builtin/mod.rs
+// src-tauri/src/mcp/builtin/service_id.rs
 
-pub mod example; // Add module
-
-// In BuiltinServerRegistry::new_with_session_manager (or similar)
-registry.register_server(Box::new(example::ExampleServer::new()));
+// Add a stable builtin service ID + canonical name
+BuiltinServiceEntry {
+    variant: BuiltinServiceId::Example,
+    canonical: "example",
+    optional: true,
+},
 ```
+
+```rust
+// src-tauri/src/mcp/service_proxy/factory.rs
+
+match service_id {
+    BuiltinServiceId::Example => Ok(Some(Box::new(
+        crate::mcp::builtin::example::ExampleServer::new(),
+    ))),
+    // ...
+}
+```
+
+This project uses session-bound builtin server instances created through
+`create_builtin_server(...)`, not ad-hoc global registration in `builtin/mod.rs`.
 
 ## 🔧 Frontend Integration
 
 ### Automatic Tool Detection
 
-The frontend automatically detects new tools exposed by the registry via `MCPServiceProxy`. The proxy exposes tools with the format `builtin_{server}__{tool}`.
+The frontend automatically detects new tools exposed by the registry via `MCPServiceProxy`. The proxy exposes tools with the format `{server}__{tool}`.
 
 ### Tool Call Example
 
@@ -201,7 +217,7 @@ If you are calling the tool via `agentCallBuiltinTool` (which wraps the Rust bac
 ```typescript
 const response = await agentCallBuiltinTool(
   sessionId,
-  'builtin_example__echo', // Must use the prefixed name for routing
+  'example__echo', // Must use the server__tool format for routing
   { text: "Hello, LibrAgent!" }
 );
 ```
@@ -213,7 +229,7 @@ const toolCall = {
   id: "req-123",
   type: "function",
   function: {
-    name: "builtin_example__echo", // Prefixed name required by proxy
+    name: "example__echo", // server__tool name required by proxy
     arguments: JSON.stringify({ text: "Hello, LibrAgent!" })
   }
 };
