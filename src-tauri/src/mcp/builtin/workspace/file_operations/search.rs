@@ -19,6 +19,11 @@ const SKIPPED_SEARCH_DIR_NAMES: &[&str] = &[
     "coverage",
 ];
 
+enum SearchEntrySkipReason {
+    Gitignored,
+    HeavyweightDirectory,
+}
+
 impl WorkspaceServer {
     pub async fn handle_search(
         &self,
@@ -163,7 +168,8 @@ impl WorkspaceServer {
         };
 
         let mut results = Vec::new();
-        let mut skipped_dirs = 0usize;
+        let mut skipped_heavy_dirs = 0usize;
+        let mut skipped_gitignored_dirs = 0usize;
         let gitignore = build_gitignore_matcher(root_path);
 
         // Check if root_path itself is a file
@@ -184,11 +190,21 @@ impl WorkspaceServer {
             let walker = WalkDir::new(root_path)
                 .into_iter()
                 .filter_entry(|entry| {
-                    let skip = should_skip_search_entry(root_path, entry, gitignore.as_ref());
-                    if skip && entry.file_type().is_dir() {
-                        skipped_dirs += 1;
+                    if let Some(reason) =
+                        classify_search_entry_skip(root_path, entry, gitignore.as_ref())
+                    {
+                        if entry.file_type().is_dir() {
+                            match reason {
+                                SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,
+                                SearchEntrySkipReason::HeavyweightDirectory => {
+                                    skipped_heavy_dirs += 1
+                                }
+                            }
+                        }
+                        return false;
                     }
-                    !skip
+
+                    true
                 })
                 .filter_map(|e| e.ok());
 
@@ -270,12 +286,23 @@ impl WorkspaceServer {
                     results.len()
                 ));
             }
-            if skipped_dirs > 0 {
+            if skipped_heavy_dirs > 0 {
                 text.push_str(&format!(
                     "\n*Skipped {} heavyweight director{} (`{}`)*\n",
-                    skipped_dirs,
-                    if skipped_dirs == 1 { "y" } else { "ies" },
+                    skipped_heavy_dirs,
+                    if skipped_heavy_dirs == 1 { "y" } else { "ies" },
                     SKIPPED_SEARCH_DIR_NAMES.join("`, `")
+                ));
+            }
+            if skipped_gitignored_dirs > 0 {
+                text.push_str(&format!(
+                    "*Skipped {} .gitignore-matched director{}*\n",
+                    skipped_gitignored_dirs,
+                    if skipped_gitignored_dirs == 1 {
+                        "y"
+                    } else {
+                        "ies"
+                    },
                 ));
             }
             text
@@ -285,7 +312,9 @@ impl WorkspaceServer {
             &result_text,
             json!({
                 "matches": results,
-                "skippedDirectories": skipped_dirs,
+                "skipped_directories": skipped_heavy_dirs + skipped_gitignored_dirs,
+                "skipped_heavyweight_directories": skipped_heavy_dirs,
+                "skipped_gitignored_directories": skipped_gitignored_dirs,
             }),
         ))
     }
@@ -452,7 +481,8 @@ impl WorkspaceServer {
 
         let mut file_matches: Vec<FileMatch> = Vec::new();
         let mut files_searched: usize = 0;
-        let mut skipped_dirs = 0usize;
+        let mut skipped_heavy_dirs = 0usize;
+        let mut skipped_gitignored_dirs = 0usize;
         let mut skipped_binary_files = 0usize;
         let mut skipped_large_files = 0usize;
         let max_size = effective_search_content_file_size_limit();
@@ -461,11 +491,17 @@ impl WorkspaceServer {
         let walker = WalkDir::new(dir)
             .into_iter()
             .filter_entry(|entry| {
-                let skip = should_skip_search_entry(dir, entry, gitignore.as_ref());
-                if skip && entry.file_type().is_dir() {
-                    skipped_dirs += 1;
+                if let Some(reason) = classify_search_entry_skip(dir, entry, gitignore.as_ref()) {
+                    if entry.file_type().is_dir() {
+                        match reason {
+                            SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,
+                            SearchEntrySkipReason::HeavyweightDirectory => skipped_heavy_dirs += 1,
+                        }
+                    }
+                    return false;
                 }
-                !skip
+
+                true
             })
             .filter_map(|e| e.ok());
 
@@ -643,15 +679,30 @@ impl WorkspaceServer {
                 file_matches.len() - 10
             ));
         }
-        if skipped_dirs > 0 || skipped_large_files > 0 || skipped_binary_files > 0 {
+        if skipped_heavy_dirs > 0
+            || skipped_gitignored_dirs > 0
+            || skipped_large_files > 0
+            || skipped_binary_files > 0
+        {
             text.push('\n');
         }
-        if skipped_dirs > 0 {
+        if skipped_heavy_dirs > 0 {
             text.push_str(&format!(
                 "*Skipped {} heavyweight director{} (`{}`)*\n",
-                skipped_dirs,
-                if skipped_dirs == 1 { "y" } else { "ies" },
+                skipped_heavy_dirs,
+                if skipped_heavy_dirs == 1 { "y" } else { "ies" },
                 SKIPPED_SEARCH_DIR_NAMES.join("`, `")
+            ));
+        }
+        if skipped_gitignored_dirs > 0 {
+            text.push_str(&format!(
+                "*Skipped {} .gitignore-matched director{}*\n",
+                skipped_gitignored_dirs,
+                if skipped_gitignored_dirs == 1 {
+                    "y"
+                } else {
+                    "ies"
+                },
             ));
         }
         if skipped_large_files > 0 {
@@ -674,7 +725,9 @@ impl WorkspaceServer {
             "files_searched": files_searched,
             "files_with_matches": file_matches.len(),
             "total_matches": total_hits,
-            "skipped_directories": skipped_dirs,
+            "skipped_directories": skipped_heavy_dirs + skipped_gitignored_dirs,
+            "skipped_heavyweight_directories": skipped_heavy_dirs,
+            "skipped_gitignored_directories": skipped_gitignored_dirs,
             "skipped_binary_files": skipped_binary_files,
             "skipped_large_files": skipped_large_files,
             "max_file_size": max_size,
@@ -717,13 +770,13 @@ fn matches_glob(pattern: &glob::Pattern, path: &Path, file_name: Option<&str>) -
     false
 }
 
-fn should_skip_search_entry(
+fn classify_search_entry_skip(
     root: &Path,
     entry: &walkdir::DirEntry,
     gitignore: Option<&ignore::gitignore::Gitignore>,
-) -> bool {
+) -> Option<SearchEntrySkipReason> {
     if entry.depth() == 0 || entry.path() == root {
-        return false;
+        return None;
     }
 
     if let Some(gitignore_matcher) = gitignore {
@@ -731,7 +784,7 @@ fn should_skip_search_entry(
             .matched(entry.path(), entry.file_type().is_dir())
             .is_ignore()
         {
-            return true;
+            return Some(SearchEntrySkipReason::Gitignored);
         }
     }
 
@@ -739,11 +792,11 @@ fn should_skip_search_entry(
         return entry
             .file_name()
             .to_str()
-            .map(|name| SKIPPED_SEARCH_DIR_NAMES.contains(&name))
-            .unwrap_or(false);
+            .filter(|name| SKIPPED_SEARCH_DIR_NAMES.contains(name))
+            .map(|_| SearchEntrySkipReason::HeavyweightDirectory);
     }
 
-    false
+    None
 }
 
 fn effective_search_content_file_size_limit() -> usize {

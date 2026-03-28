@@ -26,6 +26,48 @@ fn build_workspace_server(base_dir: &std::path::Path, session_id: &str) -> Works
 }
 
 #[tokio::test]
+async fn file_name_search_uses_snake_case_skip_keys() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-file-name-skip-keys";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::create_dir_all(workspace_dir.join("node_modules/pkg")).expect("node_modules dir");
+    std::fs::write(workspace_dir.join("src/main.ts"), "const needle = true;\n")
+        .expect("write source file");
+    std::fs::write(
+        workspace_dir.join("node_modules/pkg/index.ts"),
+        "const hidden = true;\n",
+    )
+    .expect("write dependency file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "filePattern": "*.ts",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+
+    assert_eq!(structured["skipped_directories"], json!(1));
+    assert_eq!(structured["skipped_heavyweight_directories"], json!(1));
+    assert_eq!(structured["skipped_gitignored_directories"], json!(0));
+    assert!(
+        structured.get("skippedDirectories").is_none(),
+        "legacy camelCase key should be absent: {structured}"
+    );
+}
+
+#[tokio::test]
 async fn search_skips_heavy_directories_during_recursive_content_search() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-skip-heavy-dirs";
@@ -73,6 +115,8 @@ async fn search_skips_heavy_directories_during_recursive_content_search() {
         .expect("structured content expected");
     assert_eq!(structured["files_with_matches"], json!(1));
     assert_eq!(structured["skipped_directories"], json!(1));
+    assert_eq!(structured["skipped_heavyweight_directories"], json!(1));
+    assert_eq!(structured["skipped_gitignored_directories"], json!(0));
 }
 
 #[tokio::test]
@@ -113,12 +157,19 @@ async fn search_respects_gitignore_rules_during_recursive_content_search() {
         !text.contains("generated/ignored.ts"),
         "gitignored file should be excluded: {text}"
     );
+    assert!(
+        text.contains("Skipped 1 .gitignore-matched directory"),
+        "gitignore skip summary should be visible: {text}"
+    );
 
     let structured = result
         .structured_content
         .as_ref()
         .expect("structured content expected");
     assert_eq!(structured["files_with_matches"], json!(1));
+    assert_eq!(structured["skipped_directories"], json!(1));
+    assert_eq!(structured["skipped_heavyweight_directories"], json!(0));
+    assert_eq!(structured["skipped_gitignored_directories"], json!(1));
 }
 
 #[tokio::test]
