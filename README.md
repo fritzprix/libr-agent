@@ -99,6 +99,14 @@ pnpm install
 pnpm tauri dev
 ```
 
+To enable local MCP features during development, use:
+
+```bash
+pnpm tauri:mcp
+```
+
+Note: API keys are managed within the application's settings modal. You do not need a `.env` file for development.
+
 ---
 
 ## Design Choices
