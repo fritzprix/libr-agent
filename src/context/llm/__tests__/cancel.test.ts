@@ -225,3 +225,27 @@ describe('AbortController identity check prevents stale cleanup', () => {
     expect(registry.has(sessionId)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// cancelCompletionRequest coordination
+// ---------------------------------------------------------------------------
+
+describe('cancelCompletionRequest coordinates provider and local aborts', () => {
+  it('cancels the active provider service and local AbortController together', () => {
+    const sessionId = 'session-abc';
+    const controller = new AbortController();
+    const controllers = new Map<string, AbortController>([[sessionId, controller]]);
+    const service = { cancel: vi.fn() };
+    const services = new Map<string, { cancel: () => void }>([[sessionId, service]]);
+
+    const cancelCompletionRequest = (targetSessionId: string) => {
+      services.get(targetSessionId)?.cancel();
+      controllers.get(targetSessionId)?.abort();
+    };
+
+    cancelCompletionRequest(sessionId);
+
+    expect(service.cancel).toHaveBeenCalledTimes(1);
+    expect(controller.signal.aborted).toBe(true);
+  });
+});

@@ -13,6 +13,7 @@ import {
   type AIServiceConfig,
   type AIServiceProvider,
   AIServiceError,
+  type ContextInjectionResult,
   type IAIService,
   type ModelInfo,
   type SamplingOptions,
@@ -330,6 +331,7 @@ export abstract class BaseAIService<
       options: {
         modelName?: string;
         systemPrompt?: string;
+        sessionContext?: string;
         availableTools?: MCPTool[];
         config?: AIServiceConfig;
         disableToolUse?: boolean;
@@ -412,6 +414,7 @@ export abstract class BaseAIService<
     options: {
       modelName?: string;
       systemPrompt?: string;
+      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       disableToolUse?: boolean;
@@ -515,6 +518,7 @@ export abstract class BaseAIService<
     options: {
       modelName?: string;
       systemPrompt?: string;
+      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
@@ -622,6 +626,7 @@ export abstract class BaseAIService<
     options?: {
       modelName?: string;
       systemPrompt?: string;
+      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
@@ -745,16 +750,20 @@ export abstract class BaseAIService<
     };
     compactMessages.push(instructionMessage);
 
-    const { systemPrompt: effectiveSystemPrompt, messages: effectiveMessages } =
-      this.prepareContextInjection(
-        options?.systemPrompt,
-        options?.sessionContext,
-        compactMessages,
-      );
+    const {
+      systemPrompt: effectiveSystemPrompt,
+      sessionContext: effectiveSessionContext,
+      messages: effectiveMessages,
+    } = this.prepareContextInjection(
+      options?.systemPrompt,
+      options?.sessionContext,
+      compactMessages,
+    );
 
     const streamGenerator = this.streamChat(effectiveMessages, {
       modelName: options?.modelName,
       systemPrompt: effectiveSystemPrompt,
+      sessionContext: effectiveSessionContext,
       availableTools: options?.availableTools,
       config: options?.config,
       forceToolUse: false,
@@ -809,14 +818,14 @@ export abstract class BaseAIService<
     systemPrompt: string | undefined,
     sessionContext: string | undefined,
     messages: Message[],
-  ): { systemPrompt: string | undefined; messages: Message[] } {
+  ): ContextInjectionResult {
     if (!sessionContext) {
-      return { systemPrompt, messages };
+      return { systemPrompt, sessionContext: undefined, messages };
     }
     const combined = [systemPrompt, sessionContext]
       .filter(Boolean)
       .join('\n\n');
-    return { systemPrompt: combined, messages };
+    return { systemPrompt: combined, sessionContext: undefined, messages };
   }
 
   /**

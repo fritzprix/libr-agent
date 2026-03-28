@@ -43,8 +43,8 @@ export function AgentChatStatusBar() {
     useAgentChat();
   const { isCompacting, isAwaitingCompact, getContextUsage } = useLLMService();
   const isCompactStrategy = settings.contextStrategy === 'compact';
-  // Use only contextWindow from the map; totalTokens comes from displayMetrics
-  // (API-reported, same source as the badge) to guarantee they always match.
+  // Rust is the source of truth for compact-strategy context occupancy.
+  // The badge shows provider-reported usage, which may exclude cached prefixes.
   const usageInfo =
     isCompactStrategy && session?.id ? getContextUsage(session.id) : undefined;
   const contextWindow = usageInfo?.contextWindow;
@@ -109,18 +109,12 @@ export function AgentChatStatusBar() {
     [metrics, lastMetrics],
   );
 
-  // Derive gauge data from the same source as the badge (API-reported promptTokens),
-  // so gauge numerator === badge prompt token count by definition.
-  // Only show the gauge once we have a real prompt token count (> 0).
-  // During the TTFT phase promptTokens is 0 (the TTFT chunk carries only
-  // details), so we suppress the gauge to avoid a brief 0% flash.
+  // The context gauge intentionally uses Rust-estimated total context occupancy,
+  // not provider-reported promptTokens shown in the badge.
   const contextUsage =
-    isCompactStrategy &&
-    displayMetrics &&
-    contextWindow &&
-    displayMetrics.promptTokens > 0
+    isCompactStrategy && usageInfo && contextWindow
       ? {
-          totalTokens: displayMetrics.promptTokens,
+          totalTokens: usageInfo.totalTokens,
           contextWindow,
           modelMaxContext,
         }

@@ -43,6 +43,7 @@ const DEFAULT_MODEL = 'llama3.1';
 interface StreamChatOptions {
   modelName?: string;
   systemPrompt?: string;
+  sessionContext?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
 }

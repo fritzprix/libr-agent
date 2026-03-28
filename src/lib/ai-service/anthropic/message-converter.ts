@@ -1,4 +1,7 @@
-import type { MessageParam as AnthropicMessageParam } from '@anthropic-ai/sdk/resources/messages.mjs';
+import type {
+  ContentBlockParam,
+  MessageParam as AnthropicMessageParam,
+} from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import { getLogger } from '../../logger';
@@ -13,6 +16,69 @@ import {
 } from './tool-input';
 
 const logger = getLogger('AnthropicMessageConverter');
+const ANTHROPIC_SESSION_CONTEXT_METADATA_KEY =
+  'anthropicSyntheticSessionContext';
+
+function isAnthropicSyntheticSessionContextMessage(message: Message): boolean {
+  return (
+    message.role === 'user' &&
+    message.metadata?.[ANTHROPIC_SESSION_CONTEXT_METADATA_KEY] === true
+  );
+}
+
+function applyCacheBreakpoint(
+  anthropicMessage: AnthropicMessageParam | undefined,
+): void {
+  if (!anthropicMessage) {
+    return;
+  }
+
+  if (typeof anthropicMessage.content === 'string') {
+    if (anthropicMessage.content.length === 0) {
+      return;
+    }
+
+    anthropicMessage.content = [
+      {
+        type: 'text',
+        text: anthropicMessage.content,
+        cache_control: { type: 'ephemeral' },
+      },
+    ];
+    return;
+  }
+
+  if (anthropicMessage.content.length === 0) {
+    return;
+  }
+
+  for (
+    let blockIndex = anthropicMessage.content.length - 1;
+    blockIndex >= 0;
+    blockIndex -= 1
+  ) {
+    const block: ContentBlockParam = anthropicMessage.content[blockIndex];
+
+    switch (block.type) {
+      case 'thinking':
+      case 'redacted_thinking':
+        continue;
+      case 'text':
+      case 'image':
+      case 'document':
+      case 'search_result':
+      case 'tool_use':
+      case 'tool_result':
+      case 'server_tool_use':
+      case 'web_search_tool_result':
+        anthropicMessage.content[blockIndex] = {
+          ...block,
+          cache_control: { type: 'ephemeral' },
+        };
+        return;
+    }
+  }
+}
 
 function logToolChainIntegrity(messages: Message[]): void {
   const toolUseIds = new Set<string>();
@@ -61,6 +127,22 @@ export function convertToAnthropicMessages(
   logToolChainIntegrity(messages);
 
   const anthropicMessages: AnthropicMessageParam[] = [];
+  let pendingToolResults: ReturnType<
+    typeof buildAnthropicToolResultBlocks
+  >['content'] = [];
+  let hasSyntheticSessionContextTail = false;
+
+  const flushPendingToolResults = () => {
+    if (pendingToolResults.length === 0) {
+      return;
+    }
+
+    anthropicMessages.push({
+      role: 'user',
+      content: pendingToolResults,
+    });
+    pendingToolResults = [];
+  };
 
   for (const message of messages) {
     const effectiveRole = message.source === 'ui' ? 'user' : message.role;
@@ -70,6 +152,13 @@ export function convertToAnthropicMessages(
     }
 
     if (effectiveRole === 'user') {
+      if (isAnthropicSyntheticSessionContextMessage(message)) {
+        flushPendingToolResults();
+        applyCacheBreakpoint(anthropicMessages[anthropicMessages.length - 1]);
+        hasSyntheticSessionContextTail = true;
+      }
+
+      flushPendingToolResults();
       anthropicMessages.push({
         role: 'user',
         content: formatAnthropicContent(message.content as MCPContent[]),
@@ -78,6 +167,7 @@ export function convertToAnthropicMessages(
     }
 
     if (effectiveRole === 'assistant') {
+      flushPendingToolResults();
       const hasContent = message.content && message.content.length > 0;
       const hasToolCalls = message.tool_calls && message.tool_calls.length > 0;
       const hasToolUse = message.tool_use;
@@ -97,6 +187,15 @@ export function convertToAnthropicMessages(
           thinking: message.thinking,
           signature: message.thinkingSignature || '',
         });
+      }
+
+      if (hasContent) {
+        const processedContent = processMessageContent(
+          message.content as MCPContent[],
+        );
+        if (processedContent.length > 0) {
+          content.push({ type: 'text' as const, text: processedContent });
+        }
       }
 
       if (message.tool_calls) {
@@ -125,15 +224,6 @@ export function convertToAnthropicMessages(
         });
       }
 
-      if (hasContent) {
-        const processedContent = processMessageContent(
-          message.content as MCPContent[],
-        );
-        if (processedContent.length > 0) {
-          content.push({ type: 'text' as const, text: processedContent });
-        }
-      }
-
       if (content.length > 0) {
         anthropicMessages.push({
           role: 'assistant',
@@ -151,19 +241,24 @@ export function convertToAnthropicMessages(
         continue;
       }
 
-      anthropicMessages.push({
-        role: 'user',
+      pendingToolResults.push(
         ...buildAnthropicToolResultBlocks(
           message.content as MCPContent[],
           message.tool_call_id,
           message.id,
           logger,
-        ),
-      });
+        ).content,
+      );
       continue;
     }
 
     logger.warn(`Unsupported message role for Anthropic: ${message.role}`);
+  }
+
+  flushPendingToolResults();
+
+  if (!hasSyntheticSessionContextTail) {
+    applyCacheBreakpoint(anthropicMessages[anthropicMessages.length - 1]);
   }
 
   return anthropicMessages;

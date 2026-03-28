@@ -253,6 +253,7 @@ export function useExecuteCompletion({
         // prompt concat vs. ephemeral tail message injection for prefix caching).
         const {
           systemPrompt: effectiveSystemPrompt,
+          sessionContext: effectiveSessionContext,
           messages: effectiveMessages,
         } = service.prepareContextInjection(
           systemPrompt,
@@ -260,6 +261,9 @@ export function useExecuteCompletion({
           enrichedMessages,
         );
 
+        // Keep a lightweight frontend guard for the provider-specific payload
+        // shape prepared in this process. Rust remains the source of truth for
+        // compaction and context occupancy decisions.
         if (settingsRef.current.contextStrategy === 'compact') {
           const effectiveContextLimit =
             contextUsage?.contextWindow ??
@@ -291,6 +295,7 @@ export function useExecuteCompletion({
         const streamGenerator = service.streamChat(effectiveMessages, {
           modelName: model,
           systemPrompt: effectiveSystemPrompt,
+          sessionContext: effectiveSessionContext,
           availableTools: availableTools || [],
           config,
           forceToolUse: false,
@@ -693,6 +698,10 @@ export function useExecuteCompletion({
 
   const cancelCompletionRequest = useCallback((sessionId: string) => {
     logger.info('Manually cancelling completion request', { sessionId });
+    const service = activeServicesRef.current.get(sessionId);
+    if (service) {
+      service.cancel();
+    }
     const abortController = abortControllersRef.current.get(sessionId);
     if (abortController) {
       abortController.abort();

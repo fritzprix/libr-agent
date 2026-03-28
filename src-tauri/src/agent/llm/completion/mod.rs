@@ -9,7 +9,7 @@ pub use compaction::{
 pub use context::{
     resolve_context_management_settings, uses_compaction_strategy, ContextManagementSettings,
 };
-pub use request::request_llm_completion;
+pub use request::{merge_consecutive_user_messages, request_llm_completion};
 
 // Crate-internal re-exports for intra-module visibility
 pub(crate) use context::load_context_management_settings;

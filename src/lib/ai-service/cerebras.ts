@@ -18,6 +18,7 @@ const TOOL_CALL_TYPE = 'function' as const;
 interface StreamChatOptions {
   modelName?: string;
   systemPrompt?: string;
+  sessionContext?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
 }

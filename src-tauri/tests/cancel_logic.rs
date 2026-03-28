@@ -75,6 +75,32 @@ fn test_start_workflow_resets_token_with_fresh_one() {
     );
 }
 
+/// resume_workflow must also replace the token with a fresh one after a
+/// StopImmediately cancel. Clearing only cancel_pending is not enough because
+/// handle_llm_response rejects replies when the old token remains cancelled.
+#[test]
+fn test_resume_workflow_resets_token_with_fresh_one() {
+    let token = CancellationToken::new();
+    let cancel_pending = Arc::new(AtomicBool::new(true));
+
+    token.cancel();
+    assert!(token.is_cancelled());
+    assert!(cancel_pending.load(Ordering::SeqCst));
+
+    // Simulates resume_workflow write-lock reset
+    cancel_pending.store(false, Ordering::SeqCst);
+    let token = CancellationToken::new();
+
+    assert!(
+        !token.is_cancelled(),
+        "after resume_workflow the token must be fresh and not cancelled"
+    );
+    assert!(
+        !cancel_pending.load(Ordering::SeqCst),
+        "resume_workflow must clear cancel_pending"
+    );
+}
+
 /// terminate_session (hard kill) also resets the token at the end,
 /// so the session is ready for a future workflow without needing start_workflow.
 #[test]

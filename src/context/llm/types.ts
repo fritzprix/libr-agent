@@ -41,7 +41,7 @@ export interface CompletionRequest {
   temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
-  /** Token usage gauge telemetry to drive frontend UI */
+  /** Rust-estimated context occupancy telemetry for compact-strategy UI/gauges. */
   contextUsage?: {
     totalTokens: number;
     contextWindow: number;

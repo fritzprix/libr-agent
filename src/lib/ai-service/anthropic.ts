@@ -6,7 +6,12 @@ import {
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
-import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
+import {
+  AIServiceProvider,
+  AIServiceConfig,
+  type ContextInjectionResult,
+  TokenUsage,
+} from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
@@ -28,9 +33,12 @@ import {
   createEmptyAnthropicUsage,
   ToolCallAccumulator,
 } from './anthropic/types';
+
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
+const ANTHROPIC_SESSION_CONTEXT_METADATA_KEY =
+  'anthropicSyntheticSessionContext';
 
 /**
  * An AI service implementation for interacting with Anthropic's language models (e.g., Claude).
@@ -227,6 +235,7 @@ export class AnthropicService extends BaseAIService<
     options: {
       modelName?: string;
       systemPrompt?: string;
+      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
@@ -257,7 +266,10 @@ export class AnthropicService extends BaseAIService<
         }
       }
 
-      const systemBlocks = buildAnthropicSystemBlocks(options.systemPrompt);
+      const systemBlocks = buildAnthropicSystemBlocks(
+        options.systemPrompt,
+        options.sessionContext,
+      );
 
       const stream = this.anthropic.messages.stream(
         {
@@ -515,6 +527,37 @@ export class AnthropicService extends BaseAIService<
     } catch (error) {
       this.handleStreamingError(error, { messages, options, config });
     }
+  }
+
+  override prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): ContextInjectionResult {
+    if (!sessionContext) {
+      return { systemPrompt, sessionContext, messages };
+    }
+
+    const referenceMessage = messages[messages.length - 1];
+    const syntheticSessionContextMessage: Message = {
+      id: `anthropic-session-context-${referenceMessage?.id ?? 'system'}`,
+      sessionId: referenceMessage?.sessionId ?? 'anthropic-session-context',
+      threadId:
+        referenceMessage?.threadId ??
+        referenceMessage?.sessionId ??
+        'anthropic-session-context',
+      role: 'user',
+      content: [{ type: 'text', text: sessionContext }],
+      metadata: {
+        [ANTHROPIC_SESSION_CONTEXT_METADATA_KEY]: true,
+      },
+    };
+
+    return {
+      systemPrompt,
+      sessionContext: undefined,
+      messages: [...messages, syntheticSessionContextMessage],
+    };
   }
   /**
    * @inheritdoc

@@ -231,8 +231,19 @@ pub async fn request_llm_completion(
     // place where consecutive user roles are legitimate; merging here keeps the
     // Gemini mapper simple and mapper-agnostic.
     // --- CONTEXT MANAGEMENT ---
-    let messages = crate::agent::llm::context_selector::remove_incomplete_tool_chains(
-        merge_consecutive_user_messages(messages),
+    let raw_message_count = messages.len();
+    let merged_messages = merge_consecutive_user_messages(messages);
+    let merged_message_count = merged_messages.len();
+    let messages =
+        crate::agent::llm::context_selector::remove_incomplete_tool_chains(merged_messages);
+    let cleaned_message_count = messages.len();
+
+    log::info!(
+        "🧱 Prompt message normalization: session={}, raw={}, merged={}, cleaned={}",
+        session_id,
+        raw_message_count,
+        merged_message_count,
+        cleaned_message_count
     );
 
     let context_settings = load_context_management_settings().await;
@@ -260,7 +271,7 @@ pub async fn request_llm_completion(
         )
     };
 
-    let messages = {
+    let (messages, compact_summary_injected) = {
         let compact_record = compact_context_arc.read().await.clone();
         if let Some(record) = compact_record {
             if !uses_compaction_strategy(&context_strategy) {
@@ -279,7 +290,7 @@ pub async fn request_llm_completion(
                     context_strategy,
                     session_id
                 );
-                messages
+                (messages, false)
             } else if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
                 let now_ms = chrono::Utc::now().timestamp_millis();
                 let summary_msg = Message {
@@ -320,7 +331,7 @@ pub async fn request_llm_completion(
                     summary_tokens,
                     tail_tokens
                 );
-                [vec![summary_msg], tail].concat()
+                ([vec![summary_msg], tail].concat(), true)
             } else {
                 // Stale: to_id not found in current message stack — invalidate in-memory cache
                 // and delete the persisted record so future resume/cache hydration does not
@@ -338,12 +349,19 @@ pub async fn request_llm_completion(
                     "⚠️ Compact cache stale (toId not found), invalidated + deleted: session={}",
                     session_id
                 );
-                messages
+                (messages, false)
             }
         } else {
-            messages
+            (messages, false)
         }
     };
+
+    log::info!(
+        "🧱 Prompt prefix composition: session={}, compact_summary_injected={}, message_count={}",
+        session_id,
+        compact_summary_injected,
+        messages.len()
+    );
 
     let mut final_messages = messages.clone();
     let mut context_usage = None;
@@ -618,30 +636,42 @@ pub(crate) async fn resolve_message_references(
 /// appended to the first with a separator. IDs and metadata from the first
 /// message are preserved. This operates on the CompletionRequest payload only —
 /// stored messages are never mutated.
-pub(crate) fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
-    let mut result: Vec<Message> = Vec::with_capacity(messages.len());
-
-    for msg in messages {
-        if msg.role == "user" {
-            if let Some(last) = result.last_mut() {
-                if last.role == "user" {
-                    // Append a separator followed by the new content
-                    last.content.push(MCPContent::Text {
-                        text: "\n\n---\n\n".to_string(),
-                        is_error: None,
-                    });
-                    last.content.extend(msg.content);
-                    log::info!(
-                        "Merged consecutive user messages: base={}, appended={}",
-                        last.id,
-                        msg.id
-                    );
-                    continue;
-                }
-            }
-        }
-        result.push(msg);
+pub fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
+    if messages.len() < 2 {
+        return messages;
     }
 
+    let trailing_run_start = messages
+        .iter()
+        .rposition(|msg| msg.role != "user")
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+
+    if trailing_run_start >= messages.len().saturating_sub(1) {
+        return messages;
+    }
+
+    let (head, trailing_users) = messages.split_at(trailing_run_start);
+    if trailing_users.iter().any(|msg| msg.role != "user") {
+        return messages;
+    }
+
+    let mut result: Vec<Message> = head.to_vec();
+    let mut merged = trailing_users[0].clone();
+
+    for msg in trailing_users.iter().skip(1) {
+        merged.content.push(MCPContent::Text {
+            text: "\n\n---\n\n".to_string(),
+            is_error: None,
+        });
+        merged.content.extend(msg.content.clone());
+        log::info!(
+            "Merged trailing consecutive user messages: base={}, appended={}",
+            merged.id,
+            msg.id
+        );
+    }
+
+    result.push(merged);
     result
 }

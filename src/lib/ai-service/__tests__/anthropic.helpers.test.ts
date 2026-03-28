@@ -20,9 +20,10 @@ import { buildAnthropicToolResultBlocks } from '../anthropic/format';
 import { parseAnthropicToolInput } from '../anthropic/tool-input';
 
 describe('Anthropic helper modules', () => {
-  it('splits cacheable and volatile system blocks at the context marker', () => {
+  it('builds separate stable and volatile Anthropic system blocks', () => {
     const blocks = buildAnthropicSystemBlocks(
-      'Stable header\n# Current Context Information\nvolatile bits',
+      'Stable header',
+      '# Current Context Information\nvolatile bits',
     );
 
     expect(blocks).toHaveLength(2);
@@ -157,6 +158,15 @@ describe('Anthropic helper modules', () => {
     expect(result[1]).toMatchObject({
       role: 'assistant',
     });
+    expect(result[1]?.content).toEqual([
+      { type: 'text', text: 'Calling tool' },
+      {
+        type: 'tool_use',
+        id: 'call_1',
+        name: 'search',
+        input: { query: 'hello' },
+      },
+    ]);
     expect(result[2]).toMatchObject({
       role: 'user',
       content: [
@@ -166,6 +176,112 @@ describe('Anthropic helper modules', () => {
           content: 'done',
         },
       ],
+    });
+  });
+
+  it('batches consecutive tool results into a single user message after one assistant tool_use turn', () => {
+    const messages: Message[] = [
+      {
+        id: 'assistant-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Calling tools' }],
+        tool_calls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'search',
+              arguments: '{"query":"hello"}',
+            },
+          },
+          {
+            id: 'call_2',
+            type: 'function',
+            function: {
+              name: 'fetch',
+              arguments: '{"url":"https://example.com"}',
+            },
+          },
+        ],
+      },
+      {
+        id: 'tool-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call_1',
+        content: [{ type: 'text', text: 'first result' }],
+      },
+      {
+        id: 'tool-2',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call_2',
+        content: [{ type: 'text', text: 'second result' }],
+      },
+    ];
+
+    const result = convertToAnthropicMessages(messages);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ role: 'assistant' });
+    expect(result[1]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'call_1',
+          content: 'first result',
+        },
+        {
+          type: 'tool_result',
+          tool_use_id: 'call_2',
+          content: 'second result',
+        },
+      ],
+    });
+  });
+
+  it('moves the cache breakpoint to the last stable message before a synthetic session-context tail', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'user',
+        content: [{ type: 'text', text: 'Stable user prompt' }],
+      },
+      {
+        id: 'session-context',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'user',
+        content: [{ type: 'text', text: '# Current Context Information\nvolatile' }],
+        metadata: {
+          anthropicSyntheticSessionContext: true,
+        },
+      },
+    ];
+
+    const result = convertToAnthropicMessages(messages);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Stable user prompt',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    });
+    expect(result[1]).toMatchObject({
+      role: 'user',
+      content: '# Current Context Information\nvolatile',
     });
   });
 });

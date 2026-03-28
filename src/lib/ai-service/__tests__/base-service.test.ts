@@ -37,7 +37,16 @@ class TestBaseAIService extends BaseAIService<string, string> {
     return [];
   }
 
-  protected async *doStreamChat(): AsyncGenerator<string, void, void> {
+  protected async *doStreamChat(
+    messages?: Message[],
+    options?: {
+      modelName?: string;
+      systemPrompt?: string;
+      sessionContext?: string;
+    },
+  ): AsyncGenerator<string, void, void> {
+    void messages;
+    void options;
     yield '';
   }
 

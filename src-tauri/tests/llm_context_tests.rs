@@ -1,8 +1,9 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    find_preflight_compaction_split_index, resolve_context_management_settings,
-    should_trigger_background_compaction, uses_compaction_strategy,
+    find_preflight_compaction_split_index, merge_consecutive_user_messages,
+    resolve_context_management_settings, should_trigger_background_compaction,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -230,6 +231,95 @@ fn test_remove_incomplete_tool_chains() {
         cleaned_assistant.tool_calls.as_ref().unwrap()[0].id,
         "call_A"
     );
+}
+
+#[test]
+fn test_remove_incomplete_tool_chains_preserves_stable_prefix_before_unstable_suffix() {
+    let mut stable_assistant = make_message("m1", "assistant", "Completed tools");
+    stable_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut stable_tool = make_message("m2", "tool", "result A");
+    stable_tool.tool_call_id = Some("call_A".to_string());
+
+    let mut unstable_assistant = make_message("m3", "assistant", "Pending tools");
+    unstable_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_B".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolB".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let cleaned = remove_incomplete_tool_chains(vec![
+        stable_assistant.clone(),
+        stable_tool.clone(),
+        unstable_assistant,
+    ]);
+
+    assert_eq!(cleaned.len(), 3);
+    assert_eq!(
+        cleaned[0].tool_calls.as_ref().map(|calls| calls.len()),
+        Some(1)
+    );
+    assert_eq!(cleaned[1].tool_call_id.as_deref(), Some("call_A"));
+    assert!(cleaned[2].tool_calls.is_none());
+}
+
+#[test]
+fn test_remove_incomplete_tool_chains_drops_orphan_tool_from_unstable_suffix_only() {
+    let stable_user = make_message("m1", "user", "Stable prefix");
+    let mut orphan_tool = make_message("m2", "tool", "orphan result");
+    orphan_tool.tool_call_id = Some("missing_call".to_string());
+
+    let cleaned = remove_incomplete_tool_chains(vec![stable_user.clone(), orphan_tool]);
+
+    assert_eq!(cleaned.len(), 1);
+    assert_eq!(cleaned[0].id, stable_user.id);
+}
+
+#[test]
+fn test_merge_consecutive_user_messages_only_merges_trailing_run() {
+    let earlier_user = make_message("m1", "user", "Earlier user");
+    let middle_user = make_message("m2", "user", "Should stay separate");
+    let assistant = make_message("m3", "assistant", "Assistant reply");
+    let trailing_user_a = make_message("m4", "user", "Latest user A");
+    let trailing_user_b = make_message("m5", "user", "Latest user B");
+
+    let merged = merge_consecutive_user_messages(vec![
+        earlier_user,
+        middle_user,
+        assistant,
+        trailing_user_a,
+        trailing_user_b,
+    ]);
+
+    assert_eq!(merged.len(), 4);
+    assert_eq!(merged[0].id, "m1");
+    assert_eq!(merged[1].id, "m2");
+    assert_eq!(merged[2].id, "m3");
+    assert_eq!(merged[3].id, "m4");
+}
+
+#[test]
+fn test_merge_consecutive_user_messages_preserves_non_trailing_sequence_boundaries() {
+    let user_a = make_message("m1", "user", "User A");
+    let user_b = make_message("m2", "user", "User B");
+    let assistant = make_message("m3", "assistant", "Assistant");
+
+    let merged = merge_consecutive_user_messages(vec![user_a, user_b, assistant]);
+
+    assert_eq!(merged.len(), 3);
+    assert_eq!(merged[0].id, "m1");
+    assert_eq!(merged[1].id, "m2");
+    assert_eq!(merged[2].id, "m3");
 }
 
 #[test]
