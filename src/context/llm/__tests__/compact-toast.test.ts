@@ -66,7 +66,7 @@ async function handleCompactEvent(
     toId: string,
     summary: string,
   ) => Promise<void>,
-  handleCompactError: (sessionId: string) => Promise<void>,
+  handleCompactError: (sessionId: string, error: unknown) => Promise<void>,
   resetContextUsageForSession: (sessionId: string) => void,
   setCompactedRangeForSession: (
     sessionId: string,
@@ -76,7 +76,7 @@ async function handleCompactEvent(
   const { sessionId, messages, fromId, toId } = payload;
 
   if (!settings) {
-    await handleCompactError(sessionId);
+    await handleCompactError(sessionId, {} as unknown);
     return;
   }
 
@@ -97,7 +97,7 @@ async function handleCompactEvent(
     setCompactedRangeForSession(sessionId, { fromId, toId });
     resetContextUsageForSession(sessionId);
   } catch {
-    await handleCompactError(sessionId);
+    await handleCompactError(sessionId, {} as unknown);
   }
 }
 
@@ -408,7 +408,7 @@ describe('compact request handler', () => {
       vi.fn(),
     );
 
-    expect(handleCompactError).toHaveBeenCalledWith(SESSION_ID);
+    expect(handleCompactError).toHaveBeenCalledWith(SESSION_ID, expect.anything());
   });
 
   it('clears in-flight state when settings are unavailable', async () => {
@@ -424,6 +424,6 @@ describe('compact request handler', () => {
       vi.fn(),
     );
 
-    expect(handleCompactError).toHaveBeenCalledWith(SESSION_ID);
+    expect(handleCompactError).toHaveBeenCalledWith(SESSION_ID, expect.anything());
   });
 });

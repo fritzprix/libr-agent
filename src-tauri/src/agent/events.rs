@@ -1,4 +1,4 @@
-use crate::agent::llm::types::AgentRuntimeError;
+use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent};
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
 use log::info;
@@ -104,6 +104,32 @@ pub enum AgentEvent {
     },
 }
 
+pub trait AgentEventDispatcher: Send + Sync {
+    fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String>;
+    fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String>;
+}
+
+#[derive(Clone)]
+pub struct TauriEventDispatcher {
+    app_handle: AppHandle,
+}
+
+impl TauriEventDispatcher {
+    pub fn new(app_handle: AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+impl AgentEventDispatcher for TauriEventDispatcher {
+    fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String> {
+        emit_agent_event(&self.app_handle, event)
+    }
+
+    fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String> {
+        emit_compact_state(&self.app_handle, event)
+    }
+}
+
 /// Emit an agent event to the frontend
 pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(), String> {
     // Use emit_to() to broadcast to all windows (Tauri 2.x requirement)
@@ -112,6 +138,12 @@ pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(),
     app_handle
         .emit_to(tauri::EventTarget::app(), "agent:event", event)
         .map_err(|e| format!("Failed to emit agent event: {}", e))
+}
+
+pub fn emit_compact_state(app_handle: &AppHandle, event: CompactStateEvent) -> Result<(), String> {
+    app_handle
+        .emit("llm:compact-state", event)
+        .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))
 }
 
 /// Emit a resource update event (convenience wrapper)

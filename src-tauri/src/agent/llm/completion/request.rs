@@ -691,6 +691,7 @@ pub async fn request_llm_completion(
             &context_strategy,
         ) {
             let _ = trigger_background_compaction(
+                active_sessions,
                 app_handle,
                 &session_id,
                 &session_name,

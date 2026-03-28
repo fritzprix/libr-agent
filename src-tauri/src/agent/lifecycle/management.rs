@@ -1,4 +1,5 @@
 use crate::agent::context::registry::ContextRegistry;
+use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
@@ -114,6 +115,7 @@ pub async fn resume_session(
                 compact_in_flight: Arc::new(AtomicBool::new(false)),
                 last_compacted_tail_id: Arc::new(RwLock::new(None)),
                 awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
+                compact_started_at_ms: Arc::new(RwLock::new(None)),
                 expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
             },
@@ -190,6 +192,24 @@ pub async fn update_session_status(
     session_id: &str,
     status: SessionStatus,
 ) -> Result<(), String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    update_session_status_with_dispatcher(
+        session_repo,
+        active_sessions,
+        &dispatcher,
+        session_id,
+        status,
+    )
+    .await
+}
+
+pub async fn update_session_status_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    status: SessionStatus,
+) -> Result<(), String> {
     // SP2: Acquire/release active-agent slot based on the status transition direction.
     //
     // Rules:
@@ -239,12 +259,11 @@ pub async fn update_session_status(
     crate::state::get_session_bus().notify_status_change(session_id);
 
     // Emit status changed event
-    let event = crate::agent::events::AgentEvent::StatusChanged {
+    let event = AgentEvent::StatusChanged {
         session_id: session_id.to_string(),
         status,
     };
-    crate::agent::events::emit_agent_event(app_handle, event)
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    dispatcher.emit_agent_event(event)?;
 
     Ok(())
 }

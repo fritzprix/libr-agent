@@ -14,6 +14,7 @@ use tokio::sync::RwLock;
 use super::circuit_breaker;
 use super::completion::{maybe_trigger_post_idle_compaction, request_llm_completion};
 use super::tool_execution;
+use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 
 /// Handle an LLM response from the frontend
@@ -606,21 +607,36 @@ pub async fn handle_llm_error(
         );
     }
 
-    crate::agent::lifecycle::update_session_status(
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    finalize_workflow_error_with_dispatcher(
         session_repo,
         active_sessions,
-        app_handle,
+        &dispatcher,
+        session_id,
+        error,
+    )
+    .await
+}
+
+pub async fn finalize_workflow_error_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: String,
+    error: AgentRuntimeError,
+) -> Result<(), String> {
+    crate::agent::lifecycle::update_session_status_with_dispatcher(
+        session_repo,
+        active_sessions,
+        dispatcher,
         &session_id,
         SessionStatus::Error,
     )
     .await?;
 
-    let event = crate::agent::events::AgentEvent::WorkflowError {
-        session_id: session_id.clone(),
+    let event = AgentEvent::WorkflowError {
+        session_id,
         error: error.clone(),
     };
-    crate::agent::events::emit_agent_event(app_handle, event)
-        .map_err(|e| format!("Failed to emit error event: {}", e))?;
-
-    Ok(())
+    dispatcher.emit_agent_event(event)
 }
