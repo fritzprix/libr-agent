@@ -374,6 +374,14 @@ pub async fn prune_knowledge(
             )
             .to_mcp_result_with_data(Some(json!({ "deleted": deleted_count }))))
         }
-        _ => Err(format!("Action '{}' not supported yet", action)),
+        _ => Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            format!("Action '{}' is not supported for prune_knowledge.", action),
+            ToolGroup::Knowledge,
+        )
+        .with_guidance(vec![
+            "Use action='delete' to remove knowledge chunks.".to_string()
+        ])
+        .to_mcp_result()),
     }
 }

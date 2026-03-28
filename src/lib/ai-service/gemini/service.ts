@@ -720,7 +720,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    */
   dispose(): void {
     const cacheKeys = [...this.cachedContextEntries.keys()];
-    this.cachedContextEntries.clear();
 
     for (const cacheKey of cacheKeys) {
       void this.removeContextCacheEntry(cacheKey, 'service dispose');

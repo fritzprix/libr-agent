@@ -4,6 +4,7 @@ use sea_orm::{ConnectOptions, Database};
 use sea_orm_migration::MigratorTrait;
 use serde_json::json;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_mcp_agent_lib::mcp::builtin::history::HistoryServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
@@ -37,7 +38,15 @@ async fn get_or_create_test_db() -> Arc<sea_orm::DatabaseConnection> {
     TEST_DB
         .get_or_init(|| async {
             common::register_sqlite_vec();
-            let db_path = std::env::temp_dir().join("libragent-history-builtins.sqlite");
+            let unique_suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos();
+            let db_path = std::env::temp_dir().join(format!(
+                "libragent-history-builtins-{}-{}.sqlite",
+                std::process::id(),
+                unique_suffix
+            ));
             let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
             let mut options = ConnectOptions::new(db_url);
             options.min_connections(1);

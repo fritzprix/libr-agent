@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use once_cell::sync::OnceCell;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-static EMBEDDING_MODEL: OnceLock<Mutex<TextEmbedding>> = OnceLock::new();
+static EMBEDDING_MODEL: OnceCell<Mutex<TextEmbedding>> = OnceCell::new();
 static EMBEDDING_RUNTIME: OnceLock<EmbeddingRuntime> = OnceLock::new();
 
 #[derive(Debug, Clone)]
@@ -41,31 +42,24 @@ pub fn runtime_summary() -> String {
 /// We use a Mutex because fastembed's TextEmbedding requires mutability for some operations,
 /// or just to be safe across threads. Actually TextEmbedding in fastembed is thread-safe (Send + Sync).
 pub fn get_embedding_model() -> Result<&'static Mutex<TextEmbedding>> {
-    if let Some(model) = EMBEDDING_MODEL.get() {
-        return Ok(model);
-    }
+    EMBEDDING_MODEL.get_or_try_init(|| -> Result<Mutex<TextEmbedding>> {
+        let runtime = runtime_details();
+        ensure_cache_dir(&runtime.cache_dir)?;
 
-    let runtime = runtime_details();
-    ensure_cache_dir(&runtime.cache_dir)?;
+        log::info!(
+            "Initializing fastembed model ({}) with cache dir {} and provider strategy: {}",
+            runtime.model_name,
+            runtime.cache_dir.display(),
+            runtime.provider_strategy
+        );
+        let model = TextEmbedding::try_new(
+            InitOptions::new(EmbeddingModel::AllMiniLML6V2)
+                .with_cache_dir(runtime.cache_dir.clone())
+                .with_show_download_progress(runtime.show_download_progress),
+        )?;
 
-    log::info!(
-        "Initializing fastembed model ({}) with cache dir {} and provider strategy: {}",
-        runtime.model_name,
-        runtime.cache_dir.display(),
-        runtime.provider_strategy
-    );
-    let model = TextEmbedding::try_new(
-        InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-            .with_cache_dir(runtime.cache_dir.clone())
-            .with_show_download_progress(runtime.show_download_progress),
-    )?;
-
-    EMBEDDING_MODEL
-        .set(Mutex::new(model))
-        .map_err(|_| anyhow!("Failed to set embedding model"))?;
-    EMBEDDING_MODEL
-        .get()
-        .ok_or_else(|| anyhow!("Embedding model was not initialized"))
+        Ok(Mutex::new(model))
+    })
 }
 
 /// Generate an embedding for a single text chunk.

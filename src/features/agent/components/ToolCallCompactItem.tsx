@@ -1,4 +1,4 @@
-import React, { useState, memo, useMemo } from 'react';
+import React, { useState, memo, useMemo, useEffect, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -66,10 +66,8 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   const [isExpanded, setIsExpanded] = useState(false);
-
-  // Use useState to track previous values for "Adjusting State During Render" pattern
-  const [prevHasError, setPrevHasError] = useState(false);
-  const [prevHasResource, setPrevHasResource] = useState(false);
+  const prevHasErrorRef = useRef(false);
+  const prevHasResourceRef = useRef(false);
 
   // Parse tool name (remove server prefix)
   const toolName = useMemo(
@@ -97,23 +95,20 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Adjusting State During Render: auto-expand in developer mode on error/resource transition.
-  if (hasError !== prevHasError || hasResource !== prevHasResource) {
-    setPrevHasError(hasError);
-    setPrevHasResource(hasResource);
+  useEffect(() => {
+    const errorBecameVisible = !prevHasErrorRef.current && hasError;
+    const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
 
-    if (!isSimpleMode) {
-      const errorBecameVisible = !prevHasError && hasError;
-      const resourceBecameVisible = !prevHasResource && hasResource;
-
-      if (
-        (errorBecameVisible || (resourceBecameVisible && isLast)) &&
-        !isExpanded
-      ) {
-        setIsExpanded(true);
-      }
+    if (
+      !isSimpleMode &&
+      (errorBecameVisible || (resourceBecameVisible && isLast))
+    ) {
+      setIsExpanded((prev) => prev || true);
     }
-  }
+
+    prevHasErrorRef.current = hasError;
+    prevHasResourceRef.current = hasResource;
+  }, [hasError, hasResource, isLast, isSimpleMode]);
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution

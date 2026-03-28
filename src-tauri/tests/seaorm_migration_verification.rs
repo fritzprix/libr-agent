@@ -1,55 +1,15 @@
+mod common;
+
 /// SeaORM Migration Verification Test
 ///
 /// This test verifies that all Phase 2 SeaORM migrations run correctly
 /// and that the refactored modules can interact with the database.
 use sea_orm::*;
-use sea_orm_migration::MigratorTrait;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use std::str::FromStr;
-use std::sync::Once;
 use tauri_mcp_agent_lib::entity::*;
-use tauri_mcp_agent_lib::migration::Migrator;
-
-fn register_sqlite_vec() {
-    static REGISTER_SQLITE_VEC: Once = Once::new();
-
-    REGISTER_SQLITE_VEC.call_once(|| unsafe {
-        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<
-            *const (),
-            unsafe extern "C" fn(
-                *mut libsqlite3_sys::sqlite3,
-                *mut *mut i8,
-                *const libsqlite3_sys::sqlite3_api_routines,
-            ) -> i32,
-        >(
-            sqlite_vec::sqlite3_vec_init as *const ()
-        )));
-    });
-}
-
-async fn setup_db() -> DatabaseConnection {
-    register_sqlite_vec();
-
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
-
-    db
-}
 
 #[tokio::test]
 async fn test_all_migrations_run_successfully() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
 
     // Verify all tables exist by trying to query them
 
@@ -141,7 +101,7 @@ async fn test_all_migrations_run_successfully() {
 
 #[tokio::test]
 async fn test_settings_crud_operations() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
 
     // Insert settings
     let setting = settings::ActiveModel {
@@ -187,7 +147,7 @@ async fn test_settings_crud_operations() {
 
 #[tokio::test]
 async fn test_knowledge_crud_operations() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
 
     // Insert knowledge
     let knowledge = knowledge::ActiveModel {
@@ -235,7 +195,7 @@ async fn test_knowledge_crud_operations() {
 
 #[tokio::test]
 async fn test_playbook_crud_operations() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
 
     // Insert playbook (ID must be provided, it's a String, not auto-increment)
     let playbook = playbook::ActiveModel {
@@ -278,7 +238,7 @@ async fn test_playbook_crud_operations() {
 
 #[tokio::test]
 async fn test_mcp_server_crud_operations() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
 
     // Insert MCP server with config field (JSON)
     let server_id = cuid2::create_id();
@@ -346,7 +306,7 @@ async fn test_mcp_server_crud_operations() {
 
 #[tokio::test]
 async fn test_assistant_crud_operations() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
 
     // Insert assistant with config field (JSON) - ID must be provided as String
     let assistant = assistant::ActiveModel {
@@ -384,7 +344,7 @@ async fn test_assistant_crud_operations() {
 
 #[tokio::test]
 async fn test_attachments_schema() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
 
     // Insert store
     let store = store::ActiveModel {

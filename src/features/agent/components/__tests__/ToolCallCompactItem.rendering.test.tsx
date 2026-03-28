@@ -5,7 +5,7 @@ import { ToolCallCompactItem } from '../ToolCallCompactItem';
 import type { ToolCall, Message } from '@/models/chat';
 
 // Mock dependencies
-const mockT = vi.fn((key) => key);
+const mockT = vi.fn((key: string) => key);
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: mockT }),
 }));
@@ -30,11 +30,19 @@ const makeToolCall = (id: string): ToolCall => ({
 
 const makeToolResult = (id: string, hasError = false): Message => ({
   id: `res-${id}`,
+  sessionId: 'test-session',
+  threadId: 'test-session',
   role: 'tool',
   content: [{ type: 'text', text: 'result' }],
   tool_call_id: id,
-  error: hasError ? 'Something went wrong' : undefined,
-} as unknown as Message);
+  error: hasError
+    ? {
+        displayMessage: 'Something went wrong',
+        type: 'TOOL_EXECUTION_ERROR',
+        recoverable: false,
+      }
+    : undefined,
+});
 
 describe('ToolCallCompactItem Rendering and Transitions', () => {
   afterEach(() => {

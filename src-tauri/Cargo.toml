@@ -90,7 +90,6 @@ libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 tauri-plugin-mcp-bridge = "0.10.0"
 sqlite-vec = "0.1.7"
 fastembed = "5.13.0"
-zerocopy = { version = "0.8.47", features = ["derive"] }
 
 [dev-dependencies]
 # test-util enables tokio::time::pause() / advance() for time-controlled async tests.
@@ -98,4 +97,3 @@ tokio = { version = "1.50", features = ["test-util"] }
 
 [workspace]
 members = ["migration"]
-

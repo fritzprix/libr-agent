@@ -66,6 +66,41 @@ fn normalize_graph_plan_adds_implicit_entities_and_normalizes_relationships() {
 }
 
 #[test]
+fn normalize_graph_plan_accepts_longer_natural_language_entity_names() {
+    let plan = normalize_graph_plan(
+        vec![ExtractedEntity {
+            name: "Sahm Rule vs Equity Market Divergence".to_string(),
+            entity_type: Some("Market Trend".to_string()),
+            description: None,
+        }],
+        vec![],
+    )
+    .expect("six-word natural-language entity name should normalize");
+
+    assert!(plan
+        .entities
+        .iter()
+        .any(|entity| { entity.name == "Sahm Rule vs Equity Market Divergence" }));
+}
+
+#[test]
+fn normalize_graph_plan_rejects_overlong_entity_names_with_guidance() {
+    let error = normalize_graph_plan(
+        vec![ExtractedEntity {
+            name: "One Two Three Four Five Six Seven Eight Nine Ten Eleven".to_string(),
+            entity_type: Some("Concept".to_string()),
+            description: None,
+        }],
+        vec![],
+    )
+    .expect_err("overlong entity name should fail validation");
+
+    assert!(error.contains("Invalid entity name"));
+    assert!(error.contains("10 words or fewer"));
+    assert!(error.contains("received 11 words"));
+}
+
+#[test]
 fn merge_plans_prefers_explicit_graph_and_fills_missing_heuristics() {
     let explicit = normalize_graph_plan(
         vec![ExtractedEntity {
@@ -172,6 +207,11 @@ fn record_knowledge_tool_schema_exposes_structured_graph_inputs() {
     assert!(entity_properties.contains_key("entity_type"));
     assert!(entity_properties.contains_key("description"));
     assert!(entity_required.iter().any(|field| field == "name"));
+    let entity_name_description = entity_properties
+        .get("name")
+        .and_then(|schema| schema.description.as_deref())
+        .expect("entity name field should describe naming guidance");
+    assert!(entity_name_description.contains("up to 10 words recommended"));
 
     let relationships_schema = properties
         .get("relationships")
@@ -204,4 +244,9 @@ fn record_knowledge_tool_schema_exposes_structured_graph_inputs() {
     assert!(relationship_required
         .iter()
         .any(|field| field == "relation_type"));
+    let relationship_source_description = relationship_properties
+        .get("source")
+        .and_then(|schema| schema.description.as_deref())
+        .expect("relationship source field should describe naming guidance");
+    assert!(relationship_source_description.contains("concise entity naming style"));
 }

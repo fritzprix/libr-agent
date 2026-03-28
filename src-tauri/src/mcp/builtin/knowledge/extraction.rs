@@ -41,6 +41,7 @@ const STOPWORDS: &[&str] = &[
     "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "memory", "of", "on", "or",
     "the", "this", "that", "these", "those", "to", "use", "uses", "using", "with",
 ];
+const MAX_ENTITY_NAME_WORDS: usize = 10;
 
 pub fn extract_graph_from_content(content: &str, tags: &[String]) -> ExtractionPlan {
     let mut entities = BTreeMap::<String, ExtractedEntity>::new();
@@ -122,8 +123,8 @@ pub fn normalize_graph_plan(
         BTreeMap::<(String, String, String), ExtractedRelationship>::new();
 
     for entity in entities {
-        let name = normalize_entity_name(&entity.name, true)
-            .ok_or_else(|| format!("Invalid entity name '{}'", entity.name))?;
+        let name = normalize_entity_name_with_reason(&entity.name, true)
+            .map_err(|reason| format!("Invalid entity name '{}': {}", entity.name, reason))?;
         insert_entity(
             &mut normalized_entities,
             ExtractedEntity {
@@ -135,10 +136,20 @@ pub fn normalize_graph_plan(
     }
 
     for relationship in relationships {
-        let source = normalize_entity_name(&relationship.source, true)
-            .ok_or_else(|| format!("Invalid relationship source '{}'", relationship.source))?;
-        let target = normalize_entity_name(&relationship.target, true)
-            .ok_or_else(|| format!("Invalid relationship target '{}'", relationship.target))?;
+        let source =
+            normalize_entity_name_with_reason(&relationship.source, true).map_err(|reason| {
+                format!(
+                    "Invalid relationship source '{}': {}",
+                    relationship.source, reason
+                )
+            })?;
+        let target =
+            normalize_entity_name_with_reason(&relationship.target, true).map_err(|reason| {
+                format!(
+                    "Invalid relationship target '{}': {}",
+                    relationship.target, reason
+                )
+            })?;
         let relation_type = normalize_relation_type(&relationship.relation_type)
             .ok_or_else(|| format!("Invalid relation_type '{}'", relationship.relation_type))?;
 
@@ -328,6 +339,13 @@ fn truncate_at_qualifier(input: &str) -> &str {
 }
 
 fn normalize_entity_name(raw: &str, allow_simple_lowercase: bool) -> Option<String> {
+    normalize_entity_name_with_reason(raw, allow_simple_lowercase).ok()
+}
+
+fn normalize_entity_name_with_reason(
+    raw: &str,
+    allow_simple_lowercase: bool,
+) -> Result<String, String> {
     let collapsed = raw
         .trim()
         .trim_matches(|character: char| {
@@ -341,13 +359,21 @@ fn normalize_entity_name(raw: &str, allow_simple_lowercase: bool) -> Option<Stri
         .join(" ");
     let collapsed = strip_leading_noise(&collapsed);
 
-    if collapsed.len() < 2 || collapsed.split_whitespace().count() > 5 {
-        return None;
+    if collapsed.len() < 2 {
+        return Err("entity names must be at least 2 characters long".to_string());
+    }
+
+    let word_count = collapsed.split_whitespace().count();
+    if word_count > MAX_ENTITY_NAME_WORDS {
+        return Err(format!(
+            "entity names must be {} words or fewer (received {} words)",
+            MAX_ENTITY_NAME_WORDS, word_count
+        ));
     }
 
     let lowercase = collapsed.to_ascii_lowercase();
     if STOPWORDS.contains(&lowercase.as_str()) {
-        return None;
+        return Err("entity names cannot be a single stopword".to_string());
     }
 
     let has_uppercase = collapsed.chars().any(|character| character.is_uppercase());
@@ -357,10 +383,13 @@ fn normalize_entity_name(raw: &str, allow_simple_lowercase: bool) -> Option<Stri
         .any(|character| character.is_ascii_digit());
 
     if !allow_simple_lowercase && !has_uppercase && !has_hyphen && !has_digit {
-        return None;
+        return Err(
+            "entity names should include a proper noun, acronym, digit, or hyphenated term"
+                .to_string(),
+        );
     }
 
-    Some(collapsed)
+    Ok(collapsed)
 }
 
 fn strip_leading_noise(input: &str) -> String {

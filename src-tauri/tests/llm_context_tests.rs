@@ -1,9 +1,9 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    find_preflight_compaction_split_index, merge_consecutive_user_messages,
-    resolve_context_management_settings, should_trigger_background_compaction,
-    uses_compaction_strategy,
+    build_compact_summary_text, find_preflight_compaction_split_index,
+    merge_consecutive_user_messages, resolve_context_management_settings,
+    should_trigger_background_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -600,4 +600,84 @@ fn test_grounded_total_tokens_ignores_grounding_after_compaction() {
         + 5;
 
     assert_eq!(tokens, expected);
+}
+
+#[test]
+fn test_build_compact_summary_text_includes_recent_tool_snapshot() {
+    let mut assistant = make_message("assistant-1", "assistant", "Writing file");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_write".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__writeFile".to_string(),
+            arguments: "{\"path\":\"src/app.tsx\",\"content\":\"updated\"}".to_string(),
+        },
+    }]);
+
+    let mut tool = make_message("tool-1", "tool", "Successfully wrote src/app.tsx");
+    tool.tool_call_id = Some("call_write".to_string());
+
+    let summary = build_compact_summary_text("User asked for an update.", &[assistant, tool]);
+
+    assert!(summary.contains("### Previous Conversation Summary"));
+    assert!(summary.contains("### Recent Tool Call Snapshot (latest 5)"));
+    assert!(summary.contains("workspace__writeFile(content=updated, path=src/app.tsx) -> success: Successfully wrote src/app.tsx"));
+}
+
+#[test]
+fn test_build_compact_summary_text_limits_snapshot_to_latest_five_completed_tool_calls() {
+    let mut messages = Vec::new();
+
+    for index in 0..6 {
+        let mut assistant =
+            make_message(&format!("assistant-{index}"), "assistant", "Calling tool");
+        assistant.tool_calls = Some(vec![AgentToolCall {
+            id: format!("call_{index}"),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__writeFile".to_string(),
+                arguments: format!("{{\"path\":\"file-{index}.txt\"}}"),
+            },
+        }]);
+        messages.push(assistant);
+
+        let mut tool = make_message(
+            &format!("tool-{index}"),
+            "tool",
+            &format!("Wrote file-{index}.txt"),
+        );
+        tool.tool_call_id = Some(format!("call_{index}"));
+        messages.push(tool);
+    }
+
+    let summary = build_compact_summary_text("Compacted summary", &messages);
+
+    assert!(!summary.contains("file-0.txt"));
+    assert!(summary.contains("file-1.txt"));
+    assert!(summary.contains("file-5.txt"));
+}
+
+#[test]
+fn test_build_compact_summary_text_caps_long_argument_preview() {
+    let mut assistant = make_message("assistant-long", "assistant", "Writing file");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_long".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__writeFile".to_string(),
+            arguments: format!(
+                "{{\"content\":\"{}\",\"path\":\"src/huge.ts\"}}",
+                "a".repeat(300)
+            ),
+        },
+    }]);
+
+    let mut tool = make_message("tool-long", "tool", "Wrote src/huge.ts");
+    tool.tool_call_id = Some("call_long".to_string());
+
+    let summary = build_compact_summary_text("Compacted summary", &[assistant, tool]);
+
+    assert!(summary.contains("workspace__writeFile("));
+    assert!(summary.contains("path=src/huge.ts"));
+    assert!(!summary.contains(&"a".repeat(150)));
 }

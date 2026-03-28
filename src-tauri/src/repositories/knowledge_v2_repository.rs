@@ -66,13 +66,11 @@ impl SqliteKnowledgeV2Repository {
 
     fn embedding_bytes(embedding: &[f32]) -> Vec<u8> {
         // sqlite-vec expects little-endian f32 bytes in a BLOB.
-        unsafe {
-            std::slice::from_raw_parts(
-                embedding.as_ptr() as *const u8,
-                std::mem::size_of_val(embedding),
-            )
-            .to_vec()
+        let mut bytes = Vec::with_capacity(std::mem::size_of_val(embedding));
+        for value in embedding {
+            bytes.extend_from_slice(&value.to_le_bytes());
         }
+        bytes
     }
 
     fn row_to_chunk_model(row: &QueryResult) -> Result<knowledge_chunk_v2::Model, DbError> {
@@ -400,7 +398,7 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
                      t.current_depth + 1
                 FROM knowledge_relationships r
                 JOIN traverse t ON r.source_entity_id = t.id OR r.target_entity_id = t.id
-                WHERE t.current_depth < ?
+                WHERE t.current_depth < ? AND r.assistant_id = ?
             )
             SELECT
                 e.id,
@@ -411,6 +409,7 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
                 MIN(t.current_depth) AS current_depth
             FROM knowledge_entities e
             JOIN traverse t ON e.id = t.id
+            WHERE e.assistant_id = ?
             GROUP BY e.id, e.assistant_id, e.name, e.entity_type, e.description
             ORDER BY current_depth, e.id
         "#;
@@ -420,7 +419,13 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
             .query_all(Statement::from_sql_and_values(
                 self.db.get_database_backend(),
                 cte_sql,
-                [assistant_id.into(), entity_name.into(), depth_limit.into()],
+                [
+                    assistant_id.into(),
+                    entity_name.into(),
+                    depth_limit.into(),
+                    assistant_id.into(),
+                    assistant_id.into(),
+                ],
             ))
             .await
             .map_err(DbError::SeaOrmQueryFailed)?;

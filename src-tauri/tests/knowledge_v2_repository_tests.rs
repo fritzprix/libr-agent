@@ -1,52 +1,12 @@
-use sea_orm::*;
-use sea_orm_migration::MigratorTrait;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use std::str::FromStr;
-use std::sync::Once;
+mod common;
+
+use sea_orm::EntityTrait;
 use tauri_mcp_agent_lib::entity::knowledge_chunk_entity;
-use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::repositories::{KnowledgeV2Repository, SqliteKnowledgeV2Repository};
-
-fn register_sqlite_vec() {
-    static REGISTER_SQLITE_VEC: Once = Once::new();
-
-    REGISTER_SQLITE_VEC.call_once(|| unsafe {
-        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<
-            *const (),
-            unsafe extern "C" fn(
-                *mut libsqlite3_sys::sqlite3,
-                *mut *mut i8,
-                *const libsqlite3_sys::sqlite3_api_routines,
-            ) -> i32,
-        >(
-            sqlite_vec::sqlite3_vec_init as *const ()
-        )));
-    });
-}
-
-async fn setup_db() -> DatabaseConnection {
-    register_sqlite_vec();
-
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
-
-    db
-}
 
 #[tokio::test]
 async fn knowledge_v2_repository_supports_keyword_and_semantic_search() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteKnowledgeV2Repository::new(db);
 
     let chunk_id = repo
@@ -83,7 +43,7 @@ async fn knowledge_v2_repository_supports_keyword_and_semantic_search() {
 
 #[tokio::test]
 async fn knowledge_v2_graph_context_stays_scoped_to_assistant() {
-    let db = setup_db().await;
+    let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteKnowledgeV2Repository::new(db.clone());
 
     let chunk_id = repo

@@ -6,7 +6,7 @@ pub fn record_knowledge_tool() -> MCPTool {
     MCPTool {
         name: "record_knowledge".to_string(),
         title: Some("Record Knowledge".to_string()),
-        description: "Save a knowledge entry to the local knowledge base. Prefer caller-supplied entities and relationships; local heuristic extraction only fills gaps when structured graph data is missing.".to_string(),
+        description: "Save a knowledge entry to the local knowledge base. Prefer caller-supplied entities and relationships; local heuristic extraction only fills gaps when structured graph data is missing. Use concise entity names (recommended: natural-language names under 10 words).".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -27,7 +27,7 @@ pub fn record_knowledge_tool() -> MCPTool {
                             vec![
                                 (
                                     "name".to_string(),
-                                    string_prop_required("Entity name as understood by the calling agent."),
+                                    string_prop_required("Entity name as understood by the calling agent. Use a concise natural-language name (up to 10 words recommended)."),
                                 ),
                                 (
                                     "entity_type".to_string(),
@@ -59,11 +59,11 @@ pub fn record_knowledge_tool() -> MCPTool {
                             vec![
                                 (
                                     "source".to_string(),
-                                    string_prop_required("Source entity name."),
+                                    string_prop_required("Source entity name. Use the same concise entity naming style as entities[].name."),
                                 ),
                                 (
                                     "target".to_string(),
-                                    string_prop_required("Target entity name."),
+                                    string_prop_required("Target entity name. Use the same concise entity naming style as entities[].name."),
                                 ),
                                 (
                                     "relation_type".to_string(),
@@ -83,7 +83,7 @@ pub fn record_knowledge_tool() -> MCPTool {
                 (
                     "auto_extract".to_string(),
                     boolean_prop(
-                        Some("Whether to run heuristic fallback extraction when structured entities or relationships are missing. Defaults to true."),
+                        Some("Whether to run heuristic fallback extraction when structured entities or relationships are missing."),
                     ),
                 ),
                 (
@@ -108,7 +108,8 @@ pub fn search_knowledge_tool() -> MCPTool {
     MCPTool {
         name: "search_knowledge".to_string(),
         title: Some("Search Knowledge".to_string()),
-        description: "Search the knowledge base using keyword, semantic, or fused hybrid ranking.".to_string(),
+        description: "Search the knowledge base using keyword, semantic, or fused hybrid ranking."
+            .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -126,10 +127,10 @@ pub fn search_knowledge_tool() -> MCPTool {
                 ),
                 (
                     "mode".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Search mode: 'keyword', 'semantic', or 'hybrid'. Defaults to 'hybrid'."),
+                    enum_prop(
+                        vec!["keyword", "semantic", "hybrid"],
+                        "hybrid",
+                        Some("Search mode. Defaults to 'hybrid'."),
                     ),
                 ),
             ],
@@ -178,7 +179,7 @@ pub fn prune_knowledge_tool() -> MCPTool {
     MCPTool {
         name: "prune_knowledge".to_string(),
         title: Some("Prune Knowledge".to_string()),
-        description: "Delete or merge knowledge entries from the database.".to_string(),
+        description: "Delete knowledge entries from the database.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -190,8 +191,9 @@ pub fn prune_knowledge_tool() -> MCPTool {
                 ),
                 (
                     "action".to_string(),
-                    string_prop_required(
-                        "The action to perform: 'delete', 'update_importance', or 'merge'.",
+                    enum_prop_required(
+                        vec!["delete"],
+                        "The action to perform. Currently only 'delete' is supported.",
                     ),
                 ),
             ],
