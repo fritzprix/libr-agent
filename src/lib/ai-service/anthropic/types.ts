@@ -12,7 +12,7 @@ export interface ToolCallAccumulator {
   name: string;
   partialJson: string;
   index: number;
-  yielded: boolean;
+  hasArgumentDelta: boolean;
   initialInput?: Record<string, unknown> | null;
 }
 

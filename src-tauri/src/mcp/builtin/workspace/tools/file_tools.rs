@@ -76,7 +76,7 @@ pub fn create_write_file_tool() -> MCPTool {
         enum_prop(
             vec!["create", "overwrite", "append"],
             "create",
-            Some("Write mode: 'create' (fails if exists), 'overwrite' (replaces entire content), or 'append' (adds to end)."),
+            Some("Write mode. If omitted, defaults to 'create'. 'create' fails if the file already exists, 'overwrite' replaces the entire file, and 'append' adds content to the end."),
         ),
     );
 
@@ -85,9 +85,12 @@ pub fn create_write_file_tool() -> MCPTool {
         title: Some("Write File".to_string()),
         description: "Create, overwrite, or append content to a file.
 
-- mode='create' (default): fails if file already exists
+- if 'mode' is omitted, the tool defaults to mode='create'
+- mode='create': fails if file already exists
 - mode='overwrite': replaces entire content, returns a diff
-- mode='append': adds content to the end of the file"
+- mode='append': adds content to the end of the file
+
+Tip: omit 'mode' when you want safe create-only behavior."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,

@@ -74,6 +74,8 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
     () => parseToolName(toolCall.function.name),
     [toolCall.function.name],
   );
+  const displayToolName =
+    toolName || t('agent.toolDetails.preparingTool', 'Preparing tool...');
 
   // Parse arguments once to share between summary and details
   const parsedArgs = useMemo(
@@ -119,7 +121,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
       <div className="rounded px-3 py-2 text-sm bg-background">
         <div className="flex items-center gap-2">
           <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
-          <span className="font-medium flex-shrink-0">{toolName}</span>
+          <span className="font-medium flex-shrink-0">{displayToolName}</span>
           {paramSummary && (
             <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
               {paramSummary}
@@ -163,7 +165,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
         aria-label={t(
           'agentChat.toolDetails.toggleAriaLabel',
           'Toggle {{toolName}} details',
-          { toolName },
+          { toolName: displayToolName },
         )}
         onClick={() => setIsExpanded((prev) => !prev)}
       >
@@ -171,7 +173,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
           <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
 
           {/* Tool name */}
-          <span className="flex-shrink-0 font-medium">{toolName}</span>
+          <span className="flex-shrink-0 font-medium">{displayToolName}</span>
 
           {/* Params Summary */}
           {paramSummary && (

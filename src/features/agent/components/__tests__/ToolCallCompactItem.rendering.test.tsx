@@ -128,4 +128,17 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
     // Should stay collapsed (no new transition)
     expect(queryByTestId('tool-details')).not.toBeInTheDocument();
   });
+
+  it('shows a subtle fallback label while the tool name is still streaming in', () => {
+    mockDetailLevel = 'simple';
+    const partialToolCall: ToolCall = {
+      id: 'call-5',
+      type: 'function',
+      function: { name: '', arguments: '' },
+    };
+
+    const { getByText } = render(<ToolCallCompactItem toolCall={partialToolCall} />);
+
+    expect(getByText('agent.toolDetails.preparingTool')).toBeInTheDocument();
+  });
 });

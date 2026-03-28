@@ -59,9 +59,9 @@ describe('Anthropic helper modules', () => {
     });
 
     expect(updatedUsage).toMatchObject({
-      promptTokens: 120,
+      promptTokens: 240,
       completionTokens: 45,
-      totalTokens: 165,
+      totalTokens: 285,
       cachedPromptTokens: 90,
     });
     expect(updatedUsage.details).toMatchObject({

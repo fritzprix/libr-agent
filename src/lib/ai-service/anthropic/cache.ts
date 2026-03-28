@@ -2,6 +2,21 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { TokenUsage } from '../types';
 import type { AnthropicUsageWithCache } from './types';
 
+export function getAnthropicPromptTokens(
+  usage: AnthropicUsageWithCache,
+  previousDetails?: TokenUsage['details'],
+): number {
+  const inputTokens = usage.input_tokens ?? 0;
+  const cacheCreationInputTokens =
+    usage.cache_creation_input_tokens ??
+    previousDetails?.cacheCreationInputTokens ??
+    0;
+  const cacheReadInputTokens =
+    usage.cache_read_input_tokens ?? previousDetails?.cacheReadInputTokens ?? 0;
+
+  return inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+}
+
 export function buildAnthropicSystemBlocks(
   systemPrompt: string | undefined,
   sessionContext?: string,
@@ -41,10 +56,11 @@ export function applyAnthropicMessageStartUsage(
   currentUsage: TokenUsage,
   usage: AnthropicUsageWithCache,
 ): TokenUsage {
+  const promptTokens = getAnthropicPromptTokens(usage);
   const nextUsage: TokenUsage = {
     ...currentUsage,
-    promptTokens: usage.input_tokens ?? 0,
-    totalTokens: (usage.input_tokens ?? 0) + currentUsage.completionTokens,
+    promptTokens,
+    totalTokens: promptTokens + currentUsage.completionTokens,
   };
 
   if (
@@ -68,14 +84,27 @@ export function applyAnthropicMessageDeltaUsage(
 ): TokenUsage {
   const promptTokens =
     usage.input_tokens !== undefined && usage.input_tokens !== null
-      ? usage.input_tokens
+      ? getAnthropicPromptTokens(usage, currentUsage.details)
       : currentUsage.promptTokens;
   const completionTokens = usage.output_tokens ?? 0;
-
-  return {
+  const nextUsage: TokenUsage = {
     ...currentUsage,
     promptTokens,
     completionTokens,
     totalTokens: promptTokens + completionTokens,
   };
+
+  if (
+    usage.cache_creation_input_tokens !== undefined ||
+    usage.cache_read_input_tokens !== undefined
+  ) {
+    nextUsage.cachedPromptTokens = usage.cache_read_input_tokens ?? undefined;
+    nextUsage.details = {
+      ...nextUsage.details,
+      cacheCreationInputTokens: usage.cache_creation_input_tokens ?? undefined,
+      cacheReadInputTokens: usage.cache_read_input_tokens ?? undefined,
+    };
+  }
+
+  return nextUsage;
 }

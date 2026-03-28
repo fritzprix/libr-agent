@@ -276,4 +276,167 @@ describe('AnthropicService', () => {
       });
     });
   });
+
+  describe('streamChat()', () => {
+    it('emits a provisional indexed tool call as soon as tool_use starts', async () => {
+      const mockStreamFn = vi.fn().mockReturnValue(
+        (async function* () {
+          yield {
+            type: 'content_block_start',
+            index: 0,
+            content_block: {
+              type: 'tool_use',
+              id: 'toolu_123',
+              name: 'workspace__writeFile',
+              input: {},
+            },
+          };
+          yield {
+            type: 'content_block_stop',
+            index: 0,
+          };
+        })(),
+      );
+
+      (
+        mockAnthropicClient as { messages: { stream: typeof mockStreamFn } }
+      ).messages.stream = mockStreamFn;
+
+      const stream = service.streamChat([
+        {
+          id: 'user-1',
+          sessionId: 'session-1',
+          threadId: 'thread-1',
+          role: 'user',
+          content: [{ type: 'text', text: 'Write a file' }],
+        },
+      ]);
+
+      const firstChunk = await stream.next();
+      expect(firstChunk.done).toBe(false);
+      if (firstChunk.done) {
+        throw new Error('Expected provisional tool call chunk');
+      }
+
+      const parsed = JSON.parse(firstChunk.value) as {
+        tool_calls?: Array<{
+          index?: number;
+          id: string;
+          function: { name: string; arguments: string };
+        }>;
+      };
+
+      expect(parsed.tool_calls).toEqual([
+        {
+          index: 0,
+          id: 'toolu_123',
+          type: 'function',
+          function: {
+            name: 'workspace__writeFile',
+            arguments: '',
+          },
+        },
+      ]);
+    });
+
+    it('streams tool argument deltas with the same index for frontend merging', async () => {
+      const mockStreamFn = vi.fn().mockReturnValue(
+        (async function* () {
+          yield {
+            type: 'content_block_start',
+            index: 0,
+            content_block: {
+              type: 'tool_use',
+              id: 'toolu_456',
+              name: 'workspace__writeFile',
+              input: {},
+            },
+          };
+          yield {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'input_json_delta',
+              partial_json: '{"path":"foo.txt"',
+            },
+          };
+          yield {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'input_json_delta',
+              partial_json: ',"content":"hello"}',
+            },
+          };
+          yield {
+            type: 'content_block_stop',
+            index: 0,
+          };
+        })(),
+      );
+
+      (
+        mockAnthropicClient as { messages: { stream: typeof mockStreamFn } }
+      ).messages.stream = mockStreamFn;
+
+      const stream = service.streamChat([
+        {
+          id: 'user-1',
+          sessionId: 'session-1',
+          threadId: 'thread-1',
+          role: 'user',
+          content: [{ type: 'text', text: 'Write a file' }],
+        },
+      ]);
+
+      const firstResult = await stream.next();
+      const secondResult = await stream.next();
+      const thirdResult = await stream.next();
+
+      if (firstResult.done || secondResult.done || thirdResult.done) {
+        throw new Error('Expected three streamed tool call chunks');
+      }
+
+      const firstChunk = JSON.parse(firstResult.value) as {
+        tool_calls?: Array<{
+          index?: number;
+          function: { name: string; arguments: string };
+        }>;
+      };
+      const secondChunk = JSON.parse(secondResult.value) as {
+        tool_calls?: Array<{
+          index?: number;
+          function: { name: string; arguments: string };
+        }>;
+      };
+      const thirdChunk = JSON.parse(thirdResult.value) as {
+        tool_calls?: Array<{
+          index?: number;
+          function: { name: string; arguments: string };
+        }>;
+      };
+
+      expect(firstChunk.tool_calls?.[0]).toMatchObject({
+        index: 0,
+        function: {
+          name: 'workspace__writeFile',
+          arguments: '',
+        },
+      });
+      expect(secondChunk.tool_calls?.[0]).toMatchObject({
+        index: 0,
+        function: {
+          name: 'workspace__writeFile',
+          arguments: '{"path":"foo.txt"',
+        },
+      });
+      expect(thirdChunk.tool_calls?.[0]).toMatchObject({
+        index: 0,
+        function: {
+          name: 'workspace__writeFile',
+          arguments: ',"content":"hello"}',
+        },
+      });
+    });
+  });
 });

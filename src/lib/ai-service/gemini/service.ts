@@ -408,7 +408,39 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     sessionContext: string | undefined,
     messages: Message[],
   ): ContextInjectionResult {
-    return { systemPrompt, sessionContext, messages };
+    if (!sessionContext) {
+      return { systemPrompt, sessionContext: undefined, messages };
+    }
+
+    const referenceMessage = messages[messages.length - 1];
+    const syntheticSessionContextMessage: Message = {
+      id: `gemini-session-context-${referenceMessage?.id ?? 'system'}`,
+      sessionId: referenceMessage?.sessionId ?? 'gemini-session-context',
+      threadId:
+        referenceMessage?.threadId ??
+        referenceMessage?.sessionId ??
+        'gemini-session-context',
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `[Current session context — background reference only, do not respond to this block]\n\n${sessionContext}\n\n[End of session context]`,
+        },
+      ],
+    };
+
+    this.logger.debug(
+      'Injecting Gemini session context as ephemeral tail message',
+      {
+        sessionContextLength: sessionContext.length,
+      },
+    );
+
+    return {
+      systemPrompt,
+      sessionContext: undefined,
+      messages: [...messages, syntheticSessionContextMessage],
+    };
   }
 
   protected convertMessages(
