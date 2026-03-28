@@ -9,6 +9,7 @@ use sea_orm::{
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Once;
 use std::time::{Duration, Instant};
 
 use super::database_backup::BackupManager;
@@ -24,6 +25,23 @@ pub fn extract_db_file_path(db_url: &str) -> Option<&str> {
     db_url
         .strip_prefix("sqlite://")
         .and_then(|p| p.split('?').next())
+}
+
+fn register_sqlite_vec() {
+    static REGISTER_SQLITE_VEC: Once = Once::new();
+
+    REGISTER_SQLITE_VEC.call_once(|| unsafe {
+        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut libsqlite3_sys::sqlite3,
+                *mut *mut i8,
+                *const libsqlite3_sys::sqlite3_api_routines,
+            ) -> i32,
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
+        )));
+    });
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -231,6 +249,9 @@ pub async fn maybe_restore_quarantined_database(db_url: &str) -> DatabaseResult<
 }
 
 pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
+    // Register sqlite-vec extension before any database connections are opened
+    register_sqlite_vec();
+
     // Extract file path from URL (strip sqlite:// prefix and query params)
     let db_file_path = extract_db_file_path(db_url)
         .ok_or_else(|| DatabaseError::ConnectionFailed("Invalid database URL format".into()))?;

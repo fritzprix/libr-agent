@@ -4,6 +4,12 @@ import type { Message } from '@/models/chat';
 
 export type { ModelInfo, SamplingOptions, SamplingResponse };
 
+export interface ContextInjectionResult {
+  systemPrompt: string | undefined;
+  sessionContext?: string;
+  messages: Message[];
+}
+
 export interface SafetySetting {
   category: string;
   threshold: string;
@@ -70,6 +76,14 @@ export interface AIServiceConfig {
   tools?: MCPTool[];
   /** The base URL for the service API endpoint. */
   baseUrl?: string;
+  /**
+   * Explicitly enables provider-specific prompt caching extensions for
+   * OpenAI-compatible backends such as llama.cpp.
+   *
+   * When undefined, providers may still auto-enable compatible extensions for
+   * clearly non-OpenAI endpoints.
+   */
+  enablePromptCache?: boolean;
 
   /**
    * Enable reasoning mode for supported models.
@@ -155,6 +169,7 @@ export interface IAIService {
     options?: {
       modelName?: string;
       systemPrompt?: string;
+      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
@@ -266,7 +281,7 @@ export interface IAIService {
     systemPrompt: string | undefined,
     sessionContext: string | undefined,
     messages: Message[],
-  ): { systemPrompt: string | undefined; messages: Message[] };
+  ): ContextInjectionResult;
 
   /**
    * Cleans up any resources used by the service instance.

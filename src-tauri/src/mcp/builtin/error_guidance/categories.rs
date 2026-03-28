@@ -24,11 +24,19 @@ pub enum ErrorCategory {
 }
 
 impl ErrorCategory {
-    /// Returns true when the failure is attributable to tool misuse or invalid tool input.
+    /// Returns true when the tool completed unsuccessfully and should surface
+    /// MCP `isError: true` semantics to the agent.
     pub fn uses_error_semantics(self) -> bool {
         matches!(
             self,
-            Self::MissingRequiredParam | Self::InvalidInput | Self::InvalidFormat
+            Self::MissingRequiredParam
+                | Self::InvalidInput
+                | Self::InvalidFormat
+                | Self::ResourceNotFound
+                | Self::DuplicateResource
+                | Self::InvalidState
+                | Self::OperationFailed
+                | Self::PermissionDenied
         )
     }
 }

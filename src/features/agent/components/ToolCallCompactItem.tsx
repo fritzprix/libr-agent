@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
+import React, { useState, memo, useMemo, useEffect, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -66,11 +66,8 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   const [isExpanded, setIsExpanded] = useState(false);
-
-  // Use refs for transition-sentinel values — they don't affect rendered output,
-  // so refs avoid the extra re-render that useState would cause.
-  const previousHasError = useRef(false);
-  const previousHasResource = useRef(false);
+  const prevHasErrorRef = useRef(false);
+  const prevHasResourceRef = useRef(false);
 
   // Parse tool name (remove server prefix)
   const toolName = useMemo(
@@ -98,25 +95,20 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Adjusting State During Render: auto-expand in developer mode on error/resource transition.
-  // Refs are read here (not written) to detect transitions; they are updated after render via useEffect.
-  if (!isSimpleMode) {
-    const errorBecameVisible = !previousHasError.current && hasError;
-    const resourceBecameVisible = !previousHasResource.current && hasResource;
+  useEffect(() => {
+    const errorBecameVisible = !prevHasErrorRef.current && hasError;
+    const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
 
     if (
-      (errorBecameVisible || (resourceBecameVisible && isLast)) &&
-      !isExpanded
+      !isSimpleMode &&
+      (errorBecameVisible || (resourceBecameVisible && isLast))
     ) {
-      setIsExpanded(true);
+      setIsExpanded((prev) => prev || true);
     }
-  }
 
-  // Update sentinel refs after each render so the next render can detect transitions.
-  useEffect(() => {
-    previousHasError.current = hasError;
-    previousHasResource.current = hasResource;
-  }, [hasError, hasResource]);
+    prevHasErrorRef.current = hasError;
+    prevHasResourceRef.current = hasResource;
+  }, [hasError, hasResource, isLast, isSimpleMode]);
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution

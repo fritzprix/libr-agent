@@ -13,6 +13,7 @@ pub mod bootstrap;
 pub mod browser;
 pub mod browser_content_store;
 pub mod error_guidance;
+pub mod history;
 pub mod knowledge;
 pub mod media;
 pub mod planning;

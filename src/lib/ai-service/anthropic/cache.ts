@@ -2,16 +2,15 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { TokenUsage } from '../types';
 import type { AnthropicUsageWithCache } from './types';
 
-export const VOLATILE_CONTEXT_MARKER = '# Current Context Information';
-
 export function buildAnthropicSystemBlocks(
   systemPrompt: string | undefined,
+  sessionContext?: string,
 ): TextBlockParam[] | undefined {
-  if (!systemPrompt) return undefined;
+  if (!systemPrompt && !sessionContext) {
+    return undefined;
+  }
 
-  const idx = systemPrompt.indexOf(VOLATILE_CONTEXT_MARKER);
-
-  if (idx < 0) {
+  if (systemPrompt && !sessionContext) {
     return [
       {
         type: 'text',
@@ -21,22 +20,19 @@ export function buildAnthropicSystemBlocks(
     ];
   }
 
-  if (idx === 0) {
-    return [{ type: 'text', text: systemPrompt }];
+  if (!systemPrompt && sessionContext) {
+    return [{ type: 'text', text: sessionContext }];
   }
-
-  const stablePrefix = systemPrompt.slice(0, idx).trimEnd();
-  const volatileSuffix = systemPrompt.slice(idx);
 
   return [
     {
       type: 'text',
-      text: stablePrefix,
+      text: systemPrompt!,
       cache_control: { type: 'ephemeral' },
     },
     {
       type: 'text',
-      text: volatileSuffix,
+      text: sessionContext!,
     },
   ];
 }

@@ -1,7 +1,8 @@
 use serde_json::json;
 use tauri_mcp_agent_lib::mcp::builtin::error_guidance::{
-    guided_error, missing_agent_config_error, missing_agent_session_error, missing_param_error,
-    not_found_error, ErrorCategory, ToolGroup,
+    duplicate_error, guided_error, missing_agent_config_error, missing_agent_session_error,
+    missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
+    ErrorCategory, ToolGroup,
 };
 use tauri_mcp_agent_lib::mcp::builtin::session_api::utils::handle_wait_timeout_result;
 use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
@@ -68,13 +69,13 @@ fn guided_error_includes_next_steps_section() {
 }
 
 #[test]
-fn not_found_error_is_informational() {
+fn not_found_error_uses_error_semantics() {
     let r = not_found_error("Assistant", "asst_123", ToolGroup::Agent);
     let text = extract_text(&r);
 
-    assert_eq!(r.is_error, Some(false));
-    assert_eq!(extract_text_error_flag(&r), None);
-    assert!(text.contains("Notice:"));
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert!(text.contains("✗"));
     assert!(text.contains("asst_123"));
     assert!(text.contains("Next Steps") || text.contains("Recovery"));
 }
@@ -84,8 +85,9 @@ fn missing_agent_config_error_suggests_listing_configs() {
     let r = missing_agent_config_error("exa");
     let text = extract_text(&r);
 
-    assert_eq!(r.is_error, Some(false));
-    assert_eq!(extract_text_error_flag(&r), None);
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert!(text.contains("✗"));
     assert!(text.contains("Agent configuration 'exa' not found"));
     assert!(text.contains("list(type=\"configs\")"));
     assert!(
@@ -98,10 +100,67 @@ fn missing_agent_session_error_suggests_listing_sessions() {
     let r = missing_agent_session_error("sess_123");
     let text = extract_text(&r);
 
-    assert_eq!(r.is_error, Some(false));
-    assert_eq!(extract_text_error_flag(&r), None);
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert!(text.contains("✗"));
     assert!(text.contains("Agent session 'sess_123' not found"));
     assert!(text.contains("list(type=\"sessions\")"));
+}
+
+#[test]
+fn duplicate_error_uses_error_semantics() {
+    let r = duplicate_error("Playbook", "pb_123", ToolGroup::Playbook);
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert!(text.contains("✗"));
+    assert!(text.contains("already exists"));
+}
+
+#[test]
+fn invalid_state_uses_error_semantics() {
+    let r = guided_error(
+        ErrorCategory::InvalidState,
+        "Browser session is already closed",
+        ToolGroup::Browser,
+    )
+    .to_mcp_result();
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert!(text.contains("✗"));
+}
+
+#[test]
+fn operation_failed_uses_error_semantics() {
+    let r = operation_failed_error(
+        "Read Session",
+        "Session 'sess_123' not found",
+        vec!["Use list() to find a valid session ID".to_string()],
+        ToolGroup::Agent,
+    );
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert!(text.contains("✗"));
+    assert!(text.contains("Read Session failed"));
+}
+
+#[test]
+fn permission_denied_uses_error_semantics() {
+    let r = permission_denied_error(
+        "attachment belongs to another session",
+        ToolGroup::Attachments,
+    );
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert!(text.contains("✗"));
+    assert!(text.contains("Permission denied"));
 }
 
 #[test]

@@ -2,19 +2,16 @@
 ///
 /// Runs via `cargo test --tests` in CI. Requires a parent session row due to the
 /// FK constraint on compact_contexts.session_id.
-use sea_orm::{Database, DatabaseConnection, EntityTrait, Set};
-use sea_orm_migration::MigratorTrait;
+mod common;
+
+use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use tauri_mcp_agent_lib::entity::session;
-use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::repositories::{
     CompactContextRecord, CompactContextRepository, SqliteCompactContextRepository,
 };
 
 async fn setup_db() -> (DatabaseConnection, SqliteCompactContextRepository) {
-    let db = Database::connect("sqlite::memory:")
-        .await
-        .expect("Failed to connect to in-memory DB");
-    Migrator::up(&db, None).await.expect("Migrations failed");
+    let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteCompactContextRepository::new(db.clone());
     (db, repo)
 }

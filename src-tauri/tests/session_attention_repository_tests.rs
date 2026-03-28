@@ -1,18 +1,12 @@
-use sea_orm::Database;
-use sea_orm_migration::MigratorTrait;
-use tauri_mcp_agent_lib::migration::Migrator;
+mod common;
+
 use tauri_mcp_agent_lib::repositories::session_repository::SessionAttentionReason;
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
 
 async fn setup_repo() -> SqliteSessionRepository {
-    let db = Database::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create in-memory database");
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = common::setup_test_db_with_migrations().await;
     SqliteSessionRepository::new(db)
 }
 

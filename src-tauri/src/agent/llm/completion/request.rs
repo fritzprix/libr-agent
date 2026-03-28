@@ -58,6 +58,213 @@ pub(crate) fn build_overflow_preflight(
     }
 }
 
+const COMPACT_TOOL_SNAPSHOT_LIMIT: usize = 5;
+const COMPACT_ARGUMENT_PREVIEW_LIMIT: usize = 96;
+const COMPACT_RESULT_PREVIEW_LIMIT: usize = 140;
+
+#[derive(Debug, Clone)]
+struct CompactToolSnapshot {
+    tool_name: String,
+    argument_preview: String,
+    status: &'static str,
+    result_preview: String,
+}
+
+pub fn build_compact_summary_text(summary: &str, compacted_messages: &[Message]) -> String {
+    let mut text = format!("### Previous Conversation Summary\n\n{}", summary.trim());
+    let recent_tool_snapshot = summarize_recent_tool_calls(compacted_messages);
+
+    if !recent_tool_snapshot.is_empty() {
+        text.push_str("\n\n### Recent Tool Call Snapshot (latest 5)\n");
+        text.push_str(
+            &recent_tool_snapshot
+                .into_iter()
+                .map(|entry| format!("- {}", entry))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+
+    text
+}
+
+fn summarize_recent_tool_calls(compacted_messages: &[Message]) -> Vec<String> {
+    let tool_results_by_id: HashMap<&str, &Message> = compacted_messages
+        .iter()
+        .filter(|message| message.role == "tool")
+        .filter_map(|message| message.tool_call_id.as_deref().map(|id| (id, message)))
+        .collect();
+
+    let mut snapshots = Vec::new();
+
+    for message in compacted_messages {
+        if message.role != "assistant" {
+            continue;
+        }
+
+        let Some(tool_calls) = &message.tool_calls else {
+            continue;
+        };
+
+        for tool_call in tool_calls {
+            let Some(result_message) = tool_results_by_id.get(tool_call.id.as_str()) else {
+                continue;
+            };
+
+            snapshots.push(CompactToolSnapshot {
+                tool_name: tool_call.function.name.clone(),
+                argument_preview: build_tool_argument_preview(&tool_call.function.arguments),
+                status: determine_tool_result_status(result_message),
+                result_preview: extract_tool_result_preview(result_message),
+            });
+        }
+    }
+
+    snapshots
+        .into_iter()
+        .rev()
+        .take(COMPACT_TOOL_SNAPSHOT_LIMIT)
+        .map(|snapshot| {
+            format!(
+                "{}({}) -> {}: {}",
+                snapshot.tool_name,
+                snapshot.argument_preview,
+                snapshot.status,
+                snapshot.result_preview,
+            )
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
+}
+
+fn build_tool_argument_preview(arguments: &str) -> String {
+    let parsed = serde_json::from_str::<serde_json::Value>(arguments).ok();
+
+    if let Some(serde_json::Value::Object(object)) = parsed {
+        let mut preview_parts = Vec::new();
+        let mut entries = object.iter().collect::<Vec<_>>();
+        entries.sort_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
+
+        for (index, (key, value)) in entries.into_iter().enumerate() {
+            if index >= 3 {
+                preview_parts.push("...".to_string());
+                break;
+            }
+
+            preview_parts.push(format!(
+                "{}={}",
+                key,
+                truncate_for_compact_snapshot(&compact_json_value_preview(value), 32)
+            ));
+        }
+
+        if preview_parts.is_empty() {
+            "no-args".to_string()
+        } else {
+            truncate_for_compact_snapshot(&preview_parts.join(", "), COMPACT_ARGUMENT_PREVIEW_LIMIT)
+        }
+    } else if let Some(parsed_value) = parsed {
+        truncate_for_compact_snapshot(&compact_json_value_preview(&parsed_value), 48)
+    } else if arguments.trim().is_empty() {
+        "no-args".to_string()
+    } else {
+        truncate_for_compact_snapshot(arguments.trim(), COMPACT_ARGUMENT_PREVIEW_LIMIT)
+    }
+}
+
+fn compact_json_value_preview(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Number(number) => number.to_string(),
+        serde_json::Value::Bool(flag) => flag.to_string(),
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Array(values) => {
+            if values.is_empty() {
+                "[]".to_string()
+            } else {
+                format!("[{} item(s)]", values.len())
+            }
+        }
+        serde_json::Value::Object(values) => {
+            if values.is_empty() {
+                "{}".to_string()
+            } else {
+                format!("{{{} key(s)}}", values.len())
+            }
+        }
+    }
+}
+
+fn determine_tool_result_status(message: &Message) -> &'static str {
+    if message.error.is_some() {
+        return "error";
+    }
+
+    for content in &message.content {
+        if let MCPContent::Text {
+            is_error: Some(true),
+            ..
+        } = content
+        {
+            return "error";
+        }
+    }
+
+    "success"
+}
+
+fn extract_tool_result_preview(message: &Message) -> String {
+    let mut text_parts = Vec::new();
+
+    for content in &message.content {
+        match content {
+            MCPContent::Text { text, .. } => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    text_parts.push(trimmed.to_string());
+                }
+            }
+            MCPContent::Resource { resource, .. } => {
+                let mime_type = resource
+                    .get("mimeType")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("resource");
+                text_parts.push(format!("[resource:{}]", mime_type));
+            }
+            MCPContent::Image { .. } => text_parts.push("[image output]".to_string()),
+            MCPContent::Audio { .. } => text_parts.push("[audio output]".to_string()),
+            MCPContent::Thinking { .. } => {}
+            MCPContent::ToolCall { name, .. } => {
+                text_parts.push(format!("[tool call:{}]", name));
+            }
+        }
+    }
+
+    if text_parts.is_empty() {
+        "completed with no textual result".to_string()
+    } else {
+        truncate_for_compact_snapshot(
+            &text_parts.join(" | ").replace('\n', " "),
+            COMPACT_RESULT_PREVIEW_LIMIT,
+        )
+    }
+}
+
+fn truncate_for_compact_snapshot(value: &str, max_len: usize) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= max_len {
+        return normalized;
+    }
+
+    let truncated = normalized
+        .chars()
+        .take(max_len.saturating_sub(1))
+        .collect::<String>();
+    format!("{}…", truncated)
+}
+
 /// Request LLM completion from frontend
 ///
 /// Note: session_repo is passed through to handle_llm_response which uses it for status updates
@@ -231,8 +438,19 @@ pub async fn request_llm_completion(
     // place where consecutive user roles are legitimate; merging here keeps the
     // Gemini mapper simple and mapper-agnostic.
     // --- CONTEXT MANAGEMENT ---
-    let messages = crate::agent::llm::context_selector::remove_incomplete_tool_chains(
-        merge_consecutive_user_messages(messages),
+    let raw_message_count = messages.len();
+    let merged_messages = merge_consecutive_user_messages(messages);
+    let merged_message_count = merged_messages.len();
+    let messages =
+        crate::agent::llm::context_selector::remove_incomplete_tool_chains(merged_messages);
+    let cleaned_message_count = messages.len();
+
+    log::info!(
+        "🧱 Prompt message normalization: session={}, raw={}, merged={}, cleaned={}",
+        session_id,
+        raw_message_count,
+        merged_message_count,
+        cleaned_message_count
     );
 
     let context_settings = load_context_management_settings().await;
@@ -260,7 +478,7 @@ pub async fn request_llm_completion(
         )
     };
 
-    let messages = {
+    let (messages, compact_summary_injected) = {
         let compact_record = compact_context_arc.read().await.clone();
         if let Some(record) = compact_record {
             if !uses_compaction_strategy(&context_strategy) {
@@ -279,7 +497,7 @@ pub async fn request_llm_completion(
                     context_strategy,
                     session_id
                 );
-                messages
+                (messages, false)
             } else if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
                 let now_ms = chrono::Utc::now().timestamp_millis();
                 let summary_msg = Message {
@@ -287,7 +505,7 @@ pub async fn request_llm_completion(
                     session_id: session_id.clone(),
                     role: "user".to_string(),
                     content: vec![MCPContent::Text {
-                        text: format!("### Previous Conversation Summary\n\n{}", record.summary),
+                        text: build_compact_summary_text(&record.summary, &messages[..=to_idx]),
                         is_error: None,
                     }],
                     source: Some("compact-summary".to_string()),
@@ -320,7 +538,7 @@ pub async fn request_llm_completion(
                     summary_tokens,
                     tail_tokens
                 );
-                [vec![summary_msg], tail].concat()
+                ([vec![summary_msg], tail].concat(), true)
             } else {
                 // Stale: to_id not found in current message stack — invalidate in-memory cache
                 // and delete the persisted record so future resume/cache hydration does not
@@ -338,12 +556,19 @@ pub async fn request_llm_completion(
                     "⚠️ Compact cache stale (toId not found), invalidated + deleted: session={}",
                     session_id
                 );
-                messages
+                (messages, false)
             }
         } else {
-            messages
+            (messages, false)
         }
     };
+
+    log::info!(
+        "🧱 Prompt prefix composition: session={}, compact_summary_injected={}, message_count={}",
+        session_id,
+        compact_summary_injected,
+        messages.len()
+    );
 
     let mut final_messages = messages.clone();
     let mut context_usage = None;
@@ -618,30 +843,42 @@ pub(crate) async fn resolve_message_references(
 /// appended to the first with a separator. IDs and metadata from the first
 /// message are preserved. This operates on the CompletionRequest payload only —
 /// stored messages are never mutated.
-pub(crate) fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
-    let mut result: Vec<Message> = Vec::with_capacity(messages.len());
-
-    for msg in messages {
-        if msg.role == "user" {
-            if let Some(last) = result.last_mut() {
-                if last.role == "user" {
-                    // Append a separator followed by the new content
-                    last.content.push(MCPContent::Text {
-                        text: "\n\n---\n\n".to_string(),
-                        is_error: None,
-                    });
-                    last.content.extend(msg.content);
-                    log::info!(
-                        "Merged consecutive user messages: base={}, appended={}",
-                        last.id,
-                        msg.id
-                    );
-                    continue;
-                }
-            }
-        }
-        result.push(msg);
+pub fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
+    if messages.len() < 2 {
+        return messages;
     }
 
+    let trailing_run_start = messages
+        .iter()
+        .rposition(|msg| msg.role != "user")
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+
+    if trailing_run_start >= messages.len().saturating_sub(1) {
+        return messages;
+    }
+
+    let (head, trailing_users) = messages.split_at(trailing_run_start);
+    if trailing_users.iter().any(|msg| msg.role != "user") {
+        return messages;
+    }
+
+    let mut result: Vec<Message> = head.to_vec();
+    let mut merged = trailing_users[0].clone();
+
+    for msg in trailing_users.iter().skip(1) {
+        merged.content.push(MCPContent::Text {
+            text: "\n\n---\n\n".to_string(),
+            is_error: None,
+        });
+        merged.content.extend(msg.content.clone());
+        log::info!(
+            "Merged trailing consecutive user messages: base={}, appended={}",
+            merged.id,
+            msg.id
+        );
+    }
+
+    result.push(merged);
     result
 }

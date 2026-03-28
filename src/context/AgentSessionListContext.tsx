@@ -386,37 +386,38 @@ export function AgentSessionListProvider({
       logger.info('Deleting agent session', { sessionId });
 
       try {
-        await safeInvoke<AgentResponse>('agent_delete_session', { sessionId });
+        const response = await safeInvoke<AgentResponse<string[]>>(
+          'agent_delete_session',
+          { sessionId },
+        );
+        const data = response?.data;
+        let deletedIds: string[];
 
-        // Remove the session and ALL its descendants from the UI
-        // Compute the set of IDs to remove outside the state updater (pure function)
-        // so that side-effects (clearSessionState) are not run inside the updater
-        // and are not double-invoked by React StrictMode.
-        let idsToRemove: Set<string> = new Set([sessionId]);
-        setSessions((prev) => {
-          // Collect all descendant IDs via BFS
-          const toRemove = new Set<string>([sessionId]);
-          let frontier = [sessionId];
-          while (frontier.length > 0) {
-            const next: string[] = [];
-            for (const s of prev) {
-              if (
-                s.parentSessionId !== undefined &&
-                frontier.includes(s.parentSessionId)
-              ) {
-                toRemove.add(s.id);
-                next.push(s.id);
-              }
-            }
-            frontier = next;
-          }
-          idsToRemove = toRemove;
-          return prev.filter((s) => !toRemove.has(s.id));
-        });
+        if (
+          Array.isArray(data) &&
+          data.every((x): x is string => typeof x === 'string')
+        ) {
+          deletedIds = data;
+        } else {
+          logger.warn(
+            'agent_delete_session returned unexpected data; falling back to single id',
+            {
+              sessionId,
+              data,
+            },
+          );
+          deletedIds = [sessionId];
+        }
+
+        const idsToRemove = new Set(deletedIds);
+
+        // Remove the session and ALL its descendants from the UI using the authoritative list from Rust
+        setSessions((prev) => prev.filter((s) => !idsToRemove.has(s.id)));
+
         // Clean up LLM state outside the updater to avoid double-invocation in StrictMode
         idsToRemove.forEach((id) => clearSessionState(id));
 
-        logger.info('Session deleted successfully', { sessionId });
+        logger.info('Session deleted successfully', { sessionId, deletedIds });
       } catch (err) {
         logger.error('Failed to delete session', err);
         throw err;

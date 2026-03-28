@@ -25,12 +25,50 @@
       {{{labelsHtml}}}
     </svg>
     <script>
-      // Auto-resize logic for MCP-UI client autoResizeIframe
-      const ro = new ResizeObserver(() => {
-        const height = document.documentElement.scrollHeight || document.body.scrollHeight;
-        window.parent.postMessage({ type: 'ui-size-change', payload: { height: height } }, '*');
-      });
-      ro.observe(document.body);
+      // Auto-resize logic for MCP-UI client autoResizeIframe.
+      const resizeTarget = document.querySelector('svg') || document.body;
+      const bodyStyles = window.getComputedStyle(document.body);
+      const bodyPaddingY =
+        parseFloat(bodyStyles.paddingTop || '0') +
+        parseFloat(bodyStyles.paddingBottom || '0');
+      let lastReportedHeight = 0;
+      let resizeFrame = null;
+
+      function measureContentHeight() {
+        const targetRect = resizeTarget.getBoundingClientRect();
+        const measuredHeight =
+          resizeTarget === document.body
+            ? targetRect.height
+            : targetRect.height + bodyPaddingY;
+
+        return Math.max(1, Math.ceil(measuredHeight));
+      }
+
+      function reportSizeIfChanged() {
+        resizeFrame = null;
+        const height = measureContentHeight();
+        if (height === lastReportedHeight) {
+          return;
+        }
+
+        lastReportedHeight = height;
+        window.parent.postMessage(
+          { type: 'ui-size-change', payload: { height } },
+          '*',
+        );
+      }
+
+      function scheduleResizeReport() {
+        if (resizeFrame !== null) {
+          cancelAnimationFrame(resizeFrame);
+        }
+        resizeFrame = requestAnimationFrame(reportSizeIfChanged);
+      }
+
+      const ro = new ResizeObserver(scheduleResizeReport);
+      ro.observe(resizeTarget);
+      window.addEventListener('load', scheduleResizeReport);
+      scheduleResizeReport();
     </script>
   </body>
 </html>

@@ -1,18 +1,12 @@
-use sea_orm::Database;
-use sea_orm_migration::MigratorTrait;
+mod common;
+
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::persist_tool_cache_for_server;
 use tauri_mcp_agent_lib::mcp::types::MCPTool;
-use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::repositories::{MCPServerRepository, SqliteMCPServerRepository};
 use tauri_mcp_agent_lib::set_mcp_server_repository;
 
 async fn setup_repo() -> SqliteMCPServerRepository {
-    let db = Database::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create in-memory database");
-    Migrator::up(&db, None)
-        .await
-        .expect("Migrations should run");
+    let db = common::setup_test_db_with_migrations().await;
     SqliteMCPServerRepository::new(db)
 }
 

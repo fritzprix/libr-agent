@@ -87,7 +87,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
                     { id: 'parent', name: 'Parent', status: 'idle', createdAt: Date.now() },
                     { id: 'child', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'parent' },
                 ]);
-            if (cmd === 'agent_delete_session') return Promise.resolve();
+            if (cmd === 'agent_delete_session') return Promise.resolve({ success: true, message: 'Deleted sessions', data: ['parent', 'child'] });
             return Promise.resolve();
         });
 
@@ -115,7 +115,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
                     { id: 'p', name: 'Parent', status: 'idle', createdAt: Date.now(), parentSessionId: 'gp' },
                     { id: 'c', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'p' },
                 ]);
-            if (cmd === 'agent_delete_session') return Promise.resolve();
+            if (cmd === 'agent_delete_session') return Promise.resolve({ success: true, message: 'ok', data: ['gp', 'p', 'c'] });
             return Promise.resolve();
         });
 

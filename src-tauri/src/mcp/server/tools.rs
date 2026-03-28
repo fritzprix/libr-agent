@@ -430,6 +430,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
                 BuiltinServiceId::Planning => planning::PlanningServer::metadata_static(),
                 BuiltinServiceId::Scratchpad => scratchpad::ScratchpadServer::metadata_static(),
                 BuiltinServiceId::Knowledge => knowledge::KnowledgeServer::metadata_static(),
+                BuiltinServiceId::History => history::HistoryServer::metadata_static(),
                 BuiltinServiceId::Browser => browser::BrowserServer::metadata_static(),
                 BuiltinServiceId::Workspace => workspace::WorkspaceServer::metadata_static(),
                 BuiltinServiceId::Attachments => attachments::AttachmentsServer::metadata_static(),
@@ -587,6 +588,7 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         BuiltinServiceId::Knowledge => {
             crate::mcp::builtin::knowledge::KnowledgeServer::tools_static()
         }
+        BuiltinServiceId::History => crate::mcp::builtin::history::HistoryServer::tools_static(),
         BuiltinServiceId::Browser => crate::mcp::builtin::browser::BrowserServer::tools_static(),
         BuiltinServiceId::Workspace => {
             crate::mcp::builtin::workspace::WorkspaceServer::tools_static()

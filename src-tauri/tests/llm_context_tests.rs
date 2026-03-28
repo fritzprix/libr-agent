@@ -1,7 +1,8 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    find_preflight_compaction_split_index, resolve_context_management_settings,
+    build_compact_summary_text, find_preflight_compaction_split_index,
+    merge_consecutive_user_messages, resolve_context_management_settings,
     should_trigger_background_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
@@ -230,6 +231,95 @@ fn test_remove_incomplete_tool_chains() {
         cleaned_assistant.tool_calls.as_ref().unwrap()[0].id,
         "call_A"
     );
+}
+
+#[test]
+fn test_remove_incomplete_tool_chains_preserves_stable_prefix_before_unstable_suffix() {
+    let mut stable_assistant = make_message("m1", "assistant", "Completed tools");
+    stable_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut stable_tool = make_message("m2", "tool", "result A");
+    stable_tool.tool_call_id = Some("call_A".to_string());
+
+    let mut unstable_assistant = make_message("m3", "assistant", "Pending tools");
+    unstable_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_B".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolB".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let cleaned = remove_incomplete_tool_chains(vec![
+        stable_assistant.clone(),
+        stable_tool.clone(),
+        unstable_assistant,
+    ]);
+
+    assert_eq!(cleaned.len(), 3);
+    assert_eq!(
+        cleaned[0].tool_calls.as_ref().map(|calls| calls.len()),
+        Some(1)
+    );
+    assert_eq!(cleaned[1].tool_call_id.as_deref(), Some("call_A"));
+    assert!(cleaned[2].tool_calls.is_none());
+}
+
+#[test]
+fn test_remove_incomplete_tool_chains_drops_orphan_tool_from_unstable_suffix_only() {
+    let stable_user = make_message("m1", "user", "Stable prefix");
+    let mut orphan_tool = make_message("m2", "tool", "orphan result");
+    orphan_tool.tool_call_id = Some("missing_call".to_string());
+
+    let cleaned = remove_incomplete_tool_chains(vec![stable_user.clone(), orphan_tool]);
+
+    assert_eq!(cleaned.len(), 1);
+    assert_eq!(cleaned[0].id, stable_user.id);
+}
+
+#[test]
+fn test_merge_consecutive_user_messages_only_merges_trailing_run() {
+    let earlier_user = make_message("m1", "user", "Earlier user");
+    let middle_user = make_message("m2", "user", "Should stay separate");
+    let assistant = make_message("m3", "assistant", "Assistant reply");
+    let trailing_user_a = make_message("m4", "user", "Latest user A");
+    let trailing_user_b = make_message("m5", "user", "Latest user B");
+
+    let merged = merge_consecutive_user_messages(vec![
+        earlier_user,
+        middle_user,
+        assistant,
+        trailing_user_a,
+        trailing_user_b,
+    ]);
+
+    assert_eq!(merged.len(), 4);
+    assert_eq!(merged[0].id, "m1");
+    assert_eq!(merged[1].id, "m2");
+    assert_eq!(merged[2].id, "m3");
+    assert_eq!(merged[3].id, "m4");
+}
+
+#[test]
+fn test_merge_consecutive_user_messages_preserves_non_trailing_sequence_boundaries() {
+    let user_a = make_message("m1", "user", "User A");
+    let user_b = make_message("m2", "user", "User B");
+    let assistant = make_message("m3", "assistant", "Assistant");
+
+    let merged = merge_consecutive_user_messages(vec![user_a, user_b, assistant]);
+
+    assert_eq!(merged.len(), 3);
+    assert_eq!(merged[0].id, "m1");
+    assert_eq!(merged[1].id, "m2");
+    assert_eq!(merged[2].id, "m3");
 }
 
 #[test]
@@ -510,4 +600,84 @@ fn test_grounded_total_tokens_ignores_grounding_after_compaction() {
         + 5;
 
     assert_eq!(tokens, expected);
+}
+
+#[test]
+fn test_build_compact_summary_text_includes_recent_tool_snapshot() {
+    let mut assistant = make_message("assistant-1", "assistant", "Writing file");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_write".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__writeFile".to_string(),
+            arguments: "{\"path\":\"src/app.tsx\",\"content\":\"updated\"}".to_string(),
+        },
+    }]);
+
+    let mut tool = make_message("tool-1", "tool", "Successfully wrote src/app.tsx");
+    tool.tool_call_id = Some("call_write".to_string());
+
+    let summary = build_compact_summary_text("User asked for an update.", &[assistant, tool]);
+
+    assert!(summary.contains("### Previous Conversation Summary"));
+    assert!(summary.contains("### Recent Tool Call Snapshot (latest 5)"));
+    assert!(summary.contains("workspace__writeFile(content=updated, path=src/app.tsx) -> success: Successfully wrote src/app.tsx"));
+}
+
+#[test]
+fn test_build_compact_summary_text_limits_snapshot_to_latest_five_completed_tool_calls() {
+    let mut messages = Vec::new();
+
+    for index in 0..6 {
+        let mut assistant =
+            make_message(&format!("assistant-{index}"), "assistant", "Calling tool");
+        assistant.tool_calls = Some(vec![AgentToolCall {
+            id: format!("call_{index}"),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__writeFile".to_string(),
+                arguments: format!("{{\"path\":\"file-{index}.txt\"}}"),
+            },
+        }]);
+        messages.push(assistant);
+
+        let mut tool = make_message(
+            &format!("tool-{index}"),
+            "tool",
+            &format!("Wrote file-{index}.txt"),
+        );
+        tool.tool_call_id = Some(format!("call_{index}"));
+        messages.push(tool);
+    }
+
+    let summary = build_compact_summary_text("Compacted summary", &messages);
+
+    assert!(!summary.contains("file-0.txt"));
+    assert!(summary.contains("file-1.txt"));
+    assert!(summary.contains("file-5.txt"));
+}
+
+#[test]
+fn test_build_compact_summary_text_caps_long_argument_preview() {
+    let mut assistant = make_message("assistant-long", "assistant", "Writing file");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_long".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__writeFile".to_string(),
+            arguments: format!(
+                "{{\"content\":\"{}\",\"path\":\"src/huge.ts\"}}",
+                "a".repeat(300)
+            ),
+        },
+    }]);
+
+    let mut tool = make_message("tool-long", "tool", "Wrote src/huge.ts");
+    tool.tool_call_id = Some("call_long".to_string());
+
+    let summary = build_compact_summary_text("Compacted summary", &[assistant, tool]);
+
+    assert!(summary.contains("workspace__writeFile("));
+    assert!(summary.contains("path=src/huge.ts"));
+    assert!(!summary.contains(&"a".repeat(150)));
 }

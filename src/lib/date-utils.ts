@@ -6,6 +6,7 @@
 // Cache formatter instances to prevent expensive re-instantiations during render loops
 let relativeTimeFormatter: Intl.RelativeTimeFormat | null = null;
 let dateFormatter: Intl.DateTimeFormat | null = null;
+let dateTimeFormatter: Intl.DateTimeFormat | null = null;
 
 function getRelativeTimeFormatter(): Intl.RelativeTimeFormat {
   if (!relativeTimeFormatter) {
@@ -25,6 +26,20 @@ function getDateFormatter(): Intl.DateTimeFormat {
     });
   }
   return dateFormatter;
+}
+
+export function getDateTimeFormatter(): Intl.DateTimeFormat {
+  if (!dateTimeFormatter) {
+    dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    });
+  }
+  return dateTimeFormatter;
 }
 
 /**
@@ -97,7 +112,7 @@ export function formatSessionTimestamp(dateInput: Date | string | undefined): {
 
   return {
     display,
-    tooltip: date.toLocaleString(),
+    tooltip: getDateTimeFormatter().format(date),
     relative,
   };
 }

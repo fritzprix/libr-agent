@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 /// Pause a running workflow
 pub async fn pause_workflow(
     session_repo: &Arc<dyn SessionRepository>,
@@ -36,9 +37,10 @@ pub async fn resume_workflow(
     session_id: String,
 ) -> Result<(), String> {
     {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(&session_id) {
             session.cancel_pending.store(false, Ordering::SeqCst);
+            session.cancellation_token = CancellationToken::new();
         }
     }
 

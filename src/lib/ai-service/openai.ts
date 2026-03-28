@@ -8,11 +8,16 @@ import {
   SamplingOptions,
   SamplingResponse,
 } from '@/lib/mcp';
-import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
+import {
+  AIServiceProvider,
+  AIServiceConfig,
+  type ContextInjectionResult,
+  TokenUsage,
+} from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager, ModelInfo } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
-import { ensureSchemaTypeField } from './utils';
+import { ensureSchemaTypeField, processMessageContent } from './utils';
 const logger = getLogger('OpenAIService');
 
 /** Shape of usage data returned by OpenAI/compatible streaming chunks. */
@@ -89,6 +94,16 @@ function isOpenAIStreamUsage(value: unknown): value is OpenAIStreamUsage {
   return true;
 }
 
+type OpenAIStreamingRequest =
+  OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & {
+    cache_prompt?: boolean;
+  };
+
+type OpenAINonStreamingRequest =
+  OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
+    cache_prompt?: boolean;
+  };
+
 /**
  * An AI service implementation for OpenAI's language models.
  * This class also serves as a base for other OpenAI-compatible services like Fireworks.
@@ -132,6 +147,42 @@ export class OpenAIService extends BaseAIService<
     if (lowerName.includes('gpt-4o')) return 128000;
     if (/^o(?:3|4)(?:$|[-.])/.test(lowerName)) return 200000;
     return 8192;
+  }
+
+  private shouldEnablePromptCache(config: AIServiceConfig): boolean {
+    if (config.enablePromptCache !== undefined) {
+      return config.enablePromptCache;
+    }
+
+    if (this.getProvider() !== AIServiceProvider.OpenAI) {
+      return false;
+    }
+
+    const baseUrl = config.baseUrl?.trim();
+    if (!baseUrl) {
+      return false;
+    }
+
+    try {
+      const { hostname } = new URL(baseUrl);
+      return hostname !== 'api.openai.com';
+    } catch {
+      return false;
+    }
+  }
+
+  private withPromptCache<T extends { cache_prompt?: boolean }>(
+    request: T,
+    config: AIServiceConfig,
+  ): T {
+    if (!this.shouldEnablePromptCache(config)) {
+      return request;
+    }
+
+    return {
+      ...request,
+      cache_prompt: true,
+    };
   }
 
   /**
@@ -182,9 +233,9 @@ export class OpenAIService extends BaseAIService<
     systemPrompt: string | undefined,
     sessionContext: string | undefined,
     messages: Message[],
-  ): { systemPrompt: string | undefined; messages: Message[] } {
+  ): ContextInjectionResult {
     if (!sessionContext) {
-      return { systemPrompt, messages };
+      return { systemPrompt, sessionContext: undefined, messages };
     }
 
     // Inject as an ephemeral user message at the tail of the conversation.
@@ -208,7 +259,11 @@ export class OpenAIService extends BaseAIService<
       sessionContextLength: sessionContext.length,
     });
 
-    return { systemPrompt, messages: [...messages, ephemeralMessage] };
+    return {
+      systemPrompt,
+      sessionContext: undefined,
+      messages: [...messages, ephemeralMessage],
+    };
   }
 
   /**
@@ -326,6 +381,7 @@ export class OpenAIService extends BaseAIService<
     options: {
       modelName?: string;
       systemPrompt?: string;
+      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
@@ -371,26 +427,30 @@ export class OpenAIService extends BaseAIService<
         }
       }
 
+      const request = this.withPromptCache<OpenAIStreamingRequest>(
+        {
+          model: modelName,
+          messages: openaiMessages,
+          max_completion_tokens: config.maxTokens,
+          stream: true,
+          stream_options: { include_usage: true },
+          ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+          tools: tools,
+          tool_choice: !options.availableTools?.length
+            ? undefined
+            : options.disableToolUse
+              ? 'none'
+              : options.forceToolUse
+                ? 'required'
+                : 'auto',
+        },
+        config,
+      );
+
       const completion = await this.withRetry(() =>
-        this.openai.chat.completions.create(
-          {
-            model: modelName,
-            messages: openaiMessages,
-            max_completion_tokens: config.maxTokens,
-            stream: true,
-            stream_options: { include_usage: true },
-            ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-            tools: tools,
-            tool_choice: !options.availableTools?.length
-              ? undefined
-              : options.disableToolUse
-                ? 'none'
-                : options.forceToolUse
-                  ? 'required'
-                  : 'auto',
-          },
-          { signal: this.getAbortSignal() },
-        ),
+        this.openai.chat.completions.create(request, {
+          signal: this.getAbortSignal(),
+        }),
       );
 
       if (this.getAbortSignal().aborted) {
@@ -622,6 +682,10 @@ export class OpenAIService extends BaseAIService<
     });
   }
 
+  protected processMessageContent(content: MCPContent[]): string {
+    return processMessageContent(content);
+  }
+
   /**
    * @inheritdoc
    * @description The OpenAI SDK does not require explicit resource cleanup.
@@ -669,8 +733,8 @@ export class OpenAIService extends BaseAIService<
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
-    const response = await this.withRetry(() =>
-      this.openai.chat.completions.create({
+    const request = this.withPromptCache<OpenAINonStreamingRequest>(
+      {
         model,
         stream: false,
         messages: [{ role: 'user', content: prompt }],
@@ -680,7 +744,12 @@ export class OpenAIService extends BaseAIService<
         presence_penalty: s?.presencePenalty,
         frequency_penalty: s?.frequencyPenalty,
         stop: s?.stopSequences,
-      }),
+      },
+      config,
+    );
+
+    const response = await this.withRetry(() =>
+      this.openai.chat.completions.create(request),
     );
 
     const choice = response.choices[0];

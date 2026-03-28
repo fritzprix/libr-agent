@@ -80,7 +80,6 @@ async fn test_playbook_ui_rendering_integration() {
         is_bookmarked: Set(false),
         yolo_mode: Set(false),
         workspace_override: Set(None),
-        ..Default::default()
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())
@@ -237,7 +236,6 @@ async fn test_playbook_ui_interaction_flow() {
         is_bookmarked: Set(false),
         yolo_mode: Set(false),
         workspace_override: Set(None),
-        ..Default::default()
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())

@@ -75,36 +75,66 @@ pub fn find_compaction_split_index(messages: &[Message]) -> usize {
 /// Removes incomplete tool chains.
 /// An incomplete chain is a `tool_calls` message without its corresponding `tool` result message.
 pub fn remove_incomplete_tool_chains(messages: Vec<Message>) -> Vec<Message> {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     let mut tool_use_ids = HashSet::new();
     let mut completed_tool_use_ids = HashSet::new();
+    let mut tool_call_owner_indices = HashMap::new();
+    let mut unresolved_owner_counts = HashMap::new();
+    let mut first_orphan_tool_index: Option<usize> = None;
 
     // First pass: collect all tool call IDs
-    for msg in &messages {
+    for (idx, msg) in messages.iter().enumerate() {
         if msg.role == "assistant" {
             if let Some(tool_calls) = &msg.tool_calls {
                 for tc in tool_calls {
                     tool_use_ids.insert(tc.id.clone());
+                    tool_call_owner_indices.insert(tc.id.clone(), idx);
+                    *unresolved_owner_counts.entry(idx).or_insert(0usize) += 1;
                 }
             }
         }
     }
 
     // Second pass: collect the IDs of tool calls that have a corresponding result
-    for msg in &messages {
+    for (idx, msg) in messages.iter().enumerate() {
         if msg.role == "tool" {
             if let Some(tool_call_id) = &msg.tool_call_id {
                 if tool_use_ids.contains(tool_call_id) {
                     completed_tool_use_ids.insert(tool_call_id.clone());
+                    if let Some(owner_idx) = tool_call_owner_indices.get(tool_call_id) {
+                        if let Some(open_count) = unresolved_owner_counts.get_mut(owner_idx) {
+                            *open_count = open_count.saturating_sub(1);
+                            if *open_count == 0 {
+                                unresolved_owner_counts.remove(owner_idx);
+                            }
+                        }
+                    }
+                } else if first_orphan_tool_index.is_none() {
+                    first_orphan_tool_index = Some(idx);
                 }
             }
         }
     }
 
+    let first_unstable_index = unresolved_owner_counts
+        .keys()
+        .copied()
+        .chain(first_orphan_tool_index)
+        .min();
+
+    let Some(first_unstable_index) = first_unstable_index else {
+        return messages;
+    };
+
     // Third pass: build the result array, filtering out incomplete chains
     let mut result = Vec::with_capacity(messages.len());
-    for msg in messages {
+    for (idx, msg) in messages.into_iter().enumerate() {
+        if idx < first_unstable_index {
+            result.push(msg);
+            continue;
+        }
+
         if msg.role == "assistant" {
             if let Some(tool_calls) = &msg.tool_calls {
                 let completed_tool_calls: Vec<_> = tool_calls

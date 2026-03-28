@@ -1,47 +1,101 @@
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
-/// Save a knowledge entry to the assistant-scoped knowledge base
-pub fn save_knowledge_tool() -> MCPTool {
+/// Record new knowledge into the local vector DB and graph.
+pub fn record_knowledge_tool() -> MCPTool {
     MCPTool {
-        name: "saveKnowledge".to_string(),
-        title: Some("Save Knowledge".to_string()),
-        description: "Save a knowledge entry to the assistant-scoped knowledge base".to_string(),
+        name: "record_knowledge".to_string(),
+        title: Some("Record Knowledge".to_string()),
+        description: "Save a knowledge entry to the local knowledge base. Prefer caller-supplied entities and relationships; local heuristic extraction only fills gaps when structured graph data is missing. Use concise entity names (recommended: natural-language names under 10 words).".to_string(),
         input_schema: object_prop(
             vec![
                 (
-                    "title".to_string(),
-                    string_prop_required("Title of the knowledge entry"),
-                ),
-                (
                     "content".to_string(),
-                    string_prop_required("Content/body of the knowledge entry"),
-                ),
-                (
-                    "source".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Source origin of the knowledge (e.g. URL, filename, 'user')"),
-                    ),
+                    string_prop_required("The full text content to store in the knowledge base."),
                 ),
                 (
                     "tags".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Optional tags for categorization"),
+                        Some("Optional tags for categorization (e.g. ['tech', 'project_alpha'])."),
                     ),
                 ),
                 (
-                    "scope".to_string(),
+                    "entities".to_string(),
+                    array_schema(
+                        object_prop(
+                            vec![
+                                (
+                                    "name".to_string(),
+                                    string_prop_required("Entity name as understood by the calling agent. Use a concise natural-language name (up to 10 words recommended)."),
+                                ),
+                                (
+                                    "entity_type".to_string(),
+                                    string_prop(
+                                        None,
+                                        None,
+                                        Some("Optional entity type such as Project, Technology, Person, or Concept."),
+                                    ),
+                                ),
+                                (
+                                    "description".to_string(),
+                                    string_prop(
+                                        None,
+                                        None,
+                                        Some("Optional short description for the entity."),
+                                    ),
+                                ),
+                            ],
+                            vec!["name".to_string()],
+                            Some("Structured entities inferred by the calling agent."),
+                        ),
+                        Some("Optional structured entities supplied by the caller."),
+                    ),
+                ),
+                (
+                    "relationships".to_string(),
+                    array_schema(
+                        object_prop(
+                            vec![
+                                (
+                                    "source".to_string(),
+                                    string_prop_required("Source entity name. Use the same concise entity naming style as entities[].name."),
+                                ),
+                                (
+                                    "target".to_string(),
+                                    string_prop_required("Target entity name. Use the same concise entity naming style as entities[].name."),
+                                ),
+                                (
+                                    "relation_type".to_string(),
+                                    string_prop_required("Relationship type such as USES, DEPENDS_ON, or LINKS_TO."),
+                                ),
+                            ],
+                            vec![
+                                "source".to_string(),
+                                "target".to_string(),
+                                "relation_type".to_string(),
+                            ],
+                            Some("Structured relationships inferred by the calling agent."),
+                        ),
+                        Some("Optional structured relationships supplied by the caller."),
+                    ),
+                ),
+                (
+                    "auto_extract".to_string(),
+                    boolean_prop(
+                        Some("Whether to run heuristic fallback extraction when structured entities or relationships are missing."),
+                    ),
+                ),
+                (
+                    "source".to_string(),
                     string_prop(
                         None,
                         None,
-                        Some("Scope of knowledge: 'global' (shared) or 'assistant' (private to this assistant). Defaults to 'global'."),
+                        Some("Optional source label for this knowledge entry (for example: conversation, file path, or URL)."),
                     ),
                 ),
             ],
-            vec!["title".to_string(), "content".to_string()],
+            vec!["content".to_string()],
             None,
         ),
         output_schema: None,
@@ -49,104 +103,38 @@ pub fn save_knowledge_tool() -> MCPTool {
     }
 }
 
-/// Read a specific knowledge entry by ID
-pub fn read_knowledge_tool() -> MCPTool {
-    MCPTool {
-        name: "readKnowledge".to_string(),
-        title: Some("Read Knowledge".to_string()),
-        description: "Read a specific knowledge entry by ID".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "id".to_string(),
-                    integer_prop(None, None, Some("ID of the knowledge entry to read")),
-                ),
-                (
-                    "scope".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Scope of knowledge: 'global' or 'assistant'. Defaults to 'global'."),
-                    ),
-                ),
-            ],
-            vec!["id".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Delete a specific knowledge entry by ID
-pub fn delete_knowledge_tool() -> MCPTool {
-    MCPTool {
-        name: "deleteKnowledge".to_string(),
-        title: Some("Delete Knowledge".to_string()),
-        description: "Delete a specific knowledge entry by ID".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "id".to_string(),
-                    integer_prop(None, None, Some("ID of the knowledge entry to delete")),
-                ),
-                (
-                    "scope".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Scope of knowledge: 'global' or 'assistant'. Defaults to 'global'."),
-                    ),
-                ),
-            ],
-            vec!["id".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Search the knowledge base using full-text search (FTS5) and/or tags
+/// Search the knowledge base using a hybrid approach (Keyword + Semantic).
 pub fn search_knowledge_tool() -> MCPTool {
     MCPTool {
-        name: "searchKnowledge".to_string(),
+        name: "search_knowledge".to_string(),
         title: Some("Search Knowledge".to_string()),
-        description: "Search the knowledge base using full-text search (FTS5) and/or tags"
+        description: "Search the knowledge base using keyword, semantic, or fused hybrid ranking."
             .to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "query".to_string(),
-                    string_prop(None, None, Some("Search query (FTS5 full-text search)")),
-                ),
-                (
-                    "source".to_string(),
-                    string_prop(None, None, Some("Filter by source")),
-                ),
-                (
-                    "tags".to_string(),
-                    array_schema(string_prop(None, None, None), Some("Filter by tags")),
+                    string_prop_required("The natural language question or keyword to search for."),
                 ),
                 (
                     "limit".to_string(),
                     integer_prop_with_default(
-                        None,
-                        Some(100),
-                        10,
-                        Some("Maximum number of results"),
+                        Some(1),
+                        Some(50),
+                        5,
+                        Some("Maximum number of results to return (default: 5)."),
                     ),
                 ),
                 (
-                    "scope".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Scope of knowledge: 'global', 'assistant', or 'both'. Defaults to 'both' to search everything."),
+                    "mode".to_string(),
+                    enum_prop(
+                        vec!["keyword", "semantic", "hybrid"],
+                        "hybrid",
+                        Some("Search mode. Defaults to 'hybrid'."),
                     ),
                 ),
             ],
-            vec![],
+            vec!["query".to_string()],
             None,
         ),
         output_schema: None,
@@ -154,37 +142,62 @@ pub fn search_knowledge_tool() -> MCPTool {
     }
 }
 
-/// List all knowledge entries for this assistant (paginated)
-pub fn list_knowledge_tool() -> MCPTool {
+/// Explore relationships around a central entity.
+pub fn explore_context_tool() -> MCPTool {
     MCPTool {
-        name: "listKnowledge".to_string(),
-        title: Some("List Knowledge".to_string()),
-        description: "List all knowledge entries for this assistant (paginated)".to_string(),
+        name: "explore_context".to_string(),
+        title: Some("Explore Context".to_string()),
+        description: "Explore the graph of relationships around a specific entity and return agent-readable graph and linked chunk summaries.".to_string(),
         input_schema: object_prop(
             vec![
                 (
-                    "limit".to_string(),
-                    integer_prop_with_default(
-                        Some(1),
-                        Some(100),
-                        20,
-                        Some("Maximum number of entries"),
+                    "entity_name".to_string(),
+                    string_prop_required(
+                        "The name of the central entity to explore (e.g., 'LibrAgent').",
                     ),
                 ),
                 (
-                    "offset".to_string(),
-                    integer_prop_with_default(Some(0), None, 0, Some("Offset for pagination")),
-                ),
-                (
-                    "scope".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Scope of knowledge: 'global', 'assistant', or 'both'. Defaults to 'both' to list everything."),
+                    "depth".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(3),
+                        1,
+                        Some("The depth of the graph traversal. Defaults to 1."),
                     ),
                 ),
             ],
-            vec![],
+            vec!["entity_name".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Prune or manage existing knowledge.
+pub fn prune_knowledge_tool() -> MCPTool {
+    MCPTool {
+        name: "prune_knowledge".to_string(),
+        title: Some("Prune Knowledge".to_string()),
+        description: "Delete knowledge entries from the database.".to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "target_ids".to_string(),
+                    array_schema(
+                        integer_prop(None, None, None),
+                        Some("List of knowledge chunk IDs to target."),
+                    ),
+                ),
+                (
+                    "action".to_string(),
+                    enum_prop_required(
+                        vec!["delete"],
+                        "The action to perform. Currently only 'delete' is supported.",
+                    ),
+                ),
+            ],
+            vec!["target_ids".to_string(), "action".to_string()],
             None,
         ),
         output_schema: None,
@@ -195,10 +208,9 @@ pub fn list_knowledge_tool() -> MCPTool {
 /// Returns all knowledge tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
-        save_knowledge_tool(),
-        read_knowledge_tool(),
-        delete_knowledge_tool(),
+        record_knowledge_tool(),
         search_knowledge_tool(),
-        list_knowledge_tool(),
+        explore_context_tool(),
+        prune_knowledge_tool(),
     ]
 }

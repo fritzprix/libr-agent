@@ -10,6 +10,7 @@ export const BUILTIN_SERVICE_CANONICAL_NAMES = [
   'scratchpad',
   'workspace',
   'knowledge',
+  'history',
   'agent',
   'skills',
   'playbook',
@@ -29,6 +30,7 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'scratchpad',
   'workspace',
   'knowledge',
+  'history',
   'agent',
   'skills',
   'playbook',
@@ -58,6 +60,7 @@ export const CORE_BUILTIN_SERVICE_ALIASES = [
 /** Optional builtin services (optional: true in Rust) */
 export const OPTIONAL_BUILTIN_SERVICE_ALIASES = [
   'knowledge',
+  'history',
   'browser',
   'bootstrap',
   'media',
