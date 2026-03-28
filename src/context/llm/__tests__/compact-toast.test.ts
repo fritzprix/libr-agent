@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { normalizeRustMessage } from '@/lib/ai-service/utils';
+import type { Message, RustMessage } from '@/models/chat';
 
 type ToastCall = {
   kind: 'loading' | 'success' | 'error';
@@ -28,7 +30,7 @@ function makeToast(): MockToast {
 interface CompactPayload {
   sessionId: string;
   sessionName: string;
-  messages: unknown[];
+  messages: Array<Message | RustMessage>;
   fromId: string;
   toId: string;
 }
@@ -54,7 +56,7 @@ async function handleCompactEvent(
     providerConfig: { apiKey?: string; baseUrl?: string },
   ) => {
     compact: (
-      messages: unknown[],
+      messages: Message[],
       opts: { modelName: string },
     ) => Promise<string>;
   },
@@ -82,10 +84,15 @@ async function handleCompactEvent(
   const providerConfig = settings.serviceConfigs?.[provider] ?? {};
   const apiKey = providerConfig.apiKey ?? '';
   const model = settings.preferredModel.model;
+  const normalizedMessages = messages.map((message) =>
+    normalizeRustMessage(message),
+  );
 
   try {
     const service = getService(provider, apiKey, providerConfig);
-    const summary = await service.compact(messages, { modelName: model });
+    const summary = await service.compact(normalizedMessages, {
+      modelName: model,
+    });
     await handleCompactResponse(sessionId, fromId, toId, summary);
     setCompactedRangeForSession(sessionId, { fromId, toId });
     resetContextUsageForSession(sessionId);
@@ -127,7 +134,17 @@ const SESSION_ID = 'abc-123-session';
 const SESSION_NAME = 'My Agent';
 const FROM_ID = 'msg-001';
 const TO_ID = 'msg-099';
-const MESSAGES = [{ role: 'user', content: 'hello' }];
+const MESSAGES: Message[] = [
+  {
+    id: 'message-1',
+    sessionId: SESSION_ID,
+    threadId: SESSION_ID,
+    role: 'user',
+    content: [{ type: 'text', text: 'hello' }],
+    createdAt: new Date(1),
+    updatedAt: new Date(1),
+  },
+];
 
 const DEFAULT_SETTINGS: Settings = {
   preferredModel: { provider: 'openai', model: 'gpt-4o' },
@@ -269,6 +286,69 @@ describe('compact request handler', () => {
     );
 
     expect(compactService).toHaveBeenCalledWith(MESSAGES, { modelName: 'gpt-4o' });
+  });
+
+  it('normalizes Rust message tool fields before compacting', async () => {
+    const compactService = vi.fn().mockResolvedValue('summary');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
+    const rustPayload: CompactPayload = {
+      ...DEFAULT_PAYLOAD,
+      messages: [
+        {
+          id: 'assistant-1',
+          sessionId: SESSION_ID,
+          role: 'assistant',
+          content: [],
+          toolCalls: [
+            {
+              id: 'tc-1',
+              type: 'function',
+              function: {
+                name: 'workspace__readFile',
+                arguments: '{"path":"src/foo.ts"}',
+              },
+            },
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'tool-1',
+          sessionId: SESSION_ID,
+          role: 'tool',
+          content: [],
+          toolCallId: 'tc-1',
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    };
+
+    await handleCompactEvent(
+      rustPayload,
+      DEFAULT_SETTINGS,
+      getService,
+      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(undefined),
+      vi.fn(),
+      vi.fn(),
+    );
+
+    expect(compactService).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          tool_calls: [
+            expect.objectContaining({
+              id: 'tc-1',
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          tool_call_id: 'tc-1',
+        }),
+      ],
+      { modelName: 'gpt-4o' },
+    );
   });
 
   it('forwards provider config into AIServiceFactory.getService', async () => {

@@ -6,6 +6,18 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use std::path::Path;
+use tokio::io::AsyncReadExt;
+
+const BINARY_SNIFF_BYTES: usize = 8 * 1024;
+const MAX_SEARCH_CONTENT_FILE_SIZE: usize = 5 * 1024 * 1024;
+const SKIPPED_SEARCH_DIR_NAMES: &[&str] = &[
+    ".git",
+    "node_modules",
+    "dist",
+    "target",
+    ".next",
+    "coverage",
+];
 
 impl WorkspaceServer {
     pub async fn handle_search(
@@ -151,6 +163,8 @@ impl WorkspaceServer {
         };
 
         let mut results = Vec::new();
+        let mut skipped_dirs = 0usize;
+        let gitignore = build_gitignore_matcher(root_path);
 
         // Check if root_path itself is a file
         if root_path.is_file() {
@@ -167,7 +181,18 @@ impl WorkspaceServer {
                 }));
             }
         } else {
-            for entry in WalkDir::new(root_path).into_iter().filter_map(|e| e.ok()) {
+            let walker = WalkDir::new(root_path)
+                .into_iter()
+                .filter_entry(|entry| {
+                    let skip = should_skip_search_entry(root_path, entry, gitignore.as_ref());
+                    if skip && entry.file_type().is_dir() {
+                        skipped_dirs += 1;
+                    }
+                    !skip
+                })
+                .filter_map(|e| e.ok());
+
+            for entry in walker {
                 let path = entry.path();
                 let is_dir = path.is_dir();
                 let is_file = path.is_file();
@@ -245,12 +270,23 @@ impl WorkspaceServer {
                     results.len()
                 ));
             }
+            if skipped_dirs > 0 {
+                text.push_str(&format!(
+                    "\n*Skipped {} heavyweight director{} (`{}`)*\n",
+                    skipped_dirs,
+                    if skipped_dirs == 1 { "y" } else { "ies" },
+                    SKIPPED_SEARCH_DIR_NAMES.join("`, `")
+                ));
+            }
             text
         };
 
         Ok(MCPResult::success_with_data(
             &result_text,
-            json!({ "matches": results }),
+            json!({
+                "matches": results,
+                "skippedDirectories": skipped_dirs,
+            }),
         ))
     }
 
@@ -263,6 +299,44 @@ impl WorkspaceServer {
         show_hashes: bool,
         ignore_case: bool,
     ) -> Result<MCPResult, String> {
+        let max_size = effective_search_content_file_size_limit();
+        if let Ok(metadata) = tokio::fs::metadata(file_path).await {
+            let file_size = metadata.len() as usize;
+            if file_size > max_size {
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!(
+                        "Failed to search file: file size {} exceeds the search limit of {}.",
+                        format_file_size(file_size as u64),
+                        format_file_size(max_size as u64)
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Search a smaller file or narrow the directory before searching contents"
+                        .to_string(),
+                    "Use readFile or listDirectory first to inspect large generated artifacts"
+                        .to_string(),
+                ])
+                .to_mcp_result());
+            }
+        }
+        if is_probably_binary_file(file_path).await {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!(
+                    "Failed to search file: `{}` appears to be binary data.",
+                    display_path
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Search text files instead of binary artifacts".to_string(),
+                "Use filePattern to narrow the directory before searching contents".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(s) => s,
             Err(e) => {
@@ -378,8 +452,24 @@ impl WorkspaceServer {
 
         let mut file_matches: Vec<FileMatch> = Vec::new();
         let mut files_searched: usize = 0;
+        let mut skipped_dirs = 0usize;
+        let mut skipped_binary_files = 0usize;
+        let mut skipped_large_files = 0usize;
+        let max_size = effective_search_content_file_size_limit();
+        let gitignore = build_gitignore_matcher(dir);
 
-        for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+        let walker = WalkDir::new(dir)
+            .into_iter()
+            .filter_entry(|entry| {
+                let skip = should_skip_search_entry(dir, entry, gitignore.as_ref());
+                if skip && entry.file_type().is_dir() {
+                    skipped_dirs += 1;
+                }
+                !skip
+            })
+            .filter_map(|e| e.ok());
+
+        for entry in walker {
             let path = entry.path();
             if !path.is_file() {
                 continue;
@@ -433,6 +523,19 @@ impl WorkspaceServer {
                 continue;
             }
 
+            let file_size = match entry.metadata() {
+                Ok(metadata) => metadata.len() as usize,
+                Err(_) => continue,
+            };
+            if file_size > max_size {
+                skipped_large_files += 1;
+                continue;
+            }
+            if is_probably_binary_file(path).await {
+                skipped_binary_files += 1;
+                continue;
+            }
+
             let content = match tokio::fs::read_to_string(path).await {
                 Ok(s) => s,
                 Err(_) => continue, // skip unreadable
@@ -473,15 +576,29 @@ impl WorkspaceServer {
         };
 
         if file_matches.is_empty() {
+            let mut next_steps = vec![
+                "Try a broader pattern or check the directory path".to_string(),
+                "Try toggling ignoreCase".to_string(),
+            ];
+            if skipped_large_files > 0 {
+                next_steps.push(format!(
+                    "Skipped {} large file(s) over {}; narrow the search path if you need those files",
+                    skipped_large_files,
+                    format_file_size(max_size as u64)
+                ));
+            }
+            if skipped_binary_files > 0 {
+                next_steps.push(format!(
+                    "Skipped {} binary-looking file(s); refine filePattern if you need a specific artifact",
+                    skipped_binary_files
+                ));
+            }
             return Ok(SuccessHint::new(
                 format!(
                     "No matches for `{}` in {} file(s) under `{}` (Options: {})",
                     query, files_searched, display_path, options_str
                 ),
-                vec![
-                    "Try a broader pattern or check the directory path".to_string(),
-                    "Try toggling ignoreCase".to_string(),
-                ],
+                next_steps,
             )
             .to_mcp_result());
         }
@@ -526,6 +643,30 @@ impl WorkspaceServer {
                 file_matches.len() - 10
             ));
         }
+        if skipped_dirs > 0 || skipped_large_files > 0 || skipped_binary_files > 0 {
+            text.push('\n');
+        }
+        if skipped_dirs > 0 {
+            text.push_str(&format!(
+                "*Skipped {} heavyweight director{} (`{}`)*\n",
+                skipped_dirs,
+                if skipped_dirs == 1 { "y" } else { "ies" },
+                SKIPPED_SEARCH_DIR_NAMES.join("`, `")
+            ));
+        }
+        if skipped_large_files > 0 {
+            text.push_str(&format!(
+                "*Skipped {} large file(s) over {}*\n",
+                skipped_large_files,
+                format_file_size(max_size as u64)
+            ));
+        }
+        if skipped_binary_files > 0 {
+            text.push_str(&format!(
+                "*Skipped {} binary-looking file(s)*\n",
+                skipped_binary_files
+            ));
+        }
 
         let structured = json!({
             "pattern": query,
@@ -533,6 +674,10 @@ impl WorkspaceServer {
             "files_searched": files_searched,
             "files_with_matches": file_matches.len(),
             "total_matches": total_hits,
+            "skipped_directories": skipped_dirs,
+            "skipped_binary_files": skipped_binary_files,
+            "skipped_large_files": skipped_large_files,
+            "max_file_size": max_size,
             "results": file_matches.iter().map(|fm| json!({
                 "file": fm.rel_path,
                 "matches": fm.hits,
@@ -570,4 +715,69 @@ fn matches_glob(pattern: &glob::Pattern, path: &Path, file_name: Option<&str>) -
         }
     }
     false
+}
+
+fn should_skip_search_entry(
+    root: &Path,
+    entry: &walkdir::DirEntry,
+    gitignore: Option<&ignore::gitignore::Gitignore>,
+) -> bool {
+    if entry.depth() == 0 || entry.path() == root {
+        return false;
+    }
+
+    if let Some(gitignore_matcher) = gitignore {
+        if gitignore_matcher
+            .matched(entry.path(), entry.file_type().is_dir())
+            .is_ignore()
+        {
+            return true;
+        }
+    }
+
+    if entry.file_type().is_dir() {
+        return entry
+            .file_name()
+            .to_str()
+            .map(|name| SKIPPED_SEARCH_DIR_NAMES.contains(&name))
+            .unwrap_or(false);
+    }
+
+    false
+}
+
+fn effective_search_content_file_size_limit() -> usize {
+    crate::config::max_file_size().min(MAX_SEARCH_CONTENT_FILE_SIZE)
+}
+
+async fn is_probably_binary_file(path: &Path) -> bool {
+    let mut file = match tokio::fs::File::open(path).await {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    let mut buffer = [0u8; BINARY_SNIFF_BYTES];
+    let bytes_read = match file.read(&mut buffer).await {
+        Ok(bytes_read) => bytes_read,
+        Err(_) => return false,
+    };
+
+    buffer[..bytes_read].contains(&0)
+}
+
+fn build_gitignore_matcher(search_root: &Path) -> Option<ignore::gitignore::Gitignore> {
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(search_root);
+    let mut added_any = false;
+
+    for ancestor in search_root.ancestors() {
+        let gitignore_path = ancestor.join(".gitignore");
+        if gitignore_path.is_file() && builder.add(gitignore_path).is_none() {
+            added_any = true;
+        }
+    }
+
+    if !added_any {
+        return None;
+    }
+
+    builder.build().ok()
 }

@@ -411,11 +411,12 @@ export function useLLMListener({
       }>('llm:compact-request', async (event) => {
         const {
           sessionId,
-          messages,
+          messages: rawMessages,
           fromId,
           toId,
           resumeCompletionAfterCompact,
         } = event.payload;
+        const messages = rawMessages.map(normalizeRustMessage);
         logger.info(
           `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
         );
