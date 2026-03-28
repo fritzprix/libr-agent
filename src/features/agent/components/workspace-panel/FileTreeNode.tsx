@@ -99,7 +99,7 @@ export const FileTreeNode = ({
           {node.isDirectory && (
             <Badge
               variant="secondary"
-              className="text-xs px-1 opacity-0 group-hover:opacity-100"
+              className="text-xs px-1 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 focus-visible:opacity-100"
             >
               {node.children?.length || 0}
             </Badge>
