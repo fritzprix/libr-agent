@@ -186,6 +186,58 @@ describe('GeminiService context cache', () => {
     expect(firstCall.config?.functionCallingConfig?.mode).toBe('none');
   });
 
+  it('reuses the same Gemini cache entry regardless of available tool order', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+    const firstTool: MCPTool = {
+      name: 'workspace__readFile',
+      description: 'A'.repeat(70000),
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'File path' },
+        },
+        required: ['path'],
+      },
+    };
+    const secondTool: MCPTool = {
+      name: 'workspace__writeFile',
+      description: 'B'.repeat(70000),
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'File path' },
+          content: { type: 'string', description: 'Content' },
+        },
+        required: ['content', 'path'],
+      },
+    };
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'stable prompt',
+      availableTools: [firstTool, secondTool],
+    }));
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'stable prompt',
+      availableTools: [secondTool, firstTool],
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    const secondCall = generateContentStreamMock.mock.calls[1]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(secondCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
   it('moves volatile session context into a synthetic tail message for Gemini', () => {
     const service = new GeminiService('test-key');
 

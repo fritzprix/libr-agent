@@ -533,10 +533,10 @@ pub async fn get_service_context(
     }
 
     // Fallback for external MCP servers (future implementation)
-    Ok(ServiceContext {
-        context_prompt: format!("# MCP Server Context\nServer ID: {server_name}\nStatus: Active"),
-        structured_state: None,
-    })
+    Ok(ServiceContext::new(format!(
+        "# MCP Server Context\nServer ID: {server_name}\nStatus: Active"
+    ))
+    .with_volatility(crate::mcp::types::ContextVolatility::Stable))
 }
 
 /// Get static tool definitions for ALL builtin servers without requiring runtime instantiation.

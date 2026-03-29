@@ -21,6 +21,87 @@ import {
 } from './types';
 import type { Message } from '@/models/chat';
 
+export function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).sort(
+    ([leftKey], [rightKey]) => leftKey.localeCompare(rightKey),
+  );
+
+  return `{${entries
+    .map(
+      ([key, nestedValue]) =>
+        `${JSON.stringify(key)}:${stableStringify(nestedValue)}`,
+    )
+     .join(',')}}`;
+}
+
+export function stableHashKeyPart(value: string): string {
+  let hash = 2166136261;
+
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16);
+}
+
+function stableClone<T>(value: T): T {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => stableClone(item)) as T;
+  }
+
+  const sortedEntries = Object.entries(value as Record<string, unknown>)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, nestedValue]) => [key, stableClone(nestedValue)]);
+
+  return Object.fromEntries(sortedEntries) as T;
+}
+
+function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
+  return tools
+    .map((tool) => ({
+      ...tool,
+      inputSchema: stableClone(tool.inputSchema),
+      outputSchema: tool.outputSchema ? stableClone(tool.outputSchema) : undefined,
+      annotations: tool.annotations ? stableClone(tool.annotations) : undefined,
+    }))
+    .sort((left, right) => {
+      const leftSignature = [
+        left.name,
+        left.title ?? '',
+        left.description,
+        stableStringify(left.inputSchema),
+        stableStringify(left.outputSchema),
+        stableStringify(left.annotations),
+        left.backend ?? '',
+      ].join('\n');
+
+      const rightSignature = [
+        right.name,
+        right.title ?? '',
+        right.description,
+        stableStringify(right.inputSchema),
+        stableStringify(right.outputSchema),
+        stableStringify(right.annotations),
+        right.backend ?? '',
+      ].join('\n');
+
+      return leftSignature.localeCompare(rightSignature);
+    });
+}
+
 /**
  * An abstract base class that provides common functionality for all AI services.
  * It implements the `IAIService` interface and handles API key validation,
@@ -430,8 +511,12 @@ export abstract class BaseAIService<
     // Re-initialize AbortController for this call
     this.abortController = new AbortController();
 
-    const tools = options.availableTools
-      ? this.convertTools(options.availableTools)
+    const normalizedTools = options.availableTools
+      ? normalizeAvailableTools(options.availableTools)
+      : undefined;
+
+    const tools = normalizedTools
+      ? this.convertTools(normalizedTools)
       : undefined;
 
     // Apply vendor-specific message sanitization

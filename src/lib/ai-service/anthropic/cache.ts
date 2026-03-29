@@ -108,3 +108,31 @@ export function applyAnthropicMessageDeltaUsage(
 
   return nextUsage;
 }
+
+export function buildAnthropicPromptCacheMetadata(
+  usage: AnthropicUsageWithCache,
+  previousDetails?: TokenUsage['details'],
+): {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedPromptTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+} {
+  const promptTokens = getAnthropicPromptTokens(usage, previousDetails);
+  const completionTokens = usage.output_tokens ?? 0;
+  const cacheCreationInputTokens =
+    usage.cache_creation_input_tokens ?? previousDetails?.cacheCreationInputTokens;
+  const cacheReadInputTokens =
+    usage.cache_read_input_tokens ?? previousDetails?.cacheReadInputTokens;
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    cachedPromptTokens: cacheReadInputTokens ?? undefined,
+    cacheCreationInputTokens: cacheCreationInputTokens ?? undefined,
+    cacheReadInputTokens: cacheReadInputTokens ?? undefined,
+  };
+}

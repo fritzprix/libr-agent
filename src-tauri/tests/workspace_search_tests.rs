@@ -203,6 +203,63 @@ async fn search_rejects_single_files_that_exceed_content_limit() {
 }
 
 #[tokio::test]
+async fn write_file_duplicate_resource_guidance_keeps_numbered_steps_clean() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-duplicate-guidance";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("art.html"), "<html>existing</html>\n")
+        .expect("seed existing file");
+
+    let result = server
+        .handle_write_file(
+            json!({
+                "path": "art.html",
+                "content": "<html>new</html>\n",
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("write should return duplicate-resource guidance");
+
+    let text = extract_text_content(&result);
+
+    assert_eq!(
+        result.is_error,
+        Some(true),
+        "duplicate resource currently uses error semantics"
+    );
+    assert!(
+        text.contains("💡 Next Steps:"),
+        "missing next-steps header: {text}"
+    );
+    assert!(
+        text.contains("1. Set \"mode\": \"overwrite\" to replace the existing file."),
+        "overwrite guidance should be a clean numbered step: {text}"
+    );
+    assert!(
+        text.contains(
+            "2. Set \"mode\": \"append\" to add content to the end of the existing file."
+        ),
+        "append guidance should be a clean numbered step: {text}"
+    );
+    assert!(
+        text.contains("3. Use readFile(\"art.html\") first if you need the current contents before changing the file."),
+        "read guidance should be a clean numbered step: {text}"
+    );
+    assert!(
+        text.contains("4. Use editFile(\"art.html\", [{line, line_hash, new_value}]) for targeted edits instead of rewriting the whole file."),
+        "edit guidance should be a clean numbered step: {text}"
+    );
+    assert!(
+        !text.contains("5. "),
+        "there should not be a phantom blank numbered item: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_skips_binary_looking_files_even_without_binary_extension() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-binary-skip";

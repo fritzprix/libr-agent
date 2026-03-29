@@ -1,6 +1,6 @@
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
+use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use async_trait::async_trait;
@@ -159,10 +159,8 @@ impl BuiltinMCPServer for AgentServer {
 
         if let Some(cache) = self.cache.read().await.as_ref() {
             if cache.last_update.elapsed() < CACHE_TTL {
-                return ServiceContext {
-                    context_prompt: cache.prompt.clone(),
-                    structured_state: None,
-                };
+                return ServiceContext::new(cache.prompt.clone())
+                    .with_volatility(ContextVolatility::Stable);
             }
         }
 
@@ -211,9 +209,6 @@ impl BuiltinMCPServer for AgentServer {
             });
         }
 
-        ServiceContext {
-            context_prompt,
-            structured_state: None,
-        }
+        ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Stable)
     }
 }

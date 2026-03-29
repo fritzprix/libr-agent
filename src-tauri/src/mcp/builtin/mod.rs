@@ -1,5 +1,5 @@
 use crate::mcp::types::MCPResult;
-use crate::mcp::types::{BuiltinServerMetadata, ServiceContext};
+use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, ServiceContext};
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::session::SessionManager;
 use async_trait::async_trait;
@@ -94,14 +94,12 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
 
     /// Returns a markdown-formatted string describing the server's current status and context.
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        ServiceContext {
-            context_prompt: format!(
-                "## {}\n**Description**: {}",
-                self.display_name(),
-                self.description()
-            ),
-            structured_state: None,
-        }
+        ServiceContext::new(format!(
+            "## {}\n**Description**: {}",
+            self.display_name(),
+            self.description()
+        ))
+        .with_volatility(ContextVolatility::Stable)
     }
 
     /// Returns `true` when the server has meaningful state worth including in the

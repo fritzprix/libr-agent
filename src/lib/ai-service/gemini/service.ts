@@ -15,7 +15,11 @@ import {
   AIServiceConfig,
   type ContextInjectionResult,
 } from '../types';
-import { BaseAIService } from '../base-service';
+import {
+  BaseAIService,
+  stableHashKeyPart,
+  stableStringify,
+} from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
 import { convertToGeminiMessages } from './mapper';
@@ -256,7 +260,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       // --- CONTEXT CACHING ABSTRACTION BEGIN ---
       const stablePrefix = options.systemPrompt ?? '';
       const dynamicContext = options.sessionContext ?? '';
-      const toolsPayload = geminiTools ? JSON.stringify(geminiTools) : '';
+      const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
       const requiresToolOverride =
         Boolean(geminiTools) &&
         (options.forceToolUse === true || options.disableToolUse === true);
@@ -265,9 +269,10 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         canUseCachedContent &&
         this.shouldAttemptContextCache(model, stablePrefix, toolsPayload);
       let cachedContentName: string | undefined;
+      let cacheKey: string | undefined;
 
       if (shouldUseCache) {
-        const cacheKey = this.createContextCacheKey(
+        cacheKey = this.createContextCacheKey(
           model,
           stablePrefix,
           toolsPayload,
@@ -289,6 +294,17 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         }
       }
       // --- CONTEXT CACHING ABSTRACTION END ---
+
+      this.logPromptCacheMetadata({
+        model,
+        stablePrefix,
+        toolsPayload,
+        cacheKey,
+        canUseCachedContent,
+        requiresToolOverride,
+        shouldUseCache,
+        cachedContentName,
+      });
 
       const geminiConfig: GeminiServiceConfig = {
         responseMimeType: 'text/plain',
@@ -531,6 +547,37 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     return Math.ceil((stablePrefix.length + toolsPayload.length) / 4);
   }
 
+  private logPromptCacheMetadata(args: {
+    model: string;
+    stablePrefix: string;
+    toolsPayload: string;
+    cacheKey?: string;
+    canUseCachedContent: boolean;
+    requiresToolOverride: boolean;
+    shouldUseCache: boolean;
+    cachedContentName?: string;
+  }): void {
+    const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
+      args.stablePrefix,
+      args.toolsPayload,
+    );
+
+    this.logger.info('Gemini prompt cache metadata', {
+      model: args.model,
+      cacheKey: args.cacheKey,
+      stablePrefixHash: stableHashKeyPart(args.stablePrefix),
+      toolsHash: stableHashKeyPart(args.toolsPayload),
+      stablePrefixLength: args.stablePrefix.length,
+      toolsPayloadLength: args.toolsPayload.length,
+      cacheableTokenEstimate,
+      canUseCachedContent: args.canUseCachedContent,
+      requiresToolOverride: args.requiresToolOverride,
+      shouldUseCache: args.shouldUseCache,
+      cachedContentName: args.cachedContentName,
+      cacheHit: Boolean(args.cachedContentName),
+    });
+  }
+
   private createContextCacheKey(
     model: string,
     stablePrefix: string,
@@ -538,20 +585,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   ): string {
     return [
       model,
-      this.hashCacheKeyPart(stablePrefix),
-      this.hashCacheKeyPart(toolsPayload),
+      stableHashKeyPart(stablePrefix),
+      stableHashKeyPart(toolsPayload),
     ].join(':');
-  }
-
-  private hashCacheKeyPart(value: string): string {
-    let hash = 2166136261;
-
-    for (let i = 0; i < value.length; i += 1) {
-      hash ^= value.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-
-    return (hash >>> 0).toString(16);
   }
 
   private async getUsableContextCacheEntry(

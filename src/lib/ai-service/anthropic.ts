@@ -18,6 +18,7 @@ import { supportsThinking, getContextWindow } from './model-capabilities';
 import {
   applyAnthropicMessageDeltaUsage,
   applyAnthropicMessageStartUsage,
+  buildAnthropicPromptCacheMetadata,
   buildAnthropicSystemBlocks,
   getAnthropicPromptTokens,
 } from './anthropic/cache';
@@ -214,6 +215,26 @@ export class AnthropicService extends BaseAIService<
     return model;
   }
 
+  private logPromptCacheMetadata(args: {
+    mode: 'stream' | 'non-stream';
+    source: 'message_start' | 'message_delta' | 'sample';
+    model: string;
+    usage: {
+      input_tokens: number | null;
+      output_tokens: number | null;
+      cache_creation_input_tokens?: number | null;
+      cache_read_input_tokens?: number | null;
+    };
+    previousDetails?: TokenUsage['details'];
+  }): void {
+    this.logger.info('Anthropic prompt cache metadata', {
+      mode: args.mode,
+      source: args.source,
+      model: args.model,
+      ...buildAnthropicPromptCacheMetadata(args.usage, args.previousDetails),
+    });
+  }
+
   /**
    * Initiates a streaming chat session with the Anthropic API.
    * It handles message conversion, tool use, and processes the streaming response,
@@ -318,6 +339,13 @@ export class AnthropicService extends BaseAIService<
         // Handle message_start for input tokens and cache stats
         if (chunk.type === 'message_start') {
           if (chunk.message?.usage) {
+            this.logPromptCacheMetadata({
+              mode: 'stream',
+              source: 'message_start',
+              model,
+              usage: chunk.message.usage,
+              previousDetails: currentUsage.details,
+            });
             currentUsage = applyAnthropicMessageStartUsage(
               currentUsage,
               chunk.message.usage,
@@ -328,6 +356,13 @@ export class AnthropicService extends BaseAIService<
 
         if (chunk.type === 'message_delta') {
           if (chunk.usage) {
+            this.logPromptCacheMetadata({
+              mode: 'stream',
+              source: 'message_delta',
+              model,
+              usage: chunk.usage,
+              previousDetails: currentUsage.details,
+            });
             currentUsage = applyAnthropicMessageDeltaUsage(
               currentUsage,
               chunk.usage,
@@ -608,6 +643,13 @@ export class AnthropicService extends BaseAIService<
 
     const textBlock = response.content.find((b) => b.type === 'text');
     const text = textBlock?.type === 'text' ? textBlock.text : '';
+
+    this.logPromptCacheMetadata({
+      mode: 'non-stream',
+      source: 'sample',
+      model,
+      usage: response.usage,
+    });
 
     const promptTokens = getAnthropicPromptTokens(response.usage);
 

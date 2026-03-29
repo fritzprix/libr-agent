@@ -71,9 +71,6 @@ impl BuiltinMCPServer for SessionApiServer {
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Return empty context to hide from system prompt
-        ServiceContext {
-            context_prompt: String::new(),
-            structured_state: None,
-        }
+        ServiceContext::new(String::new())
     }
 }

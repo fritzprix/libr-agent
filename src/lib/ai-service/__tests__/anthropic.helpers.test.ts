@@ -13,6 +13,7 @@ vi.mock('../../logger', () => ({
 import {
   applyAnthropicMessageDeltaUsage,
   applyAnthropicMessageStartUsage,
+  buildAnthropicPromptCacheMetadata,
   buildAnthropicSystemBlocks,
 } from '../anthropic/cache';
 import { convertToAnthropicMessages } from '../anthropic/message-converter';
@@ -65,6 +66,28 @@ describe('Anthropic helper modules', () => {
       cachedPromptTokens: 90,
     });
     expect(updatedUsage.details).toMatchObject({
+      cacheCreationInputTokens: 30,
+      cacheReadInputTokens: 90,
+    });
+  });
+
+  it('builds Anthropic cache metadata for logging without losing prior cache details', () => {
+    const metadata = buildAnthropicPromptCacheMetadata(
+      {
+        input_tokens: 120,
+        output_tokens: 45,
+      },
+      {
+        cacheCreationInputTokens: 30,
+        cacheReadInputTokens: 90,
+      },
+    );
+
+    expect(metadata).toEqual({
+      promptTokens: 240,
+      completionTokens: 45,
+      totalTokens: 285,
+      cachedPromptTokens: 90,
       cacheCreationInputTokens: 30,
       cacheReadInputTokens: 90,
     });

@@ -611,10 +611,7 @@ impl BuiltinMCPServer for UiServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        ServiceContext {
-            context_prompt: String::new(),
-            structured_state: None,
-        }
+        ServiceContext::new(String::new())
     }
 
     fn tools(&self) -> Vec<MCPTool> {

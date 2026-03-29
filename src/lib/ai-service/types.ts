@@ -77,13 +77,32 @@ export interface AIServiceConfig {
   /** The base URL for the service API endpoint. */
   baseUrl?: string;
   /**
-   * Explicitly enables provider-specific prompt caching extensions for
+   * Explicitly enables the non-standard `cache_prompt` extension used by some
    * OpenAI-compatible backends such as llama.cpp.
    *
-   * When undefined, providers may still auto-enable compatible extensions for
-   * clearly non-OpenAI endpoints.
+   * This does not control OpenAI's official prompt caching, which is automatic
+   * on supported models and surfaces via usage.prompt_tokens_details.cached_tokens.
+   * When undefined, compatible extensions may still auto-enable for clearly
+   * non-OpenAI endpoints configured under the OpenAI provider.
    */
   enablePromptCache?: boolean;
+
+  /**
+   * Optional OpenAI prompt cache routing key for official OpenAI endpoints.
+   *
+   * When unset, providers may derive a stable key automatically for chat
+   * conversations that benefit from prefix caching.
+   */
+  promptCacheKey?: string;
+
+  /**
+   * Optional retention policy for official OpenAI prompt caching.
+   *
+   * The public docs describe `in_memory` and `24h`. The JS SDK types may lag
+   * behind the API, so this field is forwarded only for official OpenAI
+   * endpoints.
+   */
+  promptCacheRetention?: 'in_memory' | '24h';
 
   /**
    * Enable reasoning mode for supported models.

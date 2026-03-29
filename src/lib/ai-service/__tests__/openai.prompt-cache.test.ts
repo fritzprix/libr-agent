@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MCPTool } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
 const createMock = vi.fn();
+const loggerMock = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+};
 
 vi.mock('openai', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -15,12 +22,7 @@ vi.mock('openai', () => ({
 }));
 
 vi.mock('../../logger', () => ({
-  getLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
+  getLogger: () => loggerMock,
 }));
 
 vi.mock('../../retry-utils', () => ({
@@ -71,9 +73,37 @@ const message: Message = {
   createdAt: new Date(),
 };
 
+const alphaTool: MCPTool = {
+  name: 'alpha',
+  description: 'Alpha tool',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      zeta: { type: 'string' },
+      alpha: { type: 'string' },
+    },
+    required: ['alpha'],
+  },
+};
+
+const betaTool: MCPTool = {
+  name: 'beta',
+  description: 'Beta tool',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      beta: { type: 'number' },
+    },
+  },
+};
+
 describe('OpenAIService prompt cache extensions', () => {
   beforeEach(() => {
     createMock.mockReset();
+    loggerMock.debug.mockReset();
+    loggerMock.info.mockReset();
+    loggerMock.warn.mockReset();
+    loggerMock.error.mockReset();
     createMock.mockImplementation((request: { stream?: boolean }) => {
       if (request.stream) {
         return Promise.resolve(fakeStream());
@@ -109,13 +139,152 @@ describe('OpenAIService prompt cache extensions', () => {
 
     const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
     expect(request.cache_prompt).toBe(true);
+    expect(request.prompt_cache_key).toBeUndefined();
     expect(request.stream).toBe(true);
     expect(request).not.toHaveProperty('extra_body');
   });
 
-  it('does not send cache_prompt to the default OpenAI endpoint unless explicitly enabled', async () => {
+  it('uses official OpenAI prompt cache routing fields instead of cache_prompt for the default endpoint', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test');
+
+    const chunks: string[] = [];
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.length).toBeGreaterThan(0);
+
+    const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
+    expect(request.cache_prompt).toBeUndefined();
+    expect(request.prompt_cache_key).toMatch(
+      /^chat:gpt-4o:[a-f0-9]+:[a-f0-9]+$/,
+    );
+  });
+
+  it('emits prompt and fetch diagnostics with a request id header for streaming requests', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool, betaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    expect(loggerMock.info).toHaveBeenCalledWith(
+      'OpenAI prompt diagnostics',
+      expect.objectContaining({
+        mode: 'stream',
+        model: 'gpt-4o',
+      }),
+    );
+    expect(loggerMock.info).toHaveBeenCalledWith(
+      'OpenAI fetch diagnostics',
+      expect.objectContaining({
+        mode: 'stream',
+        model: 'gpt-4o',
+        requestId: expect.stringMatching(/^req_/),
+      }),
+    );
+
+    const options = createMock.mock.calls[0]?.[1] as
+      | { headers?: Record<string, string> }
+      | undefined;
+    expect(options?.headers?.['x-libragent-request-id']).toMatch(/^req_/);
+  });
+
+  it('derives the same prompt_cache_key regardless of available tool order', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [betaTool, alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [firstRequest] = createMock.mock.calls[0] as [Record<string, unknown>];
+
+    createMock.mockClear();
+
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool, betaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [secondRequest] = createMock.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+
+    expect(firstRequest.prompt_cache_key).toBe(secondRequest.prompt_cache_key);
+  });
+
+  it('derives the same prompt_cache_key across sessions with the same stable prefix', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    const firstSessionMessage: Message = {
+      ...message,
+      id: 'm-session-1',
+      sessionId: 'session-1',
+      threadId: 'thread-1',
+    };
+
+    const secondSessionMessage: Message = {
+      ...message,
+      id: 'm-session-2',
+      sessionId: 'session-2',
+      threadId: 'thread-2',
+    };
+
+    for await (const chunk of service.streamChat([firstSessionMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool, betaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [firstRequest] = createMock.mock.calls[0] as [Record<string, unknown>];
+
+    createMock.mockClear();
+
+    for await (const chunk of service.streamChat([secondSessionMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool, betaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [secondRequest] = createMock.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+
+    expect(firstRequest.prompt_cache_key).toBe(secondRequest.prompt_cache_key);
+  });
+
+  it('does not send cache_prompt to the default OpenAI endpoint even when explicitly enabled', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test', {
+      enablePromptCache: true,
+    });
 
     await service.sampleText('hello', { modelName: 'gpt-4o' });
 
@@ -123,7 +292,7 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(request.cache_prompt).toBeUndefined();
   });
 
-  it('supports explicit prompt cache enablement for non-streaming requests', async () => {
+  it('supports explicit prompt cache enablement for non-streaming compatible endpoints', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test', {
       baseUrl: 'https://llama.example.com/v1',
@@ -136,6 +305,21 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(request.cache_prompt).toBe(true);
     expect(request.stream).toBe(false);
     expect(request).not.toHaveProperty('extra_body');
+  });
+
+  it('forwards official OpenAI prompt cache parameters for non-streaming requests', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test', {
+      promptCacheKey: 'project:shared-prefix',
+      promptCacheRetention: '24h',
+    });
+
+    await service.sampleText('hello', { modelName: 'gpt-4o' });
+
+    const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
+    expect(request.cache_prompt).toBeUndefined();
+    expect(request.prompt_cache_key).toBe('project:shared-prefix');
+    expect(request.prompt_cache_retention).toBe('24h');
   });
 
   it('streams tool call deltas through without waiting for completion', async () => {

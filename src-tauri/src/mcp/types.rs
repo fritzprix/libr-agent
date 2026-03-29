@@ -483,6 +483,19 @@ pub struct ServiceContextOptions {
     pub assistant_id: Option<String>,
 }
 
+/// Relative volatility for prompt ordering.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ContextVolatility {
+    /// Rarely changes during a session; keep earlier to maximize cached prefix reuse.
+    Stable,
+    /// Changes occasionally, but still worth keeping ahead of the most volatile state.
+    #[default]
+    Medium,
+    /// Frequently changing live state that should be pushed toward the end of the prompt.
+    Volatile,
+}
+
 /// Represents the service context with structured state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -492,6 +505,29 @@ pub struct ServiceContext<T = serde_json::Value> {
     /// Optional structured state data.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub structured_state: Option<T>,
+    /// Ordering hint used when composing volatile prompt sections.
+    #[serde(default)]
+    pub volatility: ContextVolatility,
+}
+
+impl<T> ServiceContext<T> {
+    pub fn new(context_prompt: impl Into<String>) -> Self {
+        Self {
+            context_prompt: context_prompt.into(),
+            structured_state: None,
+            volatility: ContextVolatility::default(),
+        }
+    }
+
+    pub fn with_structured_state(mut self, structured_state: T) -> Self {
+        self.structured_state = Some(structured_state);
+        self
+    }
+
+    pub fn with_volatility(mut self, volatility: ContextVolatility) -> Self {
+        self.volatility = volatility;
+        self
+    }
 }
 
 // ========================================

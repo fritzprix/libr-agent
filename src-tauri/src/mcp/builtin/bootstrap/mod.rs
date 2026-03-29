@@ -7,7 +7,9 @@ use crate::mcp::builtin::error_guidance::{
     missing_param_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
+use crate::mcp::types::{
+    BuiltinServerMetadata, ContextVolatility, MCPResult, MCPTool, ServiceContext,
+};
 
 pub mod guides;
 pub mod platform;
@@ -65,10 +67,9 @@ impl BootstrapServer {
             context_parts.push(format!("Installed Tools: {}", installed.join(", ")));
         }
 
-        ServiceContext {
-            context_prompt: format!("## Bootstrap\n\n{}", context_parts.join("\n")),
-            structured_state: Some(json!(platform)),
-        }
+        ServiceContext::new(format!("## Bootstrap\n\n{}", context_parts.join("\n")))
+            .with_structured_state(json!(platform))
+            .with_volatility(ContextVolatility::Stable)
     }
 
     /// Detect the current platform

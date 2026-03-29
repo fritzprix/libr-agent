@@ -1,5 +1,5 @@
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
-use crate::mcp::types::MCPResult;
+use crate::mcp::types::{ContextVolatility, MCPResult};
 use crate::mcp::MCPTool;
 use crate::services::InteractiveBrowserServer;
 use async_trait::async_trait;
@@ -146,12 +146,13 @@ impl BuiltinMCPServer for BrowserServer {
         let session_id = match browser_session_id {
             Some(id) => id,
             None => {
-                return crate::mcp::types::ServiceContext {
-                    context_prompt: "## Browser\n\nNo active session".to_string(),
-                    structured_state: Some(json!({
-                        "active": false
-                    })),
-                };
+                return crate::mcp::types::ServiceContext::new(
+                    "## Browser\n\n### Live State\n- No active session",
+                )
+                .with_structured_state(json!({
+                    "active": false
+                }))
+                .with_volatility(ContextVolatility::Volatile);
             }
         };
 
@@ -163,20 +164,19 @@ impl BuiltinMCPServer for BrowserServer {
                 if elapsed.as_secs() < CACHE_TTL_SECS {
                     // Use cached data with full session_id
                     let context_prompt = format!(
-                        "## Browser\n\nSession {}: {} ({})",
+                        "## Browser\n\n### Live State\n- Session: {}\n- URL: {}\n- Title: {}\n- Source: cached snapshot",
                         session_id, cached_url, cached_title
                     );
 
-                    return crate::mcp::types::ServiceContext {
-                        context_prompt,
-                        structured_state: Some(json!({
+                    return crate::mcp::types::ServiceContext::new(context_prompt)
+                        .with_structured_state(json!({
                             "active": true,
                             "session_id": session_id,
                             "url": cached_url,
                             "title": cached_title,
                             "cached": true
-                        })),
-                    };
+                        }))
+                        .with_volatility(ContextVolatility::Volatile);
                 }
             }
         }
@@ -185,13 +185,14 @@ impl BuiltinMCPServer for BrowserServer {
         let service = match self.get_browser_service() {
             Ok(s) => s,
             Err(_) => {
-                return crate::mcp::types::ServiceContext {
-                    context_prompt: "## Browser\n\nService unavailable".to_string(),
-                    structured_state: Some(json!({
-                        "active": false,
-                        "error": "service_unavailable"
-                    })),
-                };
+                return crate::mcp::types::ServiceContext::new(
+                    "## Browser\n\n### Live State\n- Service unavailable",
+                )
+                .with_structured_state(json!({
+                    "active": false,
+                    "error": "service_unavailable"
+                }))
+                .with_volatility(ContextVolatility::Volatile);
             }
         };
 
@@ -216,18 +217,20 @@ impl BuiltinMCPServer for BrowserServer {
         }
 
         // Use full session_id so AI can call browser tools with correct ID
-        let context_prompt = format!("## Browser\n\nSession {}: {} ({})", session_id, url, title);
+        let context_prompt = format!(
+            "## Browser\n\n### Live State\n- Session: {}\n- URL: {}\n- Title: {}\n- Source: fresh snapshot",
+            session_id, url, title
+        );
 
-        crate::mcp::types::ServiceContext {
-            context_prompt,
-            structured_state: Some(json!({
+        crate::mcp::types::ServiceContext::new(context_prompt)
+            .with_structured_state(json!({
                 "active": true,
                 "session_id": session_id,
                 "url": url,
                 "title": title,
                 "cached": false
-            })),
-        }
+            }))
+            .with_volatility(ContextVolatility::Volatile)
     }
 
     fn tools(&self) -> Vec<MCPTool> {
