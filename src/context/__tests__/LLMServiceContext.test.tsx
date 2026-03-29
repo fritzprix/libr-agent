@@ -312,6 +312,56 @@ describe('LLMServiceContext – Core', () => {
       });
     });
 
+    it('creates a renderable streaming assistant placeholder before chunks complete', async () => {
+      const { result } = renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      let releaseStream!: () => void;
+      mockStreamChat.mockImplementation(async function* () {
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+        yield JSON.stringify({ content: 'done' });
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let promise!: Promise<Message>;
+      await act(async () => {
+        promise = result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      const streamingMessage = result.current.streamingMessages.get('test-session');
+      expect(streamingMessage).toMatchObject({
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'assistant',
+        isStreaming: true,
+        content: [],
+      });
+
+      await act(async () => {
+        releaseStream();
+        await promise;
+      });
+    });
+
     it('should handle thinking content', async () => {
       const { result } = renderHook(() => useLLMService(), {
         wrapper: TestWrapper,

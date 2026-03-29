@@ -14,7 +14,11 @@ import {
   type ContextInjectionResult,
   TokenUsage,
 } from './types';
-import { BaseAIService } from './base-service';
+import {
+  BaseAIService,
+  stableHashKeyPart,
+  stableStringify,
+} from './base-service';
 import { llmConfigManager, ModelInfo } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
 import { ensureSchemaTypeField, processMessageContent } from './utils';
@@ -94,14 +98,33 @@ function isOpenAIStreamUsage(value: unknown): value is OpenAIStreamUsage {
   return true;
 }
 
+interface OpenAIResponseUsageDetails {
+  prompt_tokens_details?: Record<string, unknown>;
+  completion_tokens_details?: Record<string, unknown>;
+  prompt_cache_hit_tokens?: number;
+}
+
+interface OpenAIMessageFingerprint {
+  role: string;
+  contentLength: number;
+  contentHash: string;
+  toolCallCount: number;
+  toolCallNames?: string[];
+  toolCallHash?: string;
+  toolCallIdHash?: string;
+  toolCallId?: string;
+}
+
 type OpenAIStreamingRequest =
   OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & {
     cache_prompt?: boolean;
+    prompt_cache_retention?: 'in_memory' | '24h';
   };
 
 type OpenAINonStreamingRequest =
   OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
     cache_prompt?: boolean;
+    prompt_cache_retention?: 'in_memory' | '24h';
   };
 
 /**
@@ -149,9 +172,29 @@ export class OpenAIService extends BaseAIService<
     return 8192;
   }
 
-  private shouldEnablePromptCache(config: AIServiceConfig): boolean {
+  private isOfficialOpenAIEndpoint(config: AIServiceConfig): boolean {
+    if (this.getProvider() !== AIServiceProvider.OpenAI) {
+      return false;
+    }
+
+    const baseUrl = config.baseUrl?.trim();
+    if (!baseUrl) {
+      return true;
+    }
+
+    try {
+      const { hostname } = new URL(baseUrl);
+      return hostname === 'api.openai.com';
+    } catch {
+      return false;
+    }
+  }
+
+  private shouldEnableCompatiblePromptCacheExtension(
+    config: AIServiceConfig,
+  ): boolean {
     if (config.enablePromptCache !== undefined) {
-      return config.enablePromptCache;
+      return config.enablePromptCache && !this.isOfficialOpenAIEndpoint(config);
     }
 
     if (this.getProvider() !== AIServiceProvider.OpenAI) {
@@ -175,7 +218,7 @@ export class OpenAIService extends BaseAIService<
     request: T,
     config: AIServiceConfig,
   ): T {
-    if (!this.shouldEnablePromptCache(config)) {
+    if (!this.shouldEnableCompatiblePromptCacheExtension(config)) {
       return request;
     }
 
@@ -183,6 +226,241 @@ export class OpenAIService extends BaseAIService<
       ...request,
       cache_prompt: true,
     };
+  }
+
+  private buildAutomaticPromptCacheKey(args: {
+    model: string;
+    systemPrompt?: string;
+    messages?: Message[];
+    tools?: OpenAIChatCompletionTool[];
+  }): string | undefined {
+    if (!args.systemPrompt && !(args.tools && args.tools.length > 0)) {
+      return undefined;
+    }
+
+    const toolsPayload = stableStringify(args.tools ?? []);
+
+    return [
+      'chat',
+      args.model,
+      stableHashKeyPart(args.systemPrompt ?? ''),
+      stableHashKeyPart(toolsPayload),
+    ].join(':');
+  }
+
+  private withOfficialPromptCaching<
+    T extends {
+      prompt_cache_key?: string;
+      prompt_cache_retention?: 'in_memory' | '24h';
+    },
+  >(
+    request: T,
+    config: AIServiceConfig,
+    automaticPromptCacheKey?: string,
+  ): T {
+    if (!this.isOfficialOpenAIEndpoint(config)) {
+      return request;
+    }
+
+    const promptCacheKey = config.promptCacheKey ?? automaticPromptCacheKey;
+    const promptCacheRetention = config.promptCacheRetention;
+
+    if (!promptCacheKey && !promptCacheRetention) {
+      return request;
+    }
+
+    return {
+      ...request,
+      ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
+      ...(promptCacheRetention
+        ? { prompt_cache_retention: promptCacheRetention }
+        : {}),
+    };
+  }
+
+  private withPromptCaching<
+    T extends OpenAIStreamingRequest | OpenAINonStreamingRequest,
+  >(
+    request: T,
+    config: AIServiceConfig,
+    automaticPromptCacheKey?: string,
+  ): T {
+    const withOfficialPromptCaching = this.withOfficialPromptCaching(
+      request,
+      config,
+      automaticPromptCacheKey,
+    );
+    return this.withPromptCache(withOfficialPromptCaching, config);
+  }
+
+  private logPromptCacheMetadata(args: {
+    mode: 'stream' | 'non-stream';
+    model: string;
+    request: {
+      model: string;
+      prompt_cache_key?: string;
+      prompt_cache_retention?: 'in_memory' | '24h';
+      cache_prompt?: boolean;
+    };
+    usage: OpenAIResponseUsageDetails & {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
+  }): void {
+    const cachedPromptTokens =
+      args.usage.prompt_tokens_details?.cached_tokens ??
+      args.usage.prompt_cache_hit_tokens;
+
+    this.logger.info('OpenAI prompt cache metadata', {
+      mode: args.mode,
+      model: args.model,
+      promptCacheKey: args.request.prompt_cache_key,
+      promptCacheRetention: args.request.prompt_cache_retention,
+      compatibleCachePrompt: args.request.cache_prompt ?? false,
+      promptTokens: args.usage.prompt_tokens,
+      completionTokens: args.usage.completion_tokens,
+      totalTokens: args.usage.total_tokens,
+      cachedPromptTokens,
+      promptTokensDetails: args.usage.prompt_tokens_details,
+      completionTokensDetails: args.usage.completion_tokens_details,
+      promptCacheHitTokens: args.usage.prompt_cache_hit_tokens,
+    });
+  }
+
+  private createRequestId(): string {
+    return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private fingerprintOpenAIMessage(
+    message: OpenAI.Chat.Completions.ChatCompletionMessageParam,
+  ): OpenAIMessageFingerprint {
+    if (message.role === 'tool') {
+      const content =
+        typeof message.content === 'string'
+          ? message.content
+          : stableStringify(message.content ?? '');
+      return {
+        role: message.role,
+        contentLength: content.length,
+        contentHash: stableHashKeyPart(content),
+        toolCallCount: 0,
+        toolCallId: message.tool_call_id,
+        toolCallIdHash: stableHashKeyPart(message.tool_call_id ?? ''),
+      };
+    }
+
+    const content =
+      typeof message.content === 'string'
+        ? message.content
+        : stableStringify(message.content ?? '');
+    const toolCalls =
+      'tool_calls' in message && Array.isArray(message.tool_calls)
+        ? message.tool_calls
+        : [];
+
+    return {
+      role: message.role,
+      contentLength: content.length,
+      contentHash: stableHashKeyPart(content),
+      toolCallCount: toolCalls.length,
+      toolCallNames: toolCalls
+        .map((toolCall) =>
+          'function' in toolCall &&
+          typeof toolCall.function === 'object' &&
+          toolCall.function !== null &&
+          'name' in toolCall.function &&
+          typeof toolCall.function.name === 'string'
+            ? toolCall.function.name
+            : 'custom',
+        ),
+      toolCallHash: stableHashKeyPart(stableStringify(toolCalls)),
+    };
+  }
+
+  private logPromptDiagnostics(args: {
+    mode: 'stream' | 'non-stream';
+    model: string;
+    systemPrompt?: string;
+    request: {
+      prompt_cache_key?: string;
+      prompt_cache_retention?: 'in_memory' | '24h';
+      cache_prompt?: boolean;
+    };
+    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+    tools?: OpenAIChatCompletionTool[];
+  }): void {
+    const messageFingerprints = args.messages.map((message) =>
+      this.fingerprintOpenAIMessage(message),
+    );
+    const serializedFingerprints = stableStringify(messageFingerprints);
+    const toolsPayload = stableStringify(args.tools ?? []);
+
+    this.logger.debug('OpenAI prompt diagnostics', {
+      mode: args.mode,
+      model: args.model,
+      promptCacheKey: args.request.prompt_cache_key,
+      promptCacheRetention: args.request.prompt_cache_retention,
+      compatibleCachePrompt: args.request.cache_prompt ?? false,
+      systemPromptLength: args.systemPrompt?.length ?? 0,
+      systemPromptHash: stableHashKeyPart(args.systemPrompt ?? ''),
+      toolCount: args.tools?.length ?? 0,
+      toolsHash: stableHashKeyPart(toolsPayload),
+      messageCount: args.messages.length,
+      messagesFingerprintHash: stableHashKeyPart(serializedFingerprints),
+      messageFingerprints,
+    });
+  }
+
+  private logFetchDiagnostics(args: {
+    mode: 'stream' | 'non-stream';
+    requestId: string;
+    model: string;
+    request: {
+      model: string;
+      prompt_cache_key?: string;
+      prompt_cache_retention?: 'in_memory' | '24h';
+      cache_prompt?: boolean;
+      tool_choice?: unknown;
+      max_completion_tokens?: number | null;
+      max_tokens?: number | null;
+      messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+      tools?: OpenAIChatCompletionTool[];
+      reasoning_effort?: string | null;
+    };
+  }): void {
+    const bodyFingerprint = stableHashKeyPart(
+      stableStringify({
+        model: args.request.model,
+        messages: args.request.messages.map((message) =>
+          this.fingerprintOpenAIMessage(message),
+        ),
+        tools: args.request.tools ?? [],
+        tool_choice: args.request.tool_choice,
+        max_completion_tokens: args.request.max_completion_tokens,
+        max_tokens: args.request.max_tokens,
+        prompt_cache_key: args.request.prompt_cache_key,
+        prompt_cache_retention: args.request.prompt_cache_retention,
+        cache_prompt: args.request.cache_prompt,
+        reasoning_effort: args.request.reasoning_effort,
+      }),
+    );
+
+    this.logger.debug('OpenAI fetch diagnostics', {
+      mode: args.mode,
+      requestId: args.requestId,
+      model: args.model,
+      promptCacheKey: args.request.prompt_cache_key,
+      promptCacheRetention: args.request.prompt_cache_retention,
+      compatibleCachePrompt: args.request.cache_prompt ?? false,
+      bodyFingerprint,
+      messageCount: args.request.messages.length,
+      toolCount: args.request.tools?.length ?? 0,
+      toolChoice: args.request.tool_choice,
+      maxCompletionTokens: args.request.max_completion_tokens,
+      maxTokens: args.request.max_tokens,
+      reasoningEffort: args.request.reasoning_effort,
+    });
   }
 
   /**
@@ -427,7 +705,14 @@ export class OpenAIService extends BaseAIService<
         }
       }
 
-      const request = this.withPromptCache<OpenAIStreamingRequest>(
+      const automaticPromptCacheKey = this.buildAutomaticPromptCacheKey({
+        model: modelName,
+        systemPrompt: options.systemPrompt,
+        messages: sanitizedMessages,
+        tools,
+      });
+
+      const request = this.withPromptCaching<OpenAIStreamingRequest>(
         {
           model: modelName,
           messages: openaiMessages,
@@ -445,11 +730,31 @@ export class OpenAIService extends BaseAIService<
                 : 'auto',
         },
         config,
+        automaticPromptCacheKey,
       );
+
+      const requestId = this.createRequestId();
+      this.logPromptDiagnostics({
+        mode: 'stream',
+        model: modelName,
+        systemPrompt: options.systemPrompt,
+        request,
+        messages: openaiMessages,
+        tools,
+      });
+      this.logFetchDiagnostics({
+        mode: 'stream',
+        requestId,
+        model: modelName,
+        request,
+      });
 
       const completion = await this.withRetry(() =>
         this.openai.chat.completions.create(request, {
           signal: this.getAbortSignal(),
+          headers: {
+            'x-libragent-request-id': requestId,
+          },
         }),
       );
 
@@ -483,6 +788,12 @@ export class OpenAIService extends BaseAIService<
         if (rawUsage && isOpenAIStreamUsage(rawUsage)) {
           // Type guard validates structure; single cast is safe here
           const u = rawUsage as OpenAIStreamUsage;
+          this.logPromptCacheMetadata({
+            mode: 'stream',
+            model: modelName,
+            request,
+            usage: u,
+          });
           const cachedPromptTokens =
             u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens;
 
@@ -733,7 +1044,7 @@ export class OpenAIService extends BaseAIService<
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
-    const request = this.withPromptCache<OpenAINonStreamingRequest>(
+    const request = this.withPromptCaching<OpenAINonStreamingRequest>(
       {
         model,
         stream: false,
@@ -748,9 +1059,42 @@ export class OpenAIService extends BaseAIService<
       config,
     );
 
+    const requestId = this.createRequestId();
+    this.logPromptDiagnostics({
+      mode: 'non-stream',
+      model,
+      systemPrompt: undefined,
+      request,
+      messages: request.messages,
+      tools: request.tools,
+    });
+    this.logFetchDiagnostics({
+      mode: 'non-stream',
+      requestId,
+      model,
+      request,
+    });
+
     const response = await this.withRetry(() =>
-      this.openai.chat.completions.create(request),
+      this.openai.chat.completions.create(request, {
+        headers: {
+          'x-libragent-request-id': requestId,
+        },
+      }),
     );
+
+    if (response.usage) {
+      this.logPromptCacheMetadata({
+        mode: 'non-stream',
+        model,
+        request,
+        usage: response.usage as OpenAIResponseUsageDetails & {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+        },
+      });
+    }
 
     const choice = response.choices[0];
     const text = choice.message.content ?? '';

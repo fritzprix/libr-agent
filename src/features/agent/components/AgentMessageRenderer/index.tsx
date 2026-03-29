@@ -153,7 +153,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   const htmlProps = useMemo(
     () => ({
       autoResizeIframe: { height: true, width: false }, // Width resize can feed iframe layout loops for raw HTML resources
-      style: { height: '384px', maxHeight: 'unset' }, // Default fallback height for backward compatibility
+      style: { height: '384px', maxHeight: '80vh' }, // Capped at 80vh to prevent infinite growth and improve UX
       iframeProps: {
         className: 'w-full',
       },

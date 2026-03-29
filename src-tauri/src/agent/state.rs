@@ -141,6 +141,10 @@ pub struct AgentSession {
     /// before Rust should retry the LLM request.
     pub awaiting_compact_completion: Arc<AtomicBool>,
 
+    /// Timestamp (Unix ms) when the current in-flight compaction was started.
+    /// Used only for observability so logs can report end-to-end compaction duration.
+    pub compact_started_at_ms: Arc<RwLock<Option<i64>>>,
+
     /// The ID generated for the next assistant message response.
     /// Shared with the frontend via CompletionRequest so streaming and persisted messages match.
     pub expected_response_id: Arc<RwLock<Option<String>>>,

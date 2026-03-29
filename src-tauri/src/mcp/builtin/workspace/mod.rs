@@ -9,7 +9,7 @@ use tracing::info;
 
 use super::BuiltinMCPServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
-use crate::mcp::types::{MCPResult, ServiceContext};
+use crate::mcp::types::{ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
@@ -463,13 +463,12 @@ impl BuiltinMCPServer for WorkspaceServer {
         if let Ok(guard) = self.context_cache.try_read() {
             if let Some((cached_prompt, last_update)) = guard.as_ref() {
                 if last_update.elapsed().as_secs() < CACHE_TTL_SECS {
-                    return ServiceContext {
-                        context_prompt: cached_prompt.clone(),
-                        structured_state: Some(json!({
+                    return ServiceContext::new(cached_prompt.clone())
+                        .with_structured_state(json!({
                             "cached": true,
                             "session_id": session_id
-                        })),
-                    };
+                        }))
+                        .with_volatility(ContextVolatility::Volatile);
                 }
             }
         }
@@ -564,16 +563,17 @@ impl BuiltinMCPServer for WorkspaceServer {
         let context_prompt = format!(
             "## Workspace
 
-**Workspace Root**: {}
-**Persistent Shell CWD**: {}
-**Platform**: {} / {} using {}
+### Stable Context
+- Workspace Root: {}
+- Platform: {} / {} using {}
 
-**Background Processes**:
-- Running: {}{}
-- Total: {}
+### Live State
+- Persistent Shell CWD: {}
+- Running Processes: {}{}
+- Total Processes: {}
 
 💡 Use waitForProcess(processId, 0) to check status or listProcesses() to see all (including full commands).",
-            workspace_dir, shell_cwd, os, arch, shell, running_count, running_processes_text, total_count
+            workspace_dir, os, arch, shell, shell_cwd, running_count, running_processes_text, total_count
         );
 
         // Update cache
@@ -581,9 +581,8 @@ impl BuiltinMCPServer for WorkspaceServer {
             *guard = Some((context_prompt.clone(), std::time::Instant::now()));
         }
 
-        ServiceContext {
-            context_prompt,
-            structured_state: Some(json!({
+        ServiceContext::new(context_prompt)
+            .with_structured_state(json!({
                 "workspace_dir": workspace_dir,
                 "shell_cwd": shell_cwd,
                 "platform": {
@@ -597,8 +596,8 @@ impl BuiltinMCPServer for WorkspaceServer {
                 },
                 "shell_active": !shell_cwd.is_empty(),
                 "tools_count": self.tools().len()
-            })),
-        }
+            }))
+            .with_volatility(ContextVolatility::Volatile)
     }
 
     async fn call_tool(

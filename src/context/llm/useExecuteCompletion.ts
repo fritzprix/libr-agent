@@ -231,8 +231,11 @@ export function useExecuteCompletion({
           const next = new Map(prev);
           next.set(sessionId, {
             id: `msg_${Date.now()}`,
+            sessionId,
+            threadId: sessionId,
             role: 'assistant',
             content: [],
+            createdAt: new Date(),
             isStreaming: true,
           });
           return next;

@@ -277,13 +277,15 @@ async fn build_volatile_sections(
         if !contexts.is_empty() {
             parts.push("\n\n## Available Tools & Current State\n".to_string());
 
-            // Sort by tool_id for deterministic ordering so the system prompt
-            // byte sequence is stable across calls. This maximises prefix-cache
-            // hit rates on providers that perform automatic prompt caching
-            // (e.g. OpenAI, Groq) where any change — including a reordering —
-            // invalidates the cached prefix.
+            // Sort by volatility first, then tool_id. Deterministic ordering keeps
+            // byte sequences stable, while pushing frequently changing state later
+            // preserves a larger reusable prefix for prompt-caching providers.
             let mut sorted_contexts: Vec<(String, _)> = contexts.into_iter().collect();
-            sorted_contexts.sort_by(|(a, _), (b, _)| a.cmp(b));
+            sorted_contexts.sort_by(|(left_id, left), (right_id, right)| {
+                left.volatility
+                    .cmp(&right.volatility)
+                    .then_with(|| left_id.cmp(right_id))
+            });
 
             for (_tool_id, service_context) in sorted_contexts {
                 if !service_context.context_prompt.trim().is_empty() {
@@ -386,7 +388,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_volatile_sections_deterministic_order() {
-        // Create mock service contexts out of order
+        // Create mock service contexts out of order with mixed volatility.
         let mut contexts = std::collections::HashMap::new();
 
         contexts.insert(
@@ -394,6 +396,7 @@ mod tests {
             crate::mcp::types::ServiceContext::<serde_json::Value> {
                 context_prompt: "Context for tool C.".to_string(),
                 structured_state: None,
+                volatility: crate::mcp::types::ContextVolatility::Volatile,
             },
         );
         contexts.insert(
@@ -401,6 +404,7 @@ mod tests {
             crate::mcp::types::ServiceContext::<serde_json::Value> {
                 context_prompt: "Context for tool A.".to_string(),
                 structured_state: None,
+                volatility: crate::mcp::types::ContextVolatility::Stable,
             },
         );
         contexts.insert(
@@ -408,6 +412,7 @@ mod tests {
             crate::mcp::types::ServiceContext::<serde_json::Value> {
                 context_prompt: "Context for tool B.".to_string(),
                 structured_state: None,
+                volatility: crate::mcp::types::ContextVolatility::Medium,
             },
         );
 
@@ -418,7 +423,11 @@ mod tests {
 
         // This is a unit test validating the deterministic sorting logic used in `build_volatile_sections`.
         let mut sorted_contexts: Vec<(String, _)> = contexts.into_iter().collect();
-        sorted_contexts.sort_by(|(a, _), (b, _)| a.cmp(b));
+        sorted_contexts.sort_by(|(left_id, left), (right_id, right)| {
+            left.volatility
+                .cmp(&right.volatility)
+                .then_with(|| left_id.cmp(right_id))
+        });
 
         let mut parts = Vec::new();
         for (_tool_id, service_context) in sorted_contexts {

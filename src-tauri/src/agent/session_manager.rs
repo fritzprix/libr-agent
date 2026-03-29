@@ -1,5 +1,6 @@
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
+use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -38,6 +39,113 @@ impl std::fmt::Debug for AgentSessionManager {
             .field("context_registry", &"<Arc<ContextRegistry>>")
             .finish()
     }
+}
+
+async fn clear_compact_flags(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let compact_started_at_ms_handle = {
+        let active = active_sessions.read().await;
+        active.get(session_id).map(|session| {
+            session
+                .compact_in_flight
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            session
+                .awaiting_compact_completion
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            session.compact_started_at_ms.clone()
+        })
+    };
+
+    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        *compact_started_at_ms_handle.write().await = None;
+    }
+}
+
+pub async fn handle_compact_error_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: String,
+    error: crate::agent::llm::types::AgentRuntimeError,
+) -> Result<(), String> {
+    let (was_awaiting, session_name, compact_started_at_ms_handle) = {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            (
+                session
+                    .awaiting_compact_completion
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                session
+                    .metadata
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
+                Some(session.compact_started_at_ms.clone()),
+            )
+        } else {
+            (false, session_id.chars().take(8).collect::<String>(), None)
+        }
+    };
+    let elapsed_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        compact_started_at_ms_handle
+            .read()
+            .await
+            .map(|started_at| chrono::Utc::now().timestamp_millis() - started_at)
+    } else {
+        None
+    };
+
+    let error_code = error
+        .details
+        .as_ref()
+        .and_then(|details| details.error_code.as_deref())
+        .unwrap_or("none");
+
+    clear_compact_flags(active_sessions, &session_id).await;
+
+    let state_event = crate::agent::llm::types::CompactStateEvent {
+        session_id: session_id.clone(),
+        session_name: Some(session_name),
+        compacting: false,
+        phase: crate::agent::llm::types::CompactStatePhase::Failed,
+        error: Some(error.display_message.clone()),
+    };
+
+    dispatcher.emit_compact_state(state_event)?;
+
+    log::warn!(
+        "❌ Compaction failed: session={}, mode={}, elapsed_ms={}, error_code={}, message={}",
+        session_id,
+        if was_awaiting {
+            "preflight"
+        } else {
+            "background"
+        },
+        elapsed_ms
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        error_code,
+        error.display_message
+    );
+
+    if was_awaiting {
+        log::warn!(
+            "Preflight compaction failed for session {}. Failing workflow.",
+            session_id
+        );
+        crate::agent::llm::finalize_workflow_error_with_dispatcher(
+            session_repo,
+            active_sessions,
+            dispatcher,
+            session_id,
+            error,
+        )
+        .await?;
+    }
+
+    Ok(())
 }
 
 impl AgentSessionManager {
@@ -681,11 +789,28 @@ impl AgentSessionManager {
         to_id: String,
         summary: String,
     ) -> Result<(), String> {
+        let compact_started_at_ms_handle = {
+            let active = self.active_sessions.read().await;
+            active
+                .get(session_id)
+                .map(|session| session.compact_started_at_ms.clone())
+        };
+        let started_at_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle
+        {
+            *compact_started_at_ms_handle.read().await
+        } else {
+            None
+        };
         log::info!(
-            "✅ Compact response stored for session {}: summary_chars={}, summary_est_tokens=~{}",
+            "✅ Compact response stored for session {}: from_id={}, to_id={}, summary_chars={}, summary_est_tokens=~{}, elapsed_ms={}",
             session_id,
+            from_id,
+            to_id,
             summary.len(),
-            summary.len() / 4
+            summary.len() / 4,
+            started_at_ms
+                .map(|value| (chrono::Utc::now().timestamp_millis() - value).to_string())
+                .unwrap_or_else(|| "unknown".to_string())
         );
         let record = CompactContextRecord {
             id: uuid::Uuid::new_v4().to_string(),
@@ -765,16 +890,25 @@ impl AgentSessionManager {
         Ok(())
     }
 
+    /// Handle a compact error from the LLM service. If we were awaiting compaction, fail the workflow.
+    pub async fn handle_compact_error(
+        &self,
+        session_id: String,
+        error: crate::agent::llm::types::AgentRuntimeError,
+    ) -> Result<(), String> {
+        let dispatcher = TauriEventDispatcher::new(self.app_handle.clone());
+        handle_compact_error_with_dispatcher(
+            &self.session_repo,
+            &self.active_sessions,
+            &dispatcher,
+            session_id,
+            error,
+        )
+        .await
+    }
+
     /// Clear the compact in-flight flag for a session (called on success or error).
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
-        let active = self.active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            session
-                .compact_in_flight
-                .store(false, std::sync::atomic::Ordering::SeqCst);
-            session
-                .awaiting_compact_completion
-                .store(false, std::sync::atomic::Ordering::SeqCst);
-        }
+        clear_compact_flags(&self.active_sessions, session_id).await;
     }
 }

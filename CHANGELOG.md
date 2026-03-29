@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.22] - 2026-03-29
+
+### 🐛 Fixes
+
+- **Compaction Failure Recovery**: Fixed a workflow hang edge case so preflight compaction failures now transition agent sessions cleanly into an error state with proper retry-safe recovery instead of leaving the UI stuck loading.
+- **Workspace Search Accuracy**: Improved workspace search so skip reporting stays accurate and nested `.gitignore` rules inside the workspace are now respected during recursive searches.
+- **Workspace File Guidance**: Cleaned up duplicate-file write guidance so numbered recovery steps render correctly and point agents toward the right overwrite, append, read, and edit actions.
+
+### 🔧 Internal
+
+- **Prompt Cache Stability**: Further stabilized provider cache behavior by tightening prompt diagnostics, normalizing edge-case serialization for cache fingerprints, and reducing noisy OpenAI cache logging to debug level.
+- **Prompt Context Ordering**: Added volatility-aware service-context ordering so stable prompt sections stay grouped ahead of live state, improving prompt consistency for long-running sessions.
+- **Regression Coverage Expansion**: Added focused Rust and Vitest coverage for compaction recovery, workspace guidance formatting, nested `.gitignore` handling, and prompt-cache helpers.
+
+## [0.6.21] - 2026-03-28
+
+### 🚀 Features
+
+- **Builtin Session History Tools**: Added new tools (`listHistory`, `searchHistory`) allowing agents to discover and search through past sessions directly within the chat context.
+- **Knowledge Server v2 Stabilization**: Completed graph persistence and stabilized the Knowledge v2 server, enabling robust entity and relationship extraction.
+- **Cascade Session Deletion**: Implemented recursive deletion of session trees in both the Rust backend and frontend, ensuring clean cleanup of related agent sessions.
+- **UI Resource Height Capping**: Limited the maximum height of interactive UI resources to `80vh` to prevent infinite growth loops and improve visual stability during long interactions.
+
+### 🐛 Fixes
+
+- **MCP Error Semantics Alignment**: Refactored guided error responses to strictly align with MCP semantics, improving compatibility and agent-facing guidance.
+- **Workspace Search Hardening**: Hardened workspace search implementations and fixed edge cases in compaction normalization for more reliable context management.
+- **Streaming Tool Feedback**: Improved real-time feedback and status reporting for streaming tool calls, reducing UI flickering and improving perceived latency.
+
+### 🔧 Internal
+
+- **ToolCall Rendering Optimization**: Refactored `ToolCallCompactItem` using the "Adjusting State During Render" pattern to eliminate redundant `useEffect` calls and improve rendering performance.
+- **Prompt Cache Stability**: Enhanced prompt cache hit detection and metrics reporting for OpenAI, Anthropic, and Gemini providers.
+- **Date Formatting Performance**: Optimized `Intl.DateTimeFormat` usage by implementing a caching layer in `date-utils`.
+- **Documentation Polish**: Clarified Rust/Tauri setup instructions in `CONTRIBUTING.md` and updated architecture references in `README.md`.
+
 ## [0.6.20] - 2026-03-26
 
 ### 🔧 Internal

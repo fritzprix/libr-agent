@@ -1,5 +1,5 @@
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPResult, MCPTool, ServiceContext};
+use crate::mcp::types::{ContextVolatility, MCPResult, MCPTool, ServiceContext};
 use crate::repositories::assistant_repository::AssistantRepository;
 use async_trait::async_trait;
 use log::{debug, warn};
@@ -48,10 +48,11 @@ impl BuiltinMCPServer for SkillsServer {
                 Ok(dir) => std::path::PathBuf::from(dir),
                 Err(e) => {
                     warn!("Failed to get skills directory: {}", e);
-                    return ServiceContext {
-                        context_prompt: format!("## Skills\n\n⚠️ Failed to load skills: {}", e),
-                        structured_state: None,
-                    };
+                    return ServiceContext::new(format!(
+                        "## Skills\n\n⚠️ Failed to load skills: {}",
+                        e
+                    ))
+                    .with_volatility(ContextVolatility::Stable);
                 }
             };
 
@@ -92,10 +93,11 @@ impl BuiltinMCPServer for SkillsServer {
             Ok(skills) => skills,
             Err(e) => {
                 warn!("Failed to scan skills directory: {}", e);
-                return ServiceContext {
-                    context_prompt: format!("## Skills\n\n⚠️ Failed to scan skills: {}", e),
-                    structured_state: None,
-                };
+                return ServiceContext::new(format!(
+                    "## Skills\n\n⚠️ Failed to scan skills: {}",
+                    e
+                ))
+                .with_volatility(ContextVolatility::Stable);
             }
         };
 
@@ -119,10 +121,7 @@ impl BuiltinMCPServer for SkillsServer {
 
         if skills.is_empty() {
             debug!("No skills found, returning empty context");
-            return ServiceContext {
-                context_prompt: String::new(),
-                structured_state: None,
-            };
+            return ServiceContext::new(String::new()).with_volatility(ContextVolatility::Stable);
         }
 
         debug!("Building skills context with {} skills", skills.len());
@@ -147,12 +146,11 @@ impl BuiltinMCPServer for SkillsServer {
             skills_xml
         );
 
-        ServiceContext {
-            context_prompt: prompt,
-            structured_state: Some(serde_json::json!({
+        ServiceContext::new(prompt)
+            .with_structured_state(serde_json::json!({
                 "count": skills.len(),
                 "skills": skills,
-            })),
-        }
+            }))
+            .with_volatility(ContextVolatility::Stable)
     }
 }

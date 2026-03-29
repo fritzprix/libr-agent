@@ -13,13 +13,14 @@ import {
   TokenUsage,
 } from './types';
 import { BaseAIService } from './base-service';
-import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
 import {
   applyAnthropicMessageDeltaUsage,
   applyAnthropicMessageStartUsage,
+  buildAnthropicPromptCacheMetadata,
   buildAnthropicSystemBlocks,
+  getAnthropicPromptTokens,
 } from './anthropic/cache';
 import { convertToAnthropicMessages } from './anthropic/message-converter';
 import {
@@ -214,6 +215,26 @@ export class AnthropicService extends BaseAIService<
     return model;
   }
 
+  private logPromptCacheMetadata(args: {
+    mode: 'stream' | 'non-stream';
+    source: 'message_start' | 'message_delta' | 'sample';
+    model: string;
+    usage: {
+      input_tokens: number | null;
+      output_tokens: number | null;
+      cache_creation_input_tokens?: number | null;
+      cache_read_input_tokens?: number | null;
+    };
+    previousDetails?: TokenUsage['details'];
+  }): void {
+    this.logger.info('Anthropic prompt cache metadata', {
+      mode: args.mode,
+      source: args.source,
+      model: args.model,
+      ...buildAnthropicPromptCacheMetadata(args.usage, args.previousDetails),
+    });
+  }
+
   /**
    * Initiates a streaming chat session with the Anthropic API.
    * It handles message conversion, tool use, and processes the streaming response,
@@ -288,6 +309,19 @@ export class AnthropicService extends BaseAIService<
       // Tool call accumulator for partial JSON streaming
       const toolCallAccumulators = new Map<number, ToolCallAccumulator>();
 
+      const createIndexedToolCall = (
+        accumulator: ToolCallAccumulator,
+        argumentsDelta: string,
+      ) => ({
+        id: accumulator.id,
+        type: 'function' as const,
+        function: {
+          name: accumulator.name,
+          arguments: argumentsDelta,
+        },
+        index: accumulator.index,
+      });
+
       // Track current usage metrics (updated from message_start and message_delta)
       let currentUsage: TokenUsage = createEmptyAnthropicUsage();
 
@@ -305,6 +339,13 @@ export class AnthropicService extends BaseAIService<
         // Handle message_start for input tokens and cache stats
         if (chunk.type === 'message_start') {
           if (chunk.message?.usage) {
+            this.logPromptCacheMetadata({
+              mode: 'stream',
+              source: 'message_start',
+              model,
+              usage: chunk.message.usage,
+              previousDetails: currentUsage.details,
+            });
             currentUsage = applyAnthropicMessageStartUsage(
               currentUsage,
               chunk.message.usage,
@@ -315,6 +356,13 @@ export class AnthropicService extends BaseAIService<
 
         if (chunk.type === 'message_delta') {
           if (chunk.usage) {
+            this.logPromptCacheMetadata({
+              mode: 'stream',
+              source: 'message_delta',
+              model,
+              usage: chunk.usage,
+              previousDetails: currentUsage.details,
+            });
             currentUsage = applyAnthropicMessageDeltaUsage(
               currentUsage,
               chunk.usage,
@@ -358,7 +406,7 @@ export class AnthropicService extends BaseAIService<
               name: chunk.content_block.name,
               partialJson: '',
               index: chunk.index,
-              yielded: false, // Initial value is false
+              hasArgumentDelta: false,
               initialInput,
             });
             logger.debug('Started tool call accumulation', {
@@ -366,6 +414,12 @@ export class AnthropicService extends BaseAIService<
               id: chunk.content_block.id,
               name: chunk.content_block.name,
             });
+            const accumulator = toolCallAccumulators.get(chunk.index);
+            if (accumulator) {
+              yield JSON.stringify({
+                tool_calls: [createIndexedToolCall(accumulator, '')],
+              });
+            }
           }
         } else if (
           chunk.type === 'content_block_delta' &&
@@ -390,108 +444,32 @@ export class AnthropicService extends BaseAIService<
                 name: accumulator.name,
               });
               toolCallAccumulators.delete(chunk.index);
-              accumulator.yielded = true;
               continue;
             }
             logger.debug('Accumulated partial JSON', {
               index: chunk.index,
               partialJson: accumulator.partialJson,
             });
-
-            // Try to parse the accumulated JSON only if not already yielded
-            if (!accumulator.yielded) {
-              const trimmedPartial = accumulator.partialJson.trim();
-              if (trimmedPartial.length === 0) {
-                logger.debug('No complete JSON fragment yet; waiting', {
-                  index: chunk.index,
-                  id: accumulator.id,
-                });
-                continue;
-              }
-              try {
-                const parsedInput = JSON.parse(trimmedPartial) as Record<
-                  string,
-                  unknown
-                >;
-                // If parsing succeeds, yield the tool call and mark as yielded
-                yield JSON.stringify({
-                  tool_calls: [
-                    formatToolCall(
-                      accumulator.id,
-                      accumulator.name,
-                      parsedInput,
-                    ),
-                  ],
-                });
-                accumulator.yielded = true; // Prevent duplicate yields
-                logger.debug('Tool call yielded successfully', {
-                  index: chunk.index,
-                  id: accumulator.id,
-                  name: accumulator.name,
-                });
-              } catch (parseError) {
-                // Continue accumulating if JSON is still incomplete
-                logger.debug('JSON still incomplete, continuing accumulation', {
-                  error: parseError,
-                  partialJson: accumulator.partialJson,
-                });
-              }
+            if (chunk.delta.partial_json.length === 0) {
+              logger.debug('No tool argument delta to emit yet', {
+                index: chunk.index,
+                id: accumulator.id,
+              });
+              continue;
             }
+            accumulator.hasArgumentDelta = true;
+            yield JSON.stringify({
+              tool_calls: [
+                createIndexedToolCall(accumulator, chunk.delta.partial_json),
+              ],
+            });
           }
         } else if (chunk.type === 'content_block_stop') {
           logger.info('Anthropic content_block_stop', { index: chunk.index });
-          // Final attempt to parse accumulated JSON only if not already yielded
           const accumulator = toolCallAccumulators.get(chunk.index);
-          if (accumulator && accumulator.partialJson && !accumulator.yielded) {
-            const trimmedPartial = accumulator.partialJson.trim();
-            try {
-              const parsedInput = JSON.parse(trimmedPartial) as Record<
-                string,
-                unknown
-              >;
-              logger.info('Tool call completed on content_block_stop', {
-                id: accumulator.id,
-                name: accumulator.name,
-                input: parsedInput,
-              });
-              // Final tool call yield if not already done
-              yield JSON.stringify({
-                tool_calls: [
-                  formatToolCall(accumulator.id, accumulator.name, parsedInput),
-                ],
-              });
-              accumulator.yielded = true;
-            } catch (parseError) {
-              if (accumulator.initialInput) {
-                logger.info(
-                  'Using initial tool input from content_block_start',
-                  {
-                    id: accumulator.id,
-                    name: accumulator.name,
-                  },
-                );
-                yield JSON.stringify({
-                  tool_calls: [
-                    formatToolCall(
-                      accumulator.id,
-                      accumulator.name,
-                      accumulator.initialInput,
-                    ),
-                  ],
-                });
-                accumulator.yielded = true;
-              } else {
-                logger.error('Failed to parse final tool call JSON', {
-                  error: parseError,
-                  partialJson: accumulator.partialJson,
-                  toolId: accumulator.id,
-                  toolName: accumulator.name,
-                });
-              }
-            }
-          } else if (
+          if (
             accumulator &&
-            !accumulator.yielded &&
+            !accumulator.hasArgumentDelta &&
             accumulator.initialInput
           ) {
             logger.info(
@@ -503,14 +481,22 @@ export class AnthropicService extends BaseAIService<
             );
             yield JSON.stringify({
               tool_calls: [
-                formatToolCall(
-                  accumulator.id,
-                  accumulator.name,
-                  accumulator.initialInput,
+                createIndexedToolCall(
+                  accumulator,
+                  JSON.stringify(accumulator.initialInput),
                 ),
               ],
             });
-            accumulator.yielded = true;
+          } else if (
+            accumulator &&
+            !accumulator.hasArgumentDelta &&
+            accumulator.partialJson.trim()
+          ) {
+            yield JSON.stringify({
+              tool_calls: [
+                createIndexedToolCall(accumulator, accumulator.partialJson),
+              ],
+            });
           }
 
           // Clean up accumulator regardless of yield status
@@ -519,7 +505,7 @@ export class AnthropicService extends BaseAIService<
             logger.debug('Cleaned up tool call accumulator', {
               index: chunk.index,
               id: accumulator.id,
-              wasYielded: accumulator.yielded,
+              hadArgumentDelta: accumulator.hasArgumentDelta,
             });
           }
         }
@@ -658,6 +644,15 @@ export class AnthropicService extends BaseAIService<
     const textBlock = response.content.find((b) => b.type === 'text');
     const text = textBlock?.type === 'text' ? textBlock.text : '';
 
+    this.logPromptCacheMetadata({
+      mode: 'non-stream',
+      source: 'sample',
+      model,
+      usage: response.usage,
+    });
+
+    const promptTokens = getAnthropicPromptTokens(response.usage);
+
     return {
       jsonrpc: '2.0',
       id: null,
@@ -666,10 +661,11 @@ export class AnthropicService extends BaseAIService<
         sampling: {
           finishReason: response.stop_reason === 'end_turn' ? 'stop' : 'length',
           usage: {
-            promptTokens: response.usage.input_tokens,
+            promptTokens,
             completionTokens: response.usage.output_tokens,
-            totalTokens:
-              response.usage.input_tokens + response.usage.output_tokens,
+            totalTokens: promptTokens + response.usage.output_tokens,
+            cachedPromptTokens:
+              response.usage.cache_read_input_tokens ?? undefined,
           },
           model: response.model,
         },

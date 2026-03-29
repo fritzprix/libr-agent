@@ -46,6 +46,7 @@ pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
 }
 
 pub(crate) async fn trigger_background_compaction(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
     session_name: &str,
@@ -92,6 +93,16 @@ pub(crate) async fn trigger_background_compaction(
         .unwrap_or_default();
 
     *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+    let started_at_ms = chrono::Utc::now().timestamp_millis();
+    let compact_started_at_ms_handle = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.compact_started_at_ms.clone())
+    };
+    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        *compact_started_at_ms_handle.write().await = Some(started_at_ms);
+    }
 
     let compact_event = CompactRequest {
         session_id: session_id.to_string(),
@@ -101,6 +112,8 @@ pub(crate) async fn trigger_background_compaction(
         to_id,
         resume_completion_after_compact: false,
     };
+    let log_from_id = compact_event.from_id.clone();
+    let log_to_id = compact_event.to_id.clone();
     let app = app_handle.clone();
     let state_session_id = session_id.to_string();
     let state_session_name = session_name.to_string();
@@ -110,6 +123,7 @@ pub(crate) async fn trigger_background_compaction(
             session_name: Some(state_session_name),
             compacting: true,
             phase: crate::agent::llm::types::CompactStatePhase::Started,
+            error: None,
         };
         if let Err(e) = app.emit("llm:compact-state", state_event) {
             log::error!("Failed to emit llm:compact-state: {}", e);
@@ -119,10 +133,13 @@ pub(crate) async fn trigger_background_compaction(
         }
     });
     log::info!(
-        "🔧 Compaction triggered: session={}, split_idx={}, tail={}",
+        "🔧 Background compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, tail={}, started_at_ms={}",
         session_id,
+        log_from_id,
+        log_to_id,
         split_idx,
-        current_tail_id.as_deref().unwrap_or("?")
+        current_tail_id.as_deref().unwrap_or("?"),
+        started_at_ms
     );
 
     Ok(true)
@@ -169,6 +186,7 @@ pub async fn maybe_trigger_post_idle_compaction(
     }
 
     let triggered = trigger_background_compaction(
+        active_sessions,
         app_handle,
         session_id,
         session_name,
@@ -236,12 +254,13 @@ pub(crate) async fn try_trigger_preflight_compaction(
             session_name: Some(session_name.to_string()),
             compacting: true,
             phase: crate::agent::llm::types::CompactStatePhase::Started,
+            error: None,
         };
         app_handle
             .emit("llm:compact-state", state_event)
             .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))?;
         log::info!(
-            "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}",
+            "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
             session_id
         );
         return Ok(true);
@@ -266,6 +285,16 @@ pub(crate) async fn try_trigger_preflight_compaction(
 
     awaiting_compact_arc.store(true, Ordering::SeqCst);
     *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+    let started_at_ms = chrono::Utc::now().timestamp_millis();
+    let compact_started_at_ms_handle = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.compact_started_at_ms.clone())
+    };
+    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        *compact_started_at_ms_handle.write().await = Some(started_at_ms);
+    }
 
     let compact_event = CompactRequest {
         session_id: session_id.to_string(),
@@ -275,11 +304,14 @@ pub(crate) async fn try_trigger_preflight_compaction(
         to_id,
         resume_completion_after_compact: true,
     };
+    let log_from_id = compact_event.from_id.clone();
+    let log_to_id = compact_event.to_id.clone();
     let state_event = crate::agent::llm::types::CompactStateEvent {
         session_id: session_id.to_string(),
         session_name: Some(session_name.to_string()),
         compacting: true,
         phase: crate::agent::llm::types::CompactStatePhase::Started,
+        error: None,
     };
 
     app_handle
@@ -288,6 +320,16 @@ pub(crate) async fn try_trigger_preflight_compaction(
     app_handle
         .emit("llm:compact-request", compact_event)
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))?;
+
+    log::info!(
+        "⏸️ Preflight compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, tail={}, started_at_ms={}",
+        session_id,
+        log_from_id,
+        log_to_id,
+        split_idx,
+        current_tail_id.as_deref().unwrap_or("?"),
+        started_at_ms
+    );
 
     Ok(true)
 }

@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 
 use super::BuiltinMCPServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
-use crate::mcp::types::{MCPResult, ServiceContext};
+use crate::mcp::types::{ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 
@@ -84,10 +84,9 @@ impl BuiltinMCPServer for ToolServer {
 
         if let Some(cache) = self.cache.read().await.as_ref() {
             if cache.last_update.elapsed() < CACHE_TTL {
-                return ServiceContext {
-                    context_prompt: cache.prompt.clone(),
-                    structured_state: Some(cache.state.clone()),
-                };
+                return ServiceContext::new(cache.prompt.clone())
+                    .with_structured_state(cache.state.clone())
+                    .with_volatility(ContextVolatility::Stable);
             }
         }
 
@@ -133,9 +132,8 @@ impl BuiltinMCPServer for ToolServer {
             });
         }
 
-        ServiceContext {
-            context_prompt,
-            structured_state: Some(structured_state),
-        }
+        ServiceContext::new(context_prompt)
+            .with_structured_state(structured_state)
+            .with_volatility(ContextVolatility::Stable)
     }
 }

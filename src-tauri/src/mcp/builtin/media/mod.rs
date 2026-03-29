@@ -95,9 +95,6 @@ impl BuiltinMCPServer for MediaServer {
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Media server has no persistent state to expose in system prompt.
-        ServiceContext {
-            context_prompt: String::new(),
-            structured_state: None,
-        }
+        ServiceContext::new(String::new())
     }
 }

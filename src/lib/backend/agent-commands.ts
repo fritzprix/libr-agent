@@ -105,12 +105,14 @@ export async function handleCompactResponse(
   });
 }
 
-/**
- * Notify Rust backend that frontend compaction LLM call failed.
- * Rust clears the in-flight flag so future turns can retry.
- */
-export async function handleCompactError(sessionId: string): Promise<void> {
-  await safeInvoke<AgentResponse>('agent_handle_compact_error', { sessionId });
+export async function handleCompactError(
+  sessionId: string,
+  error: AgentRuntimeError,
+): Promise<void> {
+  await safeInvoke<AgentResponse>('agent_handle_compact_error', {
+    sessionId,
+    error,
+  });
 }
 
 /**

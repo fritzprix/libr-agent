@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use crate::entity::knowledge_chunk_v2;
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
+use crate::mcp::types::{
+    BuiltinServerMetadata, ContextVolatility, MCPResult, MCPTool, ServiceContext,
+};
 
 pub mod embed;
 pub mod extraction;
@@ -93,8 +95,7 @@ impl BuiltinMCPServer for KnowledgeServer {
             .await
             .ok();
 
-        ServiceContext {
-            context_prompt: format!(
+        ServiceContext::new(format!(
                 "# Knowledge Base Context (Service: knowledge)\n\
                 - **Status**: Active. Ready for Hybrid Search (FTS5 + Vector).\n\
                 - **Assistant ID**: {}\n\
@@ -106,8 +107,7 @@ impl BuiltinMCPServer for KnowledgeServer {
                     .map(|count| count.to_string())
                     .unwrap_or_else(|| "unknown".to_string()),
                 embed::runtime_summary()
-            ),
-            structured_state: None,
-        }
+            ))
+            .with_volatility(ContextVolatility::Medium)
     }
 }

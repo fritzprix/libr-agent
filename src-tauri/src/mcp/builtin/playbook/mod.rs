@@ -1,5 +1,5 @@
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool};
+use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, MCPTool};
 use crate::repositories::{PlaybookRepository, SessionRepository};
 use async_trait::async_trait;
 use sea_orm::*;
@@ -85,22 +85,23 @@ impl BuiltinMCPServer for PlaybookServer {
             Ok(count) => count as i64,
             Err(e) => {
                 log::warn!("Failed to count playbooks: {}", e);
-                return crate::mcp::types::ServiceContext {
-                    context_prompt: "## Playbooks\n\nError loading state".to_string(),
-                    structured_state: None,
-                };
+                return crate::mcp::types::ServiceContext::new(
+                    "## Playbooks\n\nError loading state".to_string(),
+                )
+                .with_volatility(ContextVolatility::Medium);
             }
         };
 
         // If no playbooks, return minimal context
         if total_count == 0 {
-            return crate::mcp::types::ServiceContext {
-                context_prompt: "## Playbooks\n\nNo playbooks yet".to_string(),
-                structured_state: Some(serde_json::json!({
-                    "total_count": 0,
-                    "recent_playbooks": []
-                })),
-            };
+            return crate::mcp::types::ServiceContext::new(
+                "## Playbooks\n\nNo playbooks yet".to_string(),
+            )
+            .with_structured_state(serde_json::json!({
+                "total_count": 0,
+                "recent_playbooks": []
+            }))
+            .with_volatility(ContextVolatility::Medium);
         }
 
         // Fetch recent 3 playbooks (Planning-style detail)
@@ -115,13 +116,15 @@ impl BuiltinMCPServer for PlaybookServer {
             Ok(page) => page.items,
             Err(e) => {
                 log::warn!("Failed to fetch recent playbooks: {}", e);
-                return crate::mcp::types::ServiceContext {
-                    context_prompt: format!("## Playbooks\n\n{} total", total_count),
-                    structured_state: Some(serde_json::json!({
-                        "total_count": total_count,
-                        "recent_playbooks": []
-                    })),
-                };
+                return crate::mcp::types::ServiceContext::new(format!(
+                    "## Playbooks\n\n{} total",
+                    total_count
+                ))
+                .with_structured_state(serde_json::json!({
+                    "total_count": total_count,
+                    "recent_playbooks": []
+                }))
+                .with_volatility(ContextVolatility::Medium);
             }
         };
 
@@ -132,11 +135,13 @@ impl BuiltinMCPServer for PlaybookServer {
         let mut parts = vec![
             "## Playbooks".to_string(),
             String::new(),
-            format!("{} total", total_count),
+            "### Stable Context".to_string(),
+            format!("- Total: {}", total_count),
         ];
 
         if !playbooks.is_empty() {
             parts.push(String::new());
+            parts.push("### Live State".to_string());
             parts.push("Recent:".to_string());
             for playbook in &playbooks {
                 // Truncate goal to 50 chars for token efficiency
@@ -154,9 +159,8 @@ impl BuiltinMCPServer for PlaybookServer {
             }
         }
 
-        crate::mcp::types::ServiceContext {
-            context_prompt: parts.join("\n"),
-            structured_state: Some(serde_json::json!({
+        crate::mcp::types::ServiceContext::new(parts.join("\n"))
+            .with_structured_state(serde_json::json!({
                 "total_count": total_count,
                 "recent_playbooks": playbooks.iter().map(|p| serde_json::json!({
                     "id": p.id,
@@ -164,8 +168,8 @@ impl BuiltinMCPServer for PlaybookServer {
                     "step_count": p.workflow.len(),
                     "updated_at": p.updated_at
                 })).collect::<Vec<_>>()
-            })),
-        }
+            }))
+            .with_volatility(ContextVolatility::Medium)
     }
 
     fn tools(&self) -> Vec<MCPTool> {

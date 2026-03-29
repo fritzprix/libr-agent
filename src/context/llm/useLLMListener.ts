@@ -411,11 +411,12 @@ export function useLLMListener({
       }>('llm:compact-request', async (event) => {
         const {
           sessionId,
-          messages,
+          messages: rawMessages,
           fromId,
           toId,
           resumeCompletionAfterCompact,
         } = event.payload;
+        const messages = rawMessages.map(normalizeRustMessage);
         logger.info(
           `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
         );
@@ -425,7 +426,12 @@ export function useLLMListener({
         if (!settings) {
           logger.error('No settings available for compact request');
           setAwaitingCompactForSession(sessionId, false);
-          await handleCompactError(sessionId);
+          await handleCompactError(
+            sessionId,
+            toAgentRuntimeError(
+              new Error('No settings available for compact request'),
+            ),
+          );
           return;
         }
 
@@ -449,7 +455,7 @@ export function useLLMListener({
         } catch (error) {
           logger.error(`Compact LLM call failed: session=${sessionId}`, error);
           setAwaitingCompactForSession(sessionId, false);
-          await handleCompactError(sessionId);
+          await handleCompactError(sessionId, toAgentRuntimeError(error));
         }
       });
 
@@ -472,8 +478,10 @@ export function useLLMListener({
         sessionName?: string;
         compacting: boolean;
         phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
+        error?: string;
       }>('llm:compact-state', (event) => {
-        const { sessionId, sessionName, compacting, phase } = event.payload;
+        const { sessionId, sessionName, compacting, phase, error } =
+          event.payload;
         const toastId = `compact-${sessionId}`;
         const description = sessionName ?? sessionId.slice(0, 8);
 
@@ -493,7 +501,7 @@ export function useLLMListener({
         } else if (phase === 'FAILED') {
           toast.error(`Compaction failed`, {
             id: toastId,
-            description,
+            description: error ? `${description} - ${error}` : description,
             duration: 4000,
           });
         }

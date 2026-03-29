@@ -1,5 +1,5 @@
 // server.rs - AttachmentsServer implementation
-use crate::mcp::types::ServiceContext;
+use crate::mcp::types::{ContextVolatility, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::session::SessionManager;
 use serde_json::Value;
@@ -228,10 +228,10 @@ impl AttachmentsServer {
                     session_id,
                     e
                 );
-                return ServiceContext {
-                    context_prompt: "## Attachments\n\nError loading state".to_string(),
-                    structured_state: None,
-                };
+                return ServiceContext::new(
+                    "## Attachments\n\n### Live State\n- Error loading state",
+                )
+                .with_volatility(ContextVolatility::Volatile);
             }
         };
 
@@ -244,8 +244,9 @@ impl AttachmentsServer {
         // Build context prompt with file details
         let mut prompt_parts = vec![
             "## Attachments\n".to_string(),
+            "### Live State\n".to_string(),
             format!(
-                "{} available, 5 tools\n",
+                "- {} available, 5 tools\n",
                 Self::format_file_count(total_count)
             ),
         ];
@@ -271,9 +272,8 @@ impl AttachmentsServer {
 
         let context_prompt = prompt_parts.join("");
 
-        ServiceContext {
-            context_prompt,
-            structured_state: Some(serde_json::json!({
+        ServiceContext::new(context_prompt)
+            .with_structured_state(serde_json::json!({
                 "active": true,
                 "tool_count": 5,
                 "file_count": total_count,
@@ -282,8 +282,8 @@ impl AttachmentsServer {
                     "filename": f.filename,
                     "lineCount": f.line_count,
                 })).collect::<Vec<_>>(),
-            })),
-        }
+            }))
+            .with_volatility(ContextVolatility::Volatile)
     }
 
     // Helper functions for service context formatting

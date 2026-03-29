@@ -608,10 +608,12 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   /**
    * Retry the last failed message
    *
-   * Error state uses the same recovery mechanism as Paused:
-   * - No message deletion
-   * - Resume from last saved state with current message stack
-   * - Only difference from Paused is the UI display (error message)
+   * Error-state retry reuses the paused-session resume path:
+   * - Frontend calls `resumeSession()`, which invokes `agent_resume_workflow`
+   * - Rust rebuilds the request from the current stack, merging user turns and
+   *   dropping incomplete tool chains before reevaluating preflight compaction
+   * - No persisted messages are deleted; recovery happens by replaying from the
+   *   sanitized in-memory/database context
    */
   const retryMessage = useCallback(async () => {
     if (!session?.id) {

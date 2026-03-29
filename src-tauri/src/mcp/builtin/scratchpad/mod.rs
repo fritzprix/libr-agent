@@ -2,7 +2,7 @@ mod handlers;
 mod tools;
 
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
+use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::PlanningRepository;
 use crate::state::get_planning_repository;
@@ -92,12 +92,14 @@ impl BuiltinMCPServer for ScratchpadServer {
                 Vec::new()
             });
 
-        let mut parts = vec!["## Scratchpad".to_string()];
+        let mut parts = vec!["## Scratchpad".to_string(), String::new()];
 
         if items.is_empty() {
-            parts.push("\n*No scratchpad notes.*".to_string());
+            parts.push("### Live State".to_string());
+            parts.push("- No scratchpad notes.".to_string());
         } else {
-            parts.push(format!("\n**Notes:** {} item(s)", items.len()));
+            parts.push("### Live State".to_string());
+            parts.push(format!("- Notes: {} item(s)", items.len()));
             for item in &items {
                 let content = item.content.replace(['\n', '\r'], " ");
                 let summary = if content.chars().count() > 80 {
@@ -120,9 +122,8 @@ impl BuiltinMCPServer for ScratchpadServer {
             "count": items.len()
         });
 
-        ServiceContext {
-            context_prompt: parts.join("\n"),
-            structured_state: Some(structured_state),
-        }
+        ServiceContext::new(parts.join("\n"))
+            .with_structured_state(structured_state)
+            .with_volatility(ContextVolatility::Volatile)
     }
 }

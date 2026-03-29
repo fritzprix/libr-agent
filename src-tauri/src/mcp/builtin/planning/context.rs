@@ -1,4 +1,4 @@
-use crate::mcp::types::ServiceContext;
+use crate::mcp::types::{ContextVolatility, ServiceContext};
 use crate::repositories::PlanningRepository;
 use crate::state::get_planning_repository;
 use sea_orm::DatabaseConnection;
@@ -50,29 +50,33 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
 
     // --- Format Output ---
 
-    let mut parts = vec!["## Planning".to_string()];
+    let mut parts = vec!["## Planning".to_string(), String::new()];
 
     // Goal Section
+    parts.push("### Stable Context".to_string());
     if let Some(g) = &goal {
-        parts.push(format!("\n**Current Goal:** \"{}\"", g));
+        parts.push(format!("- Current Goal: \"{}\"", g));
     } else {
-        parts.push("\n**No Goal Set**".to_string());
+        parts.push("- No goal set".to_string());
     }
 
     // Todos Section
+    parts.push(String::new());
+    parts.push("### Live State".to_string());
     if !todos.is_empty() {
         let (checked_todos, unchecked_todos): (Vec<_>, Vec<_>) =
             todos.iter().enumerate().partition(|(_, t)| t.is_checked);
 
         parts.push(format!(
-            "\n**Tasks:** {} pending / {} completed",
+            "- Tasks: {} pending / {} completed",
             unchecked_todos.len(),
             checked_todos.len()
         ));
 
         // Unchecked Todos
         if !unchecked_todos.is_empty() {
-            parts.push("\n**Pending Tasks:**".to_string());
+            parts.push(String::new());
+            parts.push("**Pending Tasks:**".to_string());
             parts.push("| Index | Prio | Task | Info |".to_string());
             parts.push("| :--- | :--- | :--- | :--- |".to_string());
 
@@ -114,7 +118,8 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
 
         // Recently Checked
         if !checked_todos.is_empty() {
-            parts.push("\n**Completed Recently:**".to_string());
+            parts.push(String::new());
+            parts.push("**Completed Recently:**".to_string());
             for (idx, t) in checked_todos.iter().rev().take(3) {
                 let info = t
                     .description
@@ -135,9 +140,10 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
             }
         }
 
-        parts.push("\n*Use 'index' when calling updateTodo.*".to_string());
+        parts.push(String::new());
+        parts.push("*Use 'index' when calling updateTodo.*".to_string());
     } else {
-        parts.push("\n**Tasks:** None".to_string());
+        parts.push("- Tasks: None".to_string());
         parts.push("*Use 'addTodo' to create your first task.*".to_string());
     }
 
@@ -147,8 +153,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
          "todos_count": todos.len()
     });
 
-    ServiceContext {
-        context_prompt: parts.join("\n"),
-        structured_state: Some(structured_state),
-    }
+    ServiceContext::new(parts.join("\n"))
+        .with_structured_state(structured_state)
+        .with_volatility(ContextVolatility::Medium)
 }

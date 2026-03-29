@@ -101,16 +101,15 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "✅ To overwrite: Set \"mode\": \"overwrite\" in your request".to_string(),
-                    "✅ To append: Set \"mode\": \"append\" in your request".to_string(),
+                    "Set \"mode\": \"overwrite\" to replace the existing file.".to_string(),
+                    "Set \"mode\": \"append\" to add content to the end of the existing file."
+                        .to_string(),
                     format!(
-                        "   → first: readFile(\"{}\") into memory (if needed)",
+                        "Use readFile(\"{}\") first if you need the current contents before changing the file.",
                         path_str
                     ),
-                    "".to_string(),
-                    "⚠️ ALTERNATIVE: Use editFile for targeted edits (safer)".to_string(),
                     format!(
-                        "   → editFile(\"{}\", [{{line, line_hash, new_value}}])",
+                        "Use editFile(\"{}\", [{{line, line_hash, new_value}}]) for targeted edits instead of rewriting the whole file.",
                         path_str
                     ),
                 ])

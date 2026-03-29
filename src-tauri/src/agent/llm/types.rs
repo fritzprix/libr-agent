@@ -160,4 +160,5 @@ pub struct CompactStateEvent {
     pub session_name: Option<String>,
     pub compacting: bool,
     pub phase: CompactStatePhase,
+    pub error: Option<String>,
 }
