@@ -575,7 +575,6 @@ pub async fn request_llm_completion(
     let mut final_messages = messages.clone();
     let mut context_usage = None;
     let mut compaction_parent_request = Some(CompactionParentRequest {
-        messages: messages.clone(),
         model: model.clone(),
         provider: provider.clone(),
         system_prompt: system_prompt.clone(),
@@ -775,7 +774,6 @@ pub async fn request_llm_completion(
     }
 
     compaction_parent_request = Some(CompactionParentRequest {
-        messages: final_messages.clone(),
         model: model.clone(),
         provider: provider.clone(),
         system_prompt: system_prompt.clone(),

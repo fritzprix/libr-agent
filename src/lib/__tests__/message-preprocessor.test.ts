@@ -554,6 +554,7 @@ describe('message-preprocessor', () => {
       const [processedLatest] = await prepareMessagesForLLM([latestMessage]);
 
       expect(readLocalFileAsBase64).toHaveBeenCalledWith(
+        'session-1',
         'file:///tmp/example.png',
       );
       expect(fetchSpy).not.toHaveBeenCalled();

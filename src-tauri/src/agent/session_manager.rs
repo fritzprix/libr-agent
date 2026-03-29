@@ -533,7 +533,7 @@ impl AgentSessionManager {
         session_id: String,
         server_name: String,
         notification: ChannelNotification,
-    ) -> Result<bool, String> {
+    ) -> Result<(String, bool), String> {
         let session = self
             .get_session(&session_id)
             .await?
@@ -545,13 +545,14 @@ impl AgentSessionManager {
             notification.content,
             notification.meta,
         );
+        let message_id = message.id.clone();
 
         let should_trigger_workflow = !matches!(session.status, SessionStatus::Busy);
 
         self.inject_messages(session_id, vec![message], should_trigger_workflow)
             .await?;
 
-        Ok(should_trigger_workflow)
+        Ok((message_id, should_trigger_workflow))
     }
 
     pub async fn resolve_channel_notification_target(
@@ -592,15 +593,15 @@ impl AgentSessionManager {
         &self,
         server_name: String,
         notification: ChannelNotification,
-    ) -> Result<(ChannelRouteCandidate, bool), String> {
+    ) -> Result<(ChannelRouteCandidate, String, bool), String> {
         let target = self
             .resolve_channel_notification_target(&server_name)
             .await?;
-        let triggered = self
+        let (message_id, triggered) = self
             .inject_channel_notification(target.session_id.clone(), server_name, notification)
             .await?;
 
-        Ok((target, triggered))
+        Ok((target, message_id, triggered))
     }
 
     /// Handle tool execution result from frontend

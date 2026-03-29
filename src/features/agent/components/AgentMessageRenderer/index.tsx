@@ -77,6 +77,7 @@ function useResolvedMediaSource(
   rawData: string | undefined,
   uri: string | undefined,
   mimeType: string,
+  sessionId: string | undefined,
 ): string | undefined {
   const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(() => {
     if (rawData) {
@@ -130,7 +131,18 @@ function useResolvedMediaSource(
 
     setResolvedSrc(undefined);
 
-    void readLocalFileAsBase64(uri)
+    if (!sessionId) {
+      logger.error('Failed to resolve display media source', {
+        uri,
+        mimeType,
+        error: 'Cannot read file:// media without a sessionId',
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void readLocalFileAsBase64(sessionId, uri)
       .then((base64) => {
         if (cancelled) {
           return;
@@ -151,7 +163,7 @@ function useResolvedMediaSource(
     return () => {
       cancelled = true;
     };
-  }, [mimeType, rawData, uri]);
+  }, [mimeType, rawData, sessionId, uri]);
 
   return resolvedSrc;
 }
@@ -161,6 +173,7 @@ interface MediaRendererProps {
   uri?: string;
   mimeType: string;
   itemKey: string;
+  sessionId?: string;
 }
 
 function ImageContentRenderer({
@@ -168,8 +181,9 @@ function ImageContentRenderer({
   uri,
   mimeType,
   itemKey,
+  sessionId,
 }: MediaRendererProps) {
-  const imageSrc = useResolvedMediaSource(rawData, uri, mimeType);
+  const imageSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
 
   if (!imageSrc) {
     return null;
@@ -190,8 +204,9 @@ function AudioContentRenderer({
   uri,
   mimeType,
   itemKey,
+  sessionId,
 }: MediaRendererProps) {
-  const audioSrc = useResolvedMediaSource(rawData, uri, mimeType);
+  const audioSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
 
   if (!audioSrc) {
     return null;
@@ -210,8 +225,9 @@ function VideoContentRenderer({
   uri,
   mimeType,
   itemKey,
+  sessionId,
 }: MediaRendererProps) {
-  const videoSrc = useResolvedMediaSource(rawData, uri, mimeType);
+  const videoSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
 
   if (!videoSrc) {
     return null;
@@ -502,6 +518,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 rawData={rawData}
                 uri={uri}
                 mimeType={mimeType}
+                sessionId={message?.sessionId}
               />
             );
           }
@@ -522,6 +539,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 rawData={rawData}
                 uri={uri}
                 mimeType={mimeType}
+                sessionId={message?.sessionId}
               />
             );
           }
@@ -542,6 +560,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 rawData={rawData}
                 uri={uri}
                 mimeType={mimeType}
+                sessionId={message?.sessionId}
               />
             );
           }

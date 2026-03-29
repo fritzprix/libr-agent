@@ -124,6 +124,12 @@ export abstract class BaseAIService<
   TProviderMessage,
   TProviderTool,
 > implements IAIService {
+  private static readonly SESSION_CONTEXT_BACKGROUND_HEADER =
+    '[Current session context — background reference only, do not respond to this block]';
+
+  private static readonly SESSION_CONTEXT_BACKGROUND_FOOTER =
+    '[End of session context]';
+
   /**
    * The default configuration for the service.
    * @protected
@@ -931,10 +937,66 @@ export abstract class BaseAIService<
     if (!sessionContext) {
       return { systemPrompt, sessionContext: undefined, messages };
     }
-    const combined = [systemPrompt, sessionContext]
-      .filter(Boolean)
-      .join('\n\n');
-    return { systemPrompt: combined, sessionContext: undefined, messages };
+
+    return {
+      systemPrompt: this.mergeSessionContextIntoSystemPrompt(
+        systemPrompt,
+        sessionContext,
+      ),
+      sessionContext: undefined,
+      messages,
+    };
+  }
+
+  protected mergeSessionContextIntoSystemPrompt(
+    systemPrompt: string | undefined,
+    sessionContext: string,
+  ): string {
+    return [systemPrompt, sessionContext].filter(Boolean).join('\n\n');
+  }
+
+  protected formatSessionContextAsBackgroundReference(
+    sessionContext: string,
+  ): string {
+    return `${BaseAIService.SESSION_CONTEXT_BACKGROUND_HEADER}\n\n${sessionContext}\n\n${BaseAIService.SESSION_CONTEXT_BACKGROUND_FOOTER}`;
+  }
+
+  protected createSyntheticSessionContextMessage(
+    sessionContext: string,
+    messages: Message[],
+    options?: {
+      idPrefix?: string;
+      contentText?: string;
+      metadata?: Record<string, unknown>;
+      sessionIdFallback?: string;
+      threadIdFallback?: string;
+      createdAt?: Date;
+    },
+  ): Message {
+    const referenceMessage = messages[messages.length - 1];
+    const idPrefix = options?.idPrefix ?? 'session-context';
+
+    return {
+      id: `${idPrefix}-${referenceMessage?.id ?? 'system'}`,
+      sessionId:
+        referenceMessage?.sessionId ??
+        options?.sessionIdFallback ??
+        `${idPrefix}`,
+      threadId:
+        referenceMessage?.threadId ??
+        referenceMessage?.sessionId ??
+        options?.threadIdFallback ??
+        `${idPrefix}`,
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: options?.contentText ?? sessionContext,
+        },
+      ],
+      metadata: options?.metadata,
+      createdAt: options?.createdAt,
+    };
   }
 
   /**

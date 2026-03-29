@@ -115,11 +115,21 @@ describe('AgentMessageRenderer', () => {
         mimeType: 'image/png',
       },
     ];
+    const message = {
+      id: 'msg-1',
+      sessionId: 'test-session',
+      threadId: 'test-session',
+      role: 'assistant',
+      content,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Message;
 
-    render(<AgentMessageRenderer content={content} />);
+    render(<AgentMessageRenderer content={content} message={message} />);
 
     const image = await screen.findByAltText('Tool output');
     expect(readLocalFileAsBase64).toHaveBeenCalledWith(
+      'test-session',
       'file:///tmp/tool-output.png',
     );
     expect(image).toHaveAttribute(
