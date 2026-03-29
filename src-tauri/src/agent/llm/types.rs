@@ -126,6 +126,21 @@ pub struct CompletionRequest {
     pub context_usage: Option<serde_json::Value>,
 }
 
+/// Prompt-layout fields from the parent workflow request that should be reused
+/// for frontend-driven compaction calls to preserve provider prompt-cache hits.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionParentRequest {
+    pub messages: Vec<Message>,
+    pub model: String,
+    pub provider: String,
+    /// Stable system prompt (sections 1–4). Cacheable across turns within a session.
+    pub system_prompt: Option<String>,
+    /// Volatile session context (sections 5–6). Rebuilt on every LLM call.
+    pub session_context: Option<String>,
+    pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
+}
+
 /// Event payload emitted as `llm:compact-request`.
 /// The frontend listener calls the LLM for a summary and returns via `agent_handle_compact_response`.
 #[derive(Clone, serde::Serialize)]
@@ -138,6 +153,8 @@ pub struct CompactRequest {
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,
+    /// The exact parent workflow request layout to replay for cache-friendly compaction.
+    pub parent_request: Option<CompactionParentRequest>,
     /// When true, Rust is waiting for this compaction to complete before retrying
     /// the blocked LLM turn.
     pub resume_completion_after_compact: bool,

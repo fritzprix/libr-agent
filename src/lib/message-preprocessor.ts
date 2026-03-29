@@ -141,7 +141,8 @@ function messageHasMedia(message: Message): boolean {
 
   return (
     message.attachments?.some(
-      (attachment) => attachment.status === 'inline' && !!attachment.inlineContent,
+      (attachment) =>
+        attachment.status === 'inline' && !!attachment.inlineContent,
     ) ?? false
   );
 }

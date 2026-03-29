@@ -62,8 +62,8 @@ LibrAgent does **not yet** support the full direct Claude-style runtime where co
   - LibrAgent emits a `channelPermissionRequest` agent event with `request_id`, `tool_name`, `description`, and `input_preview`
   - that event is now gated by real session capability: it is only emitted when the session has at least one connected channel server advertising `claude/channel/permission`
   - remote bridges can resolve approvals through:
-     - Tauri command: `agent_respond_channel_permission`
-     - HTTP API: `POST /api/sessions/{id}/channel/permission`
+    - Tauri command: `agent_respond_channel_permission`
+    - HTTP API: `POST /api/sessions/{id}/channel/permission`
 
 ### 1.8 Supported bridge contract
 

@@ -49,6 +49,25 @@ export interface CompletionRequest {
   };
 }
 
+export interface CompactionParentRequest {
+  messages: Message[];
+  model: string;
+  provider: string;
+  systemPrompt?: string;
+  sessionContext?: string;
+  availableTools?: MCPTool[];
+}
+
+export interface CompactRequest {
+  sessionId: string;
+  sessionName: string;
+  messages: Message[];
+  fromId: string;
+  toId: string;
+  parentRequest?: CompactionParentRequest;
+  resumeCompletionAfterCompact: boolean;
+}
+
 /**
  * Status of LLM execution for a specific session
  */

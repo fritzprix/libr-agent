@@ -91,12 +91,12 @@ function AgentMessageBubbleImpl({
             isChannelMessage
               ? 'border border-amber-500/30 bg-amber-500/10 text-secondary-foreground'
               : msg.role === 'user'
-              ? isPending
-                ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
-                : 'bg-primary text-primary-foreground'
-              : toolErrorGroup
-                ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
-                : 'bg-secondary text-secondary-foreground',
+                ? isPending
+                  ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
+                  : 'bg-primary text-primary-foreground'
+                : toolErrorGroup
+                  ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
+                  : 'bg-secondary text-secondary-foreground',
             // Add custom utility to ensure links inside are visible
             isStandardUserMessage
               ? '[&_a]:text-primary-foreground'
