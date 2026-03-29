@@ -20,6 +20,8 @@ import {
   agentCallBuiltinTool,
   deleteAgentFile,
 } from '@/features/agent/api/agent-backend';
+import { getWorkspaceDir } from '@/lib/backend/workspace';
+import { workspacePathToFileUrl } from '@/lib/file-url';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 
 const logger = getLogger('AgentResourceAttachmentContext');
@@ -306,7 +308,8 @@ export function AgentResourceAttachmentProvider({
       if (file) {
         try {
           workspacePath = await syncFileToWorkspace(file, sessionId);
-          fileUrl = url;
+          const workspaceDir = await getWorkspaceDir(sessionId);
+          fileUrl = workspacePathToFileUrl(workspaceDir, workspacePath);
           actualMimeType =
             file.type || mimeType || getMimeTypeFromFilename(actualFilename);
           fileSize = file.size;
@@ -341,7 +344,8 @@ export function AgentResourceAttachmentProvider({
             type: resolvedMimeType,
           });
           workspacePath = await syncFileToWorkspace(downloadedFile, sessionId);
-          fileUrl = `file://${workspacePath}`;
+          const workspaceDir = await getWorkspaceDir(sessionId);
+          fileUrl = workspacePathToFileUrl(workspaceDir, workspacePath);
           actualMimeType = resolvedMimeType;
           fileSize = fetchedBlob.size;
         } catch (downloadError) {
@@ -382,42 +386,42 @@ export function AgentResourceAttachmentProvider({
         actualMimeType.startsWith('audio/');
 
       if (isInlineType) {
-        logger.info('File is image/audio — reading as inline base64', {
+        logger.info('File is image/audio — storing stable inline media reference', {
           filename: actualFilename,
           mimeType: actualMimeType,
+          hasStableUri: !fileUrl.startsWith('blob:'),
         });
-
-        let base64Data = '';
-        try {
-          // Use the File object if available (drop path), otherwise fall back to
-          // the blob fetched from the URL (URL-only path)
-          const sourceBlob: Blob =
-            file ??
-            fetchedBlob ??
-            (() => {
-              throw new Error('No data source available for inline content');
-            })();
-          const buffer = await sourceBlob.arrayBuffer();
-          const bytes = new Uint8Array(buffer);
-          // Convert to base64 in chunks to avoid call-stack overflow for large files
-          let binary = '';
-          for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          base64Data = btoa(binary);
-        } catch (readError) {
-          logger.error('Failed to read file as base64', {
-            filename: actualFilename,
-            error: readError,
-          });
-          throw new Error(
-            `Failed to read file "${actualFilename}" for inline attachment.`,
-          );
-        }
 
         const inlineType = actualMimeType.startsWith('image/')
           ? ('image' as const)
           : ('audio' as const);
+
+        let fallbackBase64Data: string | undefined;
+        if (fileUrl.startsWith('blob:')) {
+          try {
+            const sourceBlob: Blob =
+              file ??
+              fetchedBlob ??
+              (() => {
+                throw new Error('No data source available for inline content');
+              })();
+            const buffer = await sourceBlob.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            fallbackBase64Data = btoa(binary);
+          } catch (readError) {
+            logger.error('Failed to read fallback inline media as base64', {
+              filename: actualFilename,
+              error: readError,
+            });
+            throw new Error(
+              `Failed to read file "${actualFilename}" for inline attachment.`,
+            );
+          }
+        }
 
         return {
           sessionId,
@@ -430,7 +434,8 @@ export function AgentResourceAttachmentProvider({
           uploadedAt: new Date().toISOString(),
           inlineContent: {
             type: inlineType,
-            data: base64Data,
+            data: fallbackBase64Data,
+            uri: fileUrl,
             mimeType: actualMimeType,
           },
         };

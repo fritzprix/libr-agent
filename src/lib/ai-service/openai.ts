@@ -253,11 +253,7 @@ export class OpenAIService extends BaseAIService<
       prompt_cache_key?: string;
       prompt_cache_retention?: 'in_memory' | '24h';
     },
-  >(
-    request: T,
-    config: AIServiceConfig,
-    automaticPromptCacheKey?: string,
-  ): T {
+  >(request: T, config: AIServiceConfig, automaticPromptCacheKey?: string): T {
     if (!this.isOfficialOpenAIEndpoint(config)) {
       return request;
     }
@@ -280,11 +276,7 @@ export class OpenAIService extends BaseAIService<
 
   private withPromptCaching<
     T extends OpenAIStreamingRequest | OpenAINonStreamingRequest,
-  >(
-    request: T,
-    config: AIServiceConfig,
-    automaticPromptCacheKey?: string,
-  ): T {
+  >(request: T, config: AIServiceConfig, automaticPromptCacheKey?: string): T {
     const withOfficialPromptCaching = this.withOfficialPromptCaching(
       request,
       config,
@@ -364,16 +356,15 @@ export class OpenAIService extends BaseAIService<
       contentLength: content.length,
       contentHash: stableHashKeyPart(content),
       toolCallCount: toolCalls.length,
-      toolCallNames: toolCalls
-        .map((toolCall) =>
-          'function' in toolCall &&
-          typeof toolCall.function === 'object' &&
-          toolCall.function !== null &&
-          'name' in toolCall.function &&
-          typeof toolCall.function.name === 'string'
-            ? toolCall.function.name
-            : 'custom',
-        ),
+      toolCallNames: toolCalls.map((toolCall) =>
+        'function' in toolCall &&
+        typeof toolCall.function === 'object' &&
+        toolCall.function !== null &&
+        'name' in toolCall.function &&
+        typeof toolCall.function.name === 'string'
+          ? toolCall.function.name
+          : 'custom',
+      ),
       toolCallHash: stableHashKeyPart(stableStringify(toolCalls)),
     };
   }

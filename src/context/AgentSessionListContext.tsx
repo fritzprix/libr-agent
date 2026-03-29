@@ -568,6 +568,7 @@ export function AgentSessionListProvider({
           createdAt: number;
         };
         toolCallId?: string;
+        approved?: boolean;
         reason?: WorkflowCompletionReason;
       }>('agent:event', (event) => {
         const payload = event.payload;
@@ -700,6 +701,15 @@ export function AgentSessionListProvider({
               },
             );
           }
+          return;
+        }
+
+        if (
+          payload.type === 'toolExecutionApprovalResolved' &&
+          payload.sessionId &&
+          payload.toolCallId
+        ) {
+          clearPendingApproval(payload.sessionId, payload.toolCallId);
         }
       });
     };

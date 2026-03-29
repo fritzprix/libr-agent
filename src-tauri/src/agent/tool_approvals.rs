@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+
+const CHANNEL_PERMISSION_ID_ALPHABET: &[u8] = b"abcdefghijkmnopqrstuvwxyz";
+const CHANNEL_PERMISSION_ID_LENGTH: usize = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolApprovalsConfig {
@@ -37,6 +41,73 @@ pub async fn is_approval_required(tool_name: &str) -> bool {
     }
     // Default false if no match
     false
+}
+
+pub fn generate_channel_permission_request_id() -> String {
+    let bytes = uuid::Uuid::new_v4().into_bytes();
+    let mut output = String::with_capacity(CHANNEL_PERMISSION_ID_LENGTH);
+
+    for byte in bytes.iter().take(CHANNEL_PERMISSION_ID_LENGTH) {
+        let index = (*byte as usize) % CHANNEL_PERMISSION_ID_ALPHABET.len();
+        output.push(CHANNEL_PERMISSION_ID_ALPHABET[index] as char);
+    }
+
+    output
+}
+
+pub fn build_channel_permission_description(tool_name: &str, arguments: &str) -> String {
+    let trimmed_arguments = arguments.trim();
+
+    if trimmed_arguments.is_empty() {
+        format!("Claude requested approval to run tool {}", tool_name)
+    } else {
+        format!(
+            "Claude requested approval to run tool {} with the provided arguments",
+            tool_name
+        )
+    }
+}
+
+pub fn build_channel_permission_input_preview(arguments: &str) -> String {
+    const MAX_CHARS: usize = 200;
+
+    let trimmed = arguments.trim();
+    let mut preview = String::new();
+    let mut chars = trimmed.chars();
+
+    for _ in 0..MAX_CHARS {
+        if let Some(ch) = chars.next() {
+            preview.push(ch);
+        } else {
+            return preview;
+        }
+    }
+
+    if chars.next().is_some() {
+        preview.push('…');
+    }
+
+    preview
+}
+
+pub fn parse_channel_permission_behavior(behavior: &str) -> Result<bool, String> {
+    match behavior {
+        "allow" => Ok(true),
+        "deny" => Ok(false),
+        other => Err(format!(
+            "Invalid channel permission behavior: {} (expected 'allow' or 'deny')",
+            other
+        )),
+    }
+}
+
+pub fn find_pending_approval_tool_call_id(
+    approvals: &HashMap<String, crate::agent::state::PendingApprovalData>,
+    request_id: &str,
+) -> Option<String> {
+    approvals.iter().find_map(|(tool_call_id, data)| {
+        (data.request_id.as_deref() == Some(request_id)).then(|| tool_call_id.clone())
+    })
 }
 
 #[cfg(test)]

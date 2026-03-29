@@ -51,11 +51,13 @@ export interface AttachmentReference {
   blobCleanup?: () => void; // Cleanup function for blob URLs
   /**
    * Populated for image/* and audio/* attachments instead of going through the
-   * content store. Holds the base64-encoded file data for direct LLM consumption.
+   * content store. Holds either a stable file URI or an inline base64 fallback
+   * for direct LLM consumption.
    */
   inlineContent?: {
     type: 'image' | 'audio';
-    data: string; // base64-encoded file bytes
+    data?: string; // base64-encoded file bytes
+    uri?: string; // stable file:// or blob: URL for display and lazy materialization
     mimeType: string;
   };
 }
@@ -130,8 +132,8 @@ export interface Message {
   usage?: TokenUsage;
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
-  /** Source of the message - 'assistant' for AI-generated, 'ui' for user interface interactions */
-  source?: 'assistant' | 'ui';
+  /** Source of the message - 'assistant' for AI-generated, 'ui' for interface actions, 'channel' for external channel events */
+  source?: MessageSource;
   // Error handling for failed AI service calls
   error?: {
     // User-friendly message to display
@@ -201,7 +203,7 @@ export interface RustMessage {
   createdAt: number;
   updatedAt: number;
 
-  source?: 'assistant' | 'ui';
+  source?: MessageSource;
   error?: {
     displayMessage: string;
     type: MessageErrorType;
@@ -247,6 +249,8 @@ export function rustMessageToMessage(rustMsg: RustMessage): Message {
     metadata: rustMsg.metadata,
   };
 }
+
+export type MessageSource = 'assistant' | 'ui' | 'channel';
 
 // ========================================
 // MCP Configuration Types (MCP 2025-06-18 Spec)

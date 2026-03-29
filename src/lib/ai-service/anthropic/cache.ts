@@ -123,7 +123,8 @@ export function buildAnthropicPromptCacheMetadata(
   const promptTokens = getAnthropicPromptTokens(usage, previousDetails);
   const completionTokens = usage.output_tokens ?? 0;
   const cacheCreationInputTokens =
-    usage.cache_creation_input_tokens ?? previousDetails?.cacheCreationInputTokens;
+    usage.cache_creation_input_tokens ??
+    previousDetails?.cacheCreationInputTokens;
   const cacheReadInputTokens =
     usage.cache_read_input_tokens ?? previousDetails?.cacheReadInputTokens;
 

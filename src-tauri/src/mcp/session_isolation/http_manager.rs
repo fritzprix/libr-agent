@@ -325,7 +325,11 @@ impl HttpSessionManager {
                             "image" => {
                                 let data = json_val.get("data")?.as_str()?.to_string();
                                 let mime_type = json_val.get("mimeType")?.as_str()?.to_string();
-                                Some(crate::mcp::types::MCPContent::Image { data, mime_type })
+                                Some(crate::mcp::types::MCPContent::Image {
+                                    data: Some(data),
+                                    uri: None,
+                                    mime_type,
+                                })
                             }
                             "resource" => {
                                 // Extract only the nested "resource" field to avoid double-nesting

@@ -1,3 +1,4 @@
+use crate::agent::channel_routing::{resolve_auto_routed_channel_target, ChannelRouteCandidate};
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
@@ -308,6 +309,25 @@ impl AgentSessionManager {
                             arguments: data.arguments.clone(),
                         },
                     );
+                    if let Some(request_id) = &data.request_id {
+                        evs.push(crate::agent::events::AgentEvent::ChannelPermissionRequest {
+                            session_id: session_id.to_string(),
+                            request_id: request_id.clone(),
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: data.tool_name.clone(),
+                            description: data.description.clone().unwrap_or_else(|| {
+                                crate::agent::tool_approvals::build_channel_permission_description(
+                                    &data.tool_name,
+                                    &data.arguments,
+                                )
+                            }),
+                            input_preview: data.input_preview.clone().unwrap_or_else(|| {
+                                crate::agent::tool_approvals::build_channel_permission_input_preview(
+                                    &data.arguments,
+                                )
+                            }),
+                        });
+                    }
                 }
             }
             evs
@@ -534,6 +554,55 @@ impl AgentSessionManager {
         Ok(should_trigger_workflow)
     }
 
+    pub async fn resolve_channel_notification_target(
+        &self,
+        server_name: &str,
+    ) -> Result<ChannelRouteCandidate, String> {
+        let active_session_candidates = {
+            let active = self.active_sessions.read().await;
+            active
+                .iter()
+                .map(|(session_id, session)| ChannelRouteCandidate {
+                    session_id: session_id.clone(),
+                    session_name: session
+                        .metadata
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
+                    parent_session_id: session.metadata.parent_session_id.clone(),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut matching_candidates = Vec::new();
+        for candidate in active_session_candidates {
+            if self
+                .proxy_manager
+                .session_has_channel_server(&candidate.session_id, server_name)
+                .await
+            {
+                matching_candidates.push(candidate);
+            }
+        }
+
+        resolve_auto_routed_channel_target(server_name, matching_candidates)
+    }
+
+    pub async fn inject_channel_notification_auto(
+        &self,
+        server_name: String,
+        notification: ChannelNotification,
+    ) -> Result<(ChannelRouteCandidate, bool), String> {
+        let target = self
+            .resolve_channel_notification_target(&server_name)
+            .await?;
+        let triggered = self
+            .inject_channel_notification(target.session_id.clone(), server_name, notification)
+            .await?;
+
+        Ok((target, triggered))
+    }
+
     /// Handle tool execution result from frontend
     pub async fn handle_tool_result(
         &self,
@@ -566,6 +635,14 @@ impl AgentSessionManager {
             let mut approvals = session.pending_approvals.write().await;
             if let Some(data) = approvals.remove(tool_call_id) {
                 let _ = data.sender.send(approved);
+                let event = crate::agent::events::AgentEvent::ToolExecutionApprovalResolved {
+                    session_id: session_id.to_string(),
+                    tool_call_id: tool_call_id.to_string(),
+                    approved,
+                };
+                if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+                    log::error!("Failed to emit ToolExecutionApprovalResolved event: {}", e);
+                }
                 return Ok(());
             }
         }
@@ -573,6 +650,37 @@ impl AgentSessionManager {
             "Pending approval not found for tool call: {}",
             tool_call_id
         ))
+    }
+
+    pub async fn respond_channel_permission(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        approved: bool,
+    ) -> Result<String, String> {
+        let active = self.active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return Err(format!("Session not found: {}", session_id));
+        };
+
+        let matching_tool_call_id = {
+            let approvals = session.pending_approvals.read().await;
+            crate::agent::tool_approvals::find_pending_approval_tool_call_id(&approvals, request_id)
+        };
+
+        drop(active);
+
+        let tool_call_id = matching_tool_call_id.ok_or_else(|| {
+            format!(
+                "Pending approval not found for request_id: {} in session {}",
+                request_id, session_id
+            )
+        })?;
+
+        self.respond_tool_approval(session_id, &tool_call_id, approved)
+            .await?;
+
+        Ok(tool_call_id)
     }
 
     /// Set YOLO mode for a session

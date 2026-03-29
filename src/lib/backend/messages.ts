@@ -43,9 +43,10 @@ function deserializeMessage(rustMsg: RustMessage): Message {
     tool_use: (rustMsg.toolUse as Message['tool_use']) ?? undefined,
     createdAt: new Date(rustMsg.createdAt),
     updatedAt: new Date(rustMsg.updatedAt),
-    source: rustMsg.source as 'assistant' | 'ui' | undefined,
+    source: rustMsg.source as Message['source'],
     error: (rustMsg.error as Message['error']) ?? undefined,
     usage: rustMsg.usage,
+    metadata: rustMsg.metadata,
   };
 }
 

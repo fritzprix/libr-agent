@@ -1,9 +1,10 @@
+use crate::services::{WorkspaceFileItem, WorkspaceService};
+use crate::session::get_session_manager;
 /// Workspace-related Tauri commands
 ///
 /// This module contains commands for workspace and application directory management,
 /// including file listing, data directories, and log directories.
-use crate::services::{WorkspaceFileItem, WorkspaceService};
-use crate::session::get_session_manager;
+use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
 
 /// A simple command to test the frontend-backend connection.
@@ -153,4 +154,30 @@ pub async fn get_workspace_dir(session_id: String) -> Result<String, String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
     Ok(workspace_path.to_string_lossy().to_string())
+}
+
+/// Reads a local file URI and returns its contents as a base64 string.
+///
+/// This exists for frontend multimodal request preparation because webview
+/// `fetch(file://...)` is not reliable across platforms/runtime policies.
+#[tauri::command]
+pub async fn read_local_file_as_base64(file_url: String) -> Result<String, String> {
+    let url = url::Url::parse(&file_url).map_err(|e| format!("Invalid file URL format: {e}"))?;
+
+    if url.scheme() != "file" {
+        return Err(format!(
+            "read_local_file_as_base64 only supports file:// URLs, got: {}",
+            url.scheme()
+        ));
+    }
+
+    let file_path = url
+        .to_file_path()
+        .map_err(|_| "URL cannot be converted to a local file path".to_string())?;
+
+    let bytes = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| format!("Failed to read local file '{}': {e}", file_path.display()))?;
+
+    Ok(general_purpose::STANDARD.encode(bytes))
 }

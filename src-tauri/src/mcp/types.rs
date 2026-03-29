@@ -209,13 +209,19 @@ pub enum MCPContent {
     },
     #[serde(rename = "image")]
     Image {
-        data: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uri: Option<String>,
         #[serde(rename = "mimeType")]
         mime_type: String,
     },
     #[serde(rename = "audio")]
     Audio {
-        data: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uri: Option<String>,
         #[serde(rename = "mimeType")]
         mime_type: String,
     },

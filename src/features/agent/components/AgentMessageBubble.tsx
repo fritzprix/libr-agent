@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
@@ -19,6 +20,27 @@ interface AgentMessageBubbleProps {
    * (iconography/colors) for clear visual distinction.
    */
   toolErrorGroup?: boolean;
+}
+
+interface ChannelBubbleMetadata {
+  serverName?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getChannelBubbleMetadata(
+  metadata: Message['metadata'],
+): ChannelBubbleMetadata | null {
+  if (!isRecord(metadata) || !isRecord(metadata.channel)) {
+    return null;
+  }
+
+  const { serverName } = metadata.channel;
+  return {
+    serverName: typeof serverName === 'string' ? serverName : undefined,
+  };
 }
 
 function AgentMessageBubbleImpl({
@@ -45,12 +67,20 @@ function AgentMessageBubbleImpl({
     );
   }, [displayContent, msg.content]);
 
+  const channelMetadata = useMemo(
+    () => getChannelBubbleMetadata(msg.metadata),
+    [msg.metadata],
+  );
+
+  const isChannelMessage = msg.source === 'channel' || channelMetadata !== null;
+  const isStandardUserMessage = msg.role === 'user' && !isChannelMessage;
+
   return (
     <div className="px-4 py-2">
       <div
         className={cn(
           'flex',
-          msg.role === 'user' ? 'justify-end' : 'justify-start',
+          isStandardUserMessage ? 'justify-end' : 'justify-start',
           hasUIResource && 'w-full',
         )}
       >
@@ -58,7 +88,9 @@ function AgentMessageBubbleImpl({
           className={cn(
             'relative p-3 rounded-lg flex flex-col',
             hasUIResource ? 'w-full max-w-full' : 'max-w-[85%] md:max-w-2xl',
-            msg.role === 'user'
+            isChannelMessage
+              ? 'border border-amber-500/30 bg-amber-500/10 text-secondary-foreground'
+              : msg.role === 'user'
               ? isPending
                 ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
                 : 'bg-primary text-primary-foreground'
@@ -66,19 +98,38 @@ function AgentMessageBubbleImpl({
                 ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
                 : 'bg-secondary text-secondary-foreground',
             // Add custom utility to ensure links inside are visible
-            msg.role === 'user'
+            isStandardUserMessage
               ? '[&_a]:text-primary-foreground'
               : '[&_a]:text-primary',
           )}
         >
-          <div className="text-xs font-semibold mb-1 opacity-70">
-            {msg.role === 'assistant'
-              ? assistantName || 'ASSISTANT'
-              : msg.role === 'user'
-                ? isPending
-                  ? 'You (queued)'
-                  : 'You'
-                : msg.role.toUpperCase()}
+          <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold opacity-80">
+            {isChannelMessage ? (
+              <>
+                <span>Notification</span>
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                >
+                  CHANNEL
+                </Badge>
+                {channelMetadata?.serverName ? (
+                  <Badge variant="secondary" className="bg-background/70">
+                    {channelMetadata.serverName}
+                  </Badge>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {msg.role === 'assistant'
+                  ? assistantName || 'ASSISTANT'
+                  : msg.role === 'user'
+                    ? isPending
+                      ? 'You (queued)'
+                      : 'You'
+                    : msg.role.toUpperCase()}
+              </>
+            )}
           </div>
           <div className="whitespace-pre-wrap min-w-0 font-sans">
             {/* File Attachments Display */}

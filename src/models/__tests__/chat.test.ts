@@ -90,6 +90,29 @@ describe('Message conversions', () => {
     expect(msg.createdAt?.getTime()).toBe(nowTs);
   });
 
+  it('preserves channel source and metadata from RustMessage', () => {
+    const rustMsg: RustMessage = {
+      id: 'channel-msg',
+      sessionId: 'session1',
+      role: 'user',
+      content: [{ type: 'text', text: '<channel source="alerts">build failed</channel>' }],
+      createdAt: nowTs,
+      updatedAt: nowTs,
+      source: 'channel',
+      metadata: {
+        channel: {
+          serverName: 'alerts',
+          meta: { severity: 'high' },
+        },
+      },
+    };
+
+    const msg = rustMessageToMessage(rustMsg);
+
+    expect(msg.source).toBe('channel');
+    expect(msg.metadata).toEqual(rustMsg.metadata);
+  });
+
   it('updatedAt falls back to createdAt if missing', () => {
     const createdAt = new Date('2023-01-01');
     const msg: Message = {

@@ -80,6 +80,9 @@ pub struct PendingApprovalData {
     pub sender: oneshot::Sender<bool>,
     pub tool_name: String,
     pub arguments: String,
+    pub request_id: Option<String>,
+    pub description: Option<String>,
+    pub input_preview: Option<String>,
 }
 
 /// Represents an active agent session with its runtime state

@@ -1,3 +1,4 @@
+pub mod channel_routing;
 pub mod concurrency;
 pub mod config;
 pub mod context;

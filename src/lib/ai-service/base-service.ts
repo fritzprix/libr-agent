@@ -48,7 +48,7 @@ export function stableStringify(value: unknown): string {
       ([key, nestedValue]) =>
         `${JSON.stringify(key)}:${stableStringify(nestedValue)}`,
     )
-     .join(',')}}`;
+    .join(',')}}`;
 }
 
 export function stableHashKeyPart(value: string): string {
@@ -83,7 +83,9 @@ function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
     .map((tool) => ({
       ...tool,
       inputSchema: stableClone(tool.inputSchema),
-      outputSchema: tool.outputSchema ? stableClone(tool.outputSchema) : undefined,
+      outputSchema: tool.outputSchema
+        ? stableClone(tool.outputSchema)
+        : undefined,
       annotations: tool.annotations ? stableClone(tool.annotations) : undefined,
     }))
     .sort((left, right) => {
@@ -363,6 +365,7 @@ export abstract class BaseAIService<
   }> {
     type MediaItem = {
       data?: string;
+      uri?: string;
       mimeType?: string;
       source?: { data?: string; uri?: string; mimeType?: string };
     };
@@ -370,28 +373,40 @@ export abstract class BaseAIService<
       switch (item.type) {
         case 'text':
           return { type: 'text', text: (item as { text: string }).text };
-        case 'image':
+        case 'image': {
+          const mediaItem = item as MediaItem;
+          const data = mediaItem.data || mediaItem.source?.data;
+          if (data) {
+            return {
+              type: 'image',
+              image: data,
+              mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
+            };
+          }
+
+          const uri = mediaItem.uri || mediaItem.source?.uri;
           return {
-            type: 'image',
-            image:
-              (item as MediaItem).data ||
-              (item as MediaItem).source?.data ||
-              (item as MediaItem).source?.uri,
-            mimeType:
-              (item as MediaItem).mimeType ||
-              (item as MediaItem).source?.mimeType,
+            type: 'text',
+            text: `[unresolved image omitted from multimodal request: ${uri || 'missing-uri'}]`,
           };
-        case 'audio':
+        }
+        case 'audio': {
+          const mediaItem = item as MediaItem;
+          const data = mediaItem.data || mediaItem.source?.data;
+          if (data) {
+            return {
+              type: 'audio',
+              audio: data,
+              mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
+            };
+          }
+
+          const uri = mediaItem.uri || mediaItem.source?.uri;
           return {
-            type: 'audio',
-            audio:
-              (item as MediaItem).data ||
-              (item as MediaItem).source?.data ||
-              (item as MediaItem).source?.uri,
-            mimeType:
-              (item as MediaItem).mimeType ||
-              (item as MediaItem).source?.mimeType,
+            type: 'text',
+            text: `[unresolved audio omitted from multimodal request: ${uri || 'missing-uri'}]`,
           };
+        }
         default:
           return { type: 'text', text: `[${item.type}]` };
       }
