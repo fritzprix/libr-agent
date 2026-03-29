@@ -1,3 +1,4 @@
+use crate::agent::AgentSessionManager;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
@@ -25,20 +26,30 @@ struct ContextCache {
 pub struct AgentServer {
     session_id: String,
     db: Arc<DatabaseConnection>,
+    manager: Option<AgentSessionManager>,
     cache: Arc<RwLock<Option<ContextCache>>>,
 }
 
 impl AgentServer {
-    pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
+    pub async fn new(
+        session_id: String,
+        db: Arc<DatabaseConnection>,
+        manager: Option<AgentSessionManager>,
+    ) -> Result<Self, String> {
         Ok(Self {
             session_id,
             db,
+            manager,
             cache: Arc::new(RwLock::new(None)),
         })
     }
 
     pub fn get_db(&self) -> &DatabaseConnection {
         &self.db
+    }
+
+    pub fn get_manager(&self) -> Option<&AgentSessionManager> {
+        self.manager.as_ref()
     }
 
     async fn legacy_assistant_server(
@@ -135,11 +146,13 @@ impl BuiltinMCPServer for AgentServer {
                 .await
             }
             "healthCheck" | "spawnAgent" | "getAgentStatus" | "awaitAgent" | "getAgentLog"
-            | "getChildAgents" | "messageAgent" | "terminateAgent" | "listAgentTypes" => {
+            | "getChildAgents" | "messageAgent" | "terminateAgent" | "listAgentTypes"
+            | "getAgentConfig" => {
                 crate::mcp::builtin::session_api::handlers::handle_tool_call(
                     tool_name,
                     args,
                     Some(session_id.clone()),
+                    self.get_manager(),
                 )
                 .await
             }

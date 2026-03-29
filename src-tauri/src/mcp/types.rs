@@ -370,6 +370,8 @@ pub enum MCPResponseResult {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[serde(rename = "serverInfo")]
         server_info: Option<ServerInfo>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        instructions: Option<String>,
     },
     /// Generic fallback for other operations
     Generic(serde_json::Value),
@@ -384,6 +386,8 @@ pub struct ServerCapabilities {
     pub resources: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompts: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub experimental: Option<serde_json::Value>,
 }
 
 /// Server information
@@ -528,6 +532,45 @@ impl<T> ServiceContext<T> {
         self.volatility = volatility;
         self
     }
+}
+
+// ========================================
+// Channel Protocol Extensions
+// ========================================
+
+/// Represents a notification from a channel (notifications/claude/channel)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelNotification {
+    pub content: String,
+    #[serde(default)]
+    pub meta: HashMap<String, String>,
+}
+
+/// Represents a permission request from the client (notifications/claude/channel/permission_request)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelPermissionRequest {
+    pub request_id: String,
+    pub tool_name: String,
+    pub description: String,
+    pub input_preview: String,
+}
+
+/// Represents a permission relay verdict (notifications/claude/channel/permission)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelPermissionVerdict {
+    pub request_id: String,
+    pub behavior: String, // "allow" | "deny"
+}
+
+/// Runtime metadata about an external MCP server that behaves like a channel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelServerMetadata {
+    pub server_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub supports_permission_relay: bool,
 }
 
 // ========================================

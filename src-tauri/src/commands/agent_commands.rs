@@ -1,4 +1,5 @@
 use crate::agent::AgentSessionManager;
+use crate::mcp::types::ChannelNotification;
 use crate::mcp::types::ServiceContext;
 use crate::repositories::{CompactContextRecord, SessionMetadata, SessionRepository};
 use crate::state::get_session_repository;
@@ -51,6 +52,17 @@ pub struct InjectMessagesRequest {
     pub session_id: String,
     pub messages: Vec<Message>,
     pub trigger_workflow: bool,
+}
+
+/// Request to inject a channel-originated message into a session.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InjectChannelMessageRequest {
+    pub session_id: String,
+    pub server_name: String,
+    pub content: String,
+    #[serde(default)]
+    pub meta: HashMap<String, String>,
 }
 
 /// Request to update agent configuration for a session
@@ -177,6 +189,37 @@ pub async fn agent_inject_messages(
             request.session_id, request.trigger_workflow
         ),
         data: None,
+    })
+}
+
+/// Inject a channel-originated message into the session and wake the workflow when idle.
+#[command]
+pub async fn agent_inject_channel_message(
+    manager: State<'_, AgentSessionManager>,
+    request: InjectChannelMessageRequest,
+) -> Result<AgentResponse, String> {
+    let triggered = manager
+        .inject_channel_notification(
+            request.session_id.clone(),
+            request.server_name.clone(),
+            ChannelNotification {
+                content: request.content,
+                meta: request.meta,
+            },
+        )
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!(
+            "Injected channel message for session: {} from {} ({})",
+            request.session_id,
+            request.server_name,
+            if triggered { "processed" } else { "queued" }
+        ),
+        data: Some(serde_json::json!({
+            "status": if triggered { "processed" } else { "queued" }
+        })),
     })
 }
 

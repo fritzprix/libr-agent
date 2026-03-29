@@ -1,13 +1,14 @@
-use reqwest::Method;
 use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::time::sleep;
 
+use crate::agent::AgentSessionManager;
 use crate::mcp::builtin::error_guidance::ErrorCategory;
 use crate::mcp::types::MCPResult;
+use crate::repositories::assistant_repository::AssistantRepository;
+use crate::repositories::session_repository::SessionRepository;
 
 use super::cache::{min_interval_notice, unchanged_messages_notice};
-use super::client::call_json;
 use super::formatting::*;
 use super::types::*;
 use super::utils::*;
@@ -30,11 +31,8 @@ fn map_session_response(
             .unwrap_or("Unnamed")
             .to_string(),
         status: extract_session_status(session),
-        assistant_id: session
-            .get("assistantId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string(),
+        assistant_id: extract_assistant_id_from_session_value(session)
+            .unwrap_or_else(|| "unknown".to_string()),
         turn_count,
         latest_result,
     }
@@ -44,16 +42,25 @@ pub async fn handle_tool_call(
     tool_name: &str,
     args: Value,
     caller_session_id: Option<String>,
+    manager: Option<&AgentSessionManager>,
 ) -> Result<MCPResult, String> {
     match tool_name {
         "healthCheck" => {
-            let data = call_json(Method::GET, "/api/health", None, None).await?;
+            let data = json!({
+                "status": "ok",
+                "service": "session_api_direct",
+                "transport": "in_process",
+                "managerAvailable": manager.is_some(),
+            });
             Ok(success_result(
-                "Session API health check succeeded.".to_string(),
+                "Session API direct backend health check succeeded.".to_string(),
                 data,
             ))
         }
         "spawnAgent" => {
+            let manager = manager.ok_or_else(|| {
+                "AgentSessionManager not available for legacy session API tools".to_string()
+            })?;
             let assistant_id = read_required_string(&args, "assistantId")?;
             let request = read_required_string(&args, "request")?;
 
@@ -84,31 +91,45 @@ pub async fn handle_tool_call(
                 .and_then(|v| v.as_u64())
                 .unwrap_or(180);
 
-            let data = call_json(Method::POST, "/api/sessions", Some(body), None)
-                .await
-                .map_err(|e| {
-                    if e.contains("404") && e.contains("Assistant") {
-                        return format!(
-                            "Assistant '{}' not found. Use listAgentTypes to see available types.",
-                            assistant_id
-                        );
-                    }
-                    e
-                })?;
+            let request: crate::agent::types::CreateSessionRequest =
+                serde_json::from_value(body)
+                    .map_err(|e| format!("Invalid spawnAgent arguments: {}", e))?;
 
-            let child_id = data.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let response = crate::services::AgentService::spawn_agent_with_source(
+                manager,
+                request,
+                Some("swarm_legacy".to_string()),
+            )
+            .await
+            .map_err(|e| {
+                if e.contains("Assistant not found:") {
+                    return format!(
+                        "Assistant '{}' not found. Use listAgentTypes to see available types.",
+                        assistant_id
+                    );
+                }
+                e
+            })?;
+
+            let child_id = response.id.as_str();
             let child_id_owned = child_id.to_string();
+            let session_data = fetch_session_value(manager, &child_id_owned)
+                .await?
+                .ok_or_else(|| format!("Spawned session '{}' not found", child_id_owned))?;
 
             if !await_completion {
                 return Ok(success_result(
                     format!(
                         "Child agent '{}' spawned successfully (ID: {}).\n\nUse awaitAgent(\"{}\") to wait for completion and fetch results.",
-                        data.get("name").and_then(|v| v.as_str()).unwrap_or("Unnamed"),
+                        session_data
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unnamed"),
                         child_id_owned, child_id_owned
                     ),
                     SwarmOperationResponse {
                         operation: "spawn".to_string(),
-                        session: map_session_response(&data, 0, None),
+                        session: map_session_response(&session_data, 0, None),
                         messages_count: None,
                     },
                 ));
@@ -119,6 +140,7 @@ pub async fn handle_tool_call(
                 let gate = crate::state::get_concurrency_gate();
                 gate.suspend_agent().await?;
                 let res = wait_until_session_terminal(
+                    manager,
                     &child_id_owned,
                     timeout_seconds,
                     caller_session_id.as_deref(),
@@ -141,13 +163,7 @@ pub async fn handle_tool_call(
             let final_status = extract_session_status(&session_data);
             let turn_count = count_session_turns(&child_id_owned).await;
 
-            let messages_data = call_json(
-                Method::GET,
-                &format!("/api/sessions/{}/messages", child_id_owned),
-                None,
-                Some(vec![("limit".to_string(), "20".to_string())]),
-            )
-            .await?;
+            let messages_data = fetch_messages_value(&child_id_owned, 20).await?;
 
             let messages = messages_data
                 .get("messages")
@@ -176,20 +192,13 @@ pub async fn handle_tool_call(
             ))
         }
         "getAgentStatus" => {
+            let manager = manager.ok_or_else(|| {
+                "AgentSessionManager not available for legacy session API tools".to_string()
+            })?;
             let session_id = read_required_string(&args, "sessionId")?;
-            let data = match call_json(
-                Method::GET,
-                &format!("/api/sessions/{}", session_id),
-                None,
-                None,
-            )
-            .await
-            {
-                Ok(data) => data,
-                Err(e) if e.contains("404") => {
-                    return Ok(session_not_found_error("Get Agent Status", &session_id))
-                }
-                Err(e) => return Err(e),
+            let data = match fetch_session_value(manager, &session_id).await? {
+                Some(data) => data,
+                None => return Ok(session_not_found_error("Get Agent Status", &session_id)),
             };
 
             let turn_count = count_session_turns(&session_id).await;
@@ -205,6 +214,9 @@ pub async fn handle_tool_call(
             ))
         }
         "awaitAgent" => {
+            let manager = manager.ok_or_else(|| {
+                "AgentSessionManager not available for legacy session API tools".to_string()
+            })?;
             let session_id = read_required_string(&args, "sessionId")?;
 
             let timeout_seconds = args
@@ -223,31 +235,16 @@ pub async fn handle_tool_call(
                 .filter(|v| *v > 0);
 
             // Pre-check session existence and state
-            let initial_session = match call_json(
-                Method::GET,
-                &format!("/api/sessions/{}", session_id),
-                None,
-                None,
-            )
-            .await
-            {
-                Ok(data) => data,
-                Err(e) if e.contains("404") => {
-                    return Ok(session_not_found_error("Await Agent", &session_id))
-                }
-                Err(e) => return Err(e),
+            let initial_session = match fetch_session_value(manager, &session_id).await? {
+                Some(data) => data,
+                None => return Ok(session_not_found_error("Await Agent", &session_id)),
             };
 
             if extract_session_status(&initial_session) == "paused" {
                 // ... (auto-resume logic remains same but structured)
-                let msgs_data = call_json(
-                    Method::GET,
-                    &format!("/api/sessions/{}/messages", session_id),
-                    None,
-                    Some(vec![("limit".to_string(), "5".to_string())]),
-                )
-                .await
-                .unwrap_or_default();
+                let msgs_data = fetch_messages_value(&session_id, 5)
+                    .await
+                    .unwrap_or_default();
                 let msgs = msgs_data
                     .get("messages")
                     .and_then(|v| v.as_array())
@@ -255,13 +252,8 @@ pub async fn handle_tool_call(
                     .unwrap_or_default();
 
                 if !last_message_is_ui_resource(&msgs) {
-                    let _ = call_json(
-                        Method::POST,
-                        &format!("/api/sessions/{}/resume", session_id),
-                        None,
-                        None,
-                    )
-                    .await;
+                    let _ = manager.resume_session(&session_id).await;
+                    let _ = manager.resume_workflow(session_id.clone()).await;
                     sleep(Duration::from_millis(500)).await;
                 }
             }
@@ -270,6 +262,7 @@ pub async fn handle_tool_call(
                 let gate = crate::state::get_concurrency_gate();
                 gate.suspend_agent().await?;
                 let res = wait_until_session_terminal(
+                    manager,
                     &session_id,
                     timeout_seconds,
                     caller_session_id.as_deref(),
@@ -290,16 +283,7 @@ pub async fn handle_tool_call(
             };
 
             let turn_count = count_session_turns(&session_id).await;
-            let messages_data = call_json(
-                Method::GET,
-                &format!("/api/sessions/{}/messages", session_id),
-                None,
-                Some(vec![(
-                    "limit".to_string(),
-                    result_message_limit.to_string(),
-                )]),
-            )
-            .await?;
+            let messages_data = fetch_messages_value(&session_id, result_message_limit).await?;
             let messages = messages_data
                 .get("messages")
                 .and_then(|v| v.as_array())
@@ -326,19 +310,22 @@ pub async fn handle_tool_call(
             ))
         }
         "messageAgent" => {
+            let manager = manager.ok_or_else(|| {
+                "AgentSessionManager not available for legacy session API tools".to_string()
+            })?;
             let session_id = read_required_string(&args, "sessionId")?;
             let content = read_required_string(&args, "content")?;
 
-            let data = match call_json(
-                Method::POST,
-                &format!("/api/sessions/{}/messages", session_id),
-                Some(json!({ "content": content })),
-                None,
+            let response = match crate::services::AgentService::send_message_to_session(
+                manager,
+                &session_id,
+                content,
+                Some("swarm_legacy".to_string()),
             )
             .await
             {
-                Ok(data) => data,
-                Err(e) if e.contains("404") => {
+                Ok(response) => response,
+                Err(e) if e.contains("Session not found:") => {
                     return Ok(session_not_found_error("Message Agent", &session_id))
                 }
                 Err(e) => return Err(e),
@@ -347,13 +334,15 @@ pub async fn handle_tool_call(
             Ok(success_result(
                 format!(
                     "Message accepted by session {} (ID: {})",
-                    session_id,
-                    data.get("id").and_then(|v| v.as_str()).unwrap_or("unknown")
+                    session_id, response.message_id
                 ),
-                json!({ "messageId": data.get("id"), "status": data.get("status") }),
+                json!({ "messageId": response.message_id, "status": response.status }),
             ))
         }
         "terminateAgent" => {
+            let manager = manager.ok_or_else(|| {
+                "AgentSessionManager not available for legacy session API tools".to_string()
+            })?;
             let session_id = read_required_string(&args, "sessionId")?;
 
             if caller_session_id.as_deref() == Some(session_id.as_str()) {
@@ -365,25 +354,27 @@ pub async fn handle_tool_call(
                 ));
             }
 
-            match call_json(
-                Method::POST,
-                &format!("/api/sessions/{}/terminate", session_id),
-                None,
-                None,
-            )
-            .await
-            {
-                Ok(_) => Ok(success_result(
-                    format!("Terminated session: {}", session_id),
-                    json!({ "sessionId": session_id, "terminated": true }),
-                )),
-                Err(e) if e.contains("404") => {
+            match manager.terminate_session(session_id.clone()).await {
+                Ok(_) => {
+                    crate::services::agent_service::lineage_store()
+                        .write()
+                        .await
+                        .remove(&session_id);
+                    Ok(success_result(
+                        format!("Terminated session: {}", session_id),
+                        json!({ "sessionId": session_id, "terminated": true }),
+                    ))
+                }
+                Err(e) if e.contains("not found") => {
                     Ok(session_not_found_error("Terminate Agent", &session_id))
                 }
                 Err(e) => Err(e),
             }
         }
         "getAgentLog" => {
+            let manager = manager.ok_or_else(|| {
+                "AgentSessionManager not available for legacy session API tools".to_string()
+            })?;
             let target_session_id = read_required_string(&args, "sessionId")?;
             let requested_limit = args.get("limit").and_then(|v| v.as_u64());
             let options = read_message_summary_options(&args);
@@ -400,21 +391,15 @@ pub async fn handle_tool_call(
                 None
             };
 
-            let query = requested_limit.map(|v| vec![("limit".to_string(), v.to_string())]);
-            let data = match call_json(
-                Method::GET,
-                &format!("/api/sessions/{}/messages", target_session_id),
-                None,
-                query,
-            )
-            .await
+            if fetch_session_value(manager, &target_session_id)
+                .await?
+                .is_none()
             {
-                Ok(data) => data,
-                Err(e) if e.contains("404") => {
-                    return Ok(session_not_found_error("Get Agent Log", &target_session_id))
-                }
-                Err(e) => return Err(e),
-            };
+                return Ok(session_not_found_error("Get Agent Log", &target_session_id));
+            }
+
+            let data =
+                fetch_messages_value(&target_session_id, requested_limit.unwrap_or(50)).await?;
 
             let messages = data
                 .get("messages")
@@ -447,14 +432,16 @@ pub async fn handle_tool_call(
             let parent_session_id = caller_session_id
                 .clone()
                 .ok_or_else(|| "getChildAgents requires a caller session context".to_string())?;
-
-            let data = call_json(
-                Method::GET,
-                &format!("/api/sessions/{}/children", parent_session_id),
-                None,
-                None,
-            )
-            .await?;
+            let session_repo = crate::state::get_session_repository();
+            let child_ids = session_repo
+                .get_child_session_ids(&parent_session_id)
+                .await
+                .map_err(|e| format!("Failed to fetch child sessions: {}", e))?;
+            let data = json!({
+                "parentSessionId": parent_session_id,
+                "count": child_ids.len(),
+                "children": child_ids,
+            });
 
             let child_ids = data
                 .get("children")
@@ -469,14 +456,11 @@ pub async fn handle_tool_call(
 
             for child_id in &child_ids {
                 // Fetch each child session data to map it properly
-                if let Ok(child_data) = call_json(
-                    Method::GET,
-                    &format!("/api/sessions/{}", child_id),
-                    None,
-                    None,
-                )
-                .await
-                {
+                if let Ok(Some(session)) = session_repo.get_session(child_id).await {
+                    let child_data = match session_metadata_to_value(&session) {
+                        Ok(value) => value,
+                        Err(_) => continue,
+                    };
                     let turn_count = count_session_turns(child_id).await;
                     let preview = latest_assistant_preview_for_session(
                         child_id,
@@ -513,7 +497,13 @@ pub async fn handle_tool_call(
             Ok(success_result(message, session_responses))
         }
         "listAgentTypes" => {
-            let data = call_json(Method::GET, "/api/assistants", None, None).await?;
+            let assistant_repo = crate::state::get_assistant_repository();
+            let assistants = assistant_repo
+                .list_assistants()
+                .await
+                .map_err(|e| format!("Failed to list assistants: {}", e))?;
+            let data = serde_json::to_value(&assistants)
+                .map_err(|e| format!("Failed to serialize assistants: {}", e))?;
             let assistants = data
                 .as_array()
                 .cloned()
@@ -561,13 +551,14 @@ pub async fn handle_tool_call(
         }
         "getAgentConfig" => {
             let assistant_id = read_required_string(&args, "assistantId")?;
-            let data = call_json(
-                Method::GET,
-                &format!("/api/assistants/{}", assistant_id),
-                None,
-                None,
-            )
-            .await?;
+            let assistant_repo = crate::state::get_assistant_repository();
+            let assistant = assistant_repo
+                .get_assistant(&assistant_id)
+                .await
+                .map_err(|e| format!("Failed to fetch assistant: {}", e))?
+                .ok_or_else(|| format!("Assistant '{}' not found", assistant_id))?;
+            let data = serde_json::to_value(&assistant)
+                .map_err(|e| format!("Failed to serialize assistant config: {}", e))?;
 
             let name = data
                 .get("name")

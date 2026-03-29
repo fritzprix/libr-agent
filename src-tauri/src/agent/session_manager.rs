@@ -2,10 +2,12 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
 use crate::agent::state::AgentSession;
+use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
     CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
+    SessionStatus,
 };
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -20,6 +22,7 @@ use tokio::sync::RwLock;
 /// - `workflow`: Task execution flow (start, stop, pause, resume)
 /// - `llm`: LLM interaction and response handling
 /// - `tools`: Tool execution and result handling
+#[derive(Clone)]
 pub struct AgentSessionManager {
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: AppHandle,
@@ -505,6 +508,32 @@ impl AgentSessionManager {
         Ok(())
     }
 
+    pub async fn inject_channel_notification(
+        &self,
+        session_id: String,
+        server_name: String,
+        notification: ChannelNotification,
+    ) -> Result<bool, String> {
+        let session = self
+            .get_session(&session_id)
+            .await?
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let message = build_channel_message(
+            &session_id,
+            &server_name,
+            notification.content,
+            notification.meta,
+        );
+
+        let should_trigger_workflow = !matches!(session.status, SessionStatus::Busy);
+
+        self.inject_messages(session_id, vec![message], should_trigger_workflow)
+            .await?;
+
+        Ok(should_trigger_workflow)
+    }
+
     /// Handle tool execution result from frontend
     pub async fn handle_tool_result(
         &self,
@@ -911,4 +940,82 @@ impl AgentSessionManager {
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
         clear_compact_flags(&self.active_sessions, session_id).await;
     }
+}
+
+fn build_channel_message(
+    session_id: &str,
+    server_name: &str,
+    content: String,
+    meta: HashMap<String, String>,
+) -> Message {
+    let now = chrono::Utc::now().timestamp_millis();
+    let text = format_channel_payload(server_name, &content, &meta);
+
+    Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        session_id: session_id.to_string(),
+        role: "user".to_string(),
+        content: vec![crate::mcp::types::MCPContent::Text {
+            text,
+            is_error: None,
+        }],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        created_at: now,
+        updated_at: now,
+        source: Some("channel".to_string()),
+        error: None,
+        metadata: Some(serde_json::json!({
+            "channel": {
+                "serverName": server_name,
+                "meta": meta,
+            }
+        })),
+    }
+}
+
+fn format_channel_payload(
+    server_name: &str,
+    content: &str,
+    meta: &HashMap<String, String>,
+) -> String {
+    let mut attributes = vec![format!(r#"source="{}""#, escape_xml_attr(server_name))];
+    let mut sorted_meta: Vec<_> = meta.iter().collect();
+    sorted_meta.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    for (key, value) in sorted_meta {
+        attributes.push(format!(
+            r#"{}="{}""#,
+            escape_xml_attr(key),
+            escape_xml_attr(value)
+        ));
+    }
+
+    format!(
+        "<channel {}>\n{}\n</channel>",
+        attributes.join(" "),
+        escape_xml_text(content)
+    )
+}
+
+fn escape_xml_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_xml_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }

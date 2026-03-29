@@ -34,6 +34,7 @@ impl SessionMCPManager {
             server_configs,
             config,
             active_call_tokens: Arc::new(RwLock::new(HashMap::new())),
+            channel_metadata: Arc::new(RwLock::new(HashMap::new())),
             workspace_dir,
         }
     }
@@ -152,6 +153,9 @@ impl SessionMCPManager {
             .await
             .map_err(|_| SessionMCPError::InitTimeout(server_name.to_string()))?
             .map_err(|e| SessionMCPError::InitFailed(format!("{}", e)))?;
+
+        self.update_channel_metadata(server_name, client.peer_info())
+            .await;
 
         info!("Successfully connected to MCP server: {}", server_name);
 

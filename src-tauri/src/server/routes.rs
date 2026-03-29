@@ -50,6 +50,17 @@ pub fn get_routes(
         .and(warp::body::json())
         .and_then(handlers::send_message);
 
+    // POST /api/sessions/:id/channel
+    let inject_channel_message = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("channel"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(warp::body::json())
+        .and_then(handlers::inject_channel_message);
+
     // POST /api/sessions/:id/resume
     let resume_session = warp::post()
         .and(warp::path("api"))
@@ -128,6 +139,7 @@ pub fn get_routes(
         .or(get_session)
         .or(get_messages)
         .or(send_message)
+        .or(inject_channel_message)
         .or(resume_session)
         .or(terminate_session)
         .or(get_child_sessions)
