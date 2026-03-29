@@ -11,20 +11,31 @@ This document provides a comprehensive reference for the primary Tauri commands 
 **Source**: `src-tauri/src/commands/agent_commands.rs`
 
 **Parameters**:
-- `assistant_id: String` - The ID of the assistant profile to use.
-- `name: Option<String>` - An optional name for the session.
+- `request: CreateAgentSessionRequest` - The session configuration object.
+  - `sessionId: String` - Unique identifier for the session.
+  - `name: Option<String>` - Optional descriptive name.
+  - `model: Option<String>` - LLM model ID.
+  - `provider: Option<String>` - LLM provider name.
+  - `agentConfig: AgentConfig` - System prompt and tool settings.
+  - `isEphemeral: bool` - If true, data is not persisted (defaults to false).
+  - `workspacePath: Option<String>` - Custom path for session files.
 
 **Returns**:
-- `Result<SessionResponse, String>` - Returns the created session metadata on success, or an error message on failure.
+- `Result<SessionMetadata, String>` - Returns the created session metadata on success.
 
 **Usage**:
 ```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 try {
   const session = await invoke('agent_create_session', {
-    assistantId: 'asst_coder',
-    name: 'Debug Session'
+    request: {
+      sessionId: 'session-123',
+      agentConfig: {
+        systemPrompt: 'You are a helpful assistant.',
+        tools: []
+      }
+    }
   });
   console.log('Session created:', session);
 } catch (error) {
@@ -41,22 +52,29 @@ try {
 **Source**: `src-tauri/src/commands/agent_commands.rs`
 
 **Parameters**:
-- `request: SendMessageRequest` - The message payload, including `session_id` and the `content` block.
+- `request: SendUserMessageRequest` - The message payload.
+  - `sessionId: String` - Active session ID.
+  - `message: Message` - Message object with `id`, `role`, and `content`.
 
 **Returns**:
-- `Result<(), String>` - Returns `Ok` when the workflow starts, or an error message if the session cannot be found or is busy.
+- `Result<AgentResponse, String>` - Returns status success/message on workflow start.
 
 **Usage**:
 ```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 try {
-  await invoke('agent_send_message', {
+  const response = await invoke('agent_send_message', {
     request: {
-      session_id: 'session-123',
-      content: [{ type: 'text', text: 'List the files in /tmp' }]
+      sessionId: 'session-123',
+      message: {
+        id: 'msg-1',
+        role: 'user',
+        content: [{ type: 'text', text: 'List the files in /tmp' }]
+      }
     }
   });
+  console.log('Workflow started:', response);
 } catch (error) {
   console.error('Failed to send message:', error);
 }
@@ -66,19 +84,19 @@ try {
 
 ### remove_session
 
-**Purpose**: Permanently deletes an agent session and its associated messages.
+**Purpose**: Cleans up a session workspace, search index, and metadata. *Note: Does not delete session records from the primary database.*
 
 **Source**: `src-tauri/src/commands/session_commands.rs`
 
 **Parameters**:
-- `session_id: String` - The unique identifier of the session to delete.
+- `sessionId: String` - The unique identifier of the session to clean up.
 
 **Returns**:
-- `Result<SessionResponse, String>` - Returns the deleted session metadata on success.
+- `Result<SessionResponse, String>` - Returns a status wrapper confirming cleanup on success.
 
 **Usage**:
 ```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 try {
   await invoke('remove_session', { sessionId: 'session-123' });
@@ -103,7 +121,7 @@ try {
 
 **Usage**:
 ```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 try {
   const tools = await invoke('probe_mcp_server', { serverId: 'filesystem' });
@@ -124,11 +142,18 @@ try {
 **Returns**:
 - `Vec<String>` - A list of built-in server names.
 
+**Usage**:
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+const servers = await invoke<string[]>('list_builtin_servers');
+```
+
 ---
 
 ### list_builtin_tools
 
-**Purpose**: Retrieves a list of tools for a specific built-in server or all built-in servers if none is specified.
+**Purpose**: Retrieves a list of tool definitions for a built-in server. *Note: Currently returns an empty list as tool definitions are managed dynamically per session.*
 
 **Source**: `src-tauri/src/commands/mcp_commands.rs`
 
@@ -136,7 +161,9 @@ try {
 - `server_name: Option<String>` - (Optional) The name of the built-in server.
 
 **Returns**:
-- `Vec<MCPTool>` - A list of tools.
+- `Vec<MCPTool>` - A list of tools (currently empty).
+
+---
 
 ## System Settings
 
@@ -155,7 +182,7 @@ try {
 
 **Usage**:
 ```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 try {
   await invoke('set_setting', { key: 'theme', value: 'dark' });
@@ -177,4 +204,16 @@ try {
 
 **Returns**:
 - `Result<Option<SettingDto>, String>` - Returns the setting if it exists, or `null`.
+
+**Usage**:
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  const theme = await invoke('get_setting', { key: 'theme' });
+  console.log('Current theme:', theme);
+} catch (error) {
+  console.error('Failed to get setting:', error);
+}
+```
 
