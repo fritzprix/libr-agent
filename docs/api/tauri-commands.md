@@ -1,313 +1,180 @@
 # Tauri Commands
 
-This document provides a comprehensive reference for all Tauri commands available in LibrAgent.
+This document provides a comprehensive reference for the primary Tauri commands available in LibrAgent. Commands are grouped by domain and are located in `src-tauri/src/commands/`.
 
-## Server Management
+## Agent Workflow Management
 
-### start_mcp_server
+### agent_create_session
 
-**Purpose**: Starts an MCP server and initializes its toolset.
+**Purpose**: Creates a new agent session to begin a conversation workflow.
 
-**Source**: [`src-tauri/src/lib.rs:20-25`](../src-tauri/src/lib.rs#L20-L25)
-
-**Parameters**:
-
-- `config: MCPServerConfig` - The server configuration object. See [`types.md#mcpserverconfig`](./types.md#mcpserverconfig) for details.
-
-**Returns**:
-
-- `Result<String, String>` - Returns the server name on success, or an error message on failure.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const config = {
-  name: 'filesystem',
-  command: 'npx',
-  args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
-};
-
-try {
-  const serverName = await invoke<string>('start_mcp_server', { config });
-  console.log(`Server started: ${serverName}`);
-} catch (error) {
-  console.error('Failed to start server:', error);
-}
-```
-
-**Error Cases**:
-
-- Server executable not found.
-- Port is already in use.
-- Initialization failure due to invalid configuration.
-
-**Related**:
-
-- [`stop_mcp_server`](#stop_mcp_server)
-- [`check_server_status`](#check_server_status)
-- [`MCPServerConfig`](./types.md#mcpserverconfig)
-
----
-
-### stop_mcp_server
-
-**Purpose**: Stops a running MCP server.
-
-**Source**: [`src-tauri/src/lib.rs:27-32`](../src-tauri/src/lib.rs#L27-L32)
+**Source**: `src-tauri/src/commands/agent_commands.rs`
 
 **Parameters**:
-
-- `server_name: String` - The name of the server to stop.
+- `assistant_id: String` - The ID of the assistant profile to use.
+- `name: Option<String>` - An optional name for the session.
 
 **Returns**:
-
-- `Result<(), String>` - Returns `Ok` on success, or an error message on failure.
+- `Result<SessionResponse, String>` - Returns the created session metadata on success, or an error message on failure.
 
 **Usage**:
-
 ```typescript
 import { invoke } from '@tauri-apps/api/tauri';
 
 try {
-  await invoke('stop_mcp_server', { serverName: 'filesystem' });
-  console.log('Server stopped successfully.');
-} catch (error) {
-  console.error('Failed to stop server:', error);
-}
-```
-
-**Related**:
-
-- [`start_mcp_server`](#start_mcp_server)
-- [`check_all_servers_status`](#check_all_servers_status)
-
-## Tool Operations
-
-### call_mcp_tool
-
-**Purpose**: Calls a specific tool on a running MCP server.
-
-**Source**: [`src-tauri/src/lib.rs:34-41`](../src-tauri/src/lib.rs#L34-L41)
-
-**Parameters**:
-
-- `server_name: String` - The name of the server hosting the tool.
-- `tool_name: String` - The name of the tool to call.
-- `arguments: serde_json::Value` - The arguments to pass to the tool, as a JSON object.
-
-**Returns**:
-
-- `ToolCallResult` - The result of the tool call. See [`types.md#toolcallresult`](./types.md#toolcallresult).
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-try {
-  const result = await invoke('call_mcp_tool', {
-    serverName: 'filesystem',
-    toolName: 'writeFile',
-    arguments: { path: '/tmp/test.txt', content: 'Hello, World!' },
+  const session = await invoke('agent_create_session', {
+    assistantId: 'asst_coder',
+    name: 'Debug Session'
   });
-  console.log('Tool call result:', result);
+  console.log('Session created:', session);
 } catch (error) {
-  console.error('Tool call failed:', error);
+  console.error('Failed to create session:', error);
 }
 ```
 
 ---
 
-### list_mcp_tools
+### agent_send_message
 
-**Purpose**: Lists all available tools on a specific MCP server.
+**Purpose**: Sends a new user message to an active agent session, triggering the agent's workflow (LLM completion and tool execution).
 
-**Source**: [`src-tauri/src/lib.rs:43-48`](../src-tauri/src/lib.rs#L43-L48)
+**Source**: `src-tauri/src/commands/agent_commands.rs`
 
 **Parameters**:
-
-- `server_name: String` - The name of the server.
+- `request: SendMessageRequest` - The message payload, including `session_id` and the `content` block.
 
 **Returns**:
-
-- `Result<Vec<MCPTool>, String>` - A list of tool definitions on success, or an error message on failure.
+- `Result<(), String>` - Returns `Ok` when the workflow starts, or an error message if the session cannot be found or is busy.
 
 **Usage**:
-
 ```typescript
 import { invoke } from '@tauri-apps/api/tauri';
 
 try {
-  const tools = await invoke('list_mcp_tools', { serverName: 'filesystem' });
+  await invoke('agent_send_message', {
+    request: {
+      session_id: 'session-123',
+      content: [{ type: 'text', text: 'List the files in /tmp' }]
+    }
+  });
+} catch (error) {
+  console.error('Failed to send message:', error);
+}
+```
+
+## Session Management
+
+### remove_session
+
+**Purpose**: Permanently deletes an agent session and its associated messages.
+
+**Source**: `src-tauri/src/commands/session_commands.rs`
+
+**Parameters**:
+- `session_id: String` - The unique identifier of the session to delete.
+
+**Returns**:
+- `Result<SessionResponse, String>` - Returns the deleted session metadata on success.
+
+**Usage**:
+```typescript
+import { invoke } from '@tauri-apps/api/tauri';
+
+try {
+  await invoke('remove_session', { sessionId: 'session-123' });
+} catch (error) {
+  console.error('Failed to remove session:', error);
+}
+```
+
+## MCP Integration
+
+### probe_mcp_server
+
+**Purpose**: Probes an MCP server to retrieve its list of available tools.
+
+**Source**: `src-tauri/src/commands/mcp_commands.rs`
+
+**Parameters**:
+- `server_id: String` - The ID of the server to probe.
+
+**Returns**:
+- `Result<Vec<MCPTool>, String>` - A list of tools available on the server.
+
+**Usage**:
+```typescript
+import { invoke } from '@tauri-apps/api/tauri';
+
+try {
+  const tools = await invoke('probe_mcp_server', { serverId: 'filesystem' });
   console.log('Available tools:', tools);
 } catch (error) {
-  console.error('Failed to list tools:', error);
+  console.error('Failed to probe server:', error);
 }
 ```
 
 ---
 
-### list_tools_from_config
+### list_builtin_servers
 
-**Purpose**: Starts servers from a configuration object and lists all their tools. This is useful for discovering tools from multiple servers at once.
+**Purpose**: Retrieves a list of all built-in MCP servers available in LibrAgent (e.g., `planning`, `workspace`).
 
-**Source**: [`src-tauri/src/lib.rs:50-142`](../src-tauri/src/lib.rs#L50-L142)
-
-**Parameters**:
-
-- `config: serde_json::Value` - A JSON object containing server configurations. It supports both `mcpServers` (object) and `servers` (array) formats.
+**Source**: `src-tauri/src/commands/mcp_commands.rs`
 
 **Returns**:
-
-- `Result<Vec<MCPTool>, String>` - A flattened list of all tools from all servers, with tool names prefixed by their server name (e.g., `serverName__toolName`).
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const config = {
-  mcpServers: {
-    filesystem: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
-    },
-    // ... other servers
-  },
-};
-
-try {
-  const allTools = await invoke('list_tools_from_config', { config });
-  console.log('All discovered tools:', allTools);
-} catch (error) {
-  console.error('Failed to list tools from config:', error);
-}
-```
-
-## Status & Monitoring
-
-### get_connected_servers
-
-**Purpose**: Gets a list of all currently connected MCP server names.
-
-**Source**: [`src-tauri/src/lib.rs:144-146`](../src-tauri/src/lib.rs#L144-L146)
-
-**Returns**:
-
-- `Vec<String>` - A list of connected server names.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const connectedServers = await invoke<string[]>('get_connected_servers');
-console.log('Connected servers:', connectedServers);
-```
+- `Vec<String>` - A list of built-in server names.
 
 ---
 
-### check_server_status
+### list_builtin_tools
 
-**Purpose**: Checks if a specific MCP server is currently alive and responsive.
+**Purpose**: Retrieves a list of tools for a specific built-in server or all built-in servers if none is specified.
 
-**Source**: [`src-tauri/src/lib.rs:148-150`](../src-tauri/src/lib.rs#L148-L150)
+**Source**: `src-tauri/src/commands/mcp_commands.rs`
 
 **Parameters**:
-
-- `server_name: String` - The name of the server to check.
-
-**Returns**:
-
-- `bool` - `true` if the server is alive, `false` otherwise.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const isAlive = await invoke('check_server_status', {
-  serverName: 'filesystem',
-});
-console.log('Server status:', isAlive ? 'Alive' : 'Not Responding');
-```
-
----
-
-### check_all_servers_status
-
-**Purpose**: Checks the status of all managed MCP servers.
-
-**Source**: [`src-tauri/src/lib.rs:152-154`](../src-tauri/src/lib.rs#L152-L154)
+- `server_name: Option<String>` - (Optional) The name of the built-in server.
 
 **Returns**:
+- `Vec<MCPTool>` - A list of tools.
 
-- `std::collections::HashMap<String, bool>` - A map where keys are server names and values are their status (`true` for alive, `false` for not responding).
+## System Settings
 
-**Usage**:
+### set_setting
 
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+**Purpose**: Updates or creates a global application setting.
 
-const allStatuses = await invoke('check_all_servers_status');
-console.log('All server statuses:', allStatuses);
-```
+**Source**: `src-tauri/src/commands/settings_commands.rs`
 
-## Utility Functions
-
-### list_all_tools
-
-**Purpose**: Lists all tools from all currently connected servers.
-
-**Source**: [`src-tauri/src/lib.rs:156-161`](../src-tauri/src/lib.rs#L156-L161)
+**Parameters**:
+- `key: String` - The configuration key (e.g., `theme`, `llm_provider`).
+- `value: Value` - The JSON value for the setting.
 
 **Returns**:
-
-- `Result<Vec<mcp::MCPTool>, String>` - A list of all tools, or an error message.
+- `Result<SettingDto, String>` - Returns the updated setting on success.
 
 **Usage**:
-
 ```typescript
 import { invoke } from '@tauri-apps/api/tauri';
 
 try {
-  const allTools = await invoke('list_all_tools');
-  console.log('All tools from connected servers:', allTools);
+  await invoke('set_setting', { key: 'theme', value: 'dark' });
 } catch (error) {
-  console.error(error);
+  console.error('Failed to update setting:', error);
 }
 ```
 
 ---
 
-### get_validated_tools
+### get_setting
 
-**Purpose**: Retrieves a list of tools from a server that have a valid schema.
+**Purpose**: Retrieves the value of a specific global application setting.
 
-**Source**: [`src-tauri/src/lib.rs:163-168`](../src-tauri/src/lib.rs#L163-L168)
-
-**Parameters**:
-
-- `server_name: String` - The name of the server.
-
-**Returns**:
-
-- `Result<Vec<mcp::MCPTool>, String>` - A list of validated tools, or an error message.
-
----
-
-### validate_tool_schema
-
-**Purpose**: Validates the schema of a single tool.
-
-**Source**: [`src-tauri/src/lib.rs:170-173`](../src-tauri/src/lib.rs#L170-L173)
+**Source**: `src-tauri/src/commands/settings_commands.rs`
 
 **Parameters**:
-
-- `tool: mcp::MCPTool` - The tool object to validate.
+- `key: String` - The configuration key.
 
 **Returns**:
+- `Result<Option<SettingDto>, String>` - Returns the setting if it exists, or `null`.
 
-- `Result<(), String>` - Returns `Ok` if the schema is valid, otherwise an error message.
