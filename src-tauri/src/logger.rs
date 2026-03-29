@@ -4,6 +4,55 @@ use std::path::PathBuf;
 
 extern crate fern;
 
+fn parse_log_level_arg(value: &str) -> Option<log::LevelFilter> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "trace" => Some(log::LevelFilter::Trace),
+        "debug" => Some(log::LevelFilter::Debug),
+        "info" => Some(log::LevelFilter::Info),
+        "warn" | "warning" => Some(log::LevelFilter::Warn),
+        "error" => Some(log::LevelFilter::Error),
+        _ => None,
+    }
+}
+
+pub fn resolve_launch_log_level() -> log::LevelFilter {
+    let mut args = std::env::args().skip(1);
+
+    while let Some(arg) = args.next() {
+        if let Some(value) = arg.strip_prefix("--log-level=") {
+            if let Some(level) = parse_log_level_arg(value) {
+                return level;
+            }
+            continue;
+        }
+
+        if arg == "--log-level" {
+            if let Some(value) = args.next() {
+                if let Some(level) = parse_log_level_arg(&value) {
+                    return level;
+                }
+            }
+        }
+    }
+
+    if cfg!(debug_assertions) {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    }
+}
+
+pub fn resolve_launch_log_level_name() -> &'static str {
+    match resolve_launch_log_level() {
+        log::LevelFilter::Trace => "trace",
+        log::LevelFilter::Debug => "debug",
+        log::LevelFilter::Info => "info",
+        log::LevelFilter::Warn => "warn",
+        log::LevelFilter::Error => "error",
+        _ => "info",
+    }
+}
+
 pub fn setup_file_logger(log_dir: PathBuf) -> Result<(), String> {
     // Ensure log directory exists
     if !log_dir.exists() {
@@ -30,6 +79,8 @@ pub fn setup_file_logger(log_dir: PathBuf) -> Result<(), String> {
         .open(&log_file)
         .map_err(|e| format!("Failed to open log file: {}", e))?;
 
+    let log_level = resolve_launch_log_level();
+
     // Configure fern logger
     fern::Dispatch::new()
         .format(|out, message, record| {
@@ -41,12 +92,16 @@ pub fn setup_file_logger(log_dir: PathBuf) -> Result<(), String> {
                 message
             ))
         })
-        .level(log::LevelFilter::Info)
+        .level(log_level)
         .chain(std::io::stdout()) // Keep stdout
         .chain(file) // Add file output
         .apply()
         .map_err(|e| format!("Failed to set logger: {}", e))?;
 
-    log::info!("🔥 File logger initialized at: {}", log_file.display());
+    log::info!(
+        "🔥 File logger initialized at: {} (level: {})",
+        log_file.display(),
+        resolve_launch_log_level_name()
+    );
     Ok(())
 }

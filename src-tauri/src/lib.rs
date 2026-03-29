@@ -54,8 +54,8 @@ use commands::file_commands::{
     write_file,
 };
 use commands::log_commands::{
-    backup_current_log, clear_current_log, list_log_files, log_batch, log_debug,
-    log_error_from_frontend, log_info, log_trace, log_warn,
+    backup_current_log, clear_current_log, get_launch_log_level, list_log_files, log_batch,
+    log_debug, log_error_from_frontend, log_info, log_trace, log_warn,
 };
 use commands::mcp_commands::{
     get_oauth_token, has_oauth_token, list_available_builtin_server_definitions,
@@ -179,6 +179,7 @@ pub fn run() {
                 backup_current_log,
                 clear_current_log,
                 list_log_files,
+                get_launch_log_level,
                 log_trace,
                 log_debug,
                 log_info,

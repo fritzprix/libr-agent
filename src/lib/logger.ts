@@ -52,6 +52,26 @@ interface LogEntry {
   timestamp: number;
 }
 
+function isLoggerLevel(value: unknown): value is LoggerConfig['logLevel'] {
+  return (
+    value === 'trace' ||
+    value === 'debug' ||
+    value === 'info' ||
+    value === 'warn' ||
+    value === 'error'
+  );
+}
+
+async function getLaunchLogLevel(): Promise<LoggerConfig['logLevel'] | null> {
+  try {
+    const level = await invoke<string>('get_launch_log_level');
+    return isLoggerLevel(level) ? level : null;
+  } catch (error) {
+    console.warn('Failed to read launch log level override:', error);
+    return null;
+  }
+}
+
 /**
  * Manages a queue of log messages to be sent to the backend in batches.
  * This prevents flooding the IPC bridge with individual log calls.
@@ -526,6 +546,11 @@ export const logUtils = {
       Logger.updateConfig(config);
       // Save the new configuration.
       await logUtils.saveConfig();
+    }
+
+    const launchLogLevel = await getLaunchLogLevel();
+    if (launchLogLevel) {
+      Logger.updateConfig({ logLevel: launchLogLevel });
     }
 
     await Logger.initialize();
