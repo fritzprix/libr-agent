@@ -386,11 +386,14 @@ export function AgentResourceAttachmentProvider({
         actualMimeType.startsWith('audio/');
 
       if (isInlineType) {
-        logger.info('File is image/audio — storing stable inline media reference', {
-          filename: actualFilename,
-          mimeType: actualMimeType,
-          hasStableUri: !fileUrl.startsWith('blob:'),
-        });
+        logger.info(
+          'File is image/audio — storing stable inline media reference',
+          {
+            filename: actualFilename,
+            mimeType: actualMimeType,
+            hasStableUri: !fileUrl.startsWith('blob:'),
+          },
+        );
 
         const inlineType = actualMimeType.startsWith('image/')
           ? ('image' as const)

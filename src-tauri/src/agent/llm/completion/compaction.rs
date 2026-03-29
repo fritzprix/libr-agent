@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use super::context::{load_context_management_settings, uses_compaction_strategy};
-use crate::agent::llm::types::CompactRequest;
+use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
 
 pub fn should_trigger_background_compaction(
     current_tokens: usize,
@@ -17,6 +17,26 @@ pub fn should_trigger_background_compaction(
     uses_compaction_strategy(context_strategy)
         && current_tokens
             > crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit)
+}
+
+async fn resolve_parent_request(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    explicit_parent_request: Option<CompactionParentRequest>,
+) -> Option<CompactionParentRequest> {
+    if explicit_parent_request.is_some() {
+        return explicit_parent_request;
+    }
+
+    let request_handle = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.last_completion_request.clone())
+    }?;
+
+    let request = request_handle.read().await.clone();
+    request
 }
 
 /// Determines the compactable prefix for preflight compaction.
@@ -51,6 +71,7 @@ pub(crate) async fn trigger_background_compaction(
     session_id: &str,
     session_name: &str,
     messages: &[Message],
+    parent_request: Option<CompactionParentRequest>,
     compact_in_flight_arc: &Arc<AtomicBool>,
     last_compacted_tail_id_arc: &Arc<RwLock<Option<String>>>,
 ) -> Result<bool, String> {
@@ -110,6 +131,7 @@ pub(crate) async fn trigger_background_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
+        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
         resume_completion_after_compact: false,
     };
     let log_from_id = compact_event.from_id.clone();
@@ -191,6 +213,7 @@ pub async fn maybe_trigger_post_idle_compaction(
         session_id,
         session_name,
         messages,
+        None,
         &compact_in_flight_arc,
         &last_compacted_tail_id_arc,
     )
@@ -214,6 +237,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
     session_id: &str,
     session_name: &str,
     messages: &[Message],
+    parent_request: Option<CompactionParentRequest>,
 ) -> Result<bool, String> {
     if messages.len() <= 1 {
         return Ok(false);
@@ -302,6 +326,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
+        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
         resume_completion_after_compact: true,
     };
     let log_from_id = compact_event.from_id.clone();
@@ -370,6 +395,7 @@ pub async fn trigger_preflight_compaction_for_session(
         session_id,
         &session_name,
         &merged_messages,
+        None,
     )
     .await
 }

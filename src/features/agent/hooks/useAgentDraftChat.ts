@@ -413,7 +413,10 @@ export function useAgentDraftChat() {
               const inlineType = actualMimeType.startsWith('image/')
                 ? ('image' as const)
                 : ('audio' as const);
-              const fileUrl = workspacePathToFileUrl(workspaceDir, workspacePath);
+              const fileUrl = workspacePathToFileUrl(
+                workspaceDir,
+                workspacePath,
+              );
               attachments.push({
                 sessionId: newSessionId,
                 filename: file.name,
