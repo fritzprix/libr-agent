@@ -11,6 +11,7 @@ This document provides a comprehensive reference for the primary Tauri commands 
 **Source**: `src-tauri/src/commands/agent_commands.rs`
 
 **Parameters**:
+
 - `request: CreateAgentSessionRequest` - The session configuration object.
   - `sessionId: String` - Unique identifier for the session.
   - `name: Option<String>` - Optional descriptive name.
@@ -21,9 +22,11 @@ This document provides a comprehensive reference for the primary Tauri commands 
   - `workspacePath: Option<String>` - Custom path for session files.
 
 **Returns**:
+
 - `Result<SessionMetadata, String>` - Returns the created session metadata on success.
 
 **Usage**:
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -33,9 +36,9 @@ try {
       sessionId: 'session-123',
       agentConfig: {
         systemPrompt: 'You are a helpful assistant.',
-        tools: []
-      }
-    }
+        tools: [],
+      },
+    },
   });
   console.log('Session created:', session);
 } catch (error) {
@@ -52,14 +55,17 @@ try {
 **Source**: `src-tauri/src/commands/agent_commands.rs`
 
 **Parameters**:
+
 - `request: SendUserMessageRequest` - The message payload.
   - `sessionId: String` - Active session ID.
   - `message: Message` - Message object with `id`, `role`, and `content`.
 
 **Returns**:
+
 - `Result<AgentResponse, String>` - Returns status success/message on workflow start.
 
 **Usage**:
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -70,9 +76,9 @@ try {
       message: {
         id: 'msg-1',
         role: 'user',
-        content: [{ type: 'text', text: 'List the files in /tmp' }]
-      }
-    }
+        content: [{ type: 'text', text: 'List the files in /tmp' }],
+      },
+    },
   });
   console.log('Workflow started:', response);
 } catch (error) {
@@ -84,17 +90,20 @@ try {
 
 ### remove_session
 
-**Purpose**: Cleans up a session workspace, search index, and metadata. *Note: Does not delete session records from the primary database.*
+**Purpose**: Cleans up a session workspace, search index, and metadata. _Note: Does not delete session records from the primary database._
 
 **Source**: `src-tauri/src/commands/session_commands.rs`
 
 **Parameters**:
+
 - `sessionId: String` - The unique identifier of the session to clean up.
 
 **Returns**:
+
 - `Result<SessionResponse, String>` - Returns a status wrapper confirming cleanup on success.
 
 **Usage**:
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -114,12 +123,15 @@ try {
 **Source**: `src-tauri/src/commands/mcp_commands.rs`
 
 **Parameters**:
+
 - `server_id: String` - The ID of the server to probe.
 
 **Returns**:
+
 - `Result<Vec<MCPTool>, String>` - A list of tools available on the server.
 
 **Usage**:
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -140,9 +152,11 @@ try {
 **Source**: `src-tauri/src/commands/mcp_commands.rs`
 
 **Returns**:
+
 - `Vec<String>` - A list of built-in server names.
 
 **Usage**:
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -153,14 +167,16 @@ const servers = await invoke<string[]>('list_builtin_servers');
 
 ### list_builtin_tools
 
-**Purpose**: Retrieves a list of tool definitions for a built-in server. *Note: Currently returns an empty list as tool definitions are managed dynamically per session.*
+**Purpose**: Retrieves a list of tool definitions for a built-in server. _Note: Currently returns an empty list as tool definitions are managed dynamically per session._
 
 **Source**: `src-tauri/src/commands/mcp_commands.rs`
 
 **Parameters**:
+
 - `server_name: Option<String>` - (Optional) The name of the built-in server.
 
 **Returns**:
+
 - `Vec<MCPTool>` - A list of tools (currently empty).
 
 ---
@@ -174,13 +190,16 @@ const servers = await invoke<string[]>('list_builtin_servers');
 **Source**: `src-tauri/src/commands/settings_commands.rs`
 
 **Parameters**:
+
 - `key: String` - The configuration key (e.g., `theme`, `llm_provider`).
 - `value: Value` - The JSON value for the setting.
 
 **Returns**:
+
 - `Result<SettingDto, String>` - Returns the updated setting on success.
 
 **Usage**:
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -200,12 +219,15 @@ try {
 **Source**: `src-tauri/src/commands/settings_commands.rs`
 
 **Parameters**:
+
 - `key: String` - The configuration key.
 
 **Returns**:
+
 - `Result<Option<SettingDto>, String>` - Returns the setting if it exists, or `null`.
 
 **Usage**:
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -216,4 +238,3 @@ try {
   console.error('Failed to get setting:', error);
 }
 ```
-
