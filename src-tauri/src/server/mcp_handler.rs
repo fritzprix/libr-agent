@@ -49,11 +49,13 @@ fn handle_initialize(id: Option<serde_json::Value>) -> MCPResponse {
                 tools: Some(serde_json::json!({ "listChanged": false })),
                 resources: None,
                 prompts: None,
+                experimental: None,
             },
             server_info: Some(ServerInfo {
                 name: "libragent-builtin".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
             }),
+            instructions: None,
         },
     )
 }

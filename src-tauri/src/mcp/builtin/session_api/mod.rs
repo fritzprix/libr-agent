@@ -5,7 +5,6 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
 
 pub mod cache;
-pub mod client;
 pub mod formatting;
 pub mod handlers;
 pub mod tools;

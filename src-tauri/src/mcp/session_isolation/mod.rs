@@ -1,3 +1,4 @@
+pub mod channel_metadata;
 /// Session isolation module for MCP server management.
 ///
 /// This module provides per-session isolation for external MCP servers,

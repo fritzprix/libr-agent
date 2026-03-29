@@ -1,14 +1,365 @@
+use crate::agent::types::{CreateSessionRequest, CreateSessionResponse, SessionLineageMeta};
 use crate::agent::AgentSessionManager;
+use crate::mcp::types::MCPContent;
+use crate::models::chat::Message;
 use crate::session::get_session_manager;
+use std::collections::HashMap;
 use std::fs;
+use std::sync::OnceLock;
+use tokio::sync::RwLock as TokioRwLock;
+use uuid::Uuid;
+
+pub static SESSION_LINEAGE: OnceLock<TokioRwLock<HashMap<String, SessionLineageMeta>>> =
+    OnceLock::new();
+
+pub fn lineage_store() -> &'static TokioRwLock<HashMap<String, SessionLineageMeta>> {
+    SESSION_LINEAGE.get_or_init(|| TokioRwLock::new(HashMap::new()))
+}
+
+/// Returns true if the path points to a restricted system directory that agents
+/// should not be allowed to use as a workspace.
+pub fn is_restricted_system_path(path: &std::path::Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let restricted_prefixes = [
+            "c:\\windows",
+            "c:\\program files",
+            "c:\\program files (x86)",
+            "c:\\programdata",
+            "c:\\system volume information",
+        ];
+
+        let path_components: Vec<_> = path.components().collect();
+
+        for prefix in restricted_prefixes.iter() {
+            let prefix_components: Vec<_> = std::path::Path::new(prefix).components().collect();
+
+            if path_components.len() < prefix_components.len() {
+                continue;
+            }
+
+            let mut matches = true;
+            for (p_comp, pref_comp) in path_components.iter().zip(prefix_components.iter()) {
+                use std::path::{Component, Prefix};
+
+                let p_disk = match p_comp {
+                    Component::Prefix(p) => match p.kind() {
+                        Prefix::Disk(d) | Prefix::VerbatimDisk(d) => Some(d.to_ascii_lowercase()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+
+                let pref_disk = match pref_comp {
+                    Component::Prefix(p) => match p.kind() {
+                        Prefix::Disk(d) | Prefix::VerbatimDisk(d) => Some(d.to_ascii_lowercase()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+
+                if let (Some(d1), Some(d2)) = (p_disk, pref_disk) {
+                    if d1 != d2 {
+                        matches = false;
+                        break;
+                    }
+                } else {
+                    let p_str = p_comp.as_os_str().to_string_lossy().to_lowercase();
+                    let pref_str = pref_comp.as_os_str().to_string_lossy().to_lowercase();
+                    if p_str != pref_str {
+                        matches = false;
+                        break;
+                    }
+                }
+            }
+
+            if matches {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // macOS and Linux file systems are often case-insensitive by default or case-preserving.
+        // Lowercase the path to ensure safe, case-insensitive component matching across Unix OSes.
+        let path_lower = std::path::PathBuf::from(path.to_string_lossy().to_lowercase());
+
+        let restricted_prefixes = [
+            "/etc",
+            "/sys",
+            "/proc",
+            "/dev",
+            "/run",
+            "/boot",
+            "/bin",
+            "/sbin",
+            "/lib",
+            "/lib64",
+            "/usr/bin",
+            "/usr/sbin",
+            "/usr/lib",
+            "/system",  // macOS
+            "/library", // macOS
+        ];
+
+        for prefix in restricted_prefixes.iter() {
+            if path_lower.starts_with(prefix) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
 
 pub struct AgentService;
 
+#[derive(Debug, Clone)]
+pub struct SendSessionMessageResponse {
+    pub message_id: String,
+    pub status: String,
+}
+
 impl AgentService {
+    /// Create a new session with assistant ID and initial request (Spawn Agent logic)
+    pub async fn spawn_agent(
+        manager: &AgentSessionManager,
+        body: CreateSessionRequest,
+    ) -> Result<CreateSessionResponse, String> {
+        Self::spawn_agent_with_source(manager, body, Some("agent_tool".to_string())).await
+    }
+
+    /// Create a new session with assistant ID and initial request, tagging the initial
+    /// message with the provided source for transport-specific observability.
+    pub async fn spawn_agent_with_source(
+        manager: &AgentSessionManager,
+        body: CreateSessionRequest,
+        message_source: Option<String>,
+    ) -> Result<CreateSessionResponse, String> {
+        use crate::repositories::assistant_repository::AssistantRepository;
+        use crate::repositories::session_repository::SessionRepository;
+
+        // 1. Fetch Assistant to get config
+        let assistant_repo = crate::state::get_assistant_repository();
+        let assistant = assistant_repo
+            .get_assistant(&body.assistant_id)
+            .await
+            .map_err(|e| format!("Failed to fetch assistant: {}", e))?
+            .ok_or_else(|| format!("Assistant not found: {}", body.assistant_id))?;
+
+        // 2. Build AgentConfig from Assistant
+        let mut agent_config = crate::agent::AgentConfig::from_json(&assistant.config)
+            .map_err(|e| format!("Invalid assistant configuration: {}", e))?;
+
+        agent_config.id = Some(assistant.id.clone());
+        agent_config.name = assistant.name.clone();
+        let assistant_id = agent_config.id.clone();
+
+        // 3. Resolve lineage metadata
+        let parent_session_id = body.parent_session_id.clone();
+        let requested_max_depth = body.max_depth;
+        let requested_max_fanout = body.max_fanout;
+
+        if let Some(ref parent_id) = parent_session_id {
+            if manager.get_session(parent_id).await?.is_none() {
+                return Err(format!("Parent session not found: {}", parent_id));
+            }
+        }
+
+        let session_id = format!("session-{}", Uuid::new_v4());
+        let session_name = body.name.clone().or_else(|| {
+            let short_id = &session_id[session_id.len().saturating_sub(6)..];
+            let preview: String = body.request.chars().take(40).collect();
+            let trimmed = preview.trim();
+            if trimmed.is_empty() {
+                Some(format!("{} #{}", assistant.name, short_id))
+            } else {
+                Some(format!("{}: {} #{}", assistant.name, trimmed, short_id))
+            }
+        });
+
+        let lineage_meta = if let Some(parent_id) = parent_session_id.clone() {
+            let store = lineage_store().read().await;
+            if let Some(parent_meta) = store.get(&parent_id) {
+                let effective_max_depth = requested_max_depth.or(parent_meta.max_depth);
+                let effective_max_fanout = requested_max_fanout.or(parent_meta.max_fanout);
+                let next_depth = parent_meta.depth.saturating_add(1);
+
+                let session_repo = crate::state::get_session_repository();
+                let child_count = session_repo
+                    .get_child_session_ids(&parent_id)
+                    .await
+                    .map(|children| children.len())
+                    .unwrap_or(0);
+
+                if let Some(limit) = effective_max_depth {
+                    if next_depth > limit {
+                        return Err(format!(
+                            "Depth limit exceeded: next depth {} > maxDepth {}",
+                            next_depth, limit
+                        ));
+                    }
+                }
+
+                if let Some(limit) = effective_max_fanout {
+                    if child_count >= limit as usize {
+                        return Err(format!(
+                            "Fanout limit exceeded: parent has {} children, maxFanout is {}",
+                            child_count, limit
+                        ));
+                    }
+                }
+
+                SessionLineageMeta {
+                    parent_session_id: Some(parent_id),
+                    lineage_id: parent_meta.lineage_id.clone(),
+                    depth: next_depth,
+                    max_depth: effective_max_depth,
+                    max_fanout: effective_max_fanout,
+                }
+            } else {
+                drop(store);
+                let session_repo = crate::state::get_session_repository();
+                let parent_meta = session_repo.get_session(&parent_id).await.ok().flatten();
+
+                let parent_depth = parent_meta.as_ref().and_then(|m| m.depth).unwrap_or(0);
+                let parent_lineage_id = parent_meta
+                    .as_ref()
+                    .and_then(|m| m.lineage_id.clone())
+                    .unwrap_or_else(|| parent_id.clone());
+                let inherited_max_depth = parent_meta.as_ref().and_then(|m| m.max_depth);
+                let inherited_max_fanout = parent_meta.as_ref().and_then(|m| m.max_fanout);
+
+                let effective_max_depth = requested_max_depth.or(inherited_max_depth);
+                let effective_max_fanout = requested_max_fanout.or(inherited_max_fanout);
+                let next_depth = parent_depth.saturating_add(1);
+
+                let child_count = session_repo
+                    .get_child_session_ids(&parent_id)
+                    .await
+                    .map(|children| children.len())
+                    .unwrap_or(0);
+
+                if let Some(limit) = effective_max_depth {
+                    if next_depth > limit {
+                        return Err(format!(
+                            "Depth limit exceeded: next depth {} > maxDepth {}",
+                            next_depth, limit
+                        ));
+                    }
+                }
+
+                if let Some(limit) = effective_max_fanout {
+                    if child_count >= limit as usize {
+                        return Err(format!(
+                            "Fanout limit exceeded: parent has {} children, maxFanout is {}",
+                            child_count, limit
+                        ));
+                    }
+                }
+
+                SessionLineageMeta {
+                    parent_session_id: Some(parent_id),
+                    lineage_id: parent_lineage_id,
+                    depth: next_depth,
+                    max_depth: effective_max_depth,
+                    max_fanout: effective_max_fanout,
+                }
+            }
+        } else {
+            SessionLineageMeta {
+                parent_session_id: None,
+                lineage_id: session_id.clone(),
+                depth: 0,
+                max_depth: requested_max_depth,
+                max_fanout: requested_max_fanout,
+            }
+        };
+
+        agent_config.parent_session_id = lineage_meta.parent_session_id.clone();
+        agent_config.lineage_id = Some(lineage_meta.lineage_id.clone());
+        agent_config.depth = Some(lineage_meta.depth);
+        agent_config.max_depth = lineage_meta.max_depth;
+        agent_config.max_fanout = lineage_meta.max_fanout;
+
+        if let Some(path_str) = body.workspace_path {
+            Self::validate_and_register_workspace_override(&path_str, &session_id).await?;
+        }
+
+        let session = manager
+            .create_session(session_id.clone(), session_name, None, None, agent_config)
+            .await?;
+
+        lineage_store()
+            .write()
+            .await
+            .insert(session_id.clone(), lineage_meta.clone());
+
+        if let Some(parent_id) = lineage_meta.parent_session_id.as_deref() {
+            if manager.get_yolo_mode(parent_id).await {
+                let _ = manager.set_yolo_mode(&session_id, true).await;
+            }
+        }
+
+        let message = Message {
+            id: Uuid::new_v4().to_string(),
+            session_id: session_id.clone(),
+            role: "user".to_string(),
+            content: vec![MCPContent::Text {
+                text: body.request,
+                is_error: None,
+            }],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id,
+            usage: None,
+            attachments: None,
+            tool_use: None,
+            created_at: chrono::Utc::now().timestamp_millis(),
+            updated_at: chrono::Utc::now().timestamp_millis(),
+            source: message_source,
+            error: None,
+            metadata: None,
+        };
+
+        if let Err(e) = manager.start_workflow(session_id.clone(), message).await {
+            log::error!("Failed to start initial workflow for spawned agent: {}", e);
+
+            lineage_store().write().await.remove(&session_id);
+
+            if let Err(cleanup_err) = manager.delete_session(session_id.clone()).await {
+                log::error!(
+                    "Failed to clean up spawned session {} after workflow start error: {}",
+                    session_id,
+                    cleanup_err
+                );
+            }
+
+            return Err(format!("Failed to start initial workflow: {}", e));
+        }
+
+        Ok(CreateSessionResponse {
+            id: session.id,
+            name: session.name,
+            status: format!("{:?}", crate::repositories::SessionStatus::Busy),
+            parent_session_id: lineage_meta.parent_session_id,
+            lineage_id: lineage_meta.lineage_id,
+            depth: lineage_meta.depth,
+            max_depth: lineage_meta.max_depth,
+            max_fanout: lineage_meta.max_fanout,
+        })
+    }
+
     /// Validates a workspace override path and registers it for the given session.
     ///
     /// The path must be absolute, must exist, and must be a directory.
-    async fn validate_and_register_workspace_override(
+    pub async fn validate_and_register_workspace_override(
         path_str: &str,
         session_id: &str,
     ) -> Result<(), String> {
@@ -20,6 +371,15 @@ impl AgentService {
         if !path.is_absolute() {
             return Err("Workspace path must be absolute".to_string());
         }
+
+        // Security check: prevent using restricted system directories
+        if is_restricted_system_path(&path) {
+            return Err(format!(
+                "Workspace path '{}' is a restricted system directory and cannot be used as an agent workspace",
+                path_str
+            ));
+        }
+
         match tokio::fs::metadata(&path).await {
             Ok(metadata) => {
                 if !metadata.is_dir() {
@@ -33,6 +393,108 @@ impl AgentService {
         session_manager
             .register_session_override(session_id, path)
             .await
+    }
+
+    fn extract_assistant_id_from_config(
+        session_id: &str,
+        agent_config: Option<&String>,
+    ) -> Option<String> {
+        let config_str = agent_config?;
+        let config: serde_json::Value = match serde_json::from_str(config_str) {
+            Ok(value) => value,
+            Err(error) => {
+                log::warn!(
+                    "Invalid session.agent_config JSON for session {} (assistant_id will be None): {}",
+                    session_id,
+                    error
+                );
+                return None;
+            }
+        };
+
+        let assistant_id_value = config
+            .get("assistant_id")
+            .or_else(|| config.get("assistantId"))
+            .or_else(|| config.get("id"));
+
+        match assistant_id_value {
+            Some(value) => match value.as_str() {
+                Some(assistant_id) => Some(assistant_id.to_string()),
+                None => {
+                    log::warn!(
+                        "session.agent_config assistant id field is not a string for session {} (assistant_id will be None)",
+                        session_id
+                    );
+                    None
+                }
+            },
+            None => {
+                log::warn!(
+                    "No assistant id field found in session.agent_config for session {} (expected one of: assistant_id, assistantId, id)",
+                    session_id
+                );
+                None
+            }
+        }
+    }
+
+    pub async fn send_message_to_session(
+        manager: &AgentSessionManager,
+        session_id: &str,
+        content: String,
+        source: Option<String>,
+    ) -> Result<SendSessionMessageResponse, String> {
+        let session = manager
+            .get_session(session_id)
+            .await?
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        let is_busy = matches!(session.status, crate::repositories::SessionStatus::Busy);
+        let message_id = Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let message = Message {
+            id: message_id.clone(),
+            session_id: session_id.to_string(),
+            role: "user".to_string(),
+            content: vec![MCPContent::Text {
+                text: content,
+                is_error: None,
+            }],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: Self::extract_assistant_id_from_config(
+                session_id,
+                session.agent_config.as_ref(),
+            ),
+            usage: None,
+            attachments: None,
+            tool_use: None,
+            created_at: now,
+            updated_at: now,
+            source,
+            error: None,
+            metadata: None,
+        };
+
+        let status = if is_busy {
+            manager
+                .inject_messages(session_id.to_string(), vec![message], false)
+                .await?;
+            "queued"
+        } else {
+            manager
+                .start_workflow(session_id.to_string(), message)
+                .await?;
+            "processed"
+        };
+
+        Ok(SendSessionMessageResponse {
+            message_id,
+            status: status.to_string(),
+        })
     }
 
     /// Create a new agent session
