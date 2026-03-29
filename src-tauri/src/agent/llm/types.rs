@@ -111,13 +111,12 @@ pub struct CompletionRequest {
     pub messages: Vec<Message>,
     pub model: String,
     pub provider: String,
-    /// Stable system prompt (sections 1–4: agent identity, persona, workspace instructions,
-    /// session context). Cacheable across turns within a session.
+    /// Stable system prompt (sections 1–4 plus stable service-context blocks).
+    /// Cacheable across turns within a session.
     pub system_prompt: Option<String>,
-    /// Volatile session context (sections 5–6: context providers + service tool states).
+    /// Per-turn session context (context providers + non-stable service tool state).
     /// Rebuilt on every LLM call. The frontend AI service layer decides how to inject this
-    /// via `prepareContextInjection` — providers may append it to the system prompt (default)
-    /// or inject it as an ephemeral message for better prefix-cache utilization.
+    /// via `prepareContextInjection`.
     pub session_context: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
@@ -131,12 +130,11 @@ pub struct CompletionRequest {
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactionParentRequest {
-    pub messages: Vec<Message>,
     pub model: String,
     pub provider: String,
-    /// Stable system prompt (sections 1–4). Cacheable across turns within a session.
+    /// Stable system prompt (sections 1–4 plus stable service-context blocks).
     pub system_prompt: Option<String>,
-    /// Volatile session context (sections 5–6). Rebuilt on every LLM call.
+    /// Per-turn session context (context providers + non-stable service tool state).
     pub session_context: Option<String>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
 }

@@ -33,9 +33,7 @@ pub async fn inject_channel_message(
         }
     }
 
-    let message_id = uuid::Uuid::new_v4().to_string();
-
-    let triggered = match manager
+    let (message_id, triggered) = match manager
         .inject_channel_notification(
             id.clone(),
             body.server_name.clone(),
@@ -74,9 +72,7 @@ pub async fn inject_channel_message_auto(
     manager: Arc<AgentSessionManager>,
     body: InjectChannelRequest,
 ) -> Result<impl Reply, Rejection> {
-    let message_id = uuid::Uuid::new_v4().to_string();
-
-    let (target, triggered) = match manager
+    let (target, message_id, triggered) = match manager
         .inject_channel_notification_auto(
             body.server_name.clone(),
             ChannelNotification {

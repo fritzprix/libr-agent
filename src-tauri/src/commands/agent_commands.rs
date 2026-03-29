@@ -218,7 +218,7 @@ pub async fn agent_inject_channel_message(
     manager: State<'_, AgentSessionManager>,
     request: InjectChannelMessageRequest,
 ) -> Result<AgentResponse, String> {
-    let triggered = manager
+    let (message_id, triggered) = manager
         .inject_channel_notification(
             request.session_id.clone(),
             request.server_name.clone(),
@@ -238,6 +238,7 @@ pub async fn agent_inject_channel_message(
             if triggered { "processed" } else { "queued" }
         ),
         data: Some(serde_json::json!({
+            "messageId": message_id,
             "status": if triggered { "processed" } else { "queued" }
         })),
     })
@@ -250,7 +251,7 @@ pub async fn agent_inject_channel_message_auto(
     manager: State<'_, AgentSessionManager>,
     request: InjectChannelMessageAutoRequest,
 ) -> Result<AgentResponse, String> {
-    let (target, triggered) = manager
+    let (target, message_id, triggered) = manager
         .inject_channel_notification_auto(
             request.server_name.clone(),
             ChannelNotification {
@@ -269,6 +270,7 @@ pub async fn agent_inject_channel_message_auto(
             if triggered { "processed" } else { "queued" }
         ),
         data: Some(serde_json::json!({
+            "messageId": message_id,
             "sessionId": target.session_id,
             "sessionName": target.session_name,
             "status": if triggered { "processed" } else { "queued" }

@@ -99,7 +99,10 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function loadBase64FromUri(uri: string): Promise<string> {
+async function loadBase64FromUri(
+  uri: string,
+  sessionId: string,
+): Promise<string> {
   if (uri.startsWith('data:')) {
     const [, base64 = ''] = uri.split(',', 2);
     return base64;
@@ -113,7 +116,7 @@ async function loadBase64FromUri(uri: string): Promise<string> {
   }
 
   if (uri.startsWith('file://')) {
-    const base64 = await readLocalFileAsBase64(uri);
+    const base64 = await readLocalFileAsBase64(sessionId, uri);
     updateMediaCache(uri, base64);
     return base64;
   }
@@ -190,6 +193,7 @@ function summarizeHistoricalMediaItem(
 
 async function materializeInlineAttachment(
   attachment: AttachmentReference,
+  sessionId: string,
 ): Promise<MCPContent | null> {
   const inlineContent = attachment.inlineContent;
   if (!inlineContent) {
@@ -199,7 +203,7 @@ async function materializeInlineAttachment(
   const base64 =
     inlineContent.data ??
     (inlineContent.uri
-      ? await loadBase64FromUri(inlineContent.uri)
+      ? await loadBase64FromUri(inlineContent.uri, sessionId)
       : undefined);
 
   if (!base64) {
@@ -223,16 +227,17 @@ async function materializeInlineAttachment(
 
 async function materializeMediaContentItem(
   item: MediaContentLike,
+  sessionId: string,
 ): Promise<MCPContent | null> {
   const source = item.source;
   let base64 = item.data ?? source?.data;
 
   if (!base64 && item.uri) {
-    base64 = await loadBase64FromUri(item.uri);
+    base64 = await loadBase64FromUri(item.uri, sessionId);
   }
 
   if (!base64 && source?.uri) {
-    base64 = await loadBase64FromUri(source.uri);
+    base64 = await loadBase64FromUri(source.uri, sessionId);
   }
 
   if (!base64) {
@@ -390,7 +395,10 @@ export async function prepareMessageForLLM(
       }
 
       if (includeLatestMediaPayload) {
-        const materializedItem = await materializeMediaContentItem(contentItem);
+        const materializedItem = await materializeMediaContentItem(
+          contentItem,
+          message.sessionId,
+        );
         if (materializedItem) {
           processedContent.push(materializedItem);
           continue;
@@ -405,8 +413,10 @@ export async function prepareMessageForLLM(
     const inlineContentBlocks: MCPContent[] = [];
     for (const attachment of inlineAttachments) {
       if (includeLatestMediaPayload) {
-        const materializedAttachment =
-          await materializeInlineAttachment(attachment);
+        const materializedAttachment = await materializeInlineAttachment(
+          attachment,
+          message.sessionId,
+        );
         if (materializedAttachment) {
           inlineContentBlocks.push(materializedAttachment);
           continue;
