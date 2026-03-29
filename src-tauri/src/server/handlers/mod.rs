@@ -8,7 +8,9 @@ mod types;
 
 // Re-export endpoints so existing routes.rs does not break
 pub use assistants::{get_assistant, get_assistants};
-pub use channel::inject_channel_message;
+pub use channel::{
+    inject_channel_message, inject_channel_message_auto, respond_channel_permission,
+};
 pub use health::health;
 pub use messages::{get_messages, send_message};
 pub use sessions::{

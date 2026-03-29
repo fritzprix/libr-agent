@@ -74,6 +74,19 @@ pub async fn execute_tool_calls(
         if requires_approval && !yolo_enabled {
             let (tx, rx) = oneshot::channel();
             let attention_at = chrono::Utc::now().timestamp_millis();
+            let has_permission_relay_channel = proxy_manager
+                .session_has_permission_relay_channels(&session_id)
+                .await;
+            let request_id = has_permission_relay_channel
+                .then(crate::agent::tool_approvals::generate_channel_permission_request_id);
+            let description = has_permission_relay_channel.then(|| {
+                crate::agent::tool_approvals::build_channel_permission_description(
+                    &tool_name, &args_str,
+                )
+            });
+            let input_preview = has_permission_relay_channel.then(|| {
+                crate::agent::tool_approvals::build_channel_permission_input_preview(&args_str)
+            });
 
             // Add tx to pending approvals
             {
@@ -86,6 +99,9 @@ pub async fn execute_tool_calls(
                             sender: tx,
                             tool_name: tool_name.clone(),
                             arguments: args_str.clone(),
+                            request_id: request_id.clone(),
+                            description: description.clone(),
+                            input_preview: input_preview.clone(),
                         },
                     );
                 }
@@ -115,6 +131,22 @@ pub async fn execute_tool_calls(
             };
             if let Err(e) = crate::agent::events::emit_agent_event(&app_handle, event) {
                 log::error!("Failed to emit ToolExecutionRequiresApproval event: {}", e);
+            }
+
+            if let (Some(request_id), Some(description), Some(input_preview)) =
+                (request_id, description, input_preview)
+            {
+                let channel_event = crate::agent::events::AgentEvent::ChannelPermissionRequest {
+                    session_id: session_id.clone(),
+                    request_id,
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: tool_name.clone(),
+                    description,
+                    input_preview,
+                };
+                if let Err(e) = crate::agent::events::emit_agent_event(&app_handle, channel_event) {
+                    log::error!("Failed to emit ChannelPermissionRequest event: {}", e);
+                }
             }
 
             // Wait for approval response

@@ -34,6 +34,21 @@ export type AgentEventPayload =
       arguments: string;
     }
   | {
+      type: 'channelPermissionRequest';
+      sessionId: string;
+      requestId: string;
+      toolCallId: string;
+      toolName: string;
+      description: string;
+      inputPreview: string;
+    }
+  | {
+      type: 'toolExecutionApprovalResolved';
+      sessionId: string;
+      toolCallId: string;
+      approved: boolean;
+    }
+  | {
       type: 'initializationStep';
       sessionId: string;
       step: string;

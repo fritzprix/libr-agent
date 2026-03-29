@@ -124,6 +124,15 @@ export async function getWorkspaceDir(sessionId: string): Promise<string> {
 }
 
 /**
+ * Reads a local file:// URL through the Rust backend and returns base64 content.
+ * This avoids relying on webview fetch(file://...), which is not consistently supported.
+ * @param fileUrl Absolute local file:// URL.
+ */
+export async function readLocalFileAsBase64(fileUrl: string): Promise<string> {
+  return safeInvoke<string>('read_local_file_as_base64', { fileUrl });
+}
+
+/**
  * Lists all file paths within the session workspace up to `maxDepth` levels deep.
  * Returns relative paths (forward-slash separated) sorted alphabetically.
  * @param sessionId The session ID to query.

@@ -19,6 +19,7 @@ import {
   checkDroppedPathType,
 } from '@/lib/backend';
 import { generateWorkspacePath } from '@/lib/workspace-sync-service';
+import { workspacePathToFileUrl } from '@/lib/file-url';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import {
   useDnDContext,
@@ -380,6 +381,7 @@ export function useAgentDraftChat() {
         });
 
         const attachments: AttachmentReference[] = [];
+        const workspaceDir = await getWorkspaceDir(newSessionId);
         for (const file of pendingFiles) {
           try {
             const workspacePath = generateWorkspacePath(file.name);
@@ -408,23 +410,10 @@ export function useAgentDraftChat() {
               actualMimeType.startsWith('audio/');
 
             if (isInlineType) {
-              // Optimized Base64 encoding using FileReader
-              const base64Data = await new Promise<string>(
-                (resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const result = reader.result as string;
-                    // Remove prefix like "data:image/png;base64,"
-                    resolve(result.split(',')[1]);
-                  };
-                  reader.onerror = reject;
-                  reader.readAsDataURL(file);
-                },
-              );
-
               const inlineType = actualMimeType.startsWith('image/')
                 ? ('image' as const)
                 : ('audio' as const);
+              const fileUrl = workspacePathToFileUrl(workspaceDir, workspacePath);
               attachments.push({
                 sessionId: newSessionId,
                 filename: file.name,
@@ -437,7 +426,7 @@ export function useAgentDraftChat() {
                 workspacePath,
                 inlineContent: {
                   type: inlineType,
-                  data: base64Data,
+                  uri: fileUrl,
                   mimeType: actualMimeType,
                 },
               });

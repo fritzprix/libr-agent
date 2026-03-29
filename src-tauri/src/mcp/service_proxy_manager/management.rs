@@ -221,4 +221,74 @@ impl MCPServiceProxyManager {
     pub async fn list_sessions(&self) -> Vec<String> {
         self.proxies.read().await.keys().cloned().collect()
     }
+
+    /// Returns true if the session currently has at least one channel-capable external server
+    /// that advertises remote permission relay support.
+    pub async fn session_has_permission_relay_channels(&self, session_id: &str) -> bool {
+        let stdio_manager = {
+            let stdio_managers = self.session_stdio_managers.read().await;
+            stdio_managers.get(session_id).cloned()
+        };
+
+        if let Some(manager) = stdio_manager {
+            if manager
+                .list_channel_metadata()
+                .await
+                .into_iter()
+                .any(|channel| channel.supports_permission_relay)
+            {
+                return true;
+            }
+        }
+
+        let http_manager = {
+            let http_managers = self.session_http_managers.read().await;
+            http_managers.get(session_id).cloned()
+        };
+
+        if let Some(manager) = http_manager {
+            return manager
+                .list_channel_metadata()
+                .await
+                .into_iter()
+                .any(|channel| channel.supports_permission_relay);
+        }
+
+        false
+    }
+
+    /// Returns true if the session currently has a connected channel-capable server with the
+    /// given server name.
+    pub async fn session_has_channel_server(&self, session_id: &str, server_name: &str) -> bool {
+        let stdio_manager = {
+            let stdio_managers = self.session_stdio_managers.read().await;
+            stdio_managers.get(session_id).cloned()
+        };
+
+        if let Some(manager) = stdio_manager {
+            if manager
+                .list_channel_metadata()
+                .await
+                .into_iter()
+                .any(|channel| channel.server_name == server_name)
+            {
+                return true;
+            }
+        }
+
+        let http_manager = {
+            let http_managers = self.session_http_managers.read().await;
+            http_managers.get(session_id).cloned()
+        };
+
+        if let Some(manager) = http_manager {
+            return manager
+                .list_channel_metadata()
+                .await
+                .into_iter()
+                .any(|channel| channel.server_name == server_name);
+        }
+
+        false
+    }
 }

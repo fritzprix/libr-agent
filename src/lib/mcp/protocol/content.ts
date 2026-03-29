@@ -45,6 +45,12 @@ export interface MCPImageContent {
   data?: string;
   /** The image source URI. */
   uri?: string;
+  /** Structured source descriptor for lazily materialized media. */
+  source?: {
+    data?: string;
+    uri?: string;
+    mimeType?: string;
+  };
   mimeType: string;
   annotations?: Record<string, unknown>;
   serviceInfo?: ServiceInfo;
@@ -59,6 +65,12 @@ export interface MCPAudioContent {
   data?: string;
   /** The audio source URI. */
   uri?: string;
+  /** Structured source descriptor for lazily materialized media. */
+  source?: {
+    data?: string;
+    uri?: string;
+    mimeType?: string;
+  };
   mimeType: string;
   annotations?: Record<string, unknown>;
   serviceInfo?: ServiceInfo;
@@ -73,6 +85,12 @@ export interface MCPVideoContent {
   data?: string;
   /** The video source URI. */
   uri?: string;
+  /** Structured source descriptor for lazily materialized media. */
+  source?: {
+    data?: string;
+    uri?: string;
+    mimeType?: string;
+  };
   mimeType: string;
   annotations?: Record<string, unknown>;
   serviceInfo?: ServiceInfo;
