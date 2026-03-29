@@ -708,8 +708,10 @@ pub async fn request_llm_completion(
                 &session_name,
                 &messages,
                 compaction_parent_request.clone(),
-                &compact_in_flight_arc,
-                &last_compacted_tail_id_arc,
+                &super::compaction::BackgroundCompactionHandles {
+                    compact_in_flight_arc: compact_in_flight_arc.clone(),
+                    last_compacted_tail_id_arc: last_compacted_tail_id_arc.clone(),
+                },
             )
             .await?;
         }

@@ -39,6 +39,11 @@ async fn resolve_parent_request(
     request
 }
 
+pub(crate) struct BackgroundCompactionHandles {
+    pub(crate) compact_in_flight_arc: Arc<AtomicBool>,
+    pub(crate) last_compacted_tail_id_arc: Arc<RwLock<Option<String>>>,
+}
+
 /// Determines the compactable prefix for preflight compaction.
 ///
 /// Unlike background compaction, preflight compaction must preserve the newest
@@ -72,15 +77,15 @@ pub(crate) async fn trigger_background_compaction(
     session_name: &str,
     messages: &[Message],
     parent_request: Option<CompactionParentRequest>,
-    compact_in_flight_arc: &Arc<AtomicBool>,
-    last_compacted_tail_id_arc: &Arc<RwLock<Option<String>>>,
+    handles: &BackgroundCompactionHandles,
 ) -> Result<bool, String> {
     let split_idx = crate::agent::llm::context_selector::find_compaction_split_index(messages);
     if split_idx == 0 {
         return Ok(false);
     }
 
-    let claimed_in_flight = compact_in_flight_arc
+    let claimed_in_flight = handles
+        .compact_in_flight_arc
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok();
 
@@ -90,11 +95,11 @@ pub(crate) async fn trigger_background_compaction(
     }
 
     let current_tail_id = messages.last().map(|m| m.id.clone());
-    let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
+    let last_compacted_tail = handles.last_compacted_tail_id_arc.read().await.clone();
     let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
 
     if same_tail {
-        compact_in_flight_arc.store(false, Ordering::SeqCst);
+        handles.compact_in_flight_arc.store(false, Ordering::SeqCst);
         log::debug!(
             "⏭️ Compaction skipped (same tail): session={}, tail={}",
             session_id,
@@ -113,7 +118,7 @@ pub(crate) async fn trigger_background_compaction(
         .map(|m| m.id.clone())
         .unwrap_or_default();
 
-    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+    *handles.last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let started_at_ms = chrono::Utc::now().timestamp_millis();
     let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
@@ -187,15 +192,17 @@ pub async fn maybe_trigger_post_idle_compaction(
         return Ok(false);
     }
 
-    let (compact_context_arc, compact_in_flight_arc, last_compacted_tail_id_arc) = {
+    let (compact_context_arc, handles) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         (
             session.compact_context.clone(),
-            session.compact_in_flight.clone(),
-            session.last_compacted_tail_id.clone(),
+            BackgroundCompactionHandles {
+                compact_in_flight_arc: session.compact_in_flight.clone(),
+                last_compacted_tail_id_arc: session.last_compacted_tail_id.clone(),
+            },
         )
     };
 
@@ -214,8 +221,7 @@ pub async fn maybe_trigger_post_idle_compaction(
         session_name,
         messages,
         None,
-        &compact_in_flight_arc,
-        &last_compacted_tail_id_arc,
+        &handles,
     )
     .await?;
 
