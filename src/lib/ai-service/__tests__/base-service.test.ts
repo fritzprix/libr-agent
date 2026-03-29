@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
-import { BaseAIService } from '../base-service';
+import { BaseAIService, stableStringify } from '../base-service';
 import { AIServiceProvider } from '../types';
 
 class TestBaseAIService extends BaseAIService<string, string> {
@@ -77,5 +77,15 @@ describe('BaseAIService.shouldRetry', () => {
           '429 RESOURCE_EXHAUSTED: spending cap reached for this project quota',
       }),
     ).toBe(false);
+  });
+});
+
+describe('stableStringify', () => {
+  it('returns a string for undefined values', () => {
+    expect(stableStringify(undefined)).toBe('"undefined"');
+  });
+
+  it('returns a stable string for bigint values', () => {
+    expect(stableStringify(42n)).toBe('{"$bigint":"42"}');
   });
 });

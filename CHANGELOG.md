@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.22] - 2026-03-29
+
+### 🐛 Fixes
+
+- **Compaction Failure Recovery**: Fixed a workflow hang edge case so preflight compaction failures now transition agent sessions cleanly into an error state with proper retry-safe recovery instead of leaving the UI stuck loading.
+- **Workspace Search Accuracy**: Improved workspace search so skip reporting stays accurate and nested `.gitignore` rules inside the workspace are now respected during recursive searches.
+- **Workspace File Guidance**: Cleaned up duplicate-file write guidance so numbered recovery steps render correctly and point agents toward the right overwrite, append, read, and edit actions.
+
+### 🔧 Internal
+
+- **Prompt Cache Stability**: Further stabilized provider cache behavior by tightening prompt diagnostics, normalizing edge-case serialization for cache fingerprints, and reducing noisy OpenAI cache logging to debug level.
+- **Prompt Context Ordering**: Added volatility-aware service-context ordering so stable prompt sections stay grouped ahead of live state, improving prompt consistency for long-running sessions.
+- **Regression Coverage Expansion**: Added focused Rust and Vitest coverage for compaction recovery, workspace guidance formatting, nested `.gitignore` handling, and prompt-cache helpers.
+
 ## [0.6.21] - 2026-03-28
 
 ### 🚀 Features

@@ -818,6 +818,8 @@ async fn is_probably_binary_file(path: &Path) -> bool {
 }
 
 fn build_gitignore_matcher(search_root: &Path) -> Option<ignore::gitignore::Gitignore> {
+    use walkdir::WalkDir;
+
     let mut builder = ignore::gitignore::GitignoreBuilder::new(search_root);
     let mut added_any = false;
 
@@ -825,6 +827,34 @@ fn build_gitignore_matcher(search_root: &Path) -> Option<ignore::gitignore::Giti
         let gitignore_path = ancestor.join(".gitignore");
         if gitignore_path.is_file() && builder.add(gitignore_path).is_none() {
             added_any = true;
+        }
+    }
+
+    if search_root.is_dir() {
+        let walker = WalkDir::new(search_root)
+            .into_iter()
+            .filter_entry(|entry| {
+                if !entry.file_type().is_dir() {
+                    return true;
+                }
+
+                entry.depth() == 0
+                    || entry
+                        .file_name()
+                        .to_str()
+                        .map(|name| !SKIPPED_SEARCH_DIR_NAMES.contains(&name))
+                        .unwrap_or(true)
+            })
+            .filter_map(Result::ok);
+
+        for entry in walker {
+            if entry.file_type().is_file()
+                && entry.file_name() == std::ffi::OsStr::new(".gitignore")
+                && entry.path().parent() != Some(search_root)
+                && builder.add(entry.path()).is_none()
+            {
+                added_any = true;
+            }
         }
     }
 

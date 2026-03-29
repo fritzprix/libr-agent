@@ -173,6 +173,56 @@ async fn search_respects_gitignore_rules_during_recursive_content_search() {
 }
 
 #[tokio::test]
+async fn search_respects_nested_gitignore_rules_during_recursive_content_search() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-nested-gitignore";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("generated/ignored")).expect("ignored dir");
+    std::fs::write(workspace_dir.join("generated/.gitignore"), "ignored/\n")
+        .expect("write nested gitignore");
+    std::fs::write(
+        workspace_dir.join("generated/visible.ts"),
+        "const needle = true;\n",
+    )
+    .expect("write visible file");
+    std::fs::write(
+        workspace_dir.join("generated/ignored/hidden.ts"),
+        "const needle = true;\n",
+    )
+    .expect("write hidden file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("generated/visible.ts"),
+        "expected visible file in output: {text}"
+    );
+    assert!(
+        !text.contains("generated/ignored/hidden.ts"),
+        "nested gitignored file should be excluded: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["files_with_matches"], json!(1));
+    assert_eq!(structured["skipped_gitignored_directories"], json!(1));
+}
+
+#[tokio::test]
 async fn search_rejects_single_files_that_exceed_content_limit() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-large-file-limit";

@@ -94,11 +94,14 @@ pub(crate) async fn trigger_background_compaction(
 
     *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let started_at_ms = chrono::Utc::now().timestamp_millis();
-    {
+    let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            *session.compact_started_at_ms.write().await = Some(started_at_ms);
-        }
+        active
+            .get(session_id)
+            .map(|session| session.compact_started_at_ms.clone())
+    };
+    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        *compact_started_at_ms_handle.write().await = Some(started_at_ms);
     }
 
     let compact_event = CompactRequest {
@@ -283,11 +286,14 @@ pub(crate) async fn try_trigger_preflight_compaction(
     awaiting_compact_arc.store(true, Ordering::SeqCst);
     *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let started_at_ms = chrono::Utc::now().timestamp_millis();
-    {
+    let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            *session.compact_started_at_ms.write().await = Some(started_at_ms);
-        }
+        active
+            .get(session_id)
+            .map(|session| session.compact_started_at_ms.clone())
+    };
+    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        *compact_started_at_ms_handle.write().await = Some(started_at_ms);
     }
 
     let compact_event = CompactRequest {

@@ -178,14 +178,14 @@ describe('OpenAIService prompt cache extensions', () => {
       break;
     }
 
-    expect(loggerMock.info).toHaveBeenCalledWith(
+    expect(loggerMock.debug).toHaveBeenCalledWith(
       'OpenAI prompt diagnostics',
       expect.objectContaining({
         mode: 'stream',
         model: 'gpt-4o',
       }),
     );
-    expect(loggerMock.info).toHaveBeenCalledWith(
+    expect(loggerMock.debug).toHaveBeenCalledWith(
       'OpenAI fetch diagnostics',
       expect.objectContaining({
         mode: 'stream',

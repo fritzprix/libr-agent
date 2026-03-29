@@ -23,7 +23,16 @@ import type { Message } from '@/models/chat';
 
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
+    if (typeof value === 'bigint') {
+      return `{"$bigint":${JSON.stringify(value.toString())}}`;
+    }
+
+    const serialized = JSON.stringify(value);
+    if (serialized !== undefined) {
+      return serialized;
+    }
+
+    return JSON.stringify(String(value));
   }
 
   if (Array.isArray(value)) {

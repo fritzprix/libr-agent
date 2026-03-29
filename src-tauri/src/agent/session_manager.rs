@@ -45,15 +45,21 @@ async fn clear_compact_flags(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) {
-    let active = active_sessions.read().await;
-    if let Some(session) = active.get(session_id) {
-        session
-            .compact_in_flight
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-        session
-            .awaiting_compact_completion
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-        *session.compact_started_at_ms.write().await = None;
+    let compact_started_at_ms_handle = {
+        let active = active_sessions.read().await;
+        active.get(session_id).map(|session| {
+            session
+                .compact_in_flight
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            session
+                .awaiting_compact_completion
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            session.compact_started_at_ms.clone()
+        })
+    };
+
+    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        *compact_started_at_ms_handle.write().await = None;
     }
 }
 
@@ -64,7 +70,7 @@ pub async fn handle_compact_error_with_dispatcher(
     session_id: String,
     error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<(), String> {
-    let (was_awaiting, session_name, elapsed_ms) = {
+    let (was_awaiting, session_name, compact_started_at_ms_handle) = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             (
@@ -76,15 +82,19 @@ pub async fn handle_compact_error_with_dispatcher(
                     .name
                     .clone()
                     .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
-                session
-                    .compact_started_at_ms
-                    .read()
-                    .await
-                    .map(|started_at| chrono::Utc::now().timestamp_millis() - started_at),
+                Some(session.compact_started_at_ms.clone()),
             )
         } else {
             (false, session_id.chars().take(8).collect::<String>(), None)
         }
+    };
+    let elapsed_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        compact_started_at_ms_handle
+            .read()
+            .await
+            .map(|started_at| chrono::Utc::now().timestamp_millis() - started_at)
+    } else {
+        None
     };
 
     let error_code = error
@@ -779,13 +789,17 @@ impl AgentSessionManager {
         to_id: String,
         summary: String,
     ) -> Result<(), String> {
-        let started_at_ms = {
+        let compact_started_at_ms_handle = {
             let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                *session.compact_started_at_ms.read().await
-            } else {
-                None
-            }
+            active
+                .get(session_id)
+                .map(|session| session.compact_started_at_ms.clone())
+        };
+        let started_at_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle
+        {
+            *compact_started_at_ms_handle.read().await
+        } else {
+            None
         };
         log::info!(
             "✅ Compact response stored for session {}: from_id={}, to_id={}, summary_chars={}, summary_est_tokens=~{}, elapsed_ms={}",

@@ -396,7 +396,7 @@ export class OpenAIService extends BaseAIService<
     const serializedFingerprints = stableStringify(messageFingerprints);
     const toolsPayload = stableStringify(args.tools ?? []);
 
-    this.logger.info('OpenAI prompt diagnostics', {
+    this.logger.debug('OpenAI prompt diagnostics', {
       mode: args.mode,
       model: args.model,
       promptCacheKey: args.request.prompt_cache_key,
@@ -446,7 +446,7 @@ export class OpenAIService extends BaseAIService<
       }),
     );
 
-    this.logger.info('OpenAI fetch diagnostics', {
+    this.logger.debug('OpenAI fetch diagnostics', {
       mode: args.mode,
       requestId: args.requestId,
       model: args.model,
