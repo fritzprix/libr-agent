@@ -431,9 +431,8 @@ export function useLLMListener({
             return;
           }
 
-          const provider = (
-            parentRequest?.provider ?? settings.preferredModel.provider
-          ) as AIServiceProvider;
+          const provider = (parentRequest?.provider ??
+            settings.preferredModel.provider) as AIServiceProvider;
           const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
           const model = parentRequest?.model ?? settings.preferredModel.model;
           const providerConfig: AIServiceConfig =
@@ -456,7 +455,10 @@ export function useLLMListener({
             resetContextUsageForSession(sessionId);
             logger.info(`✅ Compact summary stored: session=${sessionId}`);
           } catch (error) {
-            logger.error(`Compact LLM call failed: session=${sessionId}`, error);
+            logger.error(
+              `Compact LLM call failed: session=${sessionId}`,
+              error,
+            );
             setAwaitingCompactForSession(sessionId, false);
             await handleCompactError(sessionId, toAgentRuntimeError(error));
           }
