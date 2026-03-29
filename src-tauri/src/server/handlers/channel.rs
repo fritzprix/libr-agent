@@ -140,9 +140,9 @@ pub async fn respond_channel_permission(
     {
         Ok(tool_call_id) => tool_call_id,
         Err(error) => {
-            let status = if error.contains("Session not found") {
-                StatusCode::NOT_FOUND
-            } else if error.contains("Pending approval not found") {
+            let status = if error.contains("Session not found")
+                || error.contains("Pending approval not found")
+            {
                 StatusCode::NOT_FOUND
             } else {
                 StatusCode::INTERNAL_SERVER_ERROR
