@@ -12,3 +12,8 @@
 
 **Learning:** Tauri commands were moved from `src-tauri/src/lib.rs` to a modular `src-tauri/src/commands/` directory, causing API documentation like `tauri-commands.md` to become completely outdated.
 **Action:** Always scan `src-tauri/src/commands/` (and check `tauri::generate_handler!` in `lib.rs`) when verifying Tauri API reference documentation to ensure it matches the actual backend codebase structure.
+
+## 2026-03-30 - [Tauri API Scope]
+
+**Learning:** Tauri commands have grown to over 130 functions across many domains (browser, workspace, agent, session). The API reference cannot exhaustively document all endpoints without becoming unmaintainable.
+**Action:** Always focus the public Tauri API reference on the primary architectural endpoints (Agent Workflow, Workspace, Browser, MCP) rather than trying to auto-generate or manually maintain an exhaustive list of all internal rust commands.
