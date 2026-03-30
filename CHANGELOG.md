@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.24] - 2026-03-30
+
+### 🐛 Fixes
+
+- **Planning Todo Targeting**: Reworked `updateTodo` to use stable `todoId` values instead of fragile list indexes, eliminating cases where agents could mark or cancel the wrong task when the visible planning context omitted some items.
+
+### 🔧 Internal
+
+- **Planning Guidance Alignment**: Updated planning tool schemas, service-context output, guidance text, and regression coverage so todo identifiers stay consistent across prompts, tool calls, and backend resolution.
+
 ## [0.6.23] - 2026-03-30
 
 ### 🚀 Features
