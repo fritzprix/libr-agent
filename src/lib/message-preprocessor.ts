@@ -366,7 +366,7 @@ export async function prepareMessageForLLM(
   logger.debug('Preprocessing message with attachments', {
     messageId: message.id,
     attachmentCount: message.attachments?.length ?? 0,
-    includeLatestMediaPayload: options?.includeLatestMediaPayload ?? false,
+    includeLatestMediaPayload: options?.includeLatestMediaPayload ?? true,
   });
 
   try {

@@ -151,7 +151,10 @@ export class OpenAIService extends BaseAIService<
   OpenAI.Chat.ChatCompletionTool
 > {
   protected openai: OpenAI;
-  private lastPromptSnapshots = new Map<'stream' | 'non-stream', OpenAIPromptSnapshot>();
+  private lastPromptSnapshots = new Map<
+    'stream' | 'non-stream',
+    OpenAIPromptSnapshot
+  >();
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
   private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
@@ -372,9 +375,7 @@ export class OpenAIService extends BaseAIService<
   ): OpenAIMessageFingerprint['contentTag'] {
     if (
       role === 'user' &&
-      content.startsWith(
-        '[Current session context — background reference only',
-      )
+      content.startsWith('[Current session context — background reference only')
     ) {
       return 'session_context';
     }
@@ -447,7 +448,8 @@ export class OpenAIService extends BaseAIService<
 
     if (
       firstDivergenceIndex === -1 &&
-      previous.messageFingerprints.length !== snapshot.messageFingerprints.length
+      previous.messageFingerprints.length !==
+        snapshot.messageFingerprints.length
     ) {
       firstDivergenceIndex = minMessageCount;
     }
@@ -479,11 +481,14 @@ export class OpenAIService extends BaseAIService<
       promptCacheKey: snapshot.promptCacheKey,
       firstDivergenceComponent,
       firstDivergenceIndex:
-        firstDivergenceComponent === 'messages' ? firstDivergenceIndex : undefined,
+        firstDivergenceComponent === 'messages'
+          ? firstDivergenceIndex
+          : undefined,
       commonPrefixMessages,
       previousMessageCount: previous.messageFingerprints.length,
       messageCount: snapshot.messageFingerprints.length,
-      systemPromptChanged: previous.systemPromptHash !== snapshot.systemPromptHash,
+      systemPromptChanged:
+        previous.systemPromptHash !== snapshot.systemPromptHash,
       toolsChanged: previous.toolsHash !== snapshot.toolsHash,
       messagesChanged:
         previous.messagesFingerprintHash !== snapshot.messagesFingerprintHash,
@@ -681,9 +686,8 @@ export class OpenAIService extends BaseAIService<
       messages,
       {
         idPrefix: 'openai-session-context',
-        contentText: this.formatSessionContextAsBackgroundReference(
-          sessionContext,
-        ),
+        contentText:
+          this.formatSessionContextAsBackgroundReference(sessionContext),
         sessionIdFallback: '',
         threadIdFallback: '',
         createdAt: new Date(),

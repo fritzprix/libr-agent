@@ -96,6 +96,35 @@ describe('message-preprocessor', () => {
       expect(text).toContain('list()');
     });
 
+    it('logs the effective default for includeLatestMediaPayload', async () => {
+      const message = createMessage({
+        attachments: [
+          {
+            sessionId: 'session-1',
+            contentId: 'content-1',
+            filename: 'test.txt',
+            mimeType: 'text/plain',
+            size: 100,
+            lineCount: 10,
+            preview: 'preview',
+            uploadedAt: new Date().toISOString(),
+            status: 'committed',
+          },
+        ],
+      });
+
+      await prepareMessageForLLM(message);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Preprocessing message with attachments',
+        expect.objectContaining({
+          messageId: message.id,
+          attachmentCount: 1,
+          includeLatestMediaPayload: true,
+        }),
+      );
+    });
+
     it('should append attachment hints for Workspace files', async () => {
       const message = createMessage({
         attachments: [

@@ -1097,21 +1097,66 @@ fn format_channel_payload(
 ) -> String {
     let mut attributes = vec![format!(r#"source="{}""#, escape_xml_attr(server_name))];
     let mut sorted_meta: Vec<_> = meta.iter().collect();
+    let mut invalid_meta = Vec::new();
     sorted_meta.sort_by(|(left, _), (right, _)| left.cmp(right));
 
     for (key, value) in sorted_meta {
-        attributes.push(format!(
-            r#"{}="{}""#,
-            escape_xml_attr(key),
-            escape_xml_attr(value)
-        ));
+        if is_safe_channel_attribute_name(key) {
+            attributes.push(format!(r#"{}="{}""#, key, escape_xml_attr(value)));
+            continue;
+        }
+
+        invalid_meta.push((key.as_str(), value.as_str()));
+    }
+
+    let mut escaped_body = escape_xml_text(content);
+    if !invalid_meta.is_empty() {
+        if !escaped_body.is_empty() {
+            escaped_body.push_str("\n\n");
+        }
+        escaped_body.push_str("[channel_meta]\n");
+        for (index, (key, value)) in invalid_meta.iter().enumerate() {
+            if index > 0 {
+                escaped_body.push('\n');
+            }
+            escaped_body.push_str(&escape_xml_text(key));
+            escaped_body.push('=');
+            escaped_body.push_str(&escape_xml_text(value));
+        }
+        escaped_body.push_str("\n[/channel_meta]");
     }
 
     format!(
         "<channel {}>\n{}\n</channel>",
         attributes.join(" "),
-        escape_xml_text(content)
+        escaped_body
     )
+}
+
+fn is_safe_channel_attribute_name(key: &str) -> bool {
+    if matches!(key, "source") {
+        return false;
+    }
+
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
+#[doc(hidden)]
+pub fn format_channel_payload_for_test(
+    server_name: &str,
+    content: &str,
+    meta: &HashMap<String, String>,
+) -> String {
+    format_channel_payload(server_name, content, meta)
 }
 
 fn escape_xml_attr(value: &str) -> String {
