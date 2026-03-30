@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BrainCircuit } from 'lucide-react';
+import { BrainCircuit, Loader2 } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
@@ -296,6 +296,7 @@ export default function SettingsPage() {
               disabled={!isDirty || isSaving}
               className="h-9 font-medium"
             >
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isSaving
                 ? t('settings.saving', 'Saving...')
                 : t('settings.applyChanges', 'Apply Changes')}
