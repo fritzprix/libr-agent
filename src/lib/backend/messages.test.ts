@@ -249,6 +249,76 @@ describe('Message Management Service', () => {
         }),
       );
     });
+
+    it('should preserve backend-emitted source values recognized by the frontend', async () => {
+      const mockTimestamp = Date.now();
+      const mockRustResponse = {
+        items: [
+          {
+            id: 'msg-scheduled',
+            sessionId: 'session-1',
+            threadId: 'thread-1',
+            role: 'user',
+            content: [{ type: 'text', text: 'Scheduled execution' }],
+            createdAt: mockTimestamp,
+            updatedAt: mockTimestamp,
+            source: 'scheduled_task',
+          } satisfies RustMessage,
+        ],
+        totalItems: 1,
+        page: 1,
+        pageSize: 10,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      };
+
+      vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
+
+      const result = await getMessagesPageForSession(
+        'session-1',
+        'thread-1',
+        1,
+        10,
+      );
+
+      expect(result.items[0]?.source).toBe('scheduled_task');
+    });
+
+    it('should drop unknown source values when deserializing backend messages', async () => {
+      const mockTimestamp = Date.now();
+      const mockRustResponse = {
+        items: [
+          {
+            id: 'msg-unknown-source',
+            sessionId: 'session-1',
+            threadId: 'thread-1',
+            role: 'user',
+            content: [{ type: 'text', text: 'Unknown source' }],
+            createdAt: mockTimestamp,
+            updatedAt: mockTimestamp,
+            source: 'not-a-real-source',
+          } as unknown as RustMessage,
+        ],
+        totalItems: 1,
+        page: 1,
+        pageSize: 10,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      };
+
+      vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
+
+      const result = await getMessagesPageForSession(
+        'session-1',
+        'thread-1',
+        1,
+        10,
+      );
+
+      expect(result.items[0]?.source).toBeUndefined();
+    });
   });
 
   describe('upsertMessages', () => {

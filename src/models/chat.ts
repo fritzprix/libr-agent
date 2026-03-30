@@ -160,6 +160,26 @@ export interface Message {
 
 export type MessageError = NonNullable<Message['error']>;
 
+export const MESSAGE_SOURCES = [
+  'assistant',
+  'ui',
+  'channel',
+  'api',
+  'tool',
+  'compact-summary',
+  'recovery',
+  'scheduled_task',
+] as const;
+
+export type MessageSource = (typeof MESSAGE_SOURCES)[number];
+
+export function isMessageSource(value: unknown): value is MessageSource {
+  return (
+    typeof value === 'string' &&
+    (MESSAGE_SOURCES as readonly string[]).includes(value)
+  );
+}
+
 export interface ToolCall {
   id: string;
   type: 'function';
@@ -244,13 +264,11 @@ export function rustMessageToMessage(rustMsg: RustMessage): Message {
     usage: rustMsg.usage,
     createdAt: new Date(rustMsg.createdAt),
     updatedAt: new Date(rustMsg.updatedAt),
-    source: rustMsg.source,
+    source: isMessageSource(rustMsg.source) ? rustMsg.source : undefined,
     error: rustMsg.error,
     metadata: rustMsg.metadata,
   };
 }
-
-export type MessageSource = 'assistant' | 'ui' | 'channel';
 
 // ========================================
 // MCP Configuration Types (MCP 2025-06-18 Spec)
