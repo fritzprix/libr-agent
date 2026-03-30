@@ -21,7 +21,11 @@ import {
 } from './base-service';
 import { llmConfigManager, ModelInfo } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
-import { ensureSchemaTypeField, processMessageContent } from './utils';
+import {
+  ensureSchemaTypeField,
+  formatToolResultForLlm,
+  processMessageContent,
+} from './utils';
 const logger = getLogger('OpenAIService');
 
 /** Shape of usage data returned by OpenAI/compatible streaming chunks. */
@@ -1095,7 +1099,7 @@ export class OpenAIService extends BaseAIService<
           openaiMessages.push({
             role: 'tool',
             tool_call_id: m.tool_call_id,
-            content: this.processMessageContent(m.content),
+            content: formatToolResultForLlm(m),
           });
           // Inject image/audio from tool result as a synthetic user message
           const media = this.extractMediaContent(m.content as MCPContent[]);

@@ -20,6 +20,7 @@ pub struct CreateAssistantRequest {
     #[serde(rename = "systemPrompt")]
     pub system_prompt: Option<String>,
     pub description: Option<String>,
+    pub temperature: Option<f32>,
     #[serde(rename = "allowedBuiltInServiceAliases")]
     pub allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
@@ -41,6 +42,7 @@ pub struct UpdateAssistantRequest {
     #[serde(rename = "systemPrompt")]
     pub system_prompt: Option<String>,
     pub description: Option<String>,
+    pub temperature: Option<f32>,
     #[serde(rename = "allowedBuiltInServiceAliases")]
     pub allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
@@ -65,6 +67,7 @@ struct ConfigMergeParams<'a> {
     base_config: Option<Value>,
     system_prompt: Option<&'a str>,
     description: Option<&'a str>,
+    temperature: Option<f32>,
     allowed_builtin_service_aliases: Option<&'a Vec<BuiltinServiceId>>,
     mcp_server_ids: Option<&'a Vec<String>>,
     tools: Option<&'a Vec<String>>,
@@ -86,6 +89,9 @@ fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
     }
     if let Some(v) = params.description {
         config["description"] = json!(v);
+    }
+    if let Some(v) = params.temperature {
+        config["temperature"] = json!(v);
     }
 
     // Handle tools (v2 legacy) -> allowedBuiltInServiceAliases
@@ -182,6 +188,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         base_config: request.config,
         system_prompt: request.system_prompt.as_deref(),
         description: request.description.as_deref(),
+        temperature: request.temperature,
         allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
         mcp_server_ids: request.mcp_server_ids.as_ref(),
         tools: request.tools.as_ref(),
@@ -323,6 +330,7 @@ pub async fn update_assistant(
         base_config: Some(base_config),
         system_prompt: request.system_prompt.as_deref(),
         description: request.description.as_deref(),
+        temperature: request.temperature,
         allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
         mcp_server_ids: request.mcp_server_ids.as_ref(),
         tools: request.tools.as_ref(),

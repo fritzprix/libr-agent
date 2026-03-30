@@ -243,7 +243,7 @@ export function convertToAnthropicMessages(
 
       pendingToolResults.push(
         ...buildAnthropicToolResultBlocks(
-          message.content as MCPContent[],
+          message,
           message.tool_call_id,
           message.id,
           logger,

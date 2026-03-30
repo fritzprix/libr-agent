@@ -88,10 +88,16 @@ pub fn update_server_tool() -> MCPTool {
                     string_prop_required("Target server name (slug) to update"),
                 ),
                 ("transport".to_string(), transport_schema),
-                (
-                    "description".to_string(),
-                    string_prop(None, None, Some("Optional new description")),
+            (
+                "description".to_string(),
+                string_prop(
+                    None,
+                    None,
+                    Some(
+                        "Optional new description. If omitted, keep the existing description unchanged.",
+                    ),
                 ),
+            ),
             ],
             vec!["name".to_string(), "transport".to_string()],
             None,
@@ -155,7 +161,9 @@ pub fn list_tools_tool() -> MCPTool {
                     string_prop(
                         None,
                         None,
-                        Some("Optional filter over tool names, descriptions, and server names."),
+                        Some(
+                            "Filter over tool names, descriptions, and server names. If omitted, return unfiltered results.",
+                        ),
                     ),
                 ),
                 (
@@ -163,12 +171,16 @@ pub fn list_tools_tool() -> MCPTool {
                     enum_prop(
                         vec!["all", "internal", "external"],
                         "all",
-                        Some("Result scope: all, builtin only, or external only."),
+                        Some(
+                            "Result scope: all, builtin only, or external only. If omitted, default: all.",
+                        ),
                     ),
                 ),
                 (
                     "forceVerify".to_string(),
-                    boolean_prop(Some("Fetch live external server metadata instead of cached data.")),
+                    boolean_prop(Some(
+                        "If true (default: false), fetch live external server metadata. If omitted/false, use cached metadata from the last verification.",
+                    )),
                 ),
             ],
             vec![],

@@ -1,3 +1,4 @@
+use crate::entity::playbook;
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
 };
@@ -5,9 +6,41 @@ use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::{PaginationParams, PlaybookRepository};
 use handlebars::Handlebars;
 use serde_json::{json, Value};
+use std::cmp::Ordering;
 
 use super::templates::PLAYBOOK_LIST_TEMPLATE;
 use super::types::Playbook;
+
+fn sort_playbook_models(
+    models: &mut [playbook::Model],
+    sort_by: &str,
+    sort_order: &str,
+    bookmark_first: bool,
+) {
+    models.sort_by(|a, b| {
+        if bookmark_first && a.is_bookmarked != b.is_bookmarked {
+            return b.is_bookmarked.cmp(&a.is_bookmarked);
+        }
+
+        let ordering = match sort_by {
+            "assistant" => a.assistant_id.cmp(&b.assistant_id),
+            _ => a.created_at.cmp(&b.created_at),
+        };
+        let ordering = if sort_order == "asc" {
+            ordering
+        } else {
+            ordering.reverse()
+        };
+
+        if ordering == Ordering::Equal {
+            b.updated_at
+                .cmp(&a.updated_at)
+                .then_with(|| a.id.cmp(&b.id))
+        } else {
+            ordering
+        }
+    });
+}
 
 pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
     let goal = match args.get("goal").and_then(|v| v.as_str()) {
@@ -130,26 +163,30 @@ pub async fn list_playbooks(
         .and_then(|v| v.as_i64())
         .unwrap_or(10)
         .max(1) as u64;
+    let sort_by = args
+        .get("sortBy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("created_at");
+    let sort_order = args
+        .get("sortOrder")
+        .and_then(|v| v.as_str())
+        .unwrap_or("desc");
     let bookmark_first = args
         .get("bookmarkFirst")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Get all playbooks for assistant
-    let all_playbooks = if bookmark_first {
-        repo.get_bookmarked_playbooks(assistant_id)
-            .await
-            .map_err(|e| format!("Failed to list playbooks: {}", e))?
-    } else {
-        let pagination = PaginationParams {
-            page: 1,
-            page_size: 10000,
-        };
-        repo.list_playbooks(Some(assistant_id), pagination)
-            .await
-            .map_err(|e| format!("Failed to list playbooks: {}", e))?
-            .items
+    // Get all playbooks for assistant, then apply stable in-memory sorting/pagination
+    let pagination = PaginationParams {
+        page: 1,
+        page_size: 10000,
     };
+    let mut all_playbooks = repo
+        .list_playbooks(Some(assistant_id), pagination)
+        .await
+        .map_err(|e| format!("Failed to list playbooks: {}", e))?
+        .items;
+    sort_playbook_models(&mut all_playbooks, sort_by, sort_order, bookmark_first);
 
     let total_items = all_playbooks.len() as u64;
     let offset = (page - 1) * page_size;

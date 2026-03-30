@@ -342,9 +342,122 @@ async fn test_playbook_ui_interaction_flow() {
     assert_eq!(structured["page"]["totalItems"], 0);
 }
 
+async fn test_playbook_listing_respects_sorting_and_bookmark_priority() {
+    let db = get_or_create_test_db().await;
+    let test_suffix = uuid::Uuid::new_v4().to_string();
+    let session_id = format!("sorting-test-{test_suffix}");
+    let assistant_id = format!("assistant-sorting-{test_suffix}");
+
+    let new_session = session::ActiveModel {
+        id: Set(session_id.clone()),
+        name: Set(Some("Sorting Test".to_string())),
+        model: Set("gpt-4".to_string()),
+        provider: Set("openai".to_string()),
+        agent_config: Set(Some(format!(r#"{{"assistant_id":"{assistant_id}"}}"#))),
+        status: Set("idle".to_string()),
+        parent_session_id: Set(None),
+        lineage_id: Set(None),
+        depth: Set(None),
+        max_depth: Set(None),
+        max_fanout: Set(None),
+        created_at: Set(0),
+        updated_at: Set(0),
+        last_viewed_at: Set(None),
+        last_message_at: Set(None),
+        last_attention_at: Set(None),
+        last_attention_reason: Set(None),
+        is_bookmarked: Set(false),
+        yolo_mode: Set(false),
+        workspace_override: Set(None),
+    };
+    session::Entity::insert(new_session)
+        .exec(db.as_ref())
+        .await
+        .expect("Failed to insert sorting test session");
+
+    let first_id = format!("playbook-a-{test_suffix}");
+    let second_id = format!("playbook-b-{test_suffix}");
+    let third_id = format!("playbook-c-{test_suffix}");
+
+    for (id, goal, created_at, updated_at, is_bookmarked) in [
+        (&first_id, "First playbook", 100_i64, 100_i64, false),
+        (&second_id, "Second playbook", 200_i64, 200_i64, true),
+        (&third_id, "Third playbook", 300_i64, 300_i64, false),
+    ] {
+        let new_playbook = playbook::ActiveModel {
+            id: Set(id.to_string()),
+            assistant_id: Set(assistant_id.clone()),
+            goal: Set(goal.to_string()),
+            initial_command: Set(None),
+            workflow: Set("[]".to_string()),
+            success_criteria: Set(None),
+            created_at: Set(created_at),
+            updated_at: Set(updated_at),
+            is_bookmarked: Set(is_bookmarked),
+        };
+        playbook::Entity::insert(new_playbook)
+            .exec(db.as_ref())
+            .await
+            .expect("Failed to insert sorting test playbook");
+    }
+
+    let server = PlaybookServer::new(session_id, db)
+        .await
+        .expect("Failed to create PlaybookServer");
+
+    let asc_result = server
+        .call_tool(
+            "listPlaybooks",
+            json!({
+                "sortBy": "created_at",
+                "sortOrder": "asc"
+            }),
+            None,
+        )
+        .await
+        .expect("Failed to list playbooks in ascending order");
+
+    let asc_items = asc_result.structured_content.unwrap()["page"]["items"]
+        .as_array()
+        .expect("ascending result items should be an array")
+        .iter()
+        .map(|item| item["id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        asc_items,
+        vec![first_id.clone(), second_id.clone(), third_id.clone()]
+    );
+
+    let bookmarked_result = server
+        .call_tool(
+            "listPlaybooks",
+            json!({
+                "sortBy": "created_at",
+                "sortOrder": "asc",
+                "bookmarkFirst": true
+            }),
+            None,
+        )
+        .await
+        .expect("Failed to list playbooks with bookmark priority");
+
+    let bookmarked_items = bookmarked_result.structured_content.unwrap()["page"]["items"]
+        .as_array()
+        .expect("bookmark-priority result items should be an array")
+        .iter()
+        .map(|item| item["id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        bookmarked_items,
+        vec![second_id, first_id, third_id],
+        "bookmarked playbooks should be surfaced first while preserving the requested sort order inside each group"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_playbook_integration_suite() {
     // Run sequentially to avoid race condition on shared memory DB and global repositories
     test_playbook_ui_interaction_flow().await;
     test_playbook_ui_rendering_integration().await;
+    test_playbook_listing_respects_sorting_and_bookmark_priority().await;
 }

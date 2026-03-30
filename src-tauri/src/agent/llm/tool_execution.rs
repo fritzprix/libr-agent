@@ -37,6 +37,7 @@ pub async fn execute_tool_calls(
                 let result = crate::commands::agent_commands::ToolExecutionResult {
                     success: false,
                     content: String::new(),
+                    structured_content: None,
                     error: Some(format!("Failed to parse args: {}", e)),
                     is_error: true,
                     mcp_content: None,
@@ -157,6 +158,7 @@ pub async fn execute_tool_calls(
                         let result = crate::commands::agent_commands::ToolExecutionResult {
                             success: false,
                             content: String::from("User rejected the tool execution."),
+                            structured_content: None,
                             error: Some(String::from("User rejected the tool execution.")),
                             is_error: true,
                             mcp_content: None,
@@ -227,11 +229,18 @@ pub async fn execute_tool_calls(
                 };
 
                 let mcp_content =
-                    crate::agent::tools::convert_mcp_response_content(response.result);
+                    crate::agent::tools::convert_mcp_response_content(response.result.clone());
+                let structured_content = match response.result {
+                    Some(crate::mcp::types::MCPResponseResult::ToolCall(mcp_result)) => {
+                        mcp_result.structured_content
+                    }
+                    _ => None,
+                };
 
                 crate::commands::agent_commands::ToolExecutionResult {
                     success: !is_error,
                     content: debug_content,
+                    structured_content,
                     error: error_msg,
                     is_error,
                     mcp_content,
@@ -240,6 +249,7 @@ pub async fn execute_tool_calls(
             Err(e) => crate::commands::agent_commands::ToolExecutionResult {
                 success: false,
                 content: String::new(),
+                structured_content: None,
                 error: Some(e),
                 is_error: true,
                 mcp_content: None,

@@ -11,7 +11,7 @@ import {
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
-import { ensureSchemaTypeField } from './utils';
+import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
 const logger = getLogger('GroqService');
 
 /**
@@ -295,7 +295,7 @@ export class GroqService extends BaseAIService<
           groqMessages.push({
             role: 'tool',
             tool_call_id: m.tool_call_id,
-            content: this.processMessageContent(m.content),
+            content: formatToolResultForLlm(m),
           });
           // Inject image/audio from tool result as a synthetic user message
           const media = this.extractMediaContent(m.content as MCPContent[]);

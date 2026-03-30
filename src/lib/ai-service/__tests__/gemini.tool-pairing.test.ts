@@ -97,6 +97,68 @@ describe('GeminiService Tool Result Handling', () => {
         });
     });
 
+    it('should prefer structured tool metadata over plain text for FunctionResponse payloads', () => {
+        const toolCallId = 'call_structured';
+        const toolName = 'agent__checkSession';
+
+        const messages: Message[] = [
+            {
+                id: '1',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'assistant',
+                content: [],
+                tool_calls: [
+                    {
+                        id: toolCallId,
+                        type: 'function',
+                        function: {
+                            name: toolName,
+                            arguments: JSON.stringify({ sessionId: 'session-1' }),
+                        },
+                    },
+                ],
+            },
+            {
+                id: '2',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'tool',
+                tool_call_id: toolCallId,
+                content: [{ type: 'text', text: '✓ Session session-1 is terminal.' }],
+                metadata: {
+                    structuredContent: {
+                        toolName: 'checkSession',
+                        sessionId: 'session-1',
+                        status: 'idle',
+                        responseStatus: 'success',
+                        turnCount: 4,
+                        result: 'Final answer',
+                    },
+                },
+            },
+        ];
+
+        const result = convertToGeminiMessages(messages);
+        const toolResponse = result[2];
+
+        expect(toolResponse?.role).toBe('user');
+        expect(toolResponse?.parts?.[0]).toEqual({
+            functionResponse: {
+                id: toolCallId,
+                name: toolName,
+                response: {
+                    toolName: 'checkSession',
+                    sessionId: 'session-1',
+                    status: 'idle',
+                    responseStatus: 'success',
+                    turnCount: 4,
+                    result: 'Final answer',
+                },
+            },
+        });
+    });
+
     it('should fallback to text part if tool name is not found in history', () => {
         const messages: Message[] = [
             {

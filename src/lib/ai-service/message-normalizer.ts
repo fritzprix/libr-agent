@@ -165,6 +165,124 @@ export function validateToolCallPairing(messages: Message[]): Message[] {
   return result;
 }
 
+interface MalformedToolCallIssue {
+  toolCallId: string;
+  toolName: string;
+  reason: string;
+  argumentsPreview: string;
+}
+
+function truncateToolArgumentPreview(rawArguments: string): string {
+  const normalized = rawArguments.replace(/\s+/g, ' ').trim();
+  return normalized.length > 160
+    ? `${normalized.slice(0, 157)}...`
+    : normalized;
+}
+
+function inspectToolCallArguments(
+  rawArguments: string,
+): { valid: true } | { valid: false; reason: string } {
+  try {
+    const parsed = JSON.parse(rawArguments);
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return {
+        valid: false,
+        reason: 'arguments must decode to a JSON object',
+      };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    return {
+      valid: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function buildMalformedToolCallRepairContent(
+  issues: MalformedToolCallIssue[],
+): MCPContent[] {
+  const lines = issues.map(
+    ({ toolCallId, toolName, reason, argumentsPreview }) =>
+      `- Tool call "${toolName}" (id: ${toolCallId}) was omitted because its arguments were invalid (${reason}). Original arguments preview: ${argumentsPreview}`,
+  );
+
+  return [
+    {
+      type: 'text',
+      text: [
+        '[Sanitizer note: invalid tool call arguments were removed from conversation history to prevent repeated 400 Bad Request failures.]',
+        ...lines,
+        'Treat each omitted tool call as a failed attempt. If you retry, emit a valid JSON object for function.arguments and double-check quotes, commas, braces, and nesting before sending the next tool call.',
+      ].join('\n'),
+    },
+  ];
+}
+
+/**
+ * Removes assistant tool calls whose `function.arguments` would poison future
+ * provider requests, then replaces them with explicit assistant text so the
+ * model can recover instead of resending the same malformed payload forever.
+ */
+export function repairMalformedToolCalls(messages: Message[]): Message[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant' || !message.tool_calls?.length) {
+      return message;
+    }
+
+    const validToolCalls = [];
+    const malformedIssues: MalformedToolCallIssue[] = [];
+
+    for (const toolCall of message.tool_calls) {
+      const inspection = inspectToolCallArguments(toolCall.function.arguments);
+      if (inspection.valid) {
+        validToolCalls.push(toolCall);
+        continue;
+      }
+
+      malformedIssues.push({
+        toolCallId: toolCall.id,
+        toolName: toolCall.function.name,
+        reason: inspection.reason,
+        argumentsPreview: truncateToolArgumentPreview(
+          toolCall.function.arguments,
+        ),
+      });
+    }
+
+    if (malformedIssues.length === 0) {
+      return message;
+    }
+
+    logger.warn('Repairing malformed tool call arguments in message history', {
+      messageId: message.id,
+      malformedToolCallIds: malformedIssues.map((issue) => issue.toolCallId),
+      malformedToolCallNames: malformedIssues.map((issue) => issue.toolName),
+    });
+
+    const repairedMessage: Message = {
+      ...message,
+      content: [
+        ...(message.content ?? []),
+        ...buildMalformedToolCallRepairContent(malformedIssues),
+      ],
+    };
+
+    if (validToolCalls.length > 0) {
+      repairedMessage.tool_calls = validToolCalls;
+    } else {
+      delete repairedMessage.tool_calls;
+    }
+
+    return repairedMessage;
+  });
+}
+
 /**
  * Merges consecutive user messages into a single message while preserving
  * attachments from all merged messages.
@@ -244,6 +362,7 @@ export class MessageNormalizer {
    * @returns A new array of messages without system errors.
    */
   static filterSystemErrors = filterSystemErrors;
+  static repairMalformedToolCalls = repairMalformedToolCalls;
 
   /**
    * Ensures strict tool-call/tool-response pairing for all providers.

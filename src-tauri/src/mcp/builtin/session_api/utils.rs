@@ -195,6 +195,91 @@ pub async fn count_session_turns(session_id: &str) -> usize {
     messages.iter().filter(|m| m.role == "assistant").count()
 }
 
+pub fn check_session_next_actions(session_id: &str) -> Vec<Value> {
+    vec![
+        json!({
+            "toolName": "checkSession",
+            "reason": "Poll the session again for the latest status and turn count.",
+            "args": {
+                "sessionId": session_id,
+                "wait": false
+            }
+        }),
+        json!({
+            "toolName": "checkSession",
+            "reason": "Block again later when you want to wait for a terminal result.",
+            "args": {
+                "sessionId": session_id,
+                "wait": true
+            }
+        }),
+    ]
+}
+
+pub fn build_agent_tool_data(
+    tool_name: &str,
+    resource_type: &str,
+    resource_id: Option<&str>,
+    message: &str,
+    response_status: &str,
+    next_actions: Vec<Value>,
+) -> serde_json::Map<String, Value> {
+    let mut data = serde_json::Map::new();
+    data.insert("toolName".to_string(), Value::String(tool_name.to_string()));
+    data.insert(
+        "resourceType".to_string(),
+        Value::String(resource_type.to_string()),
+    );
+    data.insert("message".to_string(), Value::String(message.to_string()));
+    data.insert(
+        "responseStatus".to_string(),
+        Value::String(response_status.to_string()),
+    );
+
+    if let Some(resource_id) = resource_id {
+        data.insert(
+            "resourceId".to_string(),
+            Value::String(resource_id.to_string()),
+        );
+    }
+
+    if !next_actions.is_empty() {
+        data.insert("nextActions".to_string(), Value::Array(next_actions));
+    }
+
+    data
+}
+
+pub fn build_agent_session_tool_data(
+    tool_name: &str,
+    session_id: &str,
+    message: &str,
+    session_status: &str,
+    response_status: &str,
+    turn_count: usize,
+    next_actions: Vec<Value>,
+) -> serde_json::Map<String, Value> {
+    let mut data = build_agent_tool_data(
+        tool_name,
+        "session",
+        Some(session_id),
+        message,
+        response_status,
+        next_actions,
+    );
+    data.insert(
+        "sessionId".to_string(),
+        Value::String(session_id.to_string()),
+    );
+    data.insert(
+        "status".to_string(),
+        Value::String(session_status.to_string()),
+    );
+    data.insert("turnCount".to_string(), json!(turn_count));
+
+    data
+}
+
 pub fn extract_assistant_id_from_session_value(session: &Value) -> Option<String> {
     if let Some(assistant_id) = session.get("assistantId").and_then(|v| v.as_str()) {
         return Some(assistant_id.to_string());
@@ -250,12 +335,14 @@ pub async fn fetch_messages_value(session_id: &str, limit: u64) -> Result<Value,
     Ok(json!({ "messages": messages_json }))
 }
 
-/// Consolidates timeout handling for spawnAgent and awaitAgent.
-/// Converts Timeout errors into successful MCP results with guidance.
-pub fn handle_wait_timeout_result(
+/// Consolidates timeout handling for spawnAgent, awaitAgent, and checkSession.
+/// Converts Timeout errors into successful MCP results with progress metadata.
+pub async fn handle_wait_timeout_result(
     wait_result: Result<(Value, u64), String>,
+    manager: Option<&AgentSessionManager>,
     session_id: &str,
     timeout_seconds: u64,
+    tool_name: &str,
     is_spawn: bool,
 ) -> Result<(Value, u64), Result<MCPResult, String>> {
     match wait_result {
@@ -278,11 +365,37 @@ pub fn handle_wait_timeout_result(
                     )
                 };
 
-                let data = if is_spawn {
-                    serde_json::json!({ "id": session_id, "timeout": true, "error": e })
-                } else {
-                    serde_json::json!({ "sessionId": session_id, "timeout": true, "error": e })
+                let (session_status, turn_count) = match manager {
+                    Some(manager) => {
+                        let session_status = match fetch_session_value(manager, session_id).await {
+                            Ok(Some(session)) => extract_session_status(&session),
+                            Ok(None) | Err(_) => "unknown".to_string(),
+                        };
+                        (session_status, count_session_turns(session_id).await)
+                    }
+                    None => ("unknown".to_string(), 0),
                 };
+
+                let mut data = build_agent_session_tool_data(
+                    tool_name,
+                    session_id,
+                    &text,
+                    &session_status,
+                    "timeout",
+                    turn_count,
+                    check_session_next_actions(session_id),
+                );
+                data.insert("timeout".to_string(), Value::Bool(true));
+                data.insert("timeoutSeconds".to_string(), json!(timeout_seconds));
+                data.insert(
+                    "errorCategory".to_string(),
+                    Value::String("timeout".to_string()),
+                );
+                data.insert("error".to_string(), Value::String(e));
+
+                if is_spawn {
+                    data.insert("id".to_string(), Value::String(session_id.to_string()));
+                }
 
                 return Err(Ok(success_result(text, data)));
             }

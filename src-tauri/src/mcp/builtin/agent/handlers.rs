@@ -6,13 +6,15 @@ use crate::mcp::builtin::error_guidance::{
     SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::session_api::formatting::{
-    extract_session_status, latest_assistant_message_text,
+    extract_session_status, is_terminal_status, latest_assistant_message_text,
+    latest_tool_message_text,
 };
 use crate::mcp::builtin::session_api::utils::{
+    build_agent_session_tool_data, build_agent_tool_data, check_session_next_actions,
     count_session_turns, handle_wait_timeout_result, read_required_string,
     wait_until_session_terminal,
 };
-use crate::mcp::types::MCPResult;
+use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::message_repository::MessageRepository;
 
@@ -22,6 +24,268 @@ use super::formatting::{
     resolve_external_server_labels,
 };
 use super::AgentServer;
+
+fn extract_result_text(result: &MCPResult) -> Option<String> {
+    result
+        .content
+        .as_ref()?
+        .iter()
+        .find_map(|content| match content {
+            MCPContent::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+}
+
+fn normalize_agent_config_result(
+    mut result: MCPResult,
+    tool_name: &str,
+    next_actions: Vec<Value>,
+) -> MCPResult {
+    if result.is_error == Some(true) {
+        return result;
+    }
+
+    let message =
+        extract_result_text(&result).unwrap_or_else(|| format!("{} completed.", tool_name));
+    let existing = result.structured_content.take();
+    let resource_id = existing
+        .as_ref()
+        .and_then(|value| value.as_object())
+        .and_then(|object| object.get("id"))
+        .and_then(|value| value.as_str());
+
+    let mut data = build_agent_tool_data(
+        tool_name,
+        "agentConfig",
+        resource_id,
+        &message,
+        "success",
+        next_actions,
+    );
+
+    match existing {
+        Some(Value::Object(object)) => {
+            for (key, value) in object {
+                data.insert(key, value);
+            }
+        }
+        Some(value) => {
+            data.insert("data".to_string(), value);
+        }
+        None => {}
+    }
+
+    result.structured_content = Some(Value::Object(data));
+    result
+}
+
+fn default_session_recovery_message(status: &str) -> String {
+    match status.to_ascii_lowercase().as_str() {
+        "paused" => "Resume after interruption. Continue the delegated task from the last completed step, reassess any interrupted tool work, and then proceed to the final answer.".to_string(),
+        "error" | "failed" => "Retry after failure. Inspect the previous error, preserve any completed work, fix the immediate cause if needed, and continue the delegated task from the safest next step.".to_string(),
+        "terminated" => "Restart the delegated task from the latest conversation state and continue from the most sensible next step.".to_string(),
+        _ => "Continue the delegated task from the latest stable point and report the final answer.".to_string(),
+    }
+}
+
+fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> Value {
+    json!({
+        "toolName": "messageToSession",
+        "reason": reason,
+        "args": {
+            "sessionId": session_id,
+            "message": default_session_recovery_message(status),
+        }
+    })
+}
+
+fn latest_session_output(messages_value: &[Value]) -> String {
+    let (_, mut assistant_text) = latest_assistant_message_text(messages_value, None)
+        .unwrap_or(("none".to_string(), "No final answer yet.".to_string()));
+
+    if assistant_text == "[assistant message has no text content]" {
+        if let Some(tool_text) = latest_tool_message_text(messages_value) {
+            assistant_text = format!("[Tool Response Fallback]\n{}", tool_text);
+        }
+    }
+
+    assistant_text
+}
+
+pub fn build_paused_check_session_result_from_messages(
+    session_id: &str,
+    turn_count: usize,
+    messages_value: &[Value],
+) -> MCPResult {
+    let latest_output = latest_session_output(messages_value);
+    let recovery_reason =
+        "Wake the paused child session so it can continue from the last stable step.";
+    let message = format!(
+        "Session {} is paused and will not make progress on its own.\n\nLast known output:\n{}\n\nRecovery: send a follow-up message with messageToSession(...) to restart the child workflow.",
+        session_id, latest_output
+    );
+    let next_actions = vec![
+        recovery_action_for_session(session_id, "paused", recovery_reason),
+        json!({
+            "toolName": "checkSession",
+            "reason": "Check again after sending a recovery message.",
+            "args": {
+                "sessionId": session_id,
+                "wait": true
+            }
+        }),
+    ];
+    let hint = SuccessHint::new(message.clone(), vec![]);
+    let mut response_data = build_agent_session_tool_data(
+        "checkSession",
+        session_id,
+        &message,
+        "paused",
+        "paused",
+        turn_count,
+        next_actions,
+    );
+    response_data.insert("recoverable".to_string(), Value::Bool(true));
+    response_data.insert(
+        "recoveryStrategy".to_string(),
+        Value::String("messageToSession".to_string()),
+    );
+    response_data.insert(
+        "recoveryMessage".to_string(),
+        Value::String(default_session_recovery_message("paused")),
+    );
+    response_data.insert("abnormalTermination".to_string(), Value::Bool(false));
+    response_data.insert("result".to_string(), Value::String(latest_output));
+
+    hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
+}
+
+pub fn build_terminal_check_session_result_from_messages(
+    session_id: &str,
+    status: &str,
+    turn_count: usize,
+    messages_value: &[Value],
+) -> MCPResult {
+    let assistant_text = latest_session_output(messages_value);
+    let normalized_status = status.to_ascii_lowercase();
+    let is_abnormal = matches!(normalized_status.as_str(), "error" | "failed");
+    let is_recoverable = matches!(
+        normalized_status.as_str(),
+        "error" | "failed" | "terminated"
+    );
+    let next_actions = if is_recoverable {
+        vec![
+            recovery_action_for_session(
+                session_id,
+                status,
+                "Retry the child session explicitly after abnormal termination.",
+            ),
+            json!({
+                "toolName": "checkSession",
+                "reason": "Check again after sending a recovery message.",
+                "args": {
+                    "sessionId": session_id,
+                    "wait": true
+                }
+            }),
+        ]
+    } else {
+        vec![]
+    };
+    let message = if is_abnormal {
+        format!(
+            "Session {} ended abnormally ({}).\n\nLast known output:\n{}\n\nRecovery: this child session will not continue on its own. Use messageToSession(...) to retry from the last stable step.",
+            session_id, status, assistant_text
+        )
+    } else if normalized_status == "terminated" {
+        format!(
+            "Session {} was terminated.\n\nLast known output:\n{}\n\nIf you still need the work, restart it explicitly with messageToSession(...).",
+            session_id, assistant_text
+        )
+    } else {
+        format!(
+            "Session {} is terminal ({}).\n\nResult:\n{}",
+            session_id, status, assistant_text
+        )
+    };
+    let hint = SuccessHint::new(message.clone(), vec![]);
+    let mut response_data = build_agent_session_tool_data(
+        "checkSession",
+        session_id,
+        &message,
+        status,
+        if is_abnormal {
+            "error"
+        } else if normalized_status == "terminated" {
+            "terminated"
+        } else {
+            "success"
+        },
+        turn_count,
+        next_actions,
+    );
+    response_data.insert("result".to_string(), Value::String(assistant_text));
+    response_data.insert("abnormalTermination".to_string(), Value::Bool(is_abnormal));
+    response_data.insert("recoverable".to_string(), Value::Bool(is_recoverable));
+    if is_recoverable {
+        response_data.insert(
+            "recoveryStrategy".to_string(),
+            Value::String("messageToSession".to_string()),
+        );
+        response_data.insert(
+            "recoveryMessage".to_string(),
+            Value::String(default_session_recovery_message(status)),
+        );
+    }
+
+    hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
+}
+
+async fn build_terminal_check_session_result(
+    session_id: &str,
+    status: &str,
+    turn_count: usize,
+) -> Result<MCPResult, String> {
+    let repo = crate::state::get_message_repository();
+    let messages = repo
+        .get_messages_by_session(session_id, 5)
+        .await
+        .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
+
+    let messages_value: Vec<Value> = messages
+        .into_iter()
+        .map(|m| serde_json::to_value(m).unwrap_or_default())
+        .collect();
+
+    Ok(build_terminal_check_session_result_from_messages(
+        session_id,
+        status,
+        turn_count,
+        &messages_value,
+    ))
+}
+
+async fn build_paused_check_session_result(
+    session_id: &str,
+    turn_count: usize,
+) -> Result<MCPResult, String> {
+    let repo = crate::state::get_message_repository();
+    let messages = repo
+        .get_messages_by_session(session_id, 5)
+        .await
+        .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
+
+    let messages_value: Vec<Value> = messages
+        .into_iter()
+        .map(|m| serde_json::to_value(m).unwrap_or_default())
+        .collect();
+
+    Ok(build_paused_check_session_result_from_messages(
+        session_id,
+        turn_count,
+        &messages_value,
+    ))
+}
 
 /// Unified create_agent handler (from createAssistant)
 pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult, String> {
@@ -38,8 +302,22 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
     let assistant_server =
         crate::mcp::builtin::assistant::AssistantServer::new(Arc::new(server.get_db().clone()))
             .await?;
-    crate::mcp::builtin::assistant::operations::create_assistant(&assistant_server, mapped_args)
-        .await
+    let result = crate::mcp::builtin::assistant::operations::create_assistant(
+        &assistant_server,
+        mapped_args,
+    )
+    .await?;
+    Ok(normalize_agent_config_result(
+        result,
+        "create",
+        vec![json!({
+            "toolName": "list",
+            "reason": "Review the available agent configurations after creating this one.",
+            "args": {
+                "type": "configs"
+            }
+        })],
+    ))
 }
 
 /// Unified update_agent handler (from updateAssistant)
@@ -61,12 +339,23 @@ pub async fn update_agent(
     let assistant_server =
         crate::mcp::builtin::assistant::AssistantServer::new(Arc::new(server.get_db().clone()))
             .await?;
-    crate::mcp::builtin::assistant::operations::update_assistant(
+    let result = crate::mcp::builtin::assistant::operations::update_assistant(
         &assistant_server,
         mapped_args,
         caller_session_id,
     )
-    .await
+    .await?;
+    Ok(normalize_agent_config_result(
+        result,
+        "update",
+        vec![json!({
+            "toolName": "list",
+            "reason": "Review the updated agent configurations after this change.",
+            "args": {
+                "type": "configs"
+            }
+        })],
+    ))
 }
 
 /// Unified list handler: lists configs or sub-sessions
@@ -160,7 +449,22 @@ pub async fn list_agents_or_sessions(
                 text_summary,
                 vec!["Use startSession(agentId=\"...\") to delegate work".to_string()],
             );
-            Ok(hint.to_mcp_result_with_data(Some(json!({ "agents": results, "total": total }))))
+            let response_message = hint.message.clone();
+            let mut response_data = build_agent_tool_data(
+                "list",
+                "agentConfigCollection",
+                None,
+                &response_message,
+                "success",
+                vec![json!({
+                    "toolName": "startSession",
+                    "reason": "Start a delegated session with one of the listed agent configurations.",
+                })],
+            );
+            response_data.insert("type".to_string(), Value::String("configs".to_string()));
+            response_data.insert("agents".to_string(), Value::Array(results));
+            response_data.insert("total".to_string(), json!(total));
+            Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
         }
         "sessions" => {
             // Logic from getChildAgents
@@ -212,7 +516,22 @@ pub async fn list_agents_or_sessions(
                 message,
                 vec!["Use checkSession(sessionId) to get results".to_string()],
             );
-            Ok(hint.to_mcp_result_with_data(Some(json!({ "sessions": results }))))
+            let response_message = hint.message.clone();
+            let mut response_data = build_agent_tool_data(
+                "list",
+                "sessionCollection",
+                None,
+                &response_message,
+                "success",
+                vec![json!({
+                    "toolName": "checkSession",
+                    "reason": "Inspect one of the listed delegated sessions in more detail.",
+                })],
+            );
+            response_data.insert("type".to_string(), Value::String("sessions".to_string()));
+            response_data.insert("sessions".to_string(), Value::Array(results));
+            response_data.insert("total".to_string(), json!(child_ids.len()));
+            Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
         }
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
@@ -285,11 +604,19 @@ pub async fn start_session(
             session_id
         )],
     );
+    let message = hint.message.clone();
+    let mut response_data = build_agent_tool_data(
+        "startSession",
+        "session",
+        Some(&session_id),
+        &message,
+        "pending",
+        check_session_next_actions(&session_id),
+    );
+    response_data.insert("sessionId".to_string(), Value::String(session_id.clone()));
+    response_data.insert("status".to_string(), Value::String("started".to_string()));
 
-    Ok(hint.to_mcp_result_with_data(Some(json!({
-        "sessionId": session_id,
-        "status": "started"
-    }))))
+    Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
 /// messageToSession handler (from messageAgent)
@@ -325,12 +652,20 @@ pub async fn message_to_session(
             session_id
         )],
     );
+    let message = hint.message.clone();
+    let mut response_data = build_agent_tool_data(
+        "messageToSession",
+        "session",
+        Some(&session_id),
+        &message,
+        "pending",
+        check_session_next_actions(&session_id),
+    );
+    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("messageId".to_string(), Value::String(response.message_id));
+    response_data.insert("status".to_string(), Value::String(response.status));
 
-    Ok(hint.to_mcp_result_with_data(Some(json!({
-        "sessionId": session_id,
-        "messageId": response.message_id,
-        "status": response.status
-    }))))
+    Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
 /// checkSession handler (from awaitAgent / getAgentStatus)
@@ -345,6 +680,17 @@ pub async fn check_session(
     let session_id = read_required_string(&args, "sessionId")?;
     let wait = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
     let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
+
+    let current_session_meta = manager
+        .get_session(&session_id)
+        .await?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let current_status = format!("{:?}", current_session_meta.status).to_lowercase();
+    let current_turn_count = count_session_turns(&session_id).await;
+
+    if current_status == "paused" {
+        return build_paused_check_session_result(&session_id, current_turn_count).await;
+    }
 
     if wait {
         let wait_result = {
@@ -361,86 +707,60 @@ pub async fn check_session(
             res
         };
 
-        let (session_data, _) =
-            match handle_wait_timeout_result(wait_result, &session_id, timeout_secs, false) {
-                Ok(res) => res,
-                Err(mcp_res) => return mcp_res,
-            };
+        let (session_data, _) = match handle_wait_timeout_result(
+            wait_result,
+            Some(manager),
+            &session_id,
+            timeout_secs,
+            "checkSession",
+            false,
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(mcp_res) => return mcp_res,
+        };
 
         let status = extract_session_status(&session_data);
         let turn_count = count_session_turns(&session_id).await;
-
-        // Fetch latest messages from DB directly
-        let repo = crate::state::get_message_repository();
-        let messages = repo
-            .get_messages_by_session(&session_id, 5)
-            .await
-            .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
-
-        // Convert messages to Value for formatting functions
-        let messages_value: Vec<Value> = messages
-            .into_iter()
-            .map(|m| serde_json::to_value(m).unwrap_or_default())
-            .collect();
-
-        let (_, mut assistant_text) = latest_assistant_message_text(&messages_value, None)
-            .unwrap_or(("none".to_string(), "No final answer yet.".to_string()));
-
-        if assistant_text == "[assistant message has no text content]" {
-            if let Some(tool_text) =
-                crate::mcp::builtin::session_api::formatting::latest_tool_message_text(
-                    &messages_value,
-                )
-            {
-                assistant_text = format!("[Tool Response Fallback]\n{}", tool_text);
-            }
+        if status == "paused" {
+            return build_paused_check_session_result(&session_id, turn_count).await;
         }
-
-        let hint = SuccessHint::new(
-            format!(
-                "Session {} is terminal ({}).\n\nResult:\n{}",
-                session_id, status, assistant_text
-            ),
-            vec![],
-        );
-
-        return Ok(hint.to_mcp_result_with_data(Some(json!({
-            "sessionId": session_id,
-            "status": status,
-            "turnCount": turn_count,
-            "result": assistant_text
-        }))));
+        return build_terminal_check_session_result(&session_id, &status, turn_count).await;
     }
 
     // Just check status via manager
-    let session_meta = manager
-        .get_session(&session_id)
-        .await?
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let status = current_status;
+    let turn_count = current_turn_count;
 
-    let status = format!("{:?}", session_meta.status).to_lowercase();
-    let turn_count = count_session_turns(&session_id).await;
+    let is_terminal = is_terminal_status(&status);
+    if is_terminal {
+        return build_terminal_check_session_result(&session_id, &status, turn_count).await;
+    }
 
-    let hint = SuccessHint::new(
-        format!(
-            "Session {} is currently {} (Turns elapsed: {}).",
-            session_id, status, turn_count
-        ),
-        if status != "finished" && status != "error" {
-            vec![format!(
-                "Use checkSession(\"{}\", wait=true) to wait for completion.",
-                session_id
-            )]
-        } else {
-            vec![]
-        },
+    let next_steps = vec![format!(
+        "Use checkSession(\"{}\", wait=true) to wait for completion.",
+        session_id
+    )];
+    let message = format!(
+        "Session {} is currently {} (Turns elapsed: {}).",
+        session_id, status, turn_count
     );
+    let hint = SuccessHint::new(message.clone(), next_steps);
+    let response_status = "pending";
+    let next_actions = check_session_next_actions(&session_id);
 
-    Ok(hint.to_mcp_result_with_data(Some(json!({
-        "sessionId": session_id,
-        "status": status,
-        "turnCount": turn_count
-    }))))
+    Ok(
+        hint.to_mcp_result_with_data(Some(Value::Object(build_agent_session_tool_data(
+            "checkSession",
+            &session_id,
+            &message,
+            &status,
+            response_status,
+            turn_count,
+            next_actions,
+        )))),
+    )
 }
 
 /// stopSession handler (from terminateAgent)
@@ -486,9 +806,21 @@ pub async fn stop_session(
         .remove(&session_id);
 
     let hint = SuccessHint::new(format!("Session {} stopped.", session_id), vec![]);
+    let message = hint.message.clone();
+    let mut response_data = build_agent_tool_data(
+        "stopSession",
+        "session",
+        Some(&session_id),
+        &message,
+        "success",
+        vec![],
+    );
+    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("stopped".to_string(), Value::Bool(true));
+    response_data.insert(
+        "status".to_string(),
+        Value::String("terminated".to_string()),
+    );
 
-    Ok(hint.to_mcp_result_with_data(Some(json!({
-        "sessionId": session_id,
-        "stopped": true
-    }))))
+    Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

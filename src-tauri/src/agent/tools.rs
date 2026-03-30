@@ -180,6 +180,7 @@ pub fn create_tool_result_message(
     session_id: &str,
     tool_call_id: &str,
     content: String,
+    structured_content: Option<serde_json::Value>,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
     let content_array = vec![MCPContent::Text {
@@ -205,7 +206,11 @@ pub fn create_tool_result_message(
         updated_at: now,
         source: Some("tool".to_string()),
         error: None,
-        metadata: None,
+        metadata: structured_content.map(|value| {
+            serde_json::json!({
+                "structuredContent": value,
+            })
+        }),
     }
 }
 
@@ -214,12 +219,23 @@ pub fn create_error_tool_result(
     session_id: &str,
     tool_call_id: &str,
     error_message: &str,
+    structured_content: Option<serde_json::Value>,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
     let content_array = vec![MCPContent::Text {
         text: format!("Error: {}", error_message),
         is_error: Some(true),
     }];
+
+    let metadata = match structured_content {
+        Some(value) => Some(serde_json::json!({
+            "toolError": true,
+            "structuredContent": value,
+        })),
+        None => Some(serde_json::json!({
+            "toolError": true,
+        })),
+    };
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -239,9 +255,28 @@ pub fn create_error_tool_result(
         updated_at: now,
         source: Some("tool".to_string()),
         error: None,
-        metadata: Some(serde_json::json!({
-            "toolError": true,
-        })),
+        metadata,
+    }
+}
+
+fn build_tool_message_metadata(
+    tool_error: bool,
+    structured_content: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let mut metadata = serde_json::Map::new();
+
+    if tool_error {
+        metadata.insert("toolError".to_string(), serde_json::Value::Bool(true));
+    }
+
+    if let Some(value) = structured_content {
+        metadata.insert("structuredContent".to_string(), value);
+    }
+
+    if metadata.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(metadata))
     }
 }
 
@@ -462,6 +497,7 @@ pub fn create_tool_result_message_with_content(
     session_id: &str,
     tool_call_id: &str,
     content: Vec<MCPContent>,
+    structured_content: Option<serde_json::Value>,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
 
@@ -497,13 +533,7 @@ pub fn create_tool_result_message_with_content(
         updated_at: now,
         source: Some("tool".to_string()),
         error: None,
-        metadata: if tool_error {
-            Some(serde_json::json!({
-                "toolError": true,
-            }))
-        } else {
-            None
-        },
+        metadata: build_tool_message_metadata(tool_error, structured_content),
     }
 }
 
@@ -523,6 +553,7 @@ pub async fn handle_tool_result(
         success,
         content,
         mcp_content,
+        structured_content,
         error,
         is_error,
     } = result;
@@ -573,6 +604,7 @@ pub async fn handle_tool_result(
                             &session_id,
                             &tool_call_id,
                             mcp_content,
+                            structured_content.clone(),
                         )
                     } else {
                         create_error_tool_result(
@@ -581,11 +613,17 @@ pub async fn handle_tool_result(
                             error
                                 .as_deref()
                                 .unwrap_or("Tool execution failed without error message"),
+                            structured_content.clone(),
                         )
                     }
                 } else if let Some(mcp_content) = mcp_content {
                     // ✅ ALWAYS use structured content for successful tool calls
-                    create_tool_result_message_with_content(&session_id, &tool_call_id, mcp_content)
+                    create_tool_result_message_with_content(
+                        &session_id,
+                        &tool_call_id,
+                        mcp_content,
+                        structured_content.clone(),
+                    )
                 } else {
                     // ⚠️ This branch should never happen for successful tool calls
                     log::warn!(
@@ -593,7 +631,12 @@ pub async fn handle_tool_result(
                         session_id,
                         tool_call_id
                     );
-                    create_tool_result_message(&session_id, &tool_call_id, content.clone())
+                    create_tool_result_message(
+                        &session_id,
+                        &tool_call_id,
+                        content.clone(),
+                        structured_content.clone(),
+                    )
                 };
 
                 pending.results.push(message);
@@ -663,7 +706,7 @@ mod tests {
         }];
 
         // This is the branch now taken when is_error=true AND mcp_content is Some
-        let msg = create_tool_result_message_with_content("sess1", "tc1", content);
+        let msg = create_tool_result_message_with_content("sess1", "tc1", content, None);
 
         // The agent must see the full guided error, not a bare "Unknown error"
         assert!(
@@ -689,7 +732,7 @@ mod tests {
     #[test]
     fn test_error_without_mcp_content_falls_back_to_error_string() {
         // Explicit error message
-        let msg = create_error_tool_result("sess1", "tc1", "Failed to parse args: EOF");
+        let msg = create_error_tool_result("sess1", "tc1", "Failed to parse args: EOF", None);
         assert!(
             msg.content.iter().any(|c| matches!(c,
                 MCPContent::Text { text, .. } if text.contains("Failed to parse args")
@@ -698,7 +741,7 @@ mod tests {
         );
 
         // No error message → "Unknown error" fallback
-        let fallback = create_error_tool_result("sess1", "tc1", "Unknown error");
+        let fallback = create_error_tool_result("sess1", "tc1", "Unknown error", None);
         assert!(
             fallback.content.iter().any(|c| matches!(c,
                 MCPContent::Text { text, .. } if text.contains("Unknown error")

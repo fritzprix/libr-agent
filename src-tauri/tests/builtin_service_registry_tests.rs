@@ -98,7 +98,7 @@ fn test_tool_result_with_structured_content() {
         is_error: None,
     }];
 
-    let message = create_tool_result_message_with_content(session_id, tool_call_id, content);
+    let message = create_tool_result_message_with_content(session_id, tool_call_id, content, None);
 
     // No double wrapping
     assert_eq!(message.content.len(), 1);
@@ -121,7 +121,8 @@ fn test_tool_result_fallback_to_string() {
     let tool_call_id = "call-123";
     let content_str = "Plain text result";
 
-    let message = create_tool_result_message(session_id, tool_call_id, content_str.to_string());
+    let message =
+        create_tool_result_message(session_id, tool_call_id, content_str.to_string(), None);
 
     assert_eq!(message.content.len(), 1);
     assert_eq!(message.role, "tool");
@@ -139,7 +140,7 @@ fn test_error_tool_result() {
     let tool_call_id = "call-123";
     let error_msg = "Tool execution failed";
 
-    let message = create_error_tool_result(session_id, tool_call_id, error_msg);
+    let message = create_error_tool_result(session_id, tool_call_id, error_msg, None);
 
     assert_eq!(message.role, "tool");
     assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
@@ -166,7 +167,7 @@ fn test_multiple_content_items() {
         },
     ];
 
-    let message = create_tool_result_message_with_content(session_id, tool_call_id, content);
+    let message = create_tool_result_message_with_content(session_id, tool_call_id, content, None);
 
     assert_eq!(message.content.len(), 2);
 

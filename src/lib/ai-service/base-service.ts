@@ -3,6 +3,7 @@ import { llmConfigManager } from '@/lib/llm-config-manager';
 import type { MCPContent, MCPTool } from '@/lib/mcp';
 import {
   filterSystemErrors,
+  repairMalformedToolCalls,
   validateToolCallPairing,
 } from '@/lib/ai-service/message-normalizer';
 import {
@@ -562,7 +563,8 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    */
   sanitizeMessages(messages: Message[]): Message[] {
     const validMessages = filterSystemErrors(messages);
-    const processedMessages = validateToolCallPairing(validMessages);
+    const repairedMessages = repairMalformedToolCalls(validMessages);
+    const processedMessages = validateToolCallPairing(repairedMessages);
 
     return processedMessages
       .map((msg) => this.sanitizeSingleMessage(msg))
