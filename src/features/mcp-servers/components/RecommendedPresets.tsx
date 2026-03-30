@@ -4,6 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { MCPServerPreset } from '@/lib/backend/mcp-server-config';
 import { MCPServerEntity } from '@/models/chat';
 import { buttonVariants } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 interface RecommendedPresetsProps {
@@ -114,15 +119,29 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                   <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
                     {preset.command} {preset.args?.[0]}
                   </code>
-                  <div
-                    className={cn(
-                      buttonVariants({ variant: 'ghost', size: 'icon' }),
-                      'h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary',
-                    )}
-                    aria-hidden="true"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          buttonVariants({ variant: 'ghost', size: 'icon' }),
+                          'h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary',
+                        )}
+                        aria-label={t('mcpServer.installExtension', {
+                          name: preset.name,
+                          defaultValue: 'Install {{name}} extension',
+                        })}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t('mcpServer.installExtension', {
+                        name: preset.name,
+                        defaultValue: 'Install {{name}} extension',
+                      })}
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               )}
             </div>
