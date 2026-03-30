@@ -50,7 +50,7 @@ fn test_success_hint_formatting() {
         "Todo created successfully",
         vec![
             "Use getCurrentState to see all todos".to_string(),
-            "Use updateTodo(index=N, action='done') to mark as complete".to_string(),
+            "Use updateTodo(todoId=..., action='done') to mark as complete".to_string(),
         ],
     );
 

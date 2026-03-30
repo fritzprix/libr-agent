@@ -99,7 +99,7 @@ fn update_todo_tool() -> MCPTool {
     MCPTool {
         name: "updateTodo".to_string(),
         title: Some("Update Todo".to_string()),
-        description: r#"Update a todo's status or cancel (remove) it, identified by its 0-based position.
+        description: r#"Update a todo's status or cancel (remove) it, identified by its unique todoId.
 
 action:
   'done'    — Mark as completed (stays in list for progress tracking).
@@ -107,16 +107,16 @@ action:
   'cancel'  — Permanently remove the todo. Use only when the task should never have existed.
 
 Prefer 'done' over 'cancel' — completed todos preserve history.
-Get positions from getCurrentState."#
+Get todo IDs from getCurrentState."#
             .to_string(),
         input_schema: object_prop(
             vec![
                 (
-                    "index".to_string(),
+                    "todoId".to_string(),
                     integer_prop(
                         None,
-                        Some(0),
-                        Some("The 0-based position of the todo. Use getCurrentState to see current positions."),
+                        Some(1),
+                        Some("The unique todo ID. Use getCurrentState to see current todo IDs."),
                     ),
                 ),
                 (
@@ -136,7 +136,7 @@ Get positions from getCurrentState."#
                     ),
                 ),
             ],
-            vec!["index".to_string()],
+            vec!["todoId".to_string()],
             None,
         ),
         output_schema: None,
