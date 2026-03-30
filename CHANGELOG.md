@@ -8,11 +8,13 @@ All notable changes to this project will be documented in this file.
 
 - **Richer Agent Planning Visibility**: The planning sidebar now surfaces scratchpad notes directly, while closed-panel planning updates appear as Sonner toasts with checklist summaries and a live task progress bar.
 - **Refined Agent Workspace & Planning Panels**: Refreshed the agent side panels and session header with a cleaner, more polished visual treatment so the chat workspace feels more like a finished product than a developer-only surface.
+- **Polished Tools Inventory Modal**: Redesigned the agent tools modal to match the upgraded panel language with cleaner hierarchy, calmer metadata treatment, and a more readable schema inspection surface.
 
 ### 🐛 Fixes
 
 - **ID Schema Hardening for Planning and Scratchpad**: Removed misleading numeric bounds from `todoId` and scratchpad note ID schemas so agents are no longer nudged toward bogus identifier assumptions, while keeping backend validation responsible for real existence checks.
 - **Font Setting Now Reaches Agent Chat Surfaces**: Fixed the agent chat and draft chat containers so user-selected UI fonts are no longer accidentally overridden by blanket monospace wrappers.
+- **Scrollable Planning and Tools Surfaces**: Fixed overflow handling in the planning panel and tools modal so long todo lists, scratchpad notes, and large tool inventories remain fully accessible instead of clipping at the bottom.
 
 ### 🔧 Internal
 
