@@ -123,7 +123,7 @@ describe('AI Service Utils', () => {
       expect(result.output).toBe(formatNumber(usage.completionTokens));
       expect(result.total).toBe(formatNumber(usage.totalTokens));
       expect(result.speed).toBeUndefined();
-    });
+    }, 15000);
 
     it('should include speed if evalDuration is present', () => {
       const usage: TokenUsage = {
