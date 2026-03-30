@@ -124,12 +124,8 @@ impl SessionMCPManager {
 
         // Apply environment isolation:
         // 1. Clear all inherited environment variables to prevent secret leakage
-        cmd.env_clear();
-
         // 2. Re-apply whitelisted system variables
-        for (k, v) in crate::utils::env::get_isolated_env() {
-            cmd.env(k, v);
-        }
+        crate::utils::env::apply_isolated_env_async(&mut cmd);
 
         // 3. Apply user-defined variables from config (can override system vars)
         for (key, value) in env {

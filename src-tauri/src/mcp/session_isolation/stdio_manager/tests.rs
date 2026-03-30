@@ -323,16 +323,10 @@ fn test_env_clear_in_spawn_logic() {
 
     let source = include_str!("./lifecycle.rs");
 
-    // Verify that env_clear() IS present in the spawn logic
+    // Verify that we use apply_isolated_env_async
     assert!(
-        source.contains("cmd.env_clear()"),
-        "stdio_manager MUST call env_clear() to isolate process environment"
-    );
-
-    // Verify that we are whitelisting PATH
-    assert!(
-        source.contains("\"PATH\""),
-        "stdio_manager must whitelist PATH"
+        source.contains("apply_isolated_env_async"),
+        "stdio_manager MUST call apply_isolated_env_async() to isolate process environment"
     );
 
     assert!(
