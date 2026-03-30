@@ -144,7 +144,7 @@ function DraftChatInner() {
   const hasAttachedFiles = pendingFiles.length > 0;
 
   return (
-    <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl">
+    <div className="flex h-full w-full overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]">
       {/* Workspace Side Panel (Placeholder/Static for Draft) */}
       {workspaceOverride && (
         <div className="w-80 h-full border-r bg-background/95 backdrop-blur flex flex-col animate-in slide-in-from-left duration-300">
@@ -189,7 +189,7 @@ function DraftChatInner() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0 relative bg-background">
-        {/* Terminal Style Header - Identical to AgentTerminalHeader */}
+        {/* Session header - aligned with the shared agent session header style */}
         <div className="px-4 py-3 flex items-center justify-between border-b flex-shrink-0 bg-background/95 backdrop-blur z-20">
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-muted-foreground uppercase font-sans font-bold tracking-widest">

@@ -796,7 +796,12 @@
       "noTasks": "No tasks",
       "priorityHigh": "High",
       "priorityMedium": "Medium",
-      "priorityLow": "Low"
+      "priorityLow": "Low",
+      "scratchpad": "Scratchpad",
+      "noScratchpad": "No scratchpad notes",
+      "untitledNote": "Untitled note",
+      "moreTasks": "more tasks",
+      "updated": "updated"
     }
   },
   "scheduledTasks": {

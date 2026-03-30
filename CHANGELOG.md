@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.26] - 2026-03-30
+
+### 🚀 Features
+
+- **Richer Agent Planning Visibility**: The planning sidebar now surfaces scratchpad notes directly, while closed-panel planning updates appear as Sonner toasts with checklist summaries and a live task progress bar.
+- **Refined Agent Workspace & Planning Panels**: Refreshed the agent side panels and session header with a cleaner, more polished visual treatment so the chat workspace feels more like a finished product than a developer-only surface.
+
+### 🐛 Fixes
+
+- **ID Schema Hardening for Planning and Scratchpad**: Removed misleading numeric bounds from `todoId` and scratchpad note ID schemas so agents are no longer nudged toward bogus identifier assumptions, while keeping backend validation responsible for real existence checks.
+- **Font Setting Now Reaches Agent Chat Surfaces**: Fixed the agent chat and draft chat containers so user-selected UI fonts are no longer accidentally overridden by blanket monospace wrappers.
+
+### 🔧 Internal
+
+- **Planning State Parsing & Regression Coverage**: Added typed parsing for planning/scratchpad service contexts and expanded focused regression tests for scratchpad schema behavior and planning state handling.
+- **Naming Cleanup for Session UI**: Renamed the old terminal-themed session header component to match its real purpose and removed stale shell-flavored UI references.
+
 ## [0.6.25] - 2026-03-30
 
 ### 🐛 Fixes

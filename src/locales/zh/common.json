@@ -761,7 +761,12 @@
       "noTasks": "无任务",
       "priorityHigh": "高",
       "priorityMedium": "中",
-      "priorityLow": "低"
+      "priorityLow": "低",
+      "scratchpad": "草稿板",
+      "noScratchpad": "没有草稿板笔记",
+      "untitledNote": "未命名笔记",
+      "moreTasks": "个更多任务",
+      "updated": "已更新"
     }
   },
   "scheduledTasks": {

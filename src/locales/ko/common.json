@@ -771,7 +771,12 @@
       "noTasks": "작업 없음",
       "priorityHigh": "높음",
       "priorityMedium": "보통",
-      "priorityLow": "낮음"
+      "priorityLow": "낮음",
+      "scratchpad": "스크래치패드",
+      "noScratchpad": "스크래치패드 메모 없음",
+      "untitledNote": "제목 없는 메모",
+      "moreTasks": "개 작업 더 있음",
+      "updated": "업데이트됨"
     }
   },
   "scheduledTasks": {

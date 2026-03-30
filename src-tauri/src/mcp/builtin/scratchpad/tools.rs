@@ -103,11 +103,11 @@ fn list_tool() -> MCPTool {
             vec![
                 (
                     "page".to_string(),
-                    integer_prop(Some(1), Some(1), Some("Page number (default: 1)")),
+                    integer_prop(Some(1), None, Some("Page number (default: 1)")),
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop(Some(10), Some(1), Some("Items per page (default: 10)")),
+                    integer_prop(Some(1), None, Some("Items per page (default: 10)")),
                 ),
                 (
                     "tags".to_string(),
@@ -134,7 +134,7 @@ fn read_tool() -> MCPTool {
             vec![(
                 "ids".to_string(),
                 array_schema(
-                    integer_prop(None, Some(0), None),
+                    integer_prop(None, None, None),
                     Some("List of scratchpad note IDs to read (Required)."),
                 ),
             )],
@@ -154,7 +154,7 @@ fn clear_tool() -> MCPTool {
         input_schema: object_prop(
             vec![(
                 "id".to_string(),
-                integer_prop(None, Some(0), Some("The ID of the scratchpad note to remove.")),
+                integer_prop(None, None, Some("The ID of the scratchpad note to remove.")),
             )],
             vec!["id".to_string()],
             None,

@@ -459,9 +459,9 @@ pub async fn clear(
         None => return Ok(missing_param_error("id", ToolGroup::Scratchpad)),
     };
 
-    if target_id < 0 {
+    if target_id < 1 {
         return Ok(invalid_input_error(
-            "id must be >= 0",
+            "id must be >= 1",
             ToolGroup::Scratchpad,
         ));
     }

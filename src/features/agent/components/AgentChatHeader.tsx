@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import AgentTerminalHeader from './AgentTerminalHeader';
+import AgentSessionHeader from './AgentSessionHeader';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
@@ -65,7 +65,7 @@ export function AgentChatHeader({
   };
 
   return (
-    <AgentTerminalHeader>
+    <AgentSessionHeader>
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center">
           {children}
@@ -141,6 +141,6 @@ export function AgentChatHeader({
           )}
         </div>
       </div>
-    </AgentTerminalHeader>
+    </AgentSessionHeader>
   );
 }

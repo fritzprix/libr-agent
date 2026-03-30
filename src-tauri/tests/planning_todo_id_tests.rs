@@ -24,7 +24,7 @@ fn extract_text(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
 }
 
 #[test]
-fn update_todo_schema_uses_minimum_todo_id_without_maximum_cap() {
+fn update_todo_schema_leaves_todo_id_unbounded() {
     let update_tool = PlanningServer::tools_static()
         .into_iter()
         .find(|tool| tool.name == "updateTodo")
@@ -46,7 +46,7 @@ fn update_todo_schema_uses_minimum_todo_id_without_maximum_cap() {
         JSONSchemaType::Integer {
             minimum, maximum, ..
         } => {
-            assert_eq!(*minimum, Some(1));
+            assert_eq!(*minimum, None);
             assert_eq!(*maximum, None);
         }
         other => panic!("expected integer schema, got {other:?}"),

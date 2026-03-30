@@ -761,7 +761,12 @@
       "noTasks": "Keine Aufgaben",
       "priorityHigh": "Hoch",
       "priorityMedium": "Mittel",
-      "priorityLow": "Niedrig"
+      "priorityLow": "Niedrig",
+      "scratchpad": "Scratchpad",
+      "noScratchpad": "Keine Scratchpad-Notizen",
+      "untitledNote": "Unbenannte Notiz",
+      "moreTasks": "weitere Aufgaben",
+      "updated": "aktualisiert"
     }
   },
   "scheduledTasks": {

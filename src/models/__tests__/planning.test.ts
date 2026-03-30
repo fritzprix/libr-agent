@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { calculatePlanningMetadata } from '../planning';
+import {
+  calculatePlanningMetadata,
+  parsePlanningState,
+  parseScratchpadState,
+} from '../planning';
 
 describe('Models Planning', () => {
   describe('calculatePlanningMetadata', () => {
@@ -72,6 +76,85 @@ describe('Models Planning', () => {
         totalTodos: 2,
         completedTodos: 0,
         activeTodos: 2,
+      });
+    });
+  });
+
+  describe('parsePlanningState', () => {
+    it('parses valid planning state from structured context', () => {
+      const state = parsePlanningState({
+        goal: 'Ship planning panel',
+        todos: [
+          {
+            id: 1,
+            title: 'Show scratchpad',
+            checked: false,
+            priority: 'high',
+            description: 'Render scratchpad notes',
+          },
+        ],
+        lastUpdated: '2026-03-30T00:00:00Z',
+      });
+
+      expect(state).toEqual({
+        goal: 'Ship planning panel',
+        todos: [
+          {
+            id: 1,
+            title: 'Show scratchpad',
+            checked: false,
+            priority: 'high',
+            description: 'Render scratchpad notes',
+            summary: undefined,
+            parentId: undefined,
+            subtasks: undefined,
+          },
+        ],
+        lastUpdated: '2026-03-30T00:00:00Z',
+      });
+    });
+
+    it('returns an empty normalized state for invalid todo payloads', () => {
+      const state = parsePlanningState({
+        goal: 'Keep going',
+        todos: [{ id: 'bad', title: 123, checked: 'nope' }],
+      });
+
+      expect(state).toEqual({
+        goal: 'Keep going',
+        todos: [],
+        lastUpdated: undefined,
+      });
+    });
+  });
+
+  describe('parseScratchpadState', () => {
+    it('parses scratchpad items from structured context', () => {
+      const state = parseScratchpadState({
+        count: 2,
+        items: [
+          { id: 10, title: 'Note A', content: 'Alpha' },
+          { id: 11, title: null, content: 'Beta' },
+        ],
+      });
+
+      expect(state).toEqual({
+        count: 2,
+        items: [
+          { id: 10, title: 'Note A', content: 'Alpha' },
+          { id: 11, title: null, content: 'Beta' },
+        ],
+      });
+    });
+
+    it('falls back to item length when count is missing', () => {
+      const state = parseScratchpadState({
+        items: [{ id: 1, title: 'Only note', content: 'Content' }],
+      });
+
+      expect(state).toEqual({
+        count: 1,
+        items: [{ id: 1, title: 'Only note', content: 'Content' }],
       });
     });
   });

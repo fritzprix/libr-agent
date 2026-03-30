@@ -31,7 +31,7 @@ export const FileTreeNode = ({
   return (
     <div className="select-none">
       <div
-        className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 group"
+        className="group flex items-center gap-1.5 px-2 py-1.5 text-foreground/85 transition-colors hover:bg-foreground/[0.03]"
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={() => {
           // Keep mouse click behavior for padding area
@@ -45,7 +45,7 @@ export const FileTreeNode = ({
         {node.isDirectory ? (
           <button
             type="button"
-            className="w-4 h-4 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+            className="flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={(e) => {
               e.stopPropagation();
               onToggle(node);
@@ -62,13 +62,13 @@ export const FileTreeNode = ({
             )}
           </button>
         ) : (
-          <div className="w-4 h-4" /> // Spacer
+          <div className="h-4 w-4" /> // Spacer
         )}
 
         <div
           role="button"
           tabIndex={0}
-          className="flex-1 flex items-center gap-1 min-w-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm px-1"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={(e) => {
             e.stopPropagation();
             if (node.isDirectory) {
@@ -90,16 +90,16 @@ export const FileTreeNode = ({
           }}
           aria-expanded={node.isDirectory ? node.isExpanded : undefined}
         >
-          <Icon className="w-4 h-4 flex-shrink-0" />
+          <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
 
-          <span className="text-xs truncate flex-1" title={node.name}>
+          <span className="flex-1 truncate text-xs" title={node.name}>
             {node.name}
           </span>
 
           {node.isDirectory && (
             <Badge
               variant="secondary"
-              className="text-xs px-1 opacity-0 group-hover:opacity-100"
+              className="px-1 text-[10px] opacity-0 transition-opacity group-hover:opacity-100"
             >
               {node.children?.length || 0}
             </Badge>

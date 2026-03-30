@@ -761,7 +761,12 @@
       "noTasks": "タスクなし",
       "priorityHigh": "高",
       "priorityMedium": "中",
-      "priorityLow": "低"
+      "priorityLow": "低",
+      "scratchpad": "スクラッチパッド",
+      "noScratchpad": "スクラッチパッドのメモはありません",
+      "untitledNote": "無題のメモ",
+      "moreTasks": "件の追加タスク",
+      "updated": "更新済み"
     }
   },
   "scheduledTasks": {
