@@ -69,7 +69,42 @@ export function SessionHistoryPanel({
     null,
   );
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
-    () => new Set(),
+    () => {
+      const filtersActiveInit =
+        activeTab === 'bookmarked' ||
+        activeStatusFilter !== 'all' ||
+        searchQuery.trim().length > 0;
+
+      if (!filtersActiveInit) {
+        return new Set<string>();
+      }
+
+      const base = sessions;
+      const segmented =
+        activeTab === 'bookmarked' ? base.filter((s) => s.isBookmarked) : base;
+      let filtered = segmented;
+      if (activeStatusFilter !== 'all') {
+        filtered = filtered.filter((s) => s.status === activeStatusFilter);
+      }
+      filtered = filterSessions(filtered, searchQuery);
+
+      const sessionById = new Map(base.map((session) => [session.id, session]));
+      const expandedIds = new Set<string>();
+
+      filtered.forEach((session) => {
+        let current = session.parentSessionId
+          ? sessionById.get(session.parentSessionId)
+          : undefined;
+        while (current) {
+          expandedIds.add(current.id);
+          current = current.parentSessionId
+            ? sessionById.get(current.parentSessionId)
+            : undefined;
+        }
+      });
+
+      return expandedIds;
+    },
   );
 
   const defaultHeading =
@@ -185,17 +220,45 @@ export function SessionHistoryPanel({
     return expandedIds;
   }, [baseSessions, filtersActive, matchedSessions]);
 
-  useEffect(() => {
-    if (autoExpandedAncestorIds.size === 0) {
-      return;
-    }
+  const [prevFiltersActive, setPrevFiltersActive] =
+    useState<boolean>(filtersActive);
+  const [prevSearchQuery, setPrevSearchQuery] = useState<string>(searchQuery);
+  const [prevActiveTab, setPrevActiveTab] = useState<string>(activeTab);
+  const [prevActiveStatusFilter, setPrevActiveStatusFilter] =
+    useState<string>(activeStatusFilter);
 
-    setExpandedSessionIds((prev) => {
-      const next = new Set(prev);
-      autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
-      return next;
-    });
-  }, [autoExpandedAncestorIds]);
+  // When filters actually change (not just underlying sessions), we want to auto-expand
+  // the matching lineages so the user can see what matched.
+  // This replaces the old `useEffect` which was prone to re-running if `sessions` changed.
+  if (
+    prevFiltersActive !== filtersActive ||
+    prevSearchQuery !== deferredSearchQuery ||
+    prevActiveTab !== activeTab ||
+    prevActiveStatusFilter !== activeStatusFilter
+  ) {
+    setPrevFiltersActive(filtersActive);
+    setPrevSearchQuery(deferredSearchQuery);
+    setPrevActiveTab(activeTab);
+    setPrevActiveStatusFilter(activeStatusFilter);
+
+    if (filtersActive && autoExpandedAncestorIds.size > 0) {
+      setExpandedSessionIds((prev) => {
+        let hasChanges = false;
+        autoExpandedAncestorIds.forEach((sessionId) => {
+          if (!prev.has(sessionId)) {
+            hasChanges = true;
+          }
+        });
+        if (!hasChanges) {
+          return prev;
+        }
+
+        const next = new Set(prev);
+        autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
+        return next;
+      });
+    }
+  }
 
   const displayRows = useMemo(() => {
     type SessionRow = {
