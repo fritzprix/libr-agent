@@ -99,7 +99,9 @@ describe('AgentWorkspacePanel', () => {
 
     // Wait for initial load
     await waitFor(() => {
-      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
+      expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
+        0,
+      );
     });
 
     // Check buttons by aria-label
@@ -121,7 +123,9 @@ describe('AgentWorkspacePanel', () => {
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
+      expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
+        0,
+      );
     });
 
     const uploadZone = screen.getByLabelText('agent.workspace.uploadAria');
@@ -137,7 +141,9 @@ describe('AgentWorkspacePanel', () => {
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
+      expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
+        0,
+      );
     });
 
     const uploadZone = screen.getByLabelText('agent.workspace.uploadAria');
@@ -153,7 +159,9 @@ describe('AgentWorkspacePanel', () => {
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
+      expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
+        0,
+      );
     });
 
     const uploadZone = screen.getByLabelText('agent.workspace.uploadAria');
