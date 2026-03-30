@@ -90,6 +90,61 @@ describe('Message conversions', () => {
     expect(msg.createdAt?.getTime()).toBe(nowTs);
   });
 
+  it('preserves channel source and metadata from RustMessage', () => {
+    const rustMsg: RustMessage = {
+      id: 'channel-msg',
+      sessionId: 'session1',
+      role: 'user',
+      content: [{ type: 'text', text: '<channel source="alerts">build failed</channel>' }],
+      createdAt: nowTs,
+      updatedAt: nowTs,
+      source: 'channel',
+      metadata: {
+        channel: {
+          serverName: 'alerts',
+          meta: { severity: 'high' },
+        },
+      },
+    };
+
+    const msg = rustMessageToMessage(rustMsg);
+
+    expect(msg.source).toBe('channel');
+    expect(msg.metadata).toEqual(rustMsg.metadata);
+  });
+
+  it('preserves backend-emitted non-ui sources from RustMessage', () => {
+    const rustMsg: RustMessage = {
+      id: 'scheduled-msg',
+      sessionId: 'session1',
+      role: 'user',
+      content: [{ type: 'text', text: 'Scheduled run' }],
+      createdAt: nowTs,
+      updatedAt: nowTs,
+      source: 'scheduled_task',
+    };
+
+    const msg = rustMessageToMessage(rustMsg);
+
+    expect(msg.source).toBe('scheduled_task');
+  });
+
+  it('drops unknown RustMessage sources instead of trusting them blindly', () => {
+    const rustMsg = {
+      id: 'weird-msg',
+      sessionId: 'session1',
+      role: 'user',
+      content: [{ type: 'text', text: 'Unexpected source' }],
+      createdAt: nowTs,
+      updatedAt: nowTs,
+      source: 'weird-source',
+    } as unknown as RustMessage;
+
+    const msg = rustMessageToMessage(rustMsg);
+
+    expect(msg.source).toBeUndefined();
+  });
+
   it('updatedAt falls back to createdAt if missing', () => {
     const createdAt = new Date('2023-01-01');
     const msg: Message = {

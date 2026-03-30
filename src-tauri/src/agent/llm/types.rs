@@ -111,19 +111,32 @@ pub struct CompletionRequest {
     pub messages: Vec<Message>,
     pub model: String,
     pub provider: String,
-    /// Stable system prompt (sections 1–4: agent identity, persona, workspace instructions,
-    /// session context). Cacheable across turns within a session.
+    /// Stable system prompt (sections 1–4 plus stable service-context blocks).
+    /// Cacheable across turns within a session.
     pub system_prompt: Option<String>,
-    /// Volatile session context (sections 5–6: context providers + service tool states).
+    /// Per-turn session context (context providers + non-stable service tool state).
     /// Rebuilt on every LLM call. The frontend AI service layer decides how to inject this
-    /// via `prepareContextInjection` — providers may append it to the system prompt (default)
-    /// or inject it as an ephemeral message for better prefix-cache utilization.
+    /// via `prepareContextInjection`.
     pub session_context: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
     /// Token usage gauge telemetry to drive frontend UI (e.g. context window fill bar).
     pub context_usage: Option<serde_json::Value>,
+}
+
+/// Prompt-layout fields from the parent workflow request that should be reused
+/// for frontend-driven compaction calls to preserve provider prompt-cache hits.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionParentRequest {
+    pub model: String,
+    pub provider: String,
+    /// Stable system prompt (sections 1–4 plus stable service-context blocks).
+    pub system_prompt: Option<String>,
+    /// Per-turn session context (context providers + non-stable service tool state).
+    pub session_context: Option<String>,
+    pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
 }
 
 /// Event payload emitted as `llm:compact-request`.
@@ -138,6 +151,8 @@ pub struct CompactRequest {
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,
+    /// The exact parent workflow request layout to replay for cache-friendly compaction.
+    pub parent_request: Option<CompactionParentRequest>,
     /// When true, Rust is waiting for this compaction to complete before retrying
     /// the blocked LLM turn.
     pub resume_completion_after_compact: bool,

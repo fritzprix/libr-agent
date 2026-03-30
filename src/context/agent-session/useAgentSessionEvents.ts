@@ -230,6 +230,21 @@ export function useAgentSessionEvents(
               break;
             }
 
+            case 'toolExecutionApprovalResolved': {
+              setters.setPendingApprovals((prev) =>
+                prev.filter((p) => p.toolCallId !== payload.toolCallId),
+              );
+
+              if (payload.approved) {
+                setters.setWorkflowPhase('using_tools');
+              }
+              break;
+            }
+
+            case 'channelPermissionRequest': {
+              break;
+            }
+
             case 'workflowCompleted': {
               setters.setWorkflowStatus('idle');
               setters.setWorkflowPhase('idle');

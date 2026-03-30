@@ -88,32 +88,21 @@ pub async fn add_todo(
         .await
     {
         Ok(id) => {
-            // Find index of the newly created todo
-            let all_todos = repo.list_todos(session_id, true).await.unwrap_or_default();
-            let index = all_todos
-                .iter()
-                .position(|t| t.id == id)
-                .unwrap_or(all_todos.len().saturating_sub(1));
-
             let summary_text = repo
                 .get_planning_summary(session_id)
                 .await
                 .unwrap_or_default();
             let hint = SuccessHint::new(
-                format!(
-                    "Added todo #{} (index {}): {}{}",
-                    id, index, title, summary_text
-                ),
+                format!("Added todo #{}: {}{}", id, title, summary_text),
                 vec![format!(
-                    "Use updateTodo(index={}, action='done') to mark as done",
-                    index
+                    "Use updateTodo(todoId={}, action='done') to mark as done",
+                    id
                 )],
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "id": cuid2::create_id(),
                 "success": true,
                 "todoId": id,
-                "index": index,
                 "todo": title
             }))))
         }
@@ -140,10 +129,10 @@ pub async fn check_todo(
     args: Value,
     checked: bool,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameters (index only)
-    let index = match args.get("index").and_then(|v| v.as_i64()) {
+    // 1. Extract required parameters (todoId only)
+    let todo_id = match args.get("todoId").and_then(|v| v.as_i64()) {
         Some(i) => i,
-        None => return Ok(missing_param_error("index", ToolGroup::Planning)),
+        None => return Ok(missing_param_error("todoId", ToolGroup::Planning)),
     };
 
     let summary = args
@@ -151,49 +140,43 @@ pub async fn check_todo(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    if index < 0 {
+    if todo_id <= 0 {
         return Ok(invalid_input_error(
-            "Index must be >= 0",
+            "todoId must be > 0",
             ToolGroup::Planning,
         ));
     }
 
-    // 2. Fetch todos to resolve index
+    // 2. Fetch todo by ID and verify it belongs to the active session
     let repo = get_planning_repository();
-    let todos = match repo.list_todos(session_id, true).await {
-        Ok(t) => t,
+    let todo = match repo.get_todo(todo_id).await {
+        Ok(Some(todo)) if todo.session_id == session_id => todo,
+        Ok(Some(_)) | Ok(None) => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                format!("No todo found with todoId {}", todo_id),
+                ToolGroup::Planning,
+            )
+            .with_guidance(vec![
+                "Use getCurrentState to see current todos and their todo IDs".to_string(),
+                "Copy the todoId exactly from the Planning service context or getCurrentState output"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
-                format!("Failed to fetch todos: {}", e),
+                format!("Failed to fetch todo: {}", e),
                 ToolGroup::Planning,
             )
             .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
         }
     };
-
-    // 3. Get todo by index
-    let todo = match todos.get(index as usize) {
-        Some(t) => t,
-        None => {
-            return Ok(guided_error(
-                ErrorCategory::ResourceNotFound,
-                format!("No todo found at position {}", index),
-                ToolGroup::Planning,
-            )
-            .with_guidance(vec![
-                "Use getCurrentState to see current todos and their positions".to_string(),
-                "The index must be within range (0 to count-1)".to_string(),
-            ])
-            .to_mcp_result());
-        }
-    };
-
-    let todo_id = todo.id;
     let todo_content = todo.content.clone();
 
-    // 4. Update (no parent auto-completion logic)
+    // 3. Update (no parent auto-completion logic)
     if let Err(e) = repo.check_todo(todo_id, checked, summary).await {
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
@@ -236,8 +219,8 @@ pub async fn check_todo(
 
     let hint = SuccessHint::new(
         format!(
-            "Todo #{} (position {}) marked {}: {}{}",
-            todo_id, index, action, todo_content, summary_text
+            "Todo #{} marked {}: {}{}",
+            todo_id, action, todo_content, summary_text
         ),
         next_hints,
     );
@@ -259,55 +242,49 @@ pub async fn cancel_todo(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    // 1. Extract required parameter (single index only)
-    let index = match args.get("index").and_then(|v| v.as_i64()) {
+    // 1. Extract required parameter (single todoId only)
+    let todo_id = match args.get("todoId").and_then(|v| v.as_i64()) {
         Some(i) => i,
-        None => return Ok(missing_param_error("index", ToolGroup::Planning)),
+        None => return Ok(missing_param_error("todoId", ToolGroup::Planning)),
     };
 
-    if index < 0 {
+    if todo_id <= 0 {
         return Ok(invalid_input_error(
-            "Index must be >= 0",
+            "todoId must be > 0",
             ToolGroup::Planning,
         ));
     }
 
-    // 2. Fetch todos to resolve index
+    // 2. Fetch todo by ID and verify it belongs to the active session
     let repo = get_planning_repository();
-    let todos = match repo.list_todos(session_id, true).await {
-        Ok(t) => t,
+    let todo = match repo.get_todo(todo_id).await {
+        Ok(Some(todo)) if todo.session_id == session_id => todo,
+        Ok(Some(_)) | Ok(None) => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                format!("No todo found with todoId {}", todo_id),
+                ToolGroup::Planning,
+            )
+            .with_guidance(vec![
+                "Use getCurrentState to see current todos and their todo IDs".to_string(),
+                "Copy the todoId exactly from the Planning service context or getCurrentState output"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
-                format!("Failed to fetch todos: {}", e),
+                format!("Failed to fetch todo: {}", e),
                 ToolGroup::Planning,
             )
             .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
         }
     };
-
-    // 3. Get todo by index
-    let todo = match todos.get(index as usize) {
-        Some(t) => t,
-        None => {
-            return Ok(guided_error(
-                ErrorCategory::ResourceNotFound,
-                format!("No todo found at position {}", index),
-                ToolGroup::Planning,
-            )
-            .with_guidance(vec![
-                "Use getCurrentState to see current todos and their positions".to_string(),
-                "The index must be within range (0 to count-1)".to_string(),
-            ])
-            .to_mcp_result());
-        }
-    };
-
-    let todo_id = todo.id;
     let todo_content = todo.content.clone();
 
-    // 4. Delete single todo (no batch, no "delete all")
+    // 3. Delete single todo (no batch, no "delete all")
     if let Err(e) = repo.delete_todos(session_id, vec![todo_id]).await {
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
@@ -328,8 +305,8 @@ pub async fn cancel_todo(
 
     let hint = SuccessHint::new(
         format!(
-            "Removed todo #{} (position {}): {}{}",
-            todo_id, index, todo_content, summary_text
+            "Removed todo #{}: {}{}",
+            todo_id, todo_content, summary_text
         ),
         vec![],
     );
@@ -338,7 +315,6 @@ pub async fn cancel_todo(
         "id": cuid2::create_id(),
         "success": true,
         "todoId": todo_id,
-        "index": index,
         "todo": todo_content
     }))))
 }

@@ -90,7 +90,7 @@ impl ErrorGuidance {
             // Planning tool errors
             (ErrorCategory::DuplicateResource, ToolGroup::Planning) => vec![
                 "Use a different title for the new item".to_string(),
-                "Use updateTodo(action='done') to modify the existing item".to_string(),
+                "Use updateTodo(todoId=..., action='done') to modify the existing item".to_string(),
                 "Use getCurrentState to see all existing items".to_string(),
             ],
             (ErrorCategory::ResourceNotFound, ToolGroup::Planning) => vec![
@@ -326,7 +326,7 @@ impl SuccessHint {
             // Planning tools
             ("addTodo", ToolGroup::Planning) => vec![
                 "Use getCurrentState to see all todos".to_string(),
-                "Use updateTodo(index=N, action='done') to mark as complete".to_string(),
+                "Use updateTodo(todoId=..., action='done') to mark as complete".to_string(),
             ],
             ("createGoal", ToolGroup::Planning) => vec![
                 "Use addTodo to create tasks for this goal".to_string(),
@@ -338,7 +338,7 @@ impl SuccessHint {
                 "When all todos are done, use reflect to review progress".to_string(),
             ],
             ("getCurrentState", ToolGroup::Planning) => vec![
-                "Use updateTodo(index=N, action='done') to mark items as complete".to_string(),
+                "Use updateTodo(todoId=..., action='done') to mark items as complete".to_string(),
                 "Use addTodo to create new tasks".to_string(),
             ],
             ("reflect", ToolGroup::Planning) => vec![

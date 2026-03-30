@@ -9,6 +9,7 @@ import {
   setWorkspaceOverride,
   cancelWorkspaceOverride,
   getWorkspaceDir,
+  readLocalFileAsBase64,
   listWorkspaceFilePaths,
   listWorkspaceFilePathsForPath,
 } from './workspace';
@@ -155,6 +156,21 @@ describe('workspace backend wrapper', () => {
       sessionId: 'session-1',
     });
     expect(result).toBe('/workspace/session-1');
+  });
+
+  it('readLocalFileAsBase64 calls safeInvoke with session-scoped arguments', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce('Zm9v');
+
+    const result = await readLocalFileAsBase64(
+      'session-1',
+      'file:///workspace/session-1/image.png',
+    );
+
+    expect(safeInvoke).toHaveBeenCalledWith('read_local_file_as_base64', {
+      sessionId: 'session-1',
+      fileUrl: 'file:///workspace/session-1/image.png',
+    });
+    expect(result).toBe('Zm9v');
   });
 
   it('listWorkspaceFilePaths calls safeInvoke with correct arguments', async () => {

@@ -60,10 +60,10 @@ async fn load_soul_instruction(session_id: &str) -> Option<(String, String)> {
 /// Build the stable prefix and volatile sections separately for a session.
 ///
 /// Returns `(stable_prompt, session_context)` where:
-/// - `stable_prompt` — sections 1–4 (identity, persona, workspace instructions, session name).
-///   Computed once per session and cached; never changes mid-session.
-/// - `session_context` — sections 5–6 (context providers + service tool states).
-///   Rebuilt fresh on every LLM call. May be empty if no providers or services are active.
+/// - `stable_prompt` — sections 1–4 plus service-context blocks explicitly marked
+///   `ContextVolatility::Stable`. This forms the most reusable per-turn prefix.
+/// - `session_context` — rebuilt fresh on every LLM call: context providers plus
+///   non-stable service tool state.
 ///
 /// Callers decide how to combine the two parts. The frontend AI service layer uses
 /// `prepareContextInjection` to inject them via the channel best suited to each provider.
@@ -97,7 +97,7 @@ pub(crate) async fn build_session_system_prompt_split(
     };
 
     // --- Build (or reuse) stable prefix ---
-    let stable_prompt = {
+    let stable_prefix = {
         let cached = cached_stable_prompt_arc.read().await;
         if let Some(ref existing) = *cached {
             existing.clone()
@@ -130,10 +130,17 @@ pub(crate) async fn build_session_system_prompt_split(
         }
     };
 
-    // --- Build volatile sections fresh each call ---
+    // --- Build per-turn sections fresh each call ---
     let proxy = proxy_manager.get_proxy(session_id).await;
-    let volatile =
-        build_volatile_sections(Some(context_registry), proxy, agent_config.id.as_deref()).await;
+    let (cacheable_context, volatile) =
+        build_volatile_sections_split(Some(context_registry), proxy, agent_config.id.as_deref())
+            .await;
+
+    let stable_prompt = if cacheable_context.trim().is_empty() {
+        stable_prefix
+    } else {
+        format!("{}\n{}", stable_prefix, cacheable_context)
+    };
 
     let session_context = if volatile.trim().is_empty() {
         None
@@ -187,8 +194,14 @@ pub async fn build_system_prompt(
         soul_instruction,
         workspace_instructions,
     );
-    let volatile =
-        build_volatile_sections(context_registry, proxy, agent_config.id.as_deref()).await;
+    let (cacheable_context, volatile) =
+        build_volatile_sections_split(context_registry, proxy, agent_config.id.as_deref()).await;
+
+    let stable = if cacheable_context.trim().is_empty() {
+        stable
+    } else {
+        format!("{}\n{}", stable, cacheable_context)
+    };
 
     if volatile.trim().is_empty() {
         Ok(stable)
@@ -254,19 +267,55 @@ fn build_stable_prefix(
     parts.join("\n")
 }
 
-/// Build the volatile sections (5–6) that must be refreshed on every LLM call.
-async fn build_volatile_sections(
+fn split_service_context_prompts(
+    contexts: std::collections::HashMap<String, crate::mcp::types::ServiceContext>,
+) -> (Vec<String>, Vec<String>) {
+    let mut sorted_contexts: Vec<(String, _)> = contexts.into_iter().collect();
+    sorted_contexts.sort_by(|(left_id, left), (right_id, right)| {
+        left.volatility
+            .cmp(&right.volatility)
+            .then_with(|| left_id.cmp(right_id))
+    });
+
+    let mut cacheable_parts = Vec::new();
+    let mut volatile_parts = Vec::new();
+
+    for (_tool_id, service_context) in sorted_contexts {
+        if service_context.context_prompt.trim().is_empty() {
+            continue;
+        }
+
+        match service_context.volatility {
+            crate::mcp::types::ContextVolatility::Stable => {
+                cacheable_parts.push(service_context.context_prompt)
+            }
+            crate::mcp::types::ContextVolatility::Medium
+            | crate::mcp::types::ContextVolatility::Volatile => {
+                volatile_parts.push(service_context.context_prompt)
+            }
+        }
+    }
+
+    (cacheable_parts, volatile_parts)
+}
+
+/// Build the per-turn prompt sections, split into a cacheable stable-service
+/// fragment and a volatile fragment.
+async fn build_volatile_sections_split(
     context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
     proxy: Option<Arc<MCPServiceProxy>>,
     assistant_id: Option<&str>,
-) -> String {
-    let mut parts: Vec<String> = Vec::new();
+) -> (String, String) {
+    let mut cacheable_parts: Vec<String> = Vec::new();
+    let mut volatile_parts: Vec<String> = Vec::new();
 
     // 5. Read-only Context Providers (time, skills, documentation, etc.)
+    // Context providers currently emit one merged block without per-provider
+    // volatility metadata, so keep them on the per-turn channel.
     if let Some(registry) = context_registry {
         let context = registry.build_context(assistant_id).await;
         if !context.trim().is_empty() {
-            parts.push(context);
+            volatile_parts.push(context);
         }
     }
 
@@ -275,27 +324,22 @@ async fn build_volatile_sections(
         let contexts = p.get_service_contexts(assistant_id).await;
 
         if !contexts.is_empty() {
-            parts.push("\n\n## Available Tools & Current State\n".to_string());
+            let (stable_service_parts, volatile_service_parts) =
+                split_service_context_prompts(contexts);
 
-            // Sort by volatility first, then tool_id. Deterministic ordering keeps
-            // byte sequences stable, while pushing frequently changing state later
-            // preserves a larger reusable prefix for prompt-caching providers.
-            let mut sorted_contexts: Vec<(String, _)> = contexts.into_iter().collect();
-            sorted_contexts.sort_by(|(left_id, left), (right_id, right)| {
-                left.volatility
-                    .cmp(&right.volatility)
-                    .then_with(|| left_id.cmp(right_id))
-            });
+            if !stable_service_parts.is_empty() {
+                cacheable_parts.push("\n\n## Available Tools & Stable Reference\n".to_string());
+                cacheable_parts.extend(stable_service_parts);
+            }
 
-            for (_tool_id, service_context) in sorted_contexts {
-                if !service_context.context_prompt.trim().is_empty() {
-                    parts.push(service_context.context_prompt);
-                }
+            if !volatile_service_parts.is_empty() {
+                volatile_parts.push("\n\n## Available Tools & Current State\n".to_string());
+                volatile_parts.extend(volatile_service_parts);
             }
         }
     }
 
-    parts.join("\n")
+    (cacheable_parts.join("\n"), volatile_parts.join("\n"))
 }
 
 #[cfg(test)]
@@ -386,8 +430,8 @@ mod tests {
         assert!(!prompt.contains("## Available Tools & Current State"));
     }
 
-    #[tokio::test]
-    async fn test_build_volatile_sections_deterministic_order() {
+    #[test]
+    fn test_split_service_context_prompts_deterministic_order() {
         // Create mock service contexts out of order with mixed volatility.
         let mut contexts = std::collections::HashMap::new();
 
@@ -416,28 +460,15 @@ mod tests {
             },
         );
 
-        // We can't easily mock MCPServiceProxy since it's a real struct with complex state.
-        // Instead, let's extract the sorting logic into a pure function or just test the
-        // behavior by re-implementing the sort logic here as an explicit test for the
-        // actual implementation pattern used in `build_volatile_sections`.
+        let (cacheable_parts, volatile_parts) = split_service_context_prompts(contexts);
 
-        // This is a unit test validating the deterministic sorting logic used in `build_volatile_sections`.
-        let mut sorted_contexts: Vec<(String, _)> = contexts.into_iter().collect();
-        sorted_contexts.sort_by(|(left_id, left), (right_id, right)| {
-            left.volatility
-                .cmp(&right.volatility)
-                .then_with(|| left_id.cmp(right_id))
-        });
-
-        let mut parts = Vec::new();
-        for (_tool_id, service_context) in sorted_contexts {
-            parts.push(service_context.context_prompt);
-        }
-
-        let combined = parts.join("\n");
+        assert_eq!(cacheable_parts, vec!["Context for tool A.".to_string()]);
         assert_eq!(
-            combined,
-            "Context for tool A.\nContext for tool B.\nContext for tool C."
+            volatile_parts,
+            vec![
+                "Context for tool B.".to_string(),
+                "Context for tool C.".to_string()
+            ]
         );
     }
 }

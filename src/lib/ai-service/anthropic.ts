@@ -524,20 +524,13 @@ export class AnthropicService extends BaseAIService<
       return { systemPrompt, sessionContext, messages };
     }
 
-    const referenceMessage = messages[messages.length - 1];
-    const syntheticSessionContextMessage: Message = {
-      id: `anthropic-session-context-${referenceMessage?.id ?? 'system'}`,
-      sessionId: referenceMessage?.sessionId ?? 'anthropic-session-context',
-      threadId:
-        referenceMessage?.threadId ??
-        referenceMessage?.sessionId ??
-        'anthropic-session-context',
-      role: 'user',
-      content: [{ type: 'text', text: sessionContext }],
-      metadata: {
-        [ANTHROPIC_SESSION_CONTEXT_METADATA_KEY]: true,
-      },
-    };
+    const syntheticSessionContextMessage =
+      this.createSyntheticSessionContextMessage(sessionContext, messages, {
+        idPrefix: 'anthropic-session-context',
+        metadata: {
+          [ANTHROPIC_SESSION_CONTEXT_METADATA_KEY]: true,
+        },
+      });
 
     return {
       systemPrompt,

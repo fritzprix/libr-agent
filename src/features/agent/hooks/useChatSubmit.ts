@@ -84,12 +84,14 @@ export function useChatSubmit({
             return {
               type: 'image' as const,
               data: r.inlineContent!.data,
+              uri: r.inlineContent!.uri,
               mimeType: r.inlineContent!.mimeType,
             };
           }
           return {
             type: 'audio' as const,
             data: r.inlineContent!.data,
+            uri: r.inlineContent!.uri,
             mimeType: r.inlineContent!.mimeType,
           };
         });

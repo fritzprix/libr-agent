@@ -2,6 +2,7 @@
 ///
 /// This module contains commands for managing application log files,
 /// including backup, clearing, listing, and forwarding logs from TypeScript.
+use crate::logger;
 use crate::services::LogService;
 use log::{debug, error as log_error, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,12 @@ pub async fn clear_current_log() -> Result<(), String> {
 #[tauri::command]
 pub async fn list_log_files() -> Result<Vec<String>, String> {
     LogService::list_log_files().await
+}
+
+/// Returns the effective launch-time log level after applying CLI overrides and defaults.
+#[tauri::command]
+pub fn get_launch_log_level() -> String {
+    logger::resolve_launch_log_level_name().to_string()
 }
 
 /// Forward trace log from TypeScript to Rust logger

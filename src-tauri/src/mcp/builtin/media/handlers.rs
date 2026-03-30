@@ -266,7 +266,11 @@ pub async fn handle_see_content(
                 text: format!("Image loaded: {url_str}\nType: {mime_type} | Size: {size_kb} KB"),
                 is_error: None,
             },
-            MCPContent::Image { data, mime_type },
+            MCPContent::Image {
+                data: Some(data),
+                uri: None,
+                mime_type,
+            },
         ]),
         structured_content: None,
         is_error: Some(false),
@@ -335,7 +339,8 @@ pub async fn handle_listen_content(
                 is_error: None,
             },
             MCPContent::Audio {
-                data,
+                data: Some(data),
+                uri: None,
                 mime_type,
             },
         ]),

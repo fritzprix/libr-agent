@@ -7,3 +7,8 @@
 
 **Learning:** Translating raw UI routes (like `/assistants` mapped to `AssistantList`) into a structural Navigation Guide clarifies the user's mental model and bridges the gap between codebase structure and end-user features.
 **Action:** Always consider documenting the visual navigation structure when new top-level UI routes are added, ensuring users understand how to move through the workspace.
+
+## 2026-03-19 - [Tauri Commands Refactoring]
+
+**Learning:** Tauri commands were moved from `src-tauri/src/lib.rs` to a modular `src-tauri/src/commands/` directory, causing API documentation like `tauri-commands.md` to become completely outdated.
+**Action:** Always scan `src-tauri/src/commands/` (and check `tauri::generate_handler!` in `lib.rs`) when verifying Tauri API reference documentation to ensure it matches the actual backend codebase structure.

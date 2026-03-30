@@ -1,5 +1,5 @@
 import { safeInvoke } from './core';
-import type { Message, RustMessage } from '@/models/chat';
+import { isMessageSource, type Message, type RustMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import type { MessageSearchResult } from './types';
 
@@ -43,9 +43,10 @@ function deserializeMessage(rustMsg: RustMessage): Message {
     tool_use: (rustMsg.toolUse as Message['tool_use']) ?? undefined,
     createdAt: new Date(rustMsg.createdAt),
     updatedAt: new Date(rustMsg.updatedAt),
-    source: rustMsg.source as 'assistant' | 'ui' | undefined,
+    source: isMessageSource(rustMsg.source) ? rustMsg.source : undefined,
     error: (rustMsg.error as Message['error']) ?? undefined,
     usage: rustMsg.usage,
+    metadata: rustMsg.metadata,
   };
 }
 

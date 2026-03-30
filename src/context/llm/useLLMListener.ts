@@ -24,7 +24,7 @@ import {
 } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
-import type { CompletionRequest } from './types';
+import type { CompactRequest, CompletionRequest } from './types';
 import { isAbortError } from './types';
 
 const logger = getLogger('useLLMListener');
@@ -401,63 +401,69 @@ export function useLLMListener({
     let unlistenCompact: (() => void) | undefined;
 
     const setupCompactListener = async () => {
-      const unlistenFn = await listen<{
-        sessionId: string;
-        sessionName: string;
-        messages: Message[];
-        fromId: string;
-        toId: string;
-        resumeCompletionAfterCompact: boolean;
-      }>('llm:compact-request', async (event) => {
-        const {
-          sessionId,
-          messages: rawMessages,
-          fromId,
-          toId,
-          resumeCompletionAfterCompact,
-        } = event.payload;
-        const messages = rawMessages.map(normalizeRustMessage);
-        logger.info(
-          `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
-        );
-        setAwaitingCompactForSession(sessionId, resumeCompletionAfterCompact);
-
-        const settings = settingsRef.current;
-        if (!settings) {
-          logger.error('No settings available for compact request');
-          setAwaitingCompactForSession(sessionId, false);
-          await handleCompactError(
+      const unlistenFn = await listen<CompactRequest>(
+        'llm:compact-request',
+        async (event) => {
+          const {
             sessionId,
-            toAgentRuntimeError(
-              new Error('No settings available for compact request'),
-            ),
+            messages: rawMessages,
+            fromId,
+            toId,
+            parentRequest,
+            resumeCompletionAfterCompact,
+          } = event.payload;
+          const messages = rawMessages.map(normalizeRustMessage);
+          logger.info(
+            `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
           );
-          return;
-        }
+          setAwaitingCompactForSession(sessionId, resumeCompletionAfterCompact);
 
-        const provider = settings.preferredModel.provider as AIServiceProvider;
-        const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
-        const model = settings.preferredModel.model;
-        const providerConfig: AIServiceConfig =
-          settings.serviceConfigs?.[provider] ?? {};
+          const settings = settingsRef.current;
+          if (!settings) {
+            logger.error('No settings available for compact request');
+            setAwaitingCompactForSession(sessionId, false);
+            await handleCompactError(
+              sessionId,
+              toAgentRuntimeError(
+                new Error('No settings available for compact request'),
+              ),
+            );
+            return;
+          }
 
-        try {
-          const service = AIServiceFactory.getService(
-            provider,
-            apiKey,
-            providerConfig,
-          );
-          const summary = await service.compact(messages, { modelName: model });
-          await handleCompactResponse(sessionId, fromId, toId, summary);
-          setCompactedRangeForSession(sessionId, { fromId, toId });
-          resetContextUsageForSession(sessionId);
-          logger.info(`✅ Compact summary stored: session=${sessionId}`);
-        } catch (error) {
-          logger.error(`Compact LLM call failed: session=${sessionId}`, error);
-          setAwaitingCompactForSession(sessionId, false);
-          await handleCompactError(sessionId, toAgentRuntimeError(error));
-        }
-      });
+          const provider = (parentRequest?.provider ??
+            settings.preferredModel.provider) as AIServiceProvider;
+          const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
+          const model = parentRequest?.model ?? settings.preferredModel.model;
+          const providerConfig: AIServiceConfig =
+            settings.serviceConfigs?.[provider] ?? {};
+
+          try {
+            const service = AIServiceFactory.getService(
+              provider,
+              apiKey,
+              providerConfig,
+            );
+            const summary = await service.compact(messages, {
+              modelName: model,
+              systemPrompt: parentRequest?.systemPrompt,
+              sessionContext: parentRequest?.sessionContext,
+              availableTools: parentRequest?.availableTools,
+            });
+            await handleCompactResponse(sessionId, fromId, toId, summary);
+            setCompactedRangeForSession(sessionId, { fromId, toId });
+            resetContextUsageForSession(sessionId);
+            logger.info(`✅ Compact summary stored: session=${sessionId}`);
+          } catch (error) {
+            logger.error(
+              `Compact LLM call failed: session=${sessionId}`,
+              error,
+            );
+            setAwaitingCompactForSession(sessionId, false);
+            await handleCompactError(sessionId, toAgentRuntimeError(error));
+          }
+        },
+      );
 
       if (!isMounted) {
         unlistenFn();

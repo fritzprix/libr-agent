@@ -183,6 +183,18 @@ describe('AI Service Utils', () => {
       ]);
     });
 
+    it('should degrade unresolved uri-only media into text instead of fake base64', () => {
+      const content: MCPContent[] = [
+        { type: 'image', uri: 'file:///tmp/example.png', mimeType: 'image/png' },
+      ];
+      expect(processMultiModalContent(content)).toEqual([
+        {
+          type: 'text',
+          text: '[unresolved image omitted from multimodal request: file:///tmp/example.png]',
+        },
+      ]);
+    });
+
     it('should handle unknown content types', () => {
       const content: MCPContent[] = [
         // @ts-expect-error - Testing unknown type

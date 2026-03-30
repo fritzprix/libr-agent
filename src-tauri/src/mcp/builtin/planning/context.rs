@@ -77,10 +77,10 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
         if !unchecked_todos.is_empty() {
             parts.push(String::new());
             parts.push("**Pending Tasks:**".to_string());
-            parts.push("| Index | Prio | Task | Info |".to_string());
+            parts.push("| Todo ID | Prio | Task | Info |".to_string());
             parts.push("| :--- | :--- | :--- | :--- |".to_string());
 
-            for (idx, t) in unchecked_todos.iter().take(10) {
+            for (_, t) in unchecked_todos.iter().take(10) {
                 let priority_emoji = if t.priority == "high" {
                     "🔴"
                 } else if t.priority == "low" {
@@ -104,7 +104,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
 
                 parts.push(format!(
                     "| {} | {} | {} | {} |",
-                    idx, priority_emoji, safe_content, truncated_info
+                    t.id, priority_emoji, safe_content, truncated_info
                 ));
             }
 
@@ -120,7 +120,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
         if !checked_todos.is_empty() {
             parts.push(String::new());
             parts.push("**Completed Recently:**".to_string());
-            for (idx, t) in checked_todos.iter().rev().take(3) {
+            for (_, t) in checked_todos.iter().rev().take(3) {
                 let info = t
                     .description
                     .as_deref()
@@ -136,12 +136,12 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
                     format!(" ({})", info)
                 };
 
-                parts.push(format!("- [✓] (Index {}) {}{}", idx, t.content, summary));
+                parts.push(format!("- [✓] (Todo ID {}) {}{}", t.id, t.content, summary));
             }
         }
 
         parts.push(String::new());
-        parts.push("*Use 'index' when calling updateTodo.*".to_string());
+        parts.push("*Use 'todoId' when calling updateTodo.*".to_string());
     } else {
         parts.push("- Tasks: None".to_string());
         parts.push("*Use 'addTodo' to create your first task.*".to_string());

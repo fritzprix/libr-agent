@@ -200,6 +200,55 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(options?.headers?.['x-libragent-request-id']).toMatch(/^req_/);
   });
 
+  it('logs prompt drift between consecutive requests with the first differing message index', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    const firstPrepared = service.prepareContextInjection(
+      'Stable instructions',
+      '# Current Context Information\nfirst state',
+      [message],
+    );
+    for await (const chunk of service.streamChat(firstPrepared.messages, {
+      modelName: 'gpt-4o',
+      systemPrompt: firstPrepared.systemPrompt,
+      sessionContext: firstPrepared.sessionContext,
+      availableTools: [alphaTool, betaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    loggerMock.debug.mockClear();
+    loggerMock.info.mockClear();
+
+    const secondPrepared = service.prepareContextInjection(
+      'Stable instructions',
+      '# Current Context Information\nsecond state',
+      [message],
+    );
+    for await (const chunk of service.streamChat(secondPrepared.messages, {
+      modelName: 'gpt-4o',
+      systemPrompt: secondPrepared.systemPrompt,
+      sessionContext: secondPrepared.sessionContext,
+      availableTools: [alphaTool, betaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    expect(loggerMock.debug).toHaveBeenCalledWith(
+      'OpenAI prompt cache drift',
+      expect.objectContaining({
+        mode: 'stream',
+        model: 'gpt-4o',
+        firstDivergenceComponent: 'messages',
+        firstDivergenceIndex: 2,
+        commonPrefixMessages: 2,
+      }),
+    );
+  });
+
   it('derives the same prompt_cache_key regardless of available tool order', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test');

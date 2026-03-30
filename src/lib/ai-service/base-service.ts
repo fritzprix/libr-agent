@@ -48,7 +48,7 @@ export function stableStringify(value: unknown): string {
       ([key, nestedValue]) =>
         `${JSON.stringify(key)}:${stableStringify(nestedValue)}`,
     )
-     .join(',')}}`;
+    .join(',')}}`;
 }
 
 export function stableHashKeyPart(value: string): string {
@@ -83,7 +83,9 @@ function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
     .map((tool) => ({
       ...tool,
       inputSchema: stableClone(tool.inputSchema),
-      outputSchema: tool.outputSchema ? stableClone(tool.outputSchema) : undefined,
+      outputSchema: tool.outputSchema
+        ? stableClone(tool.outputSchema)
+        : undefined,
       annotations: tool.annotations ? stableClone(tool.annotations) : undefined,
     }))
     .sort((left, right) => {
@@ -118,10 +120,15 @@ function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
  * @template TProviderMessage The type of message objects used by the provider's API.
  * @template TProviderTool The type of tool objects used by the provider's API.
  */
-export abstract class BaseAIService<
-  TProviderMessage,
-  TProviderTool,
-> implements IAIService {
+export abstract class BaseAIService<TProviderMessage, TProviderTool>
+  implements IAIService
+{
+  private static readonly SESSION_CONTEXT_BACKGROUND_HEADER =
+    '[Current session context — background reference only, do not respond to this block]';
+
+  private static readonly SESSION_CONTEXT_BACKGROUND_FOOTER =
+    '[End of session context]';
+
   /**
    * The default configuration for the service.
    * @protected
@@ -363,6 +370,7 @@ export abstract class BaseAIService<
   }> {
     type MediaItem = {
       data?: string;
+      uri?: string;
       mimeType?: string;
       source?: { data?: string; uri?: string; mimeType?: string };
     };
@@ -370,28 +378,40 @@ export abstract class BaseAIService<
       switch (item.type) {
         case 'text':
           return { type: 'text', text: (item as { text: string }).text };
-        case 'image':
+        case 'image': {
+          const mediaItem = item as MediaItem;
+          const data = mediaItem.data || mediaItem.source?.data;
+          if (data) {
+            return {
+              type: 'image',
+              image: data,
+              mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
+            };
+          }
+
+          const uri = mediaItem.uri || mediaItem.source?.uri;
           return {
-            type: 'image',
-            image:
-              (item as MediaItem).data ||
-              (item as MediaItem).source?.data ||
-              (item as MediaItem).source?.uri,
-            mimeType:
-              (item as MediaItem).mimeType ||
-              (item as MediaItem).source?.mimeType,
+            type: 'text',
+            text: `[unresolved image omitted from multimodal request: ${uri || 'missing-uri'}]`,
           };
-        case 'audio':
+        }
+        case 'audio': {
+          const mediaItem = item as MediaItem;
+          const data = mediaItem.data || mediaItem.source?.data;
+          if (data) {
+            return {
+              type: 'audio',
+              audio: data,
+              mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
+            };
+          }
+
+          const uri = mediaItem.uri || mediaItem.source?.uri;
           return {
-            type: 'audio',
-            audio:
-              (item as MediaItem).data ||
-              (item as MediaItem).source?.data ||
-              (item as MediaItem).source?.uri,
-            mimeType:
-              (item as MediaItem).mimeType ||
-              (item as MediaItem).source?.mimeType,
+            type: 'text',
+            text: `[unresolved audio omitted from multimodal request: ${uri || 'missing-uri'}]`,
           };
+        }
         default:
           return { type: 'text', text: `[${item.type}]` };
       }
@@ -916,10 +936,66 @@ export abstract class BaseAIService<
     if (!sessionContext) {
       return { systemPrompt, sessionContext: undefined, messages };
     }
-    const combined = [systemPrompt, sessionContext]
-      .filter(Boolean)
-      .join('\n\n');
-    return { systemPrompt: combined, sessionContext: undefined, messages };
+
+    return {
+      systemPrompt: this.mergeSessionContextIntoSystemPrompt(
+        systemPrompt,
+        sessionContext,
+      ),
+      sessionContext: undefined,
+      messages,
+    };
+  }
+
+  protected mergeSessionContextIntoSystemPrompt(
+    systemPrompt: string | undefined,
+    sessionContext: string,
+  ): string {
+    return [systemPrompt, sessionContext].filter(Boolean).join('\n\n');
+  }
+
+  protected formatSessionContextAsBackgroundReference(
+    sessionContext: string,
+  ): string {
+    return `${BaseAIService.SESSION_CONTEXT_BACKGROUND_HEADER}\n\n${sessionContext}\n\n${BaseAIService.SESSION_CONTEXT_BACKGROUND_FOOTER}`;
+  }
+
+  protected createSyntheticSessionContextMessage(
+    sessionContext: string,
+    messages: Message[],
+    options?: {
+      idPrefix?: string;
+      contentText?: string;
+      metadata?: Record<string, unknown>;
+      sessionIdFallback?: string;
+      threadIdFallback?: string;
+      createdAt?: Date;
+    },
+  ): Message {
+    const referenceMessage = messages[messages.length - 1];
+    const idPrefix = options?.idPrefix ?? 'session-context';
+
+    return {
+      id: `${idPrefix}-${referenceMessage?.id ?? 'system'}`,
+      sessionId:
+        referenceMessage?.sessionId ??
+        options?.sessionIdFallback ??
+        `${idPrefix}`,
+      threadId:
+        referenceMessage?.threadId ??
+        referenceMessage?.sessionId ??
+        options?.threadIdFallback ??
+        `${idPrefix}`,
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: options?.contentText ?? sessionContext,
+        },
+      ],
+      metadata: options?.metadata,
+      createdAt: options?.createdAt,
+    };
   }
 
   /**
