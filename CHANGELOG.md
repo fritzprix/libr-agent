@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.23] - 2026-03-30
+
+### 🚀 Features
+
+- **Claude Channel Session Plumbing**: Added end-to-end channel routing and permission relay support so Claude-style channel notifications can be injected into the active agent workflow more reliably.
+- **Smarter Media Materialization**: Improved session message preprocessing so the latest inline or file-backed media stays available to multimodal models without bloating older message history.
+
+### 🐛 Fixes
+
+- **Channel Message Hardening**: Fixed message-source deserialization and hardened injected channel payload formatting so unsafe metadata keys no longer produce malformed channel tags.
+- **Workspace Scope and Prompt Cache Stability**: Corrected workspace-local file handling and preserved compaction prompt-cache layout to reduce context mismatches during long-running agent sessions.
+- **Agent Session UI Polish**: Cleaned up several status, attention, and workflow rendering edge cases across the agent chat and scheduled-task surfaces.
+
+### 🔧 Internal
+
+- **Backend and Logging Cleanup**: Refined launch log-level overrides, continued the agent session backend refactor, and normalized supporting type exports and formatting across touched modules.
+- **Docs and Regression Coverage**: Updated Tauri/channel documentation and added focused Rust and Vitest regression coverage for channel routing, workspace file scope, compaction recovery, and media preprocessing.
+
 ## [0.6.22] - 2026-03-29
 
 ### 🐛 Fixes
