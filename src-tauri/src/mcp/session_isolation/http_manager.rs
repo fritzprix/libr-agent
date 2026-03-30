@@ -12,7 +12,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::mcp::types::{MCPResponse, MCPServerConfig, MCPTool, TransportConfig};
+use crate::mcp::types::{
+    ChannelServerMetadata, MCPResponse, MCPServerConfig, MCPTool, TransportConfig,
+};
 
 use super::error::SessionMCPError;
 
@@ -33,6 +35,9 @@ pub struct HttpSessionManager {
 
     /// Active session-specific connections
     connections: Arc<Mutex<HashMap<String, HttpServiceConnection>>>,
+
+    /// Channel metadata discovered from initialize responses of external servers.
+    channel_metadata: Arc<RwLock<HashMap<String, ChannelServerMetadata>>>,
 }
 
 impl HttpSessionManager {
@@ -48,6 +53,7 @@ impl HttpSessionManager {
             session_id,
             http_configs: Arc::new(RwLock::new(http_configs)),
             connections: Arc::new(Mutex::new(HashMap::new())),
+            channel_metadata: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -109,6 +115,9 @@ impl HttpSessionManager {
             error!("Failed to connect to HTTP MCP server {server_name}: {e}");
             anyhow!("HTTP connection failed: {e}")
         })?;
+
+        self.update_channel_metadata(server_name, mcp_client.peer_info())
+            .await;
 
         // Store connection
         {
@@ -316,7 +325,11 @@ impl HttpSessionManager {
                             "image" => {
                                 let data = json_val.get("data")?.as_str()?.to_string();
                                 let mime_type = json_val.get("mimeType")?.as_str()?.to_string();
-                                Some(crate::mcp::types::MCPContent::Image { data, mime_type })
+                                Some(crate::mcp::types::MCPContent::Image {
+                                    data: Some(data),
+                                    uri: None,
+                                    mime_type,
+                                })
                             }
                             "resource" => {
                                 // Extract only the nested "resource" field to avoid double-nesting
@@ -420,9 +433,37 @@ impl HttpSessionManager {
         self.http_configs.read().await.keys().cloned().collect()
     }
 
+    pub async fn list_channel_metadata(&self) -> Vec<ChannelServerMetadata> {
+        self.channel_metadata
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect()
+    }
+
     /// Check if a specific server is managed by this session.
     pub async fn has_server(&self, server_name: &str) -> bool {
         self.http_configs.read().await.contains_key(server_name)
+    }
+
+    async fn update_channel_metadata(
+        &self,
+        server_name: &str,
+        peer_info: Option<&rmcp::model::ServerInfo>,
+    ) {
+        let mut metadata = self.channel_metadata.write().await;
+
+        if let Some(channel) =
+            crate::mcp::session_isolation::channel_metadata::extract_channel_server_metadata(
+                server_name,
+                peer_info,
+            )
+        {
+            metadata.insert(server_name.to_string(), channel);
+        } else {
+            metadata.remove(server_name);
+        }
     }
 
     pub async fn shutdown_all(&self) {

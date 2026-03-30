@@ -1,13 +1,13 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
-use super::client::call_json;
 use super::formatting::{extract_session_status, is_terminal_status, truncate_text};
 use super::types::MessageSummaryOptions;
+use crate::agent::AgentSessionManager;
 use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::{MessageRepository, SessionRepository};
 
@@ -195,6 +195,61 @@ pub async fn count_session_turns(session_id: &str) -> usize {
     messages.iter().filter(|m| m.role == "assistant").count()
 }
 
+pub fn extract_assistant_id_from_session_value(session: &Value) -> Option<String> {
+    if let Some(assistant_id) = session.get("assistantId").and_then(|v| v.as_str()) {
+        return Some(assistant_id.to_string());
+    }
+
+    let config_str = session.get("agentConfig").and_then(|v| v.as_str())?;
+    let config: Value = serde_json::from_str(config_str).ok()?;
+
+    config
+        .get("assistant_id")
+        .or_else(|| config.get("assistantId"))
+        .or_else(|| config.get("id"))
+        .and_then(|v| v.as_str())
+        .map(|assistant_id| assistant_id.to_string())
+}
+
+pub fn session_metadata_to_value(
+    session: &crate::repositories::SessionMetadata,
+) -> Result<Value, String> {
+    let mut value =
+        serde_json::to_value(session).map_err(|e| format!("Failed to serialize session: {}", e))?;
+
+    if let Some(assistant_id) = extract_assistant_id_from_session_value(&value) {
+        if let Some(object) = value.as_object_mut() {
+            object.insert("assistantId".to_string(), Value::String(assistant_id));
+        }
+    }
+
+    Ok(value)
+}
+
+pub async fn fetch_session_value(
+    manager: &AgentSessionManager,
+    session_id: &str,
+) -> Result<Option<Value>, String> {
+    manager
+        .get_session(session_id)
+        .await?
+        .map(|session| session_metadata_to_value(&session))
+        .transpose()
+}
+
+pub async fn fetch_messages_value(session_id: &str, limit: u64) -> Result<Value, String> {
+    let repo = crate::state::get_message_repository();
+    let messages = repo
+        .get_messages_by_session(session_id, limit)
+        .await
+        .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
+
+    let messages_json = serde_json::to_value(messages)
+        .map_err(|e| format!("Failed to serialize session messages: {}", e))?;
+
+    Ok(json!({ "messages": messages_json }))
+}
+
 /// Consolidates timeout handling for spawnAgent and awaitAgent.
 /// Converts Timeout errors into successful MCP results with guidance.
 pub fn handle_wait_timeout_result(
@@ -237,6 +292,7 @@ pub fn handle_wait_timeout_result(
 }
 
 pub async fn wait_until_session_terminal(
+    manager: &AgentSessionManager,
     session_id: &str,
     timeout_seconds: u64,
     caller_session_id: Option<&str>,
@@ -265,13 +321,9 @@ pub async fn wait_until_session_terminal(
             }
         }
 
-        let session = call_json(
-            reqwest::Method::GET,
-            &format!("/api/sessions/{}", session_id),
-            None,
-            None,
-        )
-        .await?;
+        let session = fetch_session_value(manager, session_id)
+            .await?
+            .ok_or_else(|| format!("Agent session '{}' not found", session_id))?;
 
         wake_count = wake_count.saturating_add(1);
         if is_terminal_status(&extract_session_status(&session)) {

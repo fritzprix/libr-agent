@@ -75,6 +75,25 @@ pub enum AgentEvent {
         arguments: String,
     },
 
+    /// Remote-channel-friendly permission relay request emitted for external bridges
+    #[serde(rename_all = "camelCase")]
+    ChannelPermissionRequest {
+        session_id: String,
+        request_id: String,
+        tool_call_id: String,
+        tool_name: String,
+        description: String,
+        input_preview: String,
+    },
+
+    /// Pending approval resolved by either the local UI or a remote channel bridge
+    #[serde(rename_all = "camelCase")]
+    ToolExecutionApprovalResolved {
+        session_id: String,
+        tool_call_id: String,
+        approved: bool,
+    },
+
     /// Tool execution completed
     #[serde(rename_all = "camelCase")]
     ToolExecutionCompleted {
@@ -114,6 +133,86 @@ pub struct TauriEventDispatcher {
     app_handle: AppHandle,
 }
 
+fn summarize_agent_event(event: &AgentEvent) -> String {
+    match event {
+        AgentEvent::WorkflowStarted { session_id } => {
+            format!("WorkflowStarted(session={session_id})")
+        }
+        AgentEvent::WorkflowCompleted { session_id, reason } => {
+            format!("WorkflowCompleted(session={session_id}, reason={reason:?})")
+        }
+        AgentEvent::WorkflowError { session_id, .. } => {
+            format!("WorkflowError(session={session_id})")
+        }
+        AgentEvent::StatusChanged { session_id, status } => {
+            format!("StatusChanged(session={session_id}, status={status:?})")
+        }
+        AgentEvent::MessageAdded { session_id, message } => {
+            let media_items = message
+                .content
+                .iter()
+                .filter(|item| matches!(item, crate::mcp::types::MCPContent::Image { .. } | crate::mcp::types::MCPContent::Audio { .. }))
+                .count();
+            format!(
+                "MessageAdded(session={}, message={}, role={}, content_items={}, media_items={})",
+                session_id,
+                message.id,
+                message.role,
+                message.content.len(),
+                media_items
+            )
+        }
+        AgentEvent::ToolExecutionStarted {
+            session_id,
+            tool_name,
+        } => format!("ToolExecutionStarted(session={session_id}, tool={tool_name})"),
+        AgentEvent::ToolExecutionRequiresApproval {
+            session_id,
+            tool_call_id,
+            tool_name,
+            ..
+        } => format!(
+            "ToolExecutionRequiresApproval(session={session_id}, tool_call_id={tool_call_id}, tool={tool_name})"
+        ),
+        AgentEvent::ChannelPermissionRequest {
+            session_id,
+            request_id,
+            tool_call_id,
+            tool_name,
+            ..
+        } => format!(
+            "ChannelPermissionRequest(session={session_id}, request_id={request_id}, tool_call_id={tool_call_id}, tool={tool_name})"
+        ),
+        AgentEvent::ToolExecutionApprovalResolved {
+            session_id,
+            tool_call_id,
+            approved,
+        } => format!(
+            "ToolExecutionApprovalResolved(session={session_id}, tool_call_id={tool_call_id}, approved={approved})"
+        ),
+        AgentEvent::ToolExecutionCompleted {
+            session_id,
+            tool_name,
+            success,
+        } => format!(
+            "ToolExecutionCompleted(session={session_id}, tool={tool_name}, success={success})"
+        ),
+        AgentEvent::InitializationStep {
+            session_id,
+            step,
+            status,
+        } => format!("InitializationStep(session={session_id}, step={step}, status={status:?})"),
+        AgentEvent::ResourceUpdated {
+            resource_type,
+            action,
+            resource_id,
+        } => format!(
+            "ResourceUpdated(type={resource_type}, action={action}, resource_id={})",
+            resource_id.as_deref().unwrap_or("-")
+        ),
+    }
+}
+
 impl TauriEventDispatcher {
     pub fn new(app_handle: AppHandle) -> Self {
         Self { app_handle }
@@ -134,7 +233,7 @@ impl AgentEventDispatcher for TauriEventDispatcher {
 pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(), String> {
     // Use emit_to() to broadcast to all windows (Tauri 2.x requirement)
     // EventTarget::app() sends to all webviews
-    info!("Emitting agent event: {:#?}", event);
+    info!("Emitting agent event: {}", summarize_agent_event(&event));
     app_handle
         .emit_to(tauri::EventTarget::app(), "agent:event", event)
         .map_err(|e| format!("Failed to emit agent event: {}", e))

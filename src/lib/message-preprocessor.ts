@@ -3,9 +3,22 @@ import type { MCPContent } from '@/lib/mcp/protocol/content';
 import { getLogger } from './logger';
 import { stringToMCPContentArray } from './utils';
 import type { AttachmentReference } from '@/models/chat';
+import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
 
 const logger = getLogger('message-preprocessor');
 const ATTACHMENT_PREVIEW_CHAR_LIMIT = 500;
+const MEDIA_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+
+type MediaContentLike = Extract<MCPContent, { type: 'image' | 'audio' }>;
+
+const mediaBase64Cache = new Map<
+  string,
+  {
+    data: string;
+    size: number;
+  }
+>();
+let mediaBase64CacheBytes = 0;
 
 function truncateText(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
@@ -33,6 +46,217 @@ function createAttachmentHintPayload(
 
 function estimateTextTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+function estimateBase64Bytes(value: string): number {
+  return Math.floor((value.length * 3) / 4);
+}
+
+function pruneMediaCache(maxBytes: number): void {
+  while (mediaBase64CacheBytes > maxBytes && mediaBase64Cache.size > 0) {
+    const oldestKey = mediaBase64Cache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    const entry = mediaBase64Cache.get(oldestKey);
+    if (!entry) {
+      mediaBase64Cache.delete(oldestKey);
+      continue;
+    }
+    mediaBase64CacheBytes -= entry.size;
+    mediaBase64Cache.delete(oldestKey);
+  }
+}
+
+function updateMediaCache(key: string, data: string): void {
+  const size = estimateBase64Bytes(data);
+  const existing = mediaBase64Cache.get(key);
+  if (existing) {
+    mediaBase64CacheBytes -= existing.size;
+    mediaBase64Cache.delete(key);
+  }
+  mediaBase64Cache.set(key, { data, size });
+  mediaBase64CacheBytes += size;
+  pruneMediaCache(MEDIA_CACHE_MAX_BYTES);
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Unexpected FileReader result type'));
+        return;
+      }
+      const [, base64 = ''] = result.split(',', 2);
+      resolve(base64);
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('Failed to read media blob'));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function loadBase64FromUri(
+  uri: string,
+  sessionId: string,
+): Promise<string> {
+  if (uri.startsWith('data:')) {
+    const [, base64 = ''] = uri.split(',', 2);
+    return base64;
+  }
+
+  const cached = mediaBase64Cache.get(uri);
+  if (cached) {
+    mediaBase64Cache.delete(uri);
+    mediaBase64Cache.set(uri, cached);
+    return cached.data;
+  }
+
+  if (uri.startsWith('file://')) {
+    const base64 = await readLocalFileAsBase64(sessionId, uri);
+    updateMediaCache(uri, base64);
+    return base64;
+  }
+
+  const response = await fetch(uri);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch media URI "${uri}": ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const base64 = await blobToBase64(await response.blob());
+  updateMediaCache(uri, base64);
+  return base64;
+}
+
+function isMediaContentItem(content: MCPContent): content is MediaContentLike {
+  return content.type === 'image' || content.type === 'audio';
+}
+
+function messageHasMedia(message: Message): boolean {
+  if (message.content.some((item) => isMediaContentItem(item))) {
+    return true;
+  }
+
+  return (
+    message.attachments?.some(
+      (attachment) =>
+        attachment.status === 'inline' && !!attachment.inlineContent,
+    ) ?? false
+  );
+}
+
+function buildHistoricalMediaSummary(
+  index: number,
+  payload: Record<string, unknown>,
+): string {
+  return `<historical_media_${index}>
+${JSON.stringify(payload, null, 2)}
+</historical_media_${index}>`;
+}
+
+function summarizeInlineAttachment(
+  attachment: AttachmentReference,
+  index: number,
+): string {
+  const source = attachment.inlineContent;
+  return buildHistoricalMediaSummary(index, {
+    kind: source?.type ?? 'unknown',
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    uploadedAt: attachment.uploadedAt,
+    uri: source?.uri,
+    hasInlineBytes: typeof source?.data === 'string' && source.data.length > 0,
+  });
+}
+
+function summarizeHistoricalMediaItem(
+  item: MediaContentLike,
+  index: number,
+): string {
+  const source = item.source;
+  const rawData = item.data ?? source?.data;
+  const uri = item.uri ?? source?.uri;
+
+  return buildHistoricalMediaSummary(index, {
+    kind: item.type,
+    mimeType: item.mimeType ?? source?.mimeType,
+    uri,
+    embeddedBytes: rawData ? estimateBase64Bytes(rawData) : undefined,
+  });
+}
+
+async function materializeInlineAttachment(
+  attachment: AttachmentReference,
+  sessionId: string,
+): Promise<MCPContent | null> {
+  const inlineContent = attachment.inlineContent;
+  if (!inlineContent) {
+    return null;
+  }
+
+  const base64 =
+    inlineContent.data ??
+    (inlineContent.uri
+      ? await loadBase64FromUri(inlineContent.uri, sessionId)
+      : undefined);
+
+  if (!base64) {
+    return null;
+  }
+
+  if (inlineContent.type === 'image') {
+    return {
+      type: 'image',
+      data: base64,
+      mimeType: inlineContent.mimeType,
+    };
+  }
+
+  return {
+    type: 'audio',
+    data: base64,
+    mimeType: inlineContent.mimeType,
+  };
+}
+
+async function materializeMediaContentItem(
+  item: MediaContentLike,
+  sessionId: string,
+): Promise<MCPContent | null> {
+  const source = item.source;
+  let base64 = item.data ?? source?.data;
+
+  if (!base64 && item.uri) {
+    base64 = await loadBase64FromUri(item.uri, sessionId);
+  }
+
+  if (!base64 && source?.uri) {
+    base64 = await loadBase64FromUri(source.uri, sessionId);
+  }
+
+  if (!base64) {
+    return null;
+  }
+
+  if (item.type === 'image') {
+    return {
+      type: 'image',
+      data: base64,
+      mimeType: item.mimeType ?? source?.mimeType ?? 'image/png',
+    };
+  }
+
+  return {
+    type: 'audio',
+    data: base64,
+    mimeType: item.mimeType ?? source?.mimeType ?? 'audio/mpeg',
+  };
 }
 
 export function calculateContextSafetyMargin(effectiveLimit: number): number {
@@ -126,15 +350,23 @@ export function estimatePayloadTokens(
  * @returns A promise that resolves to the processed message, ready for the LLM.
  *          If an error occurs, it returns the original message as a fallback.
  */
-export async function prepareMessageForLLM(message: Message): Promise<Message> {
-  // If there are no attachments, no preprocessing is needed.
-  if (!message.attachments || message.attachments.length === 0) {
+export async function prepareMessageForLLM(
+  message: Message,
+  options?: {
+    includeLatestMediaPayload?: boolean;
+  },
+): Promise<Message> {
+  if (
+    (!message.attachments || message.attachments.length === 0) &&
+    !message.content.some((item) => isMediaContentItem(item))
+  ) {
     return message;
   }
 
   logger.debug('Preprocessing message with attachments', {
     messageId: message.id,
-    attachmentCount: message.attachments.length,
+    attachmentCount: message.attachments?.length ?? 0,
+    includeLatestMediaPayload: options?.includeLatestMediaPayload ?? false,
   });
 
   try {
@@ -142,28 +374,59 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
     // Inline attachments must be injected into message.content; they are NOT
     // already there in the agent V2 path (Rust stores and returns them only in
     // the attachments field).
-    const inlineAttachments = message.attachments.filter(
-      (a) => a.status === 'inline' && !!a.inlineContent,
-    );
-    const textAttachments = message.attachments.filter(
-      (a) => a.status !== 'inline',
-    );
+    const inlineAttachments =
+      message.attachments?.filter(
+        (a) => a.status === 'inline' && !!a.inlineContent,
+      ) ?? [];
+    const textAttachments =
+      message.attachments?.filter((a) => a.status !== 'inline') ?? [];
 
-    // Build MCPContent blocks for inline image/audio attachments
-    const inlineContentBlocks: MCPContent[] = inlineAttachments.map((a) => {
-      if (a.inlineContent!.type === 'image') {
-        return {
-          type: 'image' as const,
-          data: a.inlineContent!.data,
-          mimeType: a.inlineContent!.mimeType,
-        };
+    const includeLatestMediaPayload =
+      options?.includeLatestMediaPayload ?? true;
+
+    const mediaSummaries: string[] = [];
+    const processedContent: MCPContent[] = [];
+    let historicalMediaIndex = 0;
+
+    for (const contentItem of message.content) {
+      if (!isMediaContentItem(contentItem)) {
+        processedContent.push(contentItem);
+        continue;
       }
-      return {
-        type: 'audio' as const,
-        data: a.inlineContent!.data,
-        mimeType: a.inlineContent!.mimeType,
-      };
-    });
+
+      if (includeLatestMediaPayload) {
+        const materializedItem = await materializeMediaContentItem(
+          contentItem,
+          message.sessionId,
+        );
+        if (materializedItem) {
+          processedContent.push(materializedItem);
+          continue;
+        }
+      }
+
+      mediaSummaries.push(
+        summarizeHistoricalMediaItem(contentItem, historicalMediaIndex++),
+      );
+    }
+
+    const inlineContentBlocks: MCPContent[] = [];
+    for (const attachment of inlineAttachments) {
+      if (includeLatestMediaPayload) {
+        const materializedAttachment = await materializeInlineAttachment(
+          attachment,
+          message.sessionId,
+        );
+        if (materializedAttachment) {
+          inlineContentBlocks.push(materializedAttachment);
+          continue;
+        }
+      }
+
+      mediaSummaries.push(
+        summarizeInlineAttachment(attachment, historicalMediaIndex++),
+      );
+    }
 
     // Build text hint blocks for workspace/committed attachments
     const attachmentHintBlocks = textAttachments.map((attachment, i) => {
@@ -189,19 +452,25 @@ ${accessHints}
     });
 
     const hasInline = inlineContentBlocks.length > 0;
-    const hasText = attachmentHintBlocks.length > 0;
+    const hasText =
+      attachmentHintBlocks.length > 0 || mediaSummaries.length > 0;
+    const contentChanged =
+      processedContent.length !== message.content.length ||
+      processedContent.some((item, index) => item !== message.content[index]);
 
-    if (!hasInline && !hasText) {
+    if (!hasInline && !hasText && !contentChanged) {
       return message;
     }
 
     const processedMessage: Message = {
       ...message,
       content: [
-        ...message.content,
+        ...processedContent,
         ...inlineContentBlocks,
         ...(hasText
-          ? stringToMCPContentArray(attachmentHintBlocks.join('\n\n'))
+          ? stringToMCPContentArray(
+              [...mediaSummaries, ...attachmentHintBlocks].join('\n\n'),
+            )
           : []),
       ],
     };
@@ -233,8 +502,20 @@ export async function prepareMessagesForLLM(
   // to understand what went wrong and how to recover.
   // The error field is metadata; the content field contains the actual error message
   // that should be sent to the LLM.
+  let latestMediaMessageIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messageHasMedia(messages[index])) {
+      latestMediaMessageIndex = index;
+      break;
+    }
+  }
+
   const processedMessages = await Promise.all(
-    messages.map((message) => prepareMessageForLLM(message)),
+    messages.map((message, index) =>
+      prepareMessageForLLM(message, {
+        includeLatestMediaPayload: index === latestMediaMessageIndex,
+      }),
+    ),
   );
 
   const attachmentCount = messages.reduce(
@@ -249,6 +530,7 @@ export async function prepareMessagesForLLM(
       totalMessages: messages.length,
       totalAttachments: attachmentCount,
       errorMessages: errorMessageCount,
+      latestMediaMessageIndex,
     });
   }
 

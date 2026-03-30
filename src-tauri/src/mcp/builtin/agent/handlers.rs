@@ -1,4 +1,3 @@
-use reqwest::Method;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -6,7 +5,6 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_agent_config_error, missing_agent_session_error, ErrorCategory,
     SuccessHint, ToolGroup,
 };
-use crate::mcp::builtin::session_api::client::call_json;
 use crate::mcp::builtin::session_api::formatting::{
     extract_session_status, latest_assistant_message_text,
 };
@@ -16,6 +14,7 @@ use crate::mcp::builtin::session_api::utils::{
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::repositories::message_repository::MessageRepository;
 
 use super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
@@ -165,41 +164,34 @@ pub async fn list_agents_or_sessions(
         }
         "sessions" => {
             // Logic from getChildAgents
-            let data: Value = call_json(
-                Method::GET,
-                &format!("/api/sessions/{}/children", caller_session_id),
-                None,
-                None,
-            )
-            .await?;
+            let session_repo = crate::state::get_session_repository();
+            use crate::repositories::session_repository::SessionRepository;
 
-            let child_ids = data
-                .get("children")
-                .and_then(|v: &Value| v.as_array())
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|value: Value| value.as_str().map(str::to_string))
-                .collect::<Vec<_>>();
+            let child_ids = match session_repo.get_child_session_ids(caller_session_id).await {
+                Ok(ids) => ids,
+                Err(_) => {
+                    // Fallback to lineage store if DB fails or doesn't have the relationship yet
+                    let store = crate::services::agent_service::lineage_store().read().await;
+                    store
+                        .iter()
+                        .filter_map(|(id, meta)| {
+                            if meta.parent_session_id.as_deref() == Some(caller_session_id) {
+                                Some(id.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                }
+            };
 
             let mut results = Vec::new();
             for child_id in &child_ids {
-                if let Ok(child_data) = call_json(
-                    Method::GET,
-                    &format!("/api/sessions/{}", child_id),
-                    None,
-                    None,
-                )
-                .await
-                {
-                    let status = extract_session_status(&child_data);
-                    let name = child_data
-                        .get("name")
-                        .and_then(|v: &Value| v.as_str())
-                        .unwrap_or("Unnamed");
+                if let Ok(Some(child_data)) = session_repo.get_session(child_id).await {
+                    let status = format!("{:?}", child_data.status).to_lowercase();
                     results.push(json!({
                         "id": child_id,
-                        "name": name,
+                        "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
                         "status": status
                     }));
                 }
@@ -240,47 +232,46 @@ pub async fn list_agents_or_sessions(
 
 /// startSession handler (from spawnAgent)
 pub async fn start_session(
-    _server: &AgentServer,
+    server: &AgentServer,
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
-    let agent_id = read_required_string(&args, "agentId")?;
-    let task = read_required_string(&args, "task")?;
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
+
+    let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(json!({
+        "parentSessionId": caller_session_id,
+        "assistantId": read_required_string(&args, "agentId")?,
+        "request": read_required_string(&args, "task")?,
+        "workspacePath": args.get("workspaceOverride").and_then(|v| v.as_str()),
+        "maxDepth": args.get("maxDepth").and_then(|v| v.as_u64()),
+        "maxFanout": args.get("maxFanout").and_then(|v| v.as_u64()),
+    }))
+    .map_err(|e| format!("Invalid arguments for start_session: {}", e))?;
+
     let wait_for_result = args
         .get("waitForResult")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let mut body = json!({
-        "parentSessionId": caller_session_id,
-        "assistantId": agent_id,
-        "request": task,
-    });
-
-    if let Some(workspace_override) = args.get("workspaceOverride").and_then(|v| v.as_str()) {
-        body["workspacePath"] = Value::String(workspace_override.to_string());
-    }
-
-    let data: Value = match call_json(Method::POST, "/api/sessions", Some(body), None).await {
-        Ok(data) => data,
-        Err(err)
-            if err.contains("Assistant not found:")
-                || err.contains("Request failed (404): Assistant not found:") =>
-        {
-            return Ok(missing_agent_config_error(&agent_id));
+    let response = match crate::services::AgentService::spawn_agent(manager, body).await {
+        Ok(res) => res,
+        Err(err) if err.contains("Assistant not found:") => {
+            let agent_id = args
+                .get("agentId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            return Ok(missing_agent_config_error(agent_id));
         }
         Err(err) => return Err(err),
     };
-    let session_id = data
-        .get("id")
-        .and_then(|v: &Value| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
+
+    let session_id = response.id;
 
     if wait_for_result {
-        // Reuse check_session logic
         return check_session(
-            _server,
+            server,
             json!({ "sessionId": session_id, "wait": true }),
             caller_session_id,
         )
@@ -303,34 +294,32 @@ pub async fn start_session(
 
 /// messageToSession handler (from messageAgent)
 pub async fn message_to_session(
-    _server: &AgentServer,
+    server: &AgentServer,
     args: Value,
     _caller_session_id: &str,
 ) -> Result<MCPResult, String> {
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
-    let message = read_required_string(&args, "message")?;
-
-    let data: Value = match call_json(
-        Method::POST,
-        &format!("/api/sessions/{}/messages", session_id),
-        Some(json!({ "content": message })),
-        None,
+    let message_text = read_required_string(&args, "message")?;
+    let response = match crate::services::AgentService::send_message_to_session(
+        manager,
+        &session_id,
+        message_text,
+        Some("agent_tool".to_string()),
     )
     .await
     {
-        Ok(data) => data,
-        Err(err) if err.contains("Request failed (404):") => {
+        Ok(response) => response,
+        Err(err) if err.contains("Session not found:") => {
             return Ok(missing_agent_session_error(&session_id));
         }
         Err(err) => return Err(err),
     };
 
-    let msg_id = data.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
     let hint = SuccessHint::new(
-        format!(
-            "Message sent to session {} (Message ID: {}).",
-            session_id, msg_id
-        ),
+        format!("Message {} for session {}.", response.status, session_id),
         vec![format!(
             "Use checkSession(\"{}\", wait=true) to see the response.",
             session_id
@@ -339,65 +328,69 @@ pub async fn message_to_session(
 
     Ok(hint.to_mcp_result_with_data(Some(json!({
         "sessionId": session_id,
-        "messageId": data.get("id")
+        "messageId": response.message_id,
+        "status": response.status
     }))))
 }
 
 /// checkSession handler (from awaitAgent / getAgentStatus)
 pub async fn check_session(
-    _server: &AgentServer,
+    server: &AgentServer,
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
     let wait = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
-    let timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
+    let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
 
     if wait {
         let wait_result = {
             let gate = crate::state::get_concurrency_gate();
             gate.suspend_agent().await?;
-            let res =
-                wait_until_session_terminal(&session_id, timeout, Some(caller_session_id)).await;
+            let res = wait_until_session_terminal(
+                manager,
+                &session_id,
+                timeout_secs,
+                Some(caller_session_id),
+            )
+            .await;
             gate.resume_agent().await?;
             res
         };
 
         let (session_data, _) =
-            match handle_wait_timeout_result(wait_result, &session_id, timeout, false) {
+            match handle_wait_timeout_result(wait_result, &session_id, timeout_secs, false) {
                 Ok(res) => res,
                 Err(mcp_res) => return mcp_res,
             };
+
         let status = extract_session_status(&session_data);
         let turn_count = count_session_turns(&session_id).await;
 
-        // Fetch latest messages to get the result
-        let messages_data: Value = match call_json(
-            Method::GET,
-            &format!("/api/sessions/{}/messages", session_id),
-            None,
-            Some(vec![("limit".to_string(), "5".to_string())]),
-        )
-        .await
-        {
-            Ok(data) => data,
-            Err(err) if err.contains("Request failed (404):") => {
-                return Ok(missing_agent_session_error(&session_id));
-            }
-            Err(err) => return Err(err),
-        };
+        // Fetch latest messages from DB directly
+        let repo = crate::state::get_message_repository();
+        let messages = repo
+            .get_messages_by_session(&session_id, 5)
+            .await
+            .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
 
-        let messages = messages_data
-            .get("messages")
-            .and_then(|v: &Value| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let (_, mut assistant_text) = latest_assistant_message_text(&messages, None)
+        // Convert messages to Value for formatting functions
+        let messages_value: Vec<Value> = messages
+            .into_iter()
+            .map(|m| serde_json::to_value(m).unwrap_or_default())
+            .collect();
+
+        let (_, mut assistant_text) = latest_assistant_message_text(&messages_value, None)
             .unwrap_or(("none".to_string(), "No final answer yet.".to_string()));
 
         if assistant_text == "[assistant message has no text content]" {
             if let Some(tool_text) =
-                crate::mcp::builtin::session_api::formatting::latest_tool_message_text(&messages)
+                crate::mcp::builtin::session_api::formatting::latest_tool_message_text(
+                    &messages_value,
+                )
             {
                 assistant_text = format!("[Tool Response Fallback]\n{}", tool_text);
             }
@@ -419,22 +412,13 @@ pub async fn check_session(
         }))));
     }
 
-    // Just check status
-    let data: Value = match call_json(
-        Method::GET,
-        &format!("/api/sessions/{}", session_id),
-        None,
-        None,
-    )
-    .await
-    {
-        Ok(data) => data,
-        Err(err) if err.contains("Request failed (404):") => {
-            return Ok(missing_agent_session_error(&session_id));
-        }
-        Err(err) => return Err(err),
-    };
-    let status = extract_session_status(&data);
+    // Just check status via manager
+    let session_meta = manager
+        .get_session(&session_id)
+        .await?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    let status = format!("{:?}", session_meta.status).to_lowercase();
     let turn_count = count_session_turns(&session_id).await;
 
     let hint = SuccessHint::new(
@@ -461,10 +445,13 @@ pub async fn check_session(
 
 /// stopSession handler (from terminateAgent)
 pub async fn stop_session(
-    _server: &AgentServer,
+    server: &AgentServer,
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
 
     if caller_session_id == session_id {
@@ -475,27 +462,28 @@ pub async fn stop_session(
         )
         .with_guidance(vec![
             "Use stopSession only for child or delegated sessions".to_string(),
-            "If you need to inspect active delegated work, use list(type=\"sessions\")".to_string(),
             "If the current workflow should stop, use the normal session cancellation controls instead"
                 .to_string(),
         ])
         .to_mcp_result());
     }
 
-    match call_json(
-        Method::POST,
-        &format!("/api/sessions/{}/terminate", session_id),
-        None,
-        None,
-    )
-    .await
-    {
-        Ok(_) => {}
-        Err(err) if err.contains("Request failed (404):") => {
-            return Ok(missing_agent_session_error(&session_id));
-        }
-        Err(err) => return Err(err),
-    };
+    manager
+        .terminate_session(session_id.clone())
+        .await
+        .map_err(|e| {
+            if e.contains("not found") {
+                format!("Session not found: {}", session_id)
+            } else {
+                e
+            }
+        })?;
+
+    // Also remove from lineage store if present
+    crate::services::agent_service::lineage_store()
+        .write()
+        .await
+        .remove(&session_id);
 
     let hint = SuccessHint::new(format!("Session {} stopped.", session_id), vec![]);
 

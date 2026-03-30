@@ -178,6 +178,7 @@ export function processMessageContent(content: string | MCPContent[]): string {
  */
 type MediaItem = {
   data?: string;
+  uri?: string;
   mimeType?: string;
   source?: { data?: string; uri?: string; mimeType?: string };
 };
@@ -193,22 +194,40 @@ export function processMultiModalContent(content: MCPContent[]): Array<{
     switch (item.type) {
       case 'text':
         return { type: 'text', text: (item as { text: string }).text };
-      case 'image':
+      case 'image': {
+        const mediaItem = item as MediaItem;
+        const data = mediaItem.data || mediaItem.source?.data;
+        if (data) {
+          return {
+            type: 'image',
+            image: data,
+            mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
+          };
+        }
+
+        const uri = mediaItem.uri || mediaItem.source?.uri;
         return {
-          type: 'image',
-          image: (item as MediaItem).data || (item as MediaItem).source?.data,
-          mimeType:
-            (item as MediaItem).mimeType ||
-            (item as MediaItem).source?.mimeType,
+          type: 'text',
+          text: `[unresolved image omitted from multimodal request: ${uri || 'missing-uri'}]`,
         };
-      case 'audio':
+      }
+      case 'audio': {
+        const mediaItem = item as MediaItem;
+        const data = mediaItem.data || mediaItem.source?.data;
+        if (data) {
+          return {
+            type: 'audio',
+            audio: data,
+            mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
+          };
+        }
+
+        const uri = mediaItem.uri || mediaItem.source?.uri;
         return {
-          type: 'audio',
-          audio: (item as MediaItem).data || (item as MediaItem).source?.data,
-          mimeType:
-            (item as MediaItem).mimeType ||
-            (item as MediaItem).source?.mimeType,
+          type: 'text',
+          text: `[unresolved audio omitted from multimodal request: ${uri || 'missing-uri'}]`,
         };
+      }
       default:
         return { type: 'text', text: `[${item.type}]` };
     }

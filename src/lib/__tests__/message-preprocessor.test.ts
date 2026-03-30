@@ -8,6 +8,7 @@ import {
 import type { Message, AttachmentReference } from '@/models/chat';
 import type { MCPTextContent } from '@/lib/mcp/protocol/content';
 import * as loggerModule from '../logger';
+import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
 
 // Mock the logger
 vi.mock('../logger', () => {
@@ -29,6 +30,10 @@ vi.mock('../logger', () => {
     _mockWarn: warn,
   };
 });
+
+vi.mock('@/lib/backend/workspace', () => ({
+  readLocalFileAsBase64: vi.fn(),
+}));
 
 describe('message-preprocessor', () => {
   let mockLogger: { debug: Mock; info: Mock; error: Mock; warn: Mock };
@@ -484,6 +489,121 @@ describe('message-preprocessor', () => {
       const textBlocks = result.content.filter((c) => c.type === 'text') as MCPTextContent[];
       const hasHintBlock = textBlocks.some((c) => c.text.includes('<attachment_'));
       expect(hasHintBlock).toBe(true);
+    });
+
+    it('materializes the latest inline media URI and summarizes older media messages', async () => {
+      const olderMessage = createMessage({
+        content: [
+          { type: 'text', text: 'Earlier image' },
+          {
+            type: 'image',
+            uri: 'data:image/png;base64,b2xkZXI=',
+            mimeType: 'image/png',
+          },
+        ],
+      });
+      const latestMessage = createMessage({
+        content: [
+          { type: 'text', text: 'Latest image' },
+          {
+            type: 'image',
+            uri: 'data:image/png;base64,bGF0ZXN0',
+            mimeType: 'image/png',
+          },
+        ],
+      });
+
+      const [processedOlder, processedLatest] = await prepareMessagesForLLM([
+        olderMessage,
+        latestMessage,
+      ]);
+
+      expect(processedOlder.content.filter((c) => c.type === 'image')).toHaveLength(0);
+      const olderTextBlocks = processedOlder.content.filter(
+        (c) => c.type === 'text',
+      ) as MCPTextContent[];
+      expect(
+        olderTextBlocks.some((c) => c.text.includes('<historical_media_0>')),
+      ).toBe(true);
+
+      const latestImageBlocks = processedLatest.content.filter(
+        (c) => c.type === 'image',
+      );
+      expect(latestImageBlocks).toHaveLength(1);
+      expect(latestImageBlocks[0]).toMatchObject({
+        data: 'bGF0ZXN0',
+        mimeType: 'image/png',
+      });
+    });
+
+    it('materializes latest file URIs through the backend instead of fetch(file://)', async () => {
+      vi.mocked(readLocalFileAsBase64).mockResolvedValue('ZmlsZS1ieXRlcw==');
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+      const latestMessage = createMessage({
+        content: [
+          { type: 'text', text: 'Latest image' },
+          {
+            type: 'image',
+            uri: 'file:///tmp/example.png',
+            mimeType: 'image/png',
+          },
+        ],
+      });
+
+      const [processedLatest] = await prepareMessagesForLLM([latestMessage]);
+
+      expect(readLocalFileAsBase64).toHaveBeenCalledWith(
+        'session-1',
+        'file:///tmp/example.png',
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(processedLatest.content.filter((c) => c.type === 'image')[0]).toMatchObject({
+        data: 'ZmlsZS1ieXRlcw==',
+        mimeType: 'image/png',
+      });
+    });
+
+    it('materializes inline attachment URIs only for the latest media message', async () => {
+      const olderMessage = createMessage({
+        attachments: [
+          makeInlineImageAttachment({
+            filename: 'older.png',
+            inlineContent: {
+              type: 'image',
+              uri: 'data:image/png;base64,b2xk',
+              mimeType: 'image/png',
+            },
+          }),
+        ],
+      });
+      const latestMessage = createMessage({
+        attachments: [
+          makeInlineImageAttachment({
+            filename: 'latest.png',
+            inlineContent: {
+              type: 'image',
+              uri: 'data:image/png;base64,bmV3',
+              mimeType: 'image/png',
+            },
+          }),
+        ],
+      });
+
+      const [processedOlder, processedLatest] = await prepareMessagesForLLM([
+        olderMessage,
+        latestMessage,
+      ]);
+
+      expect(processedOlder.content.filter((c) => c.type === 'image')).toHaveLength(0);
+      const processedLatestImages = processedLatest.content.filter(
+        (c) => c.type === 'image',
+      );
+      expect(processedLatestImages).toHaveLength(1);
+      expect(processedLatestImages[0]).toMatchObject({
+        data: 'bmV3',
+        mimeType: 'image/png',
+      });
     });
   });
 });

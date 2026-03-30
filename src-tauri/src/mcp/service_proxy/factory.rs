@@ -4,7 +4,7 @@ use crate::repositories::session_repository::SessionRepository;
 use crate::session::SessionManager;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 /// Factory function to create session-bound builtin server instances
 ///
@@ -49,9 +49,22 @@ pub(crate) async fn create_builtin_server(
         BuiltinServiceId::Planning => Ok(Some(Box::new(
             crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
-        BuiltinServiceId::Agent => Ok(Some(Box::new(
-            crate::mcp::builtin::agent::AgentServer::new(_session_id, _db.clone()).await?,
-        ))),
+        BuiltinServiceId::Agent => {
+            let agent_manager = app_handle.as_ref().map(|h| {
+                h.state::<crate::agent::AgentSessionManager>()
+                    .inner()
+                    .clone()
+            });
+
+            Ok(Some(Box::new(
+                crate::mcp::builtin::agent::AgentServer::new(
+                    _session_id,
+                    _db.clone(),
+                    agent_manager,
+                )
+                .await?,
+            )))
+        }
         BuiltinServiceId::Scratchpad => Ok(Some(Box::new(
             crate::mcp::builtin::scratchpad::ScratchpadServer::new(_session_id, _db).await?,
         ))),

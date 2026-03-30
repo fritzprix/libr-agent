@@ -1,3 +1,4 @@
+pub use crate::agent::types::CreateSessionRequest;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -7,40 +8,48 @@ pub struct HealthResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSessionRequest {
-    pub name: Option<String>,
-    pub assistant_id: String, // Replaces agent_config
-    pub workspace_path: Option<String>,
-    pub request: String,
-    pub parent_session_id: Option<String>,
-    pub max_depth: Option<u32>,
-    pub max_fanout: Option<u32>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSessionResponse {
-    pub id: String,
-    pub name: Option<String>,
-    pub status: String,
-    pub parent_session_id: Option<String>,
-    pub lineage_id: String,
-    pub depth: u32,
-    pub max_depth: Option<u32>,
-    pub max_fanout: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct SendMessageRequest {
     pub content: String,
     pub source: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InjectChannelRequest {
+    pub server_name: String,
+    pub content: String,
+    #[serde(default)]
+    pub meta: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelPermissionRequestBody {
+    pub request_id: String,
+    pub behavior: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct SendMessageResponse {
     pub id: String,
     pub status: String, // "processed" or "queued"
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoRouteChannelResponse {
+    pub id: String,
+    pub session_id: String,
+    pub session_name: String,
+    pub status: String, // "processed" or "queued"
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelPermissionResponse {
+    pub request_id: String,
+    pub tool_call_id: String,
+    pub approved: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,16 +60,6 @@ pub struct ErrorResponse {
 #[derive(Debug, Deserialize)]
 pub struct GetMessagesQuery {
     pub limit: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionLineageMeta {
-    pub parent_session_id: Option<String>,
-    pub lineage_id: String,
-    pub depth: u32,
-    pub max_depth: Option<u32>,
-    pub max_fanout: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]

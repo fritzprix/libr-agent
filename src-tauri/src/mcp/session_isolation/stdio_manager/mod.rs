@@ -1,6 +1,6 @@
 use super::process::MCPProcess;
 use crate::mcp::session_isolation_config::SessionIsolationConfig;
-use crate::mcp::types::MCPServerConfig;
+use crate::mcp::types::{ChannelServerMetadata, MCPServerConfig};
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -41,6 +41,9 @@ pub struct SessionMCPManager {
     /// Cancellation tokens for active calls.
     pub(crate) active_call_tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
 
+    /// Channel metadata discovered from initialize responses of external servers.
+    pub(crate) channel_metadata: Arc<RwLock<HashMap<String, ChannelServerMetadata>>>,
+
     /// Workspace directory for the session.
     /// External MCP child processes no longer use this as forced CWD.
     pub(crate) workspace_dir: std::path::PathBuf,
@@ -50,5 +53,33 @@ impl SessionMCPManager {
     /// Checks if a server is managed by this session manager
     pub fn has_server(&self, server_name: &str) -> bool {
         self.server_configs.contains_key(server_name)
+    }
+
+    pub async fn list_channel_metadata(&self) -> Vec<ChannelServerMetadata> {
+        self.channel_metadata
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) async fn update_channel_metadata(
+        &self,
+        server_name: &str,
+        peer_info: Option<&rmcp::model::ServerInfo>,
+    ) {
+        let mut metadata = self.channel_metadata.write().await;
+
+        if let Some(channel) =
+            crate::mcp::session_isolation::channel_metadata::extract_channel_server_metadata(
+                server_name,
+                peer_info,
+            )
+        {
+            metadata.insert(server_name.to_string(), channel);
+        } else {
+            metadata.remove(server_name);
+        }
     }
 }

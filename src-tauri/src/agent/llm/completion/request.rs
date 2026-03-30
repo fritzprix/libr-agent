@@ -13,7 +13,9 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use crate::agent::llm::prompt::build_session_system_prompt_split;
-use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType, CompletionRequest};
+use crate::agent::llm::types::{
+    AgentRuntimeError, AgentRuntimeErrorType, CompactionParentRequest, CompletionRequest,
+};
 
 use super::compaction::{
     find_preflight_compaction_split_index, should_trigger_background_compaction,
@@ -572,6 +574,13 @@ pub async fn request_llm_completion(
 
     let mut final_messages = messages.clone();
     let mut context_usage = None;
+    let mut compaction_parent_request = Some(CompactionParentRequest {
+        model: model.clone(),
+        provider: provider.clone(),
+        system_prompt: system_prompt.clone(),
+        session_context: session_context.clone(),
+        available_tools: available_tools.clone(),
+    });
 
     let combined_system_prompt = match (&system_prompt, &session_context) {
         (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
@@ -644,6 +653,7 @@ pub async fn request_llm_completion(
                 &session_id,
                 &session_name,
                 &messages,
+                compaction_parent_request.clone(),
             )
             .await?
             {
@@ -696,8 +706,11 @@ pub async fn request_llm_completion(
                 &session_id,
                 &session_name,
                 &messages,
-                &compact_in_flight_arc,
-                &last_compacted_tail_id_arc,
+                compaction_parent_request.clone(),
+                &super::compaction::BackgroundCompactionHandles {
+                    compact_in_flight_arc: compact_in_flight_arc.clone(),
+                    last_compacted_tail_id_arc: last_compacted_tail_id_arc.clone(),
+                },
             )
             .await?;
         }
@@ -760,6 +773,14 @@ pub async fn request_llm_completion(
         );
     }
 
+    compaction_parent_request = Some(CompactionParentRequest {
+        model: model.clone(),
+        provider: provider.clone(),
+        system_prompt: system_prompt.clone(),
+        session_context: session_context.clone(),
+        available_tools: available_tools.clone(),
+    });
+
     // 4. Generate response message ID and store in session for matching
     let response_message_id = cuid2::create_id();
     {
@@ -767,6 +788,8 @@ pub async fn request_llm_completion(
         if let Some(session) = active.get(&session_id) {
             let mut expected_id = session.expected_response_id.write().await;
             *expected_id = Some(response_message_id.clone());
+            let mut last_completion_request = session.last_completion_request.write().await;
+            *last_completion_request = compaction_parent_request.clone();
         }
     }
 

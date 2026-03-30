@@ -33,6 +33,13 @@ interface CompactPayload {
   messages: Array<Message | RustMessage>;
   fromId: string;
   toId: string;
+  parentRequest?: {
+    model: string;
+    provider: string;
+    systemPrompt?: string;
+    sessionContext?: string;
+    availableTools?: Array<{ name: string }>;
+  };
 }
 
 interface Settings {
@@ -57,7 +64,12 @@ async function handleCompactEvent(
   ) => {
     compact: (
       messages: Message[],
-      opts: { modelName: string },
+      opts: {
+        modelName: string;
+        systemPrompt?: string;
+        sessionContext?: string;
+        availableTools?: Array<{ name: string }>;
+      },
     ) => Promise<string>;
   },
   handleCompactResponse: (
@@ -80,10 +92,10 @@ async function handleCompactEvent(
     return;
   }
 
-  const provider = settings.preferredModel.provider;
+  const provider = payload.parentRequest?.provider ?? settings.preferredModel.provider;
   const providerConfig = settings.serviceConfigs?.[provider] ?? {};
   const apiKey = providerConfig.apiKey ?? '';
-  const model = settings.preferredModel.model;
+  const model = payload.parentRequest?.model ?? settings.preferredModel.model;
   const normalizedMessages = messages.map((message) =>
     normalizeRustMessage(message),
   );
@@ -92,6 +104,9 @@ async function handleCompactEvent(
     const service = getService(provider, apiKey, providerConfig);
     const summary = await service.compact(normalizedMessages, {
       modelName: model,
+      systemPrompt: payload.parentRequest?.systemPrompt,
+      sessionContext: payload.parentRequest?.sessionContext,
+      availableTools: payload.parentRequest?.availableTools,
     });
     await handleCompactResponse(sessionId, fromId, toId, summary);
     setCompactedRangeForSession(sessionId, { fromId, toId });
@@ -286,6 +301,56 @@ describe('compact request handler', () => {
     );
 
     expect(compactService).toHaveBeenCalledWith(MESSAGES, { modelName: 'gpt-4o' });
+  });
+
+  it('reuses parent request provider, model, and prompt layout for compaction', async () => {
+    const compactService = vi.fn().mockResolvedValue('summary');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
+    const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
+    const handleCompactError = vi.fn().mockResolvedValue(undefined);
+    const resetContextUsageForSession = vi.fn();
+    const setCompactedRangeForSession = vi.fn();
+
+    await handleCompactEvent(
+      {
+        ...DEFAULT_PAYLOAD,
+        parentRequest: {
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-6',
+          systemPrompt: 'Stable system prompt',
+          sessionContext: 'Volatile context',
+          availableTools: [{ name: 'workspace__readFile' }],
+        },
+      },
+      {
+        preferredModel: { provider: 'openai', model: 'gpt-4o' },
+        serviceConfigs: {
+          openai: { apiKey: 'sk-openai' },
+          anthropic: { apiKey: 'sk-anthropic' },
+        },
+      },
+      getService,
+      handleCompactResponse,
+      handleCompactError,
+      resetContextUsageForSession,
+      setCompactedRangeForSession,
+    );
+
+    expect(getService).toHaveBeenCalledWith(
+      'anthropic',
+      'sk-anthropic',
+      { apiKey: 'sk-anthropic' },
+    );
+    expect(compactService).toHaveBeenCalledWith(
+      MESSAGES,
+      expect.objectContaining({
+        modelName: 'claude-sonnet-4-6',
+        systemPrompt: 'Stable system prompt',
+        sessionContext: 'Volatile context',
+        availableTools: [{ name: 'workspace__readFile' }],
+      }),
+    );
+    expect(handleCompactError).not.toHaveBeenCalled();
   });
 
   it('normalizes Rust message tool fields before compacting', async () => {

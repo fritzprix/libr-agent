@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use super::context::{load_context_management_settings, uses_compaction_strategy};
-use crate::agent::llm::types::CompactRequest;
+use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
 
 pub fn should_trigger_background_compaction(
     current_tokens: usize,
@@ -17,6 +17,31 @@ pub fn should_trigger_background_compaction(
     uses_compaction_strategy(context_strategy)
         && current_tokens
             > crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit)
+}
+
+async fn resolve_parent_request(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    explicit_parent_request: Option<CompactionParentRequest>,
+) -> Option<CompactionParentRequest> {
+    if explicit_parent_request.is_some() {
+        return explicit_parent_request;
+    }
+
+    let request_handle = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.last_completion_request.clone())
+    }?;
+
+    let request = request_handle.read().await.clone();
+    request
+}
+
+pub(crate) struct BackgroundCompactionHandles {
+    pub(crate) compact_in_flight_arc: Arc<AtomicBool>,
+    pub(crate) last_compacted_tail_id_arc: Arc<RwLock<Option<String>>>,
 }
 
 /// Determines the compactable prefix for preflight compaction.
@@ -51,15 +76,16 @@ pub(crate) async fn trigger_background_compaction(
     session_id: &str,
     session_name: &str,
     messages: &[Message],
-    compact_in_flight_arc: &Arc<AtomicBool>,
-    last_compacted_tail_id_arc: &Arc<RwLock<Option<String>>>,
+    parent_request: Option<CompactionParentRequest>,
+    handles: &BackgroundCompactionHandles,
 ) -> Result<bool, String> {
     let split_idx = crate::agent::llm::context_selector::find_compaction_split_index(messages);
     if split_idx == 0 {
         return Ok(false);
     }
 
-    let claimed_in_flight = compact_in_flight_arc
+    let claimed_in_flight = handles
+        .compact_in_flight_arc
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok();
 
@@ -69,11 +95,11 @@ pub(crate) async fn trigger_background_compaction(
     }
 
     let current_tail_id = messages.last().map(|m| m.id.clone());
-    let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
+    let last_compacted_tail = handles.last_compacted_tail_id_arc.read().await.clone();
     let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
 
     if same_tail {
-        compact_in_flight_arc.store(false, Ordering::SeqCst);
+        handles.compact_in_flight_arc.store(false, Ordering::SeqCst);
         log::debug!(
             "⏭️ Compaction skipped (same tail): session={}, tail={}",
             session_id,
@@ -92,7 +118,7 @@ pub(crate) async fn trigger_background_compaction(
         .map(|m| m.id.clone())
         .unwrap_or_default();
 
-    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+    *handles.last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let started_at_ms = chrono::Utc::now().timestamp_millis();
     let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
@@ -110,6 +136,7 @@ pub(crate) async fn trigger_background_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
+        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
         resume_completion_after_compact: false,
     };
     let log_from_id = compact_event.from_id.clone();
@@ -165,15 +192,17 @@ pub async fn maybe_trigger_post_idle_compaction(
         return Ok(false);
     }
 
-    let (compact_context_arc, compact_in_flight_arc, last_compacted_tail_id_arc) = {
+    let (compact_context_arc, handles) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         (
             session.compact_context.clone(),
-            session.compact_in_flight.clone(),
-            session.last_compacted_tail_id.clone(),
+            BackgroundCompactionHandles {
+                compact_in_flight_arc: session.compact_in_flight.clone(),
+                last_compacted_tail_id_arc: session.last_compacted_tail_id.clone(),
+            },
         )
     };
 
@@ -191,8 +220,8 @@ pub async fn maybe_trigger_post_idle_compaction(
         session_id,
         session_name,
         messages,
-        &compact_in_flight_arc,
-        &last_compacted_tail_id_arc,
+        None,
+        &handles,
     )
     .await?;
 
@@ -214,6 +243,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
     session_id: &str,
     session_name: &str,
     messages: &[Message],
+    parent_request: Option<CompactionParentRequest>,
 ) -> Result<bool, String> {
     if messages.len() <= 1 {
         return Ok(false);
@@ -302,6 +332,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
+        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
         resume_completion_after_compact: true,
     };
     let log_from_id = compact_event.from_id.clone();
@@ -370,6 +401,7 @@ pub async fn trigger_preflight_compaction_for_session(
         session_id,
         &session_name,
         &merged_messages,
+        None,
     )
     .await
 }

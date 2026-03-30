@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use super::builtin::BuiltinMCPServer;
 use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
-use super::types::{MCPResponse, MCPTool, ServiceContext};
+use super::types::{ContextVolatility, MCPResponse, MCPTool, ServiceContext};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::session::SessionManager;
 
@@ -644,11 +644,15 @@ impl MCPServiceProxy {
             })
             .collect();
 
-        let contexts: HashMap<String, ServiceContext> = futures::future::join_all(futures)
+        let mut contexts: HashMap<String, ServiceContext> = futures::future::join_all(futures)
             .await
             .into_iter()
             .flatten()
             .collect();
+
+        if let Some(channel_context) = self.get_channel_service_context().await {
+            contexts.insert("external_channels".to_string(), channel_context);
+        }
 
         log::debug!(
             "Collected {} service contexts for session '{}' (parallel)",
@@ -657,5 +661,35 @@ impl MCPServiceProxy {
         );
 
         contexts
+    }
+
+    async fn get_channel_service_context(&self) -> Option<ServiceContext> {
+        let mut channels = self.session_managers.stdio.list_channel_metadata().await;
+        channels.extend(self.session_managers.http.list_channel_metadata().await);
+
+        if channels.is_empty() {
+            return None;
+        }
+
+        channels.sort_by(|left, right| left.server_name.cmp(&right.server_name));
+
+        let mut prompt = "\n\n## Channels\n".to_string();
+
+        for channel in channels {
+            prompt.push_str(&format!("\n### {}\n", channel.server_name));
+            prompt.push_str("- This external MCP server can proactively inject channel messages into the session.\n");
+
+            if channel.supports_permission_relay {
+                prompt.push_str("- It also advertises remote permission relay support.\n");
+            }
+
+            if let Some(instructions) = channel.instructions.as_deref() {
+                prompt.push_str("- Channel-specific instructions:\n");
+                prompt.push_str(instructions.trim());
+                prompt.push('\n');
+            }
+        }
+
+        Some(ServiceContext::new(prompt).with_volatility(ContextVolatility::Stable))
     }
 }

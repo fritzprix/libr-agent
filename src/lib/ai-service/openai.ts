@@ -108,11 +108,26 @@ interface OpenAIMessageFingerprint {
   role: string;
   contentLength: number;
   contentHash: string;
+  contentTag?: 'regular' | 'session_context' | 'tool_result_media';
   toolCallCount: number;
   toolCallNames?: string[];
   toolCallHash?: string;
   toolCallIdHash?: string;
   toolCallId?: string;
+}
+
+interface OpenAIPromptSnapshot {
+  mode: 'stream' | 'non-stream';
+  model: string;
+  systemPromptLength: number;
+  systemPromptHash: string;
+  toolsHash: string;
+  toolCount: number;
+  messagesFingerprintHash: string;
+  messageFingerprints: OpenAIMessageFingerprint[];
+  promptCacheKey?: string;
+  promptCacheRetention?: 'in_memory' | '24h';
+  compatibleCachePrompt: boolean;
 }
 
 type OpenAIStreamingRequest =
@@ -136,6 +151,7 @@ export class OpenAIService extends BaseAIService<
   OpenAI.Chat.ChatCompletionTool
 > {
   protected openai: OpenAI;
+  private lastPromptSnapshots = new Map<'stream' | 'non-stream', OpenAIPromptSnapshot>();
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
   private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
@@ -253,11 +269,7 @@ export class OpenAIService extends BaseAIService<
       prompt_cache_key?: string;
       prompt_cache_retention?: 'in_memory' | '24h';
     },
-  >(
-    request: T,
-    config: AIServiceConfig,
-    automaticPromptCacheKey?: string,
-  ): T {
+  >(request: T, config: AIServiceConfig, automaticPromptCacheKey?: string): T {
     if (!this.isOfficialOpenAIEndpoint(config)) {
       return request;
     }
@@ -280,11 +292,7 @@ export class OpenAIService extends BaseAIService<
 
   private withPromptCaching<
     T extends OpenAIStreamingRequest | OpenAINonStreamingRequest,
-  >(
-    request: T,
-    config: AIServiceConfig,
-    automaticPromptCacheKey?: string,
-  ): T {
+  >(request: T, config: AIServiceConfig, automaticPromptCacheKey?: string): T {
     const withOfficialPromptCaching = this.withOfficialPromptCaching(
       request,
       config,
@@ -332,28 +340,183 @@ export class OpenAIService extends BaseAIService<
     return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   }
 
+  private contentToFingerprintString(content: unknown): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => {
+          if (
+            typeof part === 'object' &&
+            part !== null &&
+            'type' in part &&
+            part.type === 'text' &&
+            'text' in part &&
+            typeof part.text === 'string'
+          ) {
+            return part.text;
+          }
+          return stableStringify(part);
+        })
+        .join('\n');
+    }
+
+    return stableStringify(content ?? '');
+  }
+
+  private classifyMessageContentTag(
+    role: string,
+    content: string,
+  ): OpenAIMessageFingerprint['contentTag'] {
+    if (
+      role === 'user' &&
+      content.startsWith(
+        '[Current session context — background reference only',
+      )
+    ) {
+      return 'session_context';
+    }
+
+    if (
+      role === 'user' &&
+      content.startsWith('Tool result media from tool_call_id=')
+    ) {
+      return 'tool_result_media';
+    }
+
+    return 'regular';
+  }
+
+  private buildPromptSnapshot(args: {
+    mode: 'stream' | 'non-stream';
+    model: string;
+    systemPrompt?: string;
+    request: {
+      prompt_cache_key?: string;
+      prompt_cache_retention?: 'in_memory' | '24h';
+      cache_prompt?: boolean;
+    };
+    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+    tools?: OpenAIChatCompletionTool[];
+  }): OpenAIPromptSnapshot {
+    const messageFingerprints = args.messages.map((message) =>
+      this.fingerprintOpenAIMessage(message),
+    );
+    const serializedFingerprints = stableStringify(messageFingerprints);
+    const toolsPayload = stableStringify(args.tools ?? []);
+
+    return {
+      mode: args.mode,
+      model: args.model,
+      systemPromptLength: args.systemPrompt?.length ?? 0,
+      systemPromptHash: stableHashKeyPart(args.systemPrompt ?? ''),
+      toolsHash: stableHashKeyPart(toolsPayload),
+      toolCount: args.tools?.length ?? 0,
+      messagesFingerprintHash: stableHashKeyPart(serializedFingerprints),
+      messageFingerprints,
+      promptCacheKey: args.request.prompt_cache_key,
+      promptCacheRetention: args.request.prompt_cache_retention,
+      compatibleCachePrompt: args.request.cache_prompt ?? false,
+    };
+  }
+
+  private logPromptDrift(snapshot: OpenAIPromptSnapshot): void {
+    const previous = this.lastPromptSnapshots.get(snapshot.mode);
+    this.lastPromptSnapshots.set(snapshot.mode, snapshot);
+
+    if (!previous) {
+      return;
+    }
+
+    const minMessageCount = Math.min(
+      previous.messageFingerprints.length,
+      snapshot.messageFingerprints.length,
+    );
+    let firstDivergenceIndex = -1;
+    for (let index = 0; index < minMessageCount; index += 1) {
+      if (
+        stableStringify(previous.messageFingerprints[index]) !==
+        stableStringify(snapshot.messageFingerprints[index])
+      ) {
+        firstDivergenceIndex = index;
+        break;
+      }
+    }
+
+    if (
+      firstDivergenceIndex === -1 &&
+      previous.messageFingerprints.length !== snapshot.messageFingerprints.length
+    ) {
+      firstDivergenceIndex = minMessageCount;
+    }
+
+    const firstDivergenceComponent =
+      previous.model !== snapshot.model
+        ? 'model'
+        : previous.systemPromptHash !== snapshot.systemPromptHash
+          ? 'system_prompt'
+          : previous.toolsHash !== snapshot.toolsHash
+            ? 'tools'
+            : firstDivergenceIndex >= 0
+              ? 'messages'
+              : 'none';
+
+    const commonPrefixMessages =
+      firstDivergenceComponent === 'messages'
+        ? firstDivergenceIndex
+        : Math.min(
+            previous.messageFingerprints.length,
+            snapshot.messageFingerprints.length,
+          );
+
+    this.logger.debug('OpenAI prompt cache drift', {
+      mode: snapshot.mode,
+      previousModel: previous.model,
+      model: snapshot.model,
+      previousPromptCacheKey: previous.promptCacheKey,
+      promptCacheKey: snapshot.promptCacheKey,
+      firstDivergenceComponent,
+      firstDivergenceIndex:
+        firstDivergenceComponent === 'messages' ? firstDivergenceIndex : undefined,
+      commonPrefixMessages,
+      previousMessageCount: previous.messageFingerprints.length,
+      messageCount: snapshot.messageFingerprints.length,
+      systemPromptChanged: previous.systemPromptHash !== snapshot.systemPromptHash,
+      toolsChanged: previous.toolsHash !== snapshot.toolsHash,
+      messagesChanged:
+        previous.messagesFingerprintHash !== snapshot.messagesFingerprintHash,
+      previousFingerprintHash: previous.messagesFingerprintHash,
+      fingerprintHash: snapshot.messagesFingerprintHash,
+      previousMessageAtDivergence:
+        firstDivergenceIndex >= 0
+          ? previous.messageFingerprints[firstDivergenceIndex]
+          : undefined,
+      currentMessageAtDivergence:
+        firstDivergenceIndex >= 0
+          ? snapshot.messageFingerprints[firstDivergenceIndex]
+          : undefined,
+    });
+  }
+
   private fingerprintOpenAIMessage(
     message: OpenAI.Chat.Completions.ChatCompletionMessageParam,
   ): OpenAIMessageFingerprint {
     if (message.role === 'tool') {
-      const content =
-        typeof message.content === 'string'
-          ? message.content
-          : stableStringify(message.content ?? '');
+      const content = this.contentToFingerprintString(message.content);
       return {
         role: message.role,
         contentLength: content.length,
         contentHash: stableHashKeyPart(content),
+        contentTag: this.classifyMessageContentTag(message.role, content),
         toolCallCount: 0,
         toolCallId: message.tool_call_id,
         toolCallIdHash: stableHashKeyPart(message.tool_call_id ?? ''),
       };
     }
 
-    const content =
-      typeof message.content === 'string'
-        ? message.content
-        : stableStringify(message.content ?? '');
+    const content = this.contentToFingerprintString(message.content);
     const toolCalls =
       'tool_calls' in message && Array.isArray(message.tool_calls)
         ? message.tool_calls
@@ -363,17 +526,17 @@ export class OpenAIService extends BaseAIService<
       role: message.role,
       contentLength: content.length,
       contentHash: stableHashKeyPart(content),
+      contentTag: this.classifyMessageContentTag(message.role, content),
       toolCallCount: toolCalls.length,
-      toolCallNames: toolCalls
-        .map((toolCall) =>
-          'function' in toolCall &&
-          typeof toolCall.function === 'object' &&
-          toolCall.function !== null &&
-          'name' in toolCall.function &&
-          typeof toolCall.function.name === 'string'
-            ? toolCall.function.name
-            : 'custom',
-        ),
+      toolCallNames: toolCalls.map((toolCall) =>
+        'function' in toolCall &&
+        typeof toolCall.function === 'object' &&
+        toolCall.function !== null &&
+        'name' in toolCall.function &&
+        typeof toolCall.function.name === 'string'
+          ? toolCall.function.name
+          : 'custom',
+      ),
       toolCallHash: stableHashKeyPart(stableStringify(toolCalls)),
     };
   }
@@ -390,11 +553,7 @@ export class OpenAIService extends BaseAIService<
     messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
     tools?: OpenAIChatCompletionTool[];
   }): void {
-    const messageFingerprints = args.messages.map((message) =>
-      this.fingerprintOpenAIMessage(message),
-    );
-    const serializedFingerprints = stableStringify(messageFingerprints);
-    const toolsPayload = stableStringify(args.tools ?? []);
+    const snapshot = this.buildPromptSnapshot(args);
 
     this.logger.debug('OpenAI prompt diagnostics', {
       mode: args.mode,
@@ -402,14 +561,15 @@ export class OpenAIService extends BaseAIService<
       promptCacheKey: args.request.prompt_cache_key,
       promptCacheRetention: args.request.prompt_cache_retention,
       compatibleCachePrompt: args.request.cache_prompt ?? false,
-      systemPromptLength: args.systemPrompt?.length ?? 0,
-      systemPromptHash: stableHashKeyPart(args.systemPrompt ?? ''),
-      toolCount: args.tools?.length ?? 0,
-      toolsHash: stableHashKeyPart(toolsPayload),
-      messageCount: args.messages.length,
-      messagesFingerprintHash: stableHashKeyPart(serializedFingerprints),
-      messageFingerprints,
+      systemPromptLength: snapshot.systemPromptLength,
+      systemPromptHash: snapshot.systemPromptHash,
+      toolCount: snapshot.toolCount,
+      toolsHash: snapshot.toolsHash,
+      messageCount: snapshot.messageFingerprints.length,
+      messagesFingerprintHash: snapshot.messagesFingerprintHash,
+      messageFingerprints: snapshot.messageFingerprints,
     });
+    this.logPromptDrift(snapshot);
   }
 
   private logFetchDiagnostics(args: {
@@ -516,22 +676,19 @@ export class OpenAIService extends BaseAIService<
       return { systemPrompt, sessionContext: undefined, messages };
     }
 
-    // Inject as an ephemeral user message at the tail of the conversation.
-    // The bracketed header tells the model this is injected context, not user
-    // input; it responds to the preceding conversation, not this block.
-    const ephemeralMessage: Message = {
-      id: `ctx_${Date.now()}`,
-      sessionId: '',
-      threadId: '',
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `[Current session context — background reference only, do not respond to this block]\n\n${sessionContext}\n\n[End of session context]`,
-        },
-      ],
-      createdAt: new Date(),
-    };
+    const ephemeralMessage = this.createSyntheticSessionContextMessage(
+      sessionContext,
+      messages,
+      {
+        idPrefix: 'openai-session-context',
+        contentText: this.formatSessionContextAsBackgroundReference(
+          sessionContext,
+        ),
+        sessionIdFallback: '',
+        threadIdFallback: '',
+        createdAt: new Date(),
+      },
+    );
 
     logger.debug('Injecting session context as ephemeral tail message', {
       sessionContextLength: sessionContext.length,

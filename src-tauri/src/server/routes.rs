@@ -50,6 +50,38 @@ pub fn get_routes(
         .and(warp::body::json())
         .and_then(handlers::send_message);
 
+    // POST /api/sessions/:id/channel
+    let inject_channel_message = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("channel"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(warp::body::json())
+        .and_then(handlers::inject_channel_message);
+
+    // POST /api/channel
+    let inject_channel_message_auto = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("channel"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(warp::body::json())
+        .and_then(handlers::inject_channel_message_auto);
+
+    // POST /api/sessions/:id/channel/permission
+    let respond_channel_permission = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("channel"))
+        .and(warp::path("permission"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(warp::body::json())
+        .and_then(handlers::respond_channel_permission);
+
     // POST /api/sessions/:id/resume
     let resume_session = warp::post()
         .and(warp::path("api"))
@@ -128,6 +160,9 @@ pub fn get_routes(
         .or(get_session)
         .or(get_messages)
         .or(send_message)
+        .or(inject_channel_message_auto)
+        .or(inject_channel_message)
+        .or(respond_channel_permission)
         .or(resume_session)
         .or(terminate_session)
         .or(get_child_sessions)

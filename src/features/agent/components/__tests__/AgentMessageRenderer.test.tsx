@@ -4,6 +4,11 @@ import '@testing-library/jest-dom/vitest';
 import { AgentMessageRenderer } from '../AgentMessageRenderer';
 import type { MCPContent } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
+import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
+
+vi.mock('@/lib/backend/workspace', () => ({
+  readLocalFileAsBase64: vi.fn(),
+}));
 
 // Mock contexts and hooks
 vi.mock('@/hooks/use-rust-backend', () => ({
@@ -99,5 +104,37 @@ describe('AgentMessageRenderer', () => {
     expect(screen.getByText('test_tool')).toBeInTheDocument();
     // Check if "Tool Executions" header exists (from AgentToolCallGroup)
     expect(screen.getByText(/Tool Executions/)).toBeInTheDocument();
+  });
+
+  it('lazily materializes file URIs to data URLs for image rendering', async () => {
+    vi.mocked(readLocalFileAsBase64).mockResolvedValue('dG9vbC1pbWFnZQ==');
+    const content: MCPContent[] = [
+      {
+        type: 'image',
+        uri: 'file:///tmp/tool-output.png',
+        mimeType: 'image/png',
+      },
+    ];
+    const message = {
+      id: 'msg-1',
+      sessionId: 'test-session',
+      threadId: 'test-session',
+      role: 'assistant',
+      content,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Message;
+
+    render(<AgentMessageRenderer content={content} message={message} />);
+
+    const image = await screen.findByAltText('Tool output');
+    expect(readLocalFileAsBase64).toHaveBeenCalledWith(
+      'test-session',
+      'file:///tmp/tool-output.png',
+    );
+    expect(image).toHaveAttribute(
+      'src',
+      'data:image/png;base64,dG9vbC1pbWFnZQ==',
+    );
   });
 });

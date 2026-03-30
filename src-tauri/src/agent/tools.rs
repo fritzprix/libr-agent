@@ -3,15 +3,20 @@ use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::services::WorkspaceService;
+use base64::engine::general_purpose;
+use base64::Engine;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
+use url::Url;
 
 use crate::mcp::builtin::service_id::{BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES};
 
 pub const TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES: usize = 64 * 1024;
 const TOOL_RESULT_SPILLOVER_DIR: &str = ".libragent/tool-results";
+const TOOL_RESULT_MEDIA_DIR: &str = ".libragent/tool-results/media";
 
 /// Resolve any alias string (including legacy pre-0.6.0 names) to the current
 /// canonical service name.
@@ -341,6 +346,117 @@ pub async fn spill_oversized_tool_result_messages(
     Ok(processed_messages)
 }
 
+fn media_extension_for_mime(mime_type: &str) -> &'static str {
+    match mime_type {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        "image/svg+xml" => "svg",
+        "audio/mpeg" => "mp3",
+        "audio/wav" | "audio/x-wav" => "wav",
+        "audio/ogg" => "ogg",
+        "audio/aac" => "aac",
+        "audio/flac" => "flac",
+        "audio/webm" => "webm",
+        _ => "bin",
+    }
+}
+
+fn media_relative_path_from_bytes(bytes: &[u8], mime_type: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let digest = format!("{:x}", hasher.finalize());
+    format!(
+        "{}/{}.{}",
+        TOOL_RESULT_MEDIA_DIR,
+        digest,
+        media_extension_for_mime(mime_type)
+    )
+}
+
+async fn persist_tool_result_media(
+    session_id: &str,
+    bytes: &[u8],
+    mime_type: &str,
+) -> Result<String, String> {
+    let relative_path = media_relative_path_from_bytes(bytes, mime_type);
+    WorkspaceService::workspace_write_file(&relative_path, bytes, Some(session_id.to_string()))
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to persist tool-result media '{}' for session {}: {}",
+                relative_path, session_id, error
+            )
+        })?;
+
+    let session_manager = crate::session::get_session_manager()?;
+    let absolute_path = session_manager
+        .get_session_workspace_dir_by_id(session_id)
+        .join(&relative_path);
+
+    Url::from_file_path(&absolute_path)
+        .map(|url| url.to_string())
+        .map_err(|_| {
+            format!(
+                "Failed to convert persisted media path '{}' into file URL",
+                absolute_path.display()
+            )
+        })
+}
+
+pub async fn externalize_media_content_for_storage(
+    session_id: &str,
+    content: Vec<MCPContent>,
+) -> Result<Vec<MCPContent>, String> {
+    let mut next_content = Vec::with_capacity(content.len());
+
+    for item in content {
+        match item {
+            MCPContent::Image {
+                data: Some(data),
+                uri: _uri,
+                mime_type,
+            } => {
+                let bytes = general_purpose::STANDARD.decode(&data).map_err(|error| {
+                    format!(
+                        "Failed to decode image payload for session {}: {}",
+                        session_id, error
+                    )
+                })?;
+                let file_url = persist_tool_result_media(session_id, &bytes, &mime_type).await?;
+                next_content.push(MCPContent::Image {
+                    data: None,
+                    uri: Some(file_url),
+                    mime_type,
+                });
+            }
+            MCPContent::Audio {
+                data: Some(data),
+                uri: _uri,
+                mime_type,
+            } => {
+                let bytes = general_purpose::STANDARD.decode(&data).map_err(|error| {
+                    format!(
+                        "Failed to decode audio payload for session {}: {}",
+                        session_id, error
+                    )
+                })?;
+                let file_url = persist_tool_result_media(session_id, &bytes, &mime_type).await?;
+                next_content.push(MCPContent::Audio {
+                    data: None,
+                    uri: Some(file_url),
+                    mime_type,
+                });
+            }
+            other => next_content.push(other),
+        }
+    }
+
+    Ok(next_content)
+}
+
 /// Create a tool result message from strict MCP content
 pub fn create_tool_result_message_with_content(
     session_id: &str,
@@ -403,6 +519,18 @@ pub async fn handle_tool_result(
     tool_call_id: String,
     result: crate::commands::agent_commands::ToolExecutionResult,
 ) -> Result<Option<Vec<Message>>, String> {
+    let crate::commands::agent_commands::ToolExecutionResult {
+        success,
+        content,
+        mcp_content,
+        error,
+        is_error,
+    } = result;
+    let mcp_content = match mcp_content {
+        Some(content) => Some(externalize_media_content_for_storage(&session_id, content).await?),
+        None => None,
+    };
+
     log::debug!(
         "Tool result received for session {}, tool_call_id: {}",
         session_id,
@@ -437,8 +565,8 @@ pub async fn handle_tool_result(
                 }
 
                 // Create Tool Message using helper methods
-                let message = if result.is_error {
-                    if let Some(mcp_content) = result.mcp_content {
+                let message = if is_error {
+                    if let Some(mcp_content) = mcp_content {
                         // Prefer structured content (guided_error) over bare error string —
                         // the content array carries the full diagnosis the agent needs.
                         create_tool_result_message_with_content(
@@ -450,13 +578,12 @@ pub async fn handle_tool_result(
                         create_error_tool_result(
                             &session_id,
                             &tool_call_id,
-                            result
-                                .error
+                            error
                                 .as_deref()
                                 .unwrap_or("Tool execution failed without error message"),
                         )
                     }
-                } else if let Some(mcp_content) = result.mcp_content {
+                } else if let Some(mcp_content) = mcp_content {
                     // ✅ ALWAYS use structured content for successful tool calls
                     create_tool_result_message_with_content(&session_id, &tool_call_id, mcp_content)
                 } else {
@@ -466,7 +593,7 @@ pub async fn handle_tool_result(
                         session_id,
                         tool_call_id
                     );
-                    create_tool_result_message(&session_id, &tool_call_id, result.content.clone())
+                    create_tool_result_message(&session_id, &tool_call_id, content.clone())
                 };
 
                 pending.results.push(message);
@@ -477,7 +604,7 @@ pub async fn handle_tool_result(
                     let event = crate::agent::events::AgentEvent::ToolExecutionCompleted {
                         session_id: session_id.clone(),
                         tool_name: tool_name.clone(),
-                        success: !result.is_error,
+                        success: !is_error && success,
                     };
                     let _ = crate::agent::events::emit_agent_event(app_handle, event);
                 }

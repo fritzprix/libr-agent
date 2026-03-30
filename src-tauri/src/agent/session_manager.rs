@@ -1,11 +1,14 @@
+use crate::agent::channel_routing::{resolve_auto_routed_channel_target, ChannelRouteCandidate};
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
 use crate::agent::state::AgentSession;
+use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
     CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
+    SessionStatus,
 };
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -20,6 +23,7 @@ use tokio::sync::RwLock;
 /// - `workflow`: Task execution flow (start, stop, pause, resume)
 /// - `llm`: LLM interaction and response handling
 /// - `tools`: Tool execution and result handling
+#[derive(Clone)]
 pub struct AgentSessionManager {
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: AppHandle,
@@ -305,6 +309,25 @@ impl AgentSessionManager {
                             arguments: data.arguments.clone(),
                         },
                     );
+                    if let Some(request_id) = &data.request_id {
+                        evs.push(crate::agent::events::AgentEvent::ChannelPermissionRequest {
+                            session_id: session_id.to_string(),
+                            request_id: request_id.clone(),
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: data.tool_name.clone(),
+                            description: data.description.clone().unwrap_or_else(|| {
+                                crate::agent::tool_approvals::build_channel_permission_description(
+                                    &data.tool_name,
+                                    &data.arguments,
+                                )
+                            }),
+                            input_preview: data.input_preview.clone().unwrap_or_else(|| {
+                                crate::agent::tool_approvals::build_channel_permission_input_preview(
+                                    &data.arguments,
+                                )
+                            }),
+                        });
+                    }
                 }
             }
             evs
@@ -505,6 +528,82 @@ impl AgentSessionManager {
         Ok(())
     }
 
+    pub async fn inject_channel_notification(
+        &self,
+        session_id: String,
+        server_name: String,
+        notification: ChannelNotification,
+    ) -> Result<(String, bool), String> {
+        let session = self
+            .get_session(&session_id)
+            .await?
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let message = build_channel_message(
+            &session_id,
+            &server_name,
+            notification.content,
+            notification.meta,
+        );
+        let message_id = message.id.clone();
+
+        let should_trigger_workflow = !matches!(session.status, SessionStatus::Busy);
+
+        self.inject_messages(session_id, vec![message], should_trigger_workflow)
+            .await?;
+
+        Ok((message_id, should_trigger_workflow))
+    }
+
+    pub async fn resolve_channel_notification_target(
+        &self,
+        server_name: &str,
+    ) -> Result<ChannelRouteCandidate, String> {
+        let active_session_candidates = {
+            let active = self.active_sessions.read().await;
+            active
+                .iter()
+                .map(|(session_id, session)| ChannelRouteCandidate {
+                    session_id: session_id.clone(),
+                    session_name: session
+                        .metadata
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
+                    parent_session_id: session.metadata.parent_session_id.clone(),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut matching_candidates = Vec::new();
+        for candidate in active_session_candidates {
+            if self
+                .proxy_manager
+                .session_has_channel_server(&candidate.session_id, server_name)
+                .await
+            {
+                matching_candidates.push(candidate);
+            }
+        }
+
+        resolve_auto_routed_channel_target(server_name, matching_candidates)
+    }
+
+    pub async fn inject_channel_notification_auto(
+        &self,
+        server_name: String,
+        notification: ChannelNotification,
+    ) -> Result<(ChannelRouteCandidate, String, bool), String> {
+        let target = self
+            .resolve_channel_notification_target(&server_name)
+            .await?;
+        let (message_id, triggered) = self
+            .inject_channel_notification(target.session_id.clone(), server_name, notification)
+            .await?;
+
+        Ok((target, message_id, triggered))
+    }
+
     /// Handle tool execution result from frontend
     pub async fn handle_tool_result(
         &self,
@@ -537,6 +636,14 @@ impl AgentSessionManager {
             let mut approvals = session.pending_approvals.write().await;
             if let Some(data) = approvals.remove(tool_call_id) {
                 let _ = data.sender.send(approved);
+                let event = crate::agent::events::AgentEvent::ToolExecutionApprovalResolved {
+                    session_id: session_id.to_string(),
+                    tool_call_id: tool_call_id.to_string(),
+                    approved,
+                };
+                if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+                    log::error!("Failed to emit ToolExecutionApprovalResolved event: {}", e);
+                }
                 return Ok(());
             }
         }
@@ -544,6 +651,37 @@ impl AgentSessionManager {
             "Pending approval not found for tool call: {}",
             tool_call_id
         ))
+    }
+
+    pub async fn respond_channel_permission(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        approved: bool,
+    ) -> Result<String, String> {
+        let active = self.active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return Err(format!("Session not found: {}", session_id));
+        };
+
+        let matching_tool_call_id = {
+            let approvals = session.pending_approvals.read().await;
+            crate::agent::tool_approvals::find_pending_approval_tool_call_id(&approvals, request_id)
+        };
+
+        drop(active);
+
+        let tool_call_id = matching_tool_call_id.ok_or_else(|| {
+            format!(
+                "Pending approval not found for request_id: {} in session {}",
+                request_id, session_id
+            )
+        })?;
+
+        self.respond_tool_approval(session_id, &tool_call_id, approved)
+            .await?;
+
+        Ok(tool_call_id)
     }
 
     /// Set YOLO mode for a session
@@ -911,4 +1049,82 @@ impl AgentSessionManager {
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
         clear_compact_flags(&self.active_sessions, session_id).await;
     }
+}
+
+fn build_channel_message(
+    session_id: &str,
+    server_name: &str,
+    content: String,
+    meta: HashMap<String, String>,
+) -> Message {
+    let now = chrono::Utc::now().timestamp_millis();
+    let text = format_channel_payload(server_name, &content, &meta);
+
+    Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        session_id: session_id.to_string(),
+        role: "user".to_string(),
+        content: vec![crate::mcp::types::MCPContent::Text {
+            text,
+            is_error: None,
+        }],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        created_at: now,
+        updated_at: now,
+        source: Some("channel".to_string()),
+        error: None,
+        metadata: Some(serde_json::json!({
+            "channel": {
+                "serverName": server_name,
+                "meta": meta,
+            }
+        })),
+    }
+}
+
+fn format_channel_payload(
+    server_name: &str,
+    content: &str,
+    meta: &HashMap<String, String>,
+) -> String {
+    let mut attributes = vec![format!(r#"source="{}""#, escape_xml_attr(server_name))];
+    let mut sorted_meta: Vec<_> = meta.iter().collect();
+    sorted_meta.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    for (key, value) in sorted_meta {
+        attributes.push(format!(
+            r#"{}="{}""#,
+            escape_xml_attr(key),
+            escape_xml_attr(value)
+        ));
+    }
+
+    format!(
+        "<channel {}>\n{}\n</channel>",
+        attributes.join(" "),
+        escape_xml_text(content)
+    )
+}
+
+fn escape_xml_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_xml_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }

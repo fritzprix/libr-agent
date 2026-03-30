@@ -1,4 +1,5 @@
 use crate::agent::context::registry::ContextRegistry;
+use crate::agent::llm::types::CompactionParentRequest;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
@@ -80,6 +81,9 @@ pub struct PendingApprovalData {
     pub sender: oneshot::Sender<bool>,
     pub tool_name: String,
     pub arguments: String,
+    pub request_id: Option<String>,
+    pub description: Option<String>,
+    pub input_preview: Option<String>,
 }
 
 /// Represents an active agent session with its runtime state
@@ -154,6 +158,10 @@ pub struct AgentSession {
     /// a session so we build them once and reuse on every LLM call to avoid redundant
     /// JSON parsing and filesystem I/O.
     pub cached_stable_prompt: Arc<RwLock<Option<String>>>,
+
+    /// Exact prompt-layout fields from the latest emitted completion request.
+    /// Reused by compaction so the summarization call preserves provider cache prefixes.
+    pub last_completion_request: Arc<RwLock<Option<CompactionParentRequest>>>,
 }
 
 #[cfg(test)]

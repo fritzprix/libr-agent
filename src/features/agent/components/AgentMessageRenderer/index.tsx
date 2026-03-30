@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect, memo } from 'react';
+import React, { useMemo, useRef, useEffect, memo, useState } from 'react';
 import { AgentToolGroupBlock } from './components/AgentToolGroupBlock';
 import { ThinkingBubble } from '../shared';
 import type {
@@ -26,8 +26,220 @@ import { groupContent } from './utils/contentGrouping';
 import { CodeBlock } from './components/CodeBlock';
 import { MarkdownText } from './components/MarkdownText';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
+import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
 
 const logger = getLogger('AgentMessageRenderer');
+const DISPLAY_MEDIA_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const displayMediaCache = new Map<string, { url: string; size: number }>();
+let displayMediaCacheBytes = 0;
+
+function estimateBase64Bytes(value: string): number {
+  return Math.floor((value.length * 3) / 4);
+}
+
+function pruneDisplayMediaCache(maxBytes: number): void {
+  while (displayMediaCacheBytes > maxBytes && displayMediaCache.size > 0) {
+    const oldestKey = displayMediaCache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+
+    const entry = displayMediaCache.get(oldestKey);
+    if (!entry) {
+      displayMediaCache.delete(oldestKey);
+      continue;
+    }
+
+    displayMediaCacheBytes -= entry.size;
+    displayMediaCache.delete(oldestKey);
+  }
+}
+
+function updateDisplayMediaCache(uri: string, url: string, size: number): void {
+  const existing = displayMediaCache.get(uri);
+  if (existing) {
+    displayMediaCacheBytes -= existing.size;
+    displayMediaCache.delete(uri);
+  }
+
+  displayMediaCache.set(uri, { url, size });
+  displayMediaCacheBytes += size;
+  pruneDisplayMediaCache(DISPLAY_MEDIA_CACHE_MAX_BYTES);
+}
+
+function inlineMediaToDataUrl(rawData: string, mimeType: string): string {
+  return rawData.startsWith('data:')
+    ? rawData
+    : `data:${mimeType};base64,${rawData}`;
+}
+
+function useResolvedMediaSource(
+  rawData: string | undefined,
+  uri: string | undefined,
+  mimeType: string,
+  sessionId: string | undefined,
+): string | undefined {
+  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(() => {
+    if (rawData) {
+      return inlineMediaToDataUrl(rawData, mimeType);
+    }
+
+    if (!uri) {
+      return undefined;
+    }
+
+    if (!uri.startsWith('file://')) {
+      return uri;
+    }
+
+    return displayMediaCache.get(uri)?.url;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (rawData) {
+      setResolvedSrc(inlineMediaToDataUrl(rawData, mimeType));
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!uri) {
+      setResolvedSrc(undefined);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!uri.startsWith('file://')) {
+      setResolvedSrc(uri);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const cached = displayMediaCache.get(uri);
+    if (cached) {
+      displayMediaCache.delete(uri);
+      displayMediaCache.set(uri, cached);
+      setResolvedSrc(cached.url);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setResolvedSrc(undefined);
+
+    if (!sessionId) {
+      logger.error('Failed to resolve display media source', {
+        uri,
+        mimeType,
+        error: 'Cannot read file:// media without a sessionId',
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void readLocalFileAsBase64(sessionId, uri)
+      .then((base64) => {
+        if (cancelled) {
+          return;
+        }
+
+        const url = inlineMediaToDataUrl(base64, mimeType);
+        updateDisplayMediaCache(uri, url, estimateBase64Bytes(base64));
+        setResolvedSrc(url);
+      })
+      .catch((error: unknown) => {
+        logger.error('Failed to resolve display media source', {
+          uri,
+          mimeType,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mimeType, rawData, sessionId, uri]);
+
+  return resolvedSrc;
+}
+
+interface MediaRendererProps {
+  rawData?: string;
+  uri?: string;
+  mimeType: string;
+  itemKey: string;
+  sessionId?: string;
+}
+
+function ImageContentRenderer({
+  rawData,
+  uri,
+  mimeType,
+  itemKey,
+  sessionId,
+}: MediaRendererProps) {
+  const imageSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
+
+  if (!imageSrc) {
+    return null;
+  }
+
+  return (
+    <img
+      key={itemKey}
+      src={imageSrc}
+      alt="Tool output"
+      className="max-w-full h-auto rounded-lg shadow-sm"
+    />
+  );
+}
+
+function AudioContentRenderer({
+  rawData,
+  uri,
+  mimeType,
+  itemKey,
+  sessionId,
+}: MediaRendererProps) {
+  const audioSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
+
+  if (!audioSrc) {
+    return null;
+  }
+
+  return (
+    <audio key={itemKey} controls className="w-full">
+      <source src={audioSrc} type={mimeType} />
+      Your browser does not support the audio element.
+    </audio>
+  );
+}
+
+function VideoContentRenderer({
+  rawData,
+  uri,
+  mimeType,
+  itemKey,
+  sessionId,
+}: MediaRendererProps) {
+  const videoSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
+
+  if (!videoSrc) {
+    return null;
+  }
+
+  return (
+    <video key={itemKey} controls className="w-full rounded-lg shadow-sm">
+      <source src={videoSrc} type={mimeType} />
+      Your browser does not support the video element.
+    </video>
+  );
+}
 
 /**
  * AgentMessageRenderer - Agent V2용 메시지 렌더러
@@ -299,24 +511,16 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             const rawData = imageItem.data || imageItem.source?.data;
             const uri = imageItem.uri || imageItem.source?.uri;
             const mimeType = imageItem.mimeType || 'image/png';
-            let imageSrc: string | undefined;
-
-            if (rawData) {
-              imageSrc = rawData.startsWith('data:')
-                ? rawData
-                : `data:${mimeType};base64,${rawData}`;
-            } else if (uri) {
-              imageSrc = uri;
-            }
-
-            return imageSrc ? (
-              <img
+            return (
+              <ImageContentRenderer
                 key={itemKey}
-                src={imageSrc}
-                alt="Tool output"
-                className="max-w-full h-auto rounded-lg shadow-sm"
+                itemKey={itemKey}
+                rawData={rawData}
+                uri={uri}
+                mimeType={mimeType}
+                sessionId={message?.sessionId}
               />
-            ) : null;
+            );
           }
           case 'audio': {
             const audioItem = contentItem as {
@@ -326,26 +530,17 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               mimeType?: string;
             };
             const mimeType = audioItem.mimeType || 'audio/mpeg';
-            let audioSrc: string | undefined;
-
             const rawData = audioItem.data || audioItem.source?.data;
             const uri = audioItem.uri || audioItem.source?.uri;
-
-            if (rawData) {
-              audioSrc = rawData.startsWith('data:')
-                ? rawData
-                : `data:${mimeType};base64,${rawData}`;
-            } else if (uri) {
-              audioSrc = uri;
-            }
-
-            if (!audioSrc) return null;
-
             return (
-              <audio key={itemKey} controls className="w-full">
-                <source src={audioSrc} type={mimeType} />
-                Your browser does not support the audio element.
-              </audio>
+              <AudioContentRenderer
+                key={itemKey}
+                itemKey={itemKey}
+                rawData={rawData}
+                uri={uri}
+                mimeType={mimeType}
+                sessionId={message?.sessionId}
+              />
             );
           }
           case 'video': {
@@ -356,30 +551,17 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               mimeType?: string;
             };
             const mimeType = videoItem.mimeType || 'video/mp4';
-            let videoSrc: string | undefined;
-
             const rawData = videoItem.data || videoItem.source?.data;
             const uri = videoItem.uri || videoItem.source?.uri;
-
-            if (rawData) {
-              videoSrc = rawData.startsWith('data:')
-                ? rawData
-                : `data:${mimeType};base64,${rawData}`;
-            } else if (uri) {
-              videoSrc = uri;
-            }
-
-            if (!videoSrc) return null;
-
             return (
-              <video
+              <VideoContentRenderer
                 key={itemKey}
-                controls
-                className="w-full rounded-lg shadow-sm"
-              >
-                <source src={videoSrc} type={mimeType} />
-                Your browser does not support the video element.
-              </video>
+                itemKey={itemKey}
+                rawData={rawData}
+                uri={uri}
+                mimeType={mimeType}
+                sessionId={message?.sessionId}
+              />
             );
           }
           case 'resource_link': {
