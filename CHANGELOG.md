@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.25] - 2026-03-30
+
+### 🐛 Fixes
+
+- **Planning Todo Schema Bounds**: Fixed the `updateTodo` tool schema so `todoId` is constrained with `minimum: 1` instead of the broken `maximum: 1`, preventing models from being steered toward invalid `todoId=1` calls.
+
+### 🔧 Internal
+
+- **Planning Schema Regression Coverage**: Added focused schema assertions to ensure future planning tool changes keep `todoId` validation aligned with the backend's real identifier behavior.
+
 ## [0.6.24] - 2026-03-30
 
 ### 🐛 Fixes
