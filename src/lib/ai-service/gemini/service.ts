@@ -37,7 +37,12 @@ import { processGeminiStream } from './stream';
 export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private static readonly MIN_CACHEABLE_PREFIX_TOKENS = 32768;
   private static readonly MAX_CONTEXT_CACHE_ENTRIES = 8;
-  private static readonly CONTEXT_CACHE_TTL_MS = 55 * 60 * 1000;
+  private static readonly SHORT_CONTEXT_CACHE_TTL_MS = 60 * 60 * 1000;
+  private static readonly MEDIUM_CONTEXT_CACHE_TTL_MS = 3 * 60 * 60 * 1000;
+  private static readonly LONG_CONTEXT_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+  private static readonly CONTEXT_CACHE_REFRESH_THRESHOLD_MS = 10 * 60 * 1000;
+  private static readonly MIN_HISTORY_CHECKPOINT_MESSAGES = 5;
+  private static readonly HISTORY_CHECKPOINT_TAIL_USER_MESSAGES = 2;
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
@@ -48,8 +53,41 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       name: string;
       createdAt: number;
       lastUsedAt: number;
+      ttlMs: number;
+      expiresAt: number;
+      cacheableTokenCount: number;
     }
   >();
+  private readonly cacheableTokenCounts = new Map<
+    string,
+    {
+      tokenCount: number;
+      source: 'count_tokens' | 'estimate_fallback';
+    }
+  >();
+  private lastPromptSnapshot?: {
+    model: string;
+    systemPromptHash: string;
+    toolsHash: string;
+    cachedHistoryHash?: string;
+    cachedHistoryMessageCount: number;
+    messagesFingerprintHash: string;
+    messageFingerprints: Array<{
+      role: string;
+      partCount: number;
+      textLength: number;
+      textHash: string;
+      contentTag: 'regular' | 'session_context' | 'tool_result_media';
+      functionCallCount: number;
+      functionCallNames?: string[];
+      functionResponseCount: number;
+      functionResponseNames?: string[];
+    }>;
+    promptCacheKey?: string;
+    cacheableTokenCount: number;
+    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
+    cacheStrategy: 'system_tools' | 'history_checkpoint' | 'none';
+  };
 
   /**
    * Initializes a new instance of the `GeminiService`.
@@ -261,13 +299,29 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const stablePrefix = options.systemPrompt ?? '';
       const dynamicContext = options.sessionContext ?? '';
       const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
+      const historyCheckpoint = this.buildHistoryCheckpoint(geminiMessages);
+      const cacheableContents = historyCheckpoint?.cacheContents;
+      const requestContents = historyCheckpoint?.requestContents ?? geminiMessages;
+      const cacheStrategy =
+        historyCheckpoint !== null ? 'history_checkpoint' : 'system_tools';
       const requiresToolOverride =
         Boolean(geminiTools) &&
         (options.forceToolUse === true || options.disableToolUse === true);
       const canUseCachedContent = !requiresToolOverride;
-      const shouldUseCache =
-        canUseCachedContent &&
-        this.shouldAttemptContextCache(model, stablePrefix, toolsPayload);
+      const cacheDecision = canUseCachedContent
+        ? await this.evaluateContextCacheEligibility(
+            model,
+            stablePrefix,
+            geminiTools,
+            toolsPayload,
+            cacheableContents,
+          )
+        : {
+            shouldUseCache: false,
+            cacheableTokenCount: 0,
+            tokenDecisionSource: 'estimate_fallback' as const,
+          };
+      const shouldUseCache = cacheDecision.shouldUseCache;
       let cachedContentName: string | undefined;
       let cacheKey: string | undefined;
 
@@ -276,10 +330,12 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           model,
           stablePrefix,
           toolsPayload,
+          historyCheckpoint?.cacheKeyPart,
         );
         const existingEntry = await this.getUsableContextCacheEntry(
           cacheKey,
           'preflight validation',
+          this.getContextCacheTtlMs(cacheDecision.cacheableTokenCount),
         );
 
         if (existingEntry) {
@@ -290,6 +346,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
             model,
             stablePrefix,
             geminiTools,
+            cacheDecision.cacheableTokenCount,
+            cacheableContents,
           );
         }
       }
@@ -303,6 +361,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         canUseCachedContent,
         requiresToolOverride,
         shouldUseCache,
+        cacheableTokenCount: cacheDecision.cacheableTokenCount,
+        tokenDecisionSource: cacheDecision.tokenDecisionSource,
+        cacheStrategy:
+          shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
+        cachedHistoryMessageCount: cacheableContents?.length ?? 0,
         cachedContentName,
       });
 
@@ -314,9 +377,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         geminiConfig.cachedContent = cachedContentName;
         // The Google GenAI API does not allow overriding system_instruction or tools when cached_content is provided.
         // Therefore, we inject the dynamic context into the first user message.
-        if (dynamicContext && geminiMessages.length > 0) {
-          if (geminiMessages[0].parts) {
-            geminiMessages[0].parts.unshift({
+        if (dynamicContext && requestContents.length > 0) {
+          if (requestContents[0].parts) {
+            requestContents[0].parts.unshift({
               text: `[System Context Update]\n${dynamicContext}\n\n`,
             });
           }
@@ -378,12 +441,24 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         first500Chars: sysPromptText.substring(0, 500),
         last500Chars: sysPromptText.substring(sysPromptText.length - 500),
       });
+      this.logPromptDiagnostics({
+        model,
+        systemPrompt: options.systemPrompt,
+        promptCacheKey: cacheKey,
+        messages: requestContents,
+        geminiTools,
+        cachedHistoryContents: cacheableContents,
+        cacheableTokenCount: cacheDecision.cacheableTokenCount,
+        tokenDecisionSource: cacheDecision.tokenDecisionSource,
+        cacheStrategy:
+          shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
+      });
 
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({
           model: model,
           config: geminiConfig,
-          contents: geminiMessages,
+          contents: requestContents,
         });
       });
 
@@ -482,6 +557,15 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
   }
 
+  static supportsContextCacheForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    return (
+      lowerName.includes('gemini-1.5') ||
+      lowerName.includes('gemini-2') ||
+      lowerName.includes('gemini-3')
+    );
+  }
+
   static estimateContextWindowForModel(modelName: string): number {
     const lowerName = modelName.toLowerCase();
     if (lowerName.includes('gemini-1.5-pro')) return 2000000;
@@ -514,20 +598,105 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     return age < this.CACHE_TTL;
   }
 
-  private shouldAttemptContextCache(
+  private async evaluateContextCacheEligibility(
     model: string,
     stablePrefix: string,
+    geminiTools:
+      | Array<{ functionDeclarations: FunctionDeclaration[] }>
+      | undefined,
     toolsPayload: string,
-  ): boolean {
-    if (!GeminiService.supportsToolsForModel(model)) {
-      return false;
+    cacheableContents?: Content[],
+  ): Promise<{
+    shouldUseCache: boolean;
+    cacheableTokenCount: number;
+    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
+  }> {
+    if (!GeminiService.supportsContextCacheForModel(model)) {
+      return {
+        shouldUseCache: false,
+        cacheableTokenCount: 0,
+        tokenDecisionSource: 'estimate_fallback',
+      };
     }
 
-    const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
+    if (!stablePrefix && !toolsPayload) {
+      return {
+        shouldUseCache: false,
+        cacheableTokenCount: 0,
+        tokenDecisionSource: 'estimate_fallback',
+      };
+    }
+
+    const tokenCountKey = this.createContextCacheKey(
+      model,
       stablePrefix,
       toolsPayload,
+      cacheableContents
+        ? stableHashKeyPart(stableStringify(this.createGeminiContentFingerprint(cacheableContents)))
+        : undefined,
     );
-    return cacheableTokenEstimate >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS;
+    const cachedTokenCount = this.cacheableTokenCounts.get(tokenCountKey);
+    if (cachedTokenCount) {
+      return {
+        shouldUseCache:
+          cachedTokenCount.tokenCount >=
+          GeminiService.MIN_CACHEABLE_PREFIX_TOKENS,
+        cacheableTokenCount: cachedTokenCount.tokenCount,
+        tokenDecisionSource: cachedTokenCount.source,
+      };
+    }
+
+    try {
+      const countResponse = await this.withRetry(() =>
+        this.genAI.models.countTokens({
+          model,
+          contents: cacheableContents ?? [{ role: 'user', parts: [{ text: 'cache probe' }] }],
+          config: {
+            systemInstruction: stablePrefix,
+            tools: geminiTools,
+          },
+        }),
+      );
+      const tokenCount = countResponse.totalTokens ?? 0;
+      const tokenDecision = {
+        tokenCount,
+        source: 'count_tokens' as const,
+      };
+      this.cacheableTokenCounts.set(tokenCountKey, tokenDecision);
+
+      return {
+        shouldUseCache: tokenCount >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS,
+        cacheableTokenCount: tokenCount,
+        tokenDecisionSource: tokenDecision.source,
+      };
+    } catch (error) {
+      const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
+        stablePrefix,
+        toolsPayload,
+      );
+      this.logger.warn(
+        'Gemini countTokens failed during cache eligibility check; falling back to character estimate.',
+        {
+          model,
+          stablePrefixLength: stablePrefix.length,
+          toolsPayloadLength: toolsPayload.length,
+          cacheableTokenEstimate,
+          error,
+        },
+      );
+      const tokenDecision = {
+        tokenCount: cacheableTokenEstimate,
+        source: 'estimate_fallback' as const,
+      };
+      this.cacheableTokenCounts.set(tokenCountKey, tokenDecision);
+
+      return {
+        shouldUseCache:
+          cacheableTokenEstimate >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS,
+        cacheableTokenCount: cacheableTokenEstimate,
+        tokenDecisionSource: tokenDecision.source,
+      };
+    }
   }
 
   private estimateCacheablePrefixTokens(
@@ -545,6 +714,10 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     canUseCachedContent: boolean;
     requiresToolOverride: boolean;
     shouldUseCache: boolean;
+    cacheableTokenCount: number;
+    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
+    cacheStrategy: 'system_tools' | 'history_checkpoint' | 'none';
+    cachedHistoryMessageCount: number;
     cachedContentName?: string;
   }): void {
     const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
@@ -560,6 +733,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       stablePrefixLength: args.stablePrefix.length,
       toolsPayloadLength: args.toolsPayload.length,
       cacheableTokenEstimate,
+      cacheableTokenCount: args.cacheableTokenCount,
+      tokenDecisionSource: args.tokenDecisionSource,
+      cacheStrategy: args.cacheStrategy,
+      cachedHistoryMessageCount: args.cachedHistoryMessageCount,
+      targetTtlMs: this.getContextCacheTtlMs(args.cacheableTokenCount),
       canUseCachedContent: args.canUseCachedContent,
       requiresToolOverride: args.requiresToolOverride,
       shouldUseCache: args.shouldUseCache,
@@ -572,30 +750,57 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     model: string,
     stablePrefix: string,
     toolsPayload: string,
+    historyKeyPart?: string,
   ): string {
     return [
       model,
       stableHashKeyPart(stablePrefix),
       stableHashKeyPart(toolsPayload),
+      historyKeyPart ?? 'no_history',
     ].join(':');
   }
 
   private async getUsableContextCacheEntry(
     cacheKey: string,
     reason: string,
+    desiredTtlMs: number,
   ): Promise<{ name: string; createdAt: number; lastUsedAt: number } | null> {
     const entry = this.cachedContextEntries.get(cacheKey);
     if (!entry) {
       return null;
     }
 
-    const age = Date.now() - entry.createdAt;
-    if (age >= GeminiService.CONTEXT_CACHE_TTL_MS) {
+    const now = Date.now();
+    if (now >= entry.expiresAt) {
       await this.removeContextCacheEntry(cacheKey, reason);
       return null;
     }
 
-    entry.lastUsedAt = Date.now();
+    entry.lastUsedAt = now;
+    if (this.shouldRefreshContextCacheEntry(entry, desiredTtlMs, now)) {
+      try {
+        await this.genAI.caches.update({
+          name: entry.name,
+          config: {
+            ttl: this.toGeminiDurationString(desiredTtlMs),
+          },
+        });
+        entry.ttlMs = desiredTtlMs;
+        entry.expiresAt = now + desiredTtlMs;
+        this.logger.debug('Refreshed Gemini context cache TTL on reuse', {
+          cacheKey,
+          cachedContentName: entry.name,
+          ttlMs: desiredTtlMs,
+        });
+      } catch (error) {
+        this.logger.debug('Failed to refresh Gemini context cache TTL', {
+          cacheKey,
+          cachedContentName: entry.name,
+          ttlMs: desiredTtlMs,
+          error,
+        });
+      }
+    }
     return entry;
   }
 
@@ -604,14 +809,20 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     model: string,
     stablePrefix: string,
     geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>,
+    cacheableTokenCount = 0,
+    cacheableContents?: Content[],
   ): Promise<string | undefined> {
     try {
+      const ttlMs = this.getContextCacheTtlMs(cacheableTokenCount);
       this.logger.debug(
         'Creating Gemini context cache for stable prefix and tools',
         {
           model,
           cacheKey,
           stablePrefixLength: stablePrefix.length,
+          cacheableTokenCount,
+          ttlMs,
+          cacheableContentCount: cacheableContents?.length ?? 0,
           toolDeclarationCount:
             geminiTools?.[0]?.functionDeclarations.length ?? 0,
         },
@@ -622,7 +833,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         config: {
           systemInstruction: stablePrefix,
           tools: geminiTools,
-          ttl: '3600s',
+          contents: cacheableContents,
+          ttl: this.toGeminiDurationString(ttlMs),
         },
       });
       const cacheName = cacheResponse.name;
@@ -630,10 +842,14 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         throw new Error('Gemini cache creation returned no cache name');
       }
 
+      const now = Date.now();
       this.cachedContextEntries.set(cacheKey, {
         name: cacheName,
-        createdAt: Date.now(),
-        lastUsedAt: Date.now(),
+        createdAt: now,
+        lastUsedAt: now,
+        ttlMs,
+        expiresAt: now + ttlMs,
+        cacheableTokenCount,
       });
       await this.evictContextCacheOverflow();
 
@@ -656,10 +872,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       this.cachedContextEntries.size > GeminiService.MAX_CONTEXT_CACHE_ENTRIES
     ) {
       const oldestEntry = [...this.cachedContextEntries.entries()].reduce(
-        (
-          oldest,
-          current,
-        ): [string, { name: string; createdAt: number; lastUsedAt: number }] =>
+        (oldest, current) =>
           current[1].lastUsedAt < oldest[1].lastUsedAt ? current : oldest,
       );
 
@@ -782,5 +995,333 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     for (const cacheKey of cacheKeys) {
       void this.removeContextCacheEntry(cacheKey, 'service dispose');
     }
+  }
+
+  private getContextCacheTtlMs(cacheableTokenCount: number): number {
+    if (cacheableTokenCount >= 262144) {
+      return GeminiService.LONG_CONTEXT_CACHE_TTL_MS;
+    }
+    if (cacheableTokenCount >= 131072) {
+      return GeminiService.MEDIUM_CONTEXT_CACHE_TTL_MS;
+    }
+    return GeminiService.SHORT_CONTEXT_CACHE_TTL_MS;
+  }
+
+  private toGeminiDurationString(ttlMs: number): string {
+    return `${Math.max(60, Math.floor(ttlMs / 1000))}s`;
+  }
+
+  private shouldRefreshContextCacheEntry(
+    entry: {
+      name: string;
+      createdAt: number;
+      lastUsedAt: number;
+      ttlMs: number;
+      expiresAt: number;
+      cacheableTokenCount: number;
+    },
+    desiredTtlMs: number,
+    now: number,
+  ): boolean {
+    const remainingTtlMs = entry.expiresAt - now;
+    return (
+      desiredTtlMs > entry.ttlMs ||
+      remainingTtlMs <= GeminiService.CONTEXT_CACHE_REFRESH_THRESHOLD_MS
+    );
+  }
+
+  private logPromptDiagnostics(args: {
+    model: string;
+    systemPrompt?: string;
+    promptCacheKey?: string;
+    messages: Content[];
+    geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
+    cachedHistoryContents?: Content[];
+    cacheableTokenCount: number;
+    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
+    cacheStrategy: 'system_tools' | 'history_checkpoint' | 'none';
+  }): void {
+    const messageFingerprints = args.messages.map((message) =>
+      this.fingerprintGeminiMessage(message),
+    );
+    const messagesFingerprintHash = stableHashKeyPart(
+      stableStringify(messageFingerprints),
+    );
+    const toolsPayload = stableStringify(args.geminiTools ?? []);
+    const cachedHistoryFingerprint =
+      args.cachedHistoryContents && args.cachedHistoryContents.length > 0
+        ? this.createGeminiContentFingerprint(args.cachedHistoryContents)
+        : undefined;
+    const snapshot = {
+      model: args.model,
+      systemPromptHash: stableHashKeyPart(args.systemPrompt ?? ''),
+      toolsHash: stableHashKeyPart(toolsPayload),
+      cachedHistoryHash: cachedHistoryFingerprint
+        ? stableHashKeyPart(stableStringify(cachedHistoryFingerprint))
+        : undefined,
+      cachedHistoryMessageCount: args.cachedHistoryContents?.length ?? 0,
+      messagesFingerprintHash,
+      messageFingerprints,
+      promptCacheKey: args.promptCacheKey,
+      cacheableTokenCount: args.cacheableTokenCount,
+      tokenDecisionSource: args.tokenDecisionSource,
+      cacheStrategy: args.cacheStrategy,
+    };
+
+    this.logger.debug('Gemini prompt diagnostics', {
+      model: args.model,
+      promptCacheKey: args.promptCacheKey,
+      systemPromptLength: args.systemPrompt?.length ?? 0,
+      systemPromptHash: snapshot.systemPromptHash,
+      toolCount: args.geminiTools?.[0]?.functionDeclarations.length ?? 0,
+      toolsHash: snapshot.toolsHash,
+      cacheStrategy: args.cacheStrategy,
+      cachedHistoryHash: snapshot.cachedHistoryHash,
+      cachedHistoryMessageCount: snapshot.cachedHistoryMessageCount,
+      messageCount: messageFingerprints.length,
+      messagesFingerprintHash,
+      cacheableTokenCount: args.cacheableTokenCount,
+      tokenDecisionSource: args.tokenDecisionSource,
+      messageFingerprints,
+    });
+    this.logPromptDrift(snapshot);
+  }
+
+  private logPromptDrift(
+    snapshot: NonNullable<GeminiService['lastPromptSnapshot']>,
+  ): void {
+    const previous = this.lastPromptSnapshot;
+    this.lastPromptSnapshot = snapshot;
+
+    if (!previous) {
+      return;
+    }
+
+    const minMessageCount = Math.min(
+      previous.messageFingerprints.length,
+      snapshot.messageFingerprints.length,
+    );
+    let firstDivergenceIndex = -1;
+    for (let index = 0; index < minMessageCount; index += 1) {
+      if (
+        stableStringify(previous.messageFingerprints[index]) !==
+        stableStringify(snapshot.messageFingerprints[index])
+      ) {
+        firstDivergenceIndex = index;
+        break;
+      }
+    }
+
+    if (
+      firstDivergenceIndex === -1 &&
+      previous.messageFingerprints.length !==
+        snapshot.messageFingerprints.length
+    ) {
+      firstDivergenceIndex = minMessageCount;
+    }
+
+    const firstDivergenceComponent =
+      previous.model !== snapshot.model
+        ? 'model'
+        : previous.systemPromptHash !== snapshot.systemPromptHash
+          ? 'system_prompt'
+          : previous.toolsHash !== snapshot.toolsHash
+            ? 'tools'
+            : previous.cachedHistoryHash !== snapshot.cachedHistoryHash
+              ? 'cached_history'
+            : firstDivergenceIndex >= 0
+              ? 'messages'
+              : 'none';
+
+    this.logger.debug('Gemini prompt cache drift', {
+      previousModel: previous.model,
+      model: snapshot.model,
+      previousPromptCacheKey: previous.promptCacheKey,
+      promptCacheKey: snapshot.promptCacheKey,
+      previousCacheStrategy: previous.cacheStrategy,
+      cacheStrategy: snapshot.cacheStrategy,
+      firstDivergenceComponent,
+      firstDivergenceIndex:
+        firstDivergenceComponent === 'messages'
+          ? firstDivergenceIndex
+          : undefined,
+      commonPrefixMessages:
+        firstDivergenceComponent === 'messages'
+          ? firstDivergenceIndex
+          : Math.min(
+              previous.messageFingerprints.length,
+              snapshot.messageFingerprints.length,
+            ),
+      previousMessageCount: previous.messageFingerprints.length,
+      messageCount: snapshot.messageFingerprints.length,
+      systemPromptChanged:
+        previous.systemPromptHash !== snapshot.systemPromptHash,
+      toolsChanged: previous.toolsHash !== snapshot.toolsHash,
+      cachedHistoryChanged:
+        previous.cachedHistoryHash !== snapshot.cachedHistoryHash,
+      previousCachedHistoryHash: previous.cachedHistoryHash,
+      cachedHistoryHash: snapshot.cachedHistoryHash,
+      previousCachedHistoryMessageCount: previous.cachedHistoryMessageCount,
+      cachedHistoryMessageCount: snapshot.cachedHistoryMessageCount,
+      messagesChanged:
+        previous.messagesFingerprintHash !== snapshot.messagesFingerprintHash,
+      previousFingerprintHash: previous.messagesFingerprintHash,
+      fingerprintHash: snapshot.messagesFingerprintHash,
+      previousMessageAtDivergence:
+        firstDivergenceIndex >= 0
+          ? previous.messageFingerprints[firstDivergenceIndex]
+          : undefined,
+      currentMessageAtDivergence:
+        firstDivergenceIndex >= 0
+          ? snapshot.messageFingerprints[firstDivergenceIndex]
+          : undefined,
+    });
+  }
+
+  private fingerprintGeminiMessage(message: Content): {
+    role: string;
+    partCount: number;
+    textLength: number;
+    textHash: string;
+    contentTag: 'regular' | 'session_context' | 'tool_result_media';
+    functionCallCount: number;
+    functionCallNames?: string[];
+    functionResponseCount: number;
+    functionResponseNames?: string[];
+  } {
+    const parts = Array.isArray(message.parts) ? message.parts : [];
+    const textSegments: string[] = [];
+    const functionCallNames: string[] = [];
+    const functionResponseNames: string[] = [];
+
+    for (const part of parts) {
+      if (typeof part !== 'object' || part === null) {
+        continue;
+      }
+      const candidate = part as Record<string, unknown>;
+      if (typeof candidate.text === 'string') {
+        textSegments.push(candidate.text);
+      }
+
+      if (
+        typeof candidate.functionCall === 'object' &&
+        candidate.functionCall !== null
+      ) {
+        const functionCall = candidate.functionCall as Record<string, unknown>;
+        if (typeof functionCall.name === 'string') {
+          functionCallNames.push(functionCall.name);
+        }
+      }
+
+      if (
+        typeof candidate.functionResponse === 'object' &&
+        candidate.functionResponse !== null
+      ) {
+        const functionResponse = candidate.functionResponse as Record<
+          string,
+          unknown
+        >;
+        if (typeof functionResponse.name === 'string') {
+          functionResponseNames.push(functionResponse.name);
+        }
+      }
+    }
+
+    const text = textSegments.join('\n');
+    return {
+      role: message.role ?? 'user',
+      partCount: parts.length,
+      textLength: text.length,
+      textHash: stableHashKeyPart(text),
+      contentTag: this.classifyGeminiContentTag(message.role ?? 'user', text),
+      functionCallCount: functionCallNames.length,
+      functionCallNames:
+        functionCallNames.length > 0 ? functionCallNames : undefined,
+      functionResponseCount: functionResponseNames.length,
+      functionResponseNames:
+        functionResponseNames.length > 0 ? functionResponseNames : undefined,
+    };
+  }
+
+  private classifyGeminiContentTag(
+    role: string,
+    content: string,
+  ): 'regular' | 'session_context' | 'tool_result_media' {
+    if (
+      role === 'user' &&
+      content.startsWith('[Current session context — background reference only')
+    ) {
+      return 'session_context';
+    }
+
+    if (
+      role === 'user' &&
+      content.startsWith('Tool result media from tool_call_id=')
+    ) {
+      return 'tool_result_media';
+    }
+
+    return 'regular';
+  }
+
+  private buildHistoryCheckpoint(
+    messages: Content[],
+  ): {
+    cacheContents: Content[];
+    requestContents: Content[];
+    cacheKeyPart: string;
+  } | null {
+    if (messages.length < GeminiService.MIN_HISTORY_CHECKPOINT_MESSAGES) {
+      return null;
+    }
+
+    let tailUserMessages = 0;
+    let splitIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === 'user') {
+        tailUserMessages += 1;
+        if (tailUserMessages === GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES) {
+          splitIndex = index;
+          break;
+        }
+      }
+    }
+
+    if (splitIndex <= 0 || splitIndex >= messages.length) {
+      return null;
+    }
+
+    const cacheContents = messages.slice(0, splitIndex);
+    const requestContents = messages.slice(splitIndex);
+    if (cacheContents.length === 0 || requestContents.length === 0) {
+      return null;
+    }
+
+    return {
+      cacheContents,
+      requestContents,
+      cacheKeyPart: stableHashKeyPart(
+        stableStringify(this.createGeminiContentFingerprint(cacheContents)),
+      ),
+    };
+  }
+
+  private createGeminiContentFingerprint(messages: Content[]): Array<{
+    role: string;
+    partCount: number;
+    textHash: string;
+    functionCallNames?: string[];
+    functionResponseNames?: string[];
+  }> {
+    return messages.map((message) => {
+      const fingerprint = this.fingerprintGeminiMessage(message);
+      return {
+        role: fingerprint.role,
+        partCount: fingerprint.partCount,
+        textHash: fingerprint.textHash,
+        functionCallNames: fingerprint.functionCallNames,
+        functionResponseNames: fingerprint.functionResponseNames,
+      };
+    });
   }
 }
