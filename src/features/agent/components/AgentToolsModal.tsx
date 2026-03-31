@@ -106,7 +106,9 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
             <span className="font-semibold text-destructive">
               {t('agent.toolsModal.errorTitle')}
             </span>
-            <span className="max-w-lg text-sm text-muted-foreground">{error}</span>
+            <span className="max-w-lg text-sm text-muted-foreground">
+              {error}
+            </span>
           </div>
         )}
 
@@ -115,81 +117,81 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
           <div className="min-h-0 overflow-hidden">
             <ScrollArea className="h-full">
               <div className="px-6 py-5">
-              {totalCount === 0 ? (
-                <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-xl border border-border/40 bg-muted/[0.16] px-6 py-10 text-center">
-                  <div className="rounded-full border border-border/50 bg-background/80 p-3 text-muted-foreground">
-                    <Blocks className="h-4 w-4" />
+                {totalCount === 0 ? (
+                  <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-xl border border-border/40 bg-muted/[0.16] px-6 py-10 text-center">
+                    <div className="rounded-full border border-border/50 bg-background/80 p-3 text-muted-foreground">
+                      <Blocks className="h-4 w-4" />
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {t('agent.toolsModal.empty')}
+                    </div>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    {t('agent.toolsModal.empty')}
-                  </div>
-                </div>
-              ) : (
-                <ul
-                  className="space-y-3"
-                  aria-label={t('agent.toolsModal.ariaLabel')}
-                >
-                  {availableTools.map((tool) => (
-                    <li
-                      key={tool.name}
-                      className="overflow-hidden rounded-xl border border-border/40 bg-muted/[0.16]"
-                    >
-                      <div className="space-y-3 px-4 py-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1 space-y-1.5">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border/40 bg-background/80 text-muted-foreground">
-                                <Wrench className="h-3.5 w-3.5" />
+                ) : (
+                  <ul
+                    className="space-y-3"
+                    aria-label={t('agent.toolsModal.ariaLabel')}
+                  >
+                    {availableTools.map((tool) => (
+                      <li
+                        key={tool.name}
+                        className="overflow-hidden rounded-xl border border-border/40 bg-muted/[0.16]"
+                      >
+                        <div className="space-y-3 px-4 py-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border/40 bg-background/80 text-muted-foreground">
+                                  <Wrench className="h-3.5 w-3.5" />
+                                </div>
+                                <span
+                                  className="break-words font-mono text-sm font-medium text-foreground"
+                                  title={parseToolName(tool.name)}
+                                >
+                                  {parseToolName(tool.name)}
+                                </span>
                               </div>
-                              <span
-                                className="break-words font-mono text-sm font-medium text-foreground"
-                                title={parseToolName(tool.name)}
-                              >
-                                {parseToolName(tool.name)}
-                              </span>
+                              {tool.description && (
+                                <p className="text-sm leading-6 text-muted-foreground">
+                                  {tool.description}
+                                </p>
+                              )}
                             </div>
-                            {tool.description && (
-                              <p className="text-sm leading-6 text-muted-foreground">
-                                {tool.description}
-                              </p>
-                            )}
+
+                            <Badge
+                              variant="outline"
+                              className={
+                                isBuiltinTool(tool.name)
+                                  ? 'shrink-0 border-border/40 bg-background/80 text-[10px] uppercase tracking-wide text-muted-foreground'
+                                  : 'shrink-0 border-border/40 bg-background/80 text-[10px] uppercase tracking-wide text-muted-foreground'
+                              }
+                              aria-hidden
+                            >
+                              {isBuiltinTool(tool.name)
+                                ? t('agent.toolsModal.badgeBuiltin')
+                                : t('agent.toolsModal.badgeMcp')}
+                            </Badge>
                           </div>
 
-                          <Badge
-                            variant="outline"
-                            className={
-                              isBuiltinTool(tool.name)
-                                ? 'shrink-0 border-border/40 bg-background/80 text-[10px] uppercase tracking-wide text-muted-foreground'
-                                : 'shrink-0 border-border/40 bg-background/80 text-[10px] uppercase tracking-wide text-muted-foreground'
-                            }
-                            aria-hidden
-                          >
-                            {isBuiltinTool(tool.name)
-                              ? t('agent.toolsModal.badgeBuiltin')
-                              : t('agent.toolsModal.badgeMcp')}
-                          </Badge>
+                          {tool.inputSchema && (
+                            <details className="group rounded-lg border border-border/35 bg-background/70">
+                              <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+                                <span className="inline-flex items-center gap-2">
+                                  <Braces className="h-3.5 w-3.5" />
+                                  {t('agent.toolsModal.viewSchema')}
+                                </span>
+                              </summary>
+                              <div className="border-t border-border/35 px-3 py-3">
+                                <pre className="overflow-x-auto rounded-md bg-muted/[0.35] p-3 text-xs leading-5 text-foreground">
+                                  {JSON.stringify(tool.inputSchema, null, 2)}
+                                </pre>
+                              </div>
+                            </details>
+                          )}
                         </div>
-
-                        {tool.inputSchema && (
-                          <details className="group rounded-lg border border-border/35 bg-background/70">
-                            <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-                              <span className="inline-flex items-center gap-2">
-                                <Braces className="h-3.5 w-3.5" />
-                                {t('agent.toolsModal.viewSchema')}
-                              </span>
-                            </summary>
-                            <div className="border-t border-border/35 px-3 py-3">
-                              <pre className="overflow-x-auto rounded-md bg-muted/[0.35] p-3 text-xs leading-5 text-foreground">
-                                {JSON.stringify(tool.inputSchema, null, 2)}
-                              </pre>
-                            </div>
-                          </details>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </ScrollArea>
           </div>
