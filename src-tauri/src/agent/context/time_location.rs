@@ -2,6 +2,7 @@
 // Injects current date, time, and timezone information into system prompts
 
 use super::ContextProvider;
+use crate::mcp::types::ContextVolatility;
 use async_trait::async_trait;
 use chrono::{Datelike, Local, Timelike};
 
@@ -80,6 +81,10 @@ impl ContextProvider for TimeLocationContextProvider {
         1000 // Low priority - volatile content placed last to maximize stable prefix for prompt caching
     }
 
+    fn volatility(&self) -> ContextVolatility {
+        ContextVolatility::Volatile
+    }
+
     async fn get_context(&self, _assistant_id: Option<&str>) -> Result<String, String> {
         Ok(self.build_context())
     }
@@ -118,6 +123,7 @@ mod tests {
 
         assert_eq!(provider.provider_id(), "time_location");
         assert_eq!(provider.priority(), 1000);
+        assert_eq!(provider.volatility(), ContextVolatility::Volatile);
         assert!(provider.is_enabled().await);
 
         let context = provider.get_context(None).await;
