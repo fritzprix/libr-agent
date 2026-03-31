@@ -5,6 +5,7 @@ import {
   clearCurrentLog,
   listLogFiles,
   openExternalUrl,
+  downloadMediaFile,
   downloadWorkspaceFile,
   exportAndDownloadZip,
   getServiceContext,
@@ -65,6 +66,23 @@ describe('backend/utils', () => {
       const res = await downloadWorkspaceFile('file.txt', 'session-123');
       expect(safeInvoke).toHaveBeenCalledWith('download_workspace_file', { filePath: 'file.txt', sessionId: 'session-123' });
       expect(res).toBe('download started');
+    });
+
+    it('should download media via download_media_file', async () => {
+      vi.mocked(safeInvoke).mockResolvedValueOnce('File downloaded successfully');
+      const res = await downloadMediaFile({
+        sessionId: 'session-123',
+        fileName: 'image.png',
+        mimeType: 'image/png',
+        dataBase64: 'Zm9v',
+      });
+      expect(safeInvoke).toHaveBeenCalledWith('download_media_file', {
+        sessionId: 'session-123',
+        fileName: 'image.png',
+        mimeType: 'image/png',
+        dataBase64: 'Zm9v',
+      });
+      expect(res).toBe('File downloaded successfully');
     });
 
     it('should export and download zip via export_and_download_zip', async () => {

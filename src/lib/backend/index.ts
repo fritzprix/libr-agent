@@ -96,6 +96,7 @@ export {
   clearCurrentLog,
   listLogFiles,
   openExternalUrl,
+  downloadMediaFile,
   downloadWorkspaceFile,
   exportAndDownloadZip,
   getServiceContext,

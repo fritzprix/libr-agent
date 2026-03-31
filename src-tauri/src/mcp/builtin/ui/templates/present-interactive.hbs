@@ -33,25 +33,33 @@
         padding: 24px 28px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       }
-      .copy-btn {
+      .action-buttons {
         position: absolute;
         top: 16px;
         right: 16px;
-        background: #f3f4f6;
-        color: #4b5563;
-        border: 1px solid #e5e7eb;
-        border-radius: 4px;
-        padding: 4px 8px;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s;
-        font-family: inherit;
+        display: flex;
+        gap: 8px;
         z-index: 10;
       }
-      .copy-btn:hover {
+      .icon-btn {
+        background: #f9fafb;
+        color: #4b5563;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .icon-btn:hover {
         background: #e5e7eb;
         color: #111827;
+      }
+      .icon-btn svg {
+        width: 16px;
+        height: 16px;
       }
       .content-title {
         font-size: 18px;
@@ -60,7 +68,7 @@
         margin: 0 0 16px 0;
         padding-bottom: 12px;
         border-bottom: 1px solid #e5e7eb;
-        padding-right: 60px;
+        padding-right: 80px;
       }
       
       /* Interaction Section */
@@ -179,7 +187,15 @@
   <body>
     <div class="container">
       <div class='content-wrapper'>
-        <button type="button" id="copy-btn" class="copy-btn">Copy</button>
+        <div class="action-buttons">
+          <button type="button" id="copy-btn" class="icon-btn" title="Copy to clipboard">
+            <svg id="icon-copy" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <svg id="icon-check" style="display: none; color: #10b981;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+          <button type="button" id="save-btn" class="icon-btn" title="Save to file">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          </button>
+        </div>
         {{#if title}}
           <div class='content-title'>{{title}}</div>
         {{/if}}
@@ -439,17 +455,79 @@
       }
       {{/if}}
 
-      // Copy logic
+      // Actions logic
+      function showCheck(btn) {
+        btn.querySelector('#icon-copy').style.display = 'none';
+        btn.querySelector('#icon-check').style.display = 'block';
+        setTimeout(function() { 
+          btn.querySelector('#icon-copy').style.display = 'block';
+          btn.querySelector('#icon-check').style.display = 'none';
+        }, 2000);
+      }
+
+      function fallbackCopy(text, btn) {
+        var textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          if(document.execCommand('copy')) {
+            showCheck(btn);
+          }
+        } catch (err) {}
+        document.body.removeChild(textArea);
+      }
+
+      function encodeUtf8Base64(text) {
+        var bytes = new TextEncoder().encode(text);
+        var binary = '';
+        for (var i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+      }
+
       document.getElementById('copy-btn').addEventListener('click', function(e) {
         e.preventDefault();
         var btn = this;
         try {
           var raw = JSON.parse(document.getElementById('raw-data').textContent || '""');
-          navigator.clipboard.writeText(raw).then(function() {
-            btn.textContent = 'Copied!';
-            setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
-          });
-        } catch(e) { btn.textContent = 'Error'; }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(raw)
+              .then(function() { showCheck(btn); })
+              .catch(function() { fallbackCopy(raw, btn); });
+          } else {
+            fallbackCopy(raw, btn);
+          }
+        } catch(e) {}
+      });
+
+      document.getElementById('save-btn').addEventListener('click', function(e) {
+        e.preventDefault();
+        try {
+          var raw = JSON.parse(document.getElementById('raw-data').textContent || '""');
+          var isMd = {{isMarkdown}};
+          var fileName = isMd ? 'export.md' : 'export.html';
+          var mimeType = isMd ? 'text/markdown;charset=utf-8' : 'text/html;charset=utf-8';
+          var encoded = encodeUtf8Base64(raw);
+
+          window.parent.postMessage({
+            type: 'tool',
+            payload: {
+              toolName: 'tauri:downloadMediaFile',
+              params: {
+                dataBase64: encoded,
+                fileName: fileName,
+                mimeType: mimeType
+              }
+            }
+          }, '*');
+        } catch(e) { console.error('Failed to save file', e); }
       });
     </script>
   </body>

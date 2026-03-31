@@ -67,6 +67,13 @@ export interface RustBackendAPI {
     filePath: string,
     sessionId: string,
   ) => Promise<string>;
+  downloadMediaFile: (args: {
+    sessionId?: string;
+    fileName?: string;
+    mimeType: string;
+    dataBase64?: string;
+    fileUrl?: string;
+  }) => Promise<string>;
   exportAndDownloadZip: (
     files: string[],
     packageName: string,
@@ -126,6 +133,7 @@ const backendAPI: RustBackendAPI = {
   openExternalUrl: client.openExternalUrl,
 
   // File Download Operations
+  downloadMediaFile: client.downloadMediaFile,
   downloadWorkspaceFile: client.downloadWorkspaceFile,
   exportAndDownloadZip: client.exportAndDownloadZip,
 

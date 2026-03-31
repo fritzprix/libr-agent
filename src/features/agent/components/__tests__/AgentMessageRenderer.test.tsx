@@ -1,19 +1,31 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { AgentMessageRenderer } from '../AgentMessageRenderer';
 import type { MCPContent } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
+import { toast } from 'sonner';
+
+const downloadMediaFileMock = vi.fn();
 
 vi.mock('@/lib/backend/workspace', () => ({
   readLocalFileAsBase64: vi.fn(),
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
 }));
 
 // Mock contexts and hooks
 vi.mock('@/hooks/use-rust-backend', () => ({
   useRustBackend: () => ({
     openExternalUrl: vi.fn(),
+    downloadMediaFile: downloadMediaFileMock,
   }),
 }));
 
@@ -65,6 +77,57 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 describe('AgentMessageRenderer', () => {
+  const originalClipboard = navigator.clipboard;
+  const originalClipboardItem = globalThis.ClipboardItem;
+  const writeClipboardMock = vi.fn();
+  const clipboardItemConstructorMock = vi.fn(
+    (items: Record<string, Blob>) => items,
+  );
+  beforeEach(() => {
+    writeClipboardMock.mockReset();
+    downloadMediaFileMock.mockReset();
+    vi.mocked(readLocalFileAsBase64).mockReset();
+    vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(toast.info).mockReset();
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        write: writeClipboardMock,
+      },
+    });
+
+    Object.defineProperty(globalThis, 'ClipboardItem', {
+      configurable: true,
+      value: clipboardItemConstructorMock,
+    });
+  });
+
+  afterAll(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: originalClipboard,
+    });
+
+    Object.defineProperty(globalThis, 'ClipboardItem', {
+      configurable: true,
+      value: originalClipboardItem,
+    });
+  });
+
+  function buildImageMessage(content: MCPContent[]): Message {
+    return {
+      id: 'msg-1',
+      sessionId: 'test-session',
+      threadId: 'test-session',
+      role: 'assistant',
+      content,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Message;
+  }
+
   it('renders text content with code block', async () => {
     const content: MCPContent[] = [
       {
@@ -115,15 +178,7 @@ describe('AgentMessageRenderer', () => {
         mimeType: 'image/png',
       },
     ];
-    const message = {
-      id: 'msg-1',
-      sessionId: 'test-session',
-      threadId: 'test-session',
-      role: 'assistant',
-      content,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    } as Message;
+    const message = buildImageMessage(content);
 
     render(<AgentMessageRenderer content={content} message={message} />);
 
@@ -136,5 +191,97 @@ describe('AgentMessageRenderer', () => {
       'src',
       'data:image/png;base64,dG9vbC1pbWFnZQ==',
     );
+  });
+
+  it('copies inline image data to the clipboard without refetching the image source', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const content: MCPContent[] = [
+      {
+        type: 'image',
+        data: 'dG9vbC1pbWFnZQ==',
+        mimeType: 'image/png',
+      },
+    ];
+
+    render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    fireEvent.click(await screen.findByLabelText('Copy image to clipboard'));
+
+    await waitFor(() => {
+      expect(writeClipboardMock).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(clipboardItemConstructorMock).toHaveBeenCalledTimes(1);
+
+    const clipboardPayload = clipboardItemConstructorMock.mock.calls[0]?.[0] as
+      | Record<string, Blob>
+      | undefined;
+    expect(clipboardPayload).toBeDefined();
+    expect(clipboardPayload?.['image/png']).toBeInstanceOf(Blob);
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      'Image copied to clipboard',
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('downloads file-backed images via the native media download command', async () => {
+    vi.mocked(readLocalFileAsBase64).mockResolvedValue('dG9vbC1pbWFnZQ==');
+    downloadMediaFileMock.mockResolvedValue('File downloaded successfully');
+    const content: MCPContent[] = [
+      {
+        type: 'image',
+        uri: 'file:///tmp/tool-output.png',
+        mimeType: 'image/png',
+      },
+    ];
+
+    render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    fireEvent.click(await screen.findByLabelText('Download image'));
+
+    await waitFor(() => {
+      expect(downloadMediaFileMock).toHaveBeenCalledWith({
+        sessionId: 'test-session',
+        fileName: 'tool-output.png',
+        mimeType: 'image/png',
+        dataBase64: 'dG9vbC1pbWFnZQ==',
+        fileUrl: undefined,
+      });
+    });
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      'File downloaded successfully',
+    );
+  });
+
+  it('downloads inline data-url images through the native media download command', async () => {
+    downloadMediaFileMock.mockResolvedValue('File downloaded successfully');
+    const content: MCPContent[] = [
+      {
+        type: 'image',
+        data: 'data:image/png;base64,dG9vbC1pbWFnZQ==',
+        mimeType: 'image/png',
+      },
+    ];
+
+    render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    fireEvent.click(await screen.findByLabelText('Download image'));
+
+    await waitFor(() => {
+      expect(downloadMediaFileMock).toHaveBeenCalledWith({
+        sessionId: 'test-session',
+        fileName: expect.stringMatching(/^image-\d+\.png$/),
+        mimeType: 'image/png',
+        dataBase64: 'dG9vbC1pbWFnZQ==',
+        fileUrl: undefined,
+      });
+    });
   });
 });

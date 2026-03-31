@@ -48,7 +48,9 @@ use commands::assistant_crud_commands::{
 };
 use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
-use commands::download_commands::{download_workspace_file, export_and_download_zip};
+use commands::download_commands::{
+    download_media_file, download_workspace_file, export_and_download_zip,
+};
 use commands::file_commands::{
     check_dropped_path_type, read_dropped_file, register_dropped_files, workspace_write_file,
     write_file,
@@ -168,6 +170,7 @@ pub fn run() {
                 list_builtin_servers_with_metadata,
                 list_available_builtin_server_definitions,
                 // Download commands
+                download_media_file,
                 download_workspace_file,
                 export_and_download_zip,
                 // Session management commands (still needed for workspace isolation)
