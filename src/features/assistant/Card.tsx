@@ -153,6 +153,11 @@ export default function AssistantCard({
             size="icon"
             className="h-8 w-8 rounded-full hover:bg-primary/5 transition-colors"
             onClick={onToggle}
+            aria-label={
+              isExpanded
+                ? t('assistant.card.collapse', 'Collapse configuration')
+                : t('assistant.card.expand', 'Expand configuration')
+            }
           >
             {isExpanded ? (
               <ChevronUp className="h-4 w-4" />
