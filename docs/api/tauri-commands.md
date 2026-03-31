@@ -238,3 +238,235 @@ try {
   console.error('Failed to get setting:', error);
 }
 ```
+
+---
+
+## Interactive Browser Management
+
+### create_browser_session
+
+**Purpose**: Creates a new interactive browser session.
+
+**Source**: `src-tauri/src/commands/browser_commands.rs`
+
+**Parameters**:
+
+- `url: String` - The initial URL to open in the new browser session.
+- `title: Option<String>` - An optional title for the session.
+
+**Returns**:
+
+- `Result<CreateSessionResponse, String>` - Returns the session response on success, containing `session_id` and `message`.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  const response = await invoke('create_browser_session', {
+    url: 'https://example.com',
+    title: 'Example',
+  });
+  console.log('Browser session created:', response.session_id);
+} catch (error) {
+  console.error('Failed to create browser session:', error);
+}
+```
+
+---
+
+### close_browser_session
+
+**Purpose**: Closes an active browser session.
+
+**Source**: `src-tauri/src/commands/browser_commands.rs`
+
+**Parameters**:
+
+- `session_id: String` - The ID of the session to close.
+
+**Returns**:
+
+- `Result<String, String>` - Returns a success message on success.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  await invoke('close_browser_session', { sessionId: 'browser-session-123' });
+} catch (error) {
+  console.error('Failed to close browser session:', error);
+}
+```
+
+---
+
+### list_browser_sessions
+
+**Purpose**: Lists all active browser sessions.
+
+**Source**: `src-tauri/src/commands/browser_commands.rs`
+
+**Returns**:
+
+- `Result<Vec<BrowserSession>, String>` - Returns a list of active browser sessions.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  const sessions = await invoke('list_browser_sessions');
+  console.log('Active browser sessions:', sessions);
+} catch (error) {
+  console.error('Failed to list browser sessions:', error);
+}
+```
+
+---
+
+### navigate_to_url
+
+**Purpose**: Navigates a browser session to a new URL.
+
+**Source**: `src-tauri/src/commands/browser_commands.rs`
+
+**Parameters**:
+
+- `session_id: String` - The ID of the browser session.
+- `url: String` - The URL to navigate to.
+
+**Returns**:
+
+- `Result<String, String>` - Returns a success message on success.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  await invoke('navigate_to_url', {
+    sessionId: 'browser-session-123',
+    url: 'https://github.com',
+  });
+} catch (error) {
+  console.error('Failed to navigate:', error);
+}
+```
+
+---
+
+## Workspace Management
+
+### get_workspace_dir
+
+**Purpose**: Returns the absolute workspace directory path for the given session.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Parameters**:
+
+- `session_id: String` - The unique identifier of the session.
+
+**Returns**:
+
+- `Result<String, String>` - Returns the absolute path of the workspace directory.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  const dir = await invoke('get_workspace_dir', { sessionId: 'session-123' });
+  console.log('Workspace directory:', dir);
+} catch (error) {
+  console.error('Failed to get workspace directory:', error);
+}
+```
+
+---
+
+### get_app_data_dir
+
+**Purpose**: Gets the application's base data directory.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Returns**:
+
+- `Result<String, String>` - Returns the path to the base data directory.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  const dataDir = await invoke('get_app_data_dir');
+  console.log('App Data Directory:', dataDir);
+} catch (error) {
+  console.error('Failed to get app data directory:', error);
+}
+```
+
+---
+
+### open_workspace_in_explorer
+
+**Purpose**: Opens the workspace directory for the session in the system's file explorer.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Parameters**:
+
+- `session_id: String` - The unique identifier of the session.
+
+**Returns**:
+
+- `Result<(), String>` - Returns an empty success object.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  await invoke('open_workspace_in_explorer', { sessionId: 'session-123' });
+} catch (error) {
+  console.error('Failed to open workspace in explorer:', error);
+}
+```
+
+---
+
+### open_workspace_in_terminal
+
+**Purpose**: Opens the workspace directory for the session in the system's terminal.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Parameters**:
+
+- `session_id: String` - The unique identifier of the session.
+
+**Returns**:
+
+- `Result<(), String>` - Returns an empty success object.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  await invoke('open_workspace_in_terminal', { sessionId: 'session-123' });
+} catch (error) {
+  console.error('Failed to open workspace in terminal:', error);
+}
+```
