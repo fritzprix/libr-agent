@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.28] - 2026-04-01
+
+### 🐛 Fixes
+
+- **Tool Discovery Availability Guidance**: Refined builtin and MCP tool discovery so agents can browse full tool inventory by default while switching to session-aware availability checks only when needed, reducing misleading "not available" guidance during planning and delegation workflows.
+
+### 🔧 Internal
+
+- **Tool Discovery Regression Coverage**: Added focused integration coverage to lock in canonical `agent__update` guidance and the new inventory-versus-session discovery behavior.
+
 ## [0.6.27] - 2026-04-02
 
 ### 🚀 Features
