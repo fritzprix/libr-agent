@@ -1,7 +1,7 @@
 import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { useState } from 'react';
+import { useState, useDeferredValue, useMemo } from 'react';
 import {
   Button,
   Dialog,
@@ -106,13 +106,16 @@ function MCPServersTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const { t } = useTranslation('common');
 
-  const filteredServers = activeServers.filter(
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const isPending = searchQuery !== deferredSearchQuery;
+
+  const filteredServers = useMemo(() => activeServers.filter(
     (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.name.toLowerCase().includes(deferredSearchQuery.toLowerCase()) ||
       s.metadata?.description
         ?.toLowerCase()
-        .includes(searchQuery.toLowerCase()),
-  );
+        .includes(deferredSearchQuery.toLowerCase()),
+  ), [activeServers, deferredSearchQuery]);
 
   const handleServerToggle = (serverId: string, enabled: boolean) => {
     update((draft) => {
@@ -160,7 +163,7 @@ function MCPServersTab() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
 
-          <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
+          <div className={`border rounded-lg divide-y max-h-96 overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}>
             {filteredServers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {t('assistant.mcp.noMatch')}
