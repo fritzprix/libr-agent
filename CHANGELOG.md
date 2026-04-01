@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.29] - 2026-04-01
+
+### 🐛 Fixes
+
+- **Database Startup Recovery for Existing Users**: Restored the previously shipped `m20260327_000025_add_stores_session_index` migration as a compatibility no-op so upgraded apps no longer fail to boot when older databases already record that migration version.
+
+### 🔧 Internal
+
+- **Migration Compatibility Guardrail**: Added focused regression coverage to ensure shipped migration versions remain registered in the migrator and cannot be silently dropped again.
+
 ## [0.6.28] - 2026-04-01
 
 ### 🐛 Fixes
