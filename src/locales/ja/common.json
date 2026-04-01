@@ -76,7 +76,9 @@
       "cancel": "キャンセル",
       "created": "作成日",
       "updated": "更新日",
-      "description": "説明"
+      "description": "説明",
+      "expand": "設定を展開",
+      "collapse": "設定を折りたたむ"
     }
   },
   "status": {

@@ -76,7 +76,9 @@
       "cancel": "Abbrechen",
       "created": "Erstellt",
       "updated": "Aktualisiert",
-      "description": "Beschreibung"
+      "description": "Beschreibung",
+      "expand": "Konfiguration erweitern",
+      "collapse": "Konfiguration einklappen"
     }
   },
   "status": {
@@ -605,21 +607,31 @@
   },
   "agent": {
     "draft": {
-      "failedToRegisterDroppedFiles": "Abgelegte Dateien konnten nicht registriert werden",
-      "dropFilesInChatInput": "Ziehen Sie Dateien in die Chat-Eingabe, um sie anzuhängen.",
+      "send": "Nachricht senden",
+      "attachFiles": "Dateien anhängen",
+      "attachedFiles": "Angehängte Dateien",
+      "removeWorkspaceOverride": "Workspace-Überschreibung entfernen",
+      "removeFile": "{{name}} entfernen",
+      "dropFilesHint": "Dateien hier ablegen...",
+      "unsupportedFile": "Nicht unterstützte Datei!",
+      "uploading": "Wird hochgeladen...",
+      "placeholder": "Nachricht an {{name}}...",
+      "failedToRegisterDroppedFiles": "Fehler beim Registrieren der abgelegten Dateien",
+      "dropFilesInChatInput": "Dateien im Chat-Eingabefeld ablegen, um sie anzuhängen.",
       "failedToProcessFile": "Fehler beim Verarbeiten: {{file}}",
       "noAssistantSpecified": "Kein Assistent angegeben",
-      "failedToLoadAssistant": "Assistent konnte nicht geladen werden",
-      "failedToAttach": "Anhängen fehlgeschlagen: {{file}}",
+      "failedToLoadAssistant": "Fehler beim Laden des Assistenten",
+      "failedToAttach": "Fehler beim Anhängen: {{file}}",
       "creatingSession": "Sitzung wird erstellt...",
-      "failedToStartSession": "Sitzung konnte nicht gestartet werden",
+      "failedToStartSession": "Fehler beim Starten der Sitzung",
       "newSession": "Neue Sitzung",
-      "workspaceOverrideActive": "Arbeitsbereich-Überschreibung aktiv",
-      "workspaceOverrideDescription": "Der Agent verwendet dieses Verzeichnis als primären Arbeitsbereich für diese Sitzung.",
-      "basicTools": "Basis-Werkzeuge",
-      "basicToolsDescription": "Enthält Kernfunktionen wie das Lesen von Dateien, das Verwalten von Aufgaben und das Ausführen von Code. Immer bereit zu helfen!",
-      "addTools": "+ Werkzeuge hinzufügen",
-      "addMoreCapabilities": "Fügen Sie in den Einstellungen weitere Funktionen hinzu",
+      "workspaceOverrideActive": "Workspace-Überschreibung aktiv",
+      "workspaceOverrideDescription": "Der Agent verwendet dieses Verzeichnis als primären Workspace für diese Sitzung.",
+      "filesWillBeListedAfterStart": "Dateien werden nach dem Start der Sitzung aufgelistet",
+      "basicTools": "Basistools",
+      "basicToolsDescription": "Enthält Kernfunktionen wie das Lesen von Dateien, Verwalten von Aufgaben und Ausführen von Code. Immer bereit zu helfen!",
+      "addTools": "+ Tools hinzufügen",
+      "addMoreCapabilities": "Weitere Funktionen in den Einstellungen hinzufügen",
       "localContext": "Lokaler Kontext"
     },
     "header": {

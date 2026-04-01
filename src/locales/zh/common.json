@@ -76,7 +76,9 @@
       "cancel": "取消",
       "created": "创建于",
       "updated": "更新于",
-      "description": "描述"
+      "description": "描述",
+      "expand": "展开配置",
+      "collapse": "折叠配置"
     }
   },
   "status": {
@@ -605,6 +607,15 @@
   },
   "agent": {
     "draft": {
+      "send": "发送消息",
+      "attachFiles": "附加文件",
+      "attachedFiles": "已附加文件",
+      "removeWorkspaceOverride": "移除工作区覆盖",
+      "removeFile": "移除 {{name}}",
+      "dropFilesHint": "在此处放下文件...",
+      "unsupportedFile": "不支持的文件类型！",
+      "uploading": "正在上传...",
+      "placeholder": "给 {{name}} 发送消息...",
       "failedToRegisterDroppedFiles": "注册拖放文件失败",
       "dropFilesInChatInput": "将文件拖放到聊天输入框以附加它们。",
       "failedToProcessFile": "处理失败: {{file}}",
@@ -616,6 +627,7 @@
       "newSession": "新会话",
       "workspaceOverrideActive": "工作区覆盖已启用",
       "workspaceOverrideDescription": "代理将使用此目录作为此会话的主要工作区。",
+      "filesWillBeListedAfterStart": "会话开始后将列出文件",
       "basicTools": "基础工具",
       "basicToolsDescription": "包含读取文件、管理任务和执行代码等核心功能。随时为您提供帮助！",
       "addTools": "+ 添加工具",

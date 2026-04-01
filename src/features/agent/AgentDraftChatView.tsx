@@ -398,10 +398,10 @@ function DraftChatInner() {
                           type="button"
                           onClick={() => handleFileRemove(index)}
                           className="text-muted-foreground hover:text-destructive transition-colors focus:outline-none"
-                          aria-label={t(
-                            'agent.draft.removeFile',
-                            'Remove file',
-                          )}
+                          aria-label={t('fileAttachment.removeFile', {
+                            name: file.name,
+                            defaultValue: `Remove ${file.name}`,
+                          })}
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -482,7 +482,7 @@ function DraftChatInner() {
                         disabled={isSubmitting || isAttachmentLoading}
                         className="mb-1 h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/5 shrink-0 transition-colors"
                         aria-label={t(
-                          'agent.draft.attachFiles',
+                          'fileAttachment.attachFiles',
                           'Attach files',
                         )}
                       >
@@ -490,7 +490,7 @@ function DraftChatInner() {
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {t('agent.draft.attachFiles', 'Attach files')}
+                      {t('fileAttachment.attachFiles', 'Attach files')}
                     </TooltipContent>
                   </Tooltip>
 
@@ -536,7 +536,7 @@ function DraftChatInner() {
                         size="icon"
                         className="mb-1 shrink-0 shadow-lg transition-all active:scale-95"
                         aria-label={t(
-                          'agent.draft.sendMessage',
+                          'agent.input.sendAriaLabel',
                           'Send message',
                         )}
                       >
@@ -548,7 +548,7 @@ function DraftChatInner() {
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {t('agent.draft.sendMessage', 'Send message')}
+                      {t('agent.input.sendTooltip', 'Send')}
                     </TooltipContent>
                   </Tooltip>
                 </form>

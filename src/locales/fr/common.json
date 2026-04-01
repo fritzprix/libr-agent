@@ -76,7 +76,9 @@
       "cancel": "Annuler",
       "created": "Créé",
       "updated": "Mis à jour",
-      "description": "Description"
+      "description": "Description",
+      "expand": "Développer la configuration",
+      "collapse": "Réduire la configuration"
     }
   },
   "status": {
@@ -605,19 +607,29 @@
   },
   "agent": {
     "draft": {
+      "send": "Envoyer le message",
+      "attachFiles": "Joindre des fichiers",
+      "attachedFiles": "Fichiers joints",
+      "removeWorkspaceOverride": "Supprimer la substitution de l'espace de travail",
+      "removeFile": "Supprimer {{name}}",
+      "dropFilesHint": "Déposez les fichiers ici...",
+      "unsupportedFile": "Fichier non supporté !",
+      "uploading": "Téléchargement...",
+      "placeholder": "Message {{name}}...",
       "failedToRegisterDroppedFiles": "Échec de l'enregistrement des fichiers déposés",
-      "dropFilesInChatInput": "Déposez des fichiers dans l'entrée du chat pour les joindre.",
+      "dropFilesInChatInput": "Déposez les fichiers dans la saisie de chat pour les joindre.",
       "failedToProcessFile": "Échec du traitement : {{file}}",
       "noAssistantSpecified": "Aucun assistant spécifié",
       "failedToLoadAssistant": "Échec du chargement de l'assistant",
-      "failedToAttach": "Échec de la pièce jointe : {{file}}",
+      "failedToAttach": "Échec de la jointure : {{file}}",
       "creatingSession": "Création de la session...",
       "failedToStartSession": "Échec du démarrage de la session",
       "newSession": "Nouvelle session",
-      "workspaceOverrideActive": "Remplacement de l'espace de travail actif",
+      "workspaceOverrideActive": "Substitution de l'espace de travail active",
       "workspaceOverrideDescription": "L'agent utilisera ce répertoire comme espace de travail principal pour cette session.",
+      "filesWillBeListedAfterStart": "Les fichiers seront listés après le début de la session",
       "basicTools": "Outils de base",
-      "basicToolsDescription": "Inclut des capacités de base comme la lecture de fichiers, la gestion des tâches et l'exécution de code. Toujours disponible pour vous aider !",
+      "basicToolsDescription": "Comprend des capacités de base comme la lecture de fichiers, la gestion des tâches et l'exécution de code. Toujours prêt à vous aider !",
       "addTools": "+ Ajouter des outils",
       "addMoreCapabilities": "Ajoutez plus de capacités dans les paramètres",
       "localContext": "Contexte local"
