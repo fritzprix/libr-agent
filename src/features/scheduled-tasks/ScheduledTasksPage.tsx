@@ -9,7 +9,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Plus, Pencil, Trash2, Clock, Zap, FolderOpen, Loader2 } from 'lucide-react';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Clock,
+  Zap,
+  FolderOpen,
+  Loader2,
+} from 'lucide-react';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { ScheduledTaskModal } from './components/ScheduledTaskModal';
 import { describeCron, getDisplayCron } from './components/ScheduleBuilder';

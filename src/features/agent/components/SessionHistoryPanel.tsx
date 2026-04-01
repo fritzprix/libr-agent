@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,14 +68,11 @@ export function SessionHistoryPanel({
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
-  const [prevSessionsForLineage, setPrevSessionsForLineage] =
-    useState(sessions);
+  const prevSessionsForLineageRef = useRef(sessions);
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [prevAutoExpanded, setPrevAutoExpanded] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const prevAutoExpandedSignatureRef = useRef('');
 
   const defaultHeading =
     heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
@@ -137,8 +134,8 @@ export function SessionHistoryPanel({
     });
   }, [activeStatusFilter, deferredSearchQuery, segmentedSessions]);
 
-  if (sessions !== prevSessionsForLineage) {
-    setPrevSessionsForLineage(sessions);
+  if (sessions !== prevSessionsForLineageRef.current) {
+    prevSessionsForLineageRef.current = sessions;
     if (selectedLineageId) {
       const stillExists = sessions.some(
         (session) => session.lineageId === selectedLineageId,
@@ -189,10 +186,18 @@ export function SessionHistoryPanel({
     return expandedIds;
   }, [baseSessions, filtersActive, matchedSessions]);
 
-  if (autoExpandedAncestorIds !== prevAutoExpanded) {
-    setPrevAutoExpanded(autoExpandedAncestorIds);
+  const autoExpandedSignature = [...autoExpandedAncestorIds].sort().join(':');
+  if (autoExpandedSignature !== prevAutoExpandedSignatureRef.current) {
+    prevAutoExpandedSignatureRef.current = autoExpandedSignature;
     if (autoExpandedAncestorIds.size > 0) {
       setExpandedSessionIds((prev) => {
+        const hasNewAncestor = [...autoExpandedAncestorIds].some(
+          (sessionId) => !prev.has(sessionId),
+        );
+        if (!hasNewAncestor) {
+          return prev;
+        }
+
         const next = new Set(prev);
         autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
         return next;
