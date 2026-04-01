@@ -393,14 +393,26 @@ function DraftChatInner() {
                         <span className="text-xs font-medium font-sans truncate max-w-[200px]">
                           {file.name}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleFileRemove(index)}
-                          className="text-muted-foreground hover:text-destructive transition-colors focus:outline-none"
-                          aria-label="Remove file"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => handleFileRemove(index)}
+                              className="text-muted-foreground hover:text-destructive transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                              aria-label={t('agent.draft.removeFileAria', {
+                                fileName: file.name,
+                                defaultValue: `Remove file ${file.name}`,
+                              })}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('agent.draft.removeFile', {
+                              defaultValue: 'Remove file',
+                            })}
+                          </TooltipContent>
+                        </Tooltip>
                       </li>
                     ))}
                   </ul>
