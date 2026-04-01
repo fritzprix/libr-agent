@@ -20,6 +20,7 @@ import {
   stableHashKeyPart,
   stableStringify,
 } from '../base-service';
+import { Logger } from '../../logger';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
 import { convertToGeminiMessages } from './mapper';
@@ -43,6 +44,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private static readonly CONTEXT_CACHE_REFRESH_THRESHOLD_MS = 10 * 60 * 1000;
   private static readonly MIN_HISTORY_CHECKPOINT_MESSAGES = 5;
   private static readonly HISTORY_CHECKPOINT_TAIL_USER_MESSAGES = 2;
+  private static readonly HISTORY_CHECKPOINT_ADVANCE_USER_INTERVAL = 2;
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
@@ -51,6 +53,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     string,
     {
       name: string;
+      scope: string;
       createdAt: number;
       lastUsedAt: number;
       ttlMs: number;
@@ -64,6 +67,10 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       tokenCount: number;
       source: 'count_tokens' | 'estimate_fallback';
     }
+  >();
+  private readonly inFlightContextCacheCreations = new Map<
+    string,
+    Promise<string | undefined>
   >();
   private lastPromptSnapshot?: {
     model: string;
@@ -203,6 +210,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         type: Type.OBJECT,
         properties: geminiProperties,
       };
+      if ('required' in schema && Array.isArray(schema.required)) {
+        result.required = schema.required;
+      }
       if (schema.description) result.description = schema.description;
       return result;
     }
@@ -297,8 +307,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       // --- CONTEXT CACHING ABSTRACTION BEGIN ---
       const stablePrefix = options.systemPrompt ?? '';
-      const dynamicContext = options.sessionContext ?? '';
       const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
+      const cacheScope = this.createContextCacheScope(sanitizedMessages);
       const historyCheckpoint = this.buildHistoryCheckpoint(geminiMessages);
       const cacheableContents = historyCheckpoint?.cacheContents;
       const requestContents = historyCheckpoint?.requestContents ?? geminiMessages;
@@ -334,6 +344,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         );
         const existingEntry = await this.getUsableContextCacheEntry(
           cacheKey,
+          cacheScope,
           'preflight validation',
           this.getContextCacheTtlMs(cacheDecision.cacheableTokenCount),
         );
@@ -341,8 +352,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         if (existingEntry) {
           cachedContentName = existingEntry.name;
         } else {
-          cachedContentName = await this.createContextCacheEntry(
+          cachedContentName = await this.getOrCreateContextCacheEntry(
             cacheKey,
+            cacheScope,
             model,
             stablePrefix,
             geminiTools,
@@ -367,6 +379,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
         cachedHistoryMessageCount: cacheableContents?.length ?? 0,
         cachedContentName,
+        cacheableContents,
       });
 
       const geminiConfig: GeminiServiceConfig = {
@@ -375,15 +388,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       if (cachedContentName) {
         geminiConfig.cachedContent = cachedContentName;
-        // The Google GenAI API does not allow overriding system_instruction or tools when cached_content is provided.
-        // Therefore, we inject the dynamic context into the first user message.
-        if (dynamicContext && requestContents.length > 0) {
-          if (requestContents[0].parts) {
-            requestContents[0].parts.unshift({
-              text: `[System Context Update]\n${dynamicContext}\n\n`,
-            });
-          }
-        }
       } else {
         if (geminiTools) {
           geminiConfig.tools = geminiTools;
@@ -441,18 +445,20 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         first500Chars: sysPromptText.substring(0, 500),
         last500Chars: sysPromptText.substring(sysPromptText.length - 500),
       });
-      this.logPromptDiagnostics({
-        model,
-        systemPrompt: options.systemPrompt,
-        promptCacheKey: cacheKey,
-        messages: requestContents,
-        geminiTools,
-        cachedHistoryContents: cacheableContents,
-        cacheableTokenCount: cacheDecision.cacheableTokenCount,
-        tokenDecisionSource: cacheDecision.tokenDecisionSource,
-        cacheStrategy:
-          shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
-      });
+      if (this.shouldLogPromptDiagnostics()) {
+        this.logPromptDiagnostics({
+          model,
+          systemPrompt: options.systemPrompt,
+          promptCacheKey: cacheKey,
+          messages: requestContents,
+          geminiTools,
+          cachedHistoryContents: cacheableContents,
+          cacheableTokenCount: cacheDecision.cacheableTokenCount,
+          tokenDecisionSource: cacheDecision.tokenDecisionSource,
+          cacheStrategy:
+            shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
+        });
+      }
 
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({
@@ -619,7 +625,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       };
     }
 
-    if (!stablePrefix && !toolsPayload) {
+    if (
+      !stablePrefix &&
+      !toolsPayload &&
+      (!cacheableContents || cacheableContents.length === 0)
+    ) {
       return {
         shouldUseCache: false,
         cacheableTokenCount: 0,
@@ -673,6 +683,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
         stablePrefix,
         toolsPayload,
+        cacheableContents,
       );
       this.logger.warn(
         'Gemini countTokens failed during cache eligibility check; falling back to character estimate.',
@@ -680,6 +691,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           model,
           stablePrefixLength: stablePrefix.length,
           toolsPayloadLength: toolsPayload.length,
+          cacheableContentCount: cacheableContents?.length ?? 0,
           cacheableTokenEstimate,
           error,
         },
@@ -702,8 +714,13 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private estimateCacheablePrefixTokens(
     stablePrefix: string,
     toolsPayload: string,
+    cacheableContents?: Content[],
   ): number {
-    return Math.ceil((stablePrefix.length + toolsPayload.length) / 4);
+    const cacheableContentCharacters =
+      this.estimateCacheableContentCharacters(cacheableContents);
+    return Math.ceil(
+      (stablePrefix.length + toolsPayload.length + cacheableContentCharacters) / 4,
+    );
   }
 
   private logPromptCacheMetadata(args: {
@@ -719,10 +736,12 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     cacheStrategy: 'system_tools' | 'history_checkpoint' | 'none';
     cachedHistoryMessageCount: number;
     cachedContentName?: string;
+    cacheableContents?: Content[];
   }): void {
     const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
       args.stablePrefix,
       args.toolsPayload,
+      args.cacheableContents,
     );
 
     this.logger.info('Gemini prompt cache metadata', {
@@ -760,8 +779,56 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     ].join(':');
   }
 
+  private async getOrCreateContextCacheEntry(
+    cacheKey: string,
+    cacheScope: string,
+    model: string,
+    stablePrefix: string,
+    geminiTools: Array<{ functionDeclarations: FunctionDeclaration[] }> | undefined,
+    cacheableTokenCount: number,
+    cacheableContents?: Content[],
+  ): Promise<string | undefined> {
+    const existingCreation = this.inFlightContextCacheCreations.get(cacheKey);
+    if (existingCreation) {
+      return existingCreation;
+    }
+
+    const creationPromise = (async () => {
+      const reusableEntry = await this.getUsableContextCacheEntry(
+        cacheKey,
+        cacheScope,
+        'in-flight cache creation recheck',
+        this.getContextCacheTtlMs(cacheableTokenCount),
+      );
+      if (reusableEntry) {
+        return reusableEntry.name;
+      }
+
+      return this.createContextCacheEntry(
+        cacheKey,
+        cacheScope,
+        model,
+        stablePrefix,
+        geminiTools,
+        cacheableTokenCount,
+        cacheableContents,
+      );
+    })();
+
+    this.inFlightContextCacheCreations.set(cacheKey, creationPromise);
+
+    try {
+      return await creationPromise;
+    } finally {
+      if (this.inFlightContextCacheCreations.get(cacheKey) === creationPromise) {
+        this.inFlightContextCacheCreations.delete(cacheKey);
+      }
+    }
+  }
+
   private async getUsableContextCacheEntry(
     cacheKey: string,
+    cacheScope: string,
     reason: string,
     desiredTtlMs: number,
   ): Promise<{ name: string; createdAt: number; lastUsedAt: number } | null> {
@@ -777,6 +844,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     }
 
     entry.lastUsedAt = now;
+    entry.scope = cacheScope;
     if (this.shouldRefreshContextCacheEntry(entry, desiredTtlMs, now)) {
       try {
         await this.genAI.caches.update({
@@ -806,6 +874,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
   private async createContextCacheEntry(
     cacheKey: string,
+    cacheScope: string,
     model: string,
     stablePrefix: string,
     geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>,
@@ -845,13 +914,14 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const now = Date.now();
       this.cachedContextEntries.set(cacheKey, {
         name: cacheName,
+        scope: cacheScope,
         createdAt: now,
         lastUsedAt: now,
         ttlMs,
         expiresAt: now + ttlMs,
         cacheableTokenCount,
       });
-      await this.evictContextCacheOverflow();
+      await this.evictContextCacheOverflow(cacheScope, cacheKey);
 
       this.logger.info(
         `Gemini context cache created successfully: ${cacheName}`,
@@ -867,13 +937,27 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     }
   }
 
-  private async evictContextCacheOverflow(): Promise<void> {
+  private async evictContextCacheOverflow(
+    preferredScope?: string,
+    protectedCacheKey?: string,
+  ): Promise<void> {
     while (
       this.cachedContextEntries.size > GeminiService.MAX_CONTEXT_CACHE_ENTRIES
     ) {
-      const oldestEntry = [...this.cachedContextEntries.entries()].reduce(
-        (oldest, current) =>
-          current[1].lastUsedAt < oldest[1].lastUsedAt ? current : oldest,
+      const entries = [...this.cachedContextEntries.entries()];
+      const evictableEntries = entries.filter(
+        ([cacheKey]) => cacheKey !== protectedCacheKey,
+      );
+      const sameScopeEntries =
+        preferredScope === undefined
+          ? []
+          : evictableEntries.filter(([, entry]) => entry.scope === preferredScope);
+      const candidateEntries =
+        sameScopeEntries.length > 0 ? sameScopeEntries : evictableEntries;
+      const oldestEntryPool =
+        candidateEntries.length > 0 ? candidateEntries : entries;
+      const oldestEntry = oldestEntryPool.reduce((oldest, current) =>
+        current[1].lastUsedAt < oldest[1].lastUsedAt ? current : oldest,
       );
 
       await this.removeContextCacheEntry(
@@ -886,28 +970,31 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private async removeContextCacheEntry(
     cacheKey: string,
     reason: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const entry = this.cachedContextEntries.get(cacheKey);
     if (!entry) {
-      return;
+      return true;
     }
-
-    this.cachedContextEntries.delete(cacheKey);
 
     try {
       await this.genAI.caches.delete({ name: entry.name });
+      this.cachedContextEntries.delete(cacheKey);
       this.logger.debug('Deleted Gemini context cache entry', {
         cacheKey,
         cachedContentName: entry.name,
         reason,
       });
+      return true;
     } catch (error) {
+      entry.expiresAt = 0;
+      entry.lastUsedAt = 0;
       this.logger.debug('Failed to delete Gemini context cache entry', {
         cacheKey,
         cachedContentName: entry.name,
         reason,
         error,
       });
+      return false;
     }
   }
 
@@ -1011,6 +1098,59 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     return `${Math.max(60, Math.floor(ttlMs / 1000))}s`;
   }
 
+  private createContextCacheScope(messages: Message[]): string {
+    const anchorMessage =
+      [...messages].reverse().find((message) => {
+        return (
+          typeof message.sessionId === 'string' &&
+          message.sessionId.length > 0 &&
+          typeof message.threadId === 'string' &&
+          message.threadId.length > 0
+        );
+      }) ?? messages[0];
+
+    if (!anchorMessage) {
+      return 'global:global';
+    }
+
+    const sessionId =
+      typeof anchorMessage.sessionId === 'string' && anchorMessage.sessionId.length > 0
+        ? anchorMessage.sessionId
+        : 'global';
+    const threadId =
+      typeof anchorMessage.threadId === 'string' && anchorMessage.threadId.length > 0
+        ? anchorMessage.threadId
+        : sessionId;
+    return `${sessionId}:${threadId}`;
+  }
+
+  private estimateCacheableContentCharacters(
+    cacheableContents?: Content[],
+  ): number {
+    if (!cacheableContents) {
+      return 0;
+    }
+
+    return cacheableContents.reduce((total, content) => {
+      if (typeof content !== 'object' || content === null) {
+        return total;
+      }
+
+      const roleLength = typeof content.role === 'string' ? content.role.length : 0;
+      const parts = Array.isArray(content.parts) ? content.parts : [];
+      const partsLength = parts.reduce((partTotal, part) => {
+        if (typeof part !== 'object' || part === null) {
+          return partTotal;
+        }
+
+        const serializedPart = JSON.stringify(part);
+        return partTotal + (serializedPart?.length ?? 0);
+      }, 0);
+
+      return total + roleLength + partsLength;
+    }, 0);
+  }
+
   private shouldRefreshContextCacheEntry(
     entry: {
       name: string;
@@ -1085,6 +1225,10 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       messageFingerprints,
     });
     this.logPromptDrift(snapshot);
+  }
+
+  protected shouldLogPromptDiagnostics(): boolean {
+    return Logger.shouldLogLevel('debug');
   }
 
   private logPromptDrift(
@@ -1275,17 +1419,49 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       return null;
     }
 
-    let tailUserMessages = 0;
-    let splitIndex = -1;
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index]?.role === 'user') {
-        tailUserMessages += 1;
-        if (tailUserMessages === GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES) {
-          splitIndex = index;
-          break;
-        }
-      }
+    if (
+      messages.some((message) => {
+        return (
+          this.isGeminiFunctionCallTurn(message) ||
+          this.isGeminiFunctionResponseTurn(message)
+        );
+      })
+    ) {
+      return null;
     }
+
+    const userMessageIndices = messages.reduce<number[]>((indices, message, index) => {
+      if (message?.role === 'user') {
+        indices.push(index);
+      }
+      return indices;
+    }, []);
+
+    const minimumUserMessagesForCheckpoint =
+      GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES + 1;
+    if (userMessageIndices.length < minimumUserMessagesForCheckpoint) {
+      return null;
+    }
+
+    const checkpointSlot = Math.min(
+      userMessageIndices.length - GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES,
+      1 +
+        Math.floor(
+          (userMessageIndices.length - minimumUserMessagesForCheckpoint) /
+            GeminiService.HISTORY_CHECKPOINT_ADVANCE_USER_INTERVAL,
+        ) *
+          GeminiService.HISTORY_CHECKPOINT_ADVANCE_USER_INTERVAL,
+    );
+    let resolvedCheckpointSlot = checkpointSlot;
+    while (resolvedCheckpointSlot >= 1) {
+      const candidateSplitIndex = userMessageIndices[resolvedCheckpointSlot] ?? -1;
+      if (this.isSafeHistoryCheckpointBoundary(messages, candidateSplitIndex)) {
+        break;
+      }
+      resolvedCheckpointSlot -= 1;
+    }
+
+    const splitIndex = userMessageIndices[resolvedCheckpointSlot] ?? -1;
 
     if (splitIndex <= 0 || splitIndex >= messages.length) {
       return null;
@@ -1304,6 +1480,51 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         stableStringify(this.createGeminiContentFingerprint(cacheContents)),
       ),
     };
+  }
+
+  private isSafeHistoryCheckpointBoundary(
+    messages: Content[],
+    splitIndex: number,
+  ): boolean {
+    if (splitIndex <= 0 || splitIndex >= messages.length) {
+      return false;
+    }
+
+    if (this.isGeminiFunctionResponseTurn(messages[splitIndex])) {
+      return false;
+    }
+
+    if (this.isGeminiFunctionCallTurn(messages[splitIndex - 1])) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private isGeminiFunctionCallTurn(message: Content | undefined): boolean {
+    const parts = Array.isArray(message?.parts) ? message.parts : [];
+    return parts.some((part) => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'functionCall' in part &&
+        typeof part.functionCall === 'object' &&
+        part.functionCall !== null
+      );
+    });
+  }
+
+  private isGeminiFunctionResponseTurn(message: Content | undefined): boolean {
+    const parts = Array.isArray(message?.parts) ? message.parts : [];
+    return parts.some((part) => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'functionResponse' in part &&
+        typeof part.functionResponse === 'object' &&
+        part.functionResponse !== null
+      );
+    });
   }
 
   private createGeminiContentFingerprint(messages: Content[]): Array<{
