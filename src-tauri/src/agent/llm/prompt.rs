@@ -310,12 +310,15 @@ async fn build_volatile_sections_split(
     let mut volatile_parts: Vec<String> = Vec::new();
 
     // 5. Read-only Context Providers (time, skills, documentation, etc.)
-    // Context providers currently emit one merged block without per-provider
-    // volatility metadata, so keep them on the per-turn channel.
+    // Stable provider content can now join the reusable prefix, while dynamic
+    // provider content stays in the per-turn channel.
     if let Some(registry) = context_registry {
-        let context = registry.build_context(assistant_id).await;
-        if !context.trim().is_empty() {
-            volatile_parts.push(context);
+        let (stable_context, volatile_context) = registry.build_context_split(assistant_id).await;
+        if !stable_context.trim().is_empty() {
+            cacheable_parts.push(stable_context);
+        }
+        if !volatile_context.trim().is_empty() {
+            volatile_parts.push(volatile_context);
         }
     }
 
@@ -346,8 +349,49 @@ async fn build_volatile_sections_split(
 mod tests {
     use super::*;
     use crate::agent::context::registry::ContextRegistry;
+    use crate::agent::context::ContextProvider;
     use crate::mcp::service_proxy::MCPServiceProxy;
+    use crate::mcp::types::ContextVolatility;
+    use async_trait::async_trait;
     use std::sync::Arc;
+
+    struct StaticTestContextProvider;
+
+    #[async_trait]
+    impl ContextProvider for StaticTestContextProvider {
+        fn provider_id(&self) -> &str {
+            "static_test"
+        }
+
+        async fn get_context(&self, _assistant_id: Option<&str>) -> Result<String, String> {
+            Ok("## Stable Context\nStable provider payload".to_string())
+        }
+
+        fn volatility(&self) -> ContextVolatility {
+            ContextVolatility::Stable
+        }
+    }
+
+    struct VolatileTestContextProvider;
+
+    #[async_trait]
+    impl ContextProvider for VolatileTestContextProvider {
+        fn provider_id(&self) -> &str {
+            "volatile_test"
+        }
+
+        async fn get_context(&self, _assistant_id: Option<&str>) -> Result<String, String> {
+            Ok("## Volatile Context\nVolatile provider payload".to_string())
+        }
+
+        fn priority(&self) -> i32 {
+            200
+        }
+
+        fn volatility(&self) -> ContextVolatility {
+            ContextVolatility::Volatile
+        }
+    }
 
     #[tokio::test]
     async fn test_build_system_prompt_all_sections() {

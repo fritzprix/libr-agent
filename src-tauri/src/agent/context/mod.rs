@@ -1,6 +1,7 @@
 // Context Provider Framework
 // Provides read-only information to system prompts without tool execution
 
+use crate::mcp::types::ContextVolatility;
 use async_trait::async_trait;
 
 pub mod registry;
@@ -36,5 +37,13 @@ pub trait ContextProvider: Send + Sync {
     /// - 50-100: Preferences and optional context
     fn priority(&self) -> i32 {
         100
+    }
+
+    /// How often this provider's content changes within a session.
+    ///
+    /// The default is `Medium` so newly added providers remain on the volatile
+    /// per-turn path until someone deliberately opts them into the stable prefix.
+    fn volatility(&self) -> ContextVolatility {
+        ContextVolatility::Medium
     }
 }

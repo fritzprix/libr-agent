@@ -255,6 +255,10 @@ export class Logger {
     return { ...globalLoggerConfig };
   }
 
+  static shouldLogLevel(level: LoggerConfig['logLevel']): boolean {
+    return Logger.shouldLog(level);
+  }
+
   /**
    * Resets the logger configuration to its default values.
    */
