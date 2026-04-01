@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.27] - 2026-04-02
+
+### 🚀 Features
+
+- **Builtin Services Codegen**: Automated generation of constants and types from Rust definitions to ensure perfect frontend-backend alignment and type safety.
+- **Enhanced Agent UI & Multilingual Support**: Introduced the new `AgentDraftChatView` and expanded multi-language support (Spanish, French, Japanese, Chinese, Korean) for a more international experience.
+- **Interactive Status & Monitoring**: Added a real-time agent chat status bar and session management utilities to improve the visibility of background tasks and session lifecycle.
+- **UX Responsiveness**: Improved UI snappiness in the `AssistantEditor` and `WorkspacePanel` with loading indicators and optimized rendering patterns.
+- **Secure Media Downloads**: Switched to native platform save dialogs for media downloads to improve consistency and user control.
+- **Provider Hardening**: Enhanced Gemini prompt caching and handle management for more reliable long-running agent sessions.
+
+### 🐛 Fixes
+
+- **Security: SQL Injection Protection**: Hardened database backup logic with stricter validation to prevent potential injection vulnerabilities in the backup pipeline.
+- **LLM State Consistency**: Fixed Gemini prompt cache stack handling and restored missing tabs/sub-editors in the Assistant Editor.
+- **Accessibility & UX Polish**: Added ARIA labels to icon-only buttons and resolved test timeouts to ensure a more stable developer and user experience.
+
+### 🔧 Internal
+
+- **Architectural Cleanup**: Eliminated redundant state syncs in `SessionHistoryPanel` and optimized session sorting for better performance.
+- **Reliability & Testing**: Tightened stdio isolation design tests and expanded regression coverage for PR comment reviews.
+- **Database Optimization**: Added performance indexes to the `stores` table for faster session and store lookups.
+
 ## [0.6.26] - 2026-03-30
 
 ### 🚀 Features
