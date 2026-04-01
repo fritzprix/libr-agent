@@ -366,12 +366,13 @@ export function AgentWorkspacePanel() {
           ) : (
             <div className="overflow-hidden rounded-lg border border-border/40 bg-muted/[0.18]">
               {fileTree.map((node) => (
-                <FileTreeNode
-                  key={node.id}
-                  node={node}
-                  onToggle={toggleDirectory}
-                  onOpen={handleOpenFile}
-                />
+                <div key={node.id}>
+                  <FileTreeNode
+                    node={node}
+                    onToggle={toggleDirectory}
+                    onOpen={handleOpenFile}
+                  />
+                </div>
               ))}
 
               {fileTree.length === 0 && !loading && (
