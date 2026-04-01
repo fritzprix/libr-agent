@@ -158,6 +158,7 @@ function DraftChatInner() {
               size="icon"
               className="h-6 w-6 text-muted-foreground hover:text-foreground"
               onClick={() => setWorkspaceOverride(null)}
+              aria-label={t('common:close', 'Close')}
             >
               <X className="w-3 h-3" />
             </Button>
@@ -397,7 +398,10 @@ function DraftChatInner() {
                           type="button"
                           onClick={() => handleFileRemove(index)}
                           className="text-muted-foreground hover:text-destructive transition-colors focus:outline-none"
-                          aria-label="Remove file"
+                          aria-label={t('fileAttachment.removeFile', {
+                            name: file.name,
+                            defaultValue: `Remove ${file.name}`,
+                          })}
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -477,11 +481,17 @@ function DraftChatInner() {
                         onClick={() => fileInputRef.current?.click()}
                         disabled={isSubmitting || isAttachmentLoading}
                         className="mb-1 h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/5 shrink-0 transition-colors"
+                        aria-label={t(
+                          'fileAttachment.attachFiles',
+                          'Attach files',
+                        )}
                       >
                         <Paperclip className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Attach files</TooltipContent>
+                    <TooltipContent>
+                      {t('fileAttachment.attachFiles', 'Attach files')}
+                    </TooltipContent>
                   </Tooltip>
 
                   <textarea
@@ -525,6 +535,10 @@ function DraftChatInner() {
                         }
                         size="icon"
                         className="mb-1 shrink-0 shadow-lg transition-all active:scale-95"
+                        aria-label={t(
+                          'agent.input.sendAriaLabel',
+                          'Send message',
+                        )}
                       >
                         {isSubmitting || isAttachmentLoading ? (
                           <Loader2 className="animate-spin h-4 w-4" />
@@ -533,7 +547,9 @@ function DraftChatInner() {
                         )}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Send message</TooltipContent>
+                    <TooltipContent>
+                      {t('agent.input.sendTooltip', 'Send')}
+                    </TooltipContent>
                   </Tooltip>
                 </form>
               </div>

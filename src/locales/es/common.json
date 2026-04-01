@@ -76,7 +76,9 @@
       "cancel": "Cancelar",
       "created": "Creado",
       "updated": "Actualizado",
-      "description": "Descripción"
+      "description": "Descripción",
+      "expand": "Expandir configuración",
+      "collapse": "Contraer configuración"
     }
   },
   "status": {
@@ -605,6 +607,15 @@
   },
   "agent": {
     "draft": {
+      "send": "Enviar mensaje",
+      "attachFiles": "Adjuntar archivos",
+      "attachedFiles": "Archivos adjuntos",
+      "removeWorkspaceOverride": "Eliminar anulación del espacio de trabajo",
+      "removeFile": "Eliminar {{name}}",
+      "dropFilesHint": "Suelte los archivos aquí...",
+      "unsupportedFile": "¡Archivo no compatible!",
+      "uploading": "Subiendo...",
+      "placeholder": "Mensaje para {{name}}...",
       "failedToRegisterDroppedFiles": "Error al registrar los archivos soltados",
       "dropFilesInChatInput": "Suelte los archivos en la entrada del chat para adjuntarlos.",
       "failedToProcessFile": "Error al procesar: {{file}}",
@@ -614,12 +625,13 @@
       "creatingSession": "Creando sesión...",
       "failedToStartSession": "Error al iniciar la sesión",
       "newSession": "Nueva sesión",
-      "workspaceOverrideActive": "Anulación de espacio de trabajo activa",
+      "workspaceOverrideActive": "Anulación del espacio de trabajo activa",
       "workspaceOverrideDescription": "El agente utilizará este directorio como su espacio de trabajo principal para esta sesión.",
+      "filesWillBeListedAfterStart": "Los archivos se enumerarán después de que comience la sesión",
       "basicTools": "Herramientas básicas",
-      "basicToolsDescription": "Incluye capacidades básicas como leer archivos, gestionar tareas y ejecutar código. ¡Siempre disponible para ayudarle!",
-      "addTools": "+ Agregar herramientas",
-      "addMoreCapabilities": "Agregue más capacidades en la configuración",
+      "basicToolsDescription": "Incluye capacidades básicas como leer archivos, gestionar tareas y ejecutar código. ¡Siempre listo para ayudarte!",
+      "addTools": "+ Añadir herramientas",
+      "addMoreCapabilities": "Añade más capacidades en los ajustes",
       "localContext": "Contexto local"
     },
     "header": {
