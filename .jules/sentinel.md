@@ -58,6 +58,11 @@
 **Learning:** Even internal queries like schema validation or `PRAGMA` statements can be vulnerable to SQL injection if they incorporate unsanitized variables. `sea_orm::Statement::from_string` does not parameterize variables by default.
 **Prevention:** Always use parameterized queries (e.g., `Statement::from_sql_and_values` with `?` placeholders) for variable data in SQL queries. If a statement cannot be parameterized (like `PRAGMA table_info`), perform strict input validation (e.g., ensuring characters are only alphanumeric and underscores) before using the variable in `format!`.
 
+## 2025-02-23 - Centralized Process Environment Isolation Enforcement
+**Vulnerability:** Several utility and process-spawning functions manually cleared environments (`env_clear`) and re-applied whitelisted variables using a loop over `get_isolated_env()`, which could lead to inconsistent environment isolation or bypass central security controls.
+**Learning:** Even though the core rule was known, developer scattered duplicate logic for isolation, increasing the risk of missing critical whitelist patches later.
+**Prevention:** Always enforce the use of `crate::utils::env::apply_isolated_env` or `apply_isolated_env_async` on `Command` objects directly, rather than manually duplicating the `env_clear()` and iteration logic. Tests should also assert the presence of these exact helper function calls in spawn logic.
+
 ## 2026-04-01 - SQLite `VACUUM INTO` String Interpolation Risk
 
 **Vulnerability:** A backup file path was interpolated directly into a `VACUUM INTO` SQL string in `src-tauri/src/lifecycle/database_backup.rs` using `format!("VACUUM INTO '{}'", backup_path.display())`.
