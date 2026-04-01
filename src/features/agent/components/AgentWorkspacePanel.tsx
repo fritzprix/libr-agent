@@ -47,7 +47,9 @@ export function AgentWorkspacePanel() {
   });
 
   const [isUploading, setIsUploading] = useState(false);
-  const [isOpeningNative, setIsOpeningNative] = useState(false);
+  const [openingNativeAction, setOpeningNativeAction] = useState<
+    'explorer' | 'terminal' | null
+  >(null);
   const openingNativeLock = useRef(false);
 
   // Extracted hooks
@@ -109,31 +111,41 @@ export function AgentWorkspacePanel() {
   }, [subscribe, handleWorkspaceFileDrop]);
 
   const handleOpenInExplorer = async () => {
-    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
+    if (
+      !session?.id ||
+      openingNativeAction !== null ||
+      openingNativeLock.current
+    )
+      return;
     openingNativeLock.current = true;
-    setIsOpeningNative(true);
+    setOpeningNativeAction('explorer');
     try {
       await openWorkspaceInExplorer(session.id);
     } catch (error) {
       logger.error('Failed to open explorer', error);
       toast.error(t('agent.workspace.openExplorerError', { error }));
     } finally {
-      setIsOpeningNative(false);
+      setOpeningNativeAction(null);
       openingNativeLock.current = false;
     }
   };
 
   const handleOpenInTerminal = async () => {
-    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
+    if (
+      !session?.id ||
+      openingNativeAction !== null ||
+      openingNativeLock.current
+    )
+      return;
     openingNativeLock.current = true;
-    setIsOpeningNative(true);
+    setOpeningNativeAction('terminal');
     try {
       await openWorkspaceInTerminal(session.id);
     } catch (error) {
       logger.error('Failed to open terminal', error);
       toast.error(t('agent.workspace.openTerminalError', { error }));
     } finally {
-      setIsOpeningNative(false);
+      setOpeningNativeAction(null);
       openingNativeLock.current = false;
     }
   };
@@ -219,9 +231,13 @@ export function AgentWorkspacePanel() {
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                   title={t('agent.workspace.openInExplorer')}
                   aria-label={t('agent.workspace.openInExplorerAria')}
-                  disabled={isOpeningNative}
+                  disabled={openingNativeAction !== null}
                 >
-                  {isOpeningNative ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Folder className="w-3.5 h-3.5" />}
+                  {openingNativeAction === 'explorer' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Folder className="w-3.5 h-3.5" />
+                  )}
                 </Button>
                 <Button
                   variant="ghost"
@@ -230,9 +246,13 @@ export function AgentWorkspacePanel() {
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                   title={t('agent.workspace.openInTerminal')}
                   aria-label={t('agent.workspace.openInTerminalAria')}
-                  disabled={isOpeningNative}
+                  disabled={openingNativeAction !== null}
                 >
-                  {isOpeningNative ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
+                  {openingNativeAction === 'terminal' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Terminal className="w-3.5 h-3.5" />
+                  )}
                 </Button>
                 <Button
                   variant="ghost"

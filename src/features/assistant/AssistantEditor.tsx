@@ -109,13 +109,16 @@ function MCPServersTab() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const isPending = searchQuery !== deferredSearchQuery;
 
-  const filteredServers = useMemo(() => activeServers.filter(
-    (s) =>
-      s.name.toLowerCase().includes(deferredSearchQuery.toLowerCase()) ||
-      s.metadata?.description
-        ?.toLowerCase()
-        .includes(deferredSearchQuery.toLowerCase()),
-  ), [activeServers, deferredSearchQuery]);
+  const filteredServers = useMemo(() => {
+    const query = deferredSearchQuery.toLowerCase().trim();
+    if (!query) return activeServers;
+
+    return activeServers.filter(
+      (s) =>
+        s.name.toLowerCase().includes(query) ||
+        s.metadata?.description?.toLowerCase().includes(query),
+    );
+  }, [activeServers, deferredSearchQuery]);
 
   const handleServerToggle = (serverId: string, enabled: boolean) => {
     update((draft) => {
@@ -163,7 +166,15 @@ function MCPServersTab() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
 
-          <div className={`border rounded-lg divide-y max-h-96 overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}>
+          <div
+            className={`border rounded-lg divide-y max-h-96 overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}
+            aria-busy={isPending}
+          >
+            {isPending && (
+              <span className="sr-only" aria-live="polite">
+                {t('assistant.mcp.filtering')}
+              </span>
+            )}
             {filteredServers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {t('assistant.mcp.noMatch')}

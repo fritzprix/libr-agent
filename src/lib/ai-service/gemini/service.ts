@@ -311,7 +311,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const cacheScope = this.createContextCacheScope(sanitizedMessages);
       const historyCheckpoint = this.buildHistoryCheckpoint(geminiMessages);
       const cacheableContents = historyCheckpoint?.cacheContents;
-      const requestContents = historyCheckpoint?.requestContents ?? geminiMessages;
+      const requestContents =
+        historyCheckpoint?.requestContents ?? geminiMessages;
       const cacheStrategy =
         historyCheckpoint !== null ? 'history_checkpoint' : 'system_tools';
       const requiresToolOverride =
@@ -376,7 +377,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         cacheableTokenCount: cacheDecision.cacheableTokenCount,
         tokenDecisionSource: cacheDecision.tokenDecisionSource,
         cacheStrategy:
-          shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
+          shouldUseCache && historyCheckpoint
+            ? 'history_checkpoint'
+            : cacheStrategy,
         cachedHistoryMessageCount: cacheableContents?.length ?? 0,
         cachedContentName,
         cacheableContents,
@@ -456,7 +459,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           cacheableTokenCount: cacheDecision.cacheableTokenCount,
           tokenDecisionSource: cacheDecision.tokenDecisionSource,
           cacheStrategy:
-            shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
+            shouldUseCache && historyCheckpoint
+              ? 'history_checkpoint'
+              : cacheStrategy,
         });
       }
 
@@ -642,7 +647,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       stablePrefix,
       toolsPayload,
       cacheableContents
-        ? stableHashKeyPart(stableStringify(this.createGeminiContentFingerprint(cacheableContents)))
+        ? stableHashKeyPart(
+            stableStringify(
+              this.createGeminiContentFingerprint(cacheableContents),
+            ),
+          )
         : undefined,
     );
     const cachedTokenCount = this.cacheableTokenCounts.get(tokenCountKey);
@@ -660,7 +669,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const countResponse = await this.withRetry(() =>
         this.genAI.models.countTokens({
           model,
-          contents: cacheableContents ?? [{ role: 'user', parts: [{ text: 'cache probe' }] }],
+          contents: cacheableContents ?? [
+            { role: 'user', parts: [{ text: 'cache probe' }] },
+          ],
           config: {
             systemInstruction: stablePrefix,
             tools: geminiTools,
@@ -719,7 +730,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     const cacheableContentCharacters =
       this.estimateCacheableContentCharacters(cacheableContents);
     return Math.ceil(
-      (stablePrefix.length + toolsPayload.length + cacheableContentCharacters) / 4,
+      (stablePrefix.length + toolsPayload.length + cacheableContentCharacters) /
+        4,
     );
   }
 
@@ -784,7 +796,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     cacheScope: string,
     model: string,
     stablePrefix: string,
-    geminiTools: Array<{ functionDeclarations: FunctionDeclaration[] }> | undefined,
+    geminiTools:
+      | Array<{ functionDeclarations: FunctionDeclaration[] }>
+      | undefined,
     cacheableTokenCount: number,
     cacheableContents?: Content[],
   ): Promise<string | undefined> {
@@ -820,7 +834,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     try {
       return await creationPromise;
     } finally {
-      if (this.inFlightContextCacheCreations.get(cacheKey) === creationPromise) {
+      if (
+        this.inFlightContextCacheCreations.get(cacheKey) === creationPromise
+      ) {
         this.inFlightContextCacheCreations.delete(cacheKey);
       }
     }
@@ -962,7 +978,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const sameScopeEntries =
         preferredScope === undefined
           ? []
-          : evictableEntries.filter(([, entry]) => entry.scope === preferredScope);
+          : evictableEntries.filter(
+              ([, entry]) => entry.scope === preferredScope,
+            );
       const candidateEntries =
         sameScopeEntries.length > 0 ? sameScopeEntries : evictableEntries;
       const oldestEntryPool =
@@ -1137,11 +1155,13 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     }
 
     const sessionId =
-      typeof anchorMessage.sessionId === 'string' && anchorMessage.sessionId.length > 0
+      typeof anchorMessage.sessionId === 'string' &&
+      anchorMessage.sessionId.length > 0
         ? anchorMessage.sessionId
         : 'global';
     const threadId =
-      typeof anchorMessage.threadId === 'string' && anchorMessage.threadId.length > 0
+      typeof anchorMessage.threadId === 'string' &&
+      anchorMessage.threadId.length > 0
         ? anchorMessage.threadId
         : sessionId;
     return `${sessionId}:${threadId}`;
@@ -1159,7 +1179,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         return total;
       }
 
-      const roleLength = typeof content.role === 'string' ? content.role.length : 0;
+      const roleLength =
+        typeof content.role === 'string' ? content.role.length : 0;
       const parts = Array.isArray(content.parts) ? content.parts : [];
       const partsLength = parts.reduce((partTotal, part) => {
         if (typeof part !== 'object' || part === null) {
@@ -1296,9 +1317,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
             ? 'tools'
             : previous.cachedHistoryHash !== snapshot.cachedHistoryHash
               ? 'cached_history'
-            : firstDivergenceIndex >= 0
-              ? 'messages'
-              : 'none';
+              : firstDivergenceIndex >= 0
+                ? 'messages'
+                : 'none';
 
     this.logger.debug('Gemini prompt cache drift', {
       previousModel: previous.model,
@@ -1431,9 +1452,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     return 'regular';
   }
 
-  private buildHistoryCheckpoint(
-    messages: Content[],
-  ): {
+  private buildHistoryCheckpoint(messages: Content[]): {
     cacheContents: Content[];
     requestContents: Content[];
     cacheKeyPart: string;
@@ -1453,12 +1472,15 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       return null;
     }
 
-    const userMessageIndices = messages.reduce<number[]>((indices, message, index) => {
-      if (message?.role === 'user') {
-        indices.push(index);
-      }
-      return indices;
-    }, []);
+    const userMessageIndices = messages.reduce<number[]>(
+      (indices, message, index) => {
+        if (message?.role === 'user') {
+          indices.push(index);
+        }
+        return indices;
+      },
+      [],
+    );
 
     const minimumUserMessagesForCheckpoint =
       GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES + 1;
@@ -1467,7 +1489,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     }
 
     const checkpointSlot = Math.min(
-      userMessageIndices.length - GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES,
+      userMessageIndices.length -
+        GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES,
       1 +
         Math.floor(
           (userMessageIndices.length - minimumUserMessagesForCheckpoint) /
@@ -1477,7 +1500,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     );
     let resolvedCheckpointSlot = checkpointSlot;
     while (resolvedCheckpointSlot >= 1) {
-      const candidateSplitIndex = userMessageIndices[resolvedCheckpointSlot] ?? -1;
+      const candidateSplitIndex =
+        userMessageIndices[resolvedCheckpointSlot] ?? -1;
       if (this.isSafeHistoryCheckpointBoundary(messages, candidateSplitIndex)) {
         break;
       }

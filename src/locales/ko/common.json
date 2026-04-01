@@ -28,6 +28,7 @@
       "addServersLink": "설정에서 서버 추가",
       "searchPlaceholder": "서버 검색...",
       "noMatch": "검색과 일치하는 서버가 없습니다",
+      "filtering": "서버 필터링 중...",
       "transport": {
         "stdio": "stdio",
         "http": "http"

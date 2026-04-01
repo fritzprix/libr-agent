@@ -28,6 +28,7 @@
       "addServersLink": "Add servers in Settings",
       "searchPlaceholder": "Search servers...",
       "noMatch": "No servers match your search",
+      "filtering": "Filtering servers...",
       "transport": {
         "stdio": "stdio",
         "http": "http"
