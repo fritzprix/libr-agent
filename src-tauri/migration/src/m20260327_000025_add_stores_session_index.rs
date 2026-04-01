@@ -5,40 +5,14 @@ pub struct Migration;
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
-    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Index on stores(session_id)
-        // Optimizes fetching stores for a specific session
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx-stores-session_id")
-                    .table(Stores::Table)
-                    .col(Stores::SessionId)
-                    .if_not_exists()
-                    .to_owned(),
-            )
-            .await?;
-
+    async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        // No-op: stores.session_id is already the PRIMARY KEY, so SQLite
+        // already maintains an implicit index for session lookups.
         Ok(())
     }
 
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_index(
-                Index::drop()
-                    .name("idx-stores-session_id")
-                    .table(Stores::Table)
-                    .to_owned(),
-            )
-            .await?;
-
+    async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        // No-op: up does not create anything, so there is nothing to drop.
         Ok(())
     }
-}
-
-#[derive(DeriveIden)]
-enum Stores {
-    #[sea_orm(iden = "stores")]
-    Table,
-    SessionId,
 }
