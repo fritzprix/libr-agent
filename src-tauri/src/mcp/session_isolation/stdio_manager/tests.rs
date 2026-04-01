@@ -313,26 +313,19 @@ fn test_env_vars_extraction() {
     }
 }
 
-/// Test that environment isolation is enforced
-/// Note: This is a design verification test - we verify that env_clear IS called
+/// Test that environment isolation is enforced via the centralized helper
 #[test]
-fn test_env_clear_in_spawn_logic() {
+fn test_apply_isolated_env_async_in_spawn_logic() {
     // This test documents the expected behavior:
-    // We MUST call env_clear() to prevent secret leakage from the host process
-    // Then we selectively whitelist essential variables like PATH
+    // We MUST call the centralized helper to prevent secret leakage from the host process
+    // and keep the environment isolation policy consistent across call sites.
 
     let source = include_str!("./lifecycle.rs");
 
-    // Verify that env_clear() IS present in the spawn logic
+    // Verify that stdio_manager uses the centralized helper on the command itself.
     assert!(
-        source.contains("cmd.env_clear()"),
-        "stdio_manager MUST call env_clear() to isolate process environment"
-    );
-
-    // Verify that we are whitelisting PATH
-    assert!(
-        source.contains("\"PATH\""),
-        "stdio_manager must whitelist PATH"
+        source.contains("crate::utils::env::apply_isolated_env_async(&mut cmd);"),
+        "stdio_manager MUST call crate::utils::env::apply_isolated_env_async(&mut cmd) to isolate process environment"
     );
 
     assert!(

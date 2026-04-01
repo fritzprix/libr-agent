@@ -81,12 +81,7 @@ async fn start_stdio_server(
 
         // Apply environment isolation to prevent leaking host secrets (e.g. API keys)
         // to untrusted MCP server processes.
-        cmd.env_clear();
-
-        // Re-apply whitelisted essential system variables
-        for (k, v) in crate::utils::env::get_isolated_env() {
-            cmd.env(k, v);
-        }
+        crate::utils::env::apply_isolated_env_async(cmd);
 
         // Apply user-defined variables from config (can override system vars)
         for (key, value) in env {
