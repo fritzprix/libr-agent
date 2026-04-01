@@ -1,6 +1,8 @@
 # Tauri Commands
 
-This document provides a comprehensive reference for the primary Tauri commands available in LibrAgent. Commands are grouped by domain and are located in `src-tauri/src/commands/`.
+This document provides a comprehensive reference for the primary Tauri commands
+available in LibrAgent. Commands are grouped by domain and are located in
+`src-tauri/src/commands/`.
 
 ## Agent Workflow Management
 
@@ -18,7 +20,7 @@ This document provides a comprehensive reference for the primary Tauri commands 
   - `model: Option<String>` - LLM model ID.
   - `provider: Option<String>` - LLM provider name.
   - `agentConfig: AgentConfig` - System prompt and tool settings.
-  - `isEphemeral: bool` - If true, data is not persisted (defaults to false).
+  - `isEphemeral: boolean` - If true, data is not persisted (defaults to false).
   - `workspacePath: Option<String>` - Custom path for session files.
 
 **Returns**:
@@ -50,7 +52,8 @@ try {
 
 ### agent_send_message
 
-**Purpose**: Sends a new user message to an active agent session, triggering the agent's workflow (LLM completion and tool execution).
+**Purpose**: Sends a new user message to an active agent session, triggering the
+agent's workflow (LLM completion and tool execution).
 
 **Source**: `src-tauri/src/commands/agent_commands.rs`
 
@@ -90,7 +93,8 @@ try {
 
 ### remove_session
 
-**Purpose**: Cleans up a session workspace, search index, and metadata. _Note: Does not delete session records from the primary database._
+**Purpose**: Cleans up a session workspace, search index, and metadata. _Note:
+Does not delete session records from the primary database._
 
 **Source**: `src-tauri/src/commands/session_commands.rs`
 
@@ -100,7 +104,8 @@ try {
 
 **Returns**:
 
-- `Result<SessionResponse, String>` - Returns a status wrapper confirming cleanup on success.
+- `Result<SessionResponse, String>` - Returns a status wrapper confirming
+  cleanup on success.
 
 **Usage**:
 
@@ -114,7 +119,100 @@ try {
 }
 ```
 
-## MCP Integration
+## Workspace & File System
+
+### get_app_data_dir
+
+**Purpose**: Gets the application's base data directory.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Returns**:
+
+- `Result<String, String>` - Returns the path on success.
+
+### get_workspace_dir
+
+**Purpose**: Returns the absolute workspace directory path for the given session.
+Used by the frontend to construct file:// URLs for binary file indexing.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Parameters**:
+
+- `sessionId: String` - The session ID.
+
+**Returns**:
+
+- `Result<String, String>` - Returns the path on success.
+
+## Assistants
+
+### create_assistant
+
+**Purpose**: Creates a new assistant profile.
+
+**Source**: `src-tauri/src/commands/assistant_crud_commands.rs`
+
+**Parameters**:
+
+- `id: String` - The assistant ID.
+- `name: String` - The assistant name.
+- `config: Value` - The JSON configuration for the assistant.
+
+**Returns**:
+
+- `Result<AssistantDto, String>` - Returns the created assistant DTO on success.
+
+### list_assistants
+
+**Purpose**: Lists all available assistants.
+
+**Source**: `src-tauri/src/commands/assistant_crud_commands.rs`
+
+**Returns**:
+
+- `Result<Vec<AssistantDto>, String>` - Returns a list of assistant DTOs.
+
+## Playbooks
+
+### create_playbook
+
+**Purpose**: Creates a new playbook.
+
+**Source**: `src-tauri/src/commands/playbook_commands.rs`
+
+**Parameters**:
+
+- `id: String` - The playbook ID.
+- `sessionId: String` - The session ID this playbook was extracted from.
+- `goal: String` - The playbook goal.
+- `initialCommand: Option<String>` - (Optional) The initial command.
+- `workflow: Value` - The JSON representation of the workflow.
+- `successCriteria: Option<Value>` - (Optional) The JSON success criteria.
+
+**Returns**:
+
+- `Result<PlaybookDto, String>` - Returns the created playbook DTO on success.
+
+### list_playbooks
+
+**Purpose**: Lists playbooks for a specific assistant.
+
+**Source**: `src-tauri/src/commands/playbook_commands.rs`
+
+**Parameters**:
+
+- `assistantId: String` - The assistant ID.
+- `sortBy: Option<String>` - (Optional) Sorting column.
+- `bookmarkFirst: Option<boolean>` - (Optional) Whether to sort bookmarked
+  playbooks first.
+
+**Returns**:
+
+- `Result<Vec<PlaybookDto>, String>` - Returns a list of playbook DTOs.
+
+## MCP Server Management
 
 ### probe_mcp_server
 
@@ -124,7 +222,7 @@ try {
 
 **Parameters**:
 
-- `server_id: String` - The ID of the server to probe.
+- `serverId: String` - The ID of the server to probe.
 
 **Returns**:
 
@@ -147,7 +245,7 @@ try {
 
 ### list_builtin_servers
 
-**Purpose**: Retrieves a list of all built-in MCP servers available in LibrAgent (e.g., `planning`, `workspace`).
+**Purpose**: Lists the names of all available built-in MCP servers.
 
 **Source**: `src-tauri/src/commands/mcp_commands.rs`
 
@@ -162,24 +260,6 @@ import { invoke } from '@tauri-apps/api/core';
 
 const servers = await invoke<string[]>('list_builtin_servers');
 ```
-
----
-
-### list_builtin_tools
-
-**Purpose**: Retrieves a list of tool definitions for a built-in server. _Note: Currently returns an empty list as tool definitions are managed dynamically per session._
-
-**Source**: `src-tauri/src/commands/mcp_commands.rs`
-
-**Parameters**:
-
-- `server_name: Option<String>` - (Optional) The name of the built-in server.
-
-**Returns**:
-
-- `Vec<MCPTool>` - A list of tools (currently empty).
-
----
 
 ## System Settings
 
