@@ -327,45 +327,47 @@ describe('GeminiService context cache', () => {
     const messages = [createUserMessage('hello')];
     const nowSpy = vi.spyOn(Date, 'now');
     const baseNow = 1_700_000_000_000;
-    nowSpy.mockReturnValue(baseNow);
-    countTokensMock.mockResolvedValueOnce({ totalTokens: 150000 });
+    try {
+      nowSpy.mockReturnValue(baseNow);
+      countTokensMock.mockResolvedValueOnce({ totalTokens: 150000 });
 
-    await consumeStream(service.streamChat(messages, {
-      modelName: 'gemini-2.5-flash',
-      systemPrompt: 'A'.repeat(131072),
-    }));
+      await consumeStream(service.streamChat(messages, {
+        modelName: 'gemini-2.5-flash',
+        systemPrompt: 'A'.repeat(131072),
+      }));
 
-    const internalEntries = (
-      service as unknown as {
-        cachedContextEntries: Map<
-          string,
-          {
-            name: string;
-            createdAt: number;
-            lastUsedAt: number;
-            ttlMs: number;
-            expiresAt: number;
-            cacheableTokenCount: number;
-          }
-        >;
-      }
-    ).cachedContextEntries;
-    const firstEntry = [...internalEntries.values()][0];
-    firstEntry.expiresAt = baseNow + 5 * 60 * 1000;
+      const internalEntries = (
+        service as unknown as {
+          cachedContextEntries: Map<
+            string,
+            {
+              name: string;
+              createdAt: number;
+              lastUsedAt: number;
+              ttlMs: number;
+              expiresAt: number;
+              cacheableTokenCount: number;
+            }
+          >;
+        }
+      ).cachedContextEntries;
+      const firstEntry = [...internalEntries.values()][0];
+      firstEntry.expiresAt = baseNow + 5 * 60 * 1000;
 
-    nowSpy.mockReturnValue(baseNow + 2 * 60 * 1000);
+      nowSpy.mockReturnValue(baseNow + 2 * 60 * 1000);
 
-    await consumeStream(service.streamChat(messages, {
-      modelName: 'gemini-2.5-flash',
-      systemPrompt: 'A'.repeat(131072),
-    }));
+      await consumeStream(service.streamChat(messages, {
+        modelName: 'gemini-2.5-flash',
+        systemPrompt: 'A'.repeat(131072),
+      }));
 
-    expect(updateCacheMock).toHaveBeenCalledWith({
-      name: 'cachedContents/1',
-      config: { ttl: '10800s' },
-    });
-
-    nowSpy.mockRestore();
+      expect(updateCacheMock).toHaveBeenCalledWith({
+        name: 'cachedContents/1',
+        config: { ttl: '10800s' },
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('moves volatile session context into a synthetic tail message for Gemini', () => {

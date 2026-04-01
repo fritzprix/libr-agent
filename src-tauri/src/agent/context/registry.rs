@@ -98,8 +98,10 @@ impl ContextRegistry {
 
     /// Build combined context from all enabled providers.
     ///
-    /// Stable providers are emitted first, followed by non-stable providers. This
-    /// preserves backward-compatible behavior for callers that still expect one block.
+    /// Stable providers are emitted first, followed by non-stable providers.
+    /// This preserves the single-block API surface for legacy callers, but it
+    /// does change ordering when stable and volatile providers would have
+    /// interleaved by priority in the original combined traversal.
     pub async fn build_context(&self, assistant_id: Option<&str>) -> String {
         let (stable, volatile) = self.build_context_split(assistant_id).await;
 

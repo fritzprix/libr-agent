@@ -363,8 +363,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         shouldUseCache,
         cacheableTokenCount: cacheDecision.cacheableTokenCount,
         tokenDecisionSource: cacheDecision.tokenDecisionSource,
-        cacheStrategy:
-          shouldUseCache && historyCheckpoint ? 'history_checkpoint' : cacheStrategy,
+        cacheStrategy: !shouldUseCache
+          ? 'none'
+          : historyCheckpoint
+            ? 'history_checkpoint'
+            : cacheStrategy,
         cachedHistoryMessageCount: cacheableContents?.length ?? 0,
         cachedContentName,
       });
@@ -619,7 +622,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       };
     }
 
-    if (!stablePrefix && !toolsPayload) {
+    if (
+      !stablePrefix &&
+      !toolsPayload &&
+      (!cacheableContents || cacheableContents.length === 0)
+    ) {
       return {
         shouldUseCache: false,
         cacheableTokenCount: 0,
@@ -863,6 +870,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         error,
       );
       this.cachedContextEntries.delete(cacheKey);
+      this.cacheableTokenCounts.delete(cacheKey);
       return undefined;
     }
   }
@@ -893,6 +901,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     }
 
     this.cachedContextEntries.delete(cacheKey);
+    this.cacheableTokenCounts.delete(cacheKey);
 
     try {
       await this.genAI.caches.delete({ name: entry.name });
@@ -991,6 +1000,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    */
   dispose(): void {
     const cacheKeys = [...this.cachedContextEntries.keys()];
+    this.cacheableTokenCounts.clear();
 
     for (const cacheKey of cacheKeys) {
       void this.removeContextCacheEntry(cacheKey, 'service dispose');
