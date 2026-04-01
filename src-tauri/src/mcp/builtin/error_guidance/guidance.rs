@@ -133,7 +133,7 @@ impl ErrorGuidance {
             ],
             (ErrorCategory::DuplicateResource, ToolGroup::Agent) => vec![
                 "Use a different name for the new Agent or Assistant".to_string(),
-                "Use updateAssistant to modify existing configurations".to_string(),
+                "Use agent__update to modify existing configurations".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Agent) => vec![
                 "Verify all required parameters (goal, inputs) are provided".to_string(),

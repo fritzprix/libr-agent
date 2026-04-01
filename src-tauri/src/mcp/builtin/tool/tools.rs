@@ -208,6 +208,16 @@ pub fn list_tools_tool() -> MCPTool {
                     ),
                 ),
                 (
+                    "availability".to_string(),
+                    enum_prop(
+                        vec!["inventory", "session"],
+                        "inventory",
+                        Some(
+                            "How to present tool availability. inventory = show platform/server inventory only. session = annotate tools with whether the current session can call them now.",
+                        ),
+                    ),
+                ),
+                (
                     "forceVerify".to_string(),
                     boolean_prop(Some(
                         "If true (default: false), fetch live external server metadata. If omitted/false, use cached metadata from the last verification.",

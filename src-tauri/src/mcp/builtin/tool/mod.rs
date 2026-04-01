@@ -61,10 +61,10 @@ impl BuiltinMCPServer for ToolServer {
         &self,
         tool_name: &str,
         args: Value,
-        _session_id: Option<String>,
+        session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "list" | "listTools" => operations::list_tools(args).await,
+            "list" | "listTools" => operations::list_tools(args, session_id.as_deref()).await,
             "register" | "registerServer" => operations::register_server(self, args).await,
             "update" | "updateServer" => operations::update_server(self, args).await,
             "delete" | "deleteServer" => operations::delete_server(self, args).await,
