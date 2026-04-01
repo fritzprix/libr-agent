@@ -65,9 +65,7 @@ impl BackupManager {
 
         // VACUUM INTO performs an atomic, WAL-consistent copy — safe for WAL-mode databases.
         // Plain fs::copy would miss unflushed WAL frames and risk an inconsistent backup.
-        // We must escape single quotes in the path to prevent SQL injection.
-        let safe_backup_path = backup_path.display().to_string().replace("'", "''");
-        let sql = format!("VACUUM INTO '{}'", safe_backup_path);
+        let sql = format!("VACUUM INTO '{}'", backup_path.display());
         db.execute(Statement::from_string(DbBackend::Sqlite, sql))
             .await
             .map_err(|e| DatabaseError::BackupFailed {

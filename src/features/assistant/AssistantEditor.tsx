@@ -1,7 +1,7 @@
 import { useEditor } from '@/context/EditorContext';
-import { Assistant } from '@/models/chat';
+import { Assistant, MCPServerEntity } from '@/models/chat';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { useState } from 'react';
+import { useState, useMemo, useDeferredValue } from 'react';
 import {
   Button,
   Dialog,
@@ -54,8 +54,8 @@ export default function AssistantEditor() {
             label={t('assistant.nameLabel')}
             value={draft?.name || ''}
             onChange={(e) =>
-              update((draft) => {
-                draft.name = e.target.value;
+              update((d: Assistant) => {
+                d.name = e.target.value;
               })
             }
             placeholder={t('assistant.namePlaceholder')}
@@ -65,8 +65,8 @@ export default function AssistantEditor() {
             label={t('assistant.descriptionLabel')}
             value={draft?.description || ''}
             onChange={(e) =>
-              update((draft) => {
-                draft.description = e.target.value || undefined;
+              update((d: Assistant) => {
+                d.description = e.target.value || undefined;
               })
             }
             placeholder={t('assistant.descriptionPlaceholder')}
@@ -77,8 +77,8 @@ export default function AssistantEditor() {
             label={t('assistant.systemPromptLabel')}
             value={draft?.systemPrompt || ''}
             onChange={(e) =>
-              update((draft) => {
-                draft.systemPrompt = e.target.value;
+              update((d: Assistant) => {
+                d.systemPrompt = e.target.value;
               })
             }
             placeholder={t('assistant.systemPromptPlaceholder')}
@@ -106,24 +106,30 @@ function MCPServersTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const { t } = useTranslation('common');
 
-  const filteredServers = activeServers.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.metadata?.description
-        ?.toLowerCase()
-        .includes(searchQuery.toLowerCase()),
-  );
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const isPending = searchQuery !== deferredSearchQuery;
+
+  const filteredServers = useMemo(() => {
+    const query = deferredSearchQuery.toLowerCase().trim();
+    if (!query) return activeServers;
+
+    return activeServers.filter(
+      (s: MCPServerEntity) =>
+        s.name.toLowerCase().includes(query) ||
+        s.metadata?.description?.toLowerCase().includes(query),
+    );
+  }, [activeServers, deferredSearchQuery]);
 
   const handleServerToggle = (serverId: string, enabled: boolean) => {
-    update((draft) => {
-      if (!draft.mcpServerIds) draft.mcpServerIds = [];
+    update((d: Assistant) => {
+      if (!d.mcpServerIds) d.mcpServerIds = [];
 
       if (enabled) {
-        if (!draft.mcpServerIds.includes(serverId)) {
-          draft.mcpServerIds.push(serverId);
+        if (!d.mcpServerIds.includes(serverId)) {
+          d.mcpServerIds.push(serverId);
         }
       } else {
-        draft.mcpServerIds = draft.mcpServerIds.filter((id) => id !== serverId);
+        d.mcpServerIds = d.mcpServerIds.filter((id: string) => id !== serverId);
       }
     });
   };
@@ -160,13 +166,21 @@ function MCPServersTab() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
 
-          <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
+          <div
+            className={`border rounded-lg divide-y max-h-96 overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}
+            aria-busy={isPending}
+          >
+            {isPending && (
+              <span className="sr-only" aria-live="polite">
+                {t('assistant.mcp.filtering')}
+              </span>
+            )}
             {filteredServers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {t('assistant.mcp.noMatch')}
               </p>
             ) : (
-              filteredServers.map((server) => (
+              filteredServers.map((server: MCPServerEntity) => (
                 <div
                   key={server.id}
                   className="flex items-start gap-3 p-3 hover:bg-accent/50 transition-colors"

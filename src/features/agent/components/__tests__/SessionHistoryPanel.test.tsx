@@ -29,30 +29,16 @@ vi.mock('../SessionCard', () => ({
     hasExpandableChildren,
     isExpanded,
     onToggleExpand,
-    selectedLineageId,
-    onLineageSelect,
   }: {
     session: AgentSession;
     descendantCount: number;
     hasExpandableChildren?: boolean;
     isExpanded?: boolean;
     onToggleExpand?: (sessionId: string) => void;
-    selectedLineageId?: string | null;
-    onLineageSelect?: (lineageId: string) => void;
   }) => (
     <div data-testid={`session-card-${session.id}`}>
       <span>{session.name}</span>
       <span data-testid={`descendants-${session.id}`}>{descendantCount}</span>
-      {session.lineageId && (
-        <button
-          type="button"
-          aria-pressed={selectedLineageId === session.lineageId}
-          aria-label={`Filter by lineage ${session.lineageId.slice(0, 8)}`}
-          onClick={() => onLineageSelect?.(session.lineageId!)}
-        >
-          Lineage
-        </button>
-      )}
       {hasExpandableChildren && (
         <button type="button" onClick={() => onToggleExpand?.(session.id)}>
           {isExpanded ? 'Collapse' : 'Expand'}
@@ -272,119 +258,5 @@ describe('SessionHistoryPanel', () => {
 
     expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
     expect(screen.queryByTestId('session-card-child')).not.toBeInTheDocument();
-  });
-
-  it('clears a selected lineage when that lineage disappears from sessions', () => {
-    const lineageId = 'lineage-1';
-    const initialSessions: AgentSession[] = [
-      createSession('root', 'Root', { lineageId }),
-      createSession('child', 'Child', {
-        parentSessionId: 'root',
-        lineageId,
-      }),
-    ];
-    const nextSessions: AgentSession[] = [
-      createSession('other-root', 'Other Root', { lineageId: 'lineage-2' }),
-    ];
-
-    const { rerender } = render(
-      <SessionHistoryPanel
-        sessions={initialSessions}
-        isLoading={false}
-        activeTab="all"
-        activeStatusFilter="all"
-        searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
-      />,
-    );
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Filter by lineage lineage-' }),
-    );
-
-    expect(screen.getByText('Show all lineages')).toBeInTheDocument();
-
-    rerender(
-      <SessionHistoryPanel
-        sessions={nextSessions}
-        isLoading={false}
-        activeTab="all"
-        activeStatusFilter="all"
-        searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
-      />,
-    );
-
-    expect(
-      screen.queryByText('Show all lineages'),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId('session-card-other-root')).toBeInTheDocument();
-  });
-
-  it('keeps auto-expanded bookmarked lineage visible after rerender with equal data', () => {
-    const sessions: AgentSession[] = [
-      createSession('root', 'Root'),
-      createSession('child', 'Child', {
-        parentSessionId: 'root',
-        isBookmarked: true,
-      }),
-    ];
-
-    const { rerender } = render(
-      <SessionHistoryPanel
-        sessions={sessions}
-        isLoading={false}
-        activeTab="bookmarked"
-        activeStatusFilter="all"
-        searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
-      />,
-    );
-
-    expect(screen.getByTestId('session-card-child')).toBeInTheDocument();
-
-    rerender(
-      <SessionHistoryPanel
-        sessions={[
-          createSession('root', 'Root'),
-          createSession('child', 'Child', {
-            parentSessionId: 'root',
-            isBookmarked: true,
-          }),
-        ]}
-        isLoading={false}
-        activeTab="bookmarked"
-        activeStatusFilter="all"
-        searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
-      />,
-    );
-
-    expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
-    expect(screen.getByTestId('session-card-child')).toBeInTheDocument();
   });
 });

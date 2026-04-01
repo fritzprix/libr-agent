@@ -124,7 +124,10 @@ impl PersistentShell {
         // Apply environment isolation to prevent leaking host secrets
         // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
         // to ensure whitelisted variables are isolated but specialized ones are preserved.
-        crate::utils::env::apply_isolated_env_async(&mut cmd);
+        cmd.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
 
         #[cfg(unix)]
         {

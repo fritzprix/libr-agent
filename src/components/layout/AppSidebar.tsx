@@ -111,11 +111,9 @@ export default function AppSidebar() {
       visited.add(session.id);
       rows.push({ session, nestingLevel });
 
-      // Optimization: Avoid redundant array sorting.
-      // `buildChildrenMap` builds the adjacency lists from `sortedSessions` sequentially.
-      // Therefore, the sub-arrays are already sorted by `sortByPriority` natively.
-      // Removing the `.sort()` prevents O(K log K) mutations in the React render loop.
-      const children = childrenByParent.get(session.id) || [];
+      const children = (childrenByParent.get(session.id) || []).sort(
+        sortByPriority,
+      );
       children.forEach((child) => {
         pushSession(child, Math.min(nestingLevel + 1, 2));
       });

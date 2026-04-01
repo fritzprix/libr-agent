@@ -29,7 +29,10 @@ pub fn command_exists(cmd: &str) -> bool {
         command.creation_flags(CREATE_NO_WINDOW);
         command.arg(cmd);
 
-        crate::utils::env::apply_isolated_env(&mut command);
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
 
         command
             .output()
@@ -45,7 +48,10 @@ pub fn command_exists(cmd: &str) -> bool {
         command.arg("--");
         command.arg(cmd);
 
-        crate::utils::env::apply_isolated_env(&mut command);
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
 
         command
             .output()
