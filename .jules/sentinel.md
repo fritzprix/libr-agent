@@ -62,3 +62,9 @@
 **Vulnerability:** Several utility and process-spawning functions manually cleared environments (`env_clear`) and re-applied whitelisted variables using a loop over `get_isolated_env()`, which could lead to inconsistent environment isolation or bypass central security controls.
 **Learning:** Even though the core rule was known, developer scattered duplicate logic for isolation, increasing the risk of missing critical whitelist patches later.
 **Prevention:** Always enforce the use of `crate::utils::env::apply_isolated_env` or `apply_isolated_env_async` on `Command` objects directly, rather than manually duplicating the `env_clear()` and iteration logic. Tests should also assert the presence of these exact helper function calls in spawn logic.
+
+## 2026-04-01 - SQLite `VACUUM INTO` String Interpolation Risk
+
+**Vulnerability:** A backup file path was interpolated directly into a `VACUUM INTO` SQL string in `src-tauri/src/lifecycle/database_backup.rs` using `format!("VACUUM INTO '{}'", backup_path.display())`.
+**Learning:** `VACUUM INTO` requires a SQL string literal, so file paths containing a single quote break the statement unless they are escaped first. Even when a statement cannot be parameterized normally, literal interpolation still needs explicit escaping.
+**Prevention:** Escape single quotes in backup paths by replacing `'` with `''` before building the `VACUUM INTO` statement, so backup creation remains valid for paths containing quotes.
