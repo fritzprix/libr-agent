@@ -221,7 +221,7 @@ export function AgentWorkspacePanel() {
                   aria-label={t('agent.workspace.openInExplorerAria')}
                   disabled={isOpeningNative}
                 >
-                  <Folder className="w-3.5 h-3.5" />
+                  {isOpeningNative ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Folder className="w-3.5 h-3.5" />}
                 </Button>
                 <Button
                   variant="ghost"
@@ -232,7 +232,7 @@ export function AgentWorkspacePanel() {
                   aria-label={t('agent.workspace.openInTerminalAria')}
                   disabled={isOpeningNative}
                 >
-                  <Terminal className="w-3.5 h-3.5" />
+                  {isOpeningNative ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
                 </Button>
                 <Button
                   variant="ghost"
