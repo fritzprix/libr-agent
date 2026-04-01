@@ -948,6 +948,17 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const evictableEntries = entries.filter(
         ([cacheKey]) => cacheKey !== protectedCacheKey,
       );
+      if (evictableEntries.length === 0) {
+        this.logger.warn(
+          'Gemini context cache overflow could not evict any entries because all candidates are protected.',
+          {
+            preferredScope,
+            protectedCacheKey,
+            cacheSize: this.cachedContextEntries.size,
+          },
+        );
+        break;
+      }
       const sameScopeEntries =
         preferredScope === undefined
           ? []
@@ -960,10 +971,22 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         current[1].lastUsedAt < oldest[1].lastUsedAt ? current : oldest,
       );
 
-      await this.removeContextCacheEntry(
+      const removed = await this.removeContextCacheEntry(
         oldestEntry[0],
         'LRU eviction after cache growth',
       );
+      if (!removed) {
+        this.logger.warn(
+          'Gemini context cache overflow eviction stopped after a cache deletion failed.',
+          {
+            cacheKey: oldestEntry[0],
+            preferredScope,
+            protectedCacheKey,
+            cacheSize: this.cachedContextEntries.size,
+          },
+        );
+        break;
+      }
     }
   }
 

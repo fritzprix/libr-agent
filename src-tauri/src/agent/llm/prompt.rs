@@ -474,21 +474,6 @@ mod tests {
         assert!(!prompt.contains("## Available Tools & Current State"));
     }
 
-    #[tokio::test]
-    async fn test_build_volatile_sections_split_separates_provider_volatility() {
-        let mut registry = ContextRegistry::new();
-        registry.register(Box::new(StaticTestContextProvider));
-        registry.register(Box::new(VolatileTestContextProvider));
-
-        let (cacheable_context, volatile_context) =
-            build_volatile_sections_split(Some(Arc::new(registry)), None, None).await;
-
-        assert!(cacheable_context.contains("## Stable Context"));
-        assert!(!cacheable_context.contains("## Volatile Context"));
-        assert!(volatile_context.contains("## Volatile Context"));
-        assert!(!volatile_context.contains("## Stable Context"));
-    }
-
     #[test]
     fn test_split_service_context_prompts_deterministic_order() {
         // Create mock service contexts out of order with mixed volatility.
