@@ -47,9 +47,7 @@ export function AgentWorkspacePanel() {
   });
 
   const [isUploading, setIsUploading] = useState(false);
-  const [openingNativeAction, setOpeningNativeAction] = useState<
-    'explorer' | 'terminal' | null
-  >(null);
+  const [isOpeningNative, setIsOpeningNative] = useState(false);
   const openingNativeLock = useRef(false);
 
   // Extracted hooks
@@ -111,41 +109,31 @@ export function AgentWorkspacePanel() {
   }, [subscribe, handleWorkspaceFileDrop]);
 
   const handleOpenInExplorer = async () => {
-    if (
-      !session?.id ||
-      openingNativeAction !== null ||
-      openingNativeLock.current
-    )
-      return;
+    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
     openingNativeLock.current = true;
-    setOpeningNativeAction('explorer');
+    setIsOpeningNative(true);
     try {
       await openWorkspaceInExplorer(session.id);
     } catch (error) {
       logger.error('Failed to open explorer', error);
       toast.error(t('agent.workspace.openExplorerError', { error }));
     } finally {
-      setOpeningNativeAction(null);
+      setIsOpeningNative(false);
       openingNativeLock.current = false;
     }
   };
 
   const handleOpenInTerminal = async () => {
-    if (
-      !session?.id ||
-      openingNativeAction !== null ||
-      openingNativeLock.current
-    )
-      return;
+    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
     openingNativeLock.current = true;
-    setOpeningNativeAction('terminal');
+    setIsOpeningNative(true);
     try {
       await openWorkspaceInTerminal(session.id);
     } catch (error) {
       logger.error('Failed to open terminal', error);
       toast.error(t('agent.workspace.openTerminalError', { error }));
     } finally {
-      setOpeningNativeAction(null);
+      setIsOpeningNative(false);
       openingNativeLock.current = false;
     }
   };
@@ -231,13 +219,9 @@ export function AgentWorkspacePanel() {
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                   title={t('agent.workspace.openInExplorer')}
                   aria-label={t('agent.workspace.openInExplorerAria')}
-                  disabled={openingNativeAction !== null}
+                  disabled={isOpeningNative}
                 >
-                  {openingNativeAction === 'explorer' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Folder className="w-3.5 h-3.5" />
-                  )}
+                  {isOpeningNative ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Folder className="w-3.5 h-3.5" />}
                 </Button>
                 <Button
                   variant="ghost"
@@ -246,13 +230,9 @@ export function AgentWorkspacePanel() {
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                   title={t('agent.workspace.openInTerminal')}
                   aria-label={t('agent.workspace.openInTerminalAria')}
-                  disabled={openingNativeAction !== null}
+                  disabled={isOpeningNative}
                 >
-                  {openingNativeAction === 'terminal' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Terminal className="w-3.5 h-3.5" />
-                  )}
+                  {isOpeningNative ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
                 </Button>
                 <Button
                   variant="ghost"
@@ -366,13 +346,12 @@ export function AgentWorkspacePanel() {
           ) : (
             <div className="overflow-hidden rounded-lg border border-border/40 bg-muted/[0.18]">
               {fileTree.map((node) => (
-                <div key={node.id}>
-                  <FileTreeNode
-                    node={node}
-                    onToggle={toggleDirectory}
-                    onOpen={handleOpenFile}
-                  />
-                </div>
+                <FileTreeNode
+                  key={node.id}
+                  node={node}
+                  onToggle={toggleDirectory}
+                  onOpen={handleOpenFile}
+                />
               ))}
 
               {fileTree.length === 0 && !loading && (

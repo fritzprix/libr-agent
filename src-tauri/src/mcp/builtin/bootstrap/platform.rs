@@ -231,7 +231,10 @@ fn get_tool_version(tool: &str) -> Option<String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.arg("--version");
 
-        crate::utils::env::apply_isolated_env(&mut cmd);
+        cmd.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
 
         cmd.output().ok()?
     };
@@ -240,7 +243,10 @@ fn get_tool_version(tool: &str) -> Option<String> {
         let mut cmd = Command::new(tool);
         cmd.arg("--version");
 
-        crate::utils::env::apply_isolated_env(&mut cmd);
+        cmd.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
 
         cmd.output().ok()?
     };
@@ -271,7 +277,10 @@ fn get_command_path(cmd: &str) -> Option<String> {
         command.creation_flags(CREATE_NO_WINDOW);
         command.arg(cmd);
 
-        crate::utils::env::apply_isolated_env(&mut command);
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
 
         let output = command.output().ok()?;
 
@@ -294,7 +303,10 @@ fn get_command_path(cmd: &str) -> Option<String> {
         command.arg("--");
         command.arg(cmd);
 
-        crate::utils::env::apply_isolated_env(&mut command);
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
 
         let output = command.output().ok()?;
 

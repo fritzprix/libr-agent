@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,11 +68,9 @@ export function SessionHistoryPanel({
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
-  const prevSessionsForLineageRef = useRef(sessions);
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const prevAutoExpandedSignatureRef = useRef('');
 
   const defaultHeading =
     heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
@@ -134,17 +132,18 @@ export function SessionHistoryPanel({
     });
   }, [activeStatusFilter, deferredSearchQuery, segmentedSessions]);
 
-  if (sessions !== prevSessionsForLineageRef.current) {
-    prevSessionsForLineageRef.current = sessions;
-    if (selectedLineageId) {
-      const stillExists = sessions.some(
-        (session) => session.lineageId === selectedLineageId,
-      );
-      if (!stillExists) {
-        setSelectedLineageId(null);
-      }
+  useEffect(() => {
+    if (!selectedLineageId) {
+      return;
     }
-  }
+
+    const stillExists = sessions.some(
+      (session) => session.lineageId === selectedLineageId,
+    );
+    if (!stillExists) {
+      setSelectedLineageId(null);
+    }
+  }, [selectedLineageId, sessions]);
 
   const descendantCounts = useMemo(
     () => buildDescendantCounts(sessions),
@@ -186,24 +185,17 @@ export function SessionHistoryPanel({
     return expandedIds;
   }, [baseSessions, filtersActive, matchedSessions]);
 
-  const autoExpandedSignature = [...autoExpandedAncestorIds].sort().join(':');
-  if (autoExpandedSignature !== prevAutoExpandedSignatureRef.current) {
-    prevAutoExpandedSignatureRef.current = autoExpandedSignature;
-    if (autoExpandedAncestorIds.size > 0) {
-      setExpandedSessionIds((prev) => {
-        const hasNewAncestor = [...autoExpandedAncestorIds].some(
-          (sessionId) => !prev.has(sessionId),
-        );
-        if (!hasNewAncestor) {
-          return prev;
-        }
-
-        const next = new Set(prev);
-        autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
-        return next;
-      });
+  useEffect(() => {
+    if (autoExpandedAncestorIds.size === 0) {
+      return;
     }
-  }
+
+    setExpandedSessionIds((prev) => {
+      const next = new Set(prev);
+      autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
+      return next;
+    });
+  }, [autoExpandedAncestorIds]);
 
   const displayRows = useMemo(() => {
     type SessionRow = {

@@ -20,7 +20,6 @@ import {
   stableHashKeyPart,
   stableStringify,
 } from '../base-service';
-import { Logger } from '../../logger';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
 import { convertToGeminiMessages } from './mapper';
@@ -38,13 +37,7 @@ import { processGeminiStream } from './stream';
 export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private static readonly MIN_CACHEABLE_PREFIX_TOKENS = 32768;
   private static readonly MAX_CONTEXT_CACHE_ENTRIES = 8;
-  private static readonly SHORT_CONTEXT_CACHE_TTL_MS = 60 * 60 * 1000;
-  private static readonly MEDIUM_CONTEXT_CACHE_TTL_MS = 3 * 60 * 60 * 1000;
-  private static readonly LONG_CONTEXT_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-  private static readonly CONTEXT_CACHE_REFRESH_THRESHOLD_MS = 10 * 60 * 1000;
-  private static readonly MIN_HISTORY_CHECKPOINT_MESSAGES = 5;
-  private static readonly HISTORY_CHECKPOINT_TAIL_USER_MESSAGES = 2;
-  private static readonly HISTORY_CHECKPOINT_ADVANCE_USER_INTERVAL = 2;
+  private static readonly CONTEXT_CACHE_TTL_MS = 55 * 60 * 1000;
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
@@ -53,48 +46,10 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     string,
     {
       name: string;
-      scope: string;
       createdAt: number;
       lastUsedAt: number;
-      ttlMs: number;
-      expiresAt: number;
-      cacheableTokenCount: number;
     }
   >();
-  private readonly cacheableTokenCounts = new Map<
-    string,
-    {
-      tokenCount: number;
-      source: 'count_tokens' | 'estimate_fallback';
-    }
-  >();
-  private readonly inFlightContextCacheCreations = new Map<
-    string,
-    Promise<string | undefined>
-  >();
-  private lastPromptSnapshot?: {
-    model: string;
-    systemPromptHash: string;
-    toolsHash: string;
-    cachedHistoryHash?: string;
-    cachedHistoryMessageCount: number;
-    messagesFingerprintHash: string;
-    messageFingerprints: Array<{
-      role: string;
-      partCount: number;
-      textLength: number;
-      textHash: string;
-      contentTag: 'regular' | 'session_context' | 'tool_result_media';
-      functionCallCount: number;
-      functionCallNames?: string[];
-      functionResponseCount: number;
-      functionResponseNames?: string[];
-    }>;
-    promptCacheKey?: string;
-    cacheableTokenCount: number;
-    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
-    cacheStrategy: 'system_tools' | 'history_checkpoint' | 'none';
-  };
 
   /**
    * Initializes a new instance of the `GeminiService`.
@@ -210,9 +165,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         type: Type.OBJECT,
         properties: geminiProperties,
       };
-      if ('required' in schema && Array.isArray(schema.required)) {
-        result.required = schema.required;
-      }
       if (schema.description) result.description = schema.description;
       return result;
     }
@@ -307,32 +259,15 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       // --- CONTEXT CACHING ABSTRACTION BEGIN ---
       const stablePrefix = options.systemPrompt ?? '';
+      const dynamicContext = options.sessionContext ?? '';
       const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
-      const cacheScope = this.createContextCacheScope(sanitizedMessages);
-      const historyCheckpoint = this.buildHistoryCheckpoint(geminiMessages);
-      const cacheableContents = historyCheckpoint?.cacheContents;
-      const requestContents =
-        historyCheckpoint?.requestContents ?? geminiMessages;
-      const cacheStrategy =
-        historyCheckpoint !== null ? 'history_checkpoint' : 'system_tools';
       const requiresToolOverride =
         Boolean(geminiTools) &&
         (options.forceToolUse === true || options.disableToolUse === true);
       const canUseCachedContent = !requiresToolOverride;
-      const cacheDecision = canUseCachedContent
-        ? await this.evaluateContextCacheEligibility(
-            model,
-            stablePrefix,
-            geminiTools,
-            toolsPayload,
-            cacheableContents,
-          )
-        : {
-            shouldUseCache: false,
-            cacheableTokenCount: 0,
-            tokenDecisionSource: 'estimate_fallback' as const,
-          };
-      const shouldUseCache = cacheDecision.shouldUseCache;
+      const shouldUseCache =
+        canUseCachedContent &&
+        this.shouldAttemptContextCache(model, stablePrefix, toolsPayload);
       let cachedContentName: string | undefined;
       let cacheKey: string | undefined;
 
@@ -341,26 +276,20 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           model,
           stablePrefix,
           toolsPayload,
-          historyCheckpoint?.cacheKeyPart,
         );
         const existingEntry = await this.getUsableContextCacheEntry(
           cacheKey,
-          cacheScope,
           'preflight validation',
-          this.getContextCacheTtlMs(cacheDecision.cacheableTokenCount),
         );
 
         if (existingEntry) {
           cachedContentName = existingEntry.name;
         } else {
-          cachedContentName = await this.getOrCreateContextCacheEntry(
+          cachedContentName = await this.createContextCacheEntry(
             cacheKey,
-            cacheScope,
             model,
             stablePrefix,
             geminiTools,
-            cacheDecision.cacheableTokenCount,
-            cacheableContents,
           );
         }
       }
@@ -374,15 +303,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         canUseCachedContent,
         requiresToolOverride,
         shouldUseCache,
-        cacheableTokenCount: cacheDecision.cacheableTokenCount,
-        tokenDecisionSource: cacheDecision.tokenDecisionSource,
-        cacheStrategy:
-          shouldUseCache && historyCheckpoint
-            ? 'history_checkpoint'
-            : cacheStrategy,
-        cachedHistoryMessageCount: cacheableContents?.length ?? 0,
         cachedContentName,
-        cacheableContents,
       });
 
       const geminiConfig: GeminiServiceConfig = {
@@ -391,6 +312,15 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       if (cachedContentName) {
         geminiConfig.cachedContent = cachedContentName;
+        // The Google GenAI API does not allow overriding system_instruction or tools when cached_content is provided.
+        // Therefore, we inject the dynamic context into the first user message.
+        if (dynamicContext && geminiMessages.length > 0) {
+          if (geminiMessages[0].parts) {
+            geminiMessages[0].parts.unshift({
+              text: `[System Context Update]\n${dynamicContext}\n\n`,
+            });
+          }
+        }
       } else {
         if (geminiTools) {
           geminiConfig.tools = geminiTools;
@@ -448,28 +378,12 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         first500Chars: sysPromptText.substring(0, 500),
         last500Chars: sysPromptText.substring(sysPromptText.length - 500),
       });
-      if (this.shouldLogPromptDiagnostics()) {
-        this.logPromptDiagnostics({
-          model,
-          systemPrompt: options.systemPrompt,
-          promptCacheKey: cacheKey,
-          messages: requestContents,
-          geminiTools,
-          cachedHistoryContents: cacheableContents,
-          cacheableTokenCount: cacheDecision.cacheableTokenCount,
-          tokenDecisionSource: cacheDecision.tokenDecisionSource,
-          cacheStrategy:
-            shouldUseCache && historyCheckpoint
-              ? 'history_checkpoint'
-              : cacheStrategy,
-        });
-      }
 
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({
           model: model,
           config: geminiConfig,
-          contents: requestContents,
+          contents: geminiMessages,
         });
       });
 
@@ -568,15 +482,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
   }
 
-  static supportsContextCacheForModel(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    return (
-      lowerName.includes('gemini-1.5') ||
-      lowerName.includes('gemini-2') ||
-      lowerName.includes('gemini-3')
-    );
-  }
-
   static estimateContextWindowForModel(modelName: string): number {
     const lowerName = modelName.toLowerCase();
     if (lowerName.includes('gemini-1.5-pro')) return 2000000;
@@ -609,130 +514,27 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     return age < this.CACHE_TTL;
   }
 
-  private async evaluateContextCacheEligibility(
+  private shouldAttemptContextCache(
     model: string,
     stablePrefix: string,
-    geminiTools:
-      | Array<{ functionDeclarations: FunctionDeclaration[] }>
-      | undefined,
     toolsPayload: string,
-    cacheableContents?: Content[],
-  ): Promise<{
-    shouldUseCache: boolean;
-    cacheableTokenCount: number;
-    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
-  }> {
-    if (!GeminiService.supportsContextCacheForModel(model)) {
-      return {
-        shouldUseCache: false,
-        cacheableTokenCount: 0,
-        tokenDecisionSource: 'estimate_fallback',
-      };
+  ): boolean {
+    if (!GeminiService.supportsToolsForModel(model)) {
+      return false;
     }
 
-    if (
-      !stablePrefix &&
-      !toolsPayload &&
-      (!cacheableContents || cacheableContents.length === 0)
-    ) {
-      return {
-        shouldUseCache: false,
-        cacheableTokenCount: 0,
-        tokenDecisionSource: 'estimate_fallback',
-      };
-    }
-
-    const tokenCountKey = this.createContextCacheKey(
-      model,
+    const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
       stablePrefix,
       toolsPayload,
-      cacheableContents
-        ? stableHashKeyPart(
-            stableStringify(
-              this.createGeminiContentFingerprint(cacheableContents),
-            ),
-          )
-        : undefined,
     );
-    const cachedTokenCount = this.cacheableTokenCounts.get(tokenCountKey);
-    if (cachedTokenCount) {
-      return {
-        shouldUseCache:
-          cachedTokenCount.tokenCount >=
-          GeminiService.MIN_CACHEABLE_PREFIX_TOKENS,
-        cacheableTokenCount: cachedTokenCount.tokenCount,
-        tokenDecisionSource: cachedTokenCount.source,
-      };
-    }
-
-    try {
-      const countResponse = await this.withRetry(() =>
-        this.genAI.models.countTokens({
-          model,
-          contents: cacheableContents ?? [
-            { role: 'user', parts: [{ text: 'cache probe' }] },
-          ],
-          config: {
-            systemInstruction: stablePrefix,
-            tools: geminiTools,
-          },
-        }),
-      );
-      const tokenCount = countResponse.totalTokens ?? 0;
-      const tokenDecision = {
-        tokenCount,
-        source: 'count_tokens' as const,
-      };
-      this.cacheableTokenCounts.set(tokenCountKey, tokenDecision);
-
-      return {
-        shouldUseCache: tokenCount >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS,
-        cacheableTokenCount: tokenCount,
-        tokenDecisionSource: tokenDecision.source,
-      };
-    } catch (error) {
-      const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
-        stablePrefix,
-        toolsPayload,
-        cacheableContents,
-      );
-      this.logger.warn(
-        'Gemini countTokens failed during cache eligibility check; falling back to character estimate.',
-        {
-          model,
-          stablePrefixLength: stablePrefix.length,
-          toolsPayloadLength: toolsPayload.length,
-          cacheableContentCount: cacheableContents?.length ?? 0,
-          cacheableTokenEstimate,
-          error,
-        },
-      );
-      const tokenDecision = {
-        tokenCount: cacheableTokenEstimate,
-        source: 'estimate_fallback' as const,
-      };
-      this.cacheableTokenCounts.set(tokenCountKey, tokenDecision);
-
-      return {
-        shouldUseCache:
-          cacheableTokenEstimate >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS,
-        cacheableTokenCount: cacheableTokenEstimate,
-        tokenDecisionSource: tokenDecision.source,
-      };
-    }
+    return cacheableTokenEstimate >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS;
   }
 
   private estimateCacheablePrefixTokens(
     stablePrefix: string,
     toolsPayload: string,
-    cacheableContents?: Content[],
   ): number {
-    const cacheableContentCharacters =
-      this.estimateCacheableContentCharacters(cacheableContents);
-    return Math.ceil(
-      (stablePrefix.length + toolsPayload.length + cacheableContentCharacters) /
-        4,
-    );
+    return Math.ceil((stablePrefix.length + toolsPayload.length) / 4);
   }
 
   private logPromptCacheMetadata(args: {
@@ -743,17 +545,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     canUseCachedContent: boolean;
     requiresToolOverride: boolean;
     shouldUseCache: boolean;
-    cacheableTokenCount: number;
-    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
-    cacheStrategy: 'system_tools' | 'history_checkpoint' | 'none';
-    cachedHistoryMessageCount: number;
     cachedContentName?: string;
-    cacheableContents?: Content[];
   }): void {
     const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
       args.stablePrefix,
       args.toolsPayload,
-      args.cacheableContents,
     );
 
     this.logger.info('Gemini prompt cache metadata', {
@@ -764,11 +560,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       stablePrefixLength: args.stablePrefix.length,
       toolsPayloadLength: args.toolsPayload.length,
       cacheableTokenEstimate,
-      cacheableTokenCount: args.cacheableTokenCount,
-      tokenDecisionSource: args.tokenDecisionSource,
-      cacheStrategy: args.cacheStrategy,
-      cachedHistoryMessageCount: args.cachedHistoryMessageCount,
-      targetTtlMs: this.getContextCacheTtlMs(args.cacheableTokenCount),
       canUseCachedContent: args.canUseCachedContent,
       requiresToolOverride: args.requiresToolOverride,
       shouldUseCache: args.shouldUseCache,
@@ -781,133 +572,46 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     model: string,
     stablePrefix: string,
     toolsPayload: string,
-    historyKeyPart?: string,
   ): string {
     return [
       model,
       stableHashKeyPart(stablePrefix),
       stableHashKeyPart(toolsPayload),
-      historyKeyPart ?? 'no_history',
     ].join(':');
-  }
-
-  private async getOrCreateContextCacheEntry(
-    cacheKey: string,
-    cacheScope: string,
-    model: string,
-    stablePrefix: string,
-    geminiTools:
-      | Array<{ functionDeclarations: FunctionDeclaration[] }>
-      | undefined,
-    cacheableTokenCount: number,
-    cacheableContents?: Content[],
-  ): Promise<string | undefined> {
-    const existingCreation = this.inFlightContextCacheCreations.get(cacheKey);
-    if (existingCreation) {
-      return existingCreation;
-    }
-
-    const creationPromise = (async () => {
-      const reusableEntry = await this.getUsableContextCacheEntry(
-        cacheKey,
-        cacheScope,
-        'in-flight cache creation recheck',
-        this.getContextCacheTtlMs(cacheableTokenCount),
-      );
-      if (reusableEntry) {
-        return reusableEntry.name;
-      }
-
-      return this.createContextCacheEntry(
-        cacheKey,
-        cacheScope,
-        model,
-        stablePrefix,
-        geminiTools,
-        cacheableTokenCount,
-        cacheableContents,
-      );
-    })();
-
-    this.inFlightContextCacheCreations.set(cacheKey, creationPromise);
-
-    try {
-      return await creationPromise;
-    } finally {
-      if (
-        this.inFlightContextCacheCreations.get(cacheKey) === creationPromise
-      ) {
-        this.inFlightContextCacheCreations.delete(cacheKey);
-      }
-    }
   }
 
   private async getUsableContextCacheEntry(
     cacheKey: string,
-    cacheScope: string,
     reason: string,
-    desiredTtlMs: number,
   ): Promise<{ name: string; createdAt: number; lastUsedAt: number } | null> {
     const entry = this.cachedContextEntries.get(cacheKey);
     if (!entry) {
       return null;
     }
 
-    const now = Date.now();
-    if (now >= entry.expiresAt) {
+    const age = Date.now() - entry.createdAt;
+    if (age >= GeminiService.CONTEXT_CACHE_TTL_MS) {
       await this.removeContextCacheEntry(cacheKey, reason);
       return null;
     }
 
-    entry.lastUsedAt = now;
-    entry.scope = cacheScope;
-    if (this.shouldRefreshContextCacheEntry(entry, desiredTtlMs, now)) {
-      try {
-        await this.genAI.caches.update({
-          name: entry.name,
-          config: {
-            ttl: this.toGeminiDurationString(desiredTtlMs),
-          },
-        });
-        entry.ttlMs = desiredTtlMs;
-        entry.expiresAt = now + desiredTtlMs;
-        this.logger.debug('Refreshed Gemini context cache TTL on reuse', {
-          cacheKey,
-          cachedContentName: entry.name,
-          ttlMs: desiredTtlMs,
-        });
-      } catch (error) {
-        this.logger.debug('Failed to refresh Gemini context cache TTL', {
-          cacheKey,
-          cachedContentName: entry.name,
-          ttlMs: desiredTtlMs,
-          error,
-        });
-      }
-    }
+    entry.lastUsedAt = Date.now();
     return entry;
   }
 
   private async createContextCacheEntry(
     cacheKey: string,
-    cacheScope: string,
     model: string,
     stablePrefix: string,
     geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>,
-    cacheableTokenCount = 0,
-    cacheableContents?: Content[],
   ): Promise<string | undefined> {
     try {
-      const ttlMs = this.getContextCacheTtlMs(cacheableTokenCount);
       this.logger.debug(
         'Creating Gemini context cache for stable prefix and tools',
         {
           model,
           cacheKey,
           stablePrefixLength: stablePrefix.length,
-          cacheableTokenCount,
-          ttlMs,
-          cacheableContentCount: cacheableContents?.length ?? 0,
           toolDeclarationCount:
             geminiTools?.[0]?.functionDeclarations.length ?? 0,
         },
@@ -918,8 +622,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         config: {
           systemInstruction: stablePrefix,
           tools: geminiTools,
-          contents: cacheableContents,
-          ttl: this.toGeminiDurationString(ttlMs),
+          ttl: '3600s',
         },
       });
       const cacheName = cacheResponse.name;
@@ -927,17 +630,12 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         throw new Error('Gemini cache creation returned no cache name');
       }
 
-      const now = Date.now();
       this.cachedContextEntries.set(cacheKey, {
         name: cacheName,
-        scope: cacheScope,
-        createdAt: now,
-        lastUsedAt: now,
-        ttlMs,
-        expiresAt: now + ttlMs,
-        cacheableTokenCount,
+        createdAt: Date.now(),
+        lastUsedAt: Date.now(),
       });
-      await this.evictContextCacheOverflow(cacheScope, cacheKey);
+      await this.evictContextCacheOverflow();
 
       this.logger.info(
         `Gemini context cache created successfully: ${cacheName}`,
@@ -953,89 +651,50 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     }
   }
 
-  private async evictContextCacheOverflow(
-    preferredScope?: string,
-    protectedCacheKey?: string,
-  ): Promise<void> {
+  private async evictContextCacheOverflow(): Promise<void> {
     while (
       this.cachedContextEntries.size > GeminiService.MAX_CONTEXT_CACHE_ENTRIES
     ) {
-      const entries = [...this.cachedContextEntries.entries()];
-      const evictableEntries = entries.filter(
-        ([cacheKey]) => cacheKey !== protectedCacheKey,
-      );
-      if (evictableEntries.length === 0) {
-        this.logger.warn(
-          'Gemini context cache overflow could not evict any entries because all candidates are protected.',
-          {
-            preferredScope,
-            protectedCacheKey,
-            cacheSize: this.cachedContextEntries.size,
-          },
-        );
-        break;
-      }
-      const sameScopeEntries =
-        preferredScope === undefined
-          ? []
-          : evictableEntries.filter(
-              ([, entry]) => entry.scope === preferredScope,
-            );
-      const candidateEntries =
-        sameScopeEntries.length > 0 ? sameScopeEntries : evictableEntries;
-      const oldestEntryPool =
-        candidateEntries.length > 0 ? candidateEntries : entries;
-      const oldestEntry = oldestEntryPool.reduce((oldest, current) =>
-        current[1].lastUsedAt < oldest[1].lastUsedAt ? current : oldest,
+      const oldestEntry = [...this.cachedContextEntries.entries()].reduce(
+        (
+          oldest,
+          current,
+        ): [string, { name: string; createdAt: number; lastUsedAt: number }] =>
+          current[1].lastUsedAt < oldest[1].lastUsedAt ? current : oldest,
       );
 
-      const removed = await this.removeContextCacheEntry(
+      await this.removeContextCacheEntry(
         oldestEntry[0],
         'LRU eviction after cache growth',
       );
-      if (!removed) {
-        this.logger.warn(
-          'Gemini context cache overflow eviction stopped after a cache deletion failed.',
-          {
-            cacheKey: oldestEntry[0],
-            preferredScope,
-            protectedCacheKey,
-            cacheSize: this.cachedContextEntries.size,
-          },
-        );
-        break;
-      }
     }
   }
 
   private async removeContextCacheEntry(
     cacheKey: string,
     reason: string,
-  ): Promise<boolean> {
+  ): Promise<void> {
     const entry = this.cachedContextEntries.get(cacheKey);
     if (!entry) {
-      return true;
+      return;
     }
+
+    this.cachedContextEntries.delete(cacheKey);
 
     try {
       await this.genAI.caches.delete({ name: entry.name });
-      this.cachedContextEntries.delete(cacheKey);
       this.logger.debug('Deleted Gemini context cache entry', {
         cacheKey,
         cachedContentName: entry.name,
         reason,
       });
-      return true;
     } catch (error) {
-      entry.expiresAt = 0;
-      entry.lastUsedAt = 0;
       this.logger.debug('Failed to delete Gemini context cache entry', {
         cacheKey,
         cachedContentName: entry.name,
         reason,
         error,
       });
-      return false;
     }
   }
 
@@ -1123,473 +782,5 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     for (const cacheKey of cacheKeys) {
       void this.removeContextCacheEntry(cacheKey, 'service dispose');
     }
-  }
-
-  private getContextCacheTtlMs(cacheableTokenCount: number): number {
-    if (cacheableTokenCount >= 262144) {
-      return GeminiService.LONG_CONTEXT_CACHE_TTL_MS;
-    }
-    if (cacheableTokenCount >= 131072) {
-      return GeminiService.MEDIUM_CONTEXT_CACHE_TTL_MS;
-    }
-    return GeminiService.SHORT_CONTEXT_CACHE_TTL_MS;
-  }
-
-  private toGeminiDurationString(ttlMs: number): string {
-    return `${Math.max(60, Math.floor(ttlMs / 1000))}s`;
-  }
-
-  private createContextCacheScope(messages: Message[]): string {
-    const anchorMessage =
-      [...messages].reverse().find((message) => {
-        return (
-          typeof message.sessionId === 'string' &&
-          message.sessionId.length > 0 &&
-          typeof message.threadId === 'string' &&
-          message.threadId.length > 0
-        );
-      }) ?? messages[0];
-
-    if (!anchorMessage) {
-      return 'global:global';
-    }
-
-    const sessionId =
-      typeof anchorMessage.sessionId === 'string' &&
-      anchorMessage.sessionId.length > 0
-        ? anchorMessage.sessionId
-        : 'global';
-    const threadId =
-      typeof anchorMessage.threadId === 'string' &&
-      anchorMessage.threadId.length > 0
-        ? anchorMessage.threadId
-        : sessionId;
-    return `${sessionId}:${threadId}`;
-  }
-
-  private estimateCacheableContentCharacters(
-    cacheableContents?: Content[],
-  ): number {
-    if (!cacheableContents) {
-      return 0;
-    }
-
-    return cacheableContents.reduce((total, content) => {
-      if (typeof content !== 'object' || content === null) {
-        return total;
-      }
-
-      const roleLength =
-        typeof content.role === 'string' ? content.role.length : 0;
-      const parts = Array.isArray(content.parts) ? content.parts : [];
-      const partsLength = parts.reduce((partTotal, part) => {
-        if (typeof part !== 'object' || part === null) {
-          return partTotal;
-        }
-
-        const serializedPart = JSON.stringify(part);
-        return partTotal + (serializedPart?.length ?? 0);
-      }, 0);
-
-      return total + roleLength + partsLength;
-    }, 0);
-  }
-
-  private shouldRefreshContextCacheEntry(
-    entry: {
-      name: string;
-      createdAt: number;
-      lastUsedAt: number;
-      ttlMs: number;
-      expiresAt: number;
-      cacheableTokenCount: number;
-    },
-    desiredTtlMs: number,
-    now: number,
-  ): boolean {
-    const remainingTtlMs = entry.expiresAt - now;
-    return (
-      desiredTtlMs > entry.ttlMs ||
-      remainingTtlMs <= GeminiService.CONTEXT_CACHE_REFRESH_THRESHOLD_MS
-    );
-  }
-
-  private logPromptDiagnostics(args: {
-    model: string;
-    systemPrompt?: string;
-    promptCacheKey?: string;
-    messages: Content[];
-    geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
-    cachedHistoryContents?: Content[];
-    cacheableTokenCount: number;
-    tokenDecisionSource: 'count_tokens' | 'estimate_fallback';
-    cacheStrategy: 'system_tools' | 'history_checkpoint' | 'none';
-  }): void {
-    const messageFingerprints = args.messages.map((message) =>
-      this.fingerprintGeminiMessage(message),
-    );
-    const messagesFingerprintHash = stableHashKeyPart(
-      stableStringify(messageFingerprints),
-    );
-    const toolsPayload = stableStringify(args.geminiTools ?? []);
-    const cachedHistoryFingerprint =
-      args.cachedHistoryContents && args.cachedHistoryContents.length > 0
-        ? this.createGeminiContentFingerprint(args.cachedHistoryContents)
-        : undefined;
-    const snapshot = {
-      model: args.model,
-      systemPromptHash: stableHashKeyPart(args.systemPrompt ?? ''),
-      toolsHash: stableHashKeyPart(toolsPayload),
-      cachedHistoryHash: cachedHistoryFingerprint
-        ? stableHashKeyPart(stableStringify(cachedHistoryFingerprint))
-        : undefined,
-      cachedHistoryMessageCount: args.cachedHistoryContents?.length ?? 0,
-      messagesFingerprintHash,
-      messageFingerprints,
-      promptCacheKey: args.promptCacheKey,
-      cacheableTokenCount: args.cacheableTokenCount,
-      tokenDecisionSource: args.tokenDecisionSource,
-      cacheStrategy: args.cacheStrategy,
-    };
-
-    this.logger.debug('Gemini prompt diagnostics', {
-      model: args.model,
-      promptCacheKey: args.promptCacheKey,
-      systemPromptLength: args.systemPrompt?.length ?? 0,
-      systemPromptHash: snapshot.systemPromptHash,
-      toolCount: args.geminiTools?.[0]?.functionDeclarations.length ?? 0,
-      toolsHash: snapshot.toolsHash,
-      cacheStrategy: args.cacheStrategy,
-      cachedHistoryHash: snapshot.cachedHistoryHash,
-      cachedHistoryMessageCount: snapshot.cachedHistoryMessageCount,
-      messageCount: messageFingerprints.length,
-      messagesFingerprintHash,
-      cacheableTokenCount: args.cacheableTokenCount,
-      tokenDecisionSource: args.tokenDecisionSource,
-      messageFingerprints,
-    });
-    this.logPromptDrift(snapshot);
-  }
-
-  protected shouldLogPromptDiagnostics(): boolean {
-    return Logger.shouldLogLevel('debug');
-  }
-
-  private logPromptDrift(
-    snapshot: NonNullable<GeminiService['lastPromptSnapshot']>,
-  ): void {
-    const previous = this.lastPromptSnapshot;
-    this.lastPromptSnapshot = snapshot;
-
-    if (!previous) {
-      return;
-    }
-
-    const minMessageCount = Math.min(
-      previous.messageFingerprints.length,
-      snapshot.messageFingerprints.length,
-    );
-    let firstDivergenceIndex = -1;
-    for (let index = 0; index < minMessageCount; index += 1) {
-      if (
-        stableStringify(previous.messageFingerprints[index]) !==
-        stableStringify(snapshot.messageFingerprints[index])
-      ) {
-        firstDivergenceIndex = index;
-        break;
-      }
-    }
-
-    if (
-      firstDivergenceIndex === -1 &&
-      previous.messageFingerprints.length !==
-        snapshot.messageFingerprints.length
-    ) {
-      firstDivergenceIndex = minMessageCount;
-    }
-
-    const firstDivergenceComponent =
-      previous.model !== snapshot.model
-        ? 'model'
-        : previous.systemPromptHash !== snapshot.systemPromptHash
-          ? 'system_prompt'
-          : previous.toolsHash !== snapshot.toolsHash
-            ? 'tools'
-            : previous.cachedHistoryHash !== snapshot.cachedHistoryHash
-              ? 'cached_history'
-              : firstDivergenceIndex >= 0
-                ? 'messages'
-                : 'none';
-
-    this.logger.debug('Gemini prompt cache drift', {
-      previousModel: previous.model,
-      model: snapshot.model,
-      previousPromptCacheKey: previous.promptCacheKey,
-      promptCacheKey: snapshot.promptCacheKey,
-      previousCacheStrategy: previous.cacheStrategy,
-      cacheStrategy: snapshot.cacheStrategy,
-      firstDivergenceComponent,
-      firstDivergenceIndex:
-        firstDivergenceComponent === 'messages'
-          ? firstDivergenceIndex
-          : undefined,
-      commonPrefixMessages:
-        firstDivergenceComponent === 'messages'
-          ? firstDivergenceIndex
-          : Math.min(
-              previous.messageFingerprints.length,
-              snapshot.messageFingerprints.length,
-            ),
-      previousMessageCount: previous.messageFingerprints.length,
-      messageCount: snapshot.messageFingerprints.length,
-      systemPromptChanged:
-        previous.systemPromptHash !== snapshot.systemPromptHash,
-      toolsChanged: previous.toolsHash !== snapshot.toolsHash,
-      cachedHistoryChanged:
-        previous.cachedHistoryHash !== snapshot.cachedHistoryHash,
-      previousCachedHistoryHash: previous.cachedHistoryHash,
-      cachedHistoryHash: snapshot.cachedHistoryHash,
-      previousCachedHistoryMessageCount: previous.cachedHistoryMessageCount,
-      cachedHistoryMessageCount: snapshot.cachedHistoryMessageCount,
-      messagesChanged:
-        previous.messagesFingerprintHash !== snapshot.messagesFingerprintHash,
-      previousFingerprintHash: previous.messagesFingerprintHash,
-      fingerprintHash: snapshot.messagesFingerprintHash,
-      previousMessageAtDivergence:
-        firstDivergenceIndex >= 0
-          ? previous.messageFingerprints[firstDivergenceIndex]
-          : undefined,
-      currentMessageAtDivergence:
-        firstDivergenceIndex >= 0
-          ? snapshot.messageFingerprints[firstDivergenceIndex]
-          : undefined,
-    });
-  }
-
-  private fingerprintGeminiMessage(message: Content): {
-    role: string;
-    partCount: number;
-    textLength: number;
-    textHash: string;
-    contentTag: 'regular' | 'session_context' | 'tool_result_media';
-    functionCallCount: number;
-    functionCallNames?: string[];
-    functionResponseCount: number;
-    functionResponseNames?: string[];
-  } {
-    const parts = Array.isArray(message.parts) ? message.parts : [];
-    const textSegments: string[] = [];
-    const functionCallNames: string[] = [];
-    const functionResponseNames: string[] = [];
-
-    for (const part of parts) {
-      if (typeof part !== 'object' || part === null) {
-        continue;
-      }
-      const candidate = part as Record<string, unknown>;
-      if (typeof candidate.text === 'string') {
-        textSegments.push(candidate.text);
-      }
-
-      if (
-        typeof candidate.functionCall === 'object' &&
-        candidate.functionCall !== null
-      ) {
-        const functionCall = candidate.functionCall as Record<string, unknown>;
-        if (typeof functionCall.name === 'string') {
-          functionCallNames.push(functionCall.name);
-        }
-      }
-
-      if (
-        typeof candidate.functionResponse === 'object' &&
-        candidate.functionResponse !== null
-      ) {
-        const functionResponse = candidate.functionResponse as Record<
-          string,
-          unknown
-        >;
-        if (typeof functionResponse.name === 'string') {
-          functionResponseNames.push(functionResponse.name);
-        }
-      }
-    }
-
-    const text = textSegments.join('\n');
-    return {
-      role: message.role ?? 'user',
-      partCount: parts.length,
-      textLength: text.length,
-      textHash: stableHashKeyPart(text),
-      contentTag: this.classifyGeminiContentTag(message.role ?? 'user', text),
-      functionCallCount: functionCallNames.length,
-      functionCallNames:
-        functionCallNames.length > 0 ? functionCallNames : undefined,
-      functionResponseCount: functionResponseNames.length,
-      functionResponseNames:
-        functionResponseNames.length > 0 ? functionResponseNames : undefined,
-    };
-  }
-
-  private classifyGeminiContentTag(
-    role: string,
-    content: string,
-  ): 'regular' | 'session_context' | 'tool_result_media' {
-    if (
-      role === 'user' &&
-      content.startsWith('[Current session context — background reference only')
-    ) {
-      return 'session_context';
-    }
-
-    if (
-      role === 'user' &&
-      content.startsWith('Tool result media from tool_call_id=')
-    ) {
-      return 'tool_result_media';
-    }
-
-    return 'regular';
-  }
-
-  private buildHistoryCheckpoint(messages: Content[]): {
-    cacheContents: Content[];
-    requestContents: Content[];
-    cacheKeyPart: string;
-  } | null {
-    if (messages.length < GeminiService.MIN_HISTORY_CHECKPOINT_MESSAGES) {
-      return null;
-    }
-
-    if (
-      messages.some((message) => {
-        return (
-          this.isGeminiFunctionCallTurn(message) ||
-          this.isGeminiFunctionResponseTurn(message)
-        );
-      })
-    ) {
-      return null;
-    }
-
-    const userMessageIndices = messages.reduce<number[]>(
-      (indices, message, index) => {
-        if (message?.role === 'user') {
-          indices.push(index);
-        }
-        return indices;
-      },
-      [],
-    );
-
-    const minimumUserMessagesForCheckpoint =
-      GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES + 1;
-    if (userMessageIndices.length < minimumUserMessagesForCheckpoint) {
-      return null;
-    }
-
-    const checkpointSlot = Math.min(
-      userMessageIndices.length -
-        GeminiService.HISTORY_CHECKPOINT_TAIL_USER_MESSAGES,
-      1 +
-        Math.floor(
-          (userMessageIndices.length - minimumUserMessagesForCheckpoint) /
-            GeminiService.HISTORY_CHECKPOINT_ADVANCE_USER_INTERVAL,
-        ) *
-          GeminiService.HISTORY_CHECKPOINT_ADVANCE_USER_INTERVAL,
-    );
-    let resolvedCheckpointSlot = checkpointSlot;
-    while (resolvedCheckpointSlot >= 1) {
-      const candidateSplitIndex =
-        userMessageIndices[resolvedCheckpointSlot] ?? -1;
-      if (this.isSafeHistoryCheckpointBoundary(messages, candidateSplitIndex)) {
-        break;
-      }
-      resolvedCheckpointSlot -= 1;
-    }
-
-    const splitIndex = userMessageIndices[resolvedCheckpointSlot] ?? -1;
-
-    if (splitIndex <= 0 || splitIndex >= messages.length) {
-      return null;
-    }
-
-    const cacheContents = messages.slice(0, splitIndex);
-    const requestContents = messages.slice(splitIndex);
-    if (cacheContents.length === 0 || requestContents.length === 0) {
-      return null;
-    }
-
-    return {
-      cacheContents,
-      requestContents,
-      cacheKeyPart: stableHashKeyPart(
-        stableStringify(this.createGeminiContentFingerprint(cacheContents)),
-      ),
-    };
-  }
-
-  private isSafeHistoryCheckpointBoundary(
-    messages: Content[],
-    splitIndex: number,
-  ): boolean {
-    if (splitIndex <= 0 || splitIndex >= messages.length) {
-      return false;
-    }
-
-    if (this.isGeminiFunctionResponseTurn(messages[splitIndex])) {
-      return false;
-    }
-
-    if (this.isGeminiFunctionCallTurn(messages[splitIndex - 1])) {
-      return false;
-    }
-
-    return true;
-  }
-
-  private isGeminiFunctionCallTurn(message: Content | undefined): boolean {
-    const parts = Array.isArray(message?.parts) ? message.parts : [];
-    return parts.some((part) => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'functionCall' in part &&
-        typeof part.functionCall === 'object' &&
-        part.functionCall !== null
-      );
-    });
-  }
-
-  private isGeminiFunctionResponseTurn(message: Content | undefined): boolean {
-    const parts = Array.isArray(message?.parts) ? message.parts : [];
-    return parts.some((part) => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'functionResponse' in part &&
-        typeof part.functionResponse === 'object' &&
-        part.functionResponse !== null
-      );
-    });
-  }
-
-  private createGeminiContentFingerprint(messages: Content[]): Array<{
-    role: string;
-    partCount: number;
-    textHash: string;
-    functionCallNames?: string[];
-    functionResponseNames?: string[];
-  }> {
-    return messages.map((message) => {
-      const fingerprint = this.fingerprintGeminiMessage(message);
-      return {
-        role: fingerprint.role,
-        partCount: fingerprint.partCount,
-        textHash: fingerprint.textHash,
-        functionCallNames: fingerprint.functionCallNames,
-        functionResponseNames: fingerprint.functionResponseNames,
-      };
-    });
   }
 }

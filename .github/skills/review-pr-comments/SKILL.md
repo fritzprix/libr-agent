@@ -11,17 +11,7 @@ Systematically pull, evaluate, and optionally apply review comments from a pull 
 
 ### 1. Fetch PR Data
 
-First ensure the local repository is checked out to the PR branch. Do not review from the default branch or an unrelated local branch.
-
-Recommended flow:
-
-1. Use the active/open PR tool to identify the target PR and its source branch.
-2. Check out that PR branch locally before reading comments or files.
-3. Then fetch the PR data from that checked-out branch context.
-
-If the repository is not already on the PR branch, switch to it first and only continue once the checkout succeeds.
-
-Use `github-pull-request_activePullRequest` after checkout. Only use `github-pull-request_openPullRequest` as a discovery step when you still need to determine which PR branch to check out.
+Use `github-pull-request_activePullRequest` (or `github-pull-request_openPullRequest` if not checked out).
 
 Extract from the result:
 
@@ -132,4 +122,3 @@ After all approved fixes have been applied, produce a **ready-to-paste agent pro
 - Bot reviewers (Copilot, Jules, etc.) often reference incorrect line numbers — always verify against the actual file.
 - `defaultValue` in i18next `t()` matters most for **plural keys** (`_one`/`_other` suffix). For simple interpolation keys that exist in all locale files, it is optional.
 - When a comment says "follow the pattern in X:Y-Z", read those lines to confirm the pattern actually exists there before accepting the claim.
-- Always perform the review from the PR branch itself. Reviewing comments against the wrong checkout is garbage-in, garbage-out.

@@ -1,93 +1,101 @@
-import { useState, useMemo, useDeferredValue } from 'react';
-import { useEditor } from '@/hooks/use-editor';
-import { useMCPServerRegistry } from '@/features/assistant/hooks/use-mcp-server-registry';
-import { Assistant } from '@/models/assistant';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
+import { useEditor } from '@/context/EditorContext';
+import { Assistant } from '@/models/chat';
+import { DialogProps } from '@radix-ui/react-dialog';
+import { useState, useDeferredValue, useMemo } from 'react';
 import {
+  Button,
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogProps,
-} from '@/components/ui/dialog';
-import { useTranslation } from 'react-i18next';
-import { Server } from 'lucide-react';
+  InputWithLabel,
+  TextareaWithLabel,
+  Input,
+  Checkbox,
+  Label,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from '../../components/ui';
+import LocalServicesEditor from './LocalServicesEditor';
+import SkillsEditor from './SkillsEditor';
+import BuiltInToolsEditor from './BuiltInToolsEditor';
+import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { Link } from 'react-router-dom';
-import { getLogger } from '@/lib/logger';
+import { useTranslation } from 'react-i18next';
+import { Settings, Wrench, Server } from 'lucide-react';
 
-const logger = getLogger('AssistantEditor');
-
-export function AssistantEditor() {
+export default function AssistantEditor() {
   const { draft, update } = useEditor<Assistant>();
   const { t } = useTranslation('common');
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      <div className="flex-1 overflow-y-auto p-6 space-y-8">
-        {/* Basic Info */}
-        <section className="space-y-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name" className="text-sm font-semibold">
-              {t('assistant.nameLabel')}
-            </Label>
-            <Input
-              id="name"
-              placeholder={t('assistant.namePlaceholder')}
-              value={draft.name || ''}
-              onChange={(e) =>
-                update((d) => {
-                  d.name = e.target.value;
-                })
-              }
-            />
-          </div>
+    <div className="w-full">
+      <Tabs defaultValue="general" className="w-full">
+        <TabsList className="w-full grid grid-cols-3 mb-4">
+          <TabsTrigger value="general" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            <span>{t('assistant.tabs.general')}</span>
+          </TabsTrigger>
+          <TabsTrigger value="tools" className="flex items-center gap-2">
+            <Wrench className="h-4 w-4" />
+            <span>{t('assistant.tabs.tools')}</span>
+          </TabsTrigger>
+          <TabsTrigger value="skills" className="flex items-center gap-2">
+            <Server className="h-4 w-4" />
+            <span>{t('assistant.tabs.skills')}</span>
+          </TabsTrigger>
+        </TabsList>
 
-          <div className="grid gap-2">
-            <Label htmlFor="description" className="text-sm font-semibold">
-              {t('assistant.descriptionLabel')}
-            </Label>
-            <Input
-              id="description"
-              placeholder={t('assistant.descriptionPlaceholder')}
-              value={draft.description || ''}
-              onChange={(e) =>
-                update((d) => {
-                  d.description = e.target.value;
-                })
-              }
-            />
-          </div>
-        </section>
+        <TabsContent value="general" className="space-y-4 p-4">
+          <InputWithLabel
+            label={t('assistant.nameLabel')}
+            value={draft?.name || ''}
+            onChange={(e) =>
+              update((draft) => {
+                draft.name = e.target.value;
+              })
+            }
+            placeholder={t('assistant.namePlaceholder')}
+          />
 
-        {/* System Prompt */}
-        <section className="space-y-4">
-          <div className="grid gap-2">
-            <Label htmlFor="systemPrompt" className="text-sm font-semibold">
-              {t('assistant.systemPromptLabel')}
-            </Label>
-            <textarea
-              id="systemPrompt"
-              className="flex min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none font-mono"
-              placeholder={t('assistant.systemPromptPlaceholder')}
-              value={draft.systemPrompt || ''}
-              onChange={(e) =>
-                update((d) => {
-                  d.systemPrompt = e.target.value;
-                })
-              }
-            />
-          </div>
-        </section>
+          <TextareaWithLabel
+            label={t('assistant.descriptionLabel')}
+            value={draft?.description || ''}
+            onChange={(e) =>
+              update((draft) => {
+                draft.description = e.target.value || undefined;
+              })
+            }
+            placeholder={t('assistant.descriptionPlaceholder')}
+            className="min-h-16"
+          />
 
-        {/* MCP Servers */}
-        <section className="pt-4 border-t">
+          <TextareaWithLabel
+            label={t('assistant.systemPromptLabel')}
+            value={draft?.systemPrompt || ''}
+            onChange={(e) =>
+              update((draft) => {
+                draft.systemPrompt = e.target.value;
+              })
+            }
+            placeholder={t('assistant.systemPromptPlaceholder')}
+            className="min-h-52"
+          />
+        </TabsContent>
+
+        <TabsContent value="tools" className="space-y-4 p-4">
+          <BuiltInToolsEditor />
           <MCPServersTab />
-        </section>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="skills" className="space-y-4 p-4">
+          <SkillsEditor />
+          <LocalServicesEditor />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -101,16 +109,13 @@ function MCPServersTab() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const isPending = searchQuery !== deferredSearchQuery;
 
-  const filteredServers = useMemo(() => {
-    const query = deferredSearchQuery.toLowerCase().trim();
-    if (!query) return activeServers;
-
-    return activeServers.filter(
-      (s) =>
-        s.name.toLowerCase().includes(query) ||
-        s.metadata?.description?.toLowerCase().includes(query),
-    );
-  }, [activeServers, deferredSearchQuery]);
+  const filteredServers = useMemo(() => activeServers.filter(
+    (s) =>
+      s.name.toLowerCase().includes(deferredSearchQuery.toLowerCase()) ||
+      s.metadata?.description
+        ?.toLowerCase()
+        .includes(deferredSearchQuery.toLowerCase()),
+  ), [activeServers, deferredSearchQuery]);
 
   const handleServerToggle = (serverId: string, enabled: boolean) => {
     update((draft) => {
@@ -158,15 +163,7 @@ function MCPServersTab() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
 
-          <div
-            className={`border rounded-lg divide-y max-h-96 overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}
-            aria-busy={isPending}
-          >
-            {isPending && (
-              <span className="sr-only" aria-live="polite">
-                {t('assistant.mcp.filtering')}
-              </span>
-            )}
+          <div className={`border rounded-lg divide-y max-h-96 overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-50' : 'opacity-100'}`}>
             {filteredServers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {t('assistant.mcp.noMatch')}

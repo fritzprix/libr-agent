@@ -2,7 +2,6 @@
 // Manages and combines multiple context providers into system prompt
 
 use super::ContextProvider;
-use crate::mcp::types::ContextVolatility;
 
 /// Registry for managing context providers
 ///
@@ -38,7 +37,7 @@ impl ContextRegistry {
     ///
     /// # Arguments
     /// * `assistant_id` - Optional assistant ID to pass to context providers
-    pub async fn build_context_split(&self, assistant_id: Option<&str>) -> (String, String) {
+    pub async fn build_context(&self, assistant_id: Option<&str>) -> String {
         // Collect provider references with priorities and sort (lower = earlier)
         let mut providers_with_priority: Vec<(i32, &Box<dyn ContextProvider>)> =
             self.providers.iter().map(|p| (p.priority(), p)).collect();
@@ -55,12 +54,11 @@ impl ContextRegistry {
                 match provider.get_context(assistant_id).await {
                     Ok(context) if !context.is_empty() => {
                         log::debug!(
-                            "Context provider '{}' contributed {} characters ({:?})",
+                            "Context provider '{}' contributed {} characters",
                             provider.provider_id(),
-                            context.len(),
-                            provider.volatility()
+                            context.len()
                         );
-                        Some((provider.volatility(), context))
+                        Some(context)
                     }
                     Ok(_) => None,
                     Err(e) => {
@@ -75,40 +73,13 @@ impl ContextRegistry {
             })
             .collect();
 
-        let (stable_parts, volatile_parts): (Vec<String>, Vec<String>) =
-            futures::future::join_all(futures)
-                .await
-                .into_iter()
-                .flatten()
-                .fold(
-                    (Vec::new(), Vec::new()),
-                    |(mut stable_parts, mut volatile_parts), (volatility, context)| {
-                        match volatility {
-                            ContextVolatility::Stable => stable_parts.push(context),
-                            ContextVolatility::Medium | ContextVolatility::Volatile => {
-                                volatile_parts.push(context)
-                            }
-                        }
-                        (stable_parts, volatile_parts)
-                    },
-                );
+        let sections: Vec<String> = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
-        (stable_parts.join("\n\n"), volatile_parts.join("\n\n"))
-    }
-
-    /// Build combined context from all enabled providers.
-    ///
-    /// Stable providers are emitted first, followed by non-stable providers. This
-    /// preserves backward-compatible behavior for callers that still expect one block.
-    pub async fn build_context(&self, assistant_id: Option<&str>) -> String {
-        let (stable, volatile) = self.build_context_split(assistant_id).await;
-
-        match (stable.trim().is_empty(), volatile.trim().is_empty()) {
-            (true, true) => String::new(),
-            (false, true) => stable,
-            (true, false) => volatile,
-            (false, false) => format!("{}\n\n{}", stable, volatile),
-        }
+        sections.join("\n\n")
     }
 
     /// Get count of registered providers
