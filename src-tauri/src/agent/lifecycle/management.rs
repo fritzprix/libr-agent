@@ -263,9 +263,7 @@ pub async fn update_session_status_with_dispatcher(
         }
     }
 
-    let persist_result = session_repo
-        .update_status(session_id, status.clone())
-        .await;
+    let persist_result = session_repo.update_status(session_id, status.clone()).await;
 
     if let Err(error) = persist_result {
         let mut active = active_sessions.write().await;

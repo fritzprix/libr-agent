@@ -17,7 +17,7 @@ export function useSkillsDirectory(
     {
       revalidateOnFocus: false,
       revalidateIfStale: false,
-    }
+    },
   );
 
   // Sync default directory back to parent
@@ -29,7 +29,11 @@ export function useSkillsDirectory(
 
   const dirToVerify = skillsDirectory || '';
 
-  const { data: skills, error, isLoading } = useSWR<SkillMetadata[]>(
+  const {
+    data: skills,
+    error,
+    isLoading,
+  } = useSWR<SkillMetadata[]>(
     dirToVerify ? ['scan_skills_directory', dirToVerify] : null,
     async ([, dir]) => {
       return await safeInvoke<SkillMetadata[]>('scan_skills_directory', {
@@ -41,7 +45,7 @@ export function useSkillsDirectory(
       onError: (err) => {
         logger.error('Failed to verify skills directory', err);
       },
-    }
+    },
   );
 
   let verificationStatus: 'idle' | 'loading' | 'success' | 'error' = 'idle';
@@ -55,7 +59,8 @@ export function useSkillsDirectory(
     verificationStatus = 'success';
   }
 
-  const errorMessage = error instanceof Error ? error.message : String(error || '');
+  const errorMessage =
+    error instanceof Error ? error.message : String(error || '');
   const resolvedSkills = error ? [] : skills || [];
 
   return {

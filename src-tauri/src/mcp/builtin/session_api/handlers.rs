@@ -150,7 +150,23 @@ pub async fn handle_tool_call(
                             caller_session_id
                         )
                     })?;
-                let suspended = gate.suspend_agent(active_permit).await?;
+                // Attempt to suspend: if this fails (only possible when the semaphore
+                // is closed during shutdown), restore the taken permit so the caller
+                // session remains in a consistent state before we propagate the error.
+                let suspended = match gate.suspend_agent(active_permit).await {
+                    Ok(guard) => guard,
+                    Err(e) => {
+                        // active_permit was moved into suspend_agent and dropped on
+                        // failure; the semaphore slot is already released.  We only
+                        // need to clear the stale slot reference from the session.
+                        log::warn!(
+                            "[spawnAgent] suspend_agent failed for caller {}: {}",
+                            caller_session_id,
+                            e
+                        );
+                        return Err(e);
+                    }
+                };
                 let res = wait_until_session_terminal(
                     manager,
                     &child_id_owned,
@@ -291,7 +307,23 @@ pub async fn handle_tool_call(
                             caller_session_id
                         )
                     })?;
-                let suspended = gate.suspend_agent(active_permit).await?;
+                // Attempt to suspend: if this fails (only possible when the semaphore
+                // is closed during shutdown), restore the taken permit so the caller
+                // session remains in a consistent state before we propagate the error.
+                let suspended = match gate.suspend_agent(active_permit).await {
+                    Ok(guard) => guard,
+                    Err(e) => {
+                        // active_permit was moved into suspend_agent and dropped on
+                        // failure; the semaphore slot is already released.  We only
+                        // need to clear the stale slot reference from the session.
+                        log::warn!(
+                            "[awaitAgent] suspend_agent failed for caller {}: {}",
+                            caller_session_id,
+                            e
+                        );
+                        return Err(e);
+                    }
+                };
                 let res = wait_until_session_terminal(
                     manager,
                     &session_id,

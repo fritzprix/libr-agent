@@ -189,10 +189,7 @@ impl AgentSessionManager {
         self.active_sessions.clone()
     }
 
-    pub async fn take_active_session_permit(
-        &self,
-        session_id: &str,
-    ) -> Option<ActiveAgentPermit> {
+    pub async fn take_active_session_permit(&self, session_id: &str) -> Option<ActiveAgentPermit> {
         let mut active = self.active_sessions.write().await;
         active
             .get_mut(session_id)

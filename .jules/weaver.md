@@ -127,10 +127,10 @@
 - Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
 - **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
 
-## 2026-03-24 - [useMessageGrouping] **Eradicated:** [Effect State Sync (Delaying Cache Updates)] **Woven:** [Adjusting State During Render Pattern]
+## 2026-03-24 - [useMessageGrouping] **Eradicated:** [Effect State Sync (Delaying Cache Updates)] **Woven:** [Synchronous Layout Effect Cache Sync]
 
-- Removed the `useEffect` that updated `cache.current` in a post-render effect based on `calculation.newCache`.
-- **Woven:** Synchronously updated the cache during the render phase (after confirming the values changed) instead of waiting for `useEffect`. This ensures the hook's cache is immediately available and perfectly matches the current render's state.
+- Removed the `useEffect` that updated `cache.current` in a later post-paint phase based on `calculation.newCache`.
+- **Woven:** Updated the cache in `useLayoutEffect` so the cache still synchronizes before paint, while matching the hook's actual implementation instead of claiming a render-phase mutation.
 - **Renders Saved:** Eliminated the delay and potential inconsistencies of effect-driven cache updates.
 
 ## 2026-03-24 - [AgentChatStatusBar] **Eradicated:** [Action-Effect Chain] **Woven:** [Adjusting State During Render Pattern]

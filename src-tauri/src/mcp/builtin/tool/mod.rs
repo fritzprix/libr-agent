@@ -59,10 +59,10 @@ impl BuiltinMCPServer for ToolServer {
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         let context_prompt = "## Tool Management\n\n\
-             Server management tool for current session\n\
-             Status: Ready\n\n\
-             - Use `tool__list` to discover builtin tools and registered external servers.\n\
-             - Use `tool__verify` to confirm a registered external server is healthy.\n";
+Server management tool for current session\n\
+Status: Ready\n\n\
+- Use `tool__list` to discover builtin tools and registered external servers.\n\
+- Use `tool__verify` to confirm a registered external server is healthy.\n";
 
         let structured_state = json!({ "status": "ready" });
 

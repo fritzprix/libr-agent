@@ -58,7 +58,9 @@ pub async fn start_workflow(
             // Check Status
             let is_transitioning_to_busy = matches!(
                 session.status_transition.read().await.as_ref(),
-                Some(crate::agent::state::SessionStatusTransition::ToStatus(SessionStatus::Busy))
+                Some(crate::agent::state::SessionStatusTransition::ToStatus(
+                    SessionStatus::Busy
+                ))
             );
 
             if session.metadata.status == SessionStatus::Busy || is_transitioning_to_busy {

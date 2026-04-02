@@ -17,7 +17,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -54,58 +54,55 @@ export function AgentChatStatusBar() {
   // ✅ Fetch real-time token metrics
   const { metrics } = useTokenMetrics(session?.id);
 
-  // Persist last metrics to show after streaming ends
+  // Persist last non-null metrics so the badge stays visible after streaming ends.
   const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
   const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
     session?.id,
   );
-  const [prevMetrics, setPrevMetrics] = useState<TokenUsage | null>(null);
 
-  // Adjusting State During Render: Reset metrics when session changes
-  let nextLastMetrics = lastMetrics;
-
+  // Adjusting State During Render: Reset accumulated metrics when the session
+  // changes. This guard is on a stable primitive (session.id string) so it is
+  // safe to call setState here — it will trigger at most one extra render per
+  // session switch, not a loop.
   if (session?.id !== prevSessionId) {
     setPrevSessionId(session?.id);
-    nextLastMetrics = null;
     setLastMetrics(null);
   }
 
-  // Adjusting State During Render: Update metrics synchronously
-  if (metrics !== prevMetrics) {
-    setPrevMetrics(metrics);
-    if (metrics) {
-      const hasData =
-        metrics.promptTokens > 0 ||
-        metrics.completionTokens > 0 ||
-        (metrics.cachedPromptTokens ?? 0) > 0;
+  // Accumulate streaming metrics in an Effect, NOT during render.
+  // `metrics` is a new object reference on every streaming chunk, so a
+  // reference-identity guard (`metrics !== prevMetrics`) inside the render
+  // body would be true on every render and call setState unconditionally,
+  // scheduling another render and creating an infinite loop.
+  useEffect(() => {
+    if (!metrics) return;
+    const hasData =
+      metrics.promptTokens > 0 ||
+      metrics.completionTokens > 0 ||
+      (metrics.cachedPromptTokens ?? 0) > 0;
+    if (!hasData) return;
 
-      if (hasData) {
-        let mergedMetrics = metrics;
-        if (nextLastMetrics) {
-          mergedMetrics = {
-            ...nextLastMetrics,
-            ...metrics,
-            details: {
-              ...nextLastMetrics.details,
-              ...metrics.details,
-              evalDuration:
-                metrics.details?.evalDuration || nextLastMetrics.details?.evalDuration,
-              timeToFirstToken:
-                metrics.details?.timeToFirstToken ||
-                nextLastMetrics.details?.timeToFirstToken,
-              promptEvalDuration:
-                metrics.details?.promptEvalDuration ||
-                nextLastMetrics.details?.promptEvalDuration,
-              loadDuration:
-                metrics.details?.loadDuration || nextLastMetrics.details?.loadDuration,
-            },
-          };
-        }
-        setLastMetrics(mergedMetrics);
-        nextLastMetrics = mergedMetrics;
-      }
-    }
-  }
+    setLastMetrics((prev) => {
+      if (!prev) return metrics;
+      return {
+        ...prev,
+        ...metrics,
+        details: {
+          ...prev.details,
+          ...metrics.details,
+          evalDuration:
+            metrics.details?.evalDuration ?? prev.details?.evalDuration,
+          timeToFirstToken:
+            metrics.details?.timeToFirstToken ?? prev.details?.timeToFirstToken,
+          promptEvalDuration:
+            metrics.details?.promptEvalDuration ??
+            prev.details?.promptEvalDuration,
+          loadDuration:
+            metrics.details?.loadDuration ?? prev.details?.loadDuration,
+        },
+      };
+    });
+  }, [metrics]);
 
   // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
   // without waiting for the next paint cycle (Effect-less derivation)
@@ -346,9 +343,8 @@ export function AgentChatStatusBar() {
                 logger.info(`Updating session config to ${provider}/${model}`);
 
                 try {
-                  const { enforceRuntimeBuiltinAliases } = await import(
-                    '@/lib/assistant/runtime-builtins'
-                  );
+                  const { enforceRuntimeBuiltinAliases } =
+                    await import('@/lib/assistant/runtime-builtins');
 
                   const updatedConfig = {
                     ...session.assistant,
