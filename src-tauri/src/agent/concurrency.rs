@@ -51,17 +51,24 @@ impl ActiveAgentPermit {
 pub struct SuspendedAgentGuard {
     gate: &'static ConcurrencyGate,
     _suspended_permit: OwnedSemaphorePermit,
+    active_permit: Option<ActiveAgentPermit>,
 }
 
 impl SuspendedAgentGuard {
-    fn new(gate: &'static ConcurrencyGate, suspended_permit: OwnedSemaphorePermit) -> Self {
+    fn new(
+        gate: &'static ConcurrencyGate,
+        suspended_permit: OwnedSemaphorePermit,
+        active_permit: ActiveAgentPermit,
+    ) -> Self {
         Self {
             gate,
             _suspended_permit: suspended_permit,
+            active_permit: Some(active_permit),
         }
     }
 
-    pub async fn resume(self) -> Result<ActiveAgentPermit, String> {
+    pub async fn resume(mut self) -> Result<ActiveAgentPermit, String> {
+        drop(self.active_permit.take());
         self.gate.acquire_active_agent().await
     }
 }
@@ -116,8 +123,7 @@ impl ConcurrencyGate {
             .acquire_owned()
             .await
             .map_err(|_| "ConcurrencyGate: suspended agent semaphore closed".to_string())?;
-        drop(active_permit);
-        Ok(SuspendedAgentGuard::new(self, suspended_permit))
+        Ok(SuspendedAgentGuard::new(self, suspended_permit, active_permit))
     }
 
     // ── Process slots ────────────────────────────────────────────────────────
