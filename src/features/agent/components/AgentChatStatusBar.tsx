@@ -17,7 +17,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -59,15 +59,20 @@ export function AgentChatStatusBar() {
   const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
     session?.id,
   );
+  const [prevMetrics, setPrevMetrics] = useState<TokenUsage | null>(null);
 
   // Adjusting State During Render: Reset metrics when session changes
+  let nextLastMetrics = lastMetrics;
+
   if (session?.id !== prevSessionId) {
     setPrevSessionId(session?.id);
+    nextLastMetrics = null;
     setLastMetrics(null);
   }
 
-  useEffect(() => {
-    // Update last metrics only when we have meaningful new data
+  // Adjusting State During Render: Update metrics synchronously
+  if (metrics !== prevMetrics) {
+    setPrevMetrics(metrics);
     if (metrics) {
       const hasData =
         metrics.promptTokens > 0 ||
@@ -75,32 +80,32 @@ export function AgentChatStatusBar() {
         (metrics.cachedPromptTokens ?? 0) > 0;
 
       if (hasData) {
-        setLastMetrics((prev) => {
-          if (!prev) return metrics;
-          // Smart merge: update counts but preserve metadata if new chunk lacks it
-          return {
-            ...prev,
+        let mergedMetrics = metrics;
+        if (nextLastMetrics) {
+          mergedMetrics = {
+            ...nextLastMetrics,
             ...metrics,
             details: {
-              ...prev.details,
+              ...nextLastMetrics.details,
               ...metrics.details,
-              // Only overwrite metadata if new value is present and non-zero
               evalDuration:
-                metrics.details?.evalDuration || prev.details?.evalDuration,
+                metrics.details?.evalDuration || nextLastMetrics.details?.evalDuration,
               timeToFirstToken:
                 metrics.details?.timeToFirstToken ||
-                prev.details?.timeToFirstToken,
+                nextLastMetrics.details?.timeToFirstToken,
               promptEvalDuration:
                 metrics.details?.promptEvalDuration ||
-                prev.details?.promptEvalDuration,
+                nextLastMetrics.details?.promptEvalDuration,
               loadDuration:
-                metrics.details?.loadDuration || prev.details?.loadDuration,
+                metrics.details?.loadDuration || nextLastMetrics.details?.loadDuration,
             },
           };
-        });
+        }
+        setLastMetrics(mergedMetrics);
+        nextLastMetrics = mergedMetrics;
       }
     }
-  }, [metrics]);
+  }
 
   // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
   // without waiting for the next paint cycle (Effect-less derivation)

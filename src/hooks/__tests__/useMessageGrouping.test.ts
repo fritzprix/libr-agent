@@ -2,6 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { useMessageGrouping } from '../useMessageGrouping';
 import type { Message } from '@/models/chat';
 import { describe, it, expect } from 'vitest';
+import { StrictMode, createElement } from 'react';
 import { createMessage } from './helpers';
 
 describe('useMessageGrouping', () => {
@@ -433,5 +434,37 @@ describe('useMessageGrouping', () => {
     expect(result.current.toolResultsMap.size).toBe(2);
     expect(result.current.toolResultsMap.get('hallucinated_id')?.id).toBe('3');
     expect(result.current.toolResultsMap.get('hallucinated_id_dup1')?.id).toBe('4');
+  });
+
+  it('keeps committed grouping stable across StrictMode rerenders', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tool'),
+      createMessage('2', 'assistant', 'Calling tool...', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'test_tool', arguments: '{}' },
+        },
+      ]),
+      createMessage('3', 'tool', 'Result 1', undefined, 'call_1'),
+    ];
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      createElement(StrictMode, null, children)
+    );
+
+    const { result, rerender } = renderHook(
+      ({ msgs }) => useMessageGrouping(msgs),
+      {
+        initialProps: { msgs: messages },
+        wrapper,
+      },
+    );
+
+    const first = result.current;
+    rerender({ msgs: messages });
+
+    expect(result.current.groupedMessages).toEqual(first.groupedMessages);
+    expect(result.current.toolResultsMap).toBe(first.toolResultsMap);
   });
 });
