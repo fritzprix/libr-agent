@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
 import { getLogger } from '@/lib/logger';
@@ -356,12 +356,9 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     };
   }, [messages]);
 
-  // Update cache during render phase to ensure sync behavior.
-  // The cache acts as an internal state tracking mechanism for memoization,
-  // making it perfectly safe (and often preferred for caches) to update inline.
-  if (cache.current !== calculation.newCache) {
+  useLayoutEffect(() => {
     cache.current = calculation.newCache;
-  }
+  }, [calculation.newCache]);
 
   return calculation.result;
 }

@@ -1,4 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
+import { SWRConfig } from 'swr';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSkillsDirectory } from '../useSkillsDirectory';
 import { safeInvoke } from '@/lib/backend/core';
@@ -27,6 +29,12 @@ const MOCK_SKILLS: SkillMetadata[] = [
   },
 ];
 
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+    {children}
+  </SWRConfig>
+);
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -47,7 +55,9 @@ describe('useSkillsDirectory', () => {
     const onSkillsDirectoryChange = vi.fn();
     mockInvoke.mockResolvedValue('/default/skills');
 
-    renderHook(() => useSkillsDirectory(undefined, onSkillsDirectoryChange));
+    renderHook(() => useSkillsDirectory(undefined, onSkillsDirectoryChange), {
+      wrapper,
+    });
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('get_default_skills_directory');
@@ -59,8 +69,9 @@ describe('useSkillsDirectory', () => {
     const onSkillsDirectoryChange = vi.fn();
     mockInvoke.mockResolvedValue(MOCK_SKILLS);
 
-    const { result } = renderHook(() =>
-      useSkillsDirectory('/configured/skills', onSkillsDirectoryChange),
+    const { result } = renderHook(
+      () => useSkillsDirectory('/configured/skills', onSkillsDirectoryChange),
+      { wrapper },
     );
 
     await waitFor(() => {
@@ -83,6 +94,7 @@ describe('useSkillsDirectory', () => {
         useSkillsDirectory(directory, onSkillsDirectoryChange),
       {
         initialProps: { directory: '/broken/skills' },
+        wrapper,
       },
     );
 
@@ -128,6 +140,7 @@ describe('useSkillsDirectory', () => {
         useSkillsDirectory(directory, onSkillsDirectoryChange),
       {
         initialProps: { directory: '/slow/skills' },
+        wrapper,
       },
     );
 
@@ -151,5 +164,33 @@ describe('useSkillsDirectory', () => {
 
     expect(result.current.skills).toEqual(MOCK_SKILLS);
     expect(result.current.errorMessage).toBe('');
+  });
+
+  it('clears stale skills when a revalidation fails', async () => {
+    const onSkillsDirectoryChange = vi.fn();
+    mockInvoke.mockResolvedValueOnce(MOCK_SKILLS);
+    mockInvoke.mockRejectedValueOnce(new Error('Rescan failed'));
+
+    const { result, rerender } = renderHook(
+      ({ directory }: { directory?: string }) =>
+        useSkillsDirectory(directory, onSkillsDirectoryChange),
+      {
+        initialProps: { directory: '/configured/skills' },
+        wrapper,
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.verificationStatus).toBe('success');
+      expect(result.current.skills).toEqual(MOCK_SKILLS);
+    });
+
+    rerender({ directory: '/configured/skills-updated' });
+
+    await waitFor(() => {
+      expect(result.current.verificationStatus).toBe('error');
+      expect(result.current.skills).toEqual([]);
+      expect(result.current.errorMessage).toContain('Rescan failed');
+    });
   });
 });

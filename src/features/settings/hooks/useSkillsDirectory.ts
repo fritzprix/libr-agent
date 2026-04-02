@@ -56,10 +56,11 @@ export function useSkillsDirectory(
   }
 
   const errorMessage = error instanceof Error ? error.message : String(error || '');
+  const resolvedSkills = error ? [] : skills || [];
 
   return {
     verificationStatus,
-    skills: skills || [],
+    skills: resolvedSkills,
     errorMessage,
   };
 }
