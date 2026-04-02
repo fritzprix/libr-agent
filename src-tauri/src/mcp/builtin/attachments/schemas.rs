@@ -10,17 +10,29 @@ pub(crate) fn tool_list_content_schema() -> JSONSchema {
     let mut pagination_props: HashMap<String, JSONSchema> = HashMap::new();
     pagination_props.insert(
         "offset".to_string(),
-        integer_prop(Some(0), None, Some("Pagination offset")),
+        integer_prop(
+            Some(0),
+            None,
+            Some("Pagination offset (0-based). If omitted, start from the beginning. Default: 0."),
+        ),
     );
     pagination_props.insert(
         "limit".to_string(),
-        integer_prop(Some(1), Some(1000), Some("Pagination limit")),
+        integer_prop(
+            Some(1),
+            Some(1000),
+            Some(
+                "Maximum number of attachments to return. If omitted, default: 100. Maximum: 1000.",
+            ),
+        ),
     );
 
     let mut pagination_schema = object_schema(pagination_props, vec![]);
     // Add description to the pagination object itself
-    pagination_schema.description =
-        Some("Optional pagination parameters for listing content".to_string());
+    pagination_schema.description = Some(
+        "Optional pagination parameters for listing content. If omitted, list starts at offset 0 with the default limit of 100."
+            .to_string(),
+    );
 
     props.insert("pagination".to_string(), pagination_schema);
 
@@ -36,11 +48,19 @@ pub(crate) fn tool_read_content_schema() -> JSONSchema {
     );
     props.insert(
         "fromLine".to_string(),
-        integer_prop(Some(1), None, Some("Starting line number (1-based)")),
+        integer_prop(
+            Some(1),
+            None,
+            Some("Starting line number (1-based). If omitted, start from line 1."),
+        ),
     );
     props.insert(
         "toLine".to_string(),
-        integer_prop(Some(1), None, Some("Ending line number (optional)")),
+        integer_prop(
+            Some(1),
+            None,
+            Some("Ending line number (inclusive). If omitted, read through the end of the file."),
+        ),
     );
     object_schema(props, vec!["contentId".to_string()])
 }

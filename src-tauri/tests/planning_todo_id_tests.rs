@@ -4,6 +4,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::mcp::builtin::planning::PlanningServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::repositories::SqlitePlanningRepository;
 use tauri_mcp_agent_lib::set_planning_repository;
@@ -20,6 +21,36 @@ fn extract_text(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[test]
+fn update_todo_schema_leaves_todo_id_unbounded() {
+    let update_tool = PlanningServer::tools_static()
+        .into_iter()
+        .find(|tool| tool.name == "updateTodo")
+        .expect("updateTodo tool should exist");
+
+    let properties = match &update_tool.input_schema.schema_type {
+        JSONSchemaType::Object {
+            properties: Some(properties),
+            ..
+        } => properties,
+        other => panic!("expected object schema, got {other:?}"),
+    };
+
+    let todo_id_schema = properties
+        .get("todoId")
+        .expect("updateTodo should expose todoId");
+
+    match &todo_id_schema.schema_type {
+        JSONSchemaType::Integer {
+            minimum, maximum, ..
+        } => {
+            assert_eq!(*minimum, None);
+            assert_eq!(*maximum, None);
+        }
+        other => panic!("expected integer schema, got {other:?}"),
+    }
 }
 
 #[tokio::test]

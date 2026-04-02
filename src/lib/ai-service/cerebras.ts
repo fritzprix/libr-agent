@@ -5,7 +5,7 @@ import { Message, ToolCall } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { ensureSchemaTypeField } from './utils';
+import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
 
 const logger = getLogger('CerebrasService');
 
@@ -456,7 +456,7 @@ export class CerebrasService extends BaseAIService<
     return {
       role: 'tool',
       tool_call_id: message.tool_call_id,
-      content: this.processMessageContent(message.content) || '',
+      content: formatToolResultForLlm(message),
     };
   }
 

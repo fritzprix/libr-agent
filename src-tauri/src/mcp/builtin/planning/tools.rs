@@ -115,7 +115,7 @@ Get todo IDs from getCurrentState."#
                     "todoId".to_string(),
                     integer_prop(
                         None,
-                        Some(1),
+                        None,
                         Some("The unique todo ID. Use getCurrentState to see current todo IDs."),
                     ),
                 ),

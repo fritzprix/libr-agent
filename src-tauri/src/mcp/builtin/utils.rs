@@ -236,7 +236,10 @@ impl SecurityValidator {
 // ========================================
 
 use crate::mcp::types::{MCPContent, MCPResult, ServiceInfo};
+use crate::repositories::session_repository::SessionRepository;
 use serde_json::json;
+use serde_json::Value;
+use std::collections::HashSet;
 
 /// Creates a standardized UI resource response with service information.
 ///
@@ -291,6 +294,134 @@ pub fn create_resource_response(
         content: Some(content),
         structured_content: None,
         is_error: Some(false),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionToolAccess {
+    pub session_id: Option<String>,
+    pub allowed_builtin_aliases: Option<HashSet<String>>,
+    pub allowed_external_server_ids: Option<HashSet<String>>,
+    pub agent_id: Option<String>,
+}
+
+impl SessionToolAccess {
+    pub fn builtin_status(&self, alias: &str) -> (&'static str, Option<String>) {
+        match &self.allowed_builtin_aliases {
+            Some(allowed) if allowed.contains(alias) => ("[Ready]", None),
+            Some(_) => (
+                "[Requires agent__update]",
+                Some(format!(
+                    "This session cannot call '{}' tools right now. Update the current agent config with agent__update(id=\"{}\", builtinCapabilities:[...]) or delegate to another agent.",
+                    alias,
+                    self.agent_id.as_deref().unwrap_or("<agentId>")
+                )),
+            ),
+            None => ("[Ready]", None),
+        }
+    }
+
+    pub fn external_status(
+        &self,
+        server_id: &str,
+        server_name: &str,
+    ) -> (&'static str, Option<String>) {
+        match &self.allowed_external_server_ids {
+            Some(allowed) if allowed.contains(server_id) => ("[Ready]", None),
+            Some(_) => (
+                "[Requires agent__update]",
+                Some(format!(
+                    "This session does not currently include external server '{}' (ID: {}). Use agent__update(id=\"{}\", externalMcpServers:[\"{}\"]) to enable it, or delegate to another agent.",
+                    server_name,
+                    server_id,
+                    self.agent_id.as_deref().unwrap_or("<agentId>"),
+                    server_id
+                )),
+            ),
+            None => (
+                "[Requires agent__update]",
+                Some(format!(
+                    "No session agent configuration was found. If you need '{}' (ID: {}), update the responsible agent with agent__update(..., externalMcpServers:[\"{}\"]).",
+                    server_name, server_id, server_id
+                )),
+            ),
+        }
+    }
+}
+
+pub async fn load_session_tool_access(session_id: Option<&str>) -> SessionToolAccess {
+    let Some(session_id) = session_id else {
+        return SessionToolAccess {
+            session_id: None,
+            allowed_builtin_aliases: None,
+            allowed_external_server_ids: None,
+            agent_id: None,
+        };
+    };
+
+    let repo = crate::state::get_session_repository();
+    let session = match repo.get_session(session_id).await {
+        Ok(Some(session)) => session,
+        _ => {
+            return SessionToolAccess {
+                session_id: Some(session_id.to_string()),
+                allowed_builtin_aliases: None,
+                allowed_external_server_ids: None,
+                agent_id: None,
+            };
+        }
+    };
+
+    let Some(config_str) = session.agent_config else {
+        return SessionToolAccess {
+            session_id: Some(session_id.to_string()),
+            allowed_builtin_aliases: None,
+            allowed_external_server_ids: None,
+            agent_id: None,
+        };
+    };
+
+    let agent_config = match crate::agent::AgentConfig::from_json(&config_str) {
+        Ok(config) => config,
+        Err(_) => {
+            return SessionToolAccess {
+                session_id: Some(session_id.to_string()),
+                allowed_builtin_aliases: None,
+                allowed_external_server_ids: None,
+                agent_id: None,
+            };
+        }
+    };
+
+    let agent_id = agent_config.id.clone().or_else(|| {
+        serde_json::from_str::<Value>(&config_str)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("assistantId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+    });
+
+    let allowed_builtin_aliases = Some(
+        crate::agent::tools::runtime_allowed_builtin_service_aliases(&agent_config)
+            .into_iter()
+            .collect::<HashSet<_>>(),
+    );
+
+    let allowed_external_server_ids = Some(
+        agent_config
+            .mcp_server_ids
+            .into_iter()
+            .collect::<HashSet<_>>(),
+    );
+
+    SessionToolAccess {
+        session_id: Some(session_id.to_string()),
+        allowed_builtin_aliases,
+        allowed_external_server_ids,
+        agent_id,
     }
 }
 

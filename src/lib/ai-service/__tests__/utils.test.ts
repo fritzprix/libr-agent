@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeRustMessage } from '../utils';
+import {
+  formatToolResultForLlm,
+  normalizeRustMessage,
+  parseToolResultForLlm,
+} from '../utils';
 import type { RustMessage, Message } from '@/models/chat';
 
 describe('normalizeRustMessage', () => {
@@ -61,5 +65,41 @@ describe('normalizeRustMessage', () => {
     expect('toolCalls' in normalized).toBe(false);
     expect(normalized.createdAt).toBeInstanceOf(Date);
     expect(normalized.createdAt?.getTime()).toBe(1234567890000);
+  });
+});
+
+describe('tool result helpers', () => {
+  it('prefers structured tool result metadata for LLM-facing text', () => {
+    const message: Message = {
+      id: 'tool-1',
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'tool',
+      tool_call_id: 'call_1',
+      content: [{ type: 'text', text: 'Human summary only' }],
+      metadata: {
+        structuredContent: {
+          toolName: 'checkSession',
+          status: 'idle',
+          responseStatus: 'success',
+          result: 'Final answer',
+        },
+      },
+    };
+
+    expect(formatToolResultForLlm(message)).toBe(
+      JSON.stringify({
+        toolName: 'checkSession',
+        status: 'idle',
+        responseStatus: 'success',
+        result: 'Final answer',
+      }),
+    );
+    expect(parseToolResultForLlm(message)).toEqual({
+      toolName: 'checkSession',
+      status: 'idle',
+      responseStatus: 'success',
+      result: 'Final answer',
+    });
   });
 });

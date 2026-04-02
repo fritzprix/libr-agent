@@ -11,6 +11,7 @@ import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { TokenUsage } from './types';
 import {
+  formatToolResultForLlm,
   tryParse,
   formatToolCall,
   generateToolCallId,
@@ -284,7 +285,7 @@ export function convertMessage(
     }
 
     case 'tool': {
-      const toolContent = processMessageContent(message.content) || '';
+      const toolContent = formatToolResultForLlm(message);
       logger.debug('🔧 Tool message converted', {
         messageId: message.id,
         toolCallId: message.tool_call_id,

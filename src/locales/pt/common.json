@@ -74,9 +74,11 @@
       "deleteConfirmTitle": "Excluir Assistente",
       "confirmDelete": "Confirmar Exclusão",
       "cancel": "Cancelar",
-      "created": "Criado em",
-      "updated": "Atualizado em",
-      "description": "Descrição"
+      "created": "Criado",
+      "updated": "Atualizado",
+      "description": "Descrição",
+      "expand": "Expandir configuração",
+      "collapse": "Recolher configuração"
     }
   },
   "status": {
@@ -605,6 +607,15 @@
   },
   "agent": {
     "draft": {
+      "send": "Enviar mensagem",
+      "attachFiles": "Anexar arquivos",
+      "attachedFiles": "Arquivos anexados",
+      "removeWorkspaceOverride": "Remover substituição do espaço de trabalho",
+      "removeFile": "Remover {{name}}",
+      "dropFilesHint": "Solte os arquivos aqui...",
+      "unsupportedFile": "Arquivo não suportado!",
+      "uploading": "Enviando...",
+      "placeholder": "Mensagem para {{name}}...",
       "failedToRegisterDroppedFiles": "Falha ao registrar arquivos soltos",
       "dropFilesInChatInput": "Solte os arquivos na entrada do chat para anexá-los.",
       "failedToProcessFile": "Falha ao processar: {{file}}",
@@ -616,6 +627,7 @@
       "newSession": "Nova Sessão",
       "workspaceOverrideActive": "Substituição de Espaço de Trabalho Ativa",
       "workspaceOverrideDescription": "O agente usará este diretório como seu espaço de trabalho principal para esta sessão.",
+      "filesWillBeListedAfterStart": "Os arquivos serão listados após o início da sessão",
       "basicTools": "Ferramentas Básicas",
       "basicToolsDescription": "Inclui recursos principais como leitura de arquivos, gerenciamento de tarefas e execução de código. Sempre disponível para ajudá-lo!",
       "addTools": "+ Adicionar ferramentas",
@@ -761,7 +773,12 @@
       "noTasks": "Nenhuma tarefa",
       "priorityHigh": "Alta",
       "priorityMedium": "Média",
-      "priorityLow": "Baixa"
+      "priorityLow": "Baixa",
+      "scratchpad": "Scratchpad",
+      "noScratchpad": "Sem notas no scratchpad",
+      "untitledNote": "Nota sem título",
+      "moreTasks": "tarefas a mais",
+      "updated": "atualizado"
     }
   },
   "scheduledTasks": {

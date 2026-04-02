@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.29] - 2026-04-01
+
+### 🐛 Fixes
+
+- **Database Startup Recovery for Existing Users**: Restored the previously shipped `m20260327_000025_add_stores_session_index` migration as a compatibility no-op so upgraded apps no longer fail to boot when older databases already record that migration version.
+
+### 🔧 Internal
+
+- **Migration Compatibility Guardrail**: Added focused regression coverage to ensure shipped migration versions remain registered in the migrator and cannot be silently dropped again.
+
+## [0.6.28] - 2026-04-01
+
+### 🐛 Fixes
+
+- **Tool Discovery Availability Guidance**: Refined builtin and MCP tool discovery so agents can browse full tool inventory by default while switching to session-aware availability checks only when needed, reducing misleading "not available" guidance during planning and delegation workflows.
+
+### 🔧 Internal
+
+- **Tool Discovery Regression Coverage**: Added focused integration coverage to lock in canonical `agent__update` guidance and the new inventory-versus-session discovery behavior.
+
+## [0.6.27] - 2026-04-02
+
+### 🚀 Features
+
+- **Builtin Services Codegen**: Automated generation of constants and types from Rust definitions to ensure perfect frontend-backend alignment and type safety.
+- **Enhanced Agent UI & Multilingual Support**: Introduced the new `AgentDraftChatView` and expanded multi-language support (Spanish, French, Japanese, Chinese, Korean) for a more international experience.
+- **Interactive Status & Monitoring**: Added a real-time agent chat status bar and session management utilities to improve the visibility of background tasks and session lifecycle.
+- **UX Responsiveness**: Improved UI snappiness in the `AssistantEditor` and `WorkspacePanel` with loading indicators and optimized rendering patterns.
+- **Secure Media Downloads**: Switched to native platform save dialogs for media downloads to improve consistency and user control.
+- **Provider Hardening**: Enhanced Gemini prompt caching and handle management for more reliable long-running agent sessions.
+
+### 🐛 Fixes
+
+- **Security: SQL Injection Protection**: Hardened database backup logic with stricter validation to prevent potential injection vulnerabilities in the backup pipeline.
+- **LLM State Consistency**: Fixed Gemini prompt cache stack handling and restored missing tabs/sub-editors in the Assistant Editor.
+- **Accessibility & UX Polish**: Added ARIA labels to icon-only buttons and resolved test timeouts to ensure a more stable developer and user experience.
+
+### 🔧 Internal
+
+- **Architectural Cleanup**: Eliminated redundant state syncs in `SessionHistoryPanel` and optimized session sorting for better performance.
+- **Reliability & Testing**: Tightened stdio isolation design tests and expanded regression coverage for PR comment reviews.
+- **Database Optimization**: Added performance indexes to the `stores` table for faster session and store lookups.
+
+## [0.6.26] - 2026-03-30
+
+### 🚀 Features
+
+- **Richer Agent Planning Visibility**: The planning sidebar now surfaces scratchpad notes directly, while closed-panel planning updates appear as Sonner toasts with checklist summaries and a live task progress bar.
+- **Refined Agent Workspace & Planning Panels**: Refreshed the agent side panels and session header with a cleaner, more polished visual treatment so the chat workspace feels more like a finished product than a developer-only surface.
+- **Polished Tools Inventory Modal**: Redesigned the agent tools modal to match the upgraded panel language with cleaner hierarchy, calmer metadata treatment, and a more readable schema inspection surface.
+
+### 🐛 Fixes
+
+- **ID Schema Hardening for Planning and Scratchpad**: Removed misleading numeric bounds from `todoId` and scratchpad note ID schemas so agents are no longer nudged toward bogus identifier assumptions, while keeping backend validation responsible for real existence checks.
+- **Font Setting Now Reaches Agent Chat Surfaces**: Fixed the agent chat and draft chat containers so user-selected UI fonts are no longer accidentally overridden by blanket monospace wrappers.
+- **Scrollable Planning and Tools Surfaces**: Fixed overflow handling in the planning panel and tools modal so long todo lists, scratchpad notes, and large tool inventories remain fully accessible instead of clipping at the bottom.
+
+### 🔧 Internal
+
+- **Planning State Parsing & Regression Coverage**: Added typed parsing for planning/scratchpad service contexts and expanded focused regression tests for scratchpad schema behavior and planning state handling.
+- **Naming Cleanup for Session UI**: Renamed the old terminal-themed session header component to match its real purpose and removed stale shell-flavored UI references.
+
+## [0.6.25] - 2026-03-30
+
+### 🐛 Fixes
+
+- **Planning Todo Schema Bounds**: Fixed the `updateTodo` tool schema so `todoId` is constrained with `minimum: 1` instead of the broken `maximum: 1`, preventing models from being steered toward invalid `todoId=1` calls.
+
+### 🔧 Internal
+
+- **Planning Schema Regression Coverage**: Added focused schema assertions to ensure future planning tool changes keep `todoId` validation aligned with the backend's real identifier behavior.
+
 ## [0.6.24] - 2026-03-30
 
 ### 🐛 Fixes

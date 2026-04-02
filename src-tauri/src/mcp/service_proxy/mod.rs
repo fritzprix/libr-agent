@@ -206,10 +206,10 @@ impl MCPServiceProxy {
                             .join(", ");
                         Err(format!(
                             "Built-in server '{}' not enabled in this session.\n\n\
-                                    Available servers: [{}]\n\n\
-                                    💡 To fix: Update the assistant's \
-                                    'allowedBuiltInServiceAliases' configuration to include \
-                                    \"{}\"",
+                                     Available servers: [{}]\n\n\
+                                     💡 To fix: Use agent__update(id=\"<agentId>\", \
+                                     builtinCapabilities:[..., \"{}\", ...]) to enable it for this agent, \
+                                     or delegate to an agent that already has access.",
                             server_id, available, server_id
                         ))
                     }
@@ -242,9 +242,8 @@ impl MCPServiceProxy {
                                 tool_name
                             ),
                             vec![
-                                "This tool is not permitted for you.".to_string(),
-                                "Please delegate this task to another agent that has access to it."
-                                    .to_string(),
+                                "This tool exists in the system, but your current session is not allowed to call it.".to_string(),
+                                "Use agent__list(type=\"configs\") to find an agent with the required capability, or update the responsible agent with agent__update(...).".to_string(),
                             ],
                         )
                     } else {
@@ -255,7 +254,8 @@ impl MCPServiceProxy {
                             ),
                             vec![
                                 "Verify the server is enabled for this agent/session".to_string(),
-                                "Re-run session tool discovery to list available tools".to_string(),
+                                "Use tool__list to inspect the current session's callable tool set"
+                                    .to_string(),
                                 "Confirm the tool name matches the server tool list".to_string(),
                             ],
                         )
@@ -304,14 +304,14 @@ impl MCPServiceProxy {
                                 .map(|k| format!("'{}'", k))
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            Err(format!(
-                                "Built-in server '{}' not enabled in this session.\n\n\
-                                    Available servers: [{}]\n\n\
-                                    💡 To fix: Update the assistant's \
-                                    'allowedBuiltInServiceAliases' configuration to include \
-                                    \"{}\"",
-                                server_id, available, server_id
-                            ))
+                        Err(format!(
+                            "Built-in server '{}' not enabled in this session.\n\n\
+                                     Available servers: [{}]\n\n\
+                                     💡 To fix: Use agent__update(id=\"<agentId>\", \
+                                     builtinCapabilities:[..., \"{}\", ...]) to enable it for this agent, \
+                                     or delegate to an agent that already has access.",
+                            server_id, available, server_id
+                        ))
                         }
                     }
                 }
@@ -344,9 +344,8 @@ impl MCPServiceProxy {
                                 tool_name
                             ),
                             vec![
-                                "This tool is not permitted for you.".to_string(),
-                                "Please delegate this task to another agent that has access to it."
-                                    .to_string(),
+                                "This tool exists in the system, but your current session is not allowed to call it.".to_string(),
+                                "Use agent__list(type=\"configs\") to find an agent with the required capability, or update the responsible agent with agent__update(...).".to_string(),
                             ],
                         )
                     } else {
@@ -357,7 +356,7 @@ impl MCPServiceProxy {
                             ),
                             vec![
                                 "Verify the server is enabled for this agent/session".to_string(),
-                                "Re-run session tool discovery to list available tools".to_string(),
+                                "Use tool__list to inspect the current session's callable tool set".to_string(),
                                 "Confirm the tool name matches the server tool list".to_string(),
                             ],
                         )
@@ -455,7 +454,7 @@ impl MCPServiceProxy {
                         vec![
                             "Verify the HTTP MCP server URL and headers are valid".to_string(),
                             "If this server is session-scoped, ensure it is enabled for this agent/session".to_string(),
-                            "Re-run session tool discovery to confirm tool availability".to_string(),
+                            "Use tool__list to inspect the current session's callable tool set".to_string(),
                         ],
                     );
                     MCPResponse {
@@ -490,7 +489,7 @@ impl MCPServiceProxy {
                         vec![
                             "Verify the MCP server command can be spawned".to_string(),
                             "Check server stderr logs for startup errors".to_string(),
-                            "Re-run session tool discovery to confirm tool availability"
+                            "Use tool__list to inspect the current session's callable tool set"
                                 .to_string(),
                         ],
                     );

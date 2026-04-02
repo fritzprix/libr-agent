@@ -172,6 +172,52 @@ export function processMessageContent(content: string | MCPContent[]): string {
     .join('\n');
 }
 
+export function extractStructuredToolResult(
+  message: Message,
+): Record<string, unknown> | null {
+  const metadata = message.metadata;
+  if (typeof metadata !== 'object' || metadata === null) {
+    return null;
+  }
+
+  const structuredContent = metadata.structuredContent;
+  if (
+    typeof structuredContent !== 'object' ||
+    structuredContent === null ||
+    Array.isArray(structuredContent)
+  ) {
+    return null;
+  }
+
+  return structuredContent as Record<string, unknown>;
+}
+
+export function formatToolResultForLlm(message: Message): string {
+  const structuredResult = extractStructuredToolResult(message);
+  if (structuredResult) {
+    return safeJsonStringify(structuredResult);
+  }
+
+  return processMessageContent(message.content);
+}
+
+export function parseToolResultForLlm(
+  message: Message,
+): Record<string, unknown> {
+  const structuredResult = extractStructuredToolResult(message);
+  if (structuredResult) {
+    return structuredResult;
+  }
+
+  const text = processMessageContent(message.content);
+  const parsed = tryParse<Record<string, unknown>>(text);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  return { result: text };
+}
+
 /**
  * Processes an array of `MCPContent` parts for a multimodal LLM,
  * handling both text and image content.

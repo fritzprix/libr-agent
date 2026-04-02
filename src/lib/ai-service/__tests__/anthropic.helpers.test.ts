@@ -105,10 +105,17 @@ describe('Anthropic helper modules', () => {
 
   it('normalizes tool-result image/jpg payloads for Anthropic', () => {
     const result = buildAnthropicToolResultBlocks(
-      [
-        { type: 'text', text: 'Rendered preview' },
-        { type: 'image', data: 'abc123', mimeType: 'image/jpg' },
-      ],
+      {
+        id: 'message-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'toolu_123',
+        content: [
+          { type: 'text', text: 'Rendered preview' },
+          { type: 'image', data: 'abc123', mimeType: 'image/jpg' },
+        ],
+      },
       'toolu_123',
       'message-1',
       { warn: vi.fn() },

@@ -76,7 +76,9 @@
       "cancel": "キャンセル",
       "created": "作成日",
       "updated": "更新日",
-      "description": "説明"
+      "description": "説明",
+      "expand": "設定を展開",
+      "collapse": "設定を折りたたむ"
     }
   },
   "status": {
@@ -761,7 +763,12 @@
       "noTasks": "タスクなし",
       "priorityHigh": "高",
       "priorityMedium": "中",
-      "priorityLow": "低"
+      "priorityLow": "低",
+      "scratchpad": "スクラッチパッド",
+      "noScratchpad": "スクラッチパッドのメモはありません",
+      "untitledNote": "無題のメモ",
+      "moreTasks": "件の追加タスク",
+      "updated": "更新済み"
     }
   },
   "scheduledTasks": {

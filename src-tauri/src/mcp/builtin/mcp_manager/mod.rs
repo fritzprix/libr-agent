@@ -61,10 +61,10 @@ impl BuiltinMCPServer for MCPManagerServer {
         &self,
         tool_name: &str,
         args: Value,
-        _session_id: Option<String>,
+        session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "listTools" => operations::list_tools(args).await,
+            "listTools" => operations::list_tools(args, session_id.as_deref()).await,
             "registerServer" => operations::register_server(self, args).await,
             "updateServer" => operations::update_server(self, args).await,
             "deleteServer" => operations::delete_server(self, args).await,

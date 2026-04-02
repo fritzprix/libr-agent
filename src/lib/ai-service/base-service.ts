@@ -3,6 +3,7 @@ import { llmConfigManager } from '@/lib/llm-config-manager';
 import type { MCPContent, MCPTool } from '@/lib/mcp';
 import {
   filterSystemErrors,
+  repairMalformedToolCalls,
   validateToolCallPairing,
 } from '@/lib/ai-service/message-normalizer';
 import {
@@ -120,15 +121,15 @@ function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
  * @template TProviderMessage The type of message objects used by the provider's API.
  * @template TProviderTool The type of tool objects used by the provider's API.
  */
-export abstract class BaseAIService<TProviderMessage, TProviderTool>
-  implements IAIService
-{
+export abstract class BaseAIService<
+  TProviderMessage,
+  TProviderTool,
+> implements IAIService {
   private static readonly SESSION_CONTEXT_BACKGROUND_HEADER =
     '[Current session context — background reference only, do not respond to this block]';
 
   private static readonly SESSION_CONTEXT_BACKGROUND_FOOTER =
     '[End of session context]';
-
   /**
    * The default configuration for the service.
    * @protected
@@ -562,7 +563,8 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    */
   sanitizeMessages(messages: Message[]): Message[] {
     const validMessages = filterSystemErrors(messages);
-    const processedMessages = validateToolCallPairing(validMessages);
+    const repairedMessages = repairMalformedToolCalls(validMessages);
+    const processedMessages = validateToolCallPairing(repairedMessages);
 
     return processedMessages
       .map((msg) => this.sanitizeSingleMessage(msg))

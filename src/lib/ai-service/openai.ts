@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
+
 import { getLogger } from '../logger';
-import { Message } from '@/models/chat';
+import type { Message } from '@/models/chat';
 import {
   MCPTool,
   MCPContent,
@@ -14,133 +15,26 @@ import {
   type ContextInjectionResult,
   TokenUsage,
 } from './types';
-import {
-  BaseAIService,
-  stableHashKeyPart,
-  stableStringify,
-} from './base-service';
-import { llmConfigManager, ModelInfo } from '../llm-config-manager';
-import { supportsThinking, getContextWindow } from './model-capabilities';
+import { BaseAIService } from './base-service';
+import type { ModelInfo } from '../llm-config-manager';
+import { supportsThinking } from './model-capabilities';
 import { ensureSchemaTypeField, processMessageContent } from './utils';
+import { OpenAIPromptDiagnosticsTracker } from './openai/diagnostics';
+import { convertToOpenAIMessages } from './openai/message-converter';
+import { fetchOpenAIModels } from './openai/models';
+import {
+  buildAutomaticPromptCacheKey,
+  withPromptCaching,
+} from './openai/prompt-cache';
+import type {
+  OpenAINonStreamingRequest,
+  OpenAIResponseUsageDetails,
+  OpenAIStreamUsage,
+  OpenAIStreamingRequest,
+} from './openai/types';
+import { isOpenAIStreamUsage } from './openai/types';
+
 const logger = getLogger('OpenAIService');
-
-/** Shape of usage data returned by OpenAI/compatible streaming chunks. */
-interface OpenAIStreamUsage {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
-  prompt_cache_hit_tokens?: number;
-  completion_tokens_details?: { reasoning_tokens?: number };
-}
-
-function isOpenAIStreamUsage(value: unknown): value is OpenAIStreamUsage {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const obj = value as Record<string, unknown>;
-
-  if (
-    obj.prompt_tokens !== undefined &&
-    typeof obj.prompt_tokens !== 'number'
-  ) {
-    return false;
-  }
-  if (
-    obj.completion_tokens !== undefined &&
-    typeof obj.completion_tokens !== 'number'
-  ) {
-    return false;
-  }
-  if (obj.total_tokens !== undefined && typeof obj.total_tokens !== 'number') {
-    return false;
-  }
-  if (
-    obj.prompt_cache_hit_tokens !== undefined &&
-    typeof obj.prompt_cache_hit_tokens !== 'number'
-  ) {
-    return false;
-  }
-
-  if (obj.prompt_tokens_details !== undefined) {
-    if (
-      typeof obj.prompt_tokens_details !== 'object' ||
-      obj.prompt_tokens_details === null
-    ) {
-      return false;
-    }
-    const details = obj.prompt_tokens_details as Record<string, unknown>;
-    if (
-      details.cached_tokens !== undefined &&
-      typeof details.cached_tokens !== 'number'
-    ) {
-      return false;
-    }
-  }
-
-  if (obj.completion_tokens_details !== undefined) {
-    if (
-      typeof obj.completion_tokens_details !== 'object' ||
-      obj.completion_tokens_details === null
-    ) {
-      return false;
-    }
-    const details = obj.completion_tokens_details as Record<string, unknown>;
-    if (
-      details.reasoning_tokens !== undefined &&
-      typeof details.reasoning_tokens !== 'number'
-    ) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-interface OpenAIResponseUsageDetails {
-  prompt_tokens_details?: Record<string, unknown>;
-  completion_tokens_details?: Record<string, unknown>;
-  prompt_cache_hit_tokens?: number;
-}
-
-interface OpenAIMessageFingerprint {
-  role: string;
-  contentLength: number;
-  contentHash: string;
-  contentTag?: 'regular' | 'session_context' | 'tool_result_media';
-  toolCallCount: number;
-  toolCallNames?: string[];
-  toolCallHash?: string;
-  toolCallIdHash?: string;
-  toolCallId?: string;
-}
-
-interface OpenAIPromptSnapshot {
-  mode: 'stream' | 'non-stream';
-  model: string;
-  systemPromptLength: number;
-  systemPromptHash: string;
-  toolsHash: string;
-  toolCount: number;
-  messagesFingerprintHash: string;
-  messageFingerprints: OpenAIMessageFingerprint[];
-  promptCacheKey?: string;
-  promptCacheRetention?: 'in_memory' | '24h';
-  compatibleCachePrompt: boolean;
-}
-
-type OpenAIStreamingRequest =
-  OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & {
-    cache_prompt?: boolean;
-    prompt_cache_retention?: 'in_memory' | '24h';
-  };
-
-type OpenAINonStreamingRequest =
-  OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
-    cache_prompt?: boolean;
-    prompt_cache_retention?: 'in_memory' | '24h';
-  };
 
 /**
  * An AI service implementation for OpenAI's language models.
@@ -151,10 +45,7 @@ export class OpenAIService extends BaseAIService<
   OpenAI.Chat.ChatCompletionTool
 > {
   protected openai: OpenAI;
-  private lastPromptSnapshots = new Map<
-    'stream' | 'non-stream',
-    OpenAIPromptSnapshot
-  >();
+  private readonly promptDiagnostics: OpenAIPromptDiagnosticsTracker;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
   private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
@@ -171,6 +62,7 @@ export class OpenAIService extends BaseAIService<
       baseURL: config?.baseUrl || undefined,
       dangerouslyAllowBrowser: true,
     });
+    this.promptDiagnostics = new OpenAIPromptDiagnosticsTracker(this.logger);
   }
 
   static supportsToolsForModel(modelName: string): boolean {
@@ -189,443 +81,6 @@ export class OpenAIService extends BaseAIService<
     if (lowerName.includes('gpt-4o')) return 128000;
     if (/^o(?:3|4)(?:$|[-.])/.test(lowerName)) return 200000;
     return 8192;
-  }
-
-  private isOfficialOpenAIEndpoint(config: AIServiceConfig): boolean {
-    if (this.getProvider() !== AIServiceProvider.OpenAI) {
-      return false;
-    }
-
-    const baseUrl = config.baseUrl?.trim();
-    if (!baseUrl) {
-      return true;
-    }
-
-    try {
-      const { hostname } = new URL(baseUrl);
-      return hostname === 'api.openai.com';
-    } catch {
-      return false;
-    }
-  }
-
-  private shouldEnableCompatiblePromptCacheExtension(
-    config: AIServiceConfig,
-  ): boolean {
-    if (config.enablePromptCache !== undefined) {
-      return config.enablePromptCache && !this.isOfficialOpenAIEndpoint(config);
-    }
-
-    if (this.getProvider() !== AIServiceProvider.OpenAI) {
-      return false;
-    }
-
-    const baseUrl = config.baseUrl?.trim();
-    if (!baseUrl) {
-      return false;
-    }
-
-    try {
-      const { hostname } = new URL(baseUrl);
-      return hostname !== 'api.openai.com';
-    } catch {
-      return false;
-    }
-  }
-
-  private withPromptCache<T extends { cache_prompt?: boolean }>(
-    request: T,
-    config: AIServiceConfig,
-  ): T {
-    if (!this.shouldEnableCompatiblePromptCacheExtension(config)) {
-      return request;
-    }
-
-    return {
-      ...request,
-      cache_prompt: true,
-    };
-  }
-
-  private buildAutomaticPromptCacheKey(args: {
-    model: string;
-    systemPrompt?: string;
-    messages?: Message[];
-    tools?: OpenAIChatCompletionTool[];
-  }): string | undefined {
-    if (!args.systemPrompt && !(args.tools && args.tools.length > 0)) {
-      return undefined;
-    }
-
-    const toolsPayload = stableStringify(args.tools ?? []);
-
-    return [
-      'chat',
-      args.model,
-      stableHashKeyPart(args.systemPrompt ?? ''),
-      stableHashKeyPart(toolsPayload),
-    ].join(':');
-  }
-
-  private withOfficialPromptCaching<
-    T extends {
-      prompt_cache_key?: string;
-      prompt_cache_retention?: 'in_memory' | '24h';
-    },
-  >(request: T, config: AIServiceConfig, automaticPromptCacheKey?: string): T {
-    if (!this.isOfficialOpenAIEndpoint(config)) {
-      return request;
-    }
-
-    const promptCacheKey = config.promptCacheKey ?? automaticPromptCacheKey;
-    const promptCacheRetention = config.promptCacheRetention;
-
-    if (!promptCacheKey && !promptCacheRetention) {
-      return request;
-    }
-
-    return {
-      ...request,
-      ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
-      ...(promptCacheRetention
-        ? { prompt_cache_retention: promptCacheRetention }
-        : {}),
-    };
-  }
-
-  private withPromptCaching<
-    T extends OpenAIStreamingRequest | OpenAINonStreamingRequest,
-  >(request: T, config: AIServiceConfig, automaticPromptCacheKey?: string): T {
-    const withOfficialPromptCaching = this.withOfficialPromptCaching(
-      request,
-      config,
-      automaticPromptCacheKey,
-    );
-    return this.withPromptCache(withOfficialPromptCaching, config);
-  }
-
-  private logPromptCacheMetadata(args: {
-    mode: 'stream' | 'non-stream';
-    model: string;
-    request: {
-      model: string;
-      prompt_cache_key?: string;
-      prompt_cache_retention?: 'in_memory' | '24h';
-      cache_prompt?: boolean;
-    };
-    usage: OpenAIResponseUsageDetails & {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      total_tokens?: number;
-    };
-  }): void {
-    const cachedPromptTokens =
-      args.usage.prompt_tokens_details?.cached_tokens ??
-      args.usage.prompt_cache_hit_tokens;
-
-    this.logger.info('OpenAI prompt cache metadata', {
-      mode: args.mode,
-      model: args.model,
-      promptCacheKey: args.request.prompt_cache_key,
-      promptCacheRetention: args.request.prompt_cache_retention,
-      compatibleCachePrompt: args.request.cache_prompt ?? false,
-      promptTokens: args.usage.prompt_tokens,
-      completionTokens: args.usage.completion_tokens,
-      totalTokens: args.usage.total_tokens,
-      cachedPromptTokens,
-      promptTokensDetails: args.usage.prompt_tokens_details,
-      completionTokensDetails: args.usage.completion_tokens_details,
-      promptCacheHitTokens: args.usage.prompt_cache_hit_tokens,
-    });
-  }
-
-  private createRequestId(): string {
-    return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-  }
-
-  private contentToFingerprintString(content: unknown): string {
-    if (typeof content === 'string') {
-      return content;
-    }
-
-    if (Array.isArray(content)) {
-      return content
-        .map((part) => {
-          if (
-            typeof part === 'object' &&
-            part !== null &&
-            'type' in part &&
-            part.type === 'text' &&
-            'text' in part &&
-            typeof part.text === 'string'
-          ) {
-            return part.text;
-          }
-          return stableStringify(part);
-        })
-        .join('\n');
-    }
-
-    return stableStringify(content ?? '');
-  }
-
-  private classifyMessageContentTag(
-    role: string,
-    content: string,
-  ): OpenAIMessageFingerprint['contentTag'] {
-    if (
-      role === 'user' &&
-      content.startsWith('[Current session context — background reference only')
-    ) {
-      return 'session_context';
-    }
-
-    if (
-      role === 'user' &&
-      content.startsWith('Tool result media from tool_call_id=')
-    ) {
-      return 'tool_result_media';
-    }
-
-    return 'regular';
-  }
-
-  private buildPromptSnapshot(args: {
-    mode: 'stream' | 'non-stream';
-    model: string;
-    systemPrompt?: string;
-    request: {
-      prompt_cache_key?: string;
-      prompt_cache_retention?: 'in_memory' | '24h';
-      cache_prompt?: boolean;
-    };
-    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-    tools?: OpenAIChatCompletionTool[];
-  }): OpenAIPromptSnapshot {
-    const messageFingerprints = args.messages.map((message) =>
-      this.fingerprintOpenAIMessage(message),
-    );
-    const serializedFingerprints = stableStringify(messageFingerprints);
-    const toolsPayload = stableStringify(args.tools ?? []);
-
-    return {
-      mode: args.mode,
-      model: args.model,
-      systemPromptLength: args.systemPrompt?.length ?? 0,
-      systemPromptHash: stableHashKeyPart(args.systemPrompt ?? ''),
-      toolsHash: stableHashKeyPart(toolsPayload),
-      toolCount: args.tools?.length ?? 0,
-      messagesFingerprintHash: stableHashKeyPart(serializedFingerprints),
-      messageFingerprints,
-      promptCacheKey: args.request.prompt_cache_key,
-      promptCacheRetention: args.request.prompt_cache_retention,
-      compatibleCachePrompt: args.request.cache_prompt ?? false,
-    };
-  }
-
-  private logPromptDrift(snapshot: OpenAIPromptSnapshot): void {
-    const previous = this.lastPromptSnapshots.get(snapshot.mode);
-    this.lastPromptSnapshots.set(snapshot.mode, snapshot);
-
-    if (!previous) {
-      return;
-    }
-
-    const minMessageCount = Math.min(
-      previous.messageFingerprints.length,
-      snapshot.messageFingerprints.length,
-    );
-    let firstDivergenceIndex = -1;
-    for (let index = 0; index < minMessageCount; index += 1) {
-      if (
-        stableStringify(previous.messageFingerprints[index]) !==
-        stableStringify(snapshot.messageFingerprints[index])
-      ) {
-        firstDivergenceIndex = index;
-        break;
-      }
-    }
-
-    if (
-      firstDivergenceIndex === -1 &&
-      previous.messageFingerprints.length !==
-        snapshot.messageFingerprints.length
-    ) {
-      firstDivergenceIndex = minMessageCount;
-    }
-
-    const firstDivergenceComponent =
-      previous.model !== snapshot.model
-        ? 'model'
-        : previous.systemPromptHash !== snapshot.systemPromptHash
-          ? 'system_prompt'
-          : previous.toolsHash !== snapshot.toolsHash
-            ? 'tools'
-            : firstDivergenceIndex >= 0
-              ? 'messages'
-              : 'none';
-
-    const commonPrefixMessages =
-      firstDivergenceComponent === 'messages'
-        ? firstDivergenceIndex
-        : Math.min(
-            previous.messageFingerprints.length,
-            snapshot.messageFingerprints.length,
-          );
-
-    this.logger.debug('OpenAI prompt cache drift', {
-      mode: snapshot.mode,
-      previousModel: previous.model,
-      model: snapshot.model,
-      previousPromptCacheKey: previous.promptCacheKey,
-      promptCacheKey: snapshot.promptCacheKey,
-      firstDivergenceComponent,
-      firstDivergenceIndex:
-        firstDivergenceComponent === 'messages'
-          ? firstDivergenceIndex
-          : undefined,
-      commonPrefixMessages,
-      previousMessageCount: previous.messageFingerprints.length,
-      messageCount: snapshot.messageFingerprints.length,
-      systemPromptChanged:
-        previous.systemPromptHash !== snapshot.systemPromptHash,
-      toolsChanged: previous.toolsHash !== snapshot.toolsHash,
-      messagesChanged:
-        previous.messagesFingerprintHash !== snapshot.messagesFingerprintHash,
-      previousFingerprintHash: previous.messagesFingerprintHash,
-      fingerprintHash: snapshot.messagesFingerprintHash,
-      previousMessageAtDivergence:
-        firstDivergenceIndex >= 0
-          ? previous.messageFingerprints[firstDivergenceIndex]
-          : undefined,
-      currentMessageAtDivergence:
-        firstDivergenceIndex >= 0
-          ? snapshot.messageFingerprints[firstDivergenceIndex]
-          : undefined,
-    });
-  }
-
-  private fingerprintOpenAIMessage(
-    message: OpenAI.Chat.Completions.ChatCompletionMessageParam,
-  ): OpenAIMessageFingerprint {
-    if (message.role === 'tool') {
-      const content = this.contentToFingerprintString(message.content);
-      return {
-        role: message.role,
-        contentLength: content.length,
-        contentHash: stableHashKeyPart(content),
-        contentTag: this.classifyMessageContentTag(message.role, content),
-        toolCallCount: 0,
-        toolCallId: message.tool_call_id,
-        toolCallIdHash: stableHashKeyPart(message.tool_call_id ?? ''),
-      };
-    }
-
-    const content = this.contentToFingerprintString(message.content);
-    const toolCalls =
-      'tool_calls' in message && Array.isArray(message.tool_calls)
-        ? message.tool_calls
-        : [];
-
-    return {
-      role: message.role,
-      contentLength: content.length,
-      contentHash: stableHashKeyPart(content),
-      contentTag: this.classifyMessageContentTag(message.role, content),
-      toolCallCount: toolCalls.length,
-      toolCallNames: toolCalls.map((toolCall) =>
-        'function' in toolCall &&
-        typeof toolCall.function === 'object' &&
-        toolCall.function !== null &&
-        'name' in toolCall.function &&
-        typeof toolCall.function.name === 'string'
-          ? toolCall.function.name
-          : 'custom',
-      ),
-      toolCallHash: stableHashKeyPart(stableStringify(toolCalls)),
-    };
-  }
-
-  private logPromptDiagnostics(args: {
-    mode: 'stream' | 'non-stream';
-    model: string;
-    systemPrompt?: string;
-    request: {
-      prompt_cache_key?: string;
-      prompt_cache_retention?: 'in_memory' | '24h';
-      cache_prompt?: boolean;
-    };
-    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-    tools?: OpenAIChatCompletionTool[];
-  }): void {
-    const snapshot = this.buildPromptSnapshot(args);
-
-    this.logger.debug('OpenAI prompt diagnostics', {
-      mode: args.mode,
-      model: args.model,
-      promptCacheKey: args.request.prompt_cache_key,
-      promptCacheRetention: args.request.prompt_cache_retention,
-      compatibleCachePrompt: args.request.cache_prompt ?? false,
-      systemPromptLength: snapshot.systemPromptLength,
-      systemPromptHash: snapshot.systemPromptHash,
-      toolCount: snapshot.toolCount,
-      toolsHash: snapshot.toolsHash,
-      messageCount: snapshot.messageFingerprints.length,
-      messagesFingerprintHash: snapshot.messagesFingerprintHash,
-      messageFingerprints: snapshot.messageFingerprints,
-    });
-    this.logPromptDrift(snapshot);
-  }
-
-  private logFetchDiagnostics(args: {
-    mode: 'stream' | 'non-stream';
-    requestId: string;
-    model: string;
-    request: {
-      model: string;
-      prompt_cache_key?: string;
-      prompt_cache_retention?: 'in_memory' | '24h';
-      cache_prompt?: boolean;
-      tool_choice?: unknown;
-      max_completion_tokens?: number | null;
-      max_tokens?: number | null;
-      messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-      tools?: OpenAIChatCompletionTool[];
-      reasoning_effort?: string | null;
-    };
-  }): void {
-    const bodyFingerprint = stableHashKeyPart(
-      stableStringify({
-        model: args.request.model,
-        messages: args.request.messages.map((message) =>
-          this.fingerprintOpenAIMessage(message),
-        ),
-        tools: args.request.tools ?? [],
-        tool_choice: args.request.tool_choice,
-        max_completion_tokens: args.request.max_completion_tokens,
-        max_tokens: args.request.max_tokens,
-        prompt_cache_key: args.request.prompt_cache_key,
-        prompt_cache_retention: args.request.prompt_cache_retention,
-        cache_prompt: args.request.cache_prompt,
-        reasoning_effort: args.request.reasoning_effort,
-      }),
-    );
-
-    this.logger.debug('OpenAI fetch diagnostics', {
-      mode: args.mode,
-      requestId: args.requestId,
-      model: args.model,
-      promptCacheKey: args.request.prompt_cache_key,
-      promptCacheRetention: args.request.prompt_cache_retention,
-      compatibleCachePrompt: args.request.cache_prompt ?? false,
-      bodyFingerprint,
-      messageCount: args.request.messages.length,
-      toolCount: args.request.tools?.length ?? 0,
-      toolChoice: args.request.tool_choice,
-      maxCompletionTokens: args.request.max_completion_tokens,
-      maxTokens: args.request.max_tokens,
-      reasoningEffort: args.request.reasoning_effort,
-    });
   }
 
   /**
@@ -720,79 +175,17 @@ export class OpenAIService extends BaseAIService<
     }
 
     try {
-      logger.info('Fetching models from OpenAI...');
-
-      const response = await this.withRetry(async () => {
-        // The OpenAI JS SDK exposes `models.list()` which returns a paginated result
-        // with a `data` array of model metadata
-        const openaiClient = this.openai as unknown as {
-          models: { list: () => Promise<{ data: unknown[] }> };
-        };
-        const res = await openaiClient.models.list();
-        return res;
+      const models = await fetchOpenAIModels({
+        openai: this.openai,
+        provider: AIServiceProvider.OpenAI,
+        withRetry: (fn) => this.withRetry(fn),
+        logger,
       });
-
-      // Normalize response shape — treat as unknown and narrow below
-      const modelsRaw: Array<unknown> = Array.isArray(response?.data)
-        ? (response.data as Array<unknown>)
-        : [];
-
-      const modelPromises = modelsRaw.map(async (entry) => {
-        if (entry == null || typeof entry !== 'object') return null;
-        const e = entry as Record<string, unknown>;
-
-        const id =
-          (typeof e.id === 'string' && e.id) ||
-          (typeof e.model === 'string' && e.model) ||
-          (typeof e.name === 'string' && e.name) ||
-          String(e);
-
-        // Merge with static config metadata
-        const staticModel = llmConfigManager.getModel('openai', id);
-
-        // Use dynamic context window detection (OpenRouter API → fallback)
-        const contextWindow = await getContextWindow(
-          id,
-          AIServiceProvider.OpenAI,
-        );
-
-        const name = staticModel?.name || id;
-        const supportStreaming = staticModel?.supportStreaming ?? true;
-        const supportReasoning =
-          staticModel?.supportReasoning ??
-          (id.toLowerCase().includes('gpt-4') ||
-            id.toLowerCase().includes('gpt-3.5'));
-        const supportTools = staticModel?.supportTools ?? false;
-
-        const description =
-          staticModel?.description ||
-          (typeof e.description === 'string' && e.description) ||
-          (Array.isArray(e.permission) ? e.permission.join(',') : undefined) ||
-          id;
-
-        const modelInfo: ModelInfo = {
-          id,
-          name,
-          contextWindow,
-          supportReasoning,
-          supportTools,
-          supportStreaming,
-          cost: staticModel?.cost || { input: 0, output: 0 },
-          description,
-        };
-
-        return modelInfo;
-      });
-
-      const models = (await Promise.all(modelPromises)).filter(
-        (v): v is ModelInfo => v !== null,
-      );
 
       // Cache the results
       this.modelCache = models;
       this.cacheTimestamp = Date.now();
 
-      logger.info(`Loaded ${models.length} models from OpenAI API`);
       return models;
     } catch (error) {
       logger.warn(
@@ -873,7 +266,7 @@ export class OpenAIService extends BaseAIService<
         tools,
       });
 
-      const request = this.withPromptCaching<OpenAIStreamingRequest>(
+      const request = withPromptCaching<OpenAIStreamingRequest>(
         {
           model: modelName,
           messages: openaiMessages,
@@ -881,7 +274,7 @@ export class OpenAIService extends BaseAIService<
           stream: true,
           stream_options: { include_usage: true },
           ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-          tools: tools,
+          tools,
           tool_choice: !options.availableTools?.length
             ? undefined
             : options.disableToolUse
@@ -890,12 +283,13 @@ export class OpenAIService extends BaseAIService<
                 ? 'required'
                 : 'auto',
         },
+        this.getProvider(),
         config,
         automaticPromptCacheKey,
       );
 
-      const requestId = this.createRequestId();
-      this.logPromptDiagnostics({
+      const requestId = this.promptDiagnostics.createRequestId();
+      this.promptDiagnostics.logPromptDiagnostics({
         mode: 'stream',
         model: modelName,
         systemPrompt: options.systemPrompt,
@@ -903,7 +297,7 @@ export class OpenAIService extends BaseAIService<
         messages: openaiMessages,
         tools,
       });
-      this.logFetchDiagnostics({
+      this.promptDiagnostics.logFetchDiagnostics({
         mode: 'stream',
         requestId,
         model: modelName,
@@ -947,9 +341,8 @@ export class OpenAIService extends BaseAIService<
 
         const rawUsage = chunk.usage;
         if (rawUsage && isOpenAIStreamUsage(rawUsage)) {
-          // Type guard validates structure; single cast is safe here
           const u = rawUsage as OpenAIStreamUsage;
-          this.logPromptCacheMetadata({
+          this.promptDiagnostics.logPromptCacheMetadata({
             mode: 'stream',
             model: modelName,
             request,
@@ -1059,98 +452,14 @@ export class OpenAIService extends BaseAIService<
     messages: Message[],
     systemPrompt?: string,
   ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-    const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-      [];
-
-    if (systemPrompt) {
-      openaiMessages.push({ role: 'system', content: systemPrompt });
-    }
-
-    for (const m of messages) {
-      // UI-generated messages are treated as user messages
-      // This ensures that messages created by UI interactions (button clicks, tool executions, etc.)
-      // are interpreted by the AI model as user intent
-      const effectiveRole = m.source === 'ui' ? 'user' : m.role;
-
-      if (effectiveRole === 'user') {
-        openaiMessages.push({
-          role: 'user',
-          content: this.formatOpenAIContent(m.content),
-        });
-      } else if (effectiveRole === 'assistant') {
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          openaiMessages.push({
-            role: 'assistant',
-            content: this.processMessageContent(m.content) || null,
-            tool_calls: m.tool_calls,
-          });
-        } else {
-          openaiMessages.push({
-            role: 'assistant',
-            content: this.processMessageContent(m.content),
-          });
-        }
-      } else if (effectiveRole === 'tool') {
-        if (m.tool_call_id) {
-          openaiMessages.push({
-            role: 'tool',
-            tool_call_id: m.tool_call_id,
-            content: this.processMessageContent(m.content),
-          });
-          // Inject image/audio from tool result as a synthetic user message
-          const media = this.extractMediaContent(m.content as MCPContent[]);
-          if (media.length > 0) {
-            const annotatedMedia: MCPContent[] = [
-              {
-                type: 'text',
-                text: `Tool result media from tool_call_id=${m.tool_call_id}. This is output from the preceding tool call, not new user instructions.`,
-              },
-              ...media,
-            ];
-            openaiMessages.push({
-              role: 'user',
-              content: this.formatOpenAIContent(annotatedMedia),
-            });
-          }
-        } else {
-          logger.warn(
-            `Tool message missing tool_call_id: ${JSON.stringify(m)}`,
-          );
-        }
-      }
-    }
-    return openaiMessages;
-  }
-
-  /**
-   * Helper to format content for OpenAI API, supporting multimodal parts.
-   * @param content The content of the message.
-   */
-  private formatOpenAIContent(
-    content: MCPContent[],
-  ): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
-    const multimodal = this.processMultiModalContent(content);
-    if (multimodal.every((p) => p.type === 'text')) {
-      return this.processMessageContent(content);
-    }
-    return multimodal.map((part) => {
-      if (part.type === 'text') {
-        return { type: 'text', text: part.text || '' };
-      } else if (part.type === 'image') {
-        const mimeType = part.mimeType || 'image/jpeg';
-        return {
-          type: 'image_url',
-          image_url: { url: `data:${mimeType};base64,${part.image}` },
-        };
-      } else if (part.type === 'audio') {
-        // OpenAI expects 'wav' or 'mp3' for audio format
-        const format = part.mimeType?.includes('wav') ? 'wav' : 'mp3';
-        return {
-          type: 'input_audio',
-          input_audio: { data: part.audio || '', format },
-        } as unknown as OpenAI.Chat.Completions.ChatCompletionContentPart; // Cast to bypass TS if missing in older types
-      }
-      return { type: 'text', text: `[Unsupported content: ${part.type}]` };
+    return convertToOpenAIMessages({
+      messages,
+      systemPrompt,
+      logger: this.logger,
+      processMessageContent: (content) => this.processMessageContent(content),
+      processMultiModalContent: (content) =>
+        this.processMultiModalContent(content),
+      extractMediaContent: (content) => this.extractMediaContent(content),
     });
   }
 
@@ -1205,7 +514,7 @@ export class OpenAIService extends BaseAIService<
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
-    const request = this.withPromptCaching<OpenAINonStreamingRequest>(
+    const request = withPromptCaching<OpenAINonStreamingRequest>(
       {
         model,
         stream: false,
@@ -1217,11 +526,12 @@ export class OpenAIService extends BaseAIService<
         frequency_penalty: s?.frequencyPenalty,
         stop: s?.stopSequences,
       },
+      this.getProvider(),
       config,
     );
 
-    const requestId = this.createRequestId();
-    this.logPromptDiagnostics({
+    const requestId = this.promptDiagnostics.createRequestId();
+    this.promptDiagnostics.logPromptDiagnostics({
       mode: 'non-stream',
       model,
       systemPrompt: undefined,
@@ -1229,7 +539,7 @@ export class OpenAIService extends BaseAIService<
       messages: request.messages,
       tools: request.tools,
     });
-    this.logFetchDiagnostics({
+    this.promptDiagnostics.logFetchDiagnostics({
       mode: 'non-stream',
       requestId,
       model,
@@ -1245,7 +555,7 @@ export class OpenAIService extends BaseAIService<
     );
 
     if (response.usage) {
-      this.logPromptCacheMetadata({
+      this.promptDiagnostics.logPromptCacheMetadata({
         mode: 'non-stream',
         model,
         request,
@@ -1293,5 +603,14 @@ export class OpenAIService extends BaseAIService<
 
   dispose(): void {
     // OpenAI SDK doesn't require explicit cleanup
+  }
+
+  private buildAutomaticPromptCacheKey(args: {
+    model: string;
+    systemPrompt?: string;
+    messages?: Message[];
+    tools?: OpenAIChatCompletionTool[];
+  }): string | undefined {
+    return buildAutomaticPromptCacheKey(args);
   }
 }

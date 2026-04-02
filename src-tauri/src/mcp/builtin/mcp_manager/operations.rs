@@ -3,6 +3,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::service_id::BuiltinServiceId;
+use crate::mcp::builtin::utils::load_session_tool_access;
 use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
@@ -174,7 +175,7 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
         ),
         vec![
             "Use listTools to review builtin tools and saved external servers.".to_string(),
-            "Use the Server ID in updateAssistant(..., mcpServerIds: [...]) to attach this server to an assistant.".to_string(),
+            "Use the Server ID in agent__update(id:\"<agentId>\", externalMcpServers:[...]) to enable this server for an agent.".to_string(),
             "Session-level attachment should also reference this Server ID, not the server name.".to_string(),
         ],
     );
@@ -466,7 +467,7 @@ async fn test_server_connection(
 }
 
 /// Unified tool discovery across builtin and external MCP servers.
-pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
+pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResult, String> {
     use crate::mcp::types::MCPServerConfig;
 
     let query = args
@@ -476,6 +477,10 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
         .to_lowercase();
 
     let scope = args.get("scope").and_then(|v| v.as_str()).unwrap_or("all");
+    let availability = args
+        .get("availability")
+        .and_then(|v| v.as_str())
+        .unwrap_or("inventory");
 
     let force_verify = args
         .get("forceVerify")
@@ -484,6 +489,12 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
 
     let include_internal = matches!(scope, "internal" | "all");
     let include_external = matches!(scope, "external" | "all");
+    let session_view = availability == "session";
+    let access = if session_view {
+        load_session_tool_access(session_id).await
+    } else {
+        load_session_tool_access(None).await
+    };
 
     let mut result_sections: Vec<String> = Vec::new();
     let mut total_tools = 0usize;
@@ -522,7 +533,18 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
                         } else {
                             t.description.clone()
                         };
-                        format!("• {} — {}", t.name, desc)
+                        if session_view {
+                            let server_alias = t.name.split("__").next().unwrap_or(&t.name);
+                            let (status, guidance) = access.builtin_status(server_alias);
+                            match guidance {
+                                Some(guidance) => {
+                                    format!("• {} {} — {}\n  {}", t.name, status, desc, guidance)
+                                }
+                                None => format!("• {} {} — {}", t.name, status, desc),
+                            }
+                        } else {
+                            format!("• {} — {}", t.name, desc)
+                        }
                     })
                     .collect()
             };
@@ -626,7 +648,15 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
                     // Compact view for tools
                     let names: Vec<String> = matched_tools
                         .iter()
-                        .map(|t| t["name"].as_str().unwrap_or("?").to_string())
+                        .map(|t| {
+                            let name = t["name"].as_str().unwrap_or("?");
+                            if session_view {
+                                let (status, _) = access.external_status(&model.id, &model.name);
+                                format!("{} {}", name, status)
+                            } else {
+                                name.to_string()
+                            }
+                        })
                         .collect();
                     format!("  Tools: {}", names.join(", "))
                 } else {
@@ -636,7 +666,18 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
                         .map(|t| {
                             let name = t["name"].as_str().unwrap_or("?");
                             let desc = t["description"].as_str().unwrap_or("");
-                            format!("• {} — {}", name, desc)
+                            if session_view {
+                                let (status, guidance) =
+                                    access.external_status(&model.id, &model.name);
+                                match guidance {
+                                    Some(guidance) => {
+                                        format!("• {} {} — {}\n  {}", name, status, desc, guidance)
+                                    }
+                                    None => format!("• {} {} — {}", name, status, desc),
+                                }
+                            } else {
+                                format!("• {} — {}", name, desc)
+                            }
                         })
                         .collect();
                     tool_lines.join("\n")
@@ -658,7 +699,7 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
             "No tools found. Use registerServer to add external MCP servers.".to_string()
         } else {
             format!(
-                "No tools found matching '{}'. Try a broader query or scope='all'.",
+                "No tools found matching '{}'. Try a broader query, scope='all', or availability='inventory'.",
                 query
             )
         };
@@ -666,6 +707,7 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
             hint_text,
             vec![
                 "Use scope='all' to search both builtin and external tools".to_string(),
+                "Use availability='inventory' to browse platform/server inventory regardless of current session access".to_string(),
                 "Use listTools to browse all available tools".to_string(),
             ],
         )
@@ -673,11 +715,14 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
     }
 
     let header = if query.is_empty() {
-        format!("Found {} tools (scope: {}):\n\n", total_tools, scope)
+        format!(
+            "Found {} tools (scope: {}, availability: {}):\n\n",
+            total_tools, scope, availability
+        )
     } else {
         format!(
-            "Found {} tools matching '{}' (scope: {}):\n\n",
-            total_tools, query, scope
+            "Found {} tools matching '{}' (scope: {}, availability: {}):\n\n",
+            total_tools, query, scope, availability
         )
     };
 
@@ -691,18 +736,26 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
             .collect();
         format!(
             "\n\n---\n📌 To attach external server(s) to an assistant:\n\
-            Server IDs found:\n{}\n\n\
-            To attach, call:\n  updateAssistant(id: \"<assistantId>\", mcpServerIds: [\"<id_1>\", \"...\"])\n\n\
-            Use listAssistants to find your assistant ID.",
+             Server IDs found:\n{}\n\n\
+            To enable them for an agent, call:\n  agent__update(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
+            Use agent__list(type: \"configs\") to find your agent ID.",
             ids_list.join("\n")
         )
     } else {
         String::new()
     };
 
-    let mut hints = vec![
-        "Builtin tools are always available; external tools must be attached via updateAssistant(mcpServerIds: [...])".to_string(),
-    ];
+    let mut hints = if session_view {
+        vec![
+            "Session mode annotates whether the current session can call each tool now. Use availability='inventory' to inspect platform/server inventory without session gating.".to_string(),
+            "Builtin tool visibility depends on the current session's builtinCapabilities; external tools require agent__update(..., externalMcpServers:[...]) before they are callable.".to_string(),
+        ]
+    } else {
+        vec![
+            "Inventory mode shows platform/server tool inventory even when the current session cannot call those tools yet.".to_string(),
+            "Use availability='session' to annotate tools with current-session readiness.".to_string(),
+        ]
+    };
     if !force_verify && include_external {
         hints.push(
             "Use forceVerify=true to get a live tool list from external servers (slower)"

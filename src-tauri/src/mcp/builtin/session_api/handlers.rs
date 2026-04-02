@@ -152,10 +152,14 @@ pub async fn handle_tool_call(
 
             let (session_data, poll_count) = match handle_wait_timeout_result(
                 wait_result,
+                Some(manager),
                 &child_id_owned,
                 timeout_seconds,
+                "spawnAgent",
                 true,
-            ) {
+            )
+            .await
+            {
                 Ok(res) => res,
                 Err(mcp_res) => return mcp_res,
             };
@@ -274,10 +278,14 @@ pub async fn handle_tool_call(
 
             let (session_data, _poll_count) = match handle_wait_timeout_result(
                 wait_result,
+                Some(manager),
                 &session_id,
                 timeout_seconds,
+                "awaitAgent",
                 false,
-            ) {
+            )
+            .await
+            {
                 Ok(res) => res,
                 Err(mcp_res) => return mcp_res,
             };

@@ -396,6 +396,7 @@ pub struct ToolExecutionResult {
     pub success: bool,
     pub content: String,
     pub mcp_content: Option<Vec<crate::mcp::types::MCPContent>>,
+    pub structured_content: Option<serde_json::Value>,
     pub error: Option<String>,
     pub is_error: bool,
 }

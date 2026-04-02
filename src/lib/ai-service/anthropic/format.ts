@@ -3,8 +3,13 @@ import type {
   MessageParam as AnthropicMessageParam,
   TextBlockParam,
 } from '@anthropic-ai/sdk/resources/messages.mjs';
+import type { Message } from '@/models/chat';
 import type { MCPContent, MCPImageContent } from '@/lib/mcp';
-import { processMessageContent, processMultiModalContent } from '../utils';
+import {
+  formatToolResultForLlm,
+  processMessageContent,
+  processMultiModalContent,
+} from '../utils';
 
 export type AnthropicImageMediaType =
   | 'image/jpeg'
@@ -68,7 +73,7 @@ export function formatAnthropicContent(
 }
 
 export function buildAnthropicToolResultBlocks(
-  content: MCPContent[],
+  message: Message,
   toolCallId: string,
   messageId: string,
   logger: {
@@ -81,8 +86,8 @@ export function buildAnthropicToolResultBlocks(
     content: string | Array<TextBlockParam | ImageBlockParam>;
   }>;
 } {
-  const textContent = processMessageContent(content);
-  const images = content.filter(
+  const textContent = formatToolResultForLlm(message);
+  const images = message.content.filter(
     (item): item is MCPImageContent => item.type === 'image',
   );
 

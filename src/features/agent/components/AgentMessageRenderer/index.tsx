@@ -1,4 +1,6 @@
 import React, { useMemo, useRef, useEffect, memo, useState } from 'react';
+import { Copy, Check, Download } from 'lucide-react';
+import { toast } from 'sonner';
 import { AgentToolGroupBlock } from './components/AgentToolGroupBlock';
 import { ThinkingBubble } from '../shared';
 import type {
@@ -71,6 +73,89 @@ function inlineMediaToDataUrl(rawData: string, mimeType: string): string {
   return rawData.startsWith('data:')
     ? rawData
     : `data:${mimeType};base64,${rawData}`;
+}
+
+function decodeBase64ToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/\s+/g, '');
+  const binary = atob(normalized);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function dataUrlToBlob(dataUrl: string, fallbackMimeType: string): Blob {
+  const separatorIndex = dataUrl.indexOf(',');
+  if (separatorIndex === -1) {
+    throw new Error('Invalid data URL');
+  }
+
+  const metadata = dataUrl.slice(0, separatorIndex);
+  const payload = dataUrl.slice(separatorIndex + 1);
+  const mimeTypeMatch = metadata.match(/^data:([^;,]+)/);
+  const resolvedMimeType = mimeTypeMatch?.[1] || fallbackMimeType;
+
+  if (metadata.includes(';base64')) {
+    return new Blob([decodeBase64ToBytes(payload)], {
+      type: resolvedMimeType,
+    });
+  }
+
+  return new Blob([decodeURIComponent(payload)], {
+    type: resolvedMimeType,
+  });
+}
+
+async function resolveImageBlob(
+  rawData: string | undefined,
+  imageSrc: string,
+  mimeType: string,
+): Promise<Blob> {
+  if (rawData) {
+    return rawData.startsWith('data:')
+      ? dataUrlToBlob(rawData, mimeType)
+      : new Blob([decodeBase64ToBytes(rawData)], { type: mimeType });
+  }
+
+  if (imageSrc.startsWith('data:')) {
+    return dataUrlToBlob(imageSrc, mimeType);
+  }
+
+  const response = await fetch(imageSrc);
+  if (!response.ok) {
+    throw new Error(`Failed to read image source: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  if (blob.type) {
+    return blob;
+  }
+
+  return new Blob([await blob.arrayBuffer()], { type: mimeType });
+}
+
+function getImageDownloadName(
+  uri: string | undefined,
+  mimeType: string,
+): string {
+  const uriSegment = uri?.split(/[?#]/u, 1)[0]?.split('/').pop();
+  if (uriSegment && uriSegment.includes('.')) {
+    return uriSegment;
+  }
+
+  const extension = mimeType.split('/')[1]?.split('+')[0] || 'png';
+  return `image-${Date.now()}.${extension}`;
+}
+
+function canWriteImagesToClipboard(): boolean {
+  return (
+    typeof navigator !== 'undefined' &&
+    typeof navigator.clipboard?.write === 'function' &&
+    typeof ClipboardItem !== 'undefined'
+  );
 }
 
 function useResolvedMediaSource(
@@ -183,19 +268,112 @@ function ImageContentRenderer({
   itemKey,
   sessionId,
 }: MediaRendererProps) {
+  const { downloadMediaFile } = useRustBackend();
   const imageSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
+  const [copied, setCopied] = useState(false);
+  const canCopyImage = canWriteImagesToClipboard();
 
   if (!imageSrc) {
     return null;
   }
 
+  const handleCopy = async () => {
+    if (!canCopyImage) {
+      toast.error('Image clipboard is not supported in this environment');
+      return;
+    }
+
+    try {
+      const blob = await resolveImageBlob(rawData, imageSrc, mimeType);
+      const clipboardMimeType = blob.type || mimeType;
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          [clipboardMimeType]: blob,
+        }),
+      ]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success('Image copied to clipboard');
+    } catch (err) {
+      logger.error('Failed to copy image to clipboard', err);
+      toast.error('Failed to copy image to clipboard');
+    }
+  };
+
+  const handleDownload = async () => {
+    const fileName = getImageDownloadName(uri, mimeType);
+    const dataBase64 =
+      rawData && !rawData.startsWith('data:')
+        ? rawData
+        : imageSrc.startsWith('data:')
+          ? imageSrc.slice(imageSrc.indexOf(',') + 1)
+          : undefined;
+    const fileUrl =
+      dataBase64 === undefined && !rawData && uri?.startsWith('file://')
+        ? uri
+        : undefined;
+
+    try {
+      const result = await downloadMediaFile({
+        sessionId,
+        fileName,
+        mimeType,
+        dataBase64,
+        fileUrl,
+      });
+
+      if (result === 'Download cancelled by user') {
+        toast.info('Download cancelled');
+        return;
+      }
+
+      toast.success(result);
+    } catch (err) {
+      logger.error('Failed to download image', err);
+      toast.error('Failed to download image');
+    }
+  };
+
   return (
-    <img
-      key={itemKey}
-      src={imageSrc}
-      alt="Tool output"
-      className="max-w-full h-auto rounded-lg shadow-sm"
-    />
+    <div className="group relative inline-block max-w-full">
+      {/* Quick Action Buttons - Visible on hover */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-10 bg-background/80 backdrop-blur-sm p-1 rounded-md border border-border shadow-sm">
+        <button
+          type="button"
+          onClick={handleCopy}
+          disabled={!canCopyImage}
+          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title={
+            canCopyImage
+              ? 'Copy Image'
+              : 'Image clipboard is not supported in this environment'
+          }
+          aria-label="Copy image to clipboard"
+        >
+          {copied ? (
+            <Check size={16} className="text-emerald-500" />
+          ) : (
+            <Copy size={16} />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
+          title="Download Image"
+          aria-label="Download image"
+        >
+          <Download size={16} />
+        </button>
+      </div>
+
+      <img
+        key={itemKey}
+        src={imageSrc}
+        alt="Tool output"
+        className="max-w-full h-auto rounded-lg shadow-sm border border-border/10"
+      />
+    </div>
   );
 }
 

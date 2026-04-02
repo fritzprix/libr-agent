@@ -6,6 +6,7 @@ import {
   processMessageContent,
   processMultiModalContent,
   extractMediaContent,
+  parseToolResultForLlm,
   tryParse,
   generateToolCallId as generateId,
 } from '../utils';
@@ -46,20 +47,6 @@ export function formatGeminiContent(content: MCPContent[]): Part[] {
     }
     return { text: `[Unsupported content format for Gemini: ${part.type}]` };
   });
-}
-
-/**
- * Attempts to parse tool result content into a structured object.
- * If parsing fails or content is not text, wraps it in a standard response object.
- * @param content The content of the message.
- */
-export function tryParseResult(content: MCPContent[]): Record<string, unknown> {
-  const text = processMessageContent(content);
-  const parsed = tryParse<Record<string, unknown>>(text);
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    return parsed;
-  }
-  return { result: text };
 }
 
 /**
@@ -135,7 +122,7 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
         if (toolMsg.tool_call_id) {
           const name = toolCallNames.get(toolMsg.tool_call_id);
           if (name) {
-            const parsed = tryParseResult(toolMsg.content as MCPContent[]);
+            const parsed = parseToolResultForLlm(toolMsg);
             responseParts.push(
               createPartFromFunctionResponse(
                 toolMsg.tool_call_id,

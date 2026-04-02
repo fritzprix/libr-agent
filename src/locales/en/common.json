@@ -76,7 +76,9 @@
       "cancel": "Cancel",
       "created": "Created",
       "updated": "Updated",
-      "description": "Description"
+      "description": "Description",
+      "expand": "Expand configuration",
+      "collapse": "Collapse configuration"
     }
   },
   "status": {
@@ -632,14 +634,13 @@
     "draft": {
       "send": "Send message",
       "attachFiles": "Attach files",
+      "attachedFiles": "Attached Files",
       "removeWorkspaceOverride": "Remove workspace override",
       "removeFile": "Remove {{name}}",
       "dropFilesHint": "Drop files here...",
       "unsupportedFile": "Unsupported file!",
       "uploading": "Uploading...",
-      "placeholder": "Message {{name}}..."
-    },
-    "draft": {
+      "placeholder": "Message {{name}}...",
       "failedToRegisterDroppedFiles": "Failed to register dropped files",
       "dropFilesInChatInput": "Drop files in the chat input to attach them.",
       "failedToProcessFile": "Failed to process: {{file}}",
@@ -651,6 +652,7 @@
       "newSession": "New Session",
       "workspaceOverrideActive": "Workspace Override Active",
       "workspaceOverrideDescription": "The agent will use this directory as its primary workspace for this session.",
+      "filesWillBeListedAfterStart": "Files will be listed after session starts",
       "basicTools": "Basic Tools",
       "basicToolsDescription": "Includes core capabilities like reading files, managing tasks, and executing code. Always available to help you!",
       "addTools": "+ Add tools",
@@ -796,7 +798,12 @@
       "noTasks": "No tasks",
       "priorityHigh": "High",
       "priorityMedium": "Medium",
-      "priorityLow": "Low"
+      "priorityLow": "Low",
+      "scratchpad": "Scratchpad",
+      "noScratchpad": "No scratchpad notes",
+      "untitledNote": "Untitled note",
+      "moreTasks": "more tasks",
+      "updated": "updated"
     }
   },
   "scheduledTasks": {

@@ -17,6 +17,12 @@ vi.mock('@anthropic-ai/sdk', () => {
   };
 });
 
+// Mock the model capabilities to avoid OpenRouter API calls
+vi.mock('../model-capabilities', () => ({
+  supportsThinking: vi.fn().mockReturnValue(false),
+  getContextWindow: vi.fn().mockResolvedValue(200000),
+}));
+
 // Mock the logger
 vi.mock('../../logger', () => ({
   getLogger: () => ({

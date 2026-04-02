@@ -74,6 +74,15 @@ export function useUIActionHandler(
                       );
                       break;
                     }
+                    case 'downloadMediaFile': {
+                      resultText = await tauriCommands.downloadMediaFile({
+                        sessionId,
+                        fileName: params.fileName as string | undefined,
+                        mimeType: params.mimeType as string,
+                        dataBase64: params.dataBase64 as string | undefined,
+                      });
+                      break;
+                    }
                     case 'exportAndDownloadZip': {
                       resultText = await tauriCommands.exportAndDownloadZip(
                         params.files as string[],

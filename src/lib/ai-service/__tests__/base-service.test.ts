@@ -80,6 +80,98 @@ describe('BaseAIService.shouldRetry', () => {
   });
 });
 
+describe('BaseAIService.sanitizeMessages', () => {
+  const service = new TestBaseAIService('test-key');
+
+  it('replaces malformed tool calls with repair guidance instead of resending them', () => {
+    const sanitized = service.sanitizeMessages([
+      {
+        id: 'assistant-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'assistant',
+        content: [],
+        tool_calls: [
+          {
+            id: 'call-bad',
+            type: 'function',
+            function: {
+              name: 'readFile',
+              arguments: '{"path":"foo.txt"',
+            },
+          },
+        ],
+      },
+    ]);
+
+    expect(sanitized).toHaveLength(1);
+    expect(sanitized[0].tool_calls).toBeUndefined();
+    expect(sanitized[0].content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(
+            'invalid tool call arguments were removed',
+          ),
+        }),
+      ]),
+    );
+    expect(
+      (sanitized[0].content[0] as { type: 'text'; text: string }).text,
+    ).toContain('readFile');
+  });
+
+  it('keeps valid tool calls while repairing malformed siblings', () => {
+    const sanitized = service.sanitizeMessages([
+      {
+        id: 'assistant-2',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Working...' }],
+        tool_calls: [
+          {
+            id: 'call-good',
+            type: 'function',
+            function: {
+              name: 'listFiles',
+              arguments: '{"path":"src"}',
+            },
+          },
+          {
+            id: 'call-bad',
+            type: 'function',
+            function: {
+              name: 'readFile',
+              arguments: '{path:"broken"}',
+            },
+          },
+        ],
+      },
+      {
+        id: 'tool-good',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call-good',
+        content: [{ type: 'text', text: 'ok' }],
+      },
+    ]);
+
+    expect(sanitized).toHaveLength(2);
+    expect(sanitized[0].tool_calls).toHaveLength(1);
+    expect(sanitized[0].tool_calls?.[0].id).toBe('call-good');
+    expect(
+      sanitized[0].content.some(
+        (part) =>
+          part.type === 'text' &&
+          part.text.includes('Treat each omitted tool call as a failed attempt'),
+      ),
+    ).toBe(true);
+    expect(sanitized[1].tool_call_id).toBe('call-good');
+  });
+});
+
 describe('stableStringify', () => {
   it('returns a string for undefined values', () => {
     expect(stableStringify(undefined)).toBe('"undefined"');

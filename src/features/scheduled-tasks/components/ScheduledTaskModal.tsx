@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Zap, FolderOpen, Upload, X } from 'lucide-react';
+import { Zap, FolderOpen, Upload, X, Loader2 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
@@ -128,7 +128,7 @@ function ScheduledTaskForm({
   ): assistantId is string =>
     Boolean(
       assistantId &&
-        assistants.some((assistant) => assistant.id === assistantId),
+      assistants.some((assistant) => assistant.id === assistantId),
     );
   const effectiveAssistantId = hasAssistant(userSelectedAssistantId)
     ? userSelectedAssistantId
@@ -258,9 +258,9 @@ function ScheduledTaskForm({
 
   const isValid = Boolean(
     name.trim() &&
-      cronExpression.trim() &&
-      effectiveAssistantId &&
-      message.trim(),
+    cronExpression.trim() &&
+    effectiveAssistantId &&
+    message.trim(),
   );
 
   return (
@@ -370,7 +370,11 @@ function ScheduledTaskForm({
                   onClick={() => void handleBrowseWorkspace()}
                   disabled={browsingWorkspace}
                 >
-                  <Upload className="mr-1 h-3.5 w-3.5" />
+                  {browsingWorkspace ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="mr-1 h-3.5 w-3.5" />
+                  )}
                   {t('scheduledTasks.modal.workspaceBrowse')}
                 </Button>
                 {workspaceOverride && (
@@ -455,6 +459,7 @@ function ScheduledTaskForm({
           {t('scheduledTasks.modal.cancel')}
         </Button>
         <Button onClick={handleSave} disabled={!isValid || saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {saving
             ? t('scheduledTasks.modal.saving')
             : task

@@ -84,6 +84,20 @@ export async function downloadWorkspaceFile(
   });
 }
 
+export interface DownloadMediaFileArgs {
+  sessionId?: string;
+  fileName?: string;
+  mimeType: string;
+  dataBase64?: string;
+  fileUrl?: string;
+}
+
+export async function downloadMediaFile(
+  args: DownloadMediaFileArgs,
+): Promise<string> {
+  return safeInvoke<string>('download_media_file', { ...args });
+}
+
 /**
  * Exports a selection of files as a zip archive and initiates a download.
  * @param files An array of file paths to include in the zip archive.

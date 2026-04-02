@@ -86,13 +86,27 @@ pub fn create_playbook_tool() -> MCPTool {
                 ("goal".to_string(), string_prop_required("Goal description")),
                 (
                     "initialCommand".to_string(),
-                    string_prop(None, None, Some("Original command")),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Original command. If omitted, the playbook is stored without an initial command."),
+                    ),
                 ),
                 (
                     "workflow".to_string(),
                     array_schema(playbook_step_schema(), Some("List of steps")),
                 ),
-                ("successCriteria".to_string(), success_criteria_schema()),
+                (
+                    "successCriteria".to_string(),
+                    {
+                        let mut schema = success_criteria_schema();
+                        schema.description = Some(
+                            "Success criteria definition. If omitted, no explicit success criteria are stored."
+                                .to_string(),
+                        );
+                        schema
+                    },
+                ),
             ],
             vec!["goal".to_string(), "workflow".to_string()],
             None,
@@ -122,27 +136,41 @@ pub fn list_playbooks_tool() -> MCPTool {
             vec![
                 (
                     "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number")),
+                    integer_prop(
+                        Some(1),
+                        None,
+                        Some("Page number (1-based). If omitted, default: 1."),
+                    ),
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop(Some(10), None, Some("Items per page")),
+                    integer_prop(
+                        Some(1),
+                        None,
+                        Some("Items per page. If omitted, default: 10."),
+                    ),
                 ),
                 (
                     "sortBy".to_string(),
                     enum_prop(
                         vec!["created_at", "assistant"],
                         "created_at",
-                        Some("Sort field"),
+                        Some("Sort field. Allowed values: 'created_at' or 'assistant'. If omitted, default: 'created_at'."),
                     ),
                 ),
                 (
                     "sortOrder".to_string(),
-                    enum_prop(vec!["asc", "desc"], "desc", Some("Sort order")),
+                    enum_prop(
+                        vec!["asc", "desc"],
+                        "desc",
+                        Some("Sort order. Allowed values: 'asc' or 'desc'. If omitted, default: 'desc'."),
+                    ),
                 ),
                 (
                     "bookmarkFirst".to_string(),
-                    boolean_prop(Some("Prioritize bookmarked items")),
+                    boolean_prop(Some(
+                        "If true, list bookmarked playbooks before non-bookmarked ones. If omitted/false (default), use only the requested sort order.",
+                    )),
                 ),
             ],
             vec![],
@@ -160,14 +188,22 @@ pub fn get_playbook_page_tool() -> MCPTool {
             vec![
                 (
                     "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number")),
+                    integer_prop(
+                        Some(1),
+                        None,
+                        Some("Page number (1-based). If omitted, default: 1."),
+                    ),
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop(Some(10), None, Some("Items per page")),
+                    integer_prop(
+                        Some(1),
+                        None,
+                        Some("Items per page. If omitted, default: 10."),
+                    ),
                 ),
             ],
-            vec!["page".to_string()],
+            vec![],
             None,
         ),
     )
@@ -213,20 +249,41 @@ pub fn update_playbook_tool() -> MCPTool {
                         vec![
                             (
                                 "goal".to_string(),
-                                string_prop(None, None, Some("Goal description")),
+                                string_prop(
+                                    None,
+                                    None,
+                                    Some("Goal description. If omitted, keep the current goal unchanged."),
+                                ),
                             ),
                             (
                                 "initialCommand".to_string(),
-                                string_prop(None, None, Some("Original command")),
+                                string_prop(
+                                    None,
+                                    None,
+                                    Some("Original command. If omitted, keep the current initial command unchanged."),
+                                ),
                             ),
                             (
                                 "workflow".to_string(),
-                                array_schema(playbook_step_schema(), Some("List of steps")),
+                                array_schema(
+                                    playbook_step_schema(),
+                                    Some("List of steps. If omitted, keep the current workflow unchanged."),
+                                ),
                             ),
-                            ("successCriteria".to_string(), success_criteria_schema()),
+                            (
+                                "successCriteria".to_string(),
+                                {
+                                    let mut schema = success_criteria_schema();
+                                    schema.description = Some(
+                                        "Success criteria definition. If omitted, keep the current success criteria unchanged."
+                                            .to_string(),
+                                    );
+                                    schema
+                                },
+                            ),
                         ],
                         vec![],
-                        Some("Fields to update"),
+                        Some("Fields to update. Omit any field you want to leave unchanged."),
                     ),
                 ),
             ],

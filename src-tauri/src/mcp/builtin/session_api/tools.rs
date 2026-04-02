@@ -44,14 +44,18 @@ pub fn create_child_session_tool() -> MCPTool {
                 ),
                 (
                     "name".to_string(),
-                    string_prop(None, None, Some("Optional child session name")),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional child session name. If omitted, the system generates a default name."),
+                    ),
                 ),
                 (
                     "workspacePath".to_string(),
                     string_prop(
                         None,
                         None,
-                        Some("Optional absolute workspace override path"),
+                        Some("Optional absolute workspace override path. If omitted, the child uses its default workspace."),
                     ),
                 ),
                 (
@@ -63,7 +67,7 @@ pub fn create_child_session_tool() -> MCPTool {
                     integer_prop(
                         Some(1),
                         None,
-                        Some("Max seconds to wait when awaitCompletion=true. Default: 180"),
+                        Some("Max seconds to wait when awaitCompletion=true. If omitted, default: 180. Ignored when awaitCompletion is omitted or false."),
                     ),
                 ),
             ],
@@ -113,12 +117,12 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
                     integer_prop(
                         Some(5),
                         Some(900),
-                        Some("Max time to wait before timeout (default: 180)"),
+                        Some("Max time to wait before timeout. If omitted, default: 180."),
                     ),
                 ),
                 (
                     "includeLastAssistantMessage".to_string(),
-                    boolean_prop(Some("If true (default), include latest assistant text result after session becomes idle")),
+                    boolean_prop(Some("If true (default), include the latest assistant text result after the session becomes idle. If false, return session status metadata without the final assistant text.")),
                 ),
                 (
                     "resultMessageLimit".to_string(),
@@ -161,28 +165,28 @@ pub fn get_messages_tool() -> MCPTool {
                     integer_prop(
                         Some(1),
                         Some(500),
-                        Some("Optional maximum messages to fetch"),
+                        Some("Maximum messages to fetch. If omitted, the server uses its default limit of 50."),
                     ),
                 ),
                 (
                     "summaryOnly".to_string(),
-                    boolean_prop(Some("If true (default), return concise previews instead of expanded message lines")),
+                    boolean_prop(Some("If true (default), return concise previews instead of expanded message lines. If false, include expanded message lines.")),
                 ),
                 (
                     "includeRawPreview".to_string(),
-                    boolean_prop(Some("If true, include longer text snippets in previews (higher token cost)")),
+                    boolean_prop(Some("If true, include longer text snippets in previews (higher token cost). If omitted/false (default), use shorter previews.")),
                 ),
                 (
                     "previewLimit".to_string(),
                     integer_prop(
                         Some(1),
                         Some(10),
-                        Some("Maximum number of message previews to include in text output (default: 3)"),
+                        Some("Maximum number of message previews to include in text output. If omitted, default: 3."),
                     ),
                 ),
                 (
                     "skipIfUnchanged".to_string(),
-                    boolean_prop(Some("If true (default), return a short notice when fetched message digest is unchanged since last fetch")),
+                    boolean_prop(Some("If true (default), return a short notice when the fetched message digest is unchanged since the last fetch. If false, always return the requested previews.")),
                 ),
             ],
             vec!["sessionId".to_string()],

@@ -27,6 +27,7 @@ import { AgentChatInput } from './components/AgentChatInput';
 import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
 import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
 import { AgentPlanningPanel } from './components/AgentPlanningPanel';
+import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -128,7 +129,7 @@ function AgentChatInner() {
 
   return (
     <>
-      <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl">
+      <div className="flex h-full w-full overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]">
         {/* Workspace side panel */}
         {showWorkspacePanel && <AgentWorkspacePanel />}
 
@@ -153,6 +154,7 @@ function AgentChatInner() {
         {/* Planning side panel */}
         {showPlanningPanel && <AgentPlanningPanel />}
       </div>
+      <AgentPlanningUpdates />
     </>
   );
 }

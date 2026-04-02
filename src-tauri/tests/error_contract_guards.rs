@@ -1,10 +1,13 @@
 use serde_json::json;
+use tauri_mcp_agent_lib::agent::tools::create_tool_result_message_with_content;
 use tauri_mcp_agent_lib::mcp::builtin::error_guidance::{
     duplicate_error, guided_error, missing_agent_config_error, missing_agent_session_error,
     missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
     ErrorCategory, ToolGroup,
 };
-use tauri_mcp_agent_lib::mcp::builtin::session_api::utils::handle_wait_timeout_result;
+use tauri_mcp_agent_lib::mcp::builtin::session_api::utils::{
+    build_agent_tool_data, handle_wait_timeout_result,
+};
 use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
@@ -196,20 +199,128 @@ fn internal_guided_error_is_informational() {
 }
 
 #[test]
-fn session_wait_timeout_is_converted_to_success_result() {
+fn build_agent_tool_data_includes_common_metadata() {
+    let data = build_agent_tool_data(
+        "startSession",
+        "session",
+        Some("sess_123"),
+        "Session started successfully.",
+        "pending",
+        vec![json!({
+            "toolName": "checkSession",
+            "reason": "Inspect progress later."
+        })],
+    );
+
+    assert_eq!(
+        data.get("toolName").and_then(|v| v.as_str()),
+        Some("startSession")
+    );
+    assert_eq!(
+        data.get("resourceType").and_then(|v| v.as_str()),
+        Some("session")
+    );
+    assert_eq!(
+        data.get("resourceId").and_then(|v| v.as_str()),
+        Some("sess_123")
+    );
+    assert_eq!(
+        data.get("responseStatus").and_then(|v| v.as_str()),
+        Some("pending")
+    );
+    assert!(data
+        .get("nextActions")
+        .and_then(|v| v.as_array())
+        .is_some_and(|actions| actions.len() == 1));
+}
+
+#[test]
+fn tool_result_message_preserves_structured_content_metadata() {
+    let message = create_tool_result_message_with_content(
+        "sess_123",
+        "call_123",
+        vec![MCPContent::Text {
+            text: "Human-readable summary".to_string(),
+            is_error: None,
+        }],
+        Some(json!({
+            "toolName": "checkSession",
+            "sessionId": "sess_123",
+            "status": "idle",
+            "responseStatus": "success",
+            "result": "Final answer",
+        })),
+    );
+
+    assert_eq!(
+        message
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("structuredContent"))
+            .and_then(|value| value.get("status"))
+            .and_then(|value| value.as_str()),
+        Some("idle")
+    );
+    assert_eq!(
+        message
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("structuredContent"))
+            .and_then(|value| value.get("result"))
+            .and_then(|value| value.as_str()),
+        Some("Final answer")
+    );
+}
+
+#[tokio::test]
+async fn session_wait_timeout_is_converted_to_success_result() {
     let timeout_error = Err("HTTP 504 Gateway Timeout: request timed out".to_string());
 
-    let result = handle_wait_timeout_result(timeout_error, "sess_123", 15, false)
-        .expect_err("timeout should be converted into an MCPResult")
-        .expect("timeout should not bubble as hard error");
+    let result =
+        handle_wait_timeout_result(timeout_error, None, "sess_123", 15, "checkSession", false)
+            .await
+            .expect_err("timeout should be converted into an MCPResult")
+            .expect("timeout should not bubble as hard error");
 
     let text = extract_text(&result);
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("timeout result should include structured content");
 
     assert_eq!(result.is_error, Some(false));
     assert_eq!(extract_text_error_flag(&result), Some(false));
     assert!(text.contains("timed out after 15s"));
     assert!(text.contains("checkSession(sessionId=\"sess_123\", wait=true)"));
     assert!(text.contains("list(type=\"sessions\")"));
+    assert_eq!(
+        structured.get("toolName").and_then(|v| v.as_str()),
+        Some("checkSession")
+    );
+    assert_eq!(
+        structured.get("resourceId").and_then(|v| v.as_str()),
+        Some("sess_123")
+    );
+    assert_eq!(
+        structured.get("responseStatus").and_then(|v| v.as_str()),
+        Some("timeout")
+    );
+    assert_eq!(
+        structured.get("status").and_then(|v| v.as_str()),
+        Some("unknown")
+    );
+    assert_eq!(
+        structured.get("turnCount").and_then(|v| v.as_u64()),
+        Some(0)
+    );
+    assert_eq!(
+        structured.get("errorCategory").and_then(|v| v.as_str()),
+        Some("timeout")
+    );
+    assert!(structured
+        .get("nextActions")
+        .and_then(|v| v.as_array())
+        .is_some_and(|actions| !actions.is_empty()));
 }
 
 #[tokio::test]

@@ -197,140 +197,162 @@ export function AgentWorkspacePanel() {
   return (
     <div
       ref={panelRef}
-      className={`w-80 h-full ${dragState.isOver ? 'ring-2 ring-success' : ''}`}
+      className={`h-full w-80 flex-shrink-0 ${dragState.isOver ? 'ring-2 ring-inset ring-success' : ''}`}
     >
       <Card
-        className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${
-          dragState.isOver ? 'border-success bg-success/10' : ''
+        className={`h-full w-full rounded-none border-y-0 border-l-0 border-r border-border/40 bg-background py-0 shadow-none gap-0 ${
+          dragState.isOver ? 'border-success bg-success/5' : ''
         }`}
       >
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Folder className="w-4 h-4" />
-              {t('agent.workspace.title')}
-            </CardTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleOpenInExplorer}
-                className="h-6 px-2 text-xs"
-                title={t('agent.workspace.openInExplorer')}
-                aria-label={t('agent.workspace.openInExplorerAria')}
-                disabled={isOpeningNative}
-              >
-                <Folder className="w-3 h-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleOpenInTerminal}
-                className="h-6 px-2 text-xs"
-                title={t('agent.workspace.openInTerminal')}
-                aria-label={t('agent.workspace.openInTerminalAria')}
-                disabled={isOpeningNative}
-              >
-                <Terminal className="w-3 h-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => loadDirectory(rootPath)}
-                className="h-6 w-6 p-0"
-                title={t('agent.workspace.refresh')}
-                aria-label={t('agent.workspace.refreshAria')}
-              >
-                <RefreshCw
-                  className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
-                />
-              </Button>
+        <CardHeader className="border-b border-border/40 px-4 py-3">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                <Folder className="h-3.5 w-3.5" />
+                <span>{t('agent.workspace.title')}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleOpenInExplorer}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  title={t('agent.workspace.openInExplorer')}
+                  aria-label={t('agent.workspace.openInExplorerAria')}
+                  disabled={isOpeningNative}
+                >
+                  {isOpeningNative ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Folder className="w-3.5 h-3.5" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleOpenInTerminal}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  title={t('agent.workspace.openInTerminal')}
+                  aria-label={t('agent.workspace.openInTerminalAria')}
+                  disabled={isOpeningNative}
+                >
+                  {isOpeningNative ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Terminal className="w-3.5 h-3.5" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => loadDirectory(rootPath)}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  title={t('agent.workspace.refresh')}
+                  aria-label={t('agent.workspace.refreshAria')}
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}
+                  />
+                </Button>
+              </div>
             </div>
-          </div>
 
-          {/* Workspace Override UI */}
-          <div className="px-0 py-2 space-y-2 border-b border-border/50 mb-2">
-            <div className="flex gap-2">
-              <Input
-                type="text"
-                placeholder={t('agent.workspace.overridePlaceholder')}
-                value={workspaceOverride}
-                readOnly
-                className="h-7 text-xs flex-1"
-                disabled={isOverrideActive}
-                aria-label={t('agent.workspace.overrideAria')}
-              />
-              {!isOverrideActive && (
+            <div className="space-y-1">
+              <CardTitle
+                className="truncate text-sm font-medium"
+                title={rootPath}
+              >
+                {rootPath}
+              </CardTitle>
+              <p className="text-[11px] text-muted-foreground">
+                {isOverrideActive
+                  ? t('agent.workspace.usingCustom')
+                  : t('agent.workspace.title')}
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-border/40 bg-muted/[0.18] p-2.5">
+              <div className="flex gap-2">
                 <Button
                   onClick={handleBrowseFolder}
                   size="sm"
                   variant="outline"
-                  className="h-7 text-xs whitespace-nowrap"
-                  disabled={isBrowsing}
+                  className="h-8 shrink-0 border-border/50 bg-background/80 text-xs"
+                  disabled={isBrowsing || isOverrideActive}
                 >
                   {isBrowsing ? (
-                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                   ) : null}
                   {t('agent.workspace.browse')}
                 </Button>
-              )}
-              {!isOverrideActive ? (
-                <Button
-                  onClick={handleSetOverride}
-                  size="sm"
-                  className="h-7 text-xs"
-                  disabled={!workspaceOverride.trim() || isSettingOverride}
-                >
-                  {isSettingOverride
-                    ? t('agent.workspace.setting')
-                    : t('agent.workspace.set')}
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleCancelOverride}
-                  size="sm"
-                  variant="destructive"
-                  className="h-7 text-xs"
-                  disabled={isCancelingOverride}
-                >
-                  {isCancelingOverride
-                    ? t('agent.workspace.canceling')
-                    : t('agent.workspace.cancel')}
-                </Button>
-              )}
-            </div>
-            {isOverrideActive && (
-              <p className="text-xs text-warning flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                {t('agent.workspace.usingCustom')}
-              </p>
-            )}
-          </div>
+                <Input
+                  type="text"
+                  placeholder={t('agent.workspace.overridePlaceholder')}
+                  value={workspaceOverride}
+                  readOnly
+                  className="h-8 flex-1 border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                  disabled={isOverrideActive}
+                  aria-label={t('agent.workspace.overrideAria')}
+                />
+              </div>
 
-          <div
-            className="text-xs text-muted-foreground truncate"
-            title={rootPath}
-          >
-            {rootPath}
+              <div className="flex items-center justify-between gap-2">
+                {isOverrideActive ? (
+                  <p className="flex items-center gap-1 text-[11px] text-warning">
+                    <AlertTriangle className="h-3 w-3" />
+                    {t('agent.workspace.usingCustom')}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    {t('agent.workspace.overridePlaceholder')}
+                  </p>
+                )}
+
+                {!isOverrideActive ? (
+                  <Button
+                    onClick={handleSetOverride}
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={!workspaceOverride.trim() || isSettingOverride}
+                  >
+                    {isSettingOverride
+                      ? t('agent.workspace.setting')
+                      : t('agent.workspace.set')}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleCancelOverride}
+                    size="sm"
+                    variant="destructive"
+                    className="h-7 text-xs"
+                    disabled={isCancelingOverride}
+                  >
+                    {isCancelingOverride
+                      ? t('agent.workspace.canceling')
+                      : t('agent.workspace.cancel')}
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </CardHeader>
 
-        <CardContent className="flex-1 overflow-auto px-0">
+        <CardContent className="flex-1 overflow-auto px-4 py-4">
           {error && (
-            <div className="text-xs text-destructive p-2 mx-2 rounded bg-destructive/10">
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
               {error}
             </div>
           )}
 
           {loading && fileTree.length === 0 ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center rounded-lg border border-border/40 bg-muted/[0.18] py-8">
               <RefreshCw className="w-4 h-4 animate-spin mr-2" />
               <span className="text-xs text-muted-foreground">
                 {t('agent.workspace.loading')}
               </span>
             </div>
           ) : (
-            <div className="space-y-0">
+            <div className="overflow-hidden rounded-lg border border-border/40 bg-muted/[0.18]">
               {fileTree.map((node) => (
                 <FileTreeNode
                   key={node.id}
@@ -341,7 +363,7 @@ export function AgentWorkspacePanel() {
               ))}
 
               {fileTree.length === 0 && !loading && (
-                <div className="text-xs text-muted-foreground text-center py-8">
+                <div className="py-8 text-center text-xs text-muted-foreground">
                   {t('agent.workspace.noFilesFound')}
                 </div>
               )}
@@ -349,30 +371,32 @@ export function AgentWorkspacePanel() {
           )}
         </CardContent>
 
-        <div
-          role="button"
-          tabIndex={0}
-          className={`border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-            isUploading ? 'opacity-50 pointer-events-none' : ''
-          }`}
-          onClick={handleUploadClick}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              handleUploadClick();
-            }
-          }}
-          aria-label={t('agent.workspace.uploadAria')}
-          aria-disabled={isUploading}
-        >
-          {isUploading ? (
-            <RefreshCw className="w-4 h-4 mx-auto mb-1 animate-spin" />
-          ) : (
-            <Upload className="w-4 h-4 mx-auto mb-1" />
-          )}
-          {isUploading
-            ? t('agent.workspace.uploading')
-            : t('agent.workspace.dropFiles')}
+        <div className="border-t border-border/50 px-4 py-3">
+          <div
+            role="button"
+            tabIndex={0}
+            className={`rounded-lg border border-dashed border-border/50 bg-muted/[0.18] p-3 text-center text-xs text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              isUploading ? 'pointer-events-none opacity-50' : 'cursor-pointer'
+            }`}
+            onClick={handleUploadClick}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleUploadClick();
+              }
+            }}
+            aria-label={t('agent.workspace.uploadAria')}
+            aria-disabled={isUploading}
+          >
+            {isUploading ? (
+              <RefreshCw className="mx-auto mb-1 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mx-auto mb-1 h-4 w-4" />
+            )}
+            {isUploading
+              ? t('agent.workspace.uploading')
+              : t('agent.workspace.dropFiles')}
+          </div>
         </div>
       </Card>
     </div>
