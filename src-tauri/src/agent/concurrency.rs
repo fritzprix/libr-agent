@@ -16,7 +16,7 @@
 /// parent waiting on children that can never start because all active slots are
 /// taken.
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Default concurrency limits applied when settings are not yet loaded.
 pub const DEFAULT_MAX_ACTIVE_AGENTS: u32 = 4;
@@ -24,6 +24,7 @@ pub const DEFAULT_MAX_SUSPENDED_AGENTS: u32 = 8;
 pub const DEFAULT_MAX_ACTIVE_PROCESSES: u32 = 10;
 pub const DEFAULT_MAX_SUSPENDED_PROCESSES: u32 = 20;
 
+#[derive(Debug)]
 pub struct ConcurrencyGate {
     /// Sessions actively executing their LLM loop.
     active_agent: Arc<Semaphore>,
@@ -33,6 +34,47 @@ pub struct ConcurrencyGate {
     active_process: Arc<Semaphore>,
     /// Processes blocked on `pollProcess`.
     suspended_process: Arc<Semaphore>,
+}
+
+#[derive(Debug)]
+pub struct ActiveAgentPermit {
+    _permit: OwnedSemaphorePermit,
+}
+
+impl ActiveAgentPermit {
+    fn new(permit: OwnedSemaphorePermit) -> Self {
+        Self { _permit: permit }
+    }
+}
+
+#[derive(Debug)]
+pub struct SuspendedAgentGuard {
+    gate: &'static ConcurrencyGate,
+    _suspended_permit: OwnedSemaphorePermit,
+}
+
+impl SuspendedAgentGuard {
+    fn new(gate: &'static ConcurrencyGate, suspended_permit: OwnedSemaphorePermit) -> Self {
+        Self {
+            gate,
+            _suspended_permit: suspended_permit,
+        }
+    }
+
+    pub async fn resume(self) -> Result<ActiveAgentPermit, String> {
+        self.gate.acquire_active_agent().await
+    }
+}
+
+#[derive(Debug)]
+pub struct ActiveProcessPermit {
+    _permit: OwnedSemaphorePermit,
+}
+
+impl ActiveProcessPermit {
+    fn new(permit: OwnedSemaphorePermit) -> Self {
+        Self { _permit: permit }
+    }
 }
 
 impl ConcurrencyGate {
@@ -54,65 +96,40 @@ impl ConcurrencyGate {
 
     /// Acquire an active agent slot. Blocks until one is available.
     /// Called when `start_workflow` begins a new LLM execution loop.
-    pub async fn acquire_active_agent(&self) -> Result<(), String> {
-        self.active_agent
-            .acquire()
+    pub async fn acquire_active_agent(&self) -> Result<ActiveAgentPermit, String> {
+        let permit = Arc::clone(&self.active_agent)
+            .acquire_owned()
             .await
-            .map_err(|_| "ConcurrencyGate: active agent semaphore closed".to_string())?
-            .forget(); // Permit is released manually via release_active_agent().
-        Ok(())
-    }
-
-    /// Release an active agent slot.
-    /// Called when the workflow loop finishes (Idle / error).
-    pub fn release_active_agent(&self) {
-        self.active_agent.add_permits(1);
+            .map_err(|_| "ConcurrencyGate: active agent semaphore closed".to_string())?;
+        Ok(ActiveAgentPermit::new(permit))
     }
 
     /// Active → Suspended transition (entry to `awaitAgent`).
     ///
     /// Acquires a suspended slot **before** releasing the active slot to prevent
     /// the TOCTOU window where both slots are briefly unoccupied.
-    pub async fn suspend_agent(&self) -> Result<(), String> {
-        self.suspended_agent
-            .acquire()
+    pub async fn suspend_agent(
+        &'static self,
+        active_permit: ActiveAgentPermit,
+    ) -> Result<SuspendedAgentGuard, String> {
+        let suspended_permit = Arc::clone(&self.suspended_agent)
+            .acquire_owned()
             .await
-            .map_err(|_| "ConcurrencyGate: suspended agent semaphore closed".to_string())?
-            .forget();
-        self.active_agent.add_permits(1);
-        Ok(())
-    }
-
-    /// Suspended → Active transition (exit from `awaitAgent`).
-    ///
-    /// Re-acquires an active slot before releasing the suspended slot so the
-    /// caller is guaranteed an active slot before considering itself resumed.
-    pub async fn resume_agent(&self) -> Result<(), String> {
-        self.active_agent
-            .acquire()
-            .await
-            .map_err(|_| "ConcurrencyGate: active agent semaphore closed on resume".to_string())?
-            .forget();
-        self.suspended_agent.add_permits(1);
-        Ok(())
+            .map_err(|_| "ConcurrencyGate: suspended agent semaphore closed".to_string())?;
+        drop(active_permit);
+        Ok(SuspendedAgentGuard::new(self, suspended_permit))
     }
 
     // ── Process slots ────────────────────────────────────────────────────────
 
     /// Acquire an active process slot. Blocks until one is available.
     /// Called when a shell / code tool starts a new process.
-    pub async fn acquire_active_process(&self) -> Result<(), String> {
-        self.active_process
-            .acquire()
+    pub async fn acquire_active_process(&self) -> Result<ActiveProcessPermit, String> {
+        let permit = Arc::clone(&self.active_process)
+            .acquire_owned()
             .await
-            .map_err(|_| "ConcurrencyGate: active process semaphore closed".to_string())?
-            .forget();
-        Ok(())
-    }
-
-    /// Release an active process slot.
-    pub fn release_active_process(&self) {
-        self.active_process.add_permits(1);
+            .map_err(|_| "ConcurrencyGate: active process semaphore closed".to_string())?;
+        Ok(ActiveProcessPermit::new(permit))
     }
 
     /// Active → Suspended transition for a process (entry to `pollProcess` wait).
@@ -153,8 +170,8 @@ mod tests {
     #[tokio::test]
     async fn test_sp1_sp2_active_slot_limit_enforced() {
         let g = gate(2, 4);
-        g.acquire_active_agent().await.unwrap();
-        g.acquire_active_agent().await.unwrap();
+        let _permit1 = g.acquire_active_agent().await.unwrap();
+        let _permit2 = g.acquire_active_agent().await.unwrap();
 
         // Third acquire must not complete before a slot is freed.
         let blocked = timeout(Duration::from_millis(30), g.acquire_active_agent()).await;
@@ -168,12 +185,12 @@ mod tests {
     #[tokio::test]
     async fn test_sp1_sp2_suspend_frees_active_slot() {
         let g = Arc::new(gate(2, 4));
-        g.acquire_active_agent().await.unwrap();
-        g.acquire_active_agent().await.unwrap();
+        let permit1 = g.acquire_active_agent().await.unwrap();
+        let _permit2 = g.acquire_active_agent().await.unwrap();
         // All active slots taken — a new acquire would block.
 
         // One agent suspends (Active → Suspended), freeing an active slot.
-        g.suspend_agent().await.unwrap();
+        let _suspended = g.suspend_agent(permit1).await.unwrap();
 
         // Now a new agent should be able to acquire the freed active slot quickly.
         let g2 = Arc::clone(&g);
@@ -193,26 +210,26 @@ mod tests {
     async fn test_sp1_sp2_suspend_resume_balances_slots() {
         let g = gate(4, 8);
         // Fill all 4 active slots.
+        let mut permits = Vec::new();
         for _ in 0..4 {
-            g.acquire_active_agent().await.unwrap();
+            permits.push(g.acquire_active_agent().await.unwrap());
         }
 
         // Suspend one: frees one active slot and uses one suspended slot.
-        g.suspend_agent().await.unwrap();
+        let suspended = g.suspend_agent(permits.pop().unwrap()).await.unwrap();
 
         // Acquire the freed active slot (simulate a child starting).
-        g.acquire_active_agent().await.unwrap();
+        let child_permit = g.acquire_active_agent().await.unwrap();
         // active pool is full again.
 
         // Release one active slot so resume() has room.
-        g.release_active_agent();
+        drop(child_permit);
         // Resume: re-acquires active, releases suspended.
-        g.resume_agent().await.unwrap();
+        let resumed = suspended.resume().await.unwrap();
+        permits.push(resumed);
 
         // Fully release all active slots and verify all 4 are available.
-        for _ in 0..4 {
-            g.release_active_agent();
-        }
+        drop(permits);
         for _ in 0..4 {
             let r = timeout(Duration::from_millis(10), g.acquire_active_agent()).await;
             assert!(
@@ -226,8 +243,8 @@ mod tests {
     #[tokio::test]
     async fn test_sp1_sp2_process_slots_independent() {
         let g = ConcurrencyGate::new(4, 8, 2, 4);
-        g.acquire_active_process().await.unwrap();
-        g.acquire_active_process().await.unwrap();
+        let _process1 = g.acquire_active_process().await.unwrap();
+        let process2 = g.acquire_active_process().await.unwrap();
 
         // 3rd process acquire should block (limit = 2)
         let blocked = timeout(Duration::from_millis(30), g.acquire_active_process()).await;
@@ -244,7 +261,7 @@ mod tests {
         );
 
         // Release a process slot and verify it becomes available
-        g.release_active_process();
+        drop(process2);
         let after_release = timeout(Duration::from_millis(20), g.acquire_active_process()).await;
         assert!(
             after_release.is_ok(),

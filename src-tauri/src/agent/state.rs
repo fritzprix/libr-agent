@@ -1,3 +1,4 @@
+use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::llm::types::CompactionParentRequest;
 use crate::models::chat::Message;
@@ -7,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::oneshot;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 /// Maximum number of messages to keep in memory cache (sliding window)
@@ -86,11 +87,19 @@ pub struct PendingApprovalData {
     pub input_preview: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionStatusTransition {
+    ToStatus(crate::repositories::SessionStatus),
+}
+
 /// Represents an active agent session with its runtime state
 #[derive(Debug)]
 pub struct AgentSession {
     pub metadata: SessionMetadata,
     pub is_running: bool,
+    pub active_permit: Option<ActiveAgentPermit>,
+    pub status_transition: Arc<RwLock<Option<SessionStatusTransition>>>,
+    pub transition_lock: Arc<Mutex<()>>,
     /// Cancellation token to abort running workflows
     pub cancellation_token: CancellationToken,
 

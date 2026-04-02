@@ -105,6 +105,9 @@ fn build_agent_session(
     AgentSession {
         metadata,
         is_running: true,
+        active_permit: None,
+        status_transition: Arc::new(RwLock::new(None)),
+        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
         cancellation_token: CancellationToken::new(),
         yolo_mode: Arc::new(AtomicBool::new(false)),
         cancel_pending: Arc::new(AtomicBool::new(false)),
