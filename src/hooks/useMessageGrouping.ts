@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
 import { getLogger } from '@/lib/logger';
