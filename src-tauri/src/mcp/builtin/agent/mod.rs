@@ -3,23 +3,14 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
-use crate::repositories::mcp_server_repository::MCPServerRepository;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
 
 mod formatting;
 pub mod handlers;
 pub mod tools;
-
-#[derive(Debug, Clone)]
-struct ContextCache {
-    prompt: String,
-    last_update: Instant,
-}
 
 /// Agent MCP Server
 #[derive(Debug)]
@@ -27,7 +18,6 @@ pub struct AgentServer {
     session_id: String,
     db: Arc<DatabaseConnection>,
     manager: Option<AgentSessionManager>,
-    cache: Arc<RwLock<Option<ContextCache>>>,
 }
 
 impl AgentServer {
@@ -40,7 +30,6 @@ impl AgentServer {
             session_id,
             db,
             manager,
-            cache: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -168,59 +157,13 @@ impl BuiltinMCPServer for AgentServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        const CACHE_TTL: Duration = Duration::from_secs(5);
-
-        if let Some(cache) = self.cache.read().await.as_ref() {
-            if cache.last_update.elapsed() < CACHE_TTL {
-                return ServiceContext::new(cache.prompt.clone())
-                    .with_volatility(ContextVolatility::Stable);
-            }
-        }
-
-        let mut context_prompt = "# System Capability Reference\n\n".to_string();
-
-        use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-        let available_builtins_count = BUILTIN_SERVICE_REGISTRY
-            .iter()
-            .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
-            .count();
-
-        context_prompt.push_str(
-            "Reference only. This section describes platform-level capabilities and registered infrastructure.\n\
-             It does **not** mean every capability listed here is enabled or callable in the current session.\n\n",
-        );
-        context_prompt.push_str("### Builtin Capability Families\n");
-        context_prompt.push_str(&format!(
-            "- {} builtin capability families are available on this installation.\n",
-            available_builtins_count
-        ));
-        context_prompt.push_str(
-            "- If you need to verify what this session can actually call right now, use `tool__list`.\n\
-             - If you need to grant or inspect capabilities for a specialist agent, use `agent__list` / `agent__update`.\n\n",
-        );
-
-        let mcp_repo = crate::state::get_mcp_server_repository();
-        context_prompt.push_str("### External MCP Infrastructure\n");
-
-        if let Ok(external_servers) = mcp_repo.list().await {
-            context_prompt.push_str(&format!(
-                "- {} external MCP server registrations exist in the system.\n",
-                external_servers.len()
-            ));
-        }
-
-        context_prompt.push_str(
-            "- Registered servers are platform inventory, not proof of current-session access.\n\
-             - Use `tool__list` when you need the exact callable tool set for the current session.\n\
-             - Use `agent__startSession(agentId=\"ID\", task=\"...\")` when you want to delegate work to a specialist agent.\n",
-        );
-
-        if let Ok(mut cache) = self.cache.try_write() {
-            *cache = Some(ContextCache {
-                prompt: context_prompt.clone(),
-                last_update: Instant::now(),
-            });
-        }
+        let context_prompt = "\
+            # System Capability Reference\n\n\
+            - Use `tool__list` to view capabilities callable in your current session.\n\
+            - Use `agent__list` to inspect specialist agent configurations and existing delegations.\n\
+            - Use `agent__startSession(agentId=\"ID\", task=\"...\")` when you want to delegate work to a specialist agent.\n\
+            - If an agent is paused or errors, use `agent__messageToSession` to resume/retry it.\n\
+            ".to_string();
 
         ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Stable)
     }

@@ -55,15 +55,3 @@ pub(super) fn format_external_server_refs(
         server_name_lookup,
     ))
 }
-
-pub(super) fn format_registered_external_servers(server_models: &[mcp_server::Model]) -> String {
-    if server_models.is_empty() {
-        "*No external MCP servers registered.*".to_string()
-    } else {
-        server_models
-            .iter()
-            .map(|server| format!("- {} (ID: {})", server.name, server.id))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}

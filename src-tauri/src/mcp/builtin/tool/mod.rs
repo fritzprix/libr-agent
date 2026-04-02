@@ -5,39 +5,17 @@ use super::BuiltinMCPServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::{ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
-use crate::repositories::mcp_server_repository::MCPServerRepository;
-
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
 
 mod operations;
 mod queries;
 pub mod tools;
 
-#[derive(Debug, Clone)]
-struct ContextCache {
-    prompt: String,
-    state: Value,
-    last_update: Instant,
-}
-
 #[derive(Debug, Default, Clone)]
-pub struct ToolServer {
-    cache: Arc<RwLock<Option<ContextCache>>>,
-}
+pub struct ToolServer {}
 
 impl ToolServer {
     pub fn new() -> Self {
-        Self {
-            cache: Arc::new(RwLock::new(None)),
-        }
-    }
-
-    pub(crate) async fn invalidate_cache(&self) {
-        if let Ok(mut cache) = self.cache.try_write() {
-            *cache = None;
-        }
+        Self {}
     }
 }
 
@@ -80,57 +58,13 @@ impl BuiltinMCPServer for ToolServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        const CACHE_TTL: Duration = Duration::from_secs(5);
+        let context_prompt = "## Tool Management\n\n\
+             Server management tool for current session\n\
+             Status: Ready\n\n\
+             - Use `tool__list` to discover builtin tools and registered external servers.\n\
+             - Use `tool__verify` to confirm a registered external server is healthy.\n";
 
-        if let Some(cache) = self.cache.read().await.as_ref() {
-            if cache.last_update.elapsed() < CACHE_TTL {
-                return ServiceContext::new(cache.prompt.clone())
-                    .with_structured_state(cache.state.clone())
-                    .with_volatility(ContextVolatility::Stable);
-            }
-        }
-
-        let mut context_prompt =
-            "## Tool Management\n\nServer management tool for current session\nStatus: Ready\n\n### System Capability Reference\n"
-                .to_string();
-
-        use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-        let available_builtins_count = BUILTIN_SERVICE_REGISTRY
-            .iter()
-            .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
-            .count();
-        context_prompt.push_str(
-            "Reference only. The items below describe platform-level inventory and may not be enabled in this session.\n",
-        );
-        context_prompt.push_str(&format!(
-            "- Builtin capability families installed: {}\n",
-            available_builtins_count
-        ));
-
-        let mcp_repo = crate::state::get_mcp_server_repository();
-        if let Ok(external_servers) = mcp_repo.list().await {
-            context_prompt.push_str(&format!(
-                "- External MCP server registrations: {}\n",
-                external_servers.len()
-            ));
-        }
-        context_prompt.push_str(
-            "- Use `tool__list` to inspect builtin tools and saved external server inventories.\n\
-             - Use `tool__verify` if you need to confirm a registered external server is healthy.\n",
-        );
-
-        let structured_state = json!({
-            "mode": "session-isolated",
-            "note": "External servers are managed per-session through MCPServiceProxy"
-        });
-
-        if let Ok(mut cache) = self.cache.try_write() {
-            *cache = Some(ContextCache {
-                prompt: context_prompt.clone(),
-                state: structured_state.clone(),
-                last_update: Instant::now(),
-            });
-        }
+        let structured_state = json!({ "status": "ready" });
 
         ServiceContext::new(context_prompt)
             .with_structured_state(structured_state)

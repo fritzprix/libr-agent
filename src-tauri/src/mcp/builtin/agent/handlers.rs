@@ -20,8 +20,7 @@ use crate::repositories::message_repository::MessageRepository;
 
 use super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
-    format_external_server_refs, format_registered_external_servers,
-    resolve_external_server_labels,
+    format_external_server_refs, resolve_external_server_labels,
 };
 use super::AgentServer;
 
@@ -425,26 +424,6 @@ pub async fn list_agents_or_sessions(
                 }));
             }
 
-            // Add system capability catalog to summary
-            use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-            let available_builtins: Vec<String> = BUILTIN_SERVICE_REGISTRY
-                .iter()
-                .filter(|e| {
-                    !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool"
-                })
-                .map(|e| e.canonical.to_string())
-                .collect();
-
-            text_summary.push_str("\n--- \n## System Capability Catalog\n");
-            text_summary.push_str(&format!(
-                "Available Builtins: {}\n",
-                format_capability_list(&available_builtins)
-            ));
-            text_summary.push_str(&format!(
-                "Available External MCPs:\n{}\n",
-                format_registered_external_servers(&external_servers)
-            ));
-
             let hint = SuccessHint::new(
                 text_summary,
                 vec!["Use startSession(agentId=\"...\") to delegate work".to_string()],
@@ -788,16 +767,12 @@ pub async fn stop_session(
         .to_mcp_result());
     }
 
-    manager
-        .terminate_session(session_id.clone())
-        .await
-        .map_err(|e| {
-            if e.contains("not found") {
-                format!("Session not found: {}", session_id)
-            } else {
-                e
-            }
-        })?;
+    if let Err(e) = manager.terminate_session(session_id.clone()).await {
+        if e.contains("not found") {
+            return Ok(missing_agent_session_error(&session_id));
+        }
+        return Err(e);
+    }
 
     // Also remove from lineage store if present
     crate::services::agent_service::lineage_store()
