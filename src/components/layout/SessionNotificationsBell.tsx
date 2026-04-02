@@ -83,10 +83,10 @@ export function SessionNotificationsBell() {
             const pendingApprovalCount = session.pendingApprovalCount ?? 0;
             const hasRecurringStopAttention = Boolean(
               session.lastAttentionReason === 'recurringStop' &&
-              session.lastAttentionAt &&
-              (!session.lastViewedAt ||
-                session.lastAttentionAt.getTime() >
-                  session.lastViewedAt.getTime()),
+                session.lastAttentionAt &&
+                (!session.lastViewedAt ||
+                  session.lastAttentionAt.getTime() >
+                    session.lastViewedAt.getTime()),
             );
 
             return (

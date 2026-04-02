@@ -1,4 +1,5 @@
 use crate::agent::channel_routing::{resolve_auto_routed_channel_target, ChannelRouteCandidate};
+use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
@@ -186,6 +187,29 @@ impl AgentSessionManager {
     /// tokens without going through Tauri managed state.
     pub fn active_sessions_arc(&self) -> Arc<RwLock<HashMap<String, AgentSession>>> {
         self.active_sessions.clone()
+    }
+
+    pub async fn take_active_session_permit(
+        &self,
+        session_id: &str,
+    ) -> Option<ActiveAgentPermit> {
+        let mut active = self.active_sessions.write().await;
+        active
+            .get_mut(session_id)
+            .and_then(|session| session.active_permit.take())
+    }
+
+    pub async fn restore_active_session_permit(
+        &self,
+        session_id: &str,
+        permit: ActiveAgentPermit,
+    ) -> Result<(), String> {
+        let mut active = self.active_sessions.write().await;
+        let session = active
+            .get_mut(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        session.active_permit = Some(permit);
+        Ok(())
     }
 
     /// Clone self for use in async tasks

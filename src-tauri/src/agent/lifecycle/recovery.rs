@@ -161,6 +161,9 @@ pub async fn recover_sessions(
                     AgentSession {
                         metadata: recovered_metadata,
                         is_running: false,
+                        active_permit: None,
+                        status_transition: Arc::new(RwLock::new(None)),
+                        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
                         cancellation_token: CancellationToken::new(),
                         yolo_mode: Arc::new(AtomicBool::new(yolo_mode)),
                         cancel_pending: Arc::new(AtomicBool::new(false)),

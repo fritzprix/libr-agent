@@ -139,7 +139,7 @@ impl WorkspaceServer {
 
         // Acquire a global active-process slot (SP2).  Called after all early-return
         // guards so no registry cleanup is needed if this blocks or fails.
-        crate::state::get_concurrency_gate()
+        let process_permit = crate::state::get_concurrency_gate()
             .acquire_active_process()
             .await?;
 
@@ -184,6 +184,7 @@ impl WorkspaceServer {
         let pid_copy = process_id.clone();
 
         tokio::spawn(async move {
+            let _process_permit = process_permit;
             // Update registry: starting -> running
             {
                 let mut reg = registry.write().await;
@@ -254,10 +255,6 @@ impl WorkspaceServer {
             if let Some(n) = notifier {
                 n.notify_waiters();
             }
-
-            // Release the global active-process slot (SP2) now that the process
-            // has reached a terminal state (Finished / Failed / cancelled).
-            crate::state::get_concurrency_gate().release_active_process();
         });
 
         // Wait briefly to detect immediate failures
