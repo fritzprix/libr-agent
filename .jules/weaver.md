@@ -126,3 +126,21 @@
 - Removed `useRef` based tracking of previous values during the render phase.
 - Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
 - **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
+
+## 2026-03-24 - [useMessageGrouping] **Eradicated:** [Effect State Sync (Delaying Cache Updates)] **Woven:** [Adjusting State During Render Pattern]
+
+- Removed the `useEffect` that updated `cache.current` in a post-render effect based on `calculation.newCache`.
+- **Woven:** Synchronously updated the cache during the render phase (after confirming the values changed) instead of waiting for `useEffect`. This ensures the hook's cache is immediately available and perfectly matches the current render's state.
+- **Renders Saved:** Eliminated the delay and potential inconsistencies of effect-driven cache updates.
+
+## 2026-03-24 - [AgentChatStatusBar] **Eradicated:** [Action-Effect Chain] **Woven:** [Adjusting State During Render Pattern]
+
+- Removed the `useEffect` block that synchronized `lastMetrics` based on updates to `metrics`, which created a secondary re-render loop.
+- **Woven:** Implemented the Adjusting State During Render pattern to compute and merge `lastMetrics` inline during the render cycle if the incoming `metrics` differ from `prevMetrics`.
+- **Renders Saved:** Eliminated the cascading action-effect loop, allowing the metrics badge to render the latest data immediately.
+
+## 2026-03-24 - [useSkillsDirectory] **Eradicated:** [Imperative Data Fetching & Effect Synchronization] **Woven:** [Declarative Data Fetching with useSWR]
+
+- Eradicated complex `useEffect` chains and `useState` flags that imperatively fetched default and scanned skills directories.
+- **Woven:** Replaced with declarative `useSWR` hooks to automatically fetch, cache, and resolve data statuses.
+- **Benefits:** Massively simplified hook logic, inherently handled race conditions, and completely decoupled data fetching from React component lifecycles.
