@@ -1,6 +1,8 @@
 # Tauri Commands
 
-This document provides a comprehensive reference for the primary Tauri commands available in LibrAgent. Commands are grouped by domain and are located in `src-tauri/src/commands/`.
+This document provides a comprehensive reference for the primary Tauri commands
+available in LibrAgent. Commands are grouped by domain and are located in
+`src-tauri/src/commands/`.
 
 ## Agent Workflow Management
 
@@ -50,7 +52,8 @@ try {
 
 ### agent_send_message
 
-**Purpose**: Sends a new user message to an active agent session, triggering the agent's workflow (LLM completion and tool execution).
+**Purpose**: Sends a new user message to an active agent session, triggering
+the agent's workflow (LLM completion and tool execution).
 
 **Source**: `src-tauri/src/commands/agent_commands.rs`
 
@@ -90,7 +93,8 @@ try {
 
 ### remove_session
 
-**Purpose**: Cleans up a session workspace, search index, and metadata. _Note: Does not delete session records from the primary database._
+**Purpose**: Cleans up a session workspace, search index, and metadata.
+_Note: Does not delete session records from the primary database._
 
 **Source**: `src-tauri/src/commands/session_commands.rs`
 
@@ -100,7 +104,8 @@ try {
 
 **Returns**:
 
-- `Result<SessionResponse, String>` - Returns a status wrapper confirming cleanup on success.
+- `Result<SessionResponse, String>` - Returns a status wrapper confirming cleanup
+on success.
 
 **Usage**:
 
@@ -111,6 +116,104 @@ try {
   await invoke('remove_session', { sessionId: 'session-123' });
 } catch (error) {
   console.error('Failed to remove session:', error);
+}
+```
+
+## Browser Automation
+
+### create_browser_session
+
+**Purpose**: Creates a new interactive browser session for automated web tasks.
+
+**Source**: `src-tauri/src/commands/browser_commands.rs`
+
+**Parameters**:
+
+- `url: String` - The initial URL to open.
+- `title: Option<String>` - An optional title for the session.
+
+**Returns**:
+
+- `Result<CreateSessionResponse, String>` - Returns the new `session_id`
+and a success message.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  const response = await invoke('create_browser_session', {
+    url: 'https://example.com',
+  });
+  console.log('Browser session ID:', response.sessionId);
+} catch (error) {
+  console.error('Failed to create browser:', error);
+}
+```
+
+### navigate_to_url
+
+**Purpose**: Navigates an existing browser session to a new URL.
+
+**Source**: `src-tauri/src/commands/browser_commands.rs`
+
+**Parameters**:
+
+- `sessionId: String` - The ID of the browser session.
+- `url: String` - The URL to navigate to.
+
+**Returns**:
+
+- `Result<String, String>` - Returns a success message.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  await invoke('navigate_to_url', {
+    sessionId: 'browser-session-123',
+    url: 'https://github.com',
+  });
+} catch (error) {
+  console.error('Navigation failed:', error);
+}
+```
+
+## Workspace
+
+### list_workspace_files
+
+**Purpose**: Lists files and directories in the current session's workspace
+or a specified path.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Parameters**:
+
+- `path: Option<String>` - The path to list files for. Defaults to workspace
+root if null.
+- `sessionId: Option<String>` - The session ID.
+
+**Returns**:
+
+- `Result<Vec<WorkspaceFileItem>, String>` - A list of file and directory
+metadata objects.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+try {
+  const files = await invoke('list_workspace_files', {
+    sessionId: 'session-123',
+  });
+  console.log('Files:', files);
+} catch (error) {
+  console.error('Failed to list files:', error);
 }
 ```
 
@@ -147,7 +250,8 @@ try {
 
 ### list_builtin_servers
 
-**Purpose**: Retrieves a list of all built-in MCP servers available in LibrAgent (e.g., `planning`, `workspace`).
+**Purpose**: Retrieves a list of all built-in MCP servers available in LibrAgent
+(e.g., `planning`, `workspace`).
 
 **Source**: `src-tauri/src/commands/mcp_commands.rs`
 
@@ -167,7 +271,9 @@ const servers = await invoke<string[]>('list_builtin_servers');
 
 ### list_builtin_tools
 
-**Purpose**: Retrieves a list of tool definitions for a built-in server. _Note: Currently returns an empty list as tool definitions are managed dynamically per session._
+**Purpose**: Retrieves a list of tool definitions for a built-in server.
+_Note: Currently returns an empty list as tool definitions are managed dynamically_
+_per session._
 
 **Source**: `src-tauri/src/commands/mcp_commands.rs`
 
