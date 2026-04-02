@@ -57,3 +57,9 @@
 **Vulnerability:** SQL injection vulnerabilities were found in `src-tauri/src/db_schema_validator.rs` where user-provided table names were being interpolated directly into SQL query strings using `format!`.
 **Learning:** Even internal queries like schema validation or `PRAGMA` statements can be vulnerable to SQL injection if they incorporate unsanitized variables. `sea_orm::Statement::from_string` does not parameterize variables by default.
 **Prevention:** Always use parameterized queries (e.g., `Statement::from_sql_and_values` with `?` placeholders) for variable data in SQL queries. If a statement cannot be parameterized (like `PRAGMA table_info`), perform strict input validation (e.g., ensuring characters are only alphanumeric and underscores) before using the variable in `format!`.
+
+## 2026-04-02 - SQL Injection via Unescaped Path in VACUUM INTO
+
+**Vulnerability:** SQL injection vulnerability in `database_backup.rs` where the backup file path was directly interpolated into a `VACUUM INTO '{path}'` SQL string without escaping single quotes.
+**Learning:** `VACUUM INTO` requires a string literal and cannot be parameterized with standard placeholder bindings (like `?`). Standard interpolation (`format!`) without sanitization allows breaking out of the string literal if the path contains single quotes, leading to syntax errors or potentially arbitrary SQL execution on SQLite databases.
+**Prevention:** Always manually escape single quotes by replacing them with two single quotes (`''`) when dynamically constructing paths for statements like `VACUUM INTO` that cannot use standard query parameters.
