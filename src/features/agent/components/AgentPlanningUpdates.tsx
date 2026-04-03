@@ -104,7 +104,9 @@ function PlanningToastSummary({
 
   const hiddenAbove = firstVisibleIndex > 0 ? firstVisibleIndex : 0;
   const hiddenBelow =
-    lastVisibleIndex >= 0 ? Math.max(todos.length - (lastVisibleIndex + 1), 0) : 0;
+    lastVisibleIndex >= 0
+      ? Math.max(todos.length - (lastVisibleIndex + 1), 0)
+      : 0;
 
   const completedTodos = todos.filter((todo) => todo.checked).length;
   const progressPercent =
@@ -146,12 +148,21 @@ function PlanningToastSummary({
               </div>
             )}
             {visibleTodos.map((todo) => {
-              const isNew = previousTodos && !previousTodos.some((t) => t.id === todo.id);
-              const isChanged = previousTodos && previousTodos.some((t) => t.id === todo.id && t.checked !== todo.checked);
+              const isNew =
+                previousTodos && !previousTodos.some((t) => t.id === todo.id);
+              const isChanged =
+                previousTodos &&
+                previousTodos.some(
+                  (t) => t.id === todo.id && t.checked !== todo.checked,
+                );
 
               return (
                 <div key={todo.id} className="flex items-start gap-2 text-sm">
-                  <Checkbox checked={todo.checked} disabled className="mt-0.5" />
+                  <Checkbox
+                    checked={todo.checked}
+                    disabled
+                    className="mt-0.5"
+                  />
                   <span
                     className={
                       todo.checked ? 'text-muted-foreground line-through' : ''
@@ -159,7 +170,10 @@ function PlanningToastSummary({
                   >
                     {todo.title}
                     {(isNew || isChanged) && (
-                      <span className="ml-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-primary" title="Updated" />
+                      <span
+                        className="ml-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-primary"
+                        title="Updated"
+                      />
                     )}
                   </span>
                 </div>
