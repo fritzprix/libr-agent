@@ -5,7 +5,7 @@ import { CerebrasService } from '../cerebras';
 import { FireworksService } from '../fireworks';
 import { GroqService } from '../groq';
 import { OpenAIService } from '../openai';
-import type { IAIService } from '../types';
+import type { AIMessageSanitizationService } from '../types';
 import type { Message } from '@/models/chat';
 
 const openAIService = new OpenAIService('sk-test-key');
@@ -14,7 +14,10 @@ const groqService = new GroqService('sk-test-key');
 const cerebrasService = new CerebrasService('sk-test-key');
 const fireworksService = new FireworksService('sk-test-key');
 
-function sanitizeWithService(service: IAIService, messages: Message[]): Message[] {
+function sanitizeWithService(
+  service: AIMessageSanitizationService,
+  messages: Message[],
+): Message[] {
   return MessageNormalizer.sanitizeMessagesForService(messages, service);
 }
 

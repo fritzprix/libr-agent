@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import { BaseAIService, stableStringify } from '../base-service';
-import { AIServiceProvider } from '../types';
+import { AIServiceError, AIServiceProvider } from '../types';
 
 class TestBaseAIService extends BaseAIService<string, string> {
+  private compactChunks: string[] = [''];
+
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Empty;
   }
@@ -47,13 +49,19 @@ class TestBaseAIService extends BaseAIService<string, string> {
   ): AsyncGenerator<string, void, void> {
     void messages;
     void options;
-    yield '';
+    for (const chunk of this.compactChunks) {
+      yield chunk;
+    }
   }
 
   dispose(): void {}
 
   public shouldRetryForTest(error: unknown): boolean {
     return this.shouldRetry(error);
+  }
+
+  public setCompactChunks(chunks: string[]): void {
+    this.compactChunks = chunks;
   }
 }
 
@@ -179,5 +187,37 @@ describe('stableStringify', () => {
 
   it('returns a stable string for bigint values', () => {
     expect(stableStringify(42n)).toBe('{"$bigint":"42"}');
+  });
+});
+
+describe('BaseAIService.compact', () => {
+  const createMessages = (): Message[] => [
+    {
+      id: 'user-1',
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'user',
+      content: [{ type: 'text', text: 'Summarize this conversation.' }],
+    },
+  ];
+
+  it('combines JSON and raw stream chunks into a trimmed summary', async () => {
+    const service = new TestBaseAIService('test-key');
+    service.setCompactChunks([
+      JSON.stringify({ content: 'Hello ' }),
+      'world',
+      JSON.stringify({ content: '  ' }),
+    ]);
+
+    await expect(service.compact(createMessages())).resolves.toBe('Hello world');
+  });
+
+  it('throws when compaction returns only empty output', async () => {
+    const service = new TestBaseAIService('test-key');
+    service.setCompactChunks(['', JSON.stringify({ content: '   ' })]);
+
+    await expect(service.compact(createMessages())).rejects.toBeInstanceOf(
+      AIServiceError,
+    );
   });
 });

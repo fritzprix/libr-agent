@@ -167,157 +167,17 @@ export class AIServiceError extends Error {
   }
 }
 
-/**
- * Defines the common interface that all AI services must implement.
- */
-export interface IAIService {
-  /**
-   * Initiates a streaming chat session with the AI service.
-   * @param messages An array of messages representing the conversation history.
-   * @param options Optional parameters for the chat session, including model name, tools, etc.
-   * @param options.modelName The name of the model.
-   * @param options.systemPrompt The system prompt.
-   * @param options.availableTools Optional array of tools available to the model.
-   * @param options.config Optional configuration for the service.
-   * @param options.forceToolUse Whether to force the model to use tools.
-   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
-   * @returns An async generator that yields chunks of the response as strings.
-   */
-  streamChat(
-    messages: Message[],
-    options?: {
-      modelName?: string;
-      systemPrompt?: string;
-      sessionContext?: string;
-      availableTools?: MCPTool[];
-      config?: AIServiceConfig;
-      forceToolUse?: boolean;
-      /**
-       * Disable tool use entirely for this stream, overriding `availableTools`.
-       * Useful when preserving the prompt cache prefix but strictly preventing the
-       * model from using tools (e.g. during compaction summarization).
-       */
-      disableToolUse?: boolean;
-    },
-  ): AsyncGenerator<string, void, void>;
-
-  /**
-   * Performs a non-streaming text generation (sampling) request from a single prompt.
-   * @param prompt The prompt to send to the model.
-   * @param options Optional parameters for the sampling request.
-   * @param options.modelName The name of the model.
-   * @param options.samplingOptions The options used for text generation sampling.
-   * @param options.config Optional configuration for the service.
-   * @returns A promise that resolves to a `SamplingResponse`.
-   */
-  sampleText(
-    prompt: string,
-    options?: {
-      modelName?: string;
-      samplingOptions?: SamplingOptions;
-      config?: AIServiceConfig;
-    },
-  ): Promise<SamplingResponse>;
-
-  /**
-   * Returns the list of supported models for this service.
-   * For services like OpenAI/Anthropic, this returns static config data.
-   * For services like Ollama, this may query the server dynamically.
-   * @returns A promise that resolves to an array of `ModelInfo` objects.
-   */
-  listModels(): Promise<ModelInfo[]>;
-
-  /**
-   * Converts an array of MCPTool objects to the provider-specific format.
-   * Each service class implements this to return the correct tool representation.
-   */
-  convertTools(mcpTools: MCPTool[]): unknown[];
-
-  /**
-   * Checks if a model supports tool use.
-   * @param modelName The name of the model to check.
-   */
-  supportsTools(modelName: string): boolean;
-
-  /**
-   * Estimates the context window size for a model.
-   * @param modelName The name of the model.
-   */
-  estimateContextWindow(modelName: string): number;
-
-  /**
-   * Cancels any in-progress streaming requests initiated by `streamChat`.
-   * Implementations should abort network requests and stop yielding further
-   * values from `streamChat` as soon as possible.
-   *
-   * This method is idempotent - calling it multiple times or calling it
-   * when no stream is active should be safe and have no effect.
-   */
-  cancel(): void;
-
-  /**
-   * Compresses a slice of conversation messages into a single summary string
-   * by calling `sampleText()` internally. The default implementation in
-   * `BaseAIService` builds a plain-text summarisation prompt; individual
-   * providers may override for cost or caching optimisations.
-   * @param messages The messages to compress.
-   * @param options Optional model name and service configuration overrides.
-   * @param options.modelName The name of the model.
-   * @param options.config Optional configuration for the service.
-   * @param options.systemPrompt The system prompt.
-   * @param options.sessionContext The session context.
-   * @param options.availableTools Optional array of tools available to the model.
-   * @returns A promise that resolves to the summary text.
-   */
-  compact(
-    messages: Message[],
-    options?: {
-      modelName?: string;
-      config?: AIServiceConfig;
-      systemPrompt?: string;
-      sessionContext?: string;
-      availableTools?: MCPTool[];
-    },
-  ): Promise<string>;
-
-  /**
-   * Merges the stable system prompt and volatile session context into the
-   * provider's preferred injection channel before each LLM request.
-   *
-   * The default implementation (in `BaseAIService`) concatenates both parts
-   * into a single system prompt string — safe for all providers. Individual
-   * providers may override to inject `sessionContext` as an ephemeral tail
-   * message instead, which keeps the system prompt fully static and maximises
-   * automatic prefix-cache hit rates.
-   *
-   * @param systemPrompt - Stable system prompt (sections 1–3). Cacheable.
-   * @param sessionContext - Volatile context (sections 4–5). Rebuilt per turn.
-   * @param messages - Current conversation message stack, after context trimming.
-   * @returns The effective system prompt and (possibly augmented) message list to
-   *          pass to `streamChat`.
-   */
-  prepareContextInjection(
-    systemPrompt: string | undefined,
-    sessionContext: string | undefined,
-    messages: Message[],
-  ): ContextInjectionResult;
-
-  /**
-   * Cleans up any resources used by the service instance.
-   */
-  dispose(): void;
-
-  /**
-   * Sanitizes messages for provider-specific compatibility.
-   * @param messages The messages to sanitize.
-   * @returns An array of sanitized messages.
-   */
-  sanitizeMessages(messages: Message[]): Message[];
-
-  /**
-   * Sanitizes a single message based on the provider's requirements.
-   * @param message The message to sanitize.
-   * @returns The sanitized message, or null if it should be filtered out.
-   */
-  sanitizeSingleMessage(message: Message): Message | null;
-}
+export type {
+  AICompactOptions,
+  AICompactionService,
+  AIContextInjectionService,
+  AIMessageSanitizationService,
+  AIModelDiscoveryService,
+  AISampleTextOptions,
+  AISamplingService,
+  AIServiceLifecycle,
+  AIStreamChatOptions,
+  AIStreamingService,
+  AIToolSupportService,
+  IAIService,
+} from './service-contracts';
