@@ -693,7 +693,7 @@ pub async fn check_session(
                             .restore_active_session_permit(caller_session_id, permit)
                             .await?;
                     }
-                    return Err(error.into());
+                    return Err(error);
                 }
             };
             let res = wait_until_session_terminal(
