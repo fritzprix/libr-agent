@@ -4,42 +4,80 @@
  */
 
 // Cache formatter instances to prevent expensive re-instantiations during render loops
-let relativeTimeFormatter: Intl.RelativeTimeFormat | null = null;
-let dateFormatter: Intl.DateTimeFormat | null = null;
-let dateTimeFormatter: Intl.DateTimeFormat | null = null;
+const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
 
-function getRelativeTimeFormatter(): Intl.RelativeTimeFormat {
-  if (!relativeTimeFormatter) {
-    relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, {
-      numeric: 'auto',
-    });
-  }
-  return relativeTimeFormatter;
+function getCacheKey(
+  locale?: string | string[],
+  options?: Intl.DateTimeFormatOptions | Intl.RelativeTimeFormatOptions,
+): string {
+  const localeKey = locale
+    ? Array.isArray(locale)
+      ? locale.join(',')
+      : locale
+    : 'default';
+  const optionsKey = options ? JSON.stringify(options) : '{}';
+  return `${localeKey}-${optionsKey}`;
 }
 
-function getDateFormatter(): Intl.DateTimeFormat {
-  if (!dateFormatter) {
-    dateFormatter = new Intl.DateTimeFormat(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+function getRelativeTimeFormatter(
+  locale?: string | string[],
+  options?: Intl.RelativeTimeFormatOptions,
+): Intl.RelativeTimeFormat {
+  const defaultOptions: Intl.RelativeTimeFormatOptions = { numeric: 'auto' };
+  const finalOptions = options || defaultOptions;
+  const key = getCacheKey(locale, finalOptions);
+
+  let formatter = relativeTimeFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.RelativeTimeFormat(locale, finalOptions);
+    relativeTimeFormatters.set(key, formatter);
   }
-  return dateFormatter;
+  return formatter;
 }
 
-export function getDateTimeFormatter(): Intl.DateTimeFormat {
-  if (!dateTimeFormatter) {
-    dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      second: 'numeric',
-    });
+export function getDateFormatter(
+  locale?: string | string[],
+  options?: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const defaultOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  };
+  const finalOptions = options || defaultOptions;
+  const key = getCacheKey(locale, finalOptions);
+
+  let formatter = dateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, finalOptions);
+    dateFormatters.set(key, formatter);
   }
-  return dateTimeFormatter;
+  return formatter;
+}
+
+export function getDateTimeFormatter(
+  locale?: string | string[],
+  options?: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const defaultOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  };
+  const finalOptions = options || defaultOptions;
+  const key = getCacheKey(locale, finalOptions);
+
+  let formatter = dateTimeFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, finalOptions);
+    dateTimeFormatters.set(key, formatter);
+  }
+  return formatter;
 }
 
 /**
