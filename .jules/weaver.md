@@ -126,3 +126,8 @@
 - Removed `useRef` based tracking of previous values during the render phase.
 - Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
 - **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
+## 2026-04-03 - [ToolCallCompactItem] **Eradicated:** [Reading/writing refs during render phase] **Woven:** [Adjusting State During Render via useState]
+
+- Removed `useRef` based tracking of previous values during the render phase.
+- Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
+- **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
