@@ -1,6 +1,7 @@
 import {
   FunctionDeclaration,
   FinishReason,
+  FunctionCallingConfigMode,
   GoogleGenAI,
   Content,
   Schema as GeminiSchema,
@@ -30,6 +31,10 @@ import {
 } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
+import {
+  createEphemeralSessionContextInjection,
+  formatSessionContextAsBackgroundReference,
+} from '../base-service-context';
 
 /**
  * An AI service implementation for interacting with Google's Gemini models.
@@ -325,9 +330,17 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         if (geminiTools) {
           geminiConfig.tools = geminiTools;
           if (options.disableToolUse) {
-            geminiConfig.functionCallingConfig = { mode: 'none' };
+            geminiConfig.toolConfig = {
+              functionCallingConfig: {
+                mode: FunctionCallingConfigMode.NONE,
+              },
+            };
           } else if (options.forceToolUse) {
-            geminiConfig.functionCallingConfig = { mode: 'any' };
+            geminiConfig.toolConfig = {
+              functionCallingConfig: {
+                mode: FunctionCallingConfigMode.ANY,
+              },
+            };
           }
         }
         const combinedSystemPrompt = [
@@ -428,13 +441,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       return { systemPrompt, sessionContext: undefined, messages };
     }
 
-    const syntheticSessionContextMessage =
-      this.createSyntheticSessionContextMessage(sessionContext, messages, {
-        idPrefix: 'gemini-session-context',
-        contentText:
-          this.formatSessionContextAsBackgroundReference(sessionContext),
-      });
-
     this.logger.debug(
       'Injecting Gemini session context as ephemeral tail message',
       {
@@ -442,11 +448,15 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       },
     );
 
-    return {
+    return createEphemeralSessionContextInjection(
       systemPrompt,
-      sessionContext: undefined,
-      messages: [...messages, syntheticSessionContextMessage],
-    };
+      sessionContext,
+      messages,
+      {
+        idPrefix: 'gemini-session-context',
+        contentText: formatSessionContextAsBackgroundReference(sessionContext),
+      },
+    );
   }
 
   protected convertMessages(

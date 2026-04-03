@@ -168,10 +168,13 @@ export class AIServiceError extends Error {
 }
 
 export type {
+  AICompletionExecutionService,
   AICompactOptions,
+  AIContextCompactionService,
   AICompactionService,
   AIContextInjectionService,
   AIMessageSanitizationService,
+  AIModelLookupService,
   AIModelDiscoveryService,
   AISampleTextOptions,
   AISamplingService,

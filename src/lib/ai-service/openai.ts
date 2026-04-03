@@ -26,6 +26,10 @@ import {
   buildAutomaticPromptCacheKey,
   withPromptCaching,
 } from './openai/prompt-cache';
+import {
+  createEphemeralSessionContextInjection,
+  formatSessionContextAsBackgroundReference,
+} from './base-service-context';
 import type {
   OpenAINonStreamingRequest,
   OpenAIResponseUsageDetails,
@@ -136,28 +140,22 @@ export class OpenAIService extends BaseAIService<
       return { systemPrompt, sessionContext: undefined, messages };
     }
 
-    const ephemeralMessage = this.createSyntheticSessionContextMessage(
+    logger.debug('Injecting session context as ephemeral tail message', {
+      sessionContextLength: sessionContext.length,
+    });
+
+    return createEphemeralSessionContextInjection(
+      systemPrompt,
       sessionContext,
       messages,
       {
         idPrefix: 'openai-session-context',
-        contentText:
-          this.formatSessionContextAsBackgroundReference(sessionContext),
+        contentText: formatSessionContextAsBackgroundReference(sessionContext),
         sessionIdFallback: '',
         threadIdFallback: '',
         createdAt: new Date(),
       },
     );
-
-    logger.debug('Injecting session context as ephemeral tail message', {
-      sessionContextLength: sessionContext.length,
-    });
-
-    return {
-      systemPrompt,
-      sessionContext: undefined,
-      messages: [...messages, ephemeralMessage],
-    };
   }
 
   /**

@@ -77,6 +77,16 @@ export interface AIServiceLifecycle {
   dispose(): void;
 }
 
+export type AICompletionExecutionService = AIStreamingService &
+  AIModelDiscoveryService &
+  AIContextInjectionService &
+  AIMessageSanitizationService &
+  AIServiceLifecycle;
+
+export type AIModelLookupService = AIModelDiscoveryService;
+
+export type AIContextCompactionService = AICompactionService;
+
 export interface IAIService
   extends
     AIStreamingService,

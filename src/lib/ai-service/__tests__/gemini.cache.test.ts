@@ -23,6 +23,13 @@ vi.mock('@google/genai', () => ({
   FinishReason: {
     STOP: 'STOP',
   },
+  FunctionCallingConfigMode: {
+    ANY: 'ANY',
+    AUTO: 'AUTO',
+    MODE_UNSPECIFIED: 'MODE_UNSPECIFIED',
+    NONE: 'NONE',
+    VALIDATED: 'VALIDATED',
+  },
   Type: {
     OBJECT: 'OBJECT',
     STRING: 'STRING',
@@ -180,10 +187,15 @@ describe('GeminiService context cache', () => {
     expect(createCacheMock).not.toHaveBeenCalled();
 
     const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
-      config?: { cachedContent?: string; functionCallingConfig?: { mode?: string } };
+      config?: {
+        cachedContent?: string;
+        toolConfig?: { functionCallingConfig?: { mode?: string } };
+      };
     };
     expect(firstCall.config?.cachedContent).toBeUndefined();
-    expect(firstCall.config?.functionCallingConfig?.mode).toBe('none');
+    expect(firstCall.config?.toolConfig?.functionCallingConfig?.mode).toBe(
+      'NONE',
+    );
   });
 
   it('reuses the same Gemini cache entry regardless of available tool order', async () => {

@@ -1,4 +1,5 @@
 import type { Message } from '@/models/chat';
+import type { ContextInjectionResult } from './types';
 import type { SyntheticSessionContextMessageOptions } from './base-service-shared';
 
 const SESSION_CONTEXT_BACKGROUND_HEADER =
@@ -81,5 +82,28 @@ export function createSyntheticSessionContextMessage(
     ],
     metadata: options?.metadata,
     createdAt: options?.createdAt,
+  };
+}
+
+export function createEphemeralSessionContextInjection(
+  systemPrompt: string | undefined,
+  sessionContext: string | undefined,
+  messages: Message[],
+  options?: SyntheticSessionContextMessageOptions,
+): ContextInjectionResult {
+  if (!sessionContext) {
+    return { systemPrompt, sessionContext: undefined, messages };
+  }
+
+  const syntheticSessionContextMessage = createSyntheticSessionContextMessage(
+    sessionContext,
+    messages,
+    options,
+  );
+
+  return {
+    systemPrompt,
+    sessionContext: undefined,
+    messages: [...messages, syntheticSessionContextMessage],
   };
 }

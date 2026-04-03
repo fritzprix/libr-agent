@@ -17,7 +17,10 @@ import type { AgentRuntimeError } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
-import type { AIServiceConfig } from '@/lib/ai-service/types';
+import type {
+  AIContextCompactionService,
+  AIServiceConfig,
+} from '@/lib/ai-service/types';
 import {
   isSpendingCapError,
   normalizeRustMessage,
@@ -439,11 +442,8 @@ export function useLLMListener({
             settings.serviceConfigs?.[provider] ?? {};
 
           try {
-            const service = AIServiceFactory.getService(
-              provider,
-              apiKey,
-              providerConfig,
-            );
+            const service: AIContextCompactionService =
+              AIServiceFactory.getService(provider, apiKey, providerConfig);
             const summary = await service.compact(messages, {
               modelName: model,
               systemPrompt: parentRequest?.systemPrompt,

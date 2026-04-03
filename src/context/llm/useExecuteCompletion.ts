@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef } from 'react';
 
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import type {
-  IAIService,
   AIServiceConfig,
+  AICompletionExecutionService,
   TokenUsage,
 } from '@/lib/ai-service/types';
 import { getLogger } from '@/lib/logger';
@@ -72,7 +72,9 @@ export function useExecuteCompletion({
   setContextUsageMap,
 }: UseExecuteCompletionProps) {
   // Track active service instances for cleanup
-  const activeServicesRef = useRef<Map<string, IAIService>>(new Map());
+  const activeServicesRef = useRef<Map<string, AICompletionExecutionService>>(
+    new Map(),
+  );
   // Track abort controllers for cancellation
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   // Track timeout IDs for cleanup

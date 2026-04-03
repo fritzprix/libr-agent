@@ -6,11 +6,7 @@ import {
   repairMalformedToolCalls,
   validateToolCallPairing,
 } from '@/lib/ai-service/message-normalizer';
-import {
-  createSyntheticSessionContextMessage as buildSyntheticSessionContextMessage,
-  formatSessionContextAsBackgroundReference as buildSessionContextBackgroundReference,
-  mergeSessionContextIntoSystemPrompt as mergeSessionContextIntoPrompt,
-} from './base-service-context';
+import { mergeSessionContextIntoSystemPrompt } from './base-service-context';
 import {
   type CompactOptions,
   type PrepareStreamChatOptions,
@@ -18,7 +14,6 @@ import {
   type SampleTextOptions,
   type StreamChatOptions,
   type StreamingErrorContext,
-  type SyntheticSessionContextMessageOptions,
 } from './base-service-shared';
 import {
   shouldRetryRequest,
@@ -576,38 +571,13 @@ export abstract class BaseAIService<
     }
 
     return {
-      systemPrompt: this.mergeSessionContextIntoSystemPrompt(
+      systemPrompt: mergeSessionContextIntoSystemPrompt(
         systemPrompt,
         sessionContext,
       ),
       sessionContext: undefined,
       messages,
     };
-  }
-
-  protected mergeSessionContextIntoSystemPrompt(
-    systemPrompt: string | undefined,
-    sessionContext: string,
-  ): string {
-    return mergeSessionContextIntoPrompt(systemPrompt, sessionContext);
-  }
-
-  protected formatSessionContextAsBackgroundReference(
-    sessionContext: string,
-  ): string {
-    return buildSessionContextBackgroundReference(sessionContext);
-  }
-
-  protected createSyntheticSessionContextMessage(
-    sessionContext: string,
-    messages: Message[],
-    options?: SyntheticSessionContextMessageOptions,
-  ): Message {
-    return buildSyntheticSessionContextMessage(
-      sessionContext,
-      messages,
-      options,
-    );
   }
 
   /**

@@ -34,6 +34,7 @@ import {
   createEmptyAnthropicUsage,
   ToolCallAccumulator,
 } from './anthropic/types';
+import { createEphemeralSessionContextInjection } from './base-service-context';
 
 const logger = getLogger('AnthropicService');
 
@@ -524,19 +525,17 @@ export class AnthropicService extends BaseAIService<
       return { systemPrompt, sessionContext, messages };
     }
 
-    const syntheticSessionContextMessage =
-      this.createSyntheticSessionContextMessage(sessionContext, messages, {
+    return createEphemeralSessionContextInjection(
+      systemPrompt,
+      sessionContext,
+      messages,
+      {
         idPrefix: 'anthropic-session-context',
         metadata: {
           [ANTHROPIC_SESSION_CONTEXT_METADATA_KEY]: true,
         },
-      });
-
-    return {
-      systemPrompt,
-      sessionContext: undefined,
-      messages: [...messages, syntheticSessionContextMessage],
-    };
+      },
+    );
   }
   /**
    * @inheritdoc
