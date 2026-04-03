@@ -82,11 +82,11 @@
 - Ensures list item identity remains stable across insertions, deletions, and reordering, preventing focus loss and flicker in the attachment UI.
 - **Benefits:** More predictable reconciliation semantics and safer future refactors around drag-and-drop and progressive uploads.
 
-## 2026-03-11 - [AgentChatStatusBar] **Eradicated:** [Effect State Sync (useEffect resetting state on prop change)] **Woven:** [Render-Phase Mutation Pattern]
+## 2026-03-11 - [AgentChatStatusBar] **Superseded by 2026-03-14 entry**
 
-- Removed the `useEffect` that listened for prop changes and imperatively reset internal status bar state.
-- Adopted a render-phase mutation pattern where derived values are computed from props and refs inline, reserving state updates solely for genuine user-driven transitions.
-- **Renders Saved:** Eliminates redundant effect-triggered renders and keeps status bar updates tightly coupled to actual interaction, not prop-mirroring.
+- This intermediate note described an earlier render-phase-mutation experiment.
+- The current implementation was later refined to the session-scoped snapshot-state pattern documented in the 2026-03-14 entry below.
+- Keep the newer entry as the source of truth when reasoning about the live code.
 
 ## 2026-03-12 - [AssistantList / SkillsEditor] **Eradicated:** [God useEffect blocks, mixed business logic and presentation, derived state] **Woven:** [Custom Hook Pattern (useAssistantsList, useAssistantSkills)]
 

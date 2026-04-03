@@ -18,6 +18,12 @@ import { agentCallBuiltinTool } from '@/features/agent/api/agent-backend';
 import { getDateTimeFormatter } from '@/lib/date-utils';
 
 const logger = getLogger('SessionFilesPopover');
+const SESSION_FILE_DATE_FORMATTER = getDateTimeFormatter('ko-KR', {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 interface SessionFilesPopoverProps {
   sessionId: string;
@@ -126,12 +132,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   };
 
   const formatDate = (dateString: string) => {
-    return getDateTimeFormatter('ko-KR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(new Date(dateString));
+    return SESSION_FILE_DATE_FORMATTER.format(new Date(dateString));
   };
 
   return (
