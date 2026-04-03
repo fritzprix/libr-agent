@@ -68,28 +68,37 @@ export function PlaybookCard({
             {assistantName}
           </Badge>
           <div className="flex items-center gap-1 -mr-2 -mt-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                'h-8 w-8 hover:bg-transparent',
-                playbook.isBookmarked
-                  ? 'text-warning hover:text-warning/80'
-                  : 'text-muted-foreground/30 hover:text-muted-foreground group-hover:text-muted-foreground',
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                onBookmarkToggle(playbook.id, !playbook.isBookmarked);
-              }}
-            >
-              <Bookmark
-                className={cn(
-                  'h-4 w-4',
-                  playbook.isBookmarked && 'fill-current',
-                )}
-              />
-              <span className="sr-only">{t('playbook.card.bookmark')}</span>
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-8 w-8 hover:bg-transparent',
+                      playbook.isBookmarked
+                        ? 'text-warning hover:text-warning/80'
+                        : 'text-muted-foreground/30 hover:text-muted-foreground group-hover:text-muted-foreground',
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onBookmarkToggle(playbook.id, !playbook.isBookmarked);
+                    }}
+                  >
+                    <Bookmark
+                      className={cn(
+                        'h-4 w-4',
+                        playbook.isBookmarked && 'fill-current',
+                      )}
+                    />
+                    <span className="sr-only">
+                      {t('playbook.card.bookmark')}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('playbook.card.bookmark')}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
         <CardTitle
