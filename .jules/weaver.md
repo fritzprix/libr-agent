@@ -106,10 +106,10 @@
 - **ScheduledTaskModal:** Removed the internal `useEffect` for data fetching (`listAssistants`) and passed `assistants` as a prop directly. Eradicated the action-effect chain `if (assistants !== prevAssistants)` by deriving the effective assistant selection directly during rendering.
 - **Benefits:** Clean separation of concerns, complete eradication of prop copying and effect-based state syncing loops.
 
-## 2026-03-14 - [AgentChatStatusBar] **Eradicated:** [Derived State & Effect Syncing] **Woven:** [Adjusting State During Render Pattern]
+## 2026-03-14 - [AgentChatStatusBar] **Eradicated:** [Prop-Mirroring Reset Effect] **Woven:** [Session-Scoped Snapshot State]
 
-- **AgentChatStatusBar:** Removed the `useEffect` that reset `lastMetrics` to `null` when `session?.id` changed. Replaced with an **Adjusting State During Render** pattern that compares `session?.id` to a `prevSessionId` state tracker, ensuring state is synchronized before the next paint and preventing an extra post-commit re-render lifecycle.
-- **Renders Saved:** Eliminated redundant effect-triggered renders that act purely as local state clears in response to prop/dependency changes.
+- **AgentChatStatusBar:** Removed the prop-mirroring reset effect for `lastMetrics` and replaced it with session-scoped snapshot state that is explicitly reset when the session changes.
+- **Benefits:** Keeps persisted metrics aligned with the active session without relying on render-phase state synchronization.
 
 ## 2026-03-14 - [GeneralTab / useSkillsDirectory] **Eradicated:** [God Component / Logic in Render] **Woven:** [Custom Hook Pattern]
 
@@ -126,21 +126,3 @@
 - Removed `useRef` based tracking of previous values during the render phase.
 - Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
 - **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
-
-## 2026-03-24 - [useMessageGrouping] **Eradicated:** [Effect State Sync (Delaying Cache Updates)] **Woven:** [Synchronous Layout Effect Cache Sync]
-
-- Removed the `useEffect` that updated `cache.current` in a later post-paint phase based on `calculation.newCache`.
-- **Woven:** Updated the cache in `useLayoutEffect` so the cache still synchronizes before paint, while matching the hook's actual implementation instead of claiming a render-phase mutation.
-- **Renders Saved:** Eliminated the delay and potential inconsistencies of effect-driven cache updates.
-
-## 2026-03-24 - [AgentChatStatusBar] **Eradicated:** [Action-Effect Chain] **Woven:** [Adjusting State During Render Pattern]
-
-- Removed the `useEffect` block that synchronized `lastMetrics` based on updates to `metrics`, which created a secondary re-render loop.
-- **Woven:** Implemented the Adjusting State During Render pattern to compute and merge `lastMetrics` inline during the render cycle if the incoming `metrics` differ from `prevMetrics`.
-- **Renders Saved:** Eliminated the cascading action-effect loop, allowing the metrics badge to render the latest data immediately.
-
-## 2026-03-24 - [useSkillsDirectory] **Eradicated:** [Imperative Data Fetching & Effect Synchronization] **Woven:** [Declarative Data Fetching with useSWR]
-
-- Eradicated complex `useEffect` chains and `useState` flags that imperatively fetched default and scanned skills directories.
-- **Woven:** Replaced with declarative `useSWR` hooks to automatically fetch, cache, and resolve data statuses.
-- **Benefits:** Massively simplified hook logic, inherently handled race conditions, and completely decoupled data fetching from React component lifecycles.

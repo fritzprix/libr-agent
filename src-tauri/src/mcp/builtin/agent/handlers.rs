@@ -674,16 +674,28 @@ pub async fn check_session(
     if wait {
         let wait_result = {
             let gate = crate::state::get_concurrency_gate();
-            let active_permit = manager
-                .take_active_session_permit(caller_session_id)
-                .await
-                .ok_or_else(|| {
-                    format!(
-                        "Caller session {} is not holding an active concurrency permit",
-                        caller_session_id
-                    )
-                })?;
-            let suspended = gate.suspend_agent(active_permit).await?;
+            let mut active_permit = Some(
+                manager
+                    .take_active_session_permit(caller_session_id)
+                    .await
+                    .ok_or_else(|| {
+                        format!(
+                            "Caller session {} is not holding an active concurrency permit",
+                            caller_session_id
+                        )
+                    })?,
+            );
+            let suspended = match gate.suspend_agent(&mut active_permit).await {
+                Ok(suspended) => suspended,
+                Err(error) => {
+                    if let Some(permit) = active_permit.take() {
+                        manager
+                            .restore_active_session_permit(caller_session_id, permit)
+                            .await?;
+                    }
+                    return Err(error.into());
+                }
+            };
             let res = wait_until_session_terminal(
                 manager,
                 &session_id,

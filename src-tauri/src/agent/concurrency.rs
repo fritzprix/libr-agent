@@ -116,13 +116,13 @@ impl ConcurrencyGate {
     /// the TOCTOU window where both slots are briefly unoccupied.
     pub async fn suspend_agent(
         &'static self,
-        active_permit: ActiveAgentPermit,
+        active_permit: &mut Option<ActiveAgentPermit>,
     ) -> Result<SuspendedAgentGuard, String> {
         let suspended_permit = Arc::clone(&self.suspended_agent)
             .acquire_owned()
             .await
             .map_err(|_| "ConcurrencyGate: suspended agent semaphore closed".to_string())?;
-        drop(active_permit);
+        drop(active_permit.take());
         Ok(SuspendedAgentGuard::new(self, suspended_permit))
     }
 
@@ -191,12 +191,12 @@ mod tests {
     #[tokio::test]
     async fn test_sp1_sp2_suspend_frees_active_slot() {
         let g = Arc::new(gate(2, 4));
-        let permit1 = g.acquire_active_agent().await.unwrap();
+        let mut permit1 = Some(g.acquire_active_agent().await.unwrap());
         let _permit2 = g.acquire_active_agent().await.unwrap();
         // All active slots taken — a new acquire would block.
 
         // One agent suspends (Active → Suspended), freeing an active slot.
-        let _suspended = g.suspend_agent(permit1).await.unwrap();
+        let _suspended = g.suspend_agent(&mut permit1).await.unwrap();
 
         // Now a new agent should be able to acquire the freed active slot quickly.
         let g2 = Arc::clone(&g);
@@ -222,7 +222,8 @@ mod tests {
         }
 
         // Suspend one: frees one active slot and uses one suspended slot.
-        let suspended = g.suspend_agent(permits.pop().unwrap()).await.unwrap();
+        let mut suspended_permit = Some(permits.pop().unwrap());
+        let suspended = g.suspend_agent(&mut suspended_permit).await.unwrap();
 
         // Acquire the freed active slot (simulate a child starting).
         let child_permit = g.acquire_active_agent().await.unwrap();

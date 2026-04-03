@@ -52,63 +52,83 @@ export function AgentChatStatusBar() {
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
-  const { metrics } = useTokenMetrics(session?.id);
+  const sessionId = session?.id;
+  const { metrics } = useTokenMetrics(sessionId);
 
-  // Persist last non-null metrics so the badge stays visible after streaming ends.
-  const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
-  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
-    session?.id,
-  );
+  // Persist last metrics to show after streaming ends.
+  const [persistedMetrics, setPersistedMetrics] = useState<{
+    sessionId?: string;
+    usage: TokenUsage | null;
+  }>({
+    sessionId,
+    usage: null,
+  });
 
-  // Adjusting State During Render: Reset accumulated metrics when the session
-  // changes. This guard is on a stable primitive (session.id string) so it is
-  // safe to call setState here — it will trigger at most one extra render per
-  // session switch, not a loop.
-  if (session?.id !== prevSessionId) {
-    setPrevSessionId(session?.id);
-    setLastMetrics(null);
-  }
-
-  // Accumulate streaming metrics in an Effect, NOT during render.
-  // `metrics` is a new object reference on every streaming chunk, so a
-  // reference-identity guard (`metrics !== prevMetrics`) inside the render
-  // body would be true on every render and call setState unconditionally,
-  // scheduling another render and creating an infinite loop.
   useEffect(() => {
-    if (!metrics) return;
+    setPersistedMetrics({
+      sessionId,
+      usage: null,
+    });
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !metrics) {
+      return;
+    }
+
     const hasData =
       metrics.promptTokens > 0 ||
       metrics.completionTokens > 0 ||
       (metrics.cachedPromptTokens ?? 0) > 0;
-    if (!hasData) return;
 
-    setLastMetrics((prev) => {
-      if (!prev) return metrics;
+    if (!hasData) {
+      return;
+    }
+
+    setPersistedMetrics((previous) => {
+      const previousUsage =
+        previous.sessionId === sessionId ? previous.usage : null;
+
+      if (!previousUsage) {
+        return {
+          sessionId,
+          usage: metrics,
+        };
+      }
+
       return {
-        ...prev,
-        ...metrics,
-        details: {
-          ...prev.details,
-          ...metrics.details,
-          evalDuration:
-            metrics.details?.evalDuration ?? prev.details?.evalDuration,
-          timeToFirstToken:
-            metrics.details?.timeToFirstToken ?? prev.details?.timeToFirstToken,
-          promptEvalDuration:
-            metrics.details?.promptEvalDuration ??
-            prev.details?.promptEvalDuration,
-          loadDuration:
-            metrics.details?.loadDuration ?? prev.details?.loadDuration,
+        sessionId,
+        usage: {
+          ...previousUsage,
+          ...metrics,
+          details: {
+            ...previousUsage.details,
+            ...metrics.details,
+            evalDuration:
+              metrics.details?.evalDuration || previousUsage.details?.evalDuration,
+            timeToFirstToken:
+              metrics.details?.timeToFirstToken ||
+              previousUsage.details?.timeToFirstToken,
+            promptEvalDuration:
+              metrics.details?.promptEvalDuration ||
+              previousUsage.details?.promptEvalDuration,
+            loadDuration:
+              metrics.details?.loadDuration || previousUsage.details?.loadDuration,
+          },
         },
       };
     });
-  }, [metrics]);
+  }, [metrics, sessionId]);
 
   // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
-  // without waiting for the next paint cycle (Effect-less derivation)
+  // without mutating state during render.
   const displayMetrics = useMemo(
-    () => mergeDisplayTokenUsage(lastMetrics, metrics),
-    [metrics, lastMetrics],
+    () =>
+      mergeDisplayTokenUsage(
+        persistedMetrics.sessionId === sessionId ? persistedMetrics.usage : null,
+        metrics,
+      ),
+    [metrics, persistedMetrics, sessionId],
   );
 
   // The context gauge intentionally uses Rust-estimated total context occupancy,

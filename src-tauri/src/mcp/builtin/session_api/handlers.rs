@@ -141,30 +141,26 @@ pub async fn handle_tool_call(
             // awaitCompletion=true: SP2 two-phase transition + SP1 push-notify wait.
             let wait_result = {
                 let gate = crate::state::get_concurrency_gate();
-                let active_permit = manager
-                    .take_active_session_permit(&caller_session_id)
-                    .await
-                    .ok_or_else(|| {
-                        format!(
-                            "Caller session {} is not holding an active concurrency permit",
-                            caller_session_id
-                        )
-                    })?;
-                // Attempt to suspend: if this fails (only possible when the semaphore
-                // is closed during shutdown), restore the taken permit so the caller
-                // session remains in a consistent state before we propagate the error.
-                let suspended = match gate.suspend_agent(active_permit).await {
-                    Ok(guard) => guard,
-                    Err(e) => {
-                        // active_permit was moved into suspend_agent and dropped on
-                        // failure; the semaphore slot is already released.  We only
-                        // need to clear the stale slot reference from the session.
-                        log::warn!(
-                            "[spawnAgent] suspend_agent failed for caller {}: {}",
-                            caller_session_id,
-                            e
-                        );
-                        return Err(e);
+                let mut active_permit = Some(
+                    manager
+                        .take_active_session_permit(&caller_session_id)
+                        .await
+                        .ok_or_else(|| {
+                            format!(
+                                "Caller session {} is not holding an active concurrency permit",
+                                caller_session_id
+                            )
+                        })?,
+                );
+                let suspended = match gate.suspend_agent(&mut active_permit).await {
+                    Ok(suspended) => suspended,
+                    Err(error) => {
+                        if let Some(permit) = active_permit.take() {
+                            manager
+                                .restore_active_session_permit(&caller_session_id, permit)
+                                .await?;
+                        }
+                        return Err(error);
                     }
                 };
                 let res = wait_until_session_terminal(
@@ -298,30 +294,26 @@ pub async fn handle_tool_call(
 
             let wait_result = {
                 let gate = crate::state::get_concurrency_gate();
-                let active_permit = manager
-                    .take_active_session_permit(&caller_session_id)
-                    .await
-                    .ok_or_else(|| {
-                        format!(
-                            "Caller session {} is not holding an active concurrency permit",
-                            caller_session_id
-                        )
-                    })?;
-                // Attempt to suspend: if this fails (only possible when the semaphore
-                // is closed during shutdown), restore the taken permit so the caller
-                // session remains in a consistent state before we propagate the error.
-                let suspended = match gate.suspend_agent(active_permit).await {
-                    Ok(guard) => guard,
-                    Err(e) => {
-                        // active_permit was moved into suspend_agent and dropped on
-                        // failure; the semaphore slot is already released.  We only
-                        // need to clear the stale slot reference from the session.
-                        log::warn!(
-                            "[awaitAgent] suspend_agent failed for caller {}: {}",
-                            caller_session_id,
-                            e
-                        );
-                        return Err(e);
+                let mut active_permit = Some(
+                    manager
+                        .take_active_session_permit(&caller_session_id)
+                        .await
+                        .ok_or_else(|| {
+                            format!(
+                                "Caller session {} is not holding an active concurrency permit",
+                                caller_session_id
+                            )
+                        })?,
+                );
+                let suspended = match gate.suspend_agent(&mut active_permit).await {
+                    Ok(suspended) => suspended,
+                    Err(error) => {
+                        if let Some(permit) = active_permit.take() {
+                            manager
+                                .restore_active_session_permit(&caller_session_id, permit)
+                                .await?;
+                        }
+                        return Err(error);
                     }
                 };
                 let res = wait_until_session_terminal(

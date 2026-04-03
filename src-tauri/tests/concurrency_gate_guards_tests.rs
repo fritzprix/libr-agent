@@ -7,8 +7,8 @@ use tokio::time::timeout;
 #[tokio::test]
 async fn suspended_guard_drop_releases_slots_without_leak() {
     let gate = Box::leak(Box::new(ConcurrencyGate::new(1, 1, 1, 1)));
-    let active = gate.acquire_active_agent().await.unwrap();
-    let suspended = gate.suspend_agent(active).await.unwrap();
+    let mut active = Some(gate.acquire_active_agent().await.unwrap());
+    let suspended = gate.suspend_agent(&mut active).await.unwrap();
 
     drop(suspended);
 
@@ -31,7 +31,7 @@ async fn suspended_guard_drop_releases_slots_without_leak() {
 async fn suspended_guard_resume_reacquires_active_slot() {
     let gate = Box::leak(Box::new(ConcurrencyGate::new(1, 1, 1, 1)));
     let child_gate: &'static ConcurrencyGate = gate;
-    let active = gate.acquire_active_agent().await.unwrap();
+    let mut active = Some(gate.acquire_active_agent().await.unwrap());
     let (acquired_tx, acquired_rx) = oneshot::channel();
 
     let child = {
@@ -44,7 +44,7 @@ async fn suspended_guard_resume_reacquires_active_slot() {
         })
     };
 
-    let suspended = gate.suspend_agent(active).await.unwrap();
+    let suspended = gate.suspend_agent(&mut active).await.unwrap();
     // Give the child 5 s to acquire the freed active slot — generous for slow CI.
     timeout(Duration::from_secs(5), acquired_rx)
         .await
