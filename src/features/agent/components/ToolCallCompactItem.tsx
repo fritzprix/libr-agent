@@ -1,4 +1,4 @@
-import React, { useState, memo, useMemo } from 'react';
+import React, { useState, memo, useMemo, useEffect, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -66,8 +66,8 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [prevHasError, setPrevHasError] = useState(false);
-  const [prevHasResource, setPrevHasResource] = useState(false);
+  const prevHasErrorRef = useRef(false);
+  const prevHasResourceRef = useRef(false);
 
   // Parse tool name (remove server prefix)
   const toolName = useMemo(
@@ -97,21 +97,21 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Adjust State During Render Pattern
-  if (hasError !== prevHasError || hasResource !== prevHasResource) {
-    const errorBecameVisible = !prevHasError && hasError;
-    const resourceBecameVisible = !prevHasResource && hasResource;
+  // Auto-expand when an error first appears or a UI resource arrives (last item only).
+  // Uses refs as sentinels to track transitions without triggering extra renders.
+  useEffect(() => {
+    if (isSimpleMode) return;
 
-    if (
-      !isSimpleMode &&
-      (errorBecameVisible || (resourceBecameVisible && isLast))
-    ) {
+    const errorBecameVisible = !prevHasErrorRef.current && hasError;
+    const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
+
+    if (errorBecameVisible || (resourceBecameVisible && isLast)) {
       setIsExpanded(true);
     }
 
-    setPrevHasError(hasError);
-    setPrevHasResource(hasResource);
-  }
+    prevHasErrorRef.current = hasError;
+    prevHasResourceRef.current = hasResource;
+  }, [hasError, hasResource, isSimpleMode, isLast]);
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution
