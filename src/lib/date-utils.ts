@@ -17,7 +17,11 @@ function getCacheKey(
       ? locale.join(',')
       : locale
     : 'default';
-  const optionsKey = options ? JSON.stringify(options) : '{}';
+  if (!options) {
+    return `${localeKey}-{}`;
+  }
+  // Sort keys for deterministic serialization regardless of object key insertion order
+  const optionsKey = JSON.stringify(options, Object.keys(options).sort());
   return `${localeKey}-${optionsKey}`;
 }
 
