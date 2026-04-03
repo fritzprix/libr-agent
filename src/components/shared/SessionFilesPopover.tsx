@@ -15,22 +15,9 @@ import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResou
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
 import { agentCallBuiltinTool } from '@/features/agent/api/agent-backend';
+import { getDateTimeFormatter } from '@/lib/date-utils';
 
 const logger = getLogger('SessionFilesPopover');
-
-// Cache Intl formatter to prevent expensive re-instantiation on every render or function call
-let koKrDateFormatter: Intl.DateTimeFormat | null = null;
-function getKoKrDateFormatter() {
-  if (!koKrDateFormatter) {
-    koKrDateFormatter = new Intl.DateTimeFormat('ko-KR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-  return koKrDateFormatter;
-}
 
 interface SessionFilesPopoverProps {
   sessionId: string;
@@ -139,7 +126,12 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   };
 
   const formatDate = (dateString: string) => {
-    return getKoKrDateFormatter().format(new Date(dateString));
+    return getDateTimeFormatter('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(dateString));
   };
 
   return (

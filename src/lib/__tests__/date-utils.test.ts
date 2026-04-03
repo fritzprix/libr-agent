@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { formatRelativeTime, formatSessionTimestamp } from '../date-utils';
+import {
+  formatRelativeTime,
+  formatSessionTimestamp,
+  getDateFormatter,
+} from '../date-utils';
 
 // Lock Intl to 'en' so assertions are locale-independent
 const OriginalRelativeTimeFormat = Intl.RelativeTimeFormat;
@@ -44,6 +48,24 @@ describe('date-utils', () => {
       value: OriginalDateTimeFormat,
       writable: true,
       configurable: true,
+    });
+  });
+
+  describe('deterministic cache key (getDateFormatter)', () => {
+    it('returns the same formatter instance for options with different key insertion orders', () => {
+      const options1: Intl.DateTimeFormatOptions = {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      };
+      const options2: Intl.DateTimeFormatOptions = {
+        day: 'numeric',
+        year: 'numeric',
+        month: 'short',
+      };
+      const formatter1 = getDateFormatter('en', options1);
+      const formatter2 = getDateFormatter('en', options2);
+      expect(formatter1).toBe(formatter2);
     });
   });
 
