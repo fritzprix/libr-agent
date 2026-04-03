@@ -190,14 +190,22 @@ export default function AssistantCard({
                 <Calendar size={12} />
                 <span>
                   {t('assistant.card.created')}:{' '}
-                  {getDateFormatter(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' }).format(new Date(assistant.createdAt))}
+                  {getDateFormatter(undefined, {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                  }).format(new Date(assistant.createdAt))}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-sans">
                 <Edit size={12} />
                 <span>
                   {t('assistant.card.updated')}:{' '}
-                  {getDateFormatter(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' }).format(new Date(assistant.updatedAt))}
+                  {getDateFormatter(undefined, {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                  }).format(new Date(assistant.updatedAt))}
                 </span>
               </div>
             </div>

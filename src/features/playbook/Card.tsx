@@ -91,9 +91,11 @@ export function PlaybookCard({
         </CardTitle>
         <CardDescription className="line-clamp-1 text-xs">
           {t('playbook.card.created', {
-            date: getDateFormatter(i18n.language, { year: 'numeric', month: 'numeric', day: 'numeric' }).format(
-              playbook.createdAt,
-            ),
+            date: getDateFormatter(i18n.language, {
+              year: 'numeric',
+              month: 'numeric',
+              day: 'numeric',
+            }).format(playbook.createdAt),
           })}
         </CardDescription>
       </CardHeader>

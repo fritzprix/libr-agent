@@ -105,7 +105,8 @@ export function AgentChatStatusBar() {
             ...previousUsage.details,
             ...metrics.details,
             evalDuration:
-              metrics.details?.evalDuration || previousUsage.details?.evalDuration,
+              metrics.details?.evalDuration ||
+              previousUsage.details?.evalDuration,
             timeToFirstToken:
               metrics.details?.timeToFirstToken ||
               previousUsage.details?.timeToFirstToken,
@@ -113,7 +114,8 @@ export function AgentChatStatusBar() {
               metrics.details?.promptEvalDuration ||
               previousUsage.details?.promptEvalDuration,
             loadDuration:
-              metrics.details?.loadDuration || previousUsage.details?.loadDuration,
+              metrics.details?.loadDuration ||
+              previousUsage.details?.loadDuration,
           },
         },
       };
@@ -125,7 +127,9 @@ export function AgentChatStatusBar() {
   const displayMetrics = useMemo(
     () =>
       mergeDisplayTokenUsage(
-        persistedMetrics.sessionId === sessionId ? persistedMetrics.usage : null,
+        persistedMetrics.sessionId === sessionId
+          ? persistedMetrics.usage
+          : null,
         metrics,
       ),
     [metrics, persistedMetrics, sessionId],
