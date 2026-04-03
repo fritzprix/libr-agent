@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.30] - 2026-04-03
+
+### 🚀 Features
+
+- **Expanded Agent Session Controls**: Added new agent session management utilities, backend handlers, and UI plumbing so session lifecycle actions and status handling are more capable and consistent across the app.
+
+### 🐛 Fixes
+
+- **Agent Workflow Stability**: Fixed staged session transitions, suspend-permit rollback, and ToolCallCompactItem expansion behavior to prevent workflow stalls and UI regressions during agent execution.
+- **Accessibility & UI Polish**: Directory child-count badges in the workspace file tree now appear on keyboard focus, improving parity between mouse and keyboard navigation.
+- **Security: Database Backup Hardening**: Closed a `VACUUM INTO` SQL injection edge case in the database backup flow.
+- **Date Formatting Cache Reliability**: Centralized `Intl.DateTimeFormat` caching and made formatter cache keys deterministic so localized date rendering stays efficient without leaking redundant formatter instances.
+
+### 🔧 Internal
+
+- **React Render Cleanup**: Removed redundant render-time work across agent UI components and hooks, including sidebar sorting and state-sync anti-pattern cleanup.
+- **Reliability & Regression Coverage**: Added focused Rust and frontend regression coverage around concurrency gates, compaction recovery, and date utility behavior.
+
 ## [0.6.29] - 2026-04-01
 
 ### 🐛 Fixes
