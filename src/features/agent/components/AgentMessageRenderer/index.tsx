@@ -32,41 +32,128 @@ import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
 
 const logger = getLogger('AgentMessageRenderer');
 const DISPLAY_MEDIA_CACHE_MAX_BYTES = 64 * 1024 * 1024;
-const displayMediaCache = new Map<string, { url: string; size: number }>();
-let displayMediaCacheBytes = 0;
+interface DisplayMediaCacheEntry {
+  url: string;
+  size: number;
+}
+
+interface SessionDisplayMediaCache {
+  entries: Map<string, DisplayMediaCacheEntry>;
+  totalBytes: number;
+  mountedRenderers: number;
+}
+
+const displayMediaCaches = new Map<string, SessionDisplayMediaCache>();
+type ToolGroupBlock = {
+  type: 'tool_group_block';
+  items: MCPToolCallContent[];
+};
+type RenderItem = MCPContent | ToolGroupBlock;
 
 function estimateBase64Bytes(value: string): number {
   return Math.floor((value.length * 3) / 4);
 }
 
-function pruneDisplayMediaCache(maxBytes: number): void {
-  while (displayMediaCacheBytes > maxBytes && displayMediaCache.size > 0) {
-    const oldestKey = displayMediaCache.keys().next().value;
+function getSessionDisplayMediaCache(
+  sessionId: string,
+): SessionDisplayMediaCache {
+  const existing = displayMediaCaches.get(sessionId);
+  if (existing) {
+    return existing;
+  }
+
+  const created: SessionDisplayMediaCache = {
+    entries: new Map(),
+    totalBytes: 0,
+    mountedRenderers: 0,
+  };
+  displayMediaCaches.set(sessionId, created);
+  return created;
+}
+
+function pruneDisplayMediaCache(
+  sessionCache: SessionDisplayMediaCache,
+  maxBytes: number,
+): void {
+  while (sessionCache.totalBytes > maxBytes && sessionCache.entries.size > 0) {
+    const oldestKey = sessionCache.entries.keys().next().value;
     if (!oldestKey) {
       break;
     }
 
-    const entry = displayMediaCache.get(oldestKey);
+    const entry = sessionCache.entries.get(oldestKey);
     if (!entry) {
-      displayMediaCache.delete(oldestKey);
+      sessionCache.entries.delete(oldestKey);
       continue;
     }
 
-    displayMediaCacheBytes -= entry.size;
-    displayMediaCache.delete(oldestKey);
+    sessionCache.totalBytes -= entry.size;
+    sessionCache.entries.delete(oldestKey);
   }
 }
 
-function updateDisplayMediaCache(uri: string, url: string, size: number): void {
-  const existing = displayMediaCache.get(uri);
-  if (existing) {
-    displayMediaCacheBytes -= existing.size;
-    displayMediaCache.delete(uri);
+function getDisplayMediaCacheEntry(
+  sessionId: string,
+  uri: string,
+): DisplayMediaCacheEntry | undefined {
+  return displayMediaCaches.get(sessionId)?.entries.get(uri);
+}
+
+function touchDisplayMediaCacheEntry(
+  sessionId: string,
+  uri: string,
+): DisplayMediaCacheEntry | undefined {
+  const sessionCache = displayMediaCaches.get(sessionId);
+  if (!sessionCache) {
+    return undefined;
   }
 
-  displayMediaCache.set(uri, { url, size });
-  displayMediaCacheBytes += size;
-  pruneDisplayMediaCache(DISPLAY_MEDIA_CACHE_MAX_BYTES);
+  const cached = sessionCache.entries.get(uri);
+  if (!cached) {
+    return undefined;
+  }
+
+  sessionCache.entries.delete(uri);
+  sessionCache.entries.set(uri, cached);
+  return cached;
+}
+
+function updateDisplayMediaCache(
+  sessionId: string,
+  uri: string,
+  url: string,
+  size: number,
+): void {
+  const sessionCache = getSessionDisplayMediaCache(sessionId);
+  const existing = sessionCache.entries.get(uri);
+  if (existing) {
+    sessionCache.totalBytes -= existing.size;
+    sessionCache.entries.delete(uri);
+  }
+
+  sessionCache.entries.set(uri, { url, size });
+  sessionCache.totalBytes += size;
+  pruneDisplayMediaCache(sessionCache, DISPLAY_MEDIA_CACHE_MAX_BYTES);
+}
+
+function retainDisplayMediaCacheSession(sessionId: string): void {
+  const sessionCache = getSessionDisplayMediaCache(sessionId);
+  sessionCache.mountedRenderers += 1;
+}
+
+function releaseDisplayMediaCacheSession(sessionId: string): void {
+  const sessionCache = displayMediaCaches.get(sessionId);
+  if (!sessionCache) {
+    return;
+  }
+
+  sessionCache.mountedRenderers = Math.max(
+    0,
+    sessionCache.mountedRenderers - 1,
+  );
+  if (sessionCache.mountedRenderers === 0) {
+    displayMediaCaches.delete(sessionId);
+  }
 }
 
 function inlineMediaToDataUrl(rawData: string, mimeType: string): string {
@@ -158,12 +245,28 @@ function canWriteImagesToClipboard(): boolean {
   );
 }
 
+function MediaLoadError({ label, detail }: { label: string; detail?: string }) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+    >
+      <div className="font-medium text-foreground/80">{`Failed to load ${label}`}</div>
+      {detail ? <div className="mt-1 text-xs">{detail}</div> : null}
+    </div>
+  );
+}
+
+function isRenderItemType(item: RenderItem, type: RenderItem['type']): boolean {
+  return item.type === type;
+}
+
 function useResolvedMediaSource(
   rawData: string | undefined,
   uri: string | undefined,
   mimeType: string,
   sessionId: string | undefined,
-): string | undefined {
+): { resolvedSrc: string | undefined; loadError?: string } {
   const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(() => {
     if (rawData) {
       return inlineMediaToDataUrl(rawData, mimeType);
@@ -177,14 +280,18 @@ function useResolvedMediaSource(
       return uri;
     }
 
-    return displayMediaCache.get(uri)?.url;
+    return sessionId
+      ? getDisplayMediaCacheEntry(sessionId, uri)?.url
+      : undefined;
   });
+  const [loadError, setLoadError] = useState<string | undefined>();
 
   useEffect(() => {
     let cancelled = false;
 
     if (rawData) {
       setResolvedSrc(inlineMediaToDataUrl(rawData, mimeType));
+      setLoadError(undefined);
       return () => {
         cancelled = true;
       };
@@ -192,6 +299,7 @@ function useResolvedMediaSource(
 
     if (!uri) {
       setResolvedSrc(undefined);
+      setLoadError(undefined);
       return () => {
         cancelled = true;
       };
@@ -199,16 +307,18 @@ function useResolvedMediaSource(
 
     if (!uri.startsWith('file://')) {
       setResolvedSrc(uri);
+      setLoadError(undefined);
       return () => {
         cancelled = true;
       };
     }
 
-    const cached = displayMediaCache.get(uri);
+    const cached = sessionId
+      ? touchDisplayMediaCacheEntry(sessionId, uri)
+      : undefined;
     if (cached) {
-      displayMediaCache.delete(uri);
-      displayMediaCache.set(uri, cached);
       setResolvedSrc(cached.url);
+      setLoadError(undefined);
       return () => {
         cancelled = true;
       };
@@ -217,32 +327,49 @@ function useResolvedMediaSource(
     setResolvedSrc(undefined);
 
     if (!sessionId) {
+      const errorMessage = 'Cannot read local media without a session';
       logger.error('Failed to resolve display media source', {
         uri,
         mimeType,
-        error: 'Cannot read file:// media without a sessionId',
+        error: errorMessage,
       });
+      setLoadError(errorMessage);
       return () => {
         cancelled = true;
       };
     }
 
-    void readLocalFileAsBase64(sessionId, uri)
+    const activeSessionId = sessionId;
+
+    void readLocalFileAsBase64(activeSessionId, uri)
       .then((base64) => {
         if (cancelled) {
           return;
         }
 
         const url = inlineMediaToDataUrl(base64, mimeType);
-        updateDisplayMediaCache(uri, url, estimateBase64Bytes(base64));
+        updateDisplayMediaCache(
+          activeSessionId,
+          uri,
+          url,
+          estimateBase64Bytes(base64),
+        );
         setResolvedSrc(url);
+        setLoadError(undefined);
       })
       .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         logger.error('Failed to resolve display media source', {
           uri,
           mimeType,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
         });
+        setLoadError(errorMessage);
       });
 
     return () => {
@@ -250,7 +377,7 @@ function useResolvedMediaSource(
     };
   }, [mimeType, rawData, sessionId, uri]);
 
-  return resolvedSrc;
+  return { resolvedSrc, loadError };
 }
 
 interface MediaRendererProps {
@@ -269,12 +396,19 @@ function ImageContentRenderer({
   sessionId,
 }: MediaRendererProps) {
   const { downloadMediaFile } = useRustBackend();
-  const imageSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
+  const { resolvedSrc: imageSrc, loadError } = useResolvedMediaSource(
+    rawData,
+    uri,
+    mimeType,
+    sessionId,
+  );
   const [copied, setCopied] = useState(false);
   const canCopyImage = canWriteImagesToClipboard();
 
   if (!imageSrc) {
-    return null;
+    return loadError ? (
+      <MediaLoadError label="image" detail={loadError} />
+    ) : null;
   }
 
   const handleCopy = async () => {
@@ -384,10 +518,17 @@ function AudioContentRenderer({
   itemKey,
   sessionId,
 }: MediaRendererProps) {
-  const audioSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
+  const { resolvedSrc: audioSrc, loadError } = useResolvedMediaSource(
+    rawData,
+    uri,
+    mimeType,
+    sessionId,
+  );
 
   if (!audioSrc) {
-    return null;
+    return loadError ? (
+      <MediaLoadError label="audio" detail={loadError} />
+    ) : null;
   }
 
   return (
@@ -405,10 +546,17 @@ function VideoContentRenderer({
   itemKey,
   sessionId,
 }: MediaRendererProps) {
-  const videoSrc = useResolvedMediaSource(rawData, uri, mimeType, sessionId);
+  const { resolvedSrc: videoSrc, loadError } = useResolvedMediaSource(
+    rawData,
+    uri,
+    mimeType,
+    sessionId,
+  );
 
   if (!videoSrc) {
-    return null;
+    return loadError ? (
+      <MediaLoadError label="video" detail={loadError} />
+    ) : null;
   }
 
   return (
@@ -474,6 +622,18 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     () => groupContent(finalContent, message),
     [finalContent, message?.thinking, message?.thinkingTime],
   );
+
+  useEffect(() => {
+    const sessionId = message?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    retainDisplayMediaCacheSession(sessionId);
+    return () => {
+      releaseDisplayMediaCacheSession(sessionId);
+    };
+  }, [message?.sessionId]);
 
   // Keep latest content in a ref to avoid recreating callbacks on each render
   const contentRef = useRef<MCPContent[]>(finalContent);
@@ -568,18 +728,18 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   // V2 UI Focus: If a UI resource is present, filter out regular text blocks
   // to ensure the interactive UI remains the focal point without redundant markdown text.
-  const hasUIResource = renderItems.some(
-    (item) => 'type' in item && (item as { type: string }).type === 'resource',
+  const hasUIResource = useMemo(
+    () => renderItems.some((item) => isRenderItemType(item, 'resource')),
+    [renderItems],
   );
 
-  const displayItems = hasUIResource
-    ? renderItems.filter((item) => {
-        if ('type' in item && (item as { type: string }).type === 'text') {
-          return false;
-        }
-        return true;
-      })
-    : renderItems;
+  const displayItems = useMemo(
+    () =>
+      hasUIResource
+        ? renderItems.filter((item) => !isRenderItemType(item, 'text'))
+        : renderItems,
+    [hasUIResource, renderItems],
+  );
 
   return (
     <div className={`flex flex-col gap-2 min-w-0 max-w-full ${className}`}>
@@ -587,11 +747,8 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
         const key = `${message?.id}_${index}`;
 
         // Handle specialized tool groups
-        if ('type' in item && item.type === 'tool_group_block') {
-          const groupBlock = item as {
-            type: 'tool_group_block';
-            items: MCPToolCallContent[];
-          };
+        if (isRenderItemType(item, 'tool_group_block')) {
+          const groupBlock = item as ToolGroupBlock;
 
           return (
             <div key={key} className="my-2">
@@ -606,7 +763,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 }
                 groupBlock={groupBlock}
                 toolResultsMap={toolResultsMap}
-                isLast={index === renderItems.length - 1}
+                isLast={index === displayItems.length - 1}
               />
             </div>
           );

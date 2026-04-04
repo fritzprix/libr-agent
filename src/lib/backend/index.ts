@@ -82,6 +82,7 @@ export {
 export {
   handleLLMResponse,
   handleUserToolCall,
+  executeUiTauriAction,
   getAgentAvailableTools,
   agentCallBuiltinTool,
 } from './agent-commands';
