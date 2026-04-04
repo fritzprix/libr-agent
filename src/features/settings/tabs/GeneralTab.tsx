@@ -118,12 +118,15 @@ function GeneralTabComponent({
         <div className="flex flex-col gap-2">
           <div className="flex gap-2 max-w-lg">
             <Input
-              value={effectiveDir}
+              value={skillsDirectory ?? ''}
               onChange={(e) => onSkillsDirectoryChange(e.target.value)}
-              placeholder={t(
-                'settings.general.skillsDirectoryPlaceholder',
-                'Select a directory for local skills...',
-              )}
+              placeholder={
+                effectiveDir ||
+                t(
+                  'settings.general.skillsDirectoryPlaceholder',
+                  'Select a directory for local skills...',
+                )
+              }
               className="bg-background border text-foreground flex-1"
             />
             <Tooltip>
