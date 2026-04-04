@@ -367,8 +367,9 @@ export function AgentChatStatusBar() {
                 logger.info(`Updating session config to ${provider}/${model}`);
 
                 try {
-                  const { enforceRuntimeBuiltinAliases } =
-                    await import('@/lib/assistant/runtime-builtins');
+                  const { enforceRuntimeBuiltinAliases } = await import(
+                    '@/lib/assistant/runtime-builtins'
+                  );
 
                   const updatedConfig = {
                     ...session.assistant,

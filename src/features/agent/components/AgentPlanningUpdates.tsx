@@ -121,7 +121,9 @@ function PlanningToastSummary({
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('agent.planning.currentGoal')}
         </div>
-        <div className="text-sm leading-relaxed">{goal ?? t('agent.planning.noGoal')}</div>
+        <div className="text-sm leading-relaxed">
+          {goal ?? t('agent.planning.noGoal')}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -174,7 +176,9 @@ function PlanningToastSummary({
             )}
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground">{t('agent.planning.noTasks')}</div>
+          <div className="text-sm text-muted-foreground">
+            {t('agent.planning.noTasks')}
+          </div>
         )}
       </div>
 
@@ -183,7 +187,9 @@ function PlanningToastSummary({
           {t('agent.planning.scratchpad')}
         </div>
         <div className="text-sm text-muted-foreground">
-          {scratchpad?.count ? scratchpad.count : t('agent.planning.noScratchpad')}
+          {scratchpad?.count
+            ? scratchpad.count
+            : t('agent.planning.noScratchpad')}
           {scratchpadChanged ? ` • ${t('agent.planning.updated')}` : ''}
         </div>
       </div>

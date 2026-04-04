@@ -34,9 +34,8 @@ function GeneralTabComponent({
   onSkillsDirectoryChange,
 }: GeneralTabProps) {
   const { t } = useTranslation('common');
-  const { effectiveDir, verificationStatus, skills, errorMessage } = useSkillsDirectory(
-    skillsDirectory,
-  );
+  const { effectiveDir, verificationStatus, skills, errorMessage } =
+    useSkillsDirectory(skillsDirectory);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isOpeningDir, setIsOpeningDir] = useState(false);
   const [isBrowsing, setIsBrowsing] = useState(false);
