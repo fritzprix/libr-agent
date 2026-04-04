@@ -126,3 +126,10 @@
 - Removed `useRef` based tracking of previous values during the render phase.
 - Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
 - **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
+
+## 2026-04-04 - [GeneralTab & AgentPlanningUpdates] **Eradicated:** [Cascading State Effect & Prop Hoarding] **Woven:** [Derived State & Hook Pattern]
+
+- **useSkillsDirectory:** Eradicated the anti-pattern where a `useEffect` forcibly synced a default directory back to the parent component on mount without user interaction.
+- **Woven (useSkillsDirectory):** Implemented derived state to compute and return an `effectiveDir` during render, which the parent (`GeneralTab`) uses for presentation and verification.
+- **AgentPlanningUpdates:** Eradicated the "Prop Hoarder" anti-pattern in `PlanningToastSummary` by removing 7 localized string props passed down from the parent.
+- **Woven (AgentPlanningUpdates):** Implemented the Custom Hook Pattern by calling `useTranslation()` directly inside `PlanningToastSummary`, allowing it to manage its own localization dependencies.
