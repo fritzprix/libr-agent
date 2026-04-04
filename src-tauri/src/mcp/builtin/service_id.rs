@@ -16,6 +16,7 @@ pub enum BuiltinServiceId {
     Attachments,
     Ui,
     Browser,
+    ScheduledTask,
     Bootstrap,
     Tool, // Unified Tool Domain
     Media,
@@ -44,6 +45,7 @@ impl BuiltinServiceId {
             "attachments" => Some(Self::Attachments),
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
+            "scheduled_task" | "scheduled-task" => Some(Self::ScheduledTask),
             "bootstrap" => Some(Self::Bootstrap),
             "tool" => Some(Self::Tool),
             "media" => Some(Self::Media),
@@ -65,6 +67,7 @@ impl BuiltinServiceId {
             Self::Attachments => "attachments",
             Self::Ui => "ui",
             Self::Browser => "browser",
+            Self::ScheduledTask => "scheduled_task",
             Self::Bootstrap => "bootstrap",
             Self::Tool => "tool",
             Self::Media => "media",
@@ -127,6 +130,11 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Browser,
         canonical: "browser",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        variant: BuiltinServiceId::ScheduledTask,
+        canonical: "scheduled_task",
         optional: true,
     },
     BuiltinServiceEntry {

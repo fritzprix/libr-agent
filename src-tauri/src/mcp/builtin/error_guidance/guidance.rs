@@ -183,6 +183,21 @@ impl ErrorGuidance {
                 "Verify data format is valid for visualization".to_string(),
                 "Try a simpler UI component".to_string(),
             ],
+            (ErrorCategory::ResourceNotFound, ToolGroup::ScheduledTask) => vec![
+                "Use listScheduledTasks() to see available scheduled task IDs".to_string(),
+                "Retry with an exact task ID copied from listScheduledTasks()".to_string(),
+                "Use getScheduledTask(id) to inspect a task before mutating it".to_string(),
+            ],
+            (ErrorCategory::InvalidInput, ToolGroup::ScheduledTask) => vec![
+                "Verify cronExpression, assistantId, and workspaceOverride values".to_string(),
+                "Use an absolute directory path for workspaceOverride".to_string(),
+                "Use scheduleTimezone of 'local' or 'utc'".to_string(),
+            ],
+            (ErrorCategory::OperationFailed, ToolGroup::ScheduledTask) => vec![
+                "Use listScheduledTasks() to inspect the current schedule state".to_string(),
+                "Use getScheduledTask(id) to verify the target task before retrying".to_string(),
+                "Check whether the target assistant still exists".to_string(),
+            ],
 
             // MCP Manager tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Tool) => vec![
@@ -417,6 +432,33 @@ impl SuccessHint {
             ("spawnAgent", ToolGroup::Agent) => vec![
                 "Use awaitAgent with the session ID to wait for completion".to_string(),
                 "Use getChildAgents to see all active sub-agents".to_string(),
+            ],
+            ("createScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to inspect the created schedule".to_string(),
+                "Use listScheduledTasks() to coordinate related recurring tasks".to_string(),
+            ],
+            ("listScheduledTasks", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to inspect one task in detail".to_string(),
+                "Use updateScheduledTask(id, ...) to revise a selected schedule".to_string(),
+            ],
+            ("getScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use updateScheduledTask(id, ...) to revise the schedule".to_string(),
+                "Use toggleScheduledTask(id, enabled=false) to pause it without deleting"
+                    .to_string(),
+            ],
+            ("updateScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to confirm the persisted next run".to_string(),
+                "Use toggleScheduledTask(id, enabled=false) if the updated schedule should pause"
+                    .to_string(),
+            ],
+            ("toggleScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to confirm the new enabled state".to_string(),
+                "Use updateScheduledTask(id, ...) if the schedule itself must change".to_string(),
+            ],
+            ("deleteScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use listScheduledTasks() to verify the remaining schedule set".to_string(),
+                "Create a replacement with createScheduledTask(...) if removal was intentional"
+                    .to_string(),
             ],
 
             // Tool Management (Unified)

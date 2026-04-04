@@ -53,6 +53,7 @@ pub enum ToolGroup {
     Knowledge,
     Playbook,
     UI,
+    ScheduledTask,
     Tool, // Unified Tool Domain (MCP Manager)
     Bootstrap,
 }

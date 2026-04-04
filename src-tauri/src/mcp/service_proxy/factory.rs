@@ -88,6 +88,9 @@ pub(crate) async fn create_builtin_server(
                 Ok(None)
             }
         }
+        BuiltinServiceId::ScheduledTask => Ok(Some(Box::new(
+            crate::mcp::builtin::scheduled_task::ScheduledTaskServer::new(_session_id, _db).await?,
+        ))),
         BuiltinServiceId::Tool => Ok(Some(Box::new(crate::mcp::builtin::tool::ToolServer::new()))),
         BuiltinServiceId::Skills => Ok(Some(Box::new(
             crate::mcp::builtin::skills::SkillsServer::new(_session_id),
