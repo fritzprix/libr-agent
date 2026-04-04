@@ -6,6 +6,11 @@ import type {
   AICompletionExecutionService,
   TokenUsage,
 } from '@/lib/ai-service/types';
+import {
+  isParsedDirectToolCall,
+  isParsedIndexedToolCallDelta,
+  parseStreamChunk,
+} from '@/lib/ai-service/stream-events';
 import { getLogger } from '@/lib/logger';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
@@ -316,16 +321,10 @@ export function useExecuteCompletion({
             throw new Error('Request aborted');
           }
 
-          // streamChat yields JSON strings; parse into a typed chunk object.
-          let chunk: Record<string, unknown>;
-          try {
-            chunk = JSON.parse(rawChunk);
-          } catch {
-            chunk = { content: rawChunk };
-          }
+          const chunk = parseStreamChunk(rawChunk);
 
           // 1. Accumulate Text
-          if (chunk.content && typeof chunk.content === 'string') {
+          if (typeof chunk.content === 'string') {
             const lastItem = content[content.length - 1];
             if (lastItem && lastItem.type === 'text') {
               (lastItem as MCPTextContent).text += chunk.content;
@@ -335,7 +334,7 @@ export function useExecuteCompletion({
           }
 
           // 2. Accumulate Thinking
-          if (chunk.thinking && typeof chunk.thinking === 'string') {
+          if (typeof chunk.thinking === 'string') {
             if (thinkingStartTime === undefined) {
               thinkingStartTime = performance.now();
             }
@@ -348,24 +347,13 @@ export function useExecuteCompletion({
           }
 
           // 3. Accumulate Thinking Signature
-          const chunkMetadata =
-            chunk.metadata !== null && typeof chunk.metadata === 'object'
-              ? (chunk.metadata as Record<string, unknown>)
-              : undefined;
-          if (
-            chunkMetadata?.thinking_signature &&
-            typeof chunkMetadata.thinking_signature === 'string'
-          ) {
-            thinkingSignature = chunkMetadata.thinking_signature;
+          if (typeof chunk.thinkingSignature === 'string') {
+            thinkingSignature = chunk.thinkingSignature;
           }
 
           // 4. Accumulate Tool Calls
-          const toolCallStartChunks = Array.isArray(chunk.tool_call_starts)
-            ? (chunk.tool_call_starts as (ToolCall & { index?: number })[])
-            : [];
-          const toolCallDeltaChunks = Array.isArray(chunk.tool_calls)
-            ? (chunk.tool_calls as (ToolCall & { index?: number })[])
-            : [];
+          const toolCallStartChunks = chunk.tool_call_starts ?? [];
+          const toolCallDeltaChunks = chunk.tool_calls ?? [];
           const toolCallChunks = [
             ...toolCallStartChunks,
             ...toolCallDeltaChunks,
@@ -374,46 +362,50 @@ export function useExecuteCompletion({
 
           if (hasToolCallUpdate) {
             toolCallChunks.forEach((toolCallChunk) => {
-              const { index } = toolCallChunk;
+              if (isParsedIndexedToolCallDelta(toolCallChunk)) {
+                const { index } = toolCallChunk;
 
-              if (index === undefined) {
-                content.push({
-                  type: 'tool_call',
-                  id: toolCallChunk.id || '',
-                  name: toolCallChunk.function?.name || '',
-                  arguments: toolCallChunk.function?.arguments || '',
-                });
+                if (activeToolCallIndices.has(index)) {
+                  const contentIndex = activeToolCallIndices.get(index)!;
+                  const targetBlock = content[
+                    contentIndex
+                  ] as MCPToolCallContent;
+                  if (toolCallChunk.id && !targetBlock.id) {
+                    targetBlock.id = toolCallChunk.id;
+                  }
+                  if (toolCallChunk.function?.name) {
+                    if (!targetBlock.name) {
+                      targetBlock.name = toolCallChunk.function.name;
+                    } else if (
+                      targetBlock.name !== toolCallChunk.function.name &&
+                      !toolCallChunk.function.name.startsWith(targetBlock.name)
+                    ) {
+                      targetBlock.name = toolCallChunk.function.name;
+                    }
+                  }
+                  if (toolCallChunk.function?.arguments) {
+                    targetBlock.arguments += toolCallChunk.function.arguments;
+                  }
+                } else {
+                  const newBlock: MCPToolCallContent = {
+                    type: 'tool_call',
+                    id: toolCallChunk.id || '',
+                    name: toolCallChunk.function?.name || '',
+                    arguments: toolCallChunk.function?.arguments || '',
+                  };
+                  content.push(newBlock);
+                  activeToolCallIndices.set(index, content.length - 1);
+                }
                 return;
               }
 
-              if (activeToolCallIndices.has(index)) {
-                const contentIndex = activeToolCallIndices.get(index)!;
-                const targetBlock = content[contentIndex] as MCPToolCallContent;
-                if (toolCallChunk.id && !targetBlock.id) {
-                  targetBlock.id = toolCallChunk.id;
-                }
-                if (toolCallChunk.function?.name) {
-                  if (!targetBlock.name) {
-                    targetBlock.name = toolCallChunk.function.name;
-                  } else if (
-                    targetBlock.name !== toolCallChunk.function.name &&
-                    !toolCallChunk.function.name.startsWith(targetBlock.name)
-                  ) {
-                    targetBlock.name = toolCallChunk.function.name;
-                  }
-                }
-                if (toolCallChunk.function?.arguments) {
-                  targetBlock.arguments += toolCallChunk.function.arguments;
-                }
-              } else {
-                const newBlock: MCPToolCallContent = {
+              if (isParsedDirectToolCall(toolCallChunk)) {
+                content.push({
                   type: 'tool_call',
-                  id: toolCallChunk.id || '',
-                  name: toolCallChunk.function?.name || '',
-                  arguments: toolCallChunk.function?.arguments || '',
-                };
-                content.push(newBlock);
-                activeToolCallIndices.set(index, content.length - 1);
+                  id: toolCallChunk.id,
+                  name: toolCallChunk.function.name,
+                  arguments: toolCallChunk.function.arguments,
+                });
               }
             });
           }
@@ -424,7 +416,7 @@ export function useExecuteCompletion({
           }
 
           if (chunk.usage) {
-            const incomingUsage = chunk.usage as TokenUsage;
+            const incomingUsage = chunk.usage;
             if (finalUsage) {
               finalUsage = {
                 // Use || to prevent 0 values in delta chunks from overwriting cumulative totals

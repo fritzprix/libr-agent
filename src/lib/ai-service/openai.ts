@@ -30,6 +30,10 @@ import {
   createEphemeralSessionContextInjection,
   formatSessionContextAsBackgroundReference,
 } from './base-service-context';
+import {
+  createSerializableToolCallArgumentDelta,
+  serializeToolCallArgumentDeltas,
+} from './stream-events';
 import type {
   OpenAINonStreamingRequest,
   OpenAIResponseUsageDetails,
@@ -320,8 +324,6 @@ export class OpenAIService extends BaseAIService<
       // Wrap with TTFT measurement (OpenAI doesn't provide native prefill timing)
       const startTime = performance.now();
       let firstChunkReceived = false;
-      const seenToolCallIndices = new Set<number>();
-
       for await (const chunk of completion) {
         if (this.getAbortSignal().aborted) {
           this.logger.info('Stream aborted during iteration');
@@ -374,70 +376,31 @@ export class OpenAIService extends BaseAIService<
         }
 
         if (delta?.tool_calls) {
-          const toolCallStarts: Array<{
-            index: number;
-            id: string;
-            type: 'function';
-            function: { name: string; arguments: string };
-          }> = [];
-          const toolCallArgumentDeltas: Array<{
-            index: number;
-            id?: string;
-            type: 'function';
-            function: { name?: string; arguments: string };
-          }> = [];
-          const passthroughToolCalls: typeof delta.tool_calls = [];
+          const toolCalls = delta.tool_calls
+            .map((toolCall) => {
+              if (typeof toolCall.index !== 'number') {
+                return null;
+              }
 
-          for (const toolCall of delta.tool_calls) {
-            if (toolCall.index === undefined) {
-              passthroughToolCalls.push(toolCall);
-              continue;
-            }
-
-            if (!seenToolCallIndices.has(toolCall.index)) {
-              seenToolCallIndices.add(toolCall.index);
-              toolCallStarts.push({
-                index: toolCall.index,
-                id: toolCall.id || '',
-                type: 'function',
-                function: {
-                  name: toolCall.function?.name || '',
-                  arguments: '',
+              return createSerializableToolCallArgumentDelta(
+                toolCall.index,
+                toolCall.function?.arguments || '',
+                {
+                  id: toolCall.id,
+                  name: toolCall.function?.name,
                 },
-              });
-            }
+              );
+            })
+            .filter(
+              (
+                toolCall,
+              ): toolCall is ReturnType<
+                typeof createSerializableToolCallArgumentDelta
+              > => toolCall !== null,
+            );
 
-            if (
-              typeof toolCall.function?.arguments === 'string' &&
-              toolCall.function.arguments.length > 0
-            ) {
-              toolCallArgumentDeltas.push({
-                index: toolCall.index,
-                ...(toolCall.id ? { id: toolCall.id } : {}),
-                type: 'function',
-                function: {
-                  ...(toolCall.function?.name
-                    ? { name: toolCall.function.name }
-                    : {}),
-                  arguments: toolCall.function.arguments,
-                },
-              });
-            }
-          }
-
-          if (toolCallStarts.length > 0) {
-            yield JSON.stringify({
-              tool_calls: toolCallStarts,
-            });
-          }
-
-          if (
-            toolCallArgumentDeltas.length > 0 ||
-            passthroughToolCalls.length > 0
-          ) {
-            yield JSON.stringify({
-              tool_calls: [...toolCallArgumentDeltas, ...passthroughToolCalls],
-            });
+          if (toolCalls.length > 0) {
+            yield serializeToolCallArgumentDeltas(toolCalls);
           }
         } else if (delta?.content) {
           yield JSON.stringify({

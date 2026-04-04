@@ -35,6 +35,10 @@ import {
   ToolCallAccumulator,
 } from './anthropic/types';
 import { createEphemeralSessionContextInjection } from './base-service-context';
+import {
+  createSerializableToolCallArgumentDelta,
+  serializeToolCallArgumentDeltas,
+} from './stream-events';
 
 const logger = getLogger('AnthropicService');
 
@@ -313,15 +317,15 @@ export class AnthropicService extends BaseAIService<
       const createIndexedToolCall = (
         accumulator: ToolCallAccumulator,
         argumentsDelta: string,
-      ) => ({
-        id: accumulator.id,
-        type: 'function' as const,
-        function: {
-          name: accumulator.name,
-          arguments: argumentsDelta,
-        },
-        index: accumulator.index,
-      });
+      ) =>
+        createSerializableToolCallArgumentDelta(
+          accumulator.index,
+          argumentsDelta,
+          {
+            id: accumulator.id,
+            name: accumulator.name,
+          },
+        );
 
       // Track current usage metrics (updated from message_start and message_delta)
       let currentUsage: TokenUsage = createEmptyAnthropicUsage();
@@ -417,9 +421,9 @@ export class AnthropicService extends BaseAIService<
             });
             const accumulator = toolCallAccumulators.get(chunk.index);
             if (accumulator) {
-              yield JSON.stringify({
-                tool_calls: [createIndexedToolCall(accumulator, '')],
-              });
+              yield serializeToolCallArgumentDeltas([
+                createIndexedToolCall(accumulator, ''),
+              ]);
             }
           }
         } else if (
@@ -459,11 +463,9 @@ export class AnthropicService extends BaseAIService<
               continue;
             }
             accumulator.hasArgumentDelta = true;
-            yield JSON.stringify({
-              tool_calls: [
-                createIndexedToolCall(accumulator, chunk.delta.partial_json),
-              ],
-            });
+            yield serializeToolCallArgumentDeltas([
+              createIndexedToolCall(accumulator, chunk.delta.partial_json),
+            ]);
           }
         } else if (chunk.type === 'content_block_stop') {
           logger.info('Anthropic content_block_stop', { index: chunk.index });
@@ -480,24 +482,20 @@ export class AnthropicService extends BaseAIService<
                 name: accumulator.name,
               },
             );
-            yield JSON.stringify({
-              tool_calls: [
-                createIndexedToolCall(
-                  accumulator,
-                  JSON.stringify(accumulator.initialInput),
-                ),
-              ],
-            });
+            yield serializeToolCallArgumentDeltas([
+              createIndexedToolCall(
+                accumulator,
+                JSON.stringify(accumulator.initialInput),
+              ),
+            ]);
           } else if (
             accumulator &&
             !accumulator.hasArgumentDelta &&
             accumulator.partialJson.trim()
           ) {
-            yield JSON.stringify({
-              tool_calls: [
-                createIndexedToolCall(accumulator, accumulator.partialJson),
-              ],
-            });
+            yield serializeToolCallArgumentDeltas([
+              createIndexedToolCall(accumulator, accumulator.partialJson),
+            ]);
           }
 
           // Clean up accumulator regardless of yield status

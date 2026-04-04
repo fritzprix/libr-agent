@@ -279,12 +279,12 @@ function SidebarTrigger({
           {...props}
         >
           <PanelLeftIcon />
-          <span className="sr-only">{t('sidebar.toggle', 'Toggle Sidebar')}</span>
+          <span className="sr-only">
+            {t('sidebar.toggle', 'Toggle Sidebar')}
+          </span>
         </Button>
       </TooltipTrigger>
-      <TooltipContent>
-        {t('sidebar.toggle', 'Toggle Sidebar')}
-      </TooltipContent>
+      <TooltipContent>{t('sidebar.toggle', 'Toggle Sidebar')}</TooltipContent>
     </Tooltip>
   );
 }

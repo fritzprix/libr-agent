@@ -202,6 +202,75 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(options?.headers?.['x-libragent-request-id']).toMatch(/^req_/);
   });
 
+  it('emits OpenAI indexed tool calls as direct tool_calls chunks', async () => {
+    createMock.mockImplementationOnce((request: { stream?: boolean }) => {
+      if (request.stream) {
+        return Promise.resolve(
+          (async function* () {
+            yield {
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: 'call_openai_1',
+                        type: 'function',
+                        function: {
+                          name: 'workspace__writeFile',
+                          arguments: '{"path":"foo.txt","content":"hello"}',
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          })(),
+        );
+      }
+
+      return Promise.resolve({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 2,
+          total_tokens: 12,
+        },
+        model: 'gpt-4o',
+      });
+    });
+
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    const chunks: Array<Record<string, unknown>> = [];
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+    })) {
+      chunks.push(JSON.parse(chunk) as Record<string, unknown>);
+    }
+
+    expect(
+      chunks.some((chunk) =>
+        Array.isArray((chunk as { tool_call_starts?: unknown[] }).tool_call_starts),
+      ),
+    ).toBe(false);
+    expect(chunks).toContainEqual({
+      tool_calls: [
+        {
+          index: 0,
+          id: 'call_openai_1',
+          type: 'function',
+          function: {
+            name: 'workspace__writeFile',
+            arguments: '{"path":"foo.txt","content":"hello"}',
+          },
+        },
+      ],
+    });
+  });
+
   it('logs prompt drift between consecutive requests with the first differing message index', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test');
@@ -550,18 +619,14 @@ describe('OpenAIService prompt cache extensions', () => {
       }>;
     }>;
 
-    expect(toolCallChunks).toHaveLength(3);
+    expect(
+      observedChunks.some((chunk) =>
+        Array.isArray((chunk as { tool_call_starts?: unknown[] }).tool_call_starts),
+      ),
+    ).toBe(false);
+    expect(toolCallChunks).toHaveLength(2);
 
     expect(toolCallChunks[0]?.tool_calls?.[0]).toEqual({
-      index: 0,
-      id: 'call_123',
-      type: 'function',
-      function: {
-        name: 'workspace__writeFile',
-        arguments: '',
-      },
-    });
-    expect(toolCallChunks[1]?.tool_calls?.[0]).toEqual({
       index: 0,
       id: 'call_123',
       type: 'function',
@@ -570,9 +635,8 @@ describe('OpenAIService prompt cache extensions', () => {
         arguments: '{"path":"foo.txt"',
       },
     });
-    expect(toolCallChunks[2]?.tool_calls?.[0]).toEqual({
+    expect(toolCallChunks[1]?.tool_calls?.[0]).toEqual({
       index: 0,
-      type: 'function',
       function: {
         arguments: ',"content":"hello"}',
       },

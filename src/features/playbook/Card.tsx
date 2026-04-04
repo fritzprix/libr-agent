@@ -80,9 +80,7 @@ export function PlaybookCard({
                       playbook.isBookmarked && 'fill-current',
                     )}
                   />
-                  <span className="sr-only">
-                    {t('playbook.card.bookmark')}
-                  </span>
+                  <span className="sr-only">{t('playbook.card.bookmark')}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t('playbook.card.bookmark')}</TooltipContent>

@@ -30,6 +30,10 @@ import {
   type Logger,
   type SimpleOllamaMessage,
 } from './ollama-core';
+import {
+  createSerializableDirectToolCall,
+  serializeDirectToolCalls,
+} from './stream-events';
 
 const logger = getLogger('OllamaService');
 
@@ -379,7 +383,14 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
           }
 
           if (processedChunk.tool_calls) {
-            yield JSON.stringify({ tool_calls: processedChunk.tool_calls });
+            const toolCalls = processedChunk.tool_calls.map((toolCall) =>
+              createSerializableDirectToolCall(
+                toolCall.id,
+                toolCall.function.name,
+                toolCall.function.arguments,
+              ),
+            );
+            yield serializeDirectToolCalls(toolCalls);
           }
 
           if (processedChunk.usage) {

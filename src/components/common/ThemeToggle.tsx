@@ -25,9 +25,7 @@ export function ThemeToggle() {
           {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>
-        {t('theme.toggle')}
-      </TooltipContent>
+      <TooltipContent>{t('theme.toggle')}</TooltipContent>
     </Tooltip>
   );
 }

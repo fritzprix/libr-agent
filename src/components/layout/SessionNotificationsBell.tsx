@@ -72,9 +72,7 @@ export function SessionNotificationsBell() {
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>
-          {t('notifications.open')}
-        </TooltipContent>
+        <TooltipContent>{t('notifications.open')}</TooltipContent>
       </Tooltip>
 
       <DropdownMenuContent align="end" className="w-80">
