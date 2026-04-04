@@ -26,13 +26,6 @@ interface PlanningToastSummaryProps {
   previousTodos?: PlanningState['todos'];
   scratchpad: ScratchpadState | undefined;
   scratchpadChanged: boolean;
-  scratchpadLabel: string;
-  currentGoalLabel: string;
-  tasksLabel: string;
-  noGoalLabel: string;
-  noTasksLabel: string;
-  noScratchpadLabel: string;
-  scratchpadUpdatedLabel: string;
 }
 
 function PlanningToastSummary({
@@ -41,14 +34,9 @@ function PlanningToastSummary({
   previousTodos,
   scratchpad,
   scratchpadChanged,
-  scratchpadLabel,
-  currentGoalLabel,
-  tasksLabel,
-  noGoalLabel,
-  noTasksLabel,
-  noScratchpadLabel,
-  scratchpadUpdatedLabel,
 }: PlanningToastSummaryProps) {
+  const { t } = useTranslation();
+
   const visibleTodos = useMemo(() => {
     if (todos.length <= 5) return todos;
 
@@ -117,7 +105,7 @@ function PlanningToastSummary({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            {completedTodos}/{todos.length} {tasksLabel}
+            {completedTodos}/{todos.length} {t('agent.planning.tasks')}
           </span>
           <span>{progressPercent}%</span>
         </div>
@@ -131,14 +119,14 @@ function PlanningToastSummary({
 
       <div className="space-y-1">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {currentGoalLabel}
+          {t('agent.planning.currentGoal')}
         </div>
-        <div className="text-sm leading-relaxed">{goal ?? noGoalLabel}</div>
+        <div className="text-sm leading-relaxed">{goal ?? t('agent.planning.noGoal')}</div>
       </div>
 
       <div className="space-y-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {tasksLabel}
+          {t('agent.planning.tasks')}
         </div>
         {visibleTodos.length > 0 ? (
           <div className="space-y-2">
@@ -186,17 +174,17 @@ function PlanningToastSummary({
             )}
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground">{noTasksLabel}</div>
+          <div className="text-sm text-muted-foreground">{t('agent.planning.noTasks')}</div>
         )}
       </div>
 
       <div className="space-y-1">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {scratchpadLabel}
+          {t('agent.planning.scratchpad')}
         </div>
         <div className="text-sm text-muted-foreground">
-          {scratchpad?.count ? scratchpad.count : noScratchpadLabel}
-          {scratchpadChanged ? ` • ${scratchpadUpdatedLabel}` : ''}
+          {scratchpad?.count ? scratchpad.count : t('agent.planning.noScratchpad')}
+          {scratchpadChanged ? ` • ${t('agent.planning.updated')}` : ''}
         </div>
       </div>
     </div>
@@ -316,13 +304,6 @@ export function AgentPlanningUpdates() {
             previousTodos={previousPlanningRef.current?.todos}
             scratchpad={scratchpadState}
             scratchpadChanged={scratchpadChanged}
-            scratchpadLabel={t('agent.planning.scratchpad')}
-            currentGoalLabel={t('agent.planning.currentGoal')}
-            tasksLabel={t('agent.planning.tasks')}
-            noGoalLabel={t('agent.planning.noGoal')}
-            noTasksLabel={t('agent.planning.noTasks')}
-            noScratchpadLabel={t('agent.planning.noScratchpad')}
-            scratchpadUpdatedLabel={t('agent.planning.updated')}
           />
         ),
       });

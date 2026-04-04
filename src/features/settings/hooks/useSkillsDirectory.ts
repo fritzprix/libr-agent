@@ -2,14 +2,10 @@ import { safeInvoke } from '@/lib/backend/core';
 import { getLogger } from '@/lib/logger';
 import type { SkillMetadata } from '@/types/skills';
 import useSWR from 'swr';
-import { useEffect } from 'react';
 
 const logger = getLogger('useSkillsDirectory');
 
-export function useSkillsDirectory(
-  skillsDirectory: string | undefined,
-  onSkillsDirectoryChange: (path: string) => void,
-) {
+export function useSkillsDirectory(skillsDirectory: string | undefined) {
   // Fetch default directory if skillsDirectory is undefined or empty
   const { data: defaultDir } = useSWR<string>(
     !skillsDirectory ? 'get_default_skills_directory' : null,
@@ -20,14 +16,9 @@ export function useSkillsDirectory(
     },
   );
 
-  // Sync default directory back to parent
-  useEffect(() => {
-    if (!skillsDirectory && defaultDir) {
-      onSkillsDirectoryChange(defaultDir);
-    }
-  }, [skillsDirectory, defaultDir, onSkillsDirectoryChange]);
+  const effectiveDir = skillsDirectory || defaultDir || '';
 
-  const dirToVerify = skillsDirectory || '';
+  const dirToVerify = effectiveDir;
 
   const {
     data: skills,
@@ -64,6 +55,7 @@ export function useSkillsDirectory(
   const resolvedSkills = error ? [] : skills || [];
 
   return {
+    effectiveDir,
     verificationStatus,
     skills: resolvedSkills,
     errorMessage,
