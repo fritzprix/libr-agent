@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.31] - 2026-04-04
+
+### 🚀 Features
+
+- **Enhanced Agent UI & Feedback**: Added tooltips to icon-only buttons across the Palette and improved planning toast notifications to prioritize recent activity for better visibility.
+- **Improved Performance & Reliability**: Optimized prompt caching and streaming feedback, and hardened the AI service compaction flow for more stable long-running sessions.
+- **UX Polish**: Added tooltips to bookmark buttons in PlaybookCard and standardized code formatting and indentation across multiple components.
+
+### 🐛 Fixes
+
+- **Stability & Recovery**: Fixed recovery pause and renderer handling issues to prevent workflow stalls during agent execution.
+- **Settings & UI Consistency**: Resolved an issue in settings where the skills directory input would snap back, and addressed PR review feedback for better code quality.
+- **Accessibility & UI Hierarchy**: Removed redundant and no-op `TooltipProvider` wrappers to clean up the component tree and improve UI consistency.
+
+### 🔧 Internal
+
+- **Architectural Refinement**: Modularized AI service base contracts and refactored agent session manager helpers to improve maintainability and separation of concerns.
+- **Technical Debt Reduction**: Eradicated redundant `useEffect` hooks and prop hoarding in UI components (e.g., `useSkillsDirectory`).
+- **Documentation & Skills**: Included updated architecture documentation and the new `code-audit-expert` skill.
+
 ## [0.6.30] - 2026-04-03
 
 ### 🚀 Features
