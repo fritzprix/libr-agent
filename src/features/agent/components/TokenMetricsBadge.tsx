@@ -105,6 +105,10 @@ export function TokenMetricsBadge({
   const cacheHitPercent = hasCacheHit
     ? calculateCacheHitPercent(cachedTokens, usage.promptTokens)
     : 0;
+  const cacheIndicatorText =
+    cachedTokens > 0
+      ? `${cacheHitPercent}% · ${formatNumber(cachedTokens)}`
+      : 'cache';
 
   // Calculate prefill tokens per second if both TTFT and prompt tokens are available
   const prefillTPS =
@@ -158,11 +162,12 @@ export function TokenMetricsBadge({
         {/* ✅ Cache Hit Indicator (Independent Placement) */}
         {isCacheActive && (
           <span
+            data-testid="cache-hit-indicator"
             className="flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 bg-cyan-400/10 px-1 rounded border border-cyan-400/20 shrink-0"
             title={`Cache Hit: ${formatNumber(cachedTokens)} tokens (${cacheHitPercent}%)`}
           >
             <Zap size={10} className="fill-current" />
-            {cacheHitPercent}%
+            {cacheIndicatorText}
           </span>
         )}
 

@@ -1,5 +1,5 @@
 import type { Message } from '@/models/chat';
-import type { IAIService } from './types';
+import type { AIMessageSanitizationService } from './types';
 import { getLogger } from '../logger';
 import type { MCPContent } from '@/lib/mcp';
 
@@ -339,7 +339,7 @@ export function mergeConsecutiveUserMessages(messages: Message[]): Message[] {
  */
 export function sanitizeMessagesForService(
   messages: Message[],
-  service: IAIService,
+  service: AIMessageSanitizationService,
 ): Message[] {
   return mergeConsecutiveUserMessages(service.sanitizeMessages(messages));
 }

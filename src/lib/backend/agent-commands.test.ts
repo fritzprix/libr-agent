@@ -3,6 +3,7 @@ import {
   handleLLMResponse,
   handleLLMError,
   handleUserToolCall,
+  executeUiTauriAction,
   getAgentAvailableTools,
   agentCallBuiltinTool,
 } from './agent-commands';
@@ -87,6 +88,29 @@ describe('backend/agent-commands', () => {
         updatedAt: mockNow,
       },
     });
+  });
+
+  it('should executeUiTauriAction', async () => {
+    const mockResponse = {
+      success: true,
+      message: 'UI Tauri action executed: tauri:downloadWorkspaceFile',
+    };
+    vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
+
+    const response = await executeUiTauriAction(
+      'session-1',
+      'tauri:downloadWorkspaceFile',
+      { filePath: 'notes.txt' },
+    );
+
+    expect(safeInvoke).toHaveBeenCalledWith('agent_execute_ui_tauri_action', {
+      request: {
+        sessionId: 'session-1',
+        toolName: 'tauri:downloadWorkspaceFile',
+        params: { filePath: 'notes.txt' },
+      },
+    });
+    expect(response).toEqual(mockResponse);
   });
 
   it('should getAgentAvailableTools', async () => {

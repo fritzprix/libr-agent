@@ -18,16 +18,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-
-const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
-function getPlaybookDateFormatter(locale: string): Intl.DateTimeFormat {
-  let formatter = dateFormatterCache.get(locale);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat(locale);
-    dateFormatterCache.set(locale, formatter);
-  }
-  return formatter;
-}
+import { getDateFormatter } from '@/lib/date-utils';
 
 interface PlaybookCardProps {
   playbook: Playbook & { id: string; createdAt: Date };
@@ -106,9 +97,11 @@ export function PlaybookCard({
         </CardTitle>
         <CardDescription className="line-clamp-1 text-xs">
           {t('playbook.card.created', {
-            date: getPlaybookDateFormatter(i18n.language).format(
-              playbook.createdAt,
-            ),
+            date: getDateFormatter(i18n.language, {
+              year: 'numeric',
+              month: 'numeric',
+              day: 'numeric',
+            }).format(playbook.createdAt),
           })}
         </CardDescription>
       </CardHeader>

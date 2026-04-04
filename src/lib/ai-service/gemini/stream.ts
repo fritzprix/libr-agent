@@ -214,6 +214,19 @@ export async function* processGeminiStream(
           })),
         });
 
+        const toolCallStarts: Array<{
+          index: number;
+          id: string;
+          type: 'function';
+          function: { name: string; arguments: string };
+        }> = [];
+        const toolCallArgumentDeltas: Array<{
+          index: number;
+          id: string;
+          type: 'function';
+          function: { name: string; arguments: string };
+        }> = [];
+
         const toolCalls = functionCallParts
           .map((part, index: number): FormattedToolCall | null => {
             const fc = part.functionCall;
@@ -237,6 +250,29 @@ export async function* processGeminiStream(
                 ? fc.id
                 : generateToolCallId();
 
+            toolCallStarts.push({
+              index,
+              id: callId,
+              type: 'function',
+              function: {
+                name: fc.name,
+                arguments: '',
+              },
+            });
+
+            const serializedArguments = JSON.stringify(fc.args ?? {});
+            if (serializedArguments.length > 0) {
+              toolCallArgumentDeltas.push({
+                index,
+                id: callId,
+                type: 'function',
+                function: {
+                  name: fc.name,
+                  arguments: serializedArguments,
+                },
+              });
+            }
+
             return formatToolCall(callId, fc.name, fc.args ?? {});
           })
           .filter((tc): tc is FormattedToolCall => tc !== null);
@@ -246,7 +282,12 @@ export async function* processGeminiStream(
             count: toolCalls.length,
             hasSignature: !!extractedSignature,
           });
-          yield JSON.stringify({ tool_calls: toolCalls });
+          if (toolCallStarts.length > 0) {
+            yield JSON.stringify({ tool_calls: toolCallStarts });
+          }
+          if (toolCallArgumentDeltas.length > 0) {
+            yield JSON.stringify({ tool_calls: toolCallArgumentDeltas });
+          }
 
           // Emit the captured signature separately
           if (extractedSignature) {

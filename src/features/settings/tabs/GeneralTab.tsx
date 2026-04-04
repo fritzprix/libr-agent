@@ -34,10 +34,8 @@ function GeneralTabComponent({
   onSkillsDirectoryChange,
 }: GeneralTabProps) {
   const { t } = useTranslation('common');
-  const { verificationStatus, skills, errorMessage } = useSkillsDirectory(
-    skillsDirectory,
-    onSkillsDirectoryChange,
-  );
+  const { effectiveDir, verificationStatus, skills, errorMessage } =
+    useSkillsDirectory(skillsDirectory);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isOpeningDir, setIsOpeningDir] = useState(false);
   const [isBrowsing, setIsBrowsing] = useState(false);
@@ -67,18 +65,18 @@ function GeneralTabComponent({
   };
 
   const handleOpenDirectory = async () => {
-    if (!skillsDirectory || isOpeningDir || openingDirLock.current) {
+    if (!effectiveDir || isOpeningDir || openingDirLock.current) {
       logger.warn(
-        'handleOpenDirectory called but skillsDirectory is empty or already opening',
+        'handleOpenDirectory called but effectiveDir is empty or already opening',
       );
       return;
     }
     openingDirLock.current = true;
     setIsOpeningDir(true);
-    logger.info(`Attempting to open directory: ${skillsDirectory}`);
+    logger.info(`Attempting to open directory: ${effectiveDir}`);
     try {
       await safeInvoke<void>('open_skills_directory_in_explorer', {
-        directory: skillsDirectory,
+        directory: effectiveDir,
       });
       logger.info(`Successfully requested open_skills_directory_in_explorer`);
     } catch (error) {
@@ -119,12 +117,15 @@ function GeneralTabComponent({
         <div className="flex flex-col gap-2">
           <div className="flex gap-2 max-w-lg">
             <Input
-              value={skillsDirectory || ''}
+              value={skillsDirectory ?? ''}
               onChange={(e) => onSkillsDirectoryChange(e.target.value)}
-              placeholder={t(
-                'settings.general.skillsDirectoryPlaceholder',
-                'Select a directory for local skills...',
-              )}
+              placeholder={
+                effectiveDir ||
+                t(
+                  'settings.general.skillsDirectoryPlaceholder',
+                  'Select a directory for local skills...',
+                )
+              }
               className="bg-background border text-foreground flex-1"
             />
             <Tooltip>
@@ -158,7 +159,7 @@ function GeneralTabComponent({
               </TooltipContent>
             </Tooltip>
 
-            {skillsDirectory && (
+            {effectiveDir && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span

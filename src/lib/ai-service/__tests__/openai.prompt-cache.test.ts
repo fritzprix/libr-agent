@@ -331,6 +331,103 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(firstRequest.prompt_cache_key).toBe(secondRequest.prompt_cache_key);
   });
 
+  it('can include a stable leading message prefix in automatic OpenAI cache keys', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test', {
+      promptCachePrefixMessageCount: 1,
+    });
+
+    const firstMessage: Message = {
+      ...message,
+      id: 'm-prefix-1',
+      content: [{ type: 'text', text: 'first stable prefix' }],
+    };
+    const secondMessage: Message = {
+      ...message,
+      id: 'm-prefix-2',
+      content: [{ type: 'text', text: 'different stable prefix' }],
+    };
+
+    for await (const chunk of service.streamChat([firstMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [firstRequest] = createMock.mock.calls[0] as [Record<string, unknown>];
+
+    createMock.mockClear();
+
+    for await (const chunk of service.streamChat([secondMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [secondRequest] = createMock.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+
+    expect(firstRequest.prompt_cache_key).not.toBe(secondRequest.prompt_cache_key);
+    expect(String(firstRequest.prompt_cache_key).split(':')).toHaveLength(5);
+  });
+
+  it('ignores session-specific ids when leading message prefix hashing is enabled', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test', {
+      promptCachePrefixMessageCount: 1,
+    });
+
+    const firstSessionMessage: Message = {
+      ...message,
+      id: 'm-prefix-session-1',
+      sessionId: 'session-1',
+      threadId: 'thread-1',
+      content: [{ type: 'text', text: 'shared stable prefix' }],
+    };
+    const secondSessionMessage: Message = {
+      ...message,
+      id: 'm-prefix-session-2',
+      sessionId: 'session-2',
+      threadId: 'thread-2',
+      content: [{ type: 'text', text: 'shared stable prefix' }],
+    };
+
+    for await (const chunk of service.streamChat([firstSessionMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [firstRequest] = createMock.mock.calls[0] as [Record<string, unknown>];
+
+    createMock.mockClear();
+
+    for await (const chunk of service.streamChat([secondSessionMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [secondRequest] = createMock.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+
+    expect(firstRequest.prompt_cache_key).toBe(secondRequest.prompt_cache_key);
+  });
+
   it('does not send cache_prompt to the default OpenAI endpoint even when explicitly enabled', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test', {
@@ -453,9 +550,18 @@ describe('OpenAIService prompt cache extensions', () => {
       }>;
     }>;
 
-    expect(toolCallChunks).toHaveLength(2);
+    expect(toolCallChunks).toHaveLength(3);
 
     expect(toolCallChunks[0]?.tool_calls?.[0]).toEqual({
+      index: 0,
+      id: 'call_123',
+      type: 'function',
+      function: {
+        name: 'workspace__writeFile',
+        arguments: '',
+      },
+    });
+    expect(toolCallChunks[1]?.tool_calls?.[0]).toEqual({
       index: 0,
       id: 'call_123',
       type: 'function',
@@ -464,8 +570,9 @@ describe('OpenAIService prompt cache extensions', () => {
         arguments: '{"path":"foo.txt"',
       },
     });
-    expect(toolCallChunks[1]?.tool_calls?.[0]).toEqual({
+    expect(toolCallChunks[2]?.tool_calls?.[0]).toEqual({
       index: 0,
+      type: 'function',
       function: {
         arguments: ',"content":"hello"}',
       },

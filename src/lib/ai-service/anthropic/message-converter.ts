@@ -18,6 +18,7 @@ import {
 const logger = getLogger('AnthropicMessageConverter');
 const ANTHROPIC_SESSION_CONTEXT_METADATA_KEY =
   'anthropicSyntheticSessionContext';
+const MIN_STABLE_MESSAGES_FOR_EXTRA_BREAKPOINT = 8;
 
 function isAnthropicSyntheticSessionContextMessage(message: Message): boolean {
   return (
@@ -78,6 +79,22 @@ function applyCacheBreakpoint(
         return;
     }
   }
+}
+
+function applyLongConversationCacheBreakpoint(
+  anthropicMessages: AnthropicMessageParam[],
+  lastStableMessageIndex: number,
+): void {
+  if (lastStableMessageIndex + 1 < MIN_STABLE_MESSAGES_FOR_EXTRA_BREAKPOINT) {
+    return;
+  }
+
+  const midpointIndex = Math.floor(lastStableMessageIndex / 2);
+  if (midpointIndex <= 0 || midpointIndex >= lastStableMessageIndex) {
+    return;
+  }
+
+  applyCacheBreakpoint(anthropicMessages[midpointIndex]);
 }
 
 function logToolChainIntegrity(messages: Message[]): void {
@@ -257,9 +274,15 @@ export function convertToAnthropicMessages(
 
   flushPendingToolResults();
 
-  if (!hasSyntheticSessionContextTail) {
-    applyCacheBreakpoint(anthropicMessages[anthropicMessages.length - 1]);
-  }
+  const lastStableMessageIndex = hasSyntheticSessionContextTail
+    ? anthropicMessages.length - 2
+    : anthropicMessages.length - 1;
+
+  applyLongConversationCacheBreakpoint(
+    anthropicMessages,
+    lastStableMessageIndex,
+  );
+  applyCacheBreakpoint(anthropicMessages[lastStableMessageIndex]);
 
   return anthropicMessages;
 }

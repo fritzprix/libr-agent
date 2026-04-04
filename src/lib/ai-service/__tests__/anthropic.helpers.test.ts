@@ -314,4 +314,89 @@ describe('Anthropic helper modules', () => {
       content: '# Current Context Information\nvolatile',
     });
   });
+
+  it('adds an extra midpoint cache breakpoint for long Anthropic conversations', () => {
+    const messages: Message[] = Array.from({ length: 8 }, (_, index) => ({
+      id: `user-${index + 1}`,
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'user',
+      content: [{ type: 'text', text: `Stable message ${index + 1}` }],
+    }));
+
+    const result = convertToAnthropicMessages(messages);
+
+    expect(result).toHaveLength(8);
+    expect(result[3]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Stable message 4',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    });
+    expect(result[7]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Stable message 8',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    });
+  });
+
+  it('keeps the extra Anthropic midpoint breakpoint on stable history before a synthetic session-context tail', () => {
+    const stableMessages: Message[] = Array.from({ length: 8 }, (_, index) => ({
+      id: `user-${index + 1}`,
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'user',
+      content: [{ type: 'text', text: `Stable message ${index + 1}` }],
+    }));
+    const messages: Message[] = [
+      ...stableMessages,
+      {
+        id: 'session-context',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'user',
+        content: [{ type: 'text', text: '# Current Context Information\nvolatile' }],
+        metadata: {
+          anthropicSyntheticSessionContext: true,
+        },
+      },
+    ];
+
+    const result = convertToAnthropicMessages(messages);
+
+    expect(result).toHaveLength(9);
+    expect(result[3]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Stable message 4',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    });
+    expect(result[7]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Stable message 8',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    });
+    expect(result[8]).toMatchObject({
+      role: 'user',
+      content: '# Current Context Information\nvolatile',
+    });
+  });
 });

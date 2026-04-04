@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
@@ -36,7 +37,7 @@ export const useAgentModels = (provider?: string) => {
 
       try {
         const providerConfig = serviceConfigs[p as AIServiceProvider] || {};
-        const service = AIServiceFactory.getService(
+        const service: AIModelLookupService = AIServiceFactory.getService(
           p as AIServiceProvider,
           effectiveApiKey,
           providerConfig,

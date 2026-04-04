@@ -157,13 +157,14 @@ impl BuiltinMCPServer for AgentServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let context_prompt = "\
-            # System Capability Reference\n\n\
-            - Use `tool__list` to view capabilities callable in your current session.\n\
-            - Use `agent__list` to inspect specialist agent configurations and existing delegations.\n\
-            - Use `agent__startSession(agentId=\"ID\", task=\"...\")` when you want to delegate work to a specialist agent.\n\
-            - If an agent is paused or errors, use `agent__messageToSession` to resume/retry it.\n\
-            ".to_string();
+        let context_prompt = concat!(
+            "# System Capability Reference\n\n",
+            "- Use `tool__list` to view capabilities callable in your current session.\n",
+            "- Use `agent__list` to inspect specialist agent configurations and existing delegations.\n",
+            "- Use `agent__startSession(agentId=\"ID\", task=\"...\")` when you want to delegate work to a specialist agent.\n",
+            "- If an agent is paused or errors, use `agent__messageToSession` to resume/retry it.\n",
+        )
+        .to_string();
 
         ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Stable)
     }

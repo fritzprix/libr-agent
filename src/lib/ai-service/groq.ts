@@ -63,8 +63,7 @@ export class GroqService extends BaseAIService<
         function: {
           name: mcpTool.name,
           description: mcpTool.description,
-          parameters:
-            parameters as GroqChatCompletionTool['function']['parameters'],
+          parameters: parameters as Record<string, unknown>,
         },
       };
     });

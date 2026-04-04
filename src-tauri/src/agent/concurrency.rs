@@ -48,13 +48,13 @@ impl ActiveAgentPermit {
 }
 
 #[derive(Debug)]
-pub struct SuspendedAgentGuard {
-    gate: &'static ConcurrencyGate,
+pub struct SuspendedAgentGuard<'a> {
+    gate: &'a ConcurrencyGate,
     _suspended_permit: OwnedSemaphorePermit,
 }
 
-impl SuspendedAgentGuard {
-    fn new(gate: &'static ConcurrencyGate, suspended_permit: OwnedSemaphorePermit) -> Self {
+impl<'a> SuspendedAgentGuard<'a> {
+    fn new(gate: &'a ConcurrencyGate, suspended_permit: OwnedSemaphorePermit) -> Self {
         Self {
             gate,
             _suspended_permit: suspended_permit,
@@ -114,10 +114,10 @@ impl ConcurrencyGate {
     ///
     /// Acquires a suspended slot **before** releasing the active slot to prevent
     /// the TOCTOU window where both slots are briefly unoccupied.
-    pub async fn suspend_agent(
-        &'static self,
+    pub async fn suspend_agent<'a>(
+        &'a self,
         active_permit: &mut Option<ActiveAgentPermit>,
-    ) -> Result<SuspendedAgentGuard, String> {
+    ) -> Result<SuspendedAgentGuard<'a>, String> {
         let suspended_permit = Arc::clone(&self.suspended_agent)
             .acquire_owned()
             .await

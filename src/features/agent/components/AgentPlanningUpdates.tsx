@@ -23,32 +23,79 @@ const PLANNING_TOAST_ID_PREFIX = 'agent-planning-update';
 interface PlanningToastSummaryProps {
   goal: string | null;
   todos: PlanningState['todos'];
+  previousTodos?: PlanningState['todos'];
   scratchpad: ScratchpadState | undefined;
   scratchpadChanged: boolean;
-  scratchpadLabel: string;
-  currentGoalLabel: string;
-  tasksLabel: string;
-  noGoalLabel: string;
-  noTasksLabel: string;
-  noScratchpadLabel: string;
-  scratchpadUpdatedLabel: string;
 }
 
 function PlanningToastSummary({
   goal,
   todos,
+  previousTodos,
   scratchpad,
   scratchpadChanged,
-  scratchpadLabel,
-  currentGoalLabel,
-  tasksLabel,
-  noGoalLabel,
-  noTasksLabel,
-  noScratchpadLabel,
-  scratchpadUpdatedLabel,
 }: PlanningToastSummaryProps) {
-  const visibleTodos = todos.slice(0, 5);
-  const hiddenTodoCount = Math.max(todos.length - visibleTodos.length, 0);
+  const { t } = useTranslation();
+
+  const visibleTodos = useMemo(() => {
+    if (todos.length <= 5) return todos;
+
+    // Identify added and changed todos
+    const prevIds = new Set((previousTodos || []).map((t) => t.id));
+    const added = todos.filter((t) => !prevIds.has(t.id));
+
+    const prevCheckedMap = new Map(
+      (previousTodos || []).map((t) => [t.id, t.checked]),
+    );
+    const changed = todos.filter(
+      (t) => prevCheckedMap.has(t.id) && prevCheckedMap.get(t.id) !== t.checked,
+    );
+
+    // Prioritize added and changed items
+    let relevant = [...added, ...changed];
+    // Remove duplicates if any
+    relevant = Array.from(new Map(relevant.map((t) => [t.id, t])).values());
+
+    if (relevant.length === 0) {
+      // If no specific changes, show the last 5 (likely the most recent)
+      return todos.slice(-5);
+    }
+
+    if (relevant.length >= 5) {
+      // If many things changed, show the last 5 of those
+      return relevant
+        .sort((a, b) => todos.indexOf(a) - todos.indexOf(b))
+        .slice(-5);
+    }
+
+    // Fill up to 5 items, prioritizing relevant ones, then filling from the end of the list
+    const result = [...relevant];
+    const resultIds = new Set(result.map((t) => t.id));
+
+    for (let i = todos.length - 1; i >= 0; i--) {
+      if (result.length >= 5) break;
+      if (!resultIds.has(todos[i].id)) {
+        result.push(todos[i]);
+      }
+    }
+
+    // Sort by original order to maintain context
+    return result.sort((a, b) => todos.indexOf(a) - todos.indexOf(b));
+  }, [todos, previousTodos]);
+
+  const firstVisibleIndex =
+    visibleTodos.length > 0 ? todos.indexOf(visibleTodos[0]) : -1;
+  const lastVisibleIndex =
+    visibleTodos.length > 0
+      ? todos.indexOf(visibleTodos[visibleTodos.length - 1])
+      : -1;
+
+  const hiddenAbove = firstVisibleIndex > 0 ? firstVisibleIndex : 0;
+  const hiddenBelow =
+    lastVisibleIndex >= 0
+      ? Math.max(todos.length - (lastVisibleIndex + 1), 0)
+      : 0;
+
   const completedTodos = todos.filter((todo) => todo.checked).length;
   const progressPercent =
     todos.length > 0 ? Math.round((completedTodos / todos.length) * 100) : 0;
@@ -58,7 +105,7 @@ function PlanningToastSummary({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            {completedTodos}/{todos.length} {tasksLabel}
+            {completedTodos}/{todos.length} {t('agent.planning.tasks')}
           </span>
           <span>{progressPercent}%</span>
         </div>
@@ -72,47 +119,78 @@ function PlanningToastSummary({
 
       <div className="space-y-1">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {currentGoalLabel}
+          {t('agent.planning.currentGoal')}
         </div>
-        <div className="text-sm leading-relaxed">{goal ?? noGoalLabel}</div>
+        <div className="text-sm leading-relaxed">
+          {goal ?? t('agent.planning.noGoal')}
+        </div>
       </div>
 
       <div className="space-y-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {tasksLabel}
+          {t('agent.planning.tasks')}
         </div>
         {visibleTodos.length > 0 ? (
           <div className="space-y-2">
-            {visibleTodos.map((todo) => (
-              <div key={todo.id} className="flex items-start gap-2 text-sm">
-                <Checkbox checked={todo.checked} disabled className="mt-0.5" />
-                <span
-                  className={
-                    todo.checked ? 'text-muted-foreground line-through' : ''
-                  }
-                >
-                  {todo.title}
-                </span>
+            {hiddenAbove > 0 && (
+              <div className="text-[10px] text-muted-foreground/60 italic">
+                +{hiddenAbove} ...
               </div>
-            ))}
-            {hiddenTodoCount > 0 && (
+            )}
+            {visibleTodos.map((todo) => {
+              const isNew =
+                previousTodos && !previousTodos.some((t) => t.id === todo.id);
+              const isChanged =
+                previousTodos &&
+                previousTodos.some(
+                  (t) => t.id === todo.id && t.checked !== todo.checked,
+                );
+
+              return (
+                <div key={todo.id} className="flex items-start gap-2 text-sm">
+                  <Checkbox
+                    checked={todo.checked}
+                    disabled
+                    className="mt-0.5"
+                  />
+                  <span
+                    className={
+                      todo.checked ? 'text-muted-foreground line-through' : ''
+                    }
+                  >
+                    {todo.title}
+                    {(isNew || isChanged) && (
+                      <span
+                        className="ml-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-primary"
+                        title="Updated"
+                      />
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+            {hiddenBelow > 0 && (
               <div className="text-xs text-muted-foreground">
-                +{hiddenTodoCount}
+                +{hiddenBelow}
               </div>
             )}
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground">{noTasksLabel}</div>
+          <div className="text-sm text-muted-foreground">
+            {t('agent.planning.noTasks')}
+          </div>
         )}
       </div>
 
       <div className="space-y-1">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {scratchpadLabel}
+          {t('agent.planning.scratchpad')}
         </div>
         <div className="text-sm text-muted-foreground">
-          {scratchpad?.count ? scratchpad.count : noScratchpadLabel}
-          {scratchpadChanged ? ` • ${scratchpadUpdatedLabel}` : ''}
+          {scratchpad?.count
+            ? scratchpad.count
+            : t('agent.planning.noScratchpad')}
+          {scratchpadChanged ? ` • ${t('agent.planning.updated')}` : ''}
         </div>
       </div>
     </div>
@@ -229,15 +307,9 @@ export function AgentPlanningUpdates() {
           <PlanningToastSummary
             goal={planningState?.goal ?? null}
             todos={planningState?.todos ?? []}
+            previousTodos={previousPlanningRef.current?.todos}
             scratchpad={scratchpadState}
             scratchpadChanged={scratchpadChanged}
-            scratchpadLabel={t('agent.planning.scratchpad')}
-            currentGoalLabel={t('agent.planning.currentGoal')}
-            tasksLabel={t('agent.planning.tasks')}
-            noGoalLabel={t('agent.planning.noGoal')}
-            noTasksLabel={t('agent.planning.noTasks')}
-            noScratchpadLabel={t('agent.planning.noScratchpad')}
-            scratchpadUpdatedLabel={t('agent.planning.updated')}
           />
         ),
       });

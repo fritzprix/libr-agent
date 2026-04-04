@@ -1,5 +1,6 @@
 import {
   FunctionDeclaration,
+  FunctionCallingConfigMode,
   HarmCategory,
   HarmBlockThreshold,
 } from '@google/genai';
@@ -11,11 +12,15 @@ import {
 export interface GeminiServiceConfig {
   responseMimeType: string;
   tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
+  toolConfig?: {
+    functionCallingConfig?: {
+      mode: FunctionCallingConfigMode;
+    };
+  };
   systemInstruction?: Array<{ text: string }>;
   maxOutputTokens?: number;
   temperature?: number;
   cachedContent?: string;
-  functionCallingConfig?: { mode: 'auto' | 'any' | 'none' };
   thinkingConfig?: {
     thinkingBudget?: number; // -1 (dynamic) | 0 (disabled) | positive number (token count)
     includeThoughts?: boolean; // Include thinking process in response

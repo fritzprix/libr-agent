@@ -1,4 +1,5 @@
 use crate::agent::context::registry::ContextRegistry;
+use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::session_repository::SessionRepository;
@@ -11,7 +12,7 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use super::management::update_session_status;
+use super::management::update_session_status_with_dispatcher;
 
 /// Close orphaned tool calls for a recovered session by injecting synthetic error responses.
 /// Prevents the UI from showing stuck running spinners after a crash recovery.
@@ -98,11 +99,56 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn build_recovered_session(
+    session: &crate::repositories::SessionMetadata,
+    context_registry: Arc<ContextRegistry>,
+) -> AgentSession {
+    AgentSession {
+        metadata: session.clone(),
+        is_running: false,
+        active_permit: None,
+        status_transition: Arc::new(RwLock::new(None)),
+        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
+        cancellation_token: CancellationToken::new(),
+        yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
+        cancel_pending: Arc::new(AtomicBool::new(false)),
+        pending_execution: None,
+        messages: Arc::new(RwLock::new(Vec::new())),
+        cache_initialized: Arc::new(AtomicBool::new(false)),
+        last_synced_at: Arc::new(RwLock::new(None)),
+        thinking_only_count: Arc::new(RwLock::new(0)),
+        pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
+        pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        context_registry,
+        compact_context: Arc::new(RwLock::new(None)),
+        compact_in_flight: Arc::new(AtomicBool::new(false)),
+        last_compacted_tail_id: Arc::new(RwLock::new(None)),
+        awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
+        compact_started_at_ms: Arc::new(RwLock::new(None)),
+        expected_response_id: Arc::new(RwLock::new(None)),
+        cached_stable_prompt: Arc::new(RwLock::new(None)),
+        last_completion_request: Arc::new(RwLock::new(None)),
+    }
+}
+
 /// Recover sessions stuck in BUSY state after app crash/restart
 pub async fn recover_sessions(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
+    context_registry: Arc<ContextRegistry>,
+) -> Result<(), String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    recover_sessions_with_dispatcher(session_repo, active_sessions, &dispatcher, context_registry)
+        .await
+}
+
+/// Recover BUSY sessions without depending on a live Tauri handle.
+/// Used by the app on startup and by integration tests with a recording dispatcher.
+pub async fn recover_sessions_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
     context_registry: Arc<ContextRegistry>,
 ) -> Result<(), String> {
     log::info!("Starting session recovery process...");
@@ -122,73 +168,40 @@ pub async fn recover_sessions(
                 session.id
             );
 
-            // Reset to PAUSED (user can manually resume)
-            // Call local update_session_status helper
-            update_session_status(
-                session_repo,
-                active_sessions,
-                app_handle,
-                &session.id,
-                SessionStatus::Paused,
-            )
-            .await?;
+            let mut recovered_metadata = session.clone();
+            recovered_metadata.status = SessionStatus::Paused;
 
-            // Initialize session in active_sessions map with fresh state
+            // Ensure the session exists in memory before persisting the pause transition.
+            // Recovery used to call update_session_status first, which failed because the
+            // crashed session was not yet present in active_sessions.
             let mut active = active_sessions.write().await;
             if let Some(existing_session) = active.get_mut(&session.id) {
                 log::info!(
                     "Session {} already active during recovery, updating metadata only",
                     session.id
                 );
-                existing_session.metadata = session.clone();
-                // Ensure status is Paused regardless of DB snapshot ordering
-                existing_session.metadata.status = SessionStatus::Paused;
+                existing_session.metadata = recovered_metadata.clone();
+                existing_session.is_running = false;
             } else {
                 log::info!(
                     "Initializing new active state for recovered session: {}",
                     session.id
                 );
-                // Use a corrected metadata snapshot with Paused status.
-                // `session` was fetched with status=Busy before update_session_status ran,
-                // and at this point the session is not yet in active_sessions, so
-                // update_session_status's in-memory update was a no-op. We must set
-                // the correct status here explicitly to avoid start_workflow seeing Busy.
-                let mut recovered_metadata = session.clone();
-                recovered_metadata.status = SessionStatus::Paused;
-                let yolo_mode = recovered_metadata.yolo_mode;
                 active.insert(
                     session.id.clone(),
-                    AgentSession {
-                        metadata: recovered_metadata,
-                        is_running: false,
-                        active_permit: None,
-                        status_transition: Arc::new(RwLock::new(None)),
-                        transition_lock: Arc::new(tokio::sync::Mutex::new(())),
-                        cancellation_token: CancellationToken::new(),
-                        yolo_mode: Arc::new(AtomicBool::new(yolo_mode)),
-                        cancel_pending: Arc::new(AtomicBool::new(false)),
-                        pending_execution: None,
-                        messages: Arc::new(RwLock::new(Vec::new())),
-                        cache_initialized: Arc::new(AtomicBool::new(false)),
-                        last_synced_at: Arc::new(RwLock::new(None)),
-                        thinking_only_count: Arc::new(RwLock::new(0)),
-                        pending_events: Arc::new(RwLock::new(
-                            crate::agent::state::PendingEventManager::new(),
-                        )),
-                        pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
-                        context_registry: context_registry.clone(),
-                        compact_context: Arc::new(RwLock::new(None)),
-                        compact_in_flight: Arc::new(AtomicBool::new(false)),
-                        last_compacted_tail_id: Arc::new(RwLock::new(None)),
-                        awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
-                        compact_started_at_ms: Arc::new(RwLock::new(None)),
-                        expected_response_id: Arc::new(RwLock::new(None)),
-                        cached_stable_prompt: Arc::new(RwLock::new(None)),
-                        last_completion_request: Arc::new(RwLock::new(None)),
-                    },
+                    build_recovered_session(&recovered_metadata, context_registry.clone()),
                 );
             }
             drop(active); // Release lock early
+
+            update_session_status_with_dispatcher(
+                session_repo,
+                active_sessions,
+                dispatcher,
+                &session.id,
+                SessionStatus::Paused,
+            )
+            .await?;
 
             // Close any orphaned tool calls that never got a result (crash tombstones)
             if let Err(e) = close_orphaned_tool_calls(&session.id).await {

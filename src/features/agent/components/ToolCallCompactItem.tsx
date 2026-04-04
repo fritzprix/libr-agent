@@ -97,20 +97,21 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
+  // Auto-expand when an error first appears or a UI resource arrives (last item only).
+  // Uses refs as sentinels to track transitions without triggering extra renders.
   useEffect(() => {
+    if (isSimpleMode) return;
+
     const errorBecameVisible = !prevHasErrorRef.current && hasError;
     const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
 
-    if (
-      !isSimpleMode &&
-      (errorBecameVisible || (resourceBecameVisible && isLast))
-    ) {
-      setIsExpanded((prev) => prev || true);
+    if (errorBecameVisible || (resourceBecameVisible && isLast)) {
+      setIsExpanded(true);
     }
 
     prevHasErrorRef.current = hasError;
     prevHasResourceRef.current = hasResource;
-  }, [hasError, hasResource, isLast, isSimpleMode]);
+  }, [hasError, hasResource, isSimpleMode, isLast]);
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution

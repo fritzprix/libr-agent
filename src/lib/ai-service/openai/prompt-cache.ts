@@ -9,6 +9,34 @@ import type {
   OpenAIStreamingRequest,
 } from './types';
 
+function buildStableMessagePrefixPayload(
+  messages: Message[],
+  prefixMessageCount: number,
+): string | undefined {
+  if (prefixMessageCount <= 0) {
+    return undefined;
+  }
+
+  const stablePrefixMessages = messages.slice(0, prefixMessageCount);
+  if (stablePrefixMessages.length === 0) {
+    return undefined;
+  }
+
+  return stableStringify(
+    stablePrefixMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      tool_calls: message.tool_calls,
+      tool_call_id: message.tool_call_id,
+      tool_use: message.tool_use,
+      source: message.source,
+      thinking: message.thinking,
+      thinkingSignature: message.thinkingSignature,
+      metadata: message.metadata,
+    })),
+  );
+}
+
 export function isOfficialOpenAIEndpoint(
   provider: AIServiceProvider,
   config: AIServiceConfig,
@@ -77,18 +105,26 @@ export function buildAutomaticPromptCacheKey(args: {
   systemPrompt?: string;
   messages?: Message[];
   tools?: OpenAIChatCompletionTool[];
+  config?: AIServiceConfig;
 }): string | undefined {
   if (!args.systemPrompt && !(args.tools && args.tools.length > 0)) {
     return undefined;
   }
 
   const toolsPayload = stableStringify(args.tools ?? []);
+  const stableMessagePrefixPayload = buildStableMessagePrefixPayload(
+    args.messages ?? [],
+    Math.max(0, args.config?.promptCachePrefixMessageCount ?? 0),
+  );
 
   return [
     'chat',
     args.model,
     stableHashKeyPart(args.systemPrompt ?? ''),
     stableHashKeyPart(toolsPayload),
+    ...(stableMessagePrefixPayload
+      ? [stableHashKeyPart(stableMessagePrefixPayload)]
+      : []),
   ].join(':');
 }
 
