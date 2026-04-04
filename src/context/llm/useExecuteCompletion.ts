@@ -360,54 +360,62 @@ export function useExecuteCompletion({
           }
 
           // 4. Accumulate Tool Calls
-          if (chunk.tool_calls && Array.isArray(chunk.tool_calls)) {
-            (chunk.tool_calls as (ToolCall & { index?: number })[]).forEach(
-              (toolCallChunk) => {
-                const { index } = toolCallChunk;
+          const toolCallStartChunks = Array.isArray(chunk.tool_call_starts)
+            ? (chunk.tool_call_starts as (ToolCall & { index?: number })[])
+            : [];
+          const toolCallDeltaChunks = Array.isArray(chunk.tool_calls)
+            ? (chunk.tool_calls as (ToolCall & { index?: number })[])
+            : [];
+          const toolCallChunks = [
+            ...toolCallStartChunks,
+            ...toolCallDeltaChunks,
+          ];
+          const hasToolCallUpdate = toolCallChunks.length > 0;
 
-                if (index === undefined) {
-                  content.push({
-                    type: 'tool_call',
-                    id: toolCallChunk.id || '',
-                    name: toolCallChunk.function?.name || '',
-                    arguments: toolCallChunk.function?.arguments || '',
-                  });
-                  return;
-                }
+          if (hasToolCallUpdate) {
+            toolCallChunks.forEach((toolCallChunk) => {
+              const { index } = toolCallChunk;
 
-                if (activeToolCallIndices.has(index)) {
-                  const contentIndex = activeToolCallIndices.get(index)!;
-                  const targetBlock = content[
-                    contentIndex
-                  ] as MCPToolCallContent;
-                  if (toolCallChunk.id && !targetBlock.id) {
-                    targetBlock.id = toolCallChunk.id;
-                  }
-                  if (toolCallChunk.function?.name) {
-                    if (!targetBlock.name) {
-                      targetBlock.name = toolCallChunk.function.name;
-                    } else if (
-                      targetBlock.name !== toolCallChunk.function.name &&
-                      !toolCallChunk.function.name.startsWith(targetBlock.name)
-                    ) {
-                      targetBlock.name = toolCallChunk.function.name;
-                    }
-                  }
-                  if (toolCallChunk.function?.arguments) {
-                    targetBlock.arguments += toolCallChunk.function.arguments;
-                  }
-                } else {
-                  const newBlock: MCPToolCallContent = {
-                    type: 'tool_call',
-                    id: toolCallChunk.id || '',
-                    name: toolCallChunk.function?.name || '',
-                    arguments: toolCallChunk.function?.arguments || '',
-                  };
-                  content.push(newBlock);
-                  activeToolCallIndices.set(index, content.length - 1);
+              if (index === undefined) {
+                content.push({
+                  type: 'tool_call',
+                  id: toolCallChunk.id || '',
+                  name: toolCallChunk.function?.name || '',
+                  arguments: toolCallChunk.function?.arguments || '',
+                });
+                return;
+              }
+
+              if (activeToolCallIndices.has(index)) {
+                const contentIndex = activeToolCallIndices.get(index)!;
+                const targetBlock = content[contentIndex] as MCPToolCallContent;
+                if (toolCallChunk.id && !targetBlock.id) {
+                  targetBlock.id = toolCallChunk.id;
                 }
-              },
-            );
+                if (toolCallChunk.function?.name) {
+                  if (!targetBlock.name) {
+                    targetBlock.name = toolCallChunk.function.name;
+                  } else if (
+                    targetBlock.name !== toolCallChunk.function.name &&
+                    !toolCallChunk.function.name.startsWith(targetBlock.name)
+                  ) {
+                    targetBlock.name = toolCallChunk.function.name;
+                  }
+                }
+                if (toolCallChunk.function?.arguments) {
+                  targetBlock.arguments += toolCallChunk.function.arguments;
+                }
+              } else {
+                const newBlock: MCPToolCallContent = {
+                  type: 'tool_call',
+                  id: toolCallChunk.id || '',
+                  name: toolCallChunk.function?.name || '',
+                  arguments: toolCallChunk.function?.arguments || '',
+                };
+                content.push(newBlock);
+                activeToolCallIndices.set(index, content.length - 1);
+              }
+            });
           }
 
           if (thinkingStartTime !== undefined) {
@@ -460,7 +468,7 @@ export function useExecuteCompletion({
           const nowMs = performance.now();
           const lastUpdateMs =
             lastStreamingUpdateRef.current.get(sessionId) ?? 0;
-          if (nowMs - lastUpdateMs >= 50) {
+          if (hasToolCallUpdate || nowMs - lastUpdateMs >= 50) {
             lastStreamingUpdateRef.current.set(sessionId, nowMs);
             setStreamingMessages((prev) => {
               const next = new Map(prev);

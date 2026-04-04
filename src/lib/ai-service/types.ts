@@ -105,6 +105,16 @@ export interface AIServiceConfig {
   promptCacheRetention?: 'in_memory' | '24h';
 
   /**
+   * Optional number of leading chat messages to include in automatically
+   * derived OpenAI prompt cache keys.
+   *
+   * This keeps the default cross-session prefix-sharing behavior unchanged when
+   * unset, but allows stricter cache partitioning for compatible proxies that
+   * expect stable leading message history in the cache key.
+   */
+  promptCachePrefixMessageCount?: number;
+
+  /**
    * Enable reasoning mode for supported models.
    * Per-conversation temporary setting (not global).
    *

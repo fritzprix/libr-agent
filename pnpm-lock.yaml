@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  punycode: ^2.3.1
+
 importers:
   .:
     dependencies:
@@ -11,8 +14,8 @@ importers:
         specifier: ^0.64.0
         version: 0.64.0(zod@3.25.76)
       '@cerebras/cerebras_cloud_sdk':
-        specifier: ^1.35.0
-        version: 1.35.0
+        specifier: ^1.64.1
+        version: 1.64.1
       '@google/genai':
         specifier: ^1.10.0
         version: 1.10.0(@modelcontextprotocol/sdk@1.17.3)
@@ -92,8 +95,8 @@ importers:
         specifier: ^3.1.3
         version: 3.1.3
       groq-sdk:
-        specifier: ^0.27.0
-        version: 0.27.0
+        specifier: ^1.1.2
+        version: 1.1.2
       handlebars:
         specifier: ^4.7.8
         version: 4.7.8
@@ -476,10 +479,10 @@ packages:
       }
     engines: { node: '>=18' }
 
-  '@cerebras/cerebras_cloud_sdk@1.35.0':
+  '@cerebras/cerebras_cloud_sdk@1.64.1':
     resolution:
       {
-        integrity: sha512-bQ6KYHmcvudHJ1aLzqkeETn3Y071/8/zpcZho6g4pKZ+VluHvLmIG0buhrwF9qJY5WSLmXR/s4pruxVRmfV7yQ==,
+        integrity: sha512-eQ0udGHS9xrWANi56yCS/FMcbwtysugD73YWipp89+zarbm2pd5hxqrmGlFqafS4Pwyo7cU7Qv31am5jdjqXFg==,
       }
 
   '@csstools/color-helpers@5.0.2':
@@ -4369,11 +4372,12 @@ packages:
         integrity: sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag==,
       }
 
-  groq-sdk@0.27.0:
+  groq-sdk@1.1.2:
     resolution:
       {
-        integrity: sha512-fiEou5jdIgXGolo6fz5N2G++0fGMRhC/GzAqKtSnagt9eOwFn7C8FYjVeqs7ah6/VN/yygEUvFVJa0XD6T+3mg==,
+        integrity: sha512-CZO0XUQQDhn43ri1+lZHxZKpb+bGutgTvFmCJtooexiitGmPqhm1hntOT3nCoaq07e+OpeokVnfUs0i/oQuUaQ==,
       }
+    hasBin: true
 
   gtoken@7.1.0:
     resolution:
@@ -5868,6 +5872,7 @@ packages:
         integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==,
       }
     engines: { node: '>=10.5.0' }
+    deprecated: Use your platform's native DOMException instead
 
   node-fetch@2.7.0:
     resolution:
@@ -8127,7 +8132,7 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@cerebras/cerebras_cloud_sdk@1.35.0':
+  '@cerebras/cerebras_cloud_sdk@1.64.1':
     dependencies:
       '@types/node': 18.19.118
       '@types/node-fetch': 2.6.12
@@ -10698,17 +10703,7 @@ snapshots:
 
   graphemer@1.4.0: {}
 
-  groq-sdk@0.27.0:
-    dependencies:
-      '@types/node': 18.19.118
-      '@types/node-fetch': 2.6.12
-      abort-controller: 3.0.0
-      agentkeepalive: 4.6.0
-      form-data-encoder: 1.7.2
-      formdata-node: 4.4.1
-      node-fetch: 2.7.0
-    transitivePeerDependencies:
-      - encoding
+  groq-sdk@1.1.2: {}
 
   gtoken@7.1.0:
     dependencies:

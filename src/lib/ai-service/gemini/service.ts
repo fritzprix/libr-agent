@@ -242,9 +242,21 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     );
 
     try {
-      const geminiMessages = this.convertMessages(
-        sanitizedMessages,
+      const normalizedContextInjection = createEphemeralSessionContextInjection(
         options.systemPrompt,
+        options.sessionContext,
+        sanitizedMessages,
+        {
+          idPrefix: 'gemini-session-context',
+          contentText: options.sessionContext
+            ? formatSessionContextAsBackgroundReference(options.sessionContext)
+            : undefined,
+        },
+      );
+
+      const geminiMessages = this.convertMessages(
+        normalizedContextInjection.messages,
+        normalizedContextInjection.systemPrompt,
       );
       if (geminiMessages.length === 0) {
         throw new Error(
@@ -263,16 +275,22 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         options.modelName || config.defaultModel || getDefaultModel();
 
       // --- CONTEXT CACHING ABSTRACTION BEGIN ---
-      const stablePrefix = options.systemPrompt ?? '';
-      const dynamicContext = options.sessionContext ?? '';
+      const stablePrefix = normalizedContextInjection.systemPrompt ?? '';
       const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
+      const toolDeclarationCount =
+        geminiTools?.[0]?.functionDeclarations.length ?? 0;
       const requiresToolOverride =
         Boolean(geminiTools) &&
         (options.forceToolUse === true || options.disableToolUse === true);
       const canUseCachedContent = !requiresToolOverride;
       const shouldUseCache =
         canUseCachedContent &&
-        this.shouldAttemptContextCache(model, stablePrefix, toolsPayload);
+        this.shouldAttemptContextCache(
+          model,
+          stablePrefix,
+          toolsPayload,
+          toolDeclarationCount,
+        );
       let cachedContentName: string | undefined;
       let cacheKey: string | undefined;
 
@@ -304,6 +322,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         model,
         stablePrefix,
         toolsPayload,
+        toolDeclarationCount,
         cacheKey,
         canUseCachedContent,
         requiresToolOverride,
@@ -317,15 +336,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       if (cachedContentName) {
         geminiConfig.cachedContent = cachedContentName;
-        // The Google GenAI API does not allow overriding system_instruction or tools when cached_content is provided.
-        // Therefore, we inject the dynamic context into the first user message.
-        if (dynamicContext && geminiMessages.length > 0) {
-          if (geminiMessages[0].parts) {
-            geminiMessages[0].parts.unshift({
-              text: `[System Context Update]\n${dynamicContext}\n\n`,
-            });
-          }
-        }
       } else {
         if (geminiTools) {
           geminiConfig.tools = geminiTools;
@@ -343,14 +353,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
             };
           }
         }
-        const combinedSystemPrompt = [
-          options.systemPrompt,
-          options.sessionContext,
-        ]
-          .filter(Boolean)
-          .join('\n\n');
-        if (combinedSystemPrompt) {
-          geminiConfig.systemInstruction = [{ text: combinedSystemPrompt }];
+        if (stablePrefix) {
+          geminiConfig.systemInstruction = [{ text: stablePrefix }];
         }
       }
 
@@ -528,6 +532,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     model: string,
     stablePrefix: string,
     toolsPayload: string,
+    toolDeclarationCount: number,
   ): boolean {
     if (!GeminiService.supportsToolsForModel(model)) {
       return false;
@@ -536,6 +541,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
       stablePrefix,
       toolsPayload,
+      toolDeclarationCount,
     );
     return cacheableTokenEstimate >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS;
   }
@@ -543,14 +549,25 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private estimateCacheablePrefixTokens(
     stablePrefix: string,
     toolsPayload: string,
+    toolDeclarationCount: number,
   ): number {
-    return Math.ceil((stablePrefix.length + toolsPayload.length) / 4);
+    const encoder = new TextEncoder();
+    const stablePrefixBytes = encoder.encode(stablePrefix).length;
+    const toolsPayloadBytes = encoder.encode(toolsPayload).length;
+    const textTokenEstimate = Math.ceil(stablePrefixBytes / 3.5);
+    const structuredTokenEstimate = Math.ceil(toolsPayloadBytes / 2.5);
+    const toolDeclarationOverhead = toolDeclarationCount * 32;
+
+    return (
+      textTokenEstimate + structuredTokenEstimate + toolDeclarationOverhead
+    );
   }
 
   private logPromptCacheMetadata(args: {
     model: string;
     stablePrefix: string;
     toolsPayload: string;
+    toolDeclarationCount: number;
     cacheKey?: string;
     canUseCachedContent: boolean;
     requiresToolOverride: boolean;
@@ -560,7 +577,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
       args.stablePrefix,
       args.toolsPayload,
+      args.toolDeclarationCount,
     );
+    const encoder = new TextEncoder();
+    const stablePrefixBytes = encoder.encode(args.stablePrefix).length;
+    const toolsPayloadBytes = encoder.encode(args.toolsPayload).length;
 
     this.logger.info('Gemini prompt cache metadata', {
       model: args.model,
@@ -568,7 +589,10 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       stablePrefixHash: stableHashKeyPart(args.stablePrefix),
       toolsHash: stableHashKeyPart(args.toolsPayload),
       stablePrefixLength: args.stablePrefix.length,
+      stablePrefixBytes,
       toolsPayloadLength: args.toolsPayload.length,
+      toolsPayloadBytes,
+      toolDeclarationCount: args.toolDeclarationCount,
       cacheableTokenEstimate,
       canUseCachedContent: args.canUseCachedContent,
       requiresToolOverride: args.requiresToolOverride,

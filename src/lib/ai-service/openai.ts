@@ -262,6 +262,7 @@ export class OpenAIService extends BaseAIService<
         systemPrompt: options.systemPrompt,
         messages: sanitizedMessages,
         tools,
+        config,
       });
 
       const request = withPromptCaching<OpenAIStreamingRequest>(
@@ -319,6 +320,7 @@ export class OpenAIService extends BaseAIService<
       // Wrap with TTFT measurement (OpenAI doesn't provide native prefill timing)
       const startTime = performance.now();
       let firstChunkReceived = false;
+      const seenToolCallIndices = new Set<number>();
 
       for await (const chunk of completion) {
         if (this.getAbortSignal().aborted) {
@@ -372,9 +374,71 @@ export class OpenAIService extends BaseAIService<
         }
 
         if (delta?.tool_calls) {
-          yield JSON.stringify({
-            tool_calls: delta.tool_calls,
-          });
+          const toolCallStarts: Array<{
+            index: number;
+            id: string;
+            type: 'function';
+            function: { name: string; arguments: string };
+          }> = [];
+          const toolCallArgumentDeltas: Array<{
+            index: number;
+            id?: string;
+            type: 'function';
+            function: { name?: string; arguments: string };
+          }> = [];
+          const passthroughToolCalls: typeof delta.tool_calls = [];
+
+          for (const toolCall of delta.tool_calls) {
+            if (toolCall.index === undefined) {
+              passthroughToolCalls.push(toolCall);
+              continue;
+            }
+
+            if (!seenToolCallIndices.has(toolCall.index)) {
+              seenToolCallIndices.add(toolCall.index);
+              toolCallStarts.push({
+                index: toolCall.index,
+                id: toolCall.id || '',
+                type: 'function',
+                function: {
+                  name: toolCall.function?.name || '',
+                  arguments: '',
+                },
+              });
+            }
+
+            if (
+              typeof toolCall.function?.arguments === 'string' &&
+              toolCall.function.arguments.length > 0
+            ) {
+              toolCallArgumentDeltas.push({
+                index: toolCall.index,
+                ...(toolCall.id ? { id: toolCall.id } : {}),
+                type: 'function',
+                function: {
+                  ...(toolCall.function?.name
+                    ? { name: toolCall.function.name }
+                    : {}),
+                  arguments: toolCall.function.arguments,
+                },
+              });
+            }
+          }
+
+          if (toolCallStarts.length > 0) {
+            yield JSON.stringify({
+              tool_calls: toolCallStarts,
+            });
+          }
+
+          if (
+            toolCallArgumentDeltas.length > 0 ||
+            passthroughToolCalls.length > 0
+          ) {
+            yield JSON.stringify({
+              tool_calls: [...toolCallArgumentDeltas, ...passthroughToolCalls],
+            });
+          }
         } else if (delta?.content) {
           yield JSON.stringify({
             content: delta.content || '',
@@ -608,6 +672,7 @@ export class OpenAIService extends BaseAIService<
     systemPrompt?: string;
     messages?: Message[];
     tools?: OpenAIChatCompletionTool[];
+    config?: AIServiceConfig;
   }): string | undefined {
     return buildAutomaticPromptCacheKey(args);
   }

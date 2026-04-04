@@ -42,7 +42,8 @@
     "handlebars",
     "postcss",
     "remark-gfm",
-    "tailwindcss"
+    "tailwindcss",
+    "punycode"
   ],
   "ignoreUnimported": [
     "src/components/ui/alert-dialog.tsx",
@@ -51,5 +52,5 @@
     "src/hooks/__tests__/helpers.ts",
     "src/test/setup.ts"
   ],
-  "ignoreDependencies": ["handlebars"]
+  "ignoreDependencies": ["handlebars", "punycode"]
 }

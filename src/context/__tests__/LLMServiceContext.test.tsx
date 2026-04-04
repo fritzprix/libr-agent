@@ -312,6 +312,174 @@ describe('LLMServiceContext – Core', () => {
       });
     });
 
+    it('surfaces streaming tool calls before the stream completes', async () => {
+      const { result } = renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      let releaseStream!: () => void;
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({
+          tool_calls: [
+            {
+              index: 0,
+              id: 'call-streaming',
+              type: 'function',
+              function: {
+                name: 'test_tool',
+                arguments: '{"arg":"partial"',
+              },
+            },
+          ],
+        });
+
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+
+        yield JSON.stringify({
+          tool_calls: [
+            {
+              index: 0,
+              function: {
+                arguments: ',"rest":"done"}',
+              },
+            },
+          ],
+        });
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let promise!: Promise<Message>;
+      await act(async () => {
+        promise = result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      await waitFor(() => {
+        expect(
+          result.current.streamingMessages.get('test-session'),
+        ).toMatchObject({
+          role: 'assistant',
+          isStreaming: true,
+          tool_calls: [
+            {
+              id: 'call-streaming',
+              type: 'function',
+              function: {
+                name: 'test_tool',
+                arguments: '{"arg":"partial"',
+              },
+            },
+          ],
+        });
+      });
+
+      await act(async () => {
+        releaseStream();
+        await promise;
+      });
+    });
+
+    it('surfaces tool_call_starts before argument deltas complete', async () => {
+      const { result } = renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      let releaseStream!: () => void;
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({
+          tool_call_starts: [
+            {
+              index: 0,
+              id: 'call-start-only',
+              type: 'function',
+              function: {
+                name: 'test_tool',
+                arguments: '',
+              },
+            },
+          ],
+        });
+
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+
+        yield JSON.stringify({
+          tool_calls: [
+            {
+              index: 0,
+              function: {
+                arguments: '{"arg":"done"}',
+              },
+            },
+          ],
+        });
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let promise!: Promise<Message>;
+      await act(async () => {
+        promise = result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      await waitFor(() => {
+        expect(
+          result.current.streamingMessages.get('test-session'),
+        ).toMatchObject({
+          role: 'assistant',
+          isStreaming: true,
+          tool_calls: [
+            {
+              id: 'call-start-only',
+              type: 'function',
+              function: {
+                name: 'test_tool',
+                arguments: '',
+              },
+            },
+          ],
+        });
+      });
+
+      await act(async () => {
+        releaseStream();
+        await promise;
+      });
+    });
+
     it('creates a renderable streaming assistant placeholder before chunks complete', async () => {
       const { result } = renderHook(() => useLLMService(), {
         wrapper: TestWrapper,

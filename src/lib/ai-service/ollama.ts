@@ -10,9 +10,17 @@ import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
-import { AIServiceProvider, AIServiceConfig } from './types';
+import {
+  AIServiceProvider,
+  AIServiceConfig,
+  ContextInjectionResult,
+} from './types';
 import { BaseAIService } from './base-service';
 import { supportsThinking, getContextWindow } from './model-capabilities';
+import {
+  createEphemeralSessionContextInjection,
+  formatSessionContextAsBackgroundReference,
+} from './base-service-context';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
@@ -96,6 +104,30 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Ollama;
+  }
+
+  override prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): ContextInjectionResult {
+    if (!sessionContext) {
+      return { systemPrompt, sessionContext: undefined, messages };
+    }
+
+    logger.debug('Injecting Ollama session context as ephemeral tail message', {
+      sessionContextLength: sessionContext.length,
+    });
+
+    return createEphemeralSessionContextInjection(
+      systemPrompt,
+      sessionContext,
+      messages,
+      {
+        idPrefix: 'ollama-session-context',
+        contentText: formatSessionContextAsBackgroundReference(sessionContext),
+      },
+    );
   }
 
   /**
