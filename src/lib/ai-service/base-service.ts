@@ -6,10 +6,32 @@ import {
   repairMalformedToolCalls,
   validateToolCallPairing,
 } from '@/lib/ai-service/message-normalizer';
+import { mergeSessionContextIntoSystemPrompt } from './base-service-context';
 import {
-  extractMediaContent,
-  isSpendingCapError,
+  type CompactOptions,
+  type PrepareStreamChatOptions,
+  type PrepareStreamChatResult,
+  type SampleTextOptions,
+  type StreamChatOptions,
+  type StreamingErrorContext,
+} from './base-service-shared';
+import {
+  shouldRetryRequest,
+  throwStreamingError,
+  withRetryPolicy,
+} from './base-service-strategies';
+import { compactMessages } from './base-service-compaction';
+import { prepareStreamChatRequest } from './base-service-stream-preparation';
+import {
+  extractMediaContent as extractMediaParts,
+  processMessageContent as stringifyMessageContent,
+  processMultiModalContent as buildMultiModalContent,
 } from '@/lib/ai-service/utils';
+import {
+  validateApiKey as validateServiceApiKey,
+  validateMessages as validateServiceMessages,
+  validateToolDefinition,
+} from './base-service-validation';
 import {
   type AIServiceConfig,
   type AIServiceProvider,
@@ -17,102 +39,11 @@ import {
   type ContextInjectionResult,
   type IAIService,
   type ModelInfo,
-  type SamplingOptions,
   type SamplingResponse,
 } from './types';
 import type { Message } from '@/models/chat';
 
-export function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    if (typeof value === 'bigint') {
-      return `{"$bigint":${JSON.stringify(value.toString())}}`;
-    }
-
-    const serialized = JSON.stringify(value);
-    if (serialized !== undefined) {
-      return serialized;
-    }
-
-    return JSON.stringify(String(value));
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
-  }
-
-  const entries = Object.entries(value as Record<string, unknown>).sort(
-    ([leftKey], [rightKey]) => leftKey.localeCompare(rightKey),
-  );
-
-  return `{${entries
-    .map(
-      ([key, nestedValue]) =>
-        `${JSON.stringify(key)}:${stableStringify(nestedValue)}`,
-    )
-    .join(',')}}`;
-}
-
-export function stableHashKeyPart(value: string): string {
-  let hash = 2166136261;
-
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return (hash >>> 0).toString(16);
-}
-
-function stableClone<T>(value: T): T {
-  if (value === null || typeof value !== 'object') {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => stableClone(item)) as T;
-  }
-
-  const sortedEntries = Object.entries(value as Record<string, unknown>)
-    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-    .map(([key, nestedValue]) => [key, stableClone(nestedValue)]);
-
-  return Object.fromEntries(sortedEntries) as T;
-}
-
-function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
-  return tools
-    .map((tool) => ({
-      ...tool,
-      inputSchema: stableClone(tool.inputSchema),
-      outputSchema: tool.outputSchema
-        ? stableClone(tool.outputSchema)
-        : undefined,
-      annotations: tool.annotations ? stableClone(tool.annotations) : undefined,
-    }))
-    .sort((left, right) => {
-      const leftSignature = [
-        left.name,
-        left.title ?? '',
-        left.description,
-        stableStringify(left.inputSchema),
-        stableStringify(left.outputSchema),
-        stableStringify(left.annotations),
-        left.backend ?? '',
-      ].join('\n');
-
-      const rightSignature = [
-        right.name,
-        right.title ?? '',
-        right.description,
-        stableStringify(right.inputSchema),
-        stableStringify(right.outputSchema),
-        stableStringify(right.annotations),
-        right.backend ?? '',
-      ].join('\n');
-
-      return leftSignature.localeCompare(rightSignature);
-    });
-}
+export { stableHashKeyPart, stableStringify } from './base-service-utils';
 
 /**
  * An abstract base class that provides common functionality for all AI services.
@@ -121,15 +52,9 @@ function normalizeAvailableTools(tools: MCPTool[]): MCPTool[] {
  * @template TProviderMessage The type of message objects used by the provider's API.
  * @template TProviderTool The type of tool objects used by the provider's API.
  */
-export abstract class BaseAIService<
-  TProviderMessage,
-  TProviderTool,
-> implements IAIService {
-  private static readonly SESSION_CONTEXT_BACKGROUND_HEADER =
-    '[Current session context — background reference only, do not respond to this block]';
-
-  private static readonly SESSION_CONTEXT_BACKGROUND_FOOTER =
-    '[End of session context]';
+export abstract class BaseAIService<TProviderMessage, TProviderTool>
+  implements IAIService
+{
   /**
    * The default configuration for the service.
    * @protected
@@ -199,9 +124,7 @@ export abstract class BaseAIService<
    * @protected
    */
   protected validateApiKey(apiKey: string): void {
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-      throw new AIServiceError('Invalid API key provided', this.getProvider());
-    }
+    validateServiceApiKey(apiKey, this.getProvider());
   }
 
   /**
@@ -211,27 +134,7 @@ export abstract class BaseAIService<
    * @protected
    */
   protected validateMessages(messages: Message[]): void {
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      throw new AIServiceError(
-        'Messages array is empty or undefined',
-        this.getProvider(),
-      );
-    }
-    messages.forEach((message) => {
-      if (!message.id || typeof message.id !== 'string') {
-        throw new Error('Message must have a valid id');
-      }
-      if (
-        (!message.content &&
-          (message.role === 'user' || message.role === 'system')) ||
-        (typeof message.content !== 'string' && !Array.isArray(message.content))
-      ) {
-        throw new Error('Message must have valid content');
-      }
-      if (!['user', 'assistant', 'system', 'tool'].includes(message.role)) {
-        throw new Error('Message must have a valid role');
-      }
-    });
+    validateServiceMessages(messages, this.getProvider());
   }
 
   /**
@@ -241,26 +144,7 @@ export abstract class BaseAIService<
    * @protected
    */
   protected validateTool(tool: MCPTool): void {
-    if (!tool.name || typeof tool.name !== 'string') {
-      throw new Error(
-        `Tool must have a valid name (provider: ${this.getProvider()})`,
-      );
-    }
-    if (!tool.description || typeof tool.description !== 'string') {
-      throw new Error(
-        `Tool must have a valid description (tool: ${tool.name})`,
-      );
-    }
-    if (!tool.inputSchema || typeof tool.inputSchema !== 'object') {
-      throw new Error(
-        `Tool must have a valid inputSchema (tool: ${tool.name})`,
-      );
-    }
-    if (tool.inputSchema.type !== 'object') {
-      throw new Error(
-        `Tool inputSchema must be of type "object" (tool: ${tool.name})`,
-      );
-    }
+    validateToolDefinition(tool, this.getProvider());
   }
 
   /**
@@ -271,48 +155,14 @@ export abstract class BaseAIService<
    * @protected
    */
   protected async withRetry<T>(fn: () => Promise<T>): Promise<T> {
-    const maxRetries = this.defaultConfig.maxRetries ?? 3;
-    let lastError: unknown;
-
-    for (let i = 0; i <= maxRetries; i++) {
-      try {
-        return await fn();
-      } catch (error: unknown) {
-        lastError = error;
-
-        // Don't retry on cancellation
-        if (this.abortController.signal.aborted) {
-          throw error;
-        }
-
-        // Only retry on certain errors (e.g., rate limits, network issues)
-        if (this.shouldRetry(error) && i < maxRetries) {
-          const delay =
-            Math.pow(2, i) * (this.defaultConfig.retryDelay ?? 1000);
-          this.logger.warn(
-            `Retrying request (${i + 1}/${maxRetries}) after ${delay}ms...`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    if (lastError instanceof Error) {
-      throw new AIServiceError(
-        lastError.message,
-        this.getProvider(),
-        undefined,
-        lastError,
-      );
-    }
-    throw new AIServiceError(
-      String(lastError),
-      this.getProvider(),
-      undefined,
-      undefined,
-    );
+    return withRetryPolicy({
+      fn,
+      config: this.defaultConfig,
+      abortSignal: this.abortController.signal,
+      logger: this.logger,
+      provider: this.getProvider(),
+      shouldRetry: (error) => this.shouldRetry(error),
+    });
   }
 
   /**
@@ -322,21 +172,7 @@ export abstract class BaseAIService<
    * @protected
    */
   protected shouldRetry(error: unknown): boolean {
-    // Basic implementation: retry on 429 (Too Many Requests) and 5xx (Server Errors)
-    const status = (error as { status?: number })?.status;
-    if (status !== undefined) {
-      if (status === 429) {
-        // Never retry billing/quota cap errors — these won't resolve on their own
-        if (isSpendingCapError(error)) {
-          return false;
-        }
-        return true;
-      }
-      if (status >= 500 && status <= 599) {
-        return true;
-      }
-    }
-    return false;
+    return shouldRetryRequest(error);
   }
 
   /**
@@ -347,11 +183,7 @@ export abstract class BaseAIService<
    * @protected
    */
   protected processMessageContent(content: MCPContent[]): string {
-    // Extracts only the text from the MCPContent array
-    return content
-      .filter((item) => item.type === 'text')
-      .map((item) => (item as { text: string }).text)
-      .join('\n');
+    return stringifyMessageContent(content);
   }
 
   /**
@@ -369,54 +201,7 @@ export abstract class BaseAIService<
     audio?: string;
     mimeType?: string;
   }> {
-    type MediaItem = {
-      data?: string;
-      uri?: string;
-      mimeType?: string;
-      source?: { data?: string; uri?: string; mimeType?: string };
-    };
-    return content.map((item) => {
-      switch (item.type) {
-        case 'text':
-          return { type: 'text', text: (item as { text: string }).text };
-        case 'image': {
-          const mediaItem = item as MediaItem;
-          const data = mediaItem.data || mediaItem.source?.data;
-          if (data) {
-            return {
-              type: 'image',
-              image: data,
-              mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
-            };
-          }
-
-          const uri = mediaItem.uri || mediaItem.source?.uri;
-          return {
-            type: 'text',
-            text: `[unresolved image omitted from multimodal request: ${uri || 'missing-uri'}]`,
-          };
-        }
-        case 'audio': {
-          const mediaItem = item as MediaItem;
-          const data = mediaItem.data || mediaItem.source?.data;
-          if (data) {
-            return {
-              type: 'audio',
-              audio: data,
-              mimeType: mediaItem.mimeType || mediaItem.source?.mimeType,
-            };
-          }
-
-          const uri = mediaItem.uri || mediaItem.source?.uri;
-          return {
-            type: 'text',
-            text: `[unresolved audio omitted from multimodal request: ${uri || 'missing-uri'}]`,
-          };
-        }
-        default:
-          return { type: 'text', text: `[${item.type}]` };
-      }
-    });
+    return buildMultiModalContent(content);
   }
 
   /**
@@ -437,61 +222,15 @@ export abstract class BaseAIService<
    */
   protected handleStreamingError(
     error: unknown,
-    context: {
-      messages: Message[];
-      options: {
-        modelName?: string;
-        systemPrompt?: string;
-        sessionContext?: string;
-        availableTools?: MCPTool[];
-        config?: AIServiceConfig;
-        disableToolUse?: boolean;
-      };
-      config: AIServiceConfig;
-    },
+    context: StreamingErrorContext,
   ): never {
-    const serviceProvider = this.getProvider();
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : undefined;
-
-    // NEW: Check if error is due to cancellation
-    const isCancellation =
-      this.abortController.signal.aborted ||
-      (error instanceof Error &&
-        (error.name === 'AbortError' ||
-          error.message.includes('abort') ||
-          error.message.includes('cancel')));
-
-    if (isCancellation) {
-      this.logger.info(`${serviceProvider} stream cancelled by user`);
-      // We throw an error to stop the generator, but this is an expected "success" case
-      // from the user's perspective. The calling code should catch this and handle it.
-      throw new AIServiceError(
-        `${serviceProvider} stream cancelled`,
-        serviceProvider,
-        undefined,
-        error instanceof Error ? error : undefined,
-      );
-    }
-
-    this.logger.error(`${serviceProvider} streaming failed`, {
-      error: errorMessage,
-      stack: errorStack,
-      requestData: {
-        model: context.options.modelName || context.config.defaultModel,
-        messagesCount: context.messages.length,
-        hasTools: !!context.options.availableTools?.length,
-        systemPrompt: !!context.options.systemPrompt,
-      },
+    throwStreamingError({
+      error,
+      context,
+      abortSignal: this.abortController.signal,
+      logger: this.logger,
+      provider: this.getProvider(),
     });
-
-    throw new AIServiceError(
-      `${serviceProvider} streaming failed: ${errorMessage}`,
-      serviceProvider,
-      undefined,
-      error instanceof Error ? error : undefined,
-    );
   }
 
   /**
@@ -522,37 +261,20 @@ export abstract class BaseAIService<
    */
   protected prepareStreamChat(
     messages: Message[],
-    options: {
-      modelName?: string;
-      systemPrompt?: string;
-      sessionContext?: string;
-      availableTools?: MCPTool[];
-      config?: AIServiceConfig;
-      disableToolUse?: boolean;
-    } = {},
-  ): {
-    config: AIServiceConfig;
-    tools?: TProviderTool[];
-    sanitizedMessages: Message[];
-  } {
+    options: PrepareStreamChatOptions = {},
+  ): PrepareStreamChatResult<TProviderTool> {
     this.validateMessages(messages);
-    const config = this.mergeConfig(options);
 
     // Re-initialize AbortController for this call
     this.abortController = new AbortController();
 
-    const normalizedTools = options.availableTools
-      ? normalizeAvailableTools(options.availableTools)
-      : undefined;
-
-    const tools = normalizedTools
-      ? this.convertTools(normalizedTools)
-      : undefined;
-
-    // Apply vendor-specific message sanitization
-    const sanitizedMessages = this.sanitizeMessages(messages);
-
-    return { config, tools, sanitizedMessages };
+    return prepareStreamChatRequest({
+      messages,
+      options,
+      mergeConfig: (streamOptions) => this.mergeConfig(streamOptions),
+      convertTools: (tools) => this.convertTools(tools),
+      sanitizeMessages: (inputMessages) => this.sanitizeMessages(inputMessages),
+    });
   }
 
   /**
@@ -580,7 +302,7 @@ export abstract class BaseAIService<
    * @protected
    */
   protected extractMediaContent(content: MCPContent[]): MCPContent[] {
-    return extractMediaContent(content);
+    return extractMediaParts(content);
   }
 
   /**
@@ -631,15 +353,7 @@ export abstract class BaseAIService<
    */
   async *streamChat(
     messages: Message[],
-    options: {
-      modelName?: string;
-      systemPrompt?: string;
-      sessionContext?: string;
-      availableTools?: MCPTool[];
-      config?: AIServiceConfig;
-      forceToolUse?: boolean;
-      disableToolUse?: boolean;
-    } = {},
+    options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
     const provider = this.getProvider();
     const model =
@@ -739,15 +453,7 @@ export abstract class BaseAIService<
    */
   protected abstract doStreamChat(
     messages: Message[],
-    options?: {
-      modelName?: string;
-      systemPrompt?: string;
-      sessionContext?: string;
-      availableTools?: MCPTool[];
-      config?: AIServiceConfig;
-      forceToolUse?: boolean;
-      disableToolUse?: boolean;
-    },
+    options?: StreamChatOptions,
   ): AsyncGenerator<string, void, void>;
 
   /**
@@ -763,11 +469,7 @@ export abstract class BaseAIService<
    */
   async sampleText(
     prompt: string,
-    options?: {
-      modelName?: string;
-      samplingOptions?: SamplingOptions;
-      config?: AIServiceConfig;
-    },
+    options?: SampleTextOptions,
   ): Promise<SamplingResponse> {
     // Deliberately unused — subclasses override this method.
     // The parameters exist only to satisfy the IAIService interface contract.
@@ -825,93 +527,21 @@ export abstract class BaseAIService<
    */
   async compact(
     messages: Message[],
-    options?: {
-      modelName?: string;
-      config?: AIServiceConfig;
-      systemPrompt?: string;
-      sessionContext?: string;
-      availableTools?: MCPTool[];
-    },
+    options?: CompactOptions,
   ): Promise<string> {
-    const compactMessages = [...messages];
-
-    let instruction =
-      'Summarise the previous conversation history concisely using structured Markdown.\n\n' +
-      'Organize the summary into clear sections (e.g., "Key Decisions", "Context", "Tool Results", "Pending Actions") ' +
-      'to preserve all information needed to continue the conversation effectively.\n\n' +
-      'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
-
-    // Residual connection principle: when a prior compact-summary is present, the new
-    // summary MUST be informationally equivalent to (old_summary ⊕ new_messages).
-    // Every piece of information from the previous summary must carry forward unchanged —
-    // treat it as an immutable residual, not a target for further compression.
-    const firstMsg = compactMessages[0];
-    if (firstMsg?.id.startsWith('compact-summary-')) {
-      instruction =
-        'The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n' +
-        'CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary ' +
-        'MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. ' +
-        'Do NOT compress, omit, or paraphrase the prior summary — treat it as an immutable residual that carries forward in full. ' +
-        'Your new summary = (prior summary, preserved completely) + (new messages, summarised).\n\n' +
-        instruction;
-    }
-
-    const instructionMessage: Message = {
-      id: `compaction_instruction_${Date.now()}`,
-      sessionId: 'internal',
-      threadId: 'internal',
-      role: 'user', // "user" role is critical here so it follows valid standard tool sequences
-      content: [{ type: 'text', text: instruction }],
-      createdAt: new Date(),
-    };
-    compactMessages.push(instructionMessage);
-
-    const {
-      systemPrompt: effectiveSystemPrompt,
-      sessionContext: effectiveSessionContext,
-      messages: effectiveMessages,
-    } = this.prepareContextInjection(
-      options?.systemPrompt,
-      options?.sessionContext,
-      compactMessages,
-    );
-
-    const streamGenerator = this.streamChat(effectiveMessages, {
-      modelName: options?.modelName,
-      systemPrompt: effectiveSystemPrompt,
-      sessionContext: effectiveSessionContext,
-      availableTools: options?.availableTools,
-      config: options?.config,
-      forceToolUse: false,
-      disableToolUse: true, // Key command to underlying providers
+    return compactMessages(messages, {
+      options,
+      prepareContextInjection: (systemPrompt, sessionContext, compactInput) =>
+        this.prepareContextInjection(
+          systemPrompt,
+          sessionContext,
+          compactInput,
+        ),
+      streamChat: (compactInput, compactOptions) =>
+        this.streamChat(compactInput, compactOptions),
+      isAborted: () => this.getAbortSignal().aborted,
+      getProvider: () => this.getProvider(),
     });
-
-    let summaryText = '';
-    for await (const chunk of streamGenerator) {
-      if (this.getAbortSignal().aborted) {
-        throw new Error('Compaction request aborted');
-      }
-
-      let parsedChunk: Record<string, unknown>;
-      try {
-        parsedChunk = JSON.parse(chunk);
-      } catch {
-        parsedChunk = { content: chunk };
-      }
-
-      if (parsedChunk.content && typeof parsedChunk.content === 'string') {
-        summaryText += parsedChunk.content;
-      }
-    }
-
-    if (!summaryText.trim()) {
-      throw new AIServiceError(
-        'compact() received an empty response from streamChat',
-        this.getProvider(),
-      );
-    }
-
-    return summaryText.trim();
   }
 
   /**
@@ -940,63 +570,12 @@ export abstract class BaseAIService<
     }
 
     return {
-      systemPrompt: this.mergeSessionContextIntoSystemPrompt(
+      systemPrompt: mergeSessionContextIntoSystemPrompt(
         systemPrompt,
         sessionContext,
       ),
       sessionContext: undefined,
       messages,
-    };
-  }
-
-  protected mergeSessionContextIntoSystemPrompt(
-    systemPrompt: string | undefined,
-    sessionContext: string,
-  ): string {
-    return [systemPrompt, sessionContext].filter(Boolean).join('\n\n');
-  }
-
-  protected formatSessionContextAsBackgroundReference(
-    sessionContext: string,
-  ): string {
-    return `${BaseAIService.SESSION_CONTEXT_BACKGROUND_HEADER}\n\n${sessionContext}\n\n${BaseAIService.SESSION_CONTEXT_BACKGROUND_FOOTER}`;
-  }
-
-  protected createSyntheticSessionContextMessage(
-    sessionContext: string,
-    messages: Message[],
-    options?: {
-      idPrefix?: string;
-      contentText?: string;
-      metadata?: Record<string, unknown>;
-      sessionIdFallback?: string;
-      threadIdFallback?: string;
-      createdAt?: Date;
-    },
-  ): Message {
-    const referenceMessage = messages[messages.length - 1];
-    const idPrefix = options?.idPrefix ?? 'session-context';
-
-    return {
-      id: `${idPrefix}-${referenceMessage?.id ?? 'system'}`,
-      sessionId:
-        referenceMessage?.sessionId ??
-        options?.sessionIdFallback ??
-        `${idPrefix}`,
-      threadId:
-        referenceMessage?.threadId ??
-        referenceMessage?.sessionId ??
-        options?.threadIdFallback ??
-        `${idPrefix}`,
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: options?.contentText ?? sessionContext,
-        },
-      ],
-      metadata: options?.metadata,
-      createdAt: options?.createdAt,
     };
   }
 

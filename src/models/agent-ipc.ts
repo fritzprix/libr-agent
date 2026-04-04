@@ -86,6 +86,16 @@ export interface InjectMessagesRequest {
 }
 
 /**
+ * Request payload for executing a UI-triggered Tauri action through the backend-owned message path.
+ * Mirrors `ExecuteUiTauriActionRequest` in `src-tauri/src/commands/agent_commands.rs`.
+ */
+export interface ExecuteUiTauriActionRequest {
+  sessionId: string;
+  toolName: string;
+  params: Record<string, unknown>;
+}
+
+/**
  * Request payload for updating agent configuration.
  * Mirrors `UpdateAgentConfigRequest` in `src-tauri/src/commands/agent_commands.rs`.
  */

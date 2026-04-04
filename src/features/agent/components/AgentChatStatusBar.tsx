@@ -17,7 +17,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useMemo, useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -52,61 +52,87 @@ export function AgentChatStatusBar() {
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
-  const { metrics } = useTokenMetrics(session?.id);
+  const sessionId = session?.id;
+  const { metrics } = useTokenMetrics(sessionId);
 
-  // Persist last metrics to show after streaming ends
-  const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
-  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
-    session?.id,
-  );
-
-  // Adjusting State During Render: Reset metrics when session changes
-  if (session?.id !== prevSessionId) {
-    setPrevSessionId(session?.id);
-    setLastMetrics(null);
-  }
+  // Persist last metrics to show after streaming ends.
+  const [persistedMetrics, setPersistedMetrics] = useState<{
+    sessionId?: string;
+    usage: TokenUsage | null;
+  }>({
+    sessionId,
+    usage: null,
+  });
 
   useEffect(() => {
-    // Update last metrics only when we have meaningful new data
-    if (metrics) {
-      const hasData =
-        metrics.promptTokens > 0 ||
-        metrics.completionTokens > 0 ||
-        (metrics.cachedPromptTokens ?? 0) > 0;
+    setPersistedMetrics({
+      sessionId,
+      usage: null,
+    });
+  }, [sessionId]);
 
-      if (hasData) {
-        setLastMetrics((prev) => {
-          if (!prev) return metrics;
-          // Smart merge: update counts but preserve metadata if new chunk lacks it
-          return {
-            ...prev,
-            ...metrics,
-            details: {
-              ...prev.details,
-              ...metrics.details,
-              // Only overwrite metadata if new value is present and non-zero
-              evalDuration:
-                metrics.details?.evalDuration || prev.details?.evalDuration,
-              timeToFirstToken:
-                metrics.details?.timeToFirstToken ||
-                prev.details?.timeToFirstToken,
-              promptEvalDuration:
-                metrics.details?.promptEvalDuration ||
-                prev.details?.promptEvalDuration,
-              loadDuration:
-                metrics.details?.loadDuration || prev.details?.loadDuration,
-            },
-          };
-        });
-      }
+  useEffect(() => {
+    if (!sessionId || !metrics) {
+      return;
     }
-  }, [metrics]);
+
+    const hasData =
+      metrics.promptTokens > 0 ||
+      metrics.completionTokens > 0 ||
+      (metrics.cachedPromptTokens ?? 0) > 0;
+
+    if (!hasData) {
+      return;
+    }
+
+    setPersistedMetrics((previous) => {
+      const previousUsage =
+        previous.sessionId === sessionId ? previous.usage : null;
+
+      if (!previousUsage) {
+        return {
+          sessionId,
+          usage: metrics,
+        };
+      }
+
+      return {
+        sessionId,
+        usage: {
+          ...previousUsage,
+          ...metrics,
+          details: {
+            ...previousUsage.details,
+            ...metrics.details,
+            evalDuration:
+              metrics.details?.evalDuration ||
+              previousUsage.details?.evalDuration,
+            timeToFirstToken:
+              metrics.details?.timeToFirstToken ||
+              previousUsage.details?.timeToFirstToken,
+            promptEvalDuration:
+              metrics.details?.promptEvalDuration ||
+              previousUsage.details?.promptEvalDuration,
+            loadDuration:
+              metrics.details?.loadDuration ||
+              previousUsage.details?.loadDuration,
+          },
+        },
+      };
+    });
+  }, [metrics, sessionId]);
 
   // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
-  // without waiting for the next paint cycle (Effect-less derivation)
+  // without mutating state during render.
   const displayMetrics = useMemo(
-    () => mergeDisplayTokenUsage(lastMetrics, metrics),
-    [metrics, lastMetrics],
+    () =>
+      mergeDisplayTokenUsage(
+        persistedMetrics.sessionId === sessionId
+          ? persistedMetrics.usage
+          : null,
+        metrics,
+      ),
+    [metrics, persistedMetrics, sessionId],
   );
 
   // The context gauge intentionally uses Rust-estimated total context occupancy,
@@ -341,8 +367,9 @@ export function AgentChatStatusBar() {
                 logger.info(`Updating session config to ${provider}/${model}`);
 
                 try {
-                  const { enforceRuntimeBuiltinAliases } =
-                    await import('@/lib/assistant/runtime-builtins');
+                  const { enforceRuntimeBuiltinAliases } = await import(
+                    '@/lib/assistant/runtime-builtins'
+                  );
 
                   const updatedConfig = {
                     ...session.assistant,

@@ -1,5 +1,9 @@
 import { safeInvoke } from '@/lib/backend/core';
-import type { AgentResponse, AgentRuntimeError } from '../../models/agent-ipc';
+import type {
+  AgentResponse,
+  AgentRuntimeError,
+  ExecuteUiTauriActionRequest,
+} from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
 import type { MCPTool } from '@/lib/mcp';
@@ -71,6 +75,22 @@ export async function handleUserToolCall(
   };
 
   await handleLLMResponse(sessionId, message);
+}
+
+export async function executeUiTauriAction(
+  sessionId: string,
+  toolName: string,
+  params: Record<string, unknown>,
+): Promise<AgentResponse> {
+  const request: ExecuteUiTauriActionRequest = {
+    sessionId,
+    toolName,
+    params,
+  };
+
+  return safeInvoke<AgentResponse>('agent_execute_ui_tauri_action', {
+    request,
+  });
 }
 
 /**

@@ -76,7 +76,7 @@ async fn delete_server_config_db(id_or_name: String) -> Result<(), String> {
 }
 
 /// Register a new MCP server configuration
-pub async fn register_server(server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n.to_string(),
         Some(_) => {
@@ -163,27 +163,25 @@ pub async fn register_server(server: &ToolServer, args: Value) -> Result<MCPResu
 
     // Note: Session Isolation means we cannot auto-start via global manager
     // External servers are now created per-session through MCPServiceProxyManager
-    server.invalidate_cache().await;
 
     // Emit resource updated event for frontend cache revalidation
     events::emit_resource_updated("mcpServer", "create", Some(name.to_string()));
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Saved\n\nExternal servers are attached per assistant or session when their server IDs are included in configuration.",
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Saved",
             name, id
         ),
         vec![
-            "Use tool__list to review builtin tools and saved external servers.".to_string(),
-            "Use the Server ID in agent__update(id:\"<agentId>\", externalMcpServers:[...]) to enable this server for an agent.".to_string(),
-            "Session-level attachment should also reference this Server ID, not the server name.".to_string(),
+            "Use tool__list to verify the registered server.".to_string(),
+            "To enable this server, add its Server ID to an agent using agent__update(id:\"<agentId>\", externalMcpServers:[...]).".to_string(),
         ],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
 }
 
 /// Delete an MCP server
-pub async fn delete_server(server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n.to_string(),
         Some(_) => {
@@ -220,8 +218,6 @@ pub async fn delete_server(server: &ToolServer, args: Value) -> Result<MCPResult
         .to_mcp_result());
     }
 
-    server.invalidate_cache().await;
-
     // Emit resource updated event for frontend cache revalidation
     events::emit_resource_updated("mcpServer", "delete", Some(name.to_string()));
 
@@ -233,7 +229,7 @@ pub async fn delete_server(server: &ToolServer, args: Value) -> Result<MCPResult
 }
 
 /// Update an existing MCP server configuration
-pub async fn update_server(server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n,
         Some(_) => {
@@ -320,8 +316,6 @@ pub async fn update_server(server: &ToolServer, args: Value) -> Result<MCPResult
     // Note: Session Isolation means we cannot restart via global manager
     // Configuration updates take effect when servers are next started in a session
 
-    server.invalidate_cache().await;
-
     // Emit resource updated event for frontend cache revalidation
     events::emit_resource_updated("mcpServer", "update", Some(name.to_string()));
 
@@ -333,7 +327,7 @@ pub async fn update_server(server: &ToolServer, args: Value) -> Result<MCPResult
 }
 
 /// Verify server configuration and connectivity
-pub async fn verify_server(server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
     use crate::mcp::types::TransportConfig;
     use std::time::Instant;
 
@@ -368,8 +362,6 @@ pub async fn verify_server(server: &ToolServer, args: Value) -> Result<MCPResult
     let start_time = Instant::now();
     let verification_result = test_server_connection(&config, name).await;
     let latency_ms = start_time.elapsed().as_millis();
-
-    server.invalidate_cache().await;
 
     // Emit resource updated event for frontend cache revalidation
     events::emit_resource_updated("mcpServer", "verify", Some(name.to_string()));
@@ -728,17 +720,16 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     let body = result_sections.join("\n\n");
 
-    // Build actionable next-step section for external servers
     let external_action = if !found_external_ids.is_empty() {
         let ids_list: Vec<String> = found_external_ids
             .iter()
             .map(|(name, id)| format!("  • {} → \"{}\"", name, id))
             .collect();
         format!(
-            "\n\n---\n📌 To attach external server(s) to an assistant:\n\
+            "\n\n---\n📌 To enable these external servers:\n\
              Server IDs found:\n{}\n\n\
-            To enable them for an agent, call:\n  agent__update(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
-            Use agent__list(type: \"configs\") to find your agent ID.",
+            To assign them to an agent, call:\n  agent__update(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
+            Use agent__list(type: \"configs\") to find your target agent ID.",
             ids_list.join("\n")
         )
     } else {
@@ -747,13 +738,11 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     let mut hints = if session_view {
         vec![
-            "Session mode annotates whether the current session can call each tool now. Use availability='inventory' to inspect platform/server inventory without session gating.".to_string(),
-            "Builtin tool visibility depends on the current session's builtinCapabilities; external tools require agent__update(..., externalMcpServers:[...]) before they are callable.".to_string(),
+            "Session mode shows whether the current session can actually call each tool. Use availability='inventory' to list all platform tools regardless of current access.".to_string(),
         ]
     } else {
         vec![
-            "Inventory mode shows platform/server tool inventory even when the current session cannot call those tools yet.".to_string(),
-            "Use availability='session' to annotate tools with current-session readiness.".to_string(),
+            "Inventory mode shows all registered platform tools. Use availability='session' to see which ones are actively permitted in the current session.".to_string(),
         ]
     };
     if !force_verify && include_external {

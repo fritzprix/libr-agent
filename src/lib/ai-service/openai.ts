@@ -26,6 +26,14 @@ import {
   buildAutomaticPromptCacheKey,
   withPromptCaching,
 } from './openai/prompt-cache';
+import {
+  createEphemeralSessionContextInjection,
+  formatSessionContextAsBackgroundReference,
+} from './base-service-context';
+import {
+  createSerializableToolCallArgumentDelta,
+  serializeToolCallArgumentDeltas,
+} from './stream-events';
 import type {
   OpenAINonStreamingRequest,
   OpenAIResponseUsageDetails,
@@ -136,28 +144,22 @@ export class OpenAIService extends BaseAIService<
       return { systemPrompt, sessionContext: undefined, messages };
     }
 
-    const ephemeralMessage = this.createSyntheticSessionContextMessage(
+    logger.debug('Injecting session context as ephemeral tail message', {
+      sessionContextLength: sessionContext.length,
+    });
+
+    return createEphemeralSessionContextInjection(
+      systemPrompt,
       sessionContext,
       messages,
       {
         idPrefix: 'openai-session-context',
-        contentText:
-          this.formatSessionContextAsBackgroundReference(sessionContext),
+        contentText: formatSessionContextAsBackgroundReference(sessionContext),
         sessionIdFallback: '',
         threadIdFallback: '',
         createdAt: new Date(),
       },
     );
-
-    logger.debug('Injecting session context as ephemeral tail message', {
-      sessionContextLength: sessionContext.length,
-    });
-
-    return {
-      systemPrompt,
-      sessionContext: undefined,
-      messages: [...messages, ephemeralMessage],
-    };
   }
 
   /**
@@ -264,6 +266,7 @@ export class OpenAIService extends BaseAIService<
         systemPrompt: options.systemPrompt,
         messages: sanitizedMessages,
         tools,
+        config,
       });
 
       const request = withPromptCaching<OpenAIStreamingRequest>(
@@ -321,7 +324,6 @@ export class OpenAIService extends BaseAIService<
       // Wrap with TTFT measurement (OpenAI doesn't provide native prefill timing)
       const startTime = performance.now();
       let firstChunkReceived = false;
-
       for await (const chunk of completion) {
         if (this.getAbortSignal().aborted) {
           this.logger.info('Stream aborted during iteration');
@@ -374,9 +376,32 @@ export class OpenAIService extends BaseAIService<
         }
 
         if (delta?.tool_calls) {
-          yield JSON.stringify({
-            tool_calls: delta.tool_calls,
-          });
+          const toolCalls = delta.tool_calls
+            .map((toolCall) => {
+              if (typeof toolCall.index !== 'number') {
+                return null;
+              }
+
+              return createSerializableToolCallArgumentDelta(
+                toolCall.index,
+                toolCall.function?.arguments || '',
+                {
+                  id: toolCall.id,
+                  name: toolCall.function?.name,
+                },
+              );
+            })
+            .filter(
+              (
+                toolCall,
+              ): toolCall is ReturnType<
+                typeof createSerializableToolCallArgumentDelta
+              > => toolCall !== null,
+            );
+
+          if (toolCalls.length > 0) {
+            yield serializeToolCallArgumentDeltas(toolCalls);
+          }
         } else if (delta?.content) {
           yield JSON.stringify({
             content: delta.content || '',
@@ -610,6 +635,7 @@ export class OpenAIService extends BaseAIService<
     systemPrompt?: string;
     messages?: Message[];
     tools?: OpenAIChatCompletionTool[];
+    config?: AIServiceConfig;
   }): string | undefined {
     return buildAutomaticPromptCacheKey(args);
   }

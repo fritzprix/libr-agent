@@ -13,6 +13,9 @@ import { CompactEventDivider } from './shared/CompactEventDivider';
 import { Bot } from 'lucide-react';
 import { PendingApprovalWidget } from './PendingApprovalWidget';
 import { ScrollArea } from '@/components/ui';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('AgentChatMessages');
 
 export function AgentChatMessages() {
   const {
@@ -55,6 +58,32 @@ export function AgentChatMessages() {
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
+
+  const streamingToolMessageIds = useMemo(
+    () =>
+      messages
+        .filter(
+          (message) =>
+            message.role === 'assistant' &&
+            message.isStreaming &&
+            !!message.tool_calls?.length,
+        )
+        .map((message) => ({
+          id: message.id,
+          contentTypes: message.content?.map((item) => item.type) ?? [],
+          toolCallCount: message.tool_calls?.length ?? 0,
+        })),
+    [messages],
+  );
+
+  if (streamingToolMessageIds.length > 0) {
+    logger.info('AgentChatMessages received streaming tool messages', {
+      sessionId: session?.id,
+      messageCount: messages.length,
+      groupedCount: groupedMessages.length,
+      streamingToolMessages: streamingToolMessageIds,
+    });
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">

@@ -23,14 +23,7 @@ import {
 } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
-
-let dateFormatter: Intl.DateTimeFormat | null = null;
-function getDateFormatter() {
-  if (!dateFormatter) {
-    dateFormatter = new Intl.DateTimeFormat();
-  }
-  return dateFormatter;
-}
+import { getDateFormatter } from '@/lib/date-utils';
 
 interface AssistantCardProps {
   assistant: Assistant;
@@ -197,14 +190,22 @@ export default function AssistantCard({
                 <Calendar size={12} />
                 <span>
                   {t('assistant.card.created')}:{' '}
-                  {getDateFormatter().format(new Date(assistant.createdAt))}
+                  {getDateFormatter(undefined, {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                  }).format(new Date(assistant.createdAt))}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-sans">
                 <Edit size={12} />
                 <span>
                   {t('assistant.card.updated')}:{' '}
-                  {getDateFormatter().format(new Date(assistant.updatedAt))}
+                  {getDateFormatter(undefined, {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                  }).format(new Date(assistant.updatedAt))}
                 </span>
               </div>
             </div>

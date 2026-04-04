@@ -94,6 +94,9 @@ pub async fn handle_tool_call(
             let request: crate::agent::types::CreateSessionRequest =
                 serde_json::from_value(body)
                     .map_err(|e| format!("Invalid spawnAgent arguments: {}", e))?;
+            let caller_session_id = caller_session_id
+                .clone()
+                .ok_or_else(|| "spawnAgent requires a caller session context".to_string())?;
 
             let response = crate::services::AgentService::spawn_agent_with_source(
                 manager,
@@ -138,15 +141,39 @@ pub async fn handle_tool_call(
             // awaitCompletion=true: SP2 two-phase transition + SP1 push-notify wait.
             let wait_result = {
                 let gate = crate::state::get_concurrency_gate();
-                gate.suspend_agent().await?;
+                let mut active_permit = Some(
+                    manager
+                        .take_active_session_permit(&caller_session_id)
+                        .await
+                        .ok_or_else(|| {
+                            format!(
+                                "Caller session {} is not holding an active concurrency permit",
+                                caller_session_id
+                            )
+                        })?,
+                );
+                let suspended = match gate.suspend_agent(&mut active_permit).await {
+                    Ok(suspended) => suspended,
+                    Err(error) => {
+                        if let Some(permit) = active_permit.take() {
+                            manager
+                                .restore_active_session_permit(&caller_session_id, permit)
+                                .await?;
+                        }
+                        return Err(error);
+                    }
+                };
                 let res = wait_until_session_terminal(
                     manager,
                     &child_id_owned,
                     timeout_seconds,
-                    caller_session_id.as_deref(),
+                    Some(&caller_session_id),
                 )
                 .await;
-                gate.resume_agent().await?;
+                let resumed = suspended.resume().await?;
+                manager
+                    .restore_active_session_permit(&caller_session_id, resumed)
+                    .await?;
                 res
             };
 
@@ -222,6 +249,9 @@ pub async fn handle_tool_call(
                 "AgentSessionManager not available for legacy session API tools".to_string()
             })?;
             let session_id = read_required_string(&args, "sessionId")?;
+            let caller_session_id = caller_session_id
+                .clone()
+                .ok_or_else(|| "awaitAgent requires a caller session context".to_string())?;
 
             let timeout_seconds = args
                 .get("timeoutSeconds")
@@ -264,15 +294,39 @@ pub async fn handle_tool_call(
 
             let wait_result = {
                 let gate = crate::state::get_concurrency_gate();
-                gate.suspend_agent().await?;
+                let mut active_permit = Some(
+                    manager
+                        .take_active_session_permit(&caller_session_id)
+                        .await
+                        .ok_or_else(|| {
+                            format!(
+                                "Caller session {} is not holding an active concurrency permit",
+                                caller_session_id
+                            )
+                        })?,
+                );
+                let suspended = match gate.suspend_agent(&mut active_permit).await {
+                    Ok(suspended) => suspended,
+                    Err(error) => {
+                        if let Some(permit) = active_permit.take() {
+                            manager
+                                .restore_active_session_permit(&caller_session_id, permit)
+                                .await?;
+                        }
+                        return Err(error);
+                    }
+                };
                 let res = wait_until_session_terminal(
                     manager,
                     &session_id,
                     timeout_seconds,
-                    caller_session_id.as_deref(),
+                    Some(&caller_session_id),
                 )
                 .await;
-                gate.resume_agent().await?;
+                let resumed = suspended.resume().await?;
+                manager
+                    .restore_active_session_permit(&caller_session_id, resumed)
+                    .await?;
                 res
             };
 

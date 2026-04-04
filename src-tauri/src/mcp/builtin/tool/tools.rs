@@ -213,7 +213,7 @@ pub fn list_tools_tool() -> MCPTool {
                         vec!["inventory", "session"],
                         "inventory",
                         Some(
-                            "How to present tool availability. inventory = show platform/server inventory only. session = annotate tools with whether the current session can call them now.",
+                            "inventory = list all registered servers and builtin tools. session = show only tools that are currently permitted in this active session.",
                         ),
                     ),
                 ),

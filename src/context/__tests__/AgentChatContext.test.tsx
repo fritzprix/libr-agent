@@ -5,10 +5,13 @@ import {
   useAgentChatState,
   useAgentChatActions,
   useAgentChat,
+  isAssistantStreamingMessageSuperseded,
 } from '../AgentChatContext';
+import { useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
 import { safeInvoke } from '@/lib/backend/core';
 import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
+import { AIServiceFactory } from '@/lib/ai-service/factory';
 import type { Message } from '@/models/chat';
 import { getMessagesPageForSession } from '@/lib/backend/messages';
 import { LLMServiceProvider } from '../LLMServiceContext';
@@ -48,6 +51,12 @@ vi.mock('@/lib/backend/messages', () => ({
   deleteMessage: vi.fn(),
 }));
 
+vi.mock('@/lib/ai-service/factory', () => ({
+  AIServiceFactory: {
+    getService: vi.fn(),
+  },
+}));
+
 // Mock logger
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
@@ -72,6 +81,9 @@ function TestWrapper({ children }: { children: ReactNode }) {
 describe('AgentChatContext', () => {
   const mockUnlisten = vi.fn();
   const mockSetError = vi.fn(); // Added mock
+  const mockStreamChat = vi.fn();
+  const mockListModels = vi.fn();
+  const mockDispose = vi.fn();
 
   const mockMessages: Message[] = [
     {
@@ -120,6 +132,31 @@ describe('AgentChatContext', () => {
     (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
       success: true,
     });
+
+    (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
+      streamChat: mockStreamChat,
+      listModels: mockListModels,
+      dispose: mockDispose,
+      sanitizeMessages: vi.fn((messages: Message[]) => messages),
+      prepareContextInjection: vi.fn(
+        (systemPrompt, _sessionContext, messages) => ({
+          systemPrompt,
+          messages,
+        }),
+      ),
+    });
+
+    mockListModels.mockResolvedValue([
+      {
+        name: 'test-model',
+        contextWindow: 4096,
+        supportReasoning: false,
+        supportTools: true,
+        supportStreaming: true,
+        cost: { input: 0.001, output: 0.002 },
+        description: 'Test model for unit tests',
+      },
+    ]);
   });
 
   describe('Provider Setup', () => {
@@ -179,6 +216,140 @@ describe('AgentChatContext', () => {
       }).toThrow('useAgentChatActions must be used within AgentChatProvider');
 
       console.error = originalError;
+    });
+  });
+
+  describe('Streaming message merge', () => {
+    it('does not mark a streaming assistant as superseded until persisted tool calls catch up', () => {
+      const streamingMessage: Message = {
+        id: 'stream-1',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Building artifact...' }],
+        thinking: 'Need a tool...',
+        tool_calls: [
+          {
+            id: 'call-streaming',
+            type: 'function',
+            function: {
+              name: 'workspace__writeFile',
+              arguments: '{"path":"index.html"',
+            },
+          },
+        ],
+        createdAt: new Date('2026-04-04T05:00:00.000Z'),
+        updatedAt: new Date('2026-04-04T05:00:01.000Z'),
+      };
+
+      const persistedWithoutToolCalls: Message = {
+        ...streamingMessage,
+        id: 'persisted-1',
+        tool_calls: [],
+        updatedAt: new Date('2026-04-04T05:00:02.000Z'),
+      };
+
+      const persistedWithToolCalls: Message = {
+        ...streamingMessage,
+        id: 'persisted-2',
+        tool_calls: [
+          {
+            id: 'call-streaming',
+            type: 'function',
+            function: {
+              name: 'workspace__writeFile',
+              arguments: '{"path":"index.html","content":"ok"}',
+            },
+          },
+        ],
+        updatedAt: new Date('2026-04-04T05:00:03.000Z'),
+      };
+
+      expect(
+        isAssistantStreamingMessageSuperseded(
+          streamingMessage,
+          persistedWithoutToolCalls,
+        ),
+      ).toBe(false);
+      expect(
+        isAssistantStreamingMessageSuperseded(
+          streamingMessage,
+          persistedWithToolCalls,
+        ),
+      ).toBe(true);
+    });
+
+    it('exposes a streaming assistant message with thinking and tool calls before completion', async () => {
+      let releaseStream!: () => void;
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({ thinking: 'Need a tool...' });
+        yield JSON.stringify({
+          tool_calls: [
+            {
+              index: 0,
+              id: 'call-streaming',
+              type: 'function',
+              function: {
+                name: 'workspace__readFile',
+                arguments: '{"path":"foo.txt"}',
+              },
+            },
+          ],
+        });
+
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+      });
+
+      const { result } = renderHook(
+        () => ({
+          llm: useLLMService(),
+          agent: useAgentChat(),
+        }),
+        { wrapper: TestWrapper },
+      );
+
+      let promise!: Promise<Message>;
+      await act(async () => {
+        promise = result.current.llm.executeCompletionRequest(
+          'test-session',
+          mockMessages,
+          'test-model',
+          'openai',
+          'test-key',
+        );
+      });
+
+      await waitFor(() => {
+        const streamingAssistant = result.current.agent.messages.find(
+          (message) =>
+            message.role === 'assistant' &&
+            message.isStreaming &&
+            message.tool_calls?.length,
+        );
+
+        expect(streamingAssistant).toMatchObject({
+          role: 'assistant',
+          isStreaming: true,
+          thinking: 'Need a tool...',
+          tool_calls: [
+            {
+              id: 'call-streaming',
+              type: 'function',
+              function: {
+                name: 'workspace__readFile',
+                arguments: '{"path":"foo.txt"}',
+              },
+            },
+          ],
+        });
+      });
+
+      await act(async () => {
+        releaseStream();
+        await promise.catch(() => undefined);
+      });
     });
   });
 

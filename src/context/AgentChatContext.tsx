@@ -34,6 +34,138 @@ function toTimestamp(
   return typeof value === 'number' ? value : null;
 }
 
+function extractTextContent(message: Message): string {
+  return (message.content ?? [])
+    .filter(
+      (item): item is { type: 'text'; text: string } =>
+        item.type === 'text' && typeof item.text === 'string',
+    )
+    .map((item) => item.text)
+    .join('');
+}
+
+function summarizeMessageForLog(
+  message: Message | Partial<Message> | undefined,
+) {
+  if (!message) {
+    return null;
+  }
+
+  return {
+    id: message.id,
+    role: message.role,
+    isStreaming: message.isStreaming,
+    contentTypes: Array.isArray(message.content)
+      ? message.content.map((item) => item.type)
+      : [],
+    textLength: extractTextContent(message as Message).length,
+    thinkingLength: message.thinking?.length ?? 0,
+    toolCallCount: message.tool_calls?.length ?? 0,
+    toolCalls: (message.tool_calls ?? []).map((toolCall) => ({
+      id: toolCall.id,
+      name: toolCall.function.name,
+      argumentsLength: toolCall.function.arguments.length,
+    })),
+  };
+}
+
+function persistedToolCallsCoverStreamingState(
+  streamingMessage: Message,
+  persistedMessage: Message,
+): boolean {
+  const streamingToolCalls = streamingMessage.tool_calls ?? [];
+  if (streamingToolCalls.length === 0) {
+    return true;
+  }
+
+  const persistedToolCalls = persistedMessage.tool_calls ?? [];
+  if (persistedToolCalls.length < streamingToolCalls.length) {
+    return false;
+  }
+
+  return streamingToolCalls.every((streamingToolCall, index) => {
+    const persistedToolCall = persistedToolCalls[index];
+    if (!persistedToolCall) {
+      return false;
+    }
+
+    if (
+      streamingToolCall.id &&
+      persistedToolCall.id &&
+      streamingToolCall.id !== persistedToolCall.id
+    ) {
+      return false;
+    }
+
+    if (
+      streamingToolCall.function.name &&
+      persistedToolCall.function.name !== streamingToolCall.function.name
+    ) {
+      return false;
+    }
+
+    const streamingArguments = streamingToolCall.function.arguments || '';
+    const persistedArguments = persistedToolCall.function.arguments || '';
+
+    return (
+      persistedArguments.length >= streamingArguments.length &&
+      persistedArguments.startsWith(streamingArguments)
+    );
+  });
+}
+
+export function isAssistantStreamingMessageSuperseded(
+  streamingMessage: Message,
+  persistedMessage: Message,
+): boolean {
+  if (
+    streamingMessage.role !== 'assistant' ||
+    persistedMessage.role !== 'assistant'
+  ) {
+    return false;
+  }
+
+  const streamingTimestamp =
+    toTimestamp(streamingMessage.updatedAt) ??
+    toTimestamp(streamingMessage.createdAt);
+  const persistedTimestamp =
+    toTimestamp(persistedMessage.updatedAt) ??
+    toTimestamp(persistedMessage.createdAt);
+
+  if (
+    streamingTimestamp === null ||
+    persistedTimestamp === null ||
+    persistedTimestamp < streamingTimestamp
+  ) {
+    return false;
+  }
+
+  const streamingThinking = streamingMessage.thinking || '';
+  const persistedThinking = persistedMessage.thinking || '';
+  if (
+    streamingThinking &&
+    (persistedThinking.length < streamingThinking.length ||
+      !persistedThinking.startsWith(streamingThinking))
+  ) {
+    return false;
+  }
+
+  const streamingText = extractTextContent(streamingMessage);
+  const persistedText = extractTextContent(persistedMessage);
+  if (
+    streamingText &&
+    (persistedText.length < streamingText.length ||
+      !persistedText.startsWith(streamingText))
+  ) {
+    return false;
+  }
+
+  return persistedToolCallsCoverStreamingState(
+    streamingMessage,
+    persistedMessage,
+  );
+}
+
 /**
  * Service Context from Rust backend
  */
@@ -323,19 +455,17 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       return;
     }
 
-    const streamingTimestamp =
-      toTimestamp(currentStreamingMessage.updatedAt) ??
-      toTimestamp(currentStreamingMessage.createdAt);
-    const persistedTimestamp =
-      toTimestamp(lastPersistedAssistantMessage.updatedAt) ??
-      toTimestamp(lastPersistedAssistantMessage.createdAt);
-
     if (
-      currentStreamingMessage.role === 'assistant' &&
-      streamingTimestamp !== null &&
-      persistedTimestamp !== null &&
-      persistedTimestamp >= streamingTimestamp
+      isAssistantStreamingMessageSuperseded(
+        currentStreamingMessage,
+        lastPersistedAssistantMessage,
+      )
     ) {
+      logger.info('Clearing superseded streaming assistant message', {
+        sessionId: session.id,
+        streaming: summarizeMessageForLog(currentStreamingMessage),
+        persisted: summarizeMessageForLog(lastPersistedAssistantMessage),
+      });
       clearStreamingMessage(session.id);
     }
   }, [
@@ -413,18 +543,27 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // If there's a streaming message that's not yet in persisted messages
     if (isValidMessage(currentStreamingMessage)) {
-      const streamingTimestamp =
-        toTimestamp(currentStreamingMessage.updatedAt) ??
-        toTimestamp(currentStreamingMessage.createdAt);
-      const persistedTimestamp = lastPersistedAssistantMessage
-        ? (toTimestamp(lastPersistedAssistantMessage.updatedAt) ??
-          toTimestamp(lastPersistedAssistantMessage.createdAt))
-        : null;
       const isSupersededByPersistedAssistant =
-        currentStreamingMessage.role === 'assistant' &&
-        streamingTimestamp !== null &&
-        persistedTimestamp !== null &&
-        persistedTimestamp >= streamingTimestamp;
+        !!lastPersistedAssistantMessage &&
+        isAssistantStreamingMessageSuperseded(
+          currentStreamingMessage,
+          lastPersistedAssistantMessage,
+        );
+
+      if (
+        currentStreamingMessage.tool_calls &&
+        currentStreamingMessage.tool_calls.length > 0
+      ) {
+        logger.info('Evaluating streaming message for display', {
+          sessionId: session.id,
+          streaming: summarizeMessageForLog(currentStreamingMessage),
+          lastPersistedAssistant: summarizeMessageForLog(
+            lastPersistedAssistantMessage,
+          ),
+          isSupersededByPersistedAssistant,
+          displayedIds: [...displayedIds],
+        });
+      }
 
       if (
         !displayedIds.has(currentStreamingMessage.id) &&
@@ -432,6 +571,16 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       ) {
         // Show streaming message alongside persisted messages
         displayed.push(currentStreamingMessage);
+        if (
+          currentStreamingMessage.tool_calls &&
+          currentStreamingMessage.tool_calls.length > 0
+        ) {
+          logger.info('Streaming message appended to displayMessages', {
+            sessionId: session.id,
+            streamingMessageId: currentStreamingMessage.id,
+            displayCount: displayed.length,
+          });
+        }
       }
     }
 

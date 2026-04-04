@@ -82,11 +82,11 @@
 - Ensures list item identity remains stable across insertions, deletions, and reordering, preventing focus loss and flicker in the attachment UI.
 - **Benefits:** More predictable reconciliation semantics and safer future refactors around drag-and-drop and progressive uploads.
 
-## 2026-03-11 - [AgentChatStatusBar] **Eradicated:** [Effect State Sync (useEffect resetting state on prop change)] **Woven:** [Render-Phase Mutation Pattern]
+## 2026-03-11 - [AgentChatStatusBar] **Superseded by 2026-03-14 entry**
 
-- Removed the `useEffect` that listened for prop changes and imperatively reset internal status bar state.
-- Adopted a render-phase mutation pattern where derived values are computed from props and refs inline, reserving state updates solely for genuine user-driven transitions.
-- **Renders Saved:** Eliminates redundant effect-triggered renders and keeps status bar updates tightly coupled to actual interaction, not prop-mirroring.
+- This intermediate note described an earlier render-phase-mutation experiment.
+- The current implementation was later refined to the session-scoped snapshot-state pattern documented in the 2026-03-14 entry below.
+- Keep the newer entry as the source of truth when reasoning about the live code.
 
 ## 2026-03-12 - [AssistantList / SkillsEditor] **Eradicated:** [God useEffect blocks, mixed business logic and presentation, derived state] **Woven:** [Custom Hook Pattern (useAssistantsList, useAssistantSkills)]
 
@@ -106,10 +106,10 @@
 - **ScheduledTaskModal:** Removed the internal `useEffect` for data fetching (`listAssistants`) and passed `assistants` as a prop directly. Eradicated the action-effect chain `if (assistants !== prevAssistants)` by deriving the effective assistant selection directly during rendering.
 - **Benefits:** Clean separation of concerns, complete eradication of prop copying and effect-based state syncing loops.
 
-## 2026-03-14 - [AgentChatStatusBar] **Eradicated:** [Derived State & Effect Syncing] **Woven:** [Adjusting State During Render Pattern]
+## 2026-03-14 - [AgentChatStatusBar] **Eradicated:** [Prop-Mirroring Reset Effect] **Woven:** [Session-Scoped Snapshot State]
 
-- **AgentChatStatusBar:** Removed the `useEffect` that reset `lastMetrics` to `null` when `session?.id` changed. Replaced with an **Adjusting State During Render** pattern that compares `session?.id` to a `prevSessionId` state tracker, ensuring state is synchronized before the next paint and preventing an extra post-commit re-render lifecycle.
-- **Renders Saved:** Eliminated redundant effect-triggered renders that act purely as local state clears in response to prop/dependency changes.
+- **AgentChatStatusBar:** Removed the prop-mirroring reset effect for `lastMetrics` and replaced it with session-scoped snapshot state that is explicitly reset when the session changes.
+- **Benefits:** Keeps persisted metrics aligned with the active session without relying on render-phase state synchronization.
 
 ## 2026-03-14 - [GeneralTab / useSkillsDirectory] **Eradicated:** [God Component / Logic in Render] **Woven:** [Custom Hook Pattern]
 
@@ -126,3 +126,10 @@
 - Removed `useRef` based tracking of previous values during the render phase.
 - Used `useState` to track previous values for transitions, updating state during render and preserving the pure render rule.
 - **Renders Saved:** Eliminated potential unpredictable render cycle side-effects while safely updating state during component evaluation.
+
+## 2026-04-04 - [GeneralTab & AgentPlanningUpdates] **Eradicated:** [Cascading State Effect & Prop Hoarding] **Woven:** [Derived State & Hook Pattern]
+
+- **useSkillsDirectory:** Eradicated the anti-pattern where a `useEffect` forcibly synced a default directory back to the parent component on mount without user interaction.
+- **Woven (useSkillsDirectory):** Implemented derived state to compute and return an `effectiveDir` during render, which the parent (`GeneralTab`) uses for presentation and verification.
+- **AgentPlanningUpdates:** Eradicated the "Prop Hoarder" anti-pattern in `PlanningToastSummary` by removing 7 localized string props passed down from the parent.
+- **Woven (AgentPlanningUpdates):** Implemented the Custom Hook Pattern by calling `useTranslation()` directly inside `PlanningToastSummary`, allowing it to manage its own localization dependencies.

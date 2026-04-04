@@ -111,9 +111,7 @@ export default function AppSidebar() {
       visited.add(session.id);
       rows.push({ session, nestingLevel });
 
-      const children = (childrenByParent.get(session.id) || []).sort(
-        sortByPriority,
-      );
+      const children = childrenByParent.get(session.id) || [];
       children.forEach((child) => {
         pushSession(child, Math.min(nestingLevel + 1, 2));
       });

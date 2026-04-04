@@ -202,6 +202,75 @@ describe('OpenAIService prompt cache extensions', () => {
     expect(options?.headers?.['x-libragent-request-id']).toMatch(/^req_/);
   });
 
+  it('emits OpenAI indexed tool calls as direct tool_calls chunks', async () => {
+    createMock.mockImplementationOnce((request: { stream?: boolean }) => {
+      if (request.stream) {
+        return Promise.resolve(
+          (async function* () {
+            yield {
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: 'call_openai_1',
+                        type: 'function',
+                        function: {
+                          name: 'workspace__writeFile',
+                          arguments: '{"path":"foo.txt","content":"hello"}',
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          })(),
+        );
+      }
+
+      return Promise.resolve({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 2,
+          total_tokens: 12,
+        },
+        model: 'gpt-4o',
+      });
+    });
+
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    const chunks: Array<Record<string, unknown>> = [];
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+    })) {
+      chunks.push(JSON.parse(chunk) as Record<string, unknown>);
+    }
+
+    expect(
+      chunks.some((chunk) =>
+        Array.isArray((chunk as { tool_call_starts?: unknown[] }).tool_call_starts),
+      ),
+    ).toBe(false);
+    expect(chunks).toContainEqual({
+      tool_calls: [
+        {
+          index: 0,
+          id: 'call_openai_1',
+          type: 'function',
+          function: {
+            name: 'workspace__writeFile',
+            arguments: '{"path":"foo.txt","content":"hello"}',
+          },
+        },
+      ],
+    });
+  });
+
   it('logs prompt drift between consecutive requests with the first differing message index', async () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test');
@@ -319,6 +388,103 @@ describe('OpenAIService prompt cache extensions', () => {
       modelName: 'gpt-4o',
       systemPrompt: 'Stable instructions',
       availableTools: [alphaTool, betaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [secondRequest] = createMock.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+
+    expect(firstRequest.prompt_cache_key).toBe(secondRequest.prompt_cache_key);
+  });
+
+  it('can include a stable leading message prefix in automatic OpenAI cache keys', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test', {
+      promptCachePrefixMessageCount: 1,
+    });
+
+    const firstMessage: Message = {
+      ...message,
+      id: 'm-prefix-1',
+      content: [{ type: 'text', text: 'first stable prefix' }],
+    };
+    const secondMessage: Message = {
+      ...message,
+      id: 'm-prefix-2',
+      content: [{ type: 'text', text: 'different stable prefix' }],
+    };
+
+    for await (const chunk of service.streamChat([firstMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [firstRequest] = createMock.mock.calls[0] as [Record<string, unknown>];
+
+    createMock.mockClear();
+
+    for await (const chunk of service.streamChat([secondMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [secondRequest] = createMock.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+
+    expect(firstRequest.prompt_cache_key).not.toBe(secondRequest.prompt_cache_key);
+    expect(String(firstRequest.prompt_cache_key).split(':')).toHaveLength(5);
+  });
+
+  it('ignores session-specific ids when leading message prefix hashing is enabled', async () => {
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test', {
+      promptCachePrefixMessageCount: 1,
+    });
+
+    const firstSessionMessage: Message = {
+      ...message,
+      id: 'm-prefix-session-1',
+      sessionId: 'session-1',
+      threadId: 'thread-1',
+      content: [{ type: 'text', text: 'shared stable prefix' }],
+    };
+    const secondSessionMessage: Message = {
+      ...message,
+      id: 'm-prefix-session-2',
+      sessionId: 'session-2',
+      threadId: 'thread-2',
+      content: [{ type: 'text', text: 'shared stable prefix' }],
+    };
+
+    for await (const chunk of service.streamChat([firstSessionMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
+    })) {
+      void chunk;
+      break;
+    }
+
+    const [firstRequest] = createMock.mock.calls[0] as [Record<string, unknown>];
+
+    createMock.mockClear();
+
+    for await (const chunk of service.streamChat([secondSessionMessage], {
+      modelName: 'gpt-4o',
+      systemPrompt: 'Stable instructions',
+      availableTools: [alphaTool],
     })) {
       void chunk;
       break;
@@ -453,6 +619,11 @@ describe('OpenAIService prompt cache extensions', () => {
       }>;
     }>;
 
+    expect(
+      observedChunks.some((chunk) =>
+        Array.isArray((chunk as { tool_call_starts?: unknown[] }).tool_call_starts),
+      ),
+    ).toBe(false);
     expect(toolCallChunks).toHaveLength(2);
 
     expect(toolCallChunks[0]?.tool_calls?.[0]).toEqual({

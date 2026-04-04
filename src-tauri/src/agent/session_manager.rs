@@ -1,20 +1,30 @@
-use crate::agent::channel_routing::{resolve_auto_routed_channel_target, ChannelRouteCandidate};
+use crate::agent::channel_routing::ChannelRouteCandidate;
+use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
-use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
+use crate::agent::events::TauriEventDispatcher;
 use crate::agent::state::AgentSession;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
     CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
-    SessionStatus,
 };
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
+
+#[path = "session_manager/approvals.rs"]
+mod approvals;
+#[path = "session_manager/channel.rs"]
+mod channel;
+#[path = "session_manager/compact.rs"]
+mod compact;
+
+pub use channel::format_channel_payload_for_test;
+pub use compact::handle_compact_error_with_dispatcher;
 
 /// Manages agent sessions and their workflows
 ///
@@ -43,113 +53,6 @@ impl std::fmt::Debug for AgentSessionManager {
             .field("context_registry", &"<Arc<ContextRegistry>>")
             .finish()
     }
-}
-
-async fn clear_compact_flags(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-) {
-    let compact_started_at_ms_handle = {
-        let active = active_sessions.read().await;
-        active.get(session_id).map(|session| {
-            session
-                .compact_in_flight
-                .store(false, std::sync::atomic::Ordering::SeqCst);
-            session
-                .awaiting_compact_completion
-                .store(false, std::sync::atomic::Ordering::SeqCst);
-            session.compact_started_at_ms.clone()
-        })
-    };
-
-    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        *compact_started_at_ms_handle.write().await = None;
-    }
-}
-
-pub async fn handle_compact_error_with_dispatcher(
-    session_repo: &Arc<dyn SessionRepository>,
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    dispatcher: &dyn AgentEventDispatcher,
-    session_id: String,
-    error: crate::agent::llm::types::AgentRuntimeError,
-) -> Result<(), String> {
-    let (was_awaiting, session_name, compact_started_at_ms_handle) = {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
-            (
-                session
-                    .awaiting_compact_completion
-                    .load(std::sync::atomic::Ordering::SeqCst),
-                session
-                    .metadata
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
-                Some(session.compact_started_at_ms.clone()),
-            )
-        } else {
-            (false, session_id.chars().take(8).collect::<String>(), None)
-        }
-    };
-    let elapsed_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        compact_started_at_ms_handle
-            .read()
-            .await
-            .map(|started_at| chrono::Utc::now().timestamp_millis() - started_at)
-    } else {
-        None
-    };
-
-    let error_code = error
-        .details
-        .as_ref()
-        .and_then(|details| details.error_code.as_deref())
-        .unwrap_or("none");
-
-    clear_compact_flags(active_sessions, &session_id).await;
-
-    let state_event = crate::agent::llm::types::CompactStateEvent {
-        session_id: session_id.clone(),
-        session_name: Some(session_name),
-        compacting: false,
-        phase: crate::agent::llm::types::CompactStatePhase::Failed,
-        error: Some(error.display_message.clone()),
-    };
-
-    dispatcher.emit_compact_state(state_event)?;
-
-    log::warn!(
-        "❌ Compaction failed: session={}, mode={}, elapsed_ms={}, error_code={}, message={}",
-        session_id,
-        if was_awaiting {
-            "preflight"
-        } else {
-            "background"
-        },
-        elapsed_ms
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "unknown".to_string()),
-        error_code,
-        error.display_message
-    );
-
-    if was_awaiting {
-        log::warn!(
-            "Preflight compaction failed for session {}. Failing workflow.",
-            session_id
-        );
-        crate::agent::llm::finalize_workflow_error_with_dispatcher(
-            session_repo,
-            active_sessions,
-            dispatcher,
-            session_id,
-            error,
-        )
-        .await?;
-    }
-
-    Ok(())
 }
 
 impl AgentSessionManager {
@@ -186,6 +89,26 @@ impl AgentSessionManager {
     /// tokens without going through Tauri managed state.
     pub fn active_sessions_arc(&self) -> Arc<RwLock<HashMap<String, AgentSession>>> {
         self.active_sessions.clone()
+    }
+
+    pub async fn take_active_session_permit(&self, session_id: &str) -> Option<ActiveAgentPermit> {
+        let mut active = self.active_sessions.write().await;
+        active
+            .get_mut(session_id)
+            .and_then(|session| session.active_permit.take())
+    }
+
+    pub async fn restore_active_session_permit(
+        &self,
+        session_id: &str,
+        permit: ActiveAgentPermit,
+    ) -> Result<(), String> {
+        let mut active = self.active_sessions.write().await;
+        let session = active
+            .get_mut(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        session.active_permit = Some(permit);
+        Ok(())
     }
 
     /// Clone self for use in async tasks
@@ -534,59 +457,14 @@ impl AgentSessionManager {
         server_name: String,
         notification: ChannelNotification,
     ) -> Result<(String, bool), String> {
-        let session = self
-            .get_session(&session_id)
-            .await?
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        let message = build_channel_message(
-            &session_id,
-            &server_name,
-            notification.content,
-            notification.meta,
-        );
-        let message_id = message.id.clone();
-
-        let should_trigger_workflow = !matches!(session.status, SessionStatus::Busy);
-
-        self.inject_messages(session_id, vec![message], should_trigger_workflow)
-            .await?;
-
-        Ok((message_id, should_trigger_workflow))
+        channel::inject_channel_notification(self, session_id, server_name, notification).await
     }
 
     pub async fn resolve_channel_notification_target(
         &self,
         server_name: &str,
     ) -> Result<ChannelRouteCandidate, String> {
-        let active_session_candidates = {
-            let active = self.active_sessions.read().await;
-            active
-                .iter()
-                .map(|(session_id, session)| ChannelRouteCandidate {
-                    session_id: session_id.clone(),
-                    session_name: session
-                        .metadata
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
-                    parent_session_id: session.metadata.parent_session_id.clone(),
-                })
-                .collect::<Vec<_>>()
-        };
-
-        let mut matching_candidates = Vec::new();
-        for candidate in active_session_candidates {
-            if self
-                .proxy_manager
-                .session_has_channel_server(&candidate.session_id, server_name)
-                .await
-            {
-                matching_candidates.push(candidate);
-            }
-        }
-
-        resolve_auto_routed_channel_target(server_name, matching_candidates)
+        channel::resolve_channel_notification_target(self, server_name).await
     }
 
     pub async fn inject_channel_notification_auto(
@@ -631,26 +509,7 @@ impl AgentSessionManager {
         tool_call_id: &str,
         approved: bool,
     ) -> Result<(), String> {
-        let active = self.active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            let mut approvals = session.pending_approvals.write().await;
-            if let Some(data) = approvals.remove(tool_call_id) {
-                let _ = data.sender.send(approved);
-                let event = crate::agent::events::AgentEvent::ToolExecutionApprovalResolved {
-                    session_id: session_id.to_string(),
-                    tool_call_id: tool_call_id.to_string(),
-                    approved,
-                };
-                if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
-                    log::error!("Failed to emit ToolExecutionApprovalResolved event: {}", e);
-                }
-                return Ok(());
-            }
-        }
-        Err(format!(
-            "Pending approval not found for tool call: {}",
-            tool_call_id
-        ))
+        approvals::respond_tool_approval(self, session_id, tool_call_id, approved).await
     }
 
     pub async fn respond_channel_permission(
@@ -659,29 +518,7 @@ impl AgentSessionManager {
         request_id: &str,
         approved: bool,
     ) -> Result<String, String> {
-        let active = self.active_sessions.read().await;
-        let Some(session) = active.get(session_id) else {
-            return Err(format!("Session not found: {}", session_id));
-        };
-
-        let matching_tool_call_id = {
-            let approvals = session.pending_approvals.read().await;
-            crate::agent::tool_approvals::find_pending_approval_tool_call_id(&approvals, request_id)
-        };
-
-        drop(active);
-
-        let tool_call_id = matching_tool_call_id.ok_or_else(|| {
-            format!(
-                "Pending approval not found for request_id: {} in session {}",
-                request_id, session_id
-            )
-        })?;
-
-        self.respond_tool_approval(session_id, &tool_call_id, approved)
-            .await?;
-
-        Ok(tool_call_id)
+        approvals::respond_channel_permission(self, session_id, request_id, approved).await
     }
 
     /// Set YOLO mode for a session
@@ -927,105 +764,7 @@ impl AgentSessionManager {
         to_id: String,
         summary: String,
     ) -> Result<(), String> {
-        let compact_started_at_ms_handle = {
-            let active = self.active_sessions.read().await;
-            active
-                .get(session_id)
-                .map(|session| session.compact_started_at_ms.clone())
-        };
-        let started_at_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle
-        {
-            *compact_started_at_ms_handle.read().await
-        } else {
-            None
-        };
-        log::info!(
-            "✅ Compact response stored for session {}: from_id={}, to_id={}, summary_chars={}, summary_est_tokens=~{}, elapsed_ms={}",
-            session_id,
-            from_id,
-            to_id,
-            summary.len(),
-            summary.len() / 4,
-            started_at_ms
-                .map(|value| (chrono::Utc::now().timestamp_millis() - value).to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        );
-        let record = CompactContextRecord {
-            id: uuid::Uuid::new_v4().to_string(),
-            session_id: session_id.to_string(),
-            from_id,
-            to_id,
-            summary,
-            created_at: chrono::Utc::now().timestamp_millis(),
-        };
-        self.save_compact_context(session_id, record).await?;
-        let should_resume_completion = {
-            let active = self.active_sessions.read().await;
-            active
-                .get(session_id)
-                .map(|session| {
-                    session
-                        .awaiting_compact_completion
-                        .swap(false, Ordering::SeqCst)
-                })
-                .unwrap_or(false)
-        };
-
-        log::info!(
-            "📌 Compact completion decision for session {}: should_resume_completion={}",
-            session_id,
-            should_resume_completion
-        );
-
-        self.clear_compact_in_flight(session_id).await;
-
-        if should_resume_completion {
-            log::info!(
-                "▶️ Resuming blocked LLM completion after compaction for session {}",
-                session_id
-            );
-            let session_repo = self.session_repo.clone();
-            let active_sessions = self.active_sessions.clone();
-            let proxy_manager = self.proxy_manager.clone();
-            let app_handle = self.app_handle.clone();
-            let resume_session_id = session_id.to_string();
-
-            tokio::spawn(async move {
-                if let Err(error) = crate::agent::llm::request_llm_completion(
-                    &session_repo,
-                    &active_sessions,
-                    &proxy_manager,
-                    &app_handle,
-                    resume_session_id.clone(),
-                )
-                .await
-                {
-                    log::error!(
-                        "Failed to resume LLM completion after compaction for session {}: {}",
-                        resume_session_id,
-                        error
-                    );
-
-                    if let Err(handle_error) = crate::agent::llm::handle_llm_error(
-                        &session_repo,
-                        &active_sessions,
-                        &app_handle,
-                        resume_session_id.clone(),
-                        error,
-                    )
-                    .await
-                    {
-                        log::error!(
-                            "Failed to surface post-compaction resume error for session {}: {}",
-                            resume_session_id,
-                            handle_error
-                        );
-                    }
-                }
-            });
-        }
-
-        Ok(())
+        compact::handle_compact_response(self, session_id, from_id, to_id, summary).await
     }
 
     /// Handle a compact error from the LLM service. If we were awaiting compaction, fail the workflow.
@@ -1047,129 +786,6 @@ impl AgentSessionManager {
 
     /// Clear the compact in-flight flag for a session (called on success or error).
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
-        clear_compact_flags(&self.active_sessions, session_id).await;
+        compact::clear_compact_in_flight(&self.active_sessions, session_id).await;
     }
-}
-
-fn build_channel_message(
-    session_id: &str,
-    server_name: &str,
-    content: String,
-    meta: HashMap<String, String>,
-) -> Message {
-    let now = chrono::Utc::now().timestamp_millis();
-    let text = format_channel_payload(server_name, &content, &meta);
-
-    Message {
-        id: uuid::Uuid::new_v4().to_string(),
-        session_id: session_id.to_string(),
-        role: "user".to_string(),
-        content: vec![crate::mcp::types::MCPContent::Text {
-            text,
-            is_error: None,
-        }],
-        tool_calls: None,
-        tool_call_id: None,
-        is_streaming: None,
-        thinking: None,
-        thinking_signature: None,
-        assistant_id: None,
-        attachments: None,
-        tool_use: None,
-        usage: None,
-        created_at: now,
-        updated_at: now,
-        source: Some("channel".to_string()),
-        error: None,
-        metadata: Some(serde_json::json!({
-            "channel": {
-                "serverName": server_name,
-                "meta": meta,
-            }
-        })),
-    }
-}
-
-fn format_channel_payload(
-    server_name: &str,
-    content: &str,
-    meta: &HashMap<String, String>,
-) -> String {
-    let mut attributes = vec![format!(r#"source="{}""#, escape_xml_attr(server_name))];
-    let mut sorted_meta: Vec<_> = meta.iter().collect();
-    let mut invalid_meta = Vec::new();
-    sorted_meta.sort_by(|(left, _), (right, _)| left.cmp(right));
-
-    for (key, value) in sorted_meta {
-        if is_safe_channel_attribute_name(key) {
-            attributes.push(format!(r#"{}="{}""#, key, escape_xml_attr(value)));
-            continue;
-        }
-
-        invalid_meta.push((key.as_str(), value.as_str()));
-    }
-
-    let mut escaped_body = escape_xml_text(content);
-    if !invalid_meta.is_empty() {
-        if !escaped_body.is_empty() {
-            escaped_body.push_str("\n\n");
-        }
-        escaped_body.push_str("[channel_meta]\n");
-        for (index, (key, value)) in invalid_meta.iter().enumerate() {
-            if index > 0 {
-                escaped_body.push('\n');
-            }
-            escaped_body.push_str(&escape_xml_text(key));
-            escaped_body.push('=');
-            escaped_body.push_str(&escape_xml_text(value));
-        }
-        escaped_body.push_str("\n[/channel_meta]");
-    }
-
-    format!(
-        "<channel {}>\n{}\n</channel>",
-        attributes.join(" "),
-        escaped_body
-    )
-}
-
-fn is_safe_channel_attribute_name(key: &str) -> bool {
-    if matches!(key, "source") {
-        return false;
-    }
-
-    let mut chars = key.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-
-    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-}
-
-#[doc(hidden)]
-pub fn format_channel_payload_for_test(
-    server_name: &str,
-    content: &str,
-    meta: &HashMap<String, String>,
-) -> String {
-    format_channel_payload(server_name, content, meta)
-}
-
-fn escape_xml_attr(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-fn escape_xml_text(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }

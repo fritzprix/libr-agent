@@ -72,3 +72,13 @@
 
 **Learning:** Calling `Number.toLocaleString()` (or similarly `Date.toLocaleDateString()`) repeatedly in React render loops or frequently called utility functions (like `formatUsageMetrics` called during streaming) causes significant performance bottlenecks because it instantiates a new `Intl.NumberFormat` instance internally on every call.
 **Action:** Cache and reuse module-level `Intl.NumberFormat` (or `Intl.DateTimeFormat`) instances using a singleton or factory function to avoid repeated object allocations and layout/rendering stutter.
+
+## 2026-04-02 - Redundant Sorting and In-Place Mutation of Derived Arrays
+
+**Learning:** `AppSidebar` was calling `.sort()` on arrays returned from a map (`childrenByParent`) during every render. Because the map was built from an already-sorted array, the child arrays naturally maintained their sort order. Calling `.sort()` was not only a redundant O(K log K) computation but also mutated the map's arrays in-place during the React render phase, which violates React's pure render rules.
+**Action:** When building adjacency lists or parent-child maps from initially sorted arrays, rely on the preserved sorting order. Never call `.sort()` on derived arrays within a render loop as it causes both unnecessary computation and in-place mutation.
+
+## 2024-05-26 - Incomplete Formatter Consolidation
+
+**Learning:** Reusable formatter caches are often re-implemented in multiple component files instead of a centralized utility file, fragmenting the cache and increasing overall memory footprint.
+**Action:** When centralizing `Intl` formats in a `utils` file, ensure you support `locale` variations by storing instances in a `Map` within the central utility function, so that various localized formats can be safely cached and reused without recreating localized formatters locally in components.

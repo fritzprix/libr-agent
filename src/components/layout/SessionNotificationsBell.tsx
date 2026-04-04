@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,21 +54,26 @@ export function SessionNotificationsBell() {
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="relative"
-          aria-label={t('notifications.open')}
-        >
-          <Bell size={16} />
-          {unreadNotificationCount > 0 ? (
-            <span className="bg-primary text-primary-foreground absolute -top-1 -right-1 flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none">
-              {unreadNotificationCount}
-            </span>
-          ) : null}
-        </Button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="relative"
+              aria-label={t('notifications.open')}
+            >
+              <Bell size={16} />
+              {unreadNotificationCount > 0 ? (
+                <span className="bg-primary text-primary-foreground absolute -top-1 -right-1 flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none">
+                  {unreadNotificationCount}
+                </span>
+              ) : null}
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{t('notifications.open')}</TooltipContent>
+      </Tooltip>
 
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel>{t('notifications.title')}</DropdownMenuLabel>
@@ -83,10 +89,10 @@ export function SessionNotificationsBell() {
             const pendingApprovalCount = session.pendingApprovalCount ?? 0;
             const hasRecurringStopAttention = Boolean(
               session.lastAttentionReason === 'recurringStop' &&
-              session.lastAttentionAt &&
-              (!session.lastViewedAt ||
-                session.lastAttentionAt.getTime() >
-                  session.lastViewedAt.getTime()),
+                session.lastAttentionAt &&
+                (!session.lastViewedAt ||
+                  session.lastAttentionAt.getTime() >
+                    session.lastViewedAt.getTime()),
             );
 
             return (

@@ -193,6 +193,54 @@ describe('AgentMessageRenderer', () => {
     );
   });
 
+  it('shows a visible error state when file-backed image resolution fails', async () => {
+    vi.mocked(readLocalFileAsBase64).mockRejectedValue(
+      new Error('Permission denied'),
+    );
+    const content: MCPContent[] = [
+      {
+        type: 'image',
+        uri: 'file:///tmp/tool-output-failure.png',
+        mimeType: 'image/png',
+      },
+    ];
+
+    render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    expect(await screen.findByText('Failed to load image')).toBeInTheDocument();
+    expect(screen.getByText('Permission denied')).toBeInTheDocument();
+  });
+
+  it('clears the session media cache when the last renderer unmounts', async () => {
+    const content: MCPContent[] = [
+      {
+        type: 'image',
+        uri: 'file:///tmp/tool-output-reused.png',
+        mimeType: 'image/png',
+      },
+    ];
+
+    vi.mocked(readLocalFileAsBase64).mockResolvedValueOnce('dG9vbC1pbWFnZQ==');
+    const firstRender = render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    expect(await screen.findByAltText('Tool output')).toBeInTheDocument();
+    firstRender.unmount();
+
+    vi.mocked(readLocalFileAsBase64).mockReset();
+    vi.mocked(readLocalFileAsBase64).mockRejectedValueOnce(
+      new Error('Permission denied'),
+    );
+
+    render(<AgentMessageRenderer content={content} message={buildImageMessage(content)} />);
+
+    expect(await screen.findByText('Failed to load image')).toBeInTheDocument();
+    expect(screen.getByText('Permission denied')).toBeInTheDocument();
+  });
+
   it('copies inline image data to the clipboard without refetching the image source', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const content: MCPContent[] = [

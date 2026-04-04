@@ -23,6 +23,13 @@ vi.mock('@google/genai', () => ({
   FinishReason: {
     STOP: 'STOP',
   },
+  FunctionCallingConfigMode: {
+    ANY: 'ANY',
+    AUTO: 'AUTO',
+    MODE_UNSPECIFIED: 'MODE_UNSPECIFIED',
+    NONE: 'NONE',
+    VALIDATED: 'VALIDATED',
+  },
   Type: {
     OBJECT: 'OBJECT',
     STRING: 'STRING',
@@ -165,6 +172,23 @@ describe('GeminiService context cache', () => {
     expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
   });
 
+  it('treats UTF-8 heavy stable prefixes as cacheable based on encoded size', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: '한'.repeat(50000),
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
   it('skips cached-content mode when tool usage is explicitly disabled', async () => {
     const service = new GeminiService('test-key');
     const messages = [createUserMessage('hello')];
@@ -180,10 +204,15 @@ describe('GeminiService context cache', () => {
     expect(createCacheMock).not.toHaveBeenCalled();
 
     const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
-      config?: { cachedContent?: string; functionCallingConfig?: { mode?: string } };
+      config?: {
+        cachedContent?: string;
+        toolConfig?: { functionCallingConfig?: { mode?: string } };
+      };
     };
     expect(firstCall.config?.cachedContent).toBeUndefined();
-    expect(firstCall.config?.functionCallingConfig?.mode).toBe('none');
+    expect(firstCall.config?.toolConfig?.functionCallingConfig?.mode).toBe(
+      'NONE',
+    );
   });
 
   it('reuses the same Gemini cache entry regardless of available tool order', async () => {
@@ -264,7 +293,67 @@ describe('GeminiService context cache', () => {
     });
   });
 
-  it('emits tool calls as soon as Gemini stream includes a functionCall part', async () => {
+  it('keeps Gemini session context as a synthetic tail message when cache is skipped', async () => {
+    const service = new GeminiService('test-key');
+
+    await consumeStream(service.streamChat([createUserMessage('hello')], {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'Stable system prompt',
+      sessionContext: '# Current Context Information\nvolatile bits',
+    }));
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string; systemInstruction?: Array<{ text: string }> };
+      contents?: Array<{ role?: string; parts?: Array<{ text?: string }> }>;
+    };
+
+    expect(firstCall.config?.cachedContent).toBeUndefined();
+    expect(firstCall.config?.systemInstruction).toEqual([
+      { text: 'Stable system prompt' },
+    ]);
+    expect(firstCall.contents).toHaveLength(2);
+    expect(firstCall.contents?.[1]).toMatchObject({
+      role: 'user',
+      parts: [
+        {
+          text: '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+        },
+      ],
+    });
+  });
+
+  it('keeps Gemini session context as a synthetic tail message when cached content is used', async () => {
+    const service = new GeminiService('test-key');
+
+    await consumeStream(service.streamChat([createUserMessage('hello')], {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+      sessionContext: '# Current Context Information\nvolatile bits',
+    }));
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string; systemInstruction?: Array<{ text: string }> };
+      contents?: Array<{ role?: string; parts?: Array<{ text?: string }> }>;
+    };
+
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(firstCall.config?.systemInstruction).toBeUndefined();
+    expect(firstCall.contents).toHaveLength(2);
+    expect(firstCall.contents?.[0]).toMatchObject({
+      role: 'user',
+      parts: [{ text: 'hello' }],
+    });
+    expect(firstCall.contents?.[1]).toMatchObject({
+      role: 'user',
+      parts: [
+        {
+          text: '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+        },
+      ],
+    });
+  });
+
+  it('emits full Gemini tool calls as soon as the stream includes a functionCall part', async () => {
     generateContentStreamMock.mockResolvedValue({
       [Symbol.asyncIterator]() {
         let step = 0;
@@ -311,35 +400,133 @@ describe('GeminiService context cache', () => {
       observedChunks.push(JSON.parse(chunk) as Record<string, unknown>);
     }
 
-    const toolCallChunk = observedChunks.find(
+    const toolCallChunks = observedChunks.filter(
       (chunk) =>
         Array.isArray((chunk as { tool_calls?: unknown[] }).tool_calls) &&
         ((chunk as { tool_calls?: unknown[] }).tool_calls?.length ?? 0) > 0,
-    ) as
-      | {
-          tool_calls?: Array<{
-            id?: string;
-            function?: { name?: string; arguments?: string };
-          }>;
-        }
-      | undefined;
+    ) as Array<{
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    }>;
     const signatureChunk = observedChunks.find(
       (chunk) =>
         typeof (chunk as { thinkingSignature?: unknown }).thinkingSignature ===
         'string',
     ) as { thinkingSignature?: string } | undefined;
 
-    expect(toolCallChunk).toBeDefined();
+    expect(
+      observedChunks.some((chunk) =>
+        Array.isArray((chunk as { tool_call_starts?: unknown[] }).tool_call_starts),
+      ),
+    ).toBe(false);
+    expect(toolCallChunks).toHaveLength(1);
     expect(signatureChunk).toBeDefined();
 
-    expect(toolCallChunk?.tool_calls?.[0]).toEqual({
+    expect(toolCallChunks[0]?.tool_calls?.[0]).toEqual({
       id: 'call_gemini_1',
+      type: 'function',
       function: {
         name: 'workspace__writeFile',
         arguments: JSON.stringify({ path: 'foo.txt', content: 'hello' }),
       },
     });
     expect(signatureChunk?.thinkingSignature).toBe('sig_123');
+  });
+
+  it('emits parallel Gemini tool calls as full snapshots in one chunk', async () => {
+    generateContentStreamMock.mockResolvedValue({
+      [Symbol.asyncIterator]() {
+        let step = 0;
+        return {
+          next: async () => {
+            step += 1;
+            if (step === 1) {
+              return {
+                done: false,
+                value: {
+                  candidates: [
+                    {
+                      content: {
+                        parts: [
+                          {
+                            functionCall: {
+                              id: 'call_gemini_a',
+                              name: 'workspace__readFile',
+                              args: { path: 'a.txt' },
+                            },
+                            thoughtSignature: 'sig_parallel',
+                          },
+                          {
+                            functionCall: {
+                              id: 'call_gemini_b',
+                              name: 'workspace__listDirectory',
+                              args: { path: 'src' },
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              };
+            }
+
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    });
+
+    const service = new GeminiService('test-key');
+    const observedChunks: Array<Record<string, unknown>> = [];
+    for await (const chunk of service.streamChat([createUserMessage('inspect')], {
+      modelName: 'gemini-2.5-flash',
+    })) {
+      observedChunks.push(JSON.parse(chunk) as Record<string, unknown>);
+    }
+
+    const toolCallChunk = observedChunks.find(
+      (chunk) =>
+        Array.isArray((chunk as { tool_calls?: unknown[] }).tool_calls) &&
+        ((chunk as { tool_calls?: unknown[] }).tool_calls?.length ?? 0) === 2,
+    ) as
+      | {
+          tool_calls?: Array<{
+            index?: number;
+            id?: string;
+            type?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        }
+      | undefined;
+
+    expect(
+      observedChunks.some((chunk) =>
+        Array.isArray((chunk as { tool_call_starts?: unknown[] }).tool_call_starts),
+      ),
+    ).toBe(false);
+    expect(toolCallChunk?.tool_calls).toEqual([
+      {
+        id: 'call_gemini_a',
+        type: 'function',
+        function: {
+          name: 'workspace__readFile',
+          arguments: JSON.stringify({ path: 'a.txt' }),
+        },
+      },
+      {
+        id: 'call_gemini_b',
+        type: 'function',
+        function: {
+          name: 'workspace__listDirectory',
+          arguments: JSON.stringify({ path: 'src' }),
+        },
+      },
+    ]);
   });
 
   it('emits tool call before later plain-text chunks once functionCall appears', async () => {

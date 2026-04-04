@@ -11,6 +11,10 @@ import {
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
+import {
+  createSerializableToolCallArgumentDelta,
+  serializeToolCallArgumentDeltas,
+} from './stream-events';
 import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
 const logger = getLogger('GroqService');
 
@@ -63,8 +67,7 @@ export class GroqService extends BaseAIService<
         function: {
           name: mcpTool.name,
           description: mcpTool.description,
-          parameters:
-            parameters as GroqChatCompletionTool['function']['parameters'],
+          parameters: parameters as Record<string, unknown>,
         },
       };
     });
@@ -168,9 +171,32 @@ export class GroqService extends BaseAIService<
         if (chunk.choices[0]?.delta?.reasoning) {
           yield JSON.stringify({ thinking: chunk.choices[0].delta.reasoning });
         } else if (chunk.choices[0]?.delta?.tool_calls) {
-          yield JSON.stringify({
-            tool_calls: chunk.choices[0].delta.tool_calls,
-          });
+          const toolCalls = chunk.choices[0].delta.tool_calls
+            .map((toolCall) => {
+              if (typeof toolCall.index !== 'number') {
+                return null;
+              }
+
+              return createSerializableToolCallArgumentDelta(
+                toolCall.index,
+                toolCall.function?.arguments || '',
+                {
+                  id: toolCall.id,
+                  name: toolCall.function?.name,
+                },
+              );
+            })
+            .filter(
+              (
+                toolCall,
+              ): toolCall is ReturnType<
+                typeof createSerializableToolCallArgumentDelta
+              > => toolCall !== null,
+            );
+
+          if (toolCalls.length > 0) {
+            yield serializeToolCallArgumentDeltas(toolCalls);
+          }
         } else if (chunk.choices[0]?.delta?.content) {
           yield JSON.stringify({
             content: chunk.choices[0]?.delta?.content || '',

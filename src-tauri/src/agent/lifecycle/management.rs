@@ -1,6 +1,7 @@
+use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
-use crate::agent::state::AgentSession;
+use crate::agent::state::{AgentSession, SessionStatusTransition};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};
@@ -98,6 +99,9 @@ pub async fn resume_session(
             AgentSession {
                 metadata: session.clone(),
                 is_running: false,
+                active_permit: None,
+                status_transition: Arc::new(RwLock::new(None)),
+                transition_lock: Arc::new(tokio::sync::Mutex::new(())),
                 cancellation_token: CancellationToken::new(),
                 yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
                 cancel_pending: Arc::new(AtomicBool::new(false)),
@@ -211,49 +215,82 @@ pub async fn update_session_status_with_dispatcher(
     session_id: &str,
     status: SessionStatus,
 ) -> Result<(), String> {
-    // SP2: Acquire/release active-agent slot based on the status transition direction.
-    //
-    // Rules:
-    //  • {Idle|Error|Paused} → Busy   : acquire slot (blocks if all slots taken)
-    //  • Busy → {Idle|Error|Paused}   : release slot
-    //  • Busy → Busy (re-entrancy)    : no-op (already holding a slot)
-    //  • non-Busy → non-Busy          : no-op
-    //
-    // We read prev_status from the in-memory map before the write lock so that the
-    // semaphore operation (which may await) doesn't happen while holding the write lock.
+    let (initial_status, transition_lock, transition_handle) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        (
+            session.metadata.status.clone(),
+            Arc::clone(&session.transition_lock),
+            Arc::clone(&session.status_transition),
+        )
+    };
+    let _transition_guard = transition_lock.lock().await;
+
     let prev_status = {
         let active = active_sessions.read().await;
-        active.get(session_id).map(|s| s.metadata.status.clone())
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        if session.metadata.status != initial_status {
+            session.metadata.status.clone()
+        } else {
+            initial_status
+        }
     };
-    let is_prev_busy = matches!(prev_status, Some(SessionStatus::Busy));
+    let is_prev_busy = prev_status == SessionStatus::Busy;
     let is_next_busy = status == SessionStatus::Busy;
+    let mut acquired_permit: Option<ActiveAgentPermit> = None;
+    let mut released_permit: Option<ActiveAgentPermit> = None;
 
-    let gate = crate::state::get_concurrency_gate();
-    match (is_prev_busy, is_next_busy) {
-        (false, true) => {
-            // Entering Busy: acquire an active-agent slot (blocks until one is free).
-            gate.acquire_active_agent().await?;
+    *transition_handle.write().await = Some(SessionStatusTransition::ToStatus(status.clone()));
+
+    if !matches!((is_prev_busy, is_next_busy), (false, false) | (true, true)) {
+        let gate = crate::state::get_concurrency_gate();
+        match (is_prev_busy, is_next_busy) {
+            (false, true) => {
+                acquired_permit = Some(gate.acquire_active_agent().await?);
+            }
+            (true, false) => {
+                let mut active = active_sessions.write().await;
+                let session = active
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("Session not found: {}", session_id))?;
+                released_permit = session.active_permit.take();
+            }
+            _ => {}
         }
-        (true, false) => {
-            // Leaving Busy: release the slot so another session can run.
-            gate.release_active_agent();
-        }
-        _ => {} // re-entrancy (Busy→Busy) or non-Busy→non-Busy: no-op
     }
 
-    session_repo
-        .update_status(session_id, status.clone())
-        .await
-        .map_err(|e| format!("Failed to update session status: {}", e))?;
+    let persist_result = session_repo.update_status(session_id, status.clone()).await;
+
+    if let Err(error) = persist_result {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(session_id) {
+            if let Some(permit) = acquired_permit.take() {
+                drop(permit);
+            }
+            if let Some(permit) = released_permit.take() {
+                session.active_permit = Some(permit);
+            }
+        }
+        *transition_handle.write().await = None;
+        return Err(format!("Failed to update session status: {}", error));
+    }
 
     // Update in-memory state
     let mut active = active_sessions.write().await;
     if let Some(session) = active.get_mut(session_id) {
+        if let Some(permit) = acquired_permit.take() {
+            session.active_permit = Some(permit);
+        }
         session.metadata.status = status.clone();
         // SP3: Update is_running based on status.
         // Busy means the workflow is active/running.
         session.is_running = status == SessionStatus::Busy;
     }
+    *transition_handle.write().await = None;
     drop(active); // Release write lock before waking waiters.
 
     // SP1: Wake any tasks sleeping on this session's status change (e.g. awaitAgent).

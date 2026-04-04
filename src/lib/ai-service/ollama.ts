@@ -10,9 +10,17 @@ import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
-import { AIServiceProvider, AIServiceConfig } from './types';
+import {
+  AIServiceProvider,
+  AIServiceConfig,
+  ContextInjectionResult,
+} from './types';
 import { BaseAIService } from './base-service';
 import { supportsThinking, getContextWindow } from './model-capabilities';
+import {
+  createEphemeralSessionContextInjection,
+  formatSessionContextAsBackgroundReference,
+} from './base-service-context';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
@@ -22,6 +30,10 @@ import {
   type Logger,
   type SimpleOllamaMessage,
 } from './ollama-core';
+import {
+  createSerializableDirectToolCall,
+  serializeDirectToolCalls,
+} from './stream-events';
 
 const logger = getLogger('OllamaService');
 
@@ -96,6 +108,30 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Ollama;
+  }
+
+  override prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): ContextInjectionResult {
+    if (!sessionContext) {
+      return { systemPrompt, sessionContext: undefined, messages };
+    }
+
+    logger.debug('Injecting Ollama session context as ephemeral tail message', {
+      sessionContextLength: sessionContext.length,
+    });
+
+    return createEphemeralSessionContextInjection(
+      systemPrompt,
+      sessionContext,
+      messages,
+      {
+        idPrefix: 'ollama-session-context',
+        contentText: formatSessionContextAsBackgroundReference(sessionContext),
+      },
+    );
   }
 
   /**
@@ -347,7 +383,14 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
           }
 
           if (processedChunk.tool_calls) {
-            yield JSON.stringify({ tool_calls: processedChunk.tool_calls });
+            const toolCalls = processedChunk.tool_calls.map((toolCall) =>
+              createSerializableDirectToolCall(
+                toolCall.id,
+                toolCall.function.name,
+                toolCall.function.arguments,
+              ),
+            );
+            yield serializeDirectToolCalls(toolCalls);
           }
 
           if (processedChunk.usage) {

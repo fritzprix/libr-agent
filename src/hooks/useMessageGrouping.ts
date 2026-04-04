@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
 import { getLogger } from '@/lib/logger';
@@ -356,8 +356,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     };
   }, [messages]);
 
-  // Update cache in useEffect to keep render phase pure(r)
-  useEffect(() => {
+  useLayoutEffect(() => {
     cache.current = calculation.newCache;
   }, [calculation.newCache]);
 

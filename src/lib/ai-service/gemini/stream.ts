@@ -2,6 +2,14 @@ import { formatToolCall } from '../utils';
 import { generateToolCallId } from './mapper';
 import { getLogger } from '../../logger';
 import type { TokenUsage } from '../types';
+import {
+  createSerializableDirectToolCall,
+  serializeStreamContent,
+  serializeStreamThinking,
+  serializeStreamUsage,
+  serializeDirectToolCalls,
+  serializeThinkingSignature,
+} from '../stream-events';
 
 // Type definition for Gemini Experimental Thoughts
 // See: https://github.com/google/generative-ai-js/issues/186
@@ -57,9 +65,6 @@ interface GeminiStreamChunk {
   candidates?: GeminiChunkCandidate[];
   text?: string;
 }
-
-type FormattedToolCall = ReturnType<typeof formatToolCall>;
-
 function isFunctionCallPart(part: GeminiChunkPart): part is GeminiChunkPart & {
   functionCall: GeminiFunctionCall;
 } {
@@ -143,7 +148,7 @@ export async function* processGeminiStream(
       if (usageUpdated) {
         currentUsage.totalTokens =
           currentUsage.promptTokens + currentUsage.completionTokens;
-        yield JSON.stringify({ usage: currentUsage });
+        yield serializeStreamUsage(currentUsage);
       }
     }
 
@@ -164,9 +169,7 @@ export async function* processGeminiStream(
         ) {
           // Yield the signature as a separate event or combined with thinking?
           // Based on Message model, we have `thinkingSignature` field.
-          yield JSON.stringify({
-            thinkingSignature: part.thoughtSignature,
-          });
+          yield serializeThinkingSignature(part.thoughtSignature);
         }
       }
     }
@@ -181,7 +184,7 @@ export async function* processGeminiStream(
     }
 
     if (thoughtContent) {
-      yield JSON.stringify({ thinking: thoughtContent });
+      yield serializeStreamThinking(thoughtContent);
     }
 
     // Extract function calls from raw parts to preserve thoughtSignature
@@ -215,7 +218,7 @@ export async function* processGeminiStream(
         });
 
         const toolCalls = functionCallParts
-          .map((part, index: number): FormattedToolCall | null => {
+          .map((part, index: number) => {
             const fc = part.functionCall;
             if (!fc || !fc.name) return null;
 
@@ -236,28 +239,40 @@ export async function* processGeminiStream(
               fc.id && typeof fc.id === 'string' && fc.id.length > 0
                 ? fc.id
                 : generateToolCallId();
+            const formattedToolCall = formatToolCall(
+              callId,
+              fc.name,
+              fc.args ?? {},
+            );
 
-            return formatToolCall(callId, fc.name, fc.args ?? {});
+            return createSerializableDirectToolCall(
+              formattedToolCall.id,
+              formattedToolCall.function.name,
+              formattedToolCall.function.arguments,
+            );
           })
-          .filter((tc): tc is FormattedToolCall => tc !== null);
+          .filter(
+            (tc): tc is ReturnType<typeof createSerializableDirectToolCall> =>
+              tc !== null,
+          );
 
         if (toolCalls.length > 0) {
           logger.debug('📤 Emitting tool calls', {
             count: toolCalls.length,
             hasSignature: !!extractedSignature,
           });
-          yield JSON.stringify({ tool_calls: toolCalls });
+          yield serializeDirectToolCalls(toolCalls);
 
           // Emit the captured signature separately
           if (extractedSignature) {
             logger.debug('📤 Emitting thought signature', {
               signature: extractedSignature.substring(0, 20) + '...',
             });
-            yield JSON.stringify({ thinkingSignature: extractedSignature });
+            yield serializeThinkingSignature(extractedSignature);
           }
         }
       } else if (chunk.text) {
-        yield JSON.stringify({ content: chunk.text });
+        yield serializeStreamContent(chunk.text);
       } else {
         const finishReason = candidate?.finishReason;
 
@@ -279,7 +294,7 @@ export async function* processGeminiStream(
         }
       }
     } else if (chunk.text) {
-      yield JSON.stringify({ content: chunk.text });
+      yield serializeStreamContent(chunk.text);
     }
   }
 }

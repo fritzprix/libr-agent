@@ -2,10 +2,15 @@ import React, { useCallback, useEffect, useRef } from 'react';
 
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import type {
-  IAIService,
   AIServiceConfig,
+  AICompletionExecutionService,
   TokenUsage,
 } from '@/lib/ai-service/types';
+import {
+  isParsedDirectToolCall,
+  isParsedIndexedToolCallDelta,
+  parseStreamChunk,
+} from '@/lib/ai-service/stream-events';
 import { getLogger } from '@/lib/logger';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
@@ -72,7 +77,9 @@ export function useExecuteCompletion({
   setContextUsageMap,
 }: UseExecuteCompletionProps) {
   // Track active service instances for cleanup
-  const activeServicesRef = useRef<Map<string, IAIService>>(new Map());
+  const activeServicesRef = useRef<Map<string, AICompletionExecutionService>>(
+    new Map(),
+  );
   // Track abort controllers for cancellation
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   // Track timeout IDs for cleanup
@@ -314,16 +321,10 @@ export function useExecuteCompletion({
             throw new Error('Request aborted');
           }
 
-          // streamChat yields JSON strings; parse into a typed chunk object.
-          let chunk: Record<string, unknown>;
-          try {
-            chunk = JSON.parse(rawChunk);
-          } catch {
-            chunk = { content: rawChunk };
-          }
+          const chunk = parseStreamChunk(rawChunk);
 
           // 1. Accumulate Text
-          if (chunk.content && typeof chunk.content === 'string') {
+          if (typeof chunk.content === 'string') {
             const lastItem = content[content.length - 1];
             if (lastItem && lastItem.type === 'text') {
               (lastItem as MCPTextContent).text += chunk.content;
@@ -333,7 +334,7 @@ export function useExecuteCompletion({
           }
 
           // 2. Accumulate Thinking
-          if (chunk.thinking && typeof chunk.thinking === 'string') {
+          if (typeof chunk.thinking === 'string') {
             if (thinkingStartTime === undefined) {
               thinkingStartTime = performance.now();
             }
@@ -346,32 +347,23 @@ export function useExecuteCompletion({
           }
 
           // 3. Accumulate Thinking Signature
-          const chunkMetadata =
-            chunk.metadata !== null && typeof chunk.metadata === 'object'
-              ? (chunk.metadata as Record<string, unknown>)
-              : undefined;
-          if (
-            chunkMetadata?.thinking_signature &&
-            typeof chunkMetadata.thinking_signature === 'string'
-          ) {
-            thinkingSignature = chunkMetadata.thinking_signature;
+          if (typeof chunk.thinkingSignature === 'string') {
+            thinkingSignature = chunk.thinkingSignature;
           }
 
           // 4. Accumulate Tool Calls
-          if (chunk.tool_calls && Array.isArray(chunk.tool_calls)) {
-            (chunk.tool_calls as (ToolCall & { index?: number })[]).forEach(
-              (toolCallChunk) => {
-                const { index } = toolCallChunk;
+          const toolCallStartChunks = chunk.tool_call_starts ?? [];
+          const toolCallDeltaChunks = chunk.tool_calls ?? [];
+          const toolCallChunks = [
+            ...toolCallStartChunks,
+            ...toolCallDeltaChunks,
+          ];
+          const hasToolCallUpdate = toolCallChunks.length > 0;
 
-                if (index === undefined) {
-                  content.push({
-                    type: 'tool_call',
-                    id: toolCallChunk.id || '',
-                    name: toolCallChunk.function?.name || '',
-                    arguments: toolCallChunk.function?.arguments || '',
-                  });
-                  return;
-                }
+          if (hasToolCallUpdate) {
+            toolCallChunks.forEach((toolCallChunk) => {
+              if (isParsedIndexedToolCallDelta(toolCallChunk)) {
+                const { index } = toolCallChunk;
 
                 if (activeToolCallIndices.has(index)) {
                   const contentIndex = activeToolCallIndices.get(index)!;
@@ -404,8 +396,18 @@ export function useExecuteCompletion({
                   content.push(newBlock);
                   activeToolCallIndices.set(index, content.length - 1);
                 }
-              },
-            );
+                return;
+              }
+
+              if (isParsedDirectToolCall(toolCallChunk)) {
+                content.push({
+                  type: 'tool_call',
+                  id: toolCallChunk.id,
+                  name: toolCallChunk.function.name,
+                  arguments: toolCallChunk.function.arguments,
+                });
+              }
+            });
           }
 
           if (thinkingStartTime !== undefined) {
@@ -414,7 +416,7 @@ export function useExecuteCompletion({
           }
 
           if (chunk.usage) {
-            const incomingUsage = chunk.usage as TokenUsage;
+            const incomingUsage = chunk.usage;
             if (finalUsage) {
               finalUsage = {
                 // Use || to prevent 0 values in delta chunks from overwriting cumulative totals
@@ -458,7 +460,7 @@ export function useExecuteCompletion({
           const nowMs = performance.now();
           const lastUpdateMs =
             lastStreamingUpdateRef.current.get(sessionId) ?? 0;
-          if (nowMs - lastUpdateMs >= 50) {
+          if (hasToolCallUpdate || nowMs - lastUpdateMs >= 50) {
             lastStreamingUpdateRef.current.set(sessionId, nowMs);
             setStreamingMessages((prev) => {
               const next = new Map(prev);
