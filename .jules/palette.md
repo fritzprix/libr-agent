@@ -52,3 +52,7 @@
 
 **Learning:** Found that custom `<button>` and `<div role="button">` elements that bypass the design system's `Button` component lack the standard keyboard focus indicators, making them invisible to keyboard users navigating via Tab.
 **Action:** Always apply `focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none` (along with `rounded` or `rounded-sm` as needed) to any interactive element that acts as a button but does not inherit standard global button styling.
+
+## 2024-04-04 - Wrapping SidebarTrigger with Tooltip
+**Learning:** For Radix UI tooltips wrapping a trigger with `asChild`, ensuring `asChild` propagates the event up the DOM needs proper usage of Radix primitive, particularly combining `DropdownMenuTrigger` with `TooltipTrigger` on `Button`. Also `forwardRef` warnings show up if the inner button is not using forwardRef correctly, but in `SessionNotificationsBell` combining them with `asChild` creates refs warning if not nested correctly. `TooltipTrigger asChild` around `DropdownMenuTrigger asChild` is needed.
+**Action:** When nesting Tooltips around Radix `DropdownMenuTrigger`, ensure both have `asChild` property so the original `<Button>` element receives both tooltip and dropdown aria/ref properties.
