@@ -16,7 +16,6 @@ import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
@@ -68,37 +67,35 @@ export function PlaybookCard({
             {assistantName}
           </Badge>
           <div className="flex items-center gap-1 -mr-2 -mt-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'h-8 w-8 hover:bg-transparent',
+                    playbook.isBookmarked
+                      ? 'text-warning hover:text-warning/80'
+                      : 'text-muted-foreground/30 hover:text-muted-foreground group-hover:text-muted-foreground',
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBookmarkToggle(playbook.id, !playbook.isBookmarked);
+                  }}
+                >
+                  <Bookmark
                     className={cn(
-                      'h-8 w-8 hover:bg-transparent',
-                      playbook.isBookmarked
-                        ? 'text-warning hover:text-warning/80'
-                        : 'text-muted-foreground/30 hover:text-muted-foreground group-hover:text-muted-foreground',
+                      'h-4 w-4',
+                      playbook.isBookmarked && 'fill-current',
                     )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onBookmarkToggle(playbook.id, !playbook.isBookmarked);
-                    }}
-                  >
-                    <Bookmark
-                      className={cn(
-                        'h-4 w-4',
-                        playbook.isBookmarked && 'fill-current',
-                      )}
-                    />
-                    <span className="sr-only">
-                      {t('playbook.card.bookmark')}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('playbook.card.bookmark')}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                  />
+                  <span className="sr-only">
+                    {t('playbook.card.bookmark')}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('playbook.card.bookmark')}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
         <CardTitle
@@ -133,22 +130,20 @@ export function PlaybookCard({
       </CardContent>
 
       <CardFooter className="pt-0 flex justify-between gap-2">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-muted-foreground hover:text-destructive h-8 w-8"
-                onClick={() => onDelete(playbook.id)}
-                aria-label={t('playbook.card.deleteTooltip')}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('playbook.card.deleteTooltip')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-destructive h-8 w-8"
+              onClick={() => onDelete(playbook.id)}
+              aria-label={t('playbook.card.deleteTooltip')}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('playbook.card.deleteTooltip')}</TooltipContent>
+        </Tooltip>
 
         <Button
           size="sm"
