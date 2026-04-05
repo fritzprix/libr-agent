@@ -7,7 +7,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// A single edit operation.
 #[derive(Debug, Clone)]
@@ -67,6 +67,63 @@ fn apply_edits(orig_lines: &[&str], edits: &[LineEdit]) -> Vec<String> {
 }
 
 impl WorkspaceServer {
+    pub async fn handle_replace_lines(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        let delegated = json!({
+            "path": args.get("path").cloned().unwrap_or(Value::Null),
+            "edits": [{
+                "action": "REPLACE",
+                "line": args.get("line").cloned().unwrap_or(Value::Null),
+                "endLine": args.get("endLine").cloned().unwrap_or(Value::Null),
+                "new_value": args.get("new_value").cloned().unwrap_or(Value::Null),
+                "anchor": args.get("anchor").cloned().unwrap_or(Value::Null),
+                "endAnchor": args.get("endAnchor").cloned().unwrap_or(Value::Null)
+            }]
+        });
+
+        self.handle_edit_file(delegated, session_id).await
+    }
+
+    pub async fn handle_insert_after_line(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        let delegated = json!({
+            "path": args.get("path").cloned().unwrap_or(Value::Null),
+            "edits": [{
+                "action": "INSERT_AFTER",
+                "line": args.get("afterLine").cloned().unwrap_or(Value::Null),
+                "new_value": args.get("new_value").cloned().unwrap_or(Value::Null),
+                "anchor": args.get("anchor").cloned().unwrap_or(Value::Null)
+            }]
+        });
+
+        self.handle_edit_file(delegated, session_id).await
+    }
+
+    pub async fn handle_delete_lines(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        let delegated = json!({
+            "path": args.get("path").cloned().unwrap_or(Value::Null),
+            "edits": [{
+                "action": "DELETE",
+                "line": args.get("line").cloned().unwrap_or(Value::Null),
+                "endLine": args.get("endLine").cloned().unwrap_or(Value::Null),
+                "anchor": args.get("anchor").cloned().unwrap_or(Value::Null),
+                "endAnchor": args.get("endAnchor").cloned().unwrap_or(Value::Null)
+            }]
+        });
+
+        self.handle_edit_file(delegated, session_id).await
+    }
+
     pub async fn handle_edit_file(
         &self,
         args: Value,

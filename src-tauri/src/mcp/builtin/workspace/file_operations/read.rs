@@ -184,7 +184,7 @@ impl WorkspaceServer {
                 // Format response for clean markdown rendering
                 let text_message = if show_line_anchors {
                     format!(
-                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — pass `anchor` from the start line into editFile, and add `endAnchor` from the final line when using endLine for a range",
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — use anchors with replaceLines, insertAfterLine, or deleteLines",
                         path_str, size_str, line_count, content
                     )
                 } else {
@@ -198,7 +198,8 @@ impl WorkspaceServer {
                 let hint = SuccessHint::new(
                     text_message,
                     vec![
-                        "editFile: copy anchor from the start-line prefix (for example, 'a31f2c' from '42:a31f2c|...'); for range edits, also copy endAnchor from the final line in the range".to_string(),
+                        "Use replaceLines or deleteLines with the start-line anchor; for ranges, also copy endAnchor from the final line".to_string(),
+                        "Use insertAfterLine with afterLine and the anchor from the line after which content should be inserted".to_string(),
                         "writeFile for full file replacement".to_string(),
                     ],
                 );

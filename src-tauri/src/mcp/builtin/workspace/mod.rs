@@ -620,7 +620,9 @@ impl BuiltinMCPServer for WorkspaceServer {
             "importFiles" => self.handle_import_files(args, session_id).await,
             "search" => self.handle_search(args, session_id).await,
             "editFile" => self.handle_edit_file(args, session_id).await,
-            "replaceLines" => self.handle_edit_file(args, session_id).await,
+            "replaceLines" => self.handle_replace_lines(args, session_id).await,
+            "insertAfterLine" => self.handle_insert_after_line(args, session_id).await,
+            "deleteLines" => self.handle_delete_lines(args, session_id).await,
             // Code execution tools
             // Note: Python/TypeScript execution were removed from the public tool
             // interface to avoid external runtime dependencies and to prevent

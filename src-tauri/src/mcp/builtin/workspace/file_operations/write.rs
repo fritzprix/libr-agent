@@ -109,7 +109,7 @@ impl WorkspaceServer {
                         path_str
                     ),
                     format!(
-                        "Use editFile(\"{}\", [{{line, anchor, new_value}}]) for targeted edits instead of rewriting the whole file. Add endAnchor when using endLine for a range.",
+                        "Use replaceLines, insertAfterLine, or deleteLines for targeted edits to \"{}\" instead of rewriting the whole file.",
                         path_str
                     ),
                 ])
@@ -188,7 +188,7 @@ impl WorkspaceServer {
                             format_as_hashlines(content)
                         ));
                     } else {
-                        // New file — show anchors so agent can immediately use editFile
+                        // New file — show anchors so agent can immediately use targeted editing tools
                         let max_display_lines = 100;
                         let max_display_bytes = 51200; // 50KB
                         let content_lines: Vec<&str> = content.lines().collect();
@@ -238,7 +238,7 @@ impl WorkspaceServer {
                     || path_str.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "Use editFile for targeted edits to \"{}\"",
+                        "Use replaceLines, insertAfterLine, or deleteLines for targeted edits to \"{}\"",
                         path_str
                     ));
                 }

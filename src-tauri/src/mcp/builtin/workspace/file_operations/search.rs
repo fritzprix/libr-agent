@@ -456,9 +456,11 @@ impl WorkspaceServer {
             }
 
             if show_hashes {
-                s.push_str("Use the returned `anchor` from the start line for `editFile`. If you set `endLine` for a range, also copy `endAnchor` from the exact end line.\n");
+                s.push_str("Use the returned anchors with replaceLines, insertAfterLine, or deleteLines. For range replacement/deletion, also copy endAnchor from the exact end line.\n");
             } else {
-                s.push_str("Run with `showLineAnchors: true` to get anchors for `editFile`.\n");
+                s.push_str(
+                    "Run with `showLineAnchors: true` to get anchors for targeted editing tools.\n",
+                );
             }
             s
         };
@@ -755,12 +757,13 @@ impl WorkspaceServer {
         ];
         if show_hashes {
             next_steps.push(
-                "Use the returned start-line anchor directly with editFile, and add endAnchor from the end line when the edit uses endLine"
+                "Use the returned anchors with replaceLines, insertAfterLine, or deleteLines; add endAnchor for range replacement/deletion"
                     .to_string(),
             );
         } else {
             next_steps.push(
-                "Run with `showLineAnchors: true` to get anchors for `editFile`.".to_string(),
+                "Run with `showLineAnchors: true` to get anchors for targeted editing tools."
+                    .to_string(),
             );
         }
 
