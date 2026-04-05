@@ -284,8 +284,7 @@ export function SessionHistoryPanel({
 
     const walk = (session: AgentSession, nestingLevel: number) => {
       const visibleChildren = (childrenByParent.get(session.id) || [])
-        .filter((child) => visibleIds.has(child.id))
-        .sort(sortByCurrentOrder);
+        .filter((child) => visibleIds.has(child.id));
       const parentName = session.parentSessionId
         ? sessionById.get(session.parentSessionId)?.name ||
           t('sessionHistory.card.fallbackName', 'Session {{id}}', {
