@@ -23,6 +23,9 @@ pub struct CreateSessionRequest {
     pub parent_session_id: Option<String>,
     pub max_depth: Option<u32>,
     pub max_fanout: Option<u32>,
+    pub org_id: Option<String>,
+    pub org_name: Option<String>,
+    pub org_root_session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,6 +39,9 @@ pub struct CreateSessionResponse {
     pub depth: u32,
     pub max_depth: Option<u32>,
     pub max_fanout: Option<u32>,
+    pub org_id: Option<String>,
+    pub org_name: Option<String>,
+    pub org_root_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,4 +52,7 @@ pub struct SessionLineageMeta {
     pub depth: u32,
     pub max_depth: Option<u32>,
     pub max_fanout: Option<u32>,
+    pub org_id: Option<String>,
+    pub org_name: Option<String>,
+    pub org_root_session_id: Option<String>,
 }

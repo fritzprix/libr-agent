@@ -83,7 +83,12 @@ impl WorkspaceServer {
                     "Create exports directory failed".to_string(),
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![format!("Error: {}", e)])
+                .guidance(vec![
+                    "Verify the session workspace exists and is writable".to_string(),
+                    "Ensure the exports directory can be created under the session workspace"
+                        .to_string(),
+                    format!("Underlying error: {}", e),
+                ])
                 .to_mcp_result());
             }
         };
@@ -163,6 +168,11 @@ impl WorkspaceServer {
                 ),
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Use listDirectory('.') to verify workspace-relative paths".to_string(),
+                "Use searchFiles(pattern) to find the exact file or directory name".to_string(),
+                "Export paths must be relative to the workspace root".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -174,7 +184,11 @@ impl WorkspaceServer {
                     "Create ZIP file failed".to_string(),
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![format!("Error: {}", e)])
+                .guidance(vec![
+                    "Verify the exports/packages directory is writable".to_string(),
+                    "Ensure sufficient disk space is available".to_string(),
+                    format!("Underlying error: {}", e),
+                ])
                 .to_mcp_result())
             }
         };
@@ -251,7 +265,11 @@ impl WorkspaceServer {
                 "Finalize ZIP file failed".to_string(),
                 ToolGroup::Workspace,
             )
-            .guidance(vec![format!("Error: {}", e)])
+            .guidance(vec![
+                "Retry the export after verifying the selected files are readable".to_string(),
+                "Ensure the target export path has enough free space".to_string(),
+                format!("Underlying error: {}", e),
+            ])
             .to_mcp_result());
         }
 
@@ -261,6 +279,12 @@ impl WorkspaceServer {
                 "No files were successfully added to ZIP".to_string(),
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Use listDirectory or searchFiles to verify the selected paths contain readable files"
+                    .to_string(),
+                "Directories are allowed, but only readable files inside them are added".to_string(),
+                "Retry with a smaller, known-good set of workspace-relative paths".to_string(),
+            ])
             .to_mcp_result());
         }
 

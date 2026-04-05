@@ -7,12 +7,12 @@ Use this file when you need concrete task wording or when a delegated child sess
 | Need | Safe with normal `startSession`? | What to do |
 | --- | --- | --- |
 | Child runs a bounded task with its own workspace | Yes | Delegate normally |
-| Child sees parent workspace files automatically | No | Put required content in the task, or do not delegate |
+| Child sees parent workspace files automatically | No | Put required content in the task, or keep the work in the parent |
 | Child inherits parent workspace `agents.md` / `CLAUDE.md` | No | Copy critical rules into the handoff |
 | Child uses assistant-scoped skills from chosen assistant | Yes | Pick the right `agentId` |
 | Child uses parent workspace-local `skills/` | No | Use global or assistant skills instead, or inline the procedure |
 | Child receives arbitrary parent files through a `contextFiles` parameter | No | Put critical context in the task text |
-| Child shares a specific workspace path through normal builtin agent tool flow | Yes | Use `workspaceOverride` with an absolute path |
+| Child works in the same workspace as the parent | Yes | Start the child with `workspaceOverride` pointing to that shared workspace |
 
 ## Delegation Recipe: Isolated Research Child
 
@@ -70,7 +70,7 @@ Choose the skill source deliberately:
 
 1. Prefer a global skill if multiple assistants need it.
 2. Prefer an assistant-scoped skill when the behavior belongs to a specialist assistant.
-3. Do not rely on parent workspace-local skills being visible to the child.
+3. Treat parent workspace-local skills as parent-only unless the child is started in that same workspace.
 4. If the procedure is short, inline it in the task instead of assuming the child can discover it.
 
 Task template:
@@ -119,7 +119,7 @@ Likely causes:
 Response:
 
 - restate the critical rule in the task text
-- do not assume prompt cache refresh mid-session
+- assume prompt refresh only in a later execution step
 
 ### Symptom: Child cannot use a workspace-local skill
 
@@ -141,5 +141,5 @@ Likely cause:
 
 Response:
 
-- use `workspaceOverride` with an absolute path when shared workspace access is required
+- start the child in that same workspace when shared workspace access is required
 - still pass critical context in the task text; workspace sharing is not the same thing as copying instructions into the prompt

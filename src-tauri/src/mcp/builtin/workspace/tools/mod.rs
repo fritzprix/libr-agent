@@ -28,10 +28,6 @@ pub fn code_tools() -> Vec<MCPTool> {
         code_tools::create_execute_shell_tool(), // Unix: runInPersistentShell, Windows: runInPersistentPowerShell
         // Background process execution (platform-agnostic)
         code_tools::create_spawn_process_tool(), // Async: background processes
-        // 2nd tool for interactive shell execution (Two-Tool Pattern)
-        code_tools::create_execute_pending_shell_tool(),
-        // Cancel tool for interactive shell execution
-        code_tools::create_cancel_pending_execution_tool(),
     ]
 }
 
@@ -60,10 +56,9 @@ mod tests {
     #[test]
     fn test_code_tools_returns_platform_tool() {
         let tools = code_tools();
-        // Updated to expect same tool counts by platform after CMD removal:
-        // runShell/runPowerShell, runInPersistentShell/runInPersistentPowerShell,
-        // spawnProcess, executePendingShell, cancelPendingExecution = 5 tools
-        assert_eq!(tools.len(), 5);
+        // Model-facing tools only: isolated shell, persistent shell, and background processes.
+        // Interactive callback tools stay dispatchable but are intentionally hidden from discovery.
+        assert_eq!(tools.len(), 3);
 
         let primary_tool = &tools[0];
         #[cfg(unix)]

@@ -181,6 +181,21 @@ impl AgentService {
             }
         });
 
+        let explicit_org = match (
+            body.org_id.clone(),
+            body.org_name.clone(),
+            body.org_root_session_id.clone(),
+        ) {
+            (Some(org_id), Some(org_name), Some(org_root_session_id)) => {
+                Some((org_id, org_name, org_root_session_id))
+            }
+            (None, None, None) => None,
+            _ => return Err(
+                "Explicit org metadata must include orgId, orgName, and orgRootSessionId together"
+                    .to_string(),
+            ),
+        };
+
         let lineage_meta = if let Some(parent_id) = parent_session_id.clone() {
             let store = lineage_store().read().await;
             if let Some(parent_meta) = store.get(&parent_id) {
@@ -219,6 +234,13 @@ impl AgentService {
                     depth: next_depth,
                     max_depth: effective_max_depth,
                     max_fanout: effective_max_fanout,
+                    org_id: explicit_org.as_ref().map(|(org_id, _, _)| org_id.clone()),
+                    org_name: explicit_org
+                        .as_ref()
+                        .map(|(_, org_name, _)| org_name.clone()),
+                    org_root_session_id: explicit_org
+                        .as_ref()
+                        .map(|(_, _, org_root_session_id)| org_root_session_id.clone()),
                 }
             } else {
                 drop(store);
@@ -267,6 +289,13 @@ impl AgentService {
                     depth: next_depth,
                     max_depth: effective_max_depth,
                     max_fanout: effective_max_fanout,
+                    org_id: explicit_org.as_ref().map(|(org_id, _, _)| org_id.clone()),
+                    org_name: explicit_org
+                        .as_ref()
+                        .map(|(_, org_name, _)| org_name.clone()),
+                    org_root_session_id: explicit_org
+                        .as_ref()
+                        .map(|(_, _, org_root_session_id)| org_root_session_id.clone()),
                 }
             }
         } else {
@@ -276,6 +305,13 @@ impl AgentService {
                 depth: 0,
                 max_depth: requested_max_depth,
                 max_fanout: requested_max_fanout,
+                org_id: explicit_org.as_ref().map(|(org_id, _, _)| org_id.clone()),
+                org_name: explicit_org
+                    .as_ref()
+                    .map(|(_, org_name, _)| org_name.clone()),
+                org_root_session_id: explicit_org
+                    .as_ref()
+                    .map(|(_, _, org_root_session_id)| org_root_session_id.clone()),
             }
         };
 
@@ -284,6 +320,9 @@ impl AgentService {
         agent_config.depth = Some(lineage_meta.depth);
         agent_config.max_depth = lineage_meta.max_depth;
         agent_config.max_fanout = lineage_meta.max_fanout;
+        agent_config.org_id = lineage_meta.org_id.clone();
+        agent_config.org_name = lineage_meta.org_name.clone();
+        agent_config.org_root_session_id = lineage_meta.org_root_session_id.clone();
 
         if let Some(path_str) = body.workspace_path {
             Self::validate_and_register_workspace_override(&path_str, &session_id).await?;
@@ -353,6 +392,9 @@ impl AgentService {
             depth: lineage_meta.depth,
             max_depth: lineage_meta.max_depth,
             max_fanout: lineage_meta.max_fanout,
+            org_id: lineage_meta.org_id,
+            org_name: lineage_meta.org_name,
+            org_root_session_id: lineage_meta.org_root_session_id,
         })
     }
 
@@ -444,10 +486,28 @@ impl AgentService {
         content: String,
         source: Option<String>,
     ) -> Result<SendSessionMessageResponse, String> {
-        let session = manager
+        let persisted_session = manager
             .get_session(session_id)
             .await?
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        let is_active = {
+            let active_sessions = manager.active_sessions_arc();
+            let active = active_sessions.read().await;
+            active.contains_key(session_id)
+        };
+
+        let session = if !is_active {
+            log::info!(
+                "Auto-resuming inactive session before send_message_to_session: {}",
+                session_id
+            );
+            let resumed_session = manager.resume_session(session_id).await?;
+            manager.init_session_with_messages(session_id).await?;
+            resumed_session
+        } else {
+            persisted_session
+        };
+
         let is_busy = matches!(session.status, crate::repositories::SessionStatus::Busy);
         let message_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis();

@@ -47,12 +47,20 @@ What is missing:
 - `src/models/agent.ts`
 - `src/context/AgentSessionListContext.tsx`
 - `src/features/agent/components/SessionHistoryPanel.tsx`
+- `src/features/history/Org.tsx`
+- `src/features/history/org-sessions.ts`
 - `src-tauri/src/server/handlers/sessions.rs`
+- `src-tauri/src/entity/session.rs`
+- `src-tauri/src/repositories/session_repository.rs`
+- `src-tauri/src/services/agent_service.rs`
 
 What is missing:
 
-- explicit org-oriented lineage metadata and UX
-- dedicated Org view
+- explicit org metadata (`org_id`, `org_name`, `org_root_session_id`)
+- explicit org-aware creation path instead of lineage-only inference
+- minimal org tool group (`createOrg`, `spawnOrgAgent`, optional `getOrg`)
+- replacing the provisional lineage-filtered Org view with org-card / org-chart UX
+- resume behavior routed to org root session
 - keeping org separate from scheduled task groups
 
 ## Validation direction
@@ -65,3 +73,9 @@ Use existing repo validation and add targeted integration coverage where behavio
 - `cargo check --tests --manifest-path src-tauri/Cargo.toml`
 
 Add Rust integration tests under `src-tauri/tests/` for backend behavior changes.
+
+Add frontend regressions for:
+
+- grouped-vs-standalone scheduled task UX
+- explicit-org-only org filtering
+- root-session resume from org view

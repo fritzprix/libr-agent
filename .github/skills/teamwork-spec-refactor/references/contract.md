@@ -43,6 +43,8 @@ That means the skill, not backend tables, decides what the teamwork operating mo
 
 `org` applies only to lineage-based sub-agent teamwork.
 
+But that is no longer enough as a filtering rule by itself.
+
 Use org for:
 
 - coordinator / specialist structures
@@ -50,11 +52,33 @@ Use org for:
 - durable organization identity
 - dedicated org-oriented UI
 
+Org membership must be **explicitly created and persisted**.
+
+Minimum direction:
+
+- `org_id`
+- `org_name`
+- `org_root_session_id`
+
+Implications:
+
+- a generic sub-agent lineage is **not** automatically an org
+- `/org` must show only lineages created through the explicit org path
+- a session having `lineage_id` or `parent_session_id` alone is insufficient to qualify
+- org view should resume the `org_root_session_id`, not whichever child card was clicked
+
+Minimal org tool direction:
+
+- `createOrg`
+- `spawnOrgAgent`
+- optional `getOrg`
+
 Do not use org for:
 
 - flat scheduled automation
 - generic workspace grouping
 - scheduled task identity
+- inferred lineage-only grouping without explicit org creation
 
 ## 4. Scheduled collaboration contract
 
@@ -65,6 +89,8 @@ Scheduled task groups are for:
 - recurring automation bundles
 - horizontal or loosely coupled periodic work
 - grouped status display in scheduled task UX
+
+They are not a substitute for org identity.
 
 Minimum model direction:
 
@@ -100,3 +126,27 @@ Current agreed policy direction:
 - current preferred cap direction: max 10 groups
 
 Agents may create/manage recurring automation if policy allows. Ordinary agents are not categorically blocked, but they must pass the same backend-enforced limits.
+
+## 7. UX contract
+
+Scheduled Tasks UX:
+
+- group-centric sections/cards for scheduled task groups
+- standalone section for non-grouped tasks
+
+Org UX:
+
+- dedicated org surface, not generic session history with a small filter tweak
+- org-card / org-chart flavor
+- selecting an org should resume the root session
+- one-off delegated child sessions must stay out of org view
+
+## 8. Regression contract
+
+Regression coverage should lock these exact promises:
+
+- scheduled collaboration remains grouped automation, not org
+- standalone tasks stay outside scheduled groups
+- org view excludes one-off sub-agent lineages
+- org view includes only explicitly org-created lineages
+- org selection resumes the org root session

@@ -217,7 +217,9 @@ impl InteractiveBrowserServer {
                 match tokio::time::timeout(self.action_timeout, notify.notified()).await {
                     Ok(_) => {
                         info!("Initial page load completed for session {session_id}");
-                        format!("Session created for {url} - ready to extract content")
+                        format!(
+                            "Session created for {url} - active session ready for content extraction"
+                        )
                     }
                     Err(_) => {
                         info!("Initial page load timed out for session {session_id}, checking health...");
@@ -563,7 +565,7 @@ try {{
             Ok(_) => {
                 info!("Page load completed for session {session_id}");
                 Ok(format!(
-                    "Navigated to {target_url} - ready to extract content"
+                    "Navigated active session to {target_url} - ready for content extraction"
                 ))
             }
             Err(_) => {

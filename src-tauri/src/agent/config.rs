@@ -57,6 +57,15 @@ pub struct AgentConfig {
 
     /// Optional hierarchy depth (root=0)
     pub depth: Option<u32>,
+
+    /// Optional explicit org identity for org-only teamwork lineages
+    pub org_id: Option<String>,
+
+    /// Optional display name for the explicit org identity
+    pub org_name: Option<String>,
+
+    /// Optional root session ID that should be resumed from org UX
+    pub org_root_session_id: Option<String>,
 }
 
 fn default_name() -> String {
@@ -80,6 +89,9 @@ impl Default for AgentConfig {
             parent_session_id: None,
             lineage_id: None,
             depth: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
         }
     }
 }
@@ -144,6 +156,9 @@ mod tests {
             parent_session_id: Some("session-parent".to_string()),
             lineage_id: Some("lineage-root".to_string()),
             depth: Some(1),
+            org_id: Some("org-1".to_string()),
+            org_name: Some("Org One".to_string()),
+            org_root_session_id: Some("session-root".to_string()),
         };
 
         let json = config.to_json().unwrap();

@@ -20,9 +20,9 @@ mod tools;
 /// # Browser Tool Workflows
 ///
 /// ## Basic Navigation Flow
-/// 1. `createSession(url?)` → get `session_id`
-/// 2. `goto(url)` → navigate to page
-/// 3. `content` → read content
+/// 1. `createSession(url?)` → create or replace the active browser session for this agent
+/// 2. `goto(url)` → navigate the active session to a new page
+/// 3. `content` → extract or read content from the current page
 ///
 /// ## Interaction Flow
 /// 1. `listInteractable` → find elements

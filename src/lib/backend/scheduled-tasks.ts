@@ -12,9 +12,12 @@ export interface ScheduledTask {
   cronExpression: string;
   scheduleTimezone: ScheduledTaskTimezone;
   assistantId: string;
+  groupId: string | null;
+  groupName: string | null;
   /** Supports @playbook:name and @skill:name mention syntax */
   message: string;
   yoloMode: boolean;
+  createdBySessionId: string | null;
   sessionId: string | null;
   workspaceOverride: string | null;
   enabled: boolean;
@@ -29,6 +32,8 @@ export interface CreateScheduledTaskRequest {
   cronExpression: string;
   scheduleTimezone?: ScheduledTaskTimezone;
   assistantId: string;
+  groupId?: string | null;
+  groupName?: string | null;
   message: string;
   yoloMode: boolean;
   workspaceOverride?: string | null;
@@ -39,9 +44,12 @@ export interface UpdateScheduledTaskRequest {
   cronExpression?: string;
   scheduleTimezone?: ScheduledTaskTimezone;
   assistantId?: string;
+  groupId?: string | null;
+  groupName?: string | null;
   message?: string;
   yoloMode?: boolean;
   workspaceOverride?: string | null;
+  clearGroup?: boolean;
   enabled?: boolean;
 }
 

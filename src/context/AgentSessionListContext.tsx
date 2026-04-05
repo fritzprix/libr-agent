@@ -147,6 +147,9 @@ export function AgentSessionListProvider({
         let parentSessionId: string | undefined = s.parentSessionId;
         let lineageId: string | undefined = s.lineageId;
         let depth: number | undefined = s.depth;
+        let orgId: string | undefined = s.orgId;
+        let orgName: string | undefined = s.orgName;
+        let orgRootSessionId: string | undefined = s.orgRootSessionId;
 
         const readStringField = (
           record: Record<string, unknown>,
@@ -185,6 +188,16 @@ export function AgentSessionListProvider({
               lineageId =
                 lineageId || readStringField(record, 'lineageId', 'lineage_id');
               depth = depth ?? readNumberField(record, 'depth');
+              orgId = orgId || readStringField(record, 'orgId', 'org_id');
+              orgName =
+                orgName || readStringField(record, 'orgName', 'org_name');
+              orgRootSessionId =
+                orgRootSessionId ||
+                readStringField(
+                  record,
+                  'orgRootSessionId',
+                  'org_root_session_id',
+                );
               assistant = parsed as Assistant;
             }
           } catch (e) {
@@ -210,6 +223,9 @@ export function AgentSessionListProvider({
           parentSessionId,
           lineageId,
           depth,
+          orgId,
+          orgName,
+          orgRootSessionId,
           createdAt: new Date(s.createdAt),
           updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
           lastViewedAt: s.lastViewedAt ? new Date(s.lastViewedAt) : undefined,
@@ -339,6 +355,9 @@ export function AgentSessionListProvider({
           lineageId:
             response.lineageId || response.parentSessionId || response.id,
           depth: response.depth ?? (response.parentSessionId ? 1 : 0),
+          orgId: response.orgId,
+          orgName: response.orgName,
+          orgRootSessionId: response.orgRootSessionId,
           createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)

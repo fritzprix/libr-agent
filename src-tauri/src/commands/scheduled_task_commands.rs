@@ -17,9 +17,12 @@ pub struct ScheduledTaskDto {
     pub cron_expression: String,
     pub schedule_timezone: String,
     pub assistant_id: String,
+    pub group_id: Option<String>,
+    pub group_name: Option<String>,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
     pub yolo_mode: bool,
+    pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace_override: Option<String>,
     pub enabled: bool,
@@ -51,8 +54,11 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             cron_expression: m.cron_expression,
             schedule_timezone: m.schedule_timezone,
             assistant_id: m.assistant_id,
+            group_id: m.group_id,
+            group_name: m.group_name,
             message: m.message,
             yolo_mode: m.yolo_mode,
+            created_by_session_id: m.created_by_session_id,
             session_id: m.session_id,
             workspace_override: m.workspace_override,
             enabled: m.enabled,
@@ -72,6 +78,8 @@ pub struct CreateScheduledTaskRequest {
     pub cron_expression: String,
     pub schedule_timezone: Option<String>,
     pub assistant_id: String,
+    pub group_id: Option<String>,
+    pub group_name: Option<String>,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
     pub yolo_mode: bool,
@@ -86,9 +94,12 @@ pub struct UpdateScheduledTaskRequest {
     pub cron_expression: Option<String>,
     pub schedule_timezone: Option<String>,
     pub assistant_id: Option<String>,
+    pub group_id: Option<String>,
+    pub group_name: Option<String>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
     pub workspace_override: Option<Option<String>>,
+    pub clear_group: Option<bool>,
     pub enabled: Option<bool>,
 }
 
@@ -106,8 +117,11 @@ pub async fn create_scheduled_task(
                 .schedule_timezone
                 .unwrap_or_else(|| default_schedule_timezone().to_string()),
             assistant_id: request.assistant_id,
+            group_id: request.group_id,
+            group_name: request.group_name,
             message: request.message,
             yolo_mode: request.yolo_mode,
+            created_by_session_id: None,
             workspace_override: request.workspace_override,
         },
     )
@@ -150,6 +164,16 @@ pub async fn update_scheduled_task(
             cron_expression: request.cron_expression,
             schedule_timezone: request.schedule_timezone,
             assistant_id: request.assistant_id,
+            group_id: if request.clear_group.unwrap_or(false) {
+                Some(None)
+            } else {
+                request.group_id.map(Some)
+            },
+            group_name: if request.clear_group.unwrap_or(false) {
+                Some(None)
+            } else {
+                request.group_name.map(Some)
+            },
             message: request.message,
             yolo_mode: request.yolo_mode,
             workspace_override: request.workspace_override,

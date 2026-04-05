@@ -92,6 +92,9 @@ pub struct SessionMetadata {
     pub depth: Option<u32>,
     pub max_depth: Option<u32>,
     pub max_fanout: Option<u32>,
+    pub org_id: Option<String>,
+    pub org_name: Option<String>,
+    pub org_root_session_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub last_viewed_at: Option<i64>,
@@ -119,6 +122,9 @@ impl TryFrom<session::Model> for SessionMetadata {
             depth: model.depth.and_then(|v| u32::try_from(v).ok()),
             max_depth: model.max_depth.and_then(|v| u32::try_from(v).ok()),
             max_fanout: model.max_fanout.and_then(|v| u32::try_from(v).ok()),
+            org_id: model.org_id,
+            org_name: model.org_name,
+            org_root_session_id: model.org_root_session_id,
             created_at: model.created_at,
             updated_at: model.updated_at,
             last_viewed_at: model.last_viewed_at,
@@ -182,6 +188,15 @@ pub trait SessionRepository: Send + Sync {
         override_path: Option<String>,
     ) -> Result<(), DbError>;
 
+    /// Persist org identity metadata for a session. Passing None clears the field.
+    async fn update_org_identity(
+        &self,
+        session_id: &str,
+        org_id: Option<String>,
+        org_name: Option<String>,
+        org_root_session_id: Option<String>,
+    ) -> Result<(), DbError>;
+
     /// Persist the timestamp when the session was last viewed by the user.
     async fn update_last_viewed_at(
         &self,
@@ -228,6 +243,9 @@ impl SessionRepository for SqliteSessionRepository {
             depth: Set(session.depth.and_then(|v| i32::try_from(v).ok())),
             max_depth: Set(session.max_depth.and_then(|v| i32::try_from(v).ok())),
             max_fanout: Set(session.max_fanout.and_then(|v| i32::try_from(v).ok())),
+            org_id: Set(session.org_id.clone()),
+            org_name: Set(session.org_name.clone()),
+            org_root_session_id: Set(session.org_root_session_id.clone()),
             created_at: Set(session.created_at),
             updated_at: Set(session.updated_at),
             last_viewed_at: Set(session.last_viewed_at),
@@ -257,6 +275,9 @@ impl SessionRepository for SqliteSessionRepository {
                         session::Column::Depth,
                         session::Column::MaxDepth,
                         session::Column::MaxFanout,
+                        session::Column::OrgId,
+                        session::Column::OrgName,
+                        session::Column::OrgRootSessionId,
                         session::Column::UpdatedAt,
                         session::Column::LastViewedAt,
                         session::Column::LastMessageAt,
@@ -414,6 +435,29 @@ impl SessionRepository for SqliteSessionRepository {
         Ok(())
     }
 
+    async fn update_org_identity(
+        &self,
+        session_id: &str,
+        org_id: Option<String>,
+        org_name: Option<String>,
+        org_root_session_id: Option<String>,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            org_id: Set(org_id),
+            org_name: Set(org_name),
+            org_root_session_id: Set(org_root_session_id),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
     async fn update_last_viewed_at(
         &self,
         session_id: &str,
@@ -496,6 +540,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             created_at: now,
             updated_at: now,
             last_viewed_at: None,
@@ -541,6 +588,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             created_at: now,
             updated_at: now,
             last_viewed_at: None,
@@ -593,6 +643,9 @@ mod tests {
                 depth: None,
                 max_depth: None,
                 max_fanout: None,
+                org_id: None,
+                org_name: None,
+                org_root_session_id: None,
                 created_at: now,
                 updated_at: now + i,
                 last_viewed_at: None,
@@ -666,6 +719,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             created_at: now,
             updated_at: now,
             last_viewed_at: None,
@@ -702,6 +758,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             workspace_override: None,
         };
 
@@ -749,6 +808,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             workspace_override: None,
         };
 
@@ -787,6 +849,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             created_at: now,
             updated_at: now,
             last_viewed_at: None,

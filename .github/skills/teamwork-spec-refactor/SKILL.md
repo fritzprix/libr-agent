@@ -5,9 +5,9 @@ description: >
   scheduled task group refactoring in LibrAgent. Use when continuing,
   implementing, or reviewing this teamwork architecture so changes stay
   aligned with the agreed contract: workspace-scaffolded SSOT,
-  task-force-builder as a meta-meta-skill, org only for lineage-based
-  sub-agent teamwork, scheduled collaboration as separate task groups,
-  and Settings-backed backend-enforced governance.
+  task-force-builder as a meta-meta-skill, org as explicit
+  org-created lineage teamwork, scheduled collaboration as separate
+  task groups, and Settings-backed backend-enforced governance.
 ---
 
 # Teamwork Spec Refactor
@@ -43,13 +43,21 @@ If a proposed change conflicts with the contract, follow the contract instead of
    - refresh semantics
    - provenance
    - observability
-4. **`org` is only for lineage-based sub-agent teamwork**
+4. **`org` is explicit lineage-based teamwork**
+   - org view must show only lineages created through explicit org creation
+   - do not infer org membership from generic `lineageId` / `parentSessionId` alone
    - do not reuse org identity for scheduled collaboration
 5. **Scheduled collaboration uses scheduled task groups**
    - separate from org
    - governed by Settings-backed backend-enforced limits
 6. **Scheduled wake-up may trigger a master agent**
    - this is an operational pattern, not a reason to merge org and scheduled models
+7. **Keep org tooling minimal**
+   - prefer 2-3 agent tools total
+   - recommended minimum set:
+     - `createOrg`
+     - `spawnOrgAgent`
+     - optional `getOrg`
 
 ## Primary Workstreams
 
@@ -100,7 +108,9 @@ Do this:
 
 1. Keep org tied to lineage-based teamwork only.
 2. Preserve separation from scheduled task groups.
-3. Build org-focused UX as a dedicated surface, not a small tweak to generic lineage history.
+3. Treat org membership as explicit metadata, not lineage inference.
+4. Build org-focused UX as a dedicated surface, not a small tweak to generic lineage history.
+5. Resume the org root session from org view, not arbitrary child sessions.
 
 ## Decision Rules
 
@@ -109,8 +119,9 @@ When uncertain, apply these rules in order:
 1. Prefer workspace scaffolding over backend canonical state.
 2. Prefer explicit contract files over hidden conventions.
 3. Prefer separate models for org and scheduled groups.
-4. Prefer Settings UX plus backend enforcement for governance.
-5. Prefer dedicated org/group surfaces over overloaded generic views.
+4. Prefer explicit org metadata over lineage-only inference when org semantics matter.
+5. Prefer Settings UX plus backend enforcement for governance.
+6. Prefer dedicated org/group surfaces over overloaded generic views.
 
 ## Current Likely Next Changes
 
@@ -128,7 +139,11 @@ When uncertain, apply these rules in order:
    - personal tasks
    - scheduled task groups
    - governance settings
-4. Add a dedicated Org view.
+4. Replace the provisional lineage-filtered Org view with:
+   - explicit org metadata
+   - minimal org tool group
+   - org-card / org-chart UX
+   - root-session resume behavior
 
 ## References
 

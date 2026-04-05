@@ -26,6 +26,9 @@ export interface AgentSession {
   parentSessionId?: string;
   lineageId?: string;
   depth?: number;
+  orgId?: string;
+  orgName?: string;
+  orgRootSessionId?: string;
   isBookmarked?: boolean;
   yoloMode: boolean;
   pendingApprovalCount?: number;

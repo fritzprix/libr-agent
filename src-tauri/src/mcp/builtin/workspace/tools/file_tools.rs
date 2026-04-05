@@ -32,9 +32,9 @@ pub fn create_read_file_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "showLineHashes".to_string(),
+        "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Optional: include a 2-char hash for each line (e.g. '42:a3|...'). Use this when you plan to edit specific lines with high precision using editFile.",
+            "Optional: include opaque edit anchors for each line (e.g. '42:a31f2c|...'). Use anchor for the start line, and endAnchor from the end line when editing a range with endLine.",
         )),
     );
 
@@ -44,7 +44,7 @@ pub fn create_read_file_tool() -> MCPTool {
         description: "Read the contents of a file.
 
 - For general reading: just provide the 'path'.
-- For precise editing: set 'showLineHashes: true' to get staleness-safe identifiers for editFile.
+        - For precise editing: set 'showLineAnchors: true' to get `anchor` values for editFile.
 - For large files: use 'startLine' and 'endLine' to read specific segments."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
@@ -199,9 +199,9 @@ pub fn create_search_tool() -> MCPTool {
         boolean_prop(Some("Case-insensitive search (default: false)")),
     );
     props.insert(
-        "showLineHashes".to_string(),
+        "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Include line hashes in results for use with editFile (default: false)",
+            "Include edit anchors in results for use with editFile (default: false)",
         )),
     );
 
@@ -214,7 +214,7 @@ pub fn create_search_tool() -> MCPTool {
 - To search text inside a specific file: search({path: 'src/main.rs', query: 'fn main'})
 - To search text inside files matching a pattern: search({path: '.', query: 'TODO', filePattern: '*.ts'})
 
-Use the returned line hashes directly in editFile.".to_string(),
+Use the returned anchors directly in editFile.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -255,26 +255,25 @@ pub fn create_edit_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("New content for the line(s). Required for REPLACE and INSERT_AFTER. For single-line REPLACE, must not contain \\n. Use \"\" for DELETE (though 'action' is preferred)."),
+            Some("New content for the line(s). Required for REPLACE and INSERT_AFTER. REPLACE may include \\n and can expand or shrink the file. Use \"\" for DELETE (though 'action' is preferred)."),
         ),
     );
     edit_item_props.insert(
-        "line_hash".to_string(),
+        "anchor".to_string(),
         string_prop(
             None,
             None,
-            Some("Staleness-safe 2-char hash from readFile(showLineHashes=true). Strongly recommended to prevent editing the wrong version of the file. Alias: 'startHash'."),
+            Some("Required for edits that target existing lines. Use the opaque anchor from the start line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Top-of-file INSERT_AFTER with line: 0 is the only anchorless exception."),
         ),
     );
     edit_item_props.insert(
-        "endHash".to_string(),
+        "endAnchor".to_string(),
         string_prop(
             None,
             None,
-            Some("Optional: 2-char hash of the end line (range mode only). Provides staleness detection on both boundaries."),
+            Some("Required when endLine creates a multi-line REPLACE or DELETE range. Use the opaque anchor from the exact end line in readFile(showLineAnchors=true) or search(showLineAnchors=true)."),
         ),
     );
-
     let edit_item_schema = object_schema(
         edit_item_props,
         vec!["line".to_string()], // line is always required
@@ -301,8 +300,11 @@ MODES:
   DELETE:          Removes lines [line..endLine].
 
 SAFETY:
-  Provide 'line_hash' from readFile(showLineHashes=true) to detect if the file changed since you last read it.
+  Existing-line edits require 'anchor' from the start line.
+  Range edits that use 'endLine' for multi-line REPLACE or DELETE also require 'endAnchor' from the end line.
+  Only INSERT_AFTER with line: 0 (insert at top) may omit anchors.
   The tool handles line-number shifts automatically for multiple edits in one call.
+  REPLACE may contain '\n' and can expand or shrink the file.
 
 Example (Insert at top):
   { path: 'main.rs', edits: [{ line: 0, action: 'INSERT_AFTER', new_value: '// Copyright 2026\n' }] }"#.to_string(),

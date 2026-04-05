@@ -1,6 +1,6 @@
 # 🤖 LibrAgent
 
-> **A lightweight, stateful platform for autonomous AI agents.**
+> **The Orchestration Layer for Autonomous Intelligence.**
 
 [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -8,109 +8,96 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-LibrAgent is a local-first agent runner designed to maintain context across interactions. Unlike stateless clients, it keeps browser tabs and terminal sessions alive between turns, allowing agents to work more fluidly within a persistent workspace.
+LibrAgent is a high-performance **Meta Agent Platform** designed to industrialize autonomous workflows. Moving beyond simple chat interfaces, it provides a robust orchestration engine and a secure execution substrate where specialized agents collaborate to solve complex, multi-step missions.
 
-It implements open standards like **MCP (Model Context Protocol)** and **Skills** to remain modular and extensible.
+By implementing open standards like the **Model Context Protocol (MCP)** and a recursive delegation architecture, LibrAgent transforms raw LLM capabilities into a coordinated swarm of intelligence.
 
 ---
 
 ## Why LibrAgent?
 
-The goal of this project is to make autonomous agents accessible. Many existing tools remain trapped behind terminal commands and manual JSON configurations, creating a gap that excludes many potential users. LibrAgent aims to bridge this gap by providing a local-first environment where anyone can deploy and manage agents without needing to be a developer.
+Modern AI work requires more than a stateless window; it requires **Strategic Autonomy**. LibrAgent bridges the gap between manual prompts and fully autonomous systems by providing a local-first environment where humans can design, deploy, and govern agentic teams with precision.
 
 ---
 
-## 🎬 Demo
+## 🎬 Platform in Action
 
 ![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
 
-_Browser automation and shell execution in a single, stateful workflow._
+_Recursive delegation and high-fidelity tool usage in a unified, stateful substrate._
 
 ---
 
-## Core Features
+## Core Pillars
 
-### 1. Persistent Workspace
+### 1. Multi-Agent Orchestration
 
-Agents operate within a long-lived environment rather than spawning fresh processes for every turn.
+LibrAgent is built for scale. It allows agents to spawn, brief, and manage specialized sub-agents with strict governance.
 
-- **Live Webview**: Real-time browser automation using Tauri webviews. Sessions and cookies persist across turns.
-- **Unified Terminal**: A persistent, sandboxed shell (Python/Node.js supported) that shares state with the workspace.
+- **Hierarchical Delegation**: Transparent parent-child lineages with configurable depth and fan-out limits.
+- **Role-Based Specialization**: Define unique "Souls" and toolsets for specific mission phases.
+- **Swarm Coordination**: Real-time message routing and terminal results monitoring across the agent tree.
 
-### 2. Multi-Agent Orchestration
+### 2. MCP-First Ecosystem
 
-LibrAgent allows agents to delegate tasks to specialized sub-agents.
+Standardization is at the heart of the platform. We use the Model Context Protocol to ensure infinite extensibility.
 
-- **Assistants**: Manage agent profiles with unique system prompts and tool configurations.
-- **Swarm Intelligence**: Parent agents can spawn, message, and await results from sub-agents to solve complex tasks.
+- **Universal Tooling**: Instantly connect to any MCP-compliant server (GitHub, Brave, Slack, etc.).
+- **Dynamic Service Proxying**: Isolated tool instances per session to prevent context leakage.
+- **One-Click Integration**: A curated catalog of essential agent capabilities.
 
-### 3. Extensibility
+### 3. Context & Substrate Persistence
 
-The platform is designed to be expanded via community standards.
+Agents operate within a long-lived environment that preserves the state of their work.
 
-- **Extensions (MCP)**: Full support for the Model Context Protocol. Connect to any MCP server instantly.
-- **One-Click Presets**: Curated catalog for GitHub, Brave Search, etc., available directly in the UI.
-- **Skills & Playbooks**: Reusable behavior snippets and structured workflow templates.
+- **Shared Workspace**: A secure, persistent file substrate where all agents in a lineage can collaborate.
+- **Live Execution Environment**: Persistent browser sessions (Tauri) and sandboxed shells (Python/Node.js) that stay alive between turns.
+- **Context Compaction**: Intelligent history management for sustained performance in long-running missions.
 
-### 4. Autonomy & Scheduling
+### 4. Operational Governance & Autonomy
 
-- **YOLO Mode**: Optional autonomous execution for sensitive tools without manual approval.
-- **Scheduled Tasks**: Cron-based automation with workspace-specific targeting and automatic recovery.
+Take control of autonomous execution with robust safety and scheduling features.
 
-### 5. Context & Metrics
-
-- **@mentions**: Direct injection of files, skills, or playbooks into chat.
-- **Multimodal**: Handles images and audio for OpenAI, Anthropic, and Gemini models.
-- **Observability**: Real-time TPS metrics and prompt caching hits (for Anthropic/Gemini).
+- **YOLO Mode**: Configurable autonomous execution for high-trust environments.
+- **Scheduled Missions**: CRON-based automation with automatic recovery and workspace targeting.
+- **Observability**: Real-time performance metrics (TPS) and prompt caching transparency.
 
 ---
 
 ## 📖 Documentation & Guides
 
-LibrAgent is a powerful platform, and we provide detailed documentation to help you get the most out of it.
+LibrAgent is an industrial-grade platform. Explore our detailed resources:
 
-- **[Navigation Guide](docs/guides/navigation-guide.md)**: A map of the application's structure, explaining how to use routes like `/assistants` (Assistant Profiles) and `/playbooks` (Workflow Templates) to manage your agents.
-- **[Architecture Guide](docs/architecture/agent-workflow-architecture.md)**: Detailed overview of how LibrAgent works under the hood.
+- **[Navigation Guide](docs/guides/navigation-guide.md)**: Explore the Command & Control hub, including `/assistants` (Role Definitions) and `/playbooks` (Workflow Blueprints).
+- **[Architecture Guide](docs/architecture/agent-workflow-architecture.md)**: Deep dive into the orchestration engine and session isolation logic.
 
 ---
 
-## 📦 Installation
+## 📦 Getting Started
 
 Download the latest binaries for Windows, macOS, or Linux from the [Release page](https://github.com/fritzprix/libr-agent/releases/latest).
 
-**Build from source:**
+**Developer Setup:**
 
 ```bash
 git clone https://github.com/fritzprix/libr-agent
 cd libr-agent
-```
-
-For production desktop app builds (Tauri binaries/installers), resolve dependencies and run the Tauri build (which will run the frontend build via `pnpm build`):
-
-```bash
-pnpm install
-pnpm tauri build
-```
-
-For local development, simply run the Tauri dev server. **No need to run `pnpm build` before `pnpm tauri dev`** — Tauri uses the Vite dev server (`beforeDevCommand: pnpm dev`), so an extra build just slows you down:
-
-```bash
 pnpm install
 pnpm tauri dev
 ```
 
 ---
 
-## Design Choices
+## Design Philosophy
 
-- **Local First**: Your data and API keys stay on your machine.
-- **Tauri + Rust**: Chosen for security (memory safety), performance, and small binary size.
-- **SQLite (SeaORM)**: Used for robust, local persistence of sessions and configurations.
+- **Local First**: Your data, keys, and agent "souls" remain under your exclusive control.
+- **Memory Safety**: Powered by Rust and Tauri for maximum security and performance.
+- **Open Standards**: Fully committed to MCP and open-source interoperability.
 
 ---
 
 ## Contributing & License
 
-Contributions are welcome. Please see `CONTRIBUTING.md`.
+We are building the future of autonomous intelligence. Join us on GitHub.
 
 **License**: MIT

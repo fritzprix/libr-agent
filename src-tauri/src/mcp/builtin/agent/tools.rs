@@ -6,7 +6,10 @@ pub fn all_tools() -> Vec<MCPTool> {
         create_tool(),
         list_tool(),
         update_tool(),
+        create_org_tool(),
+        get_org_tool(),
         start_session_tool(),
+        spawn_org_session_tool(),
         message_to_session_tool(),
         check_session_tool(),
         stop_session_tool(),
@@ -97,12 +100,71 @@ fn start_session_tool() -> MCPTool {
     MCPTool {
         name: "startSession".to_string(),
         title: Some("Start Agent Session".to_string()),
-        description: "Spawn a new sub-agent session to delegate a specific task. Returns immediately with session info. Use checkSession to wait for the result.".to_string(),
+        description: "Spawn a new child agent session to delegate a specific task. By default this is a normal delegation. Set includeCurrentOrg=true when the current session already belongs to an explicit org and you want the child to appear in Org view; when you do that and omit workspaceOverride, the child shares the explicit org root workspace by default. Returns immediately with session info unless waitForResult=true.".to_string(),
         input_schema: object_prop(
             vec![
                 ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then copy the returned ID. Do not put the agent name here.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
-                ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, the child uses its default isolated workspace."))),
+                ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a normal child uses its default isolated workspace; an org-visible child (`includeCurrentOrg=true`) inherits the explicit org root workspace by default."))),
+                ("maxDepth".to_string(), integer_prop(Some(0), None, Some("Override the delegation depth limit for this child session. If omitted, inherit the caller's maxDepth when present; otherwise leave the depth limit unset."))),
+                ("maxFanout".to_string(), integer_prop(Some(0), None, Some("Override the delegation fanout limit for this child session. If omitted, inherit the caller's maxFanout when present; otherwise leave the fanout limit unset."))),
+                ("includeCurrentOrg".to_string(), boolean_prop(Some("If true, the child inherits the caller's explicit org identity and will appear in Org view. This only works when the current session already belongs to an explicit org. If omitted/false, create a normal child session with no explicit org membership."))),
+                ("waitForResult".to_string(), boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. If omitted/false (default), return immediately with session metadata."))),
+            ],
+            vec!["agentId".to_string(), "task".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn create_org_tool() -> MCPTool {
+    MCPTool {
+        name: "createOrg".to_string(),
+        title: Some("Create Explicit Org".to_string()),
+        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session, not from arbitrary child sessions.".to_string(),
+        input_schema: object_prop(
+            vec![(
+                "name".to_string(),
+                string_prop_required("Human-readable org name to create from the current root session."),
+            )],
+            vec!["name".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn get_org_tool() -> MCPTool {
+    MCPTool {
+        name: "getOrg".to_string(),
+        title: Some("Get Org Summary".to_string()),
+        description: "Get the current explicit org summary, including root session and member sessions. If orgId is omitted, the current session's org is used.".to_string(),
+        input_schema: object_prop(
+            vec![(
+                "orgId".to_string(),
+                string_prop(None, None, Some("Optional explicit org ID. If omitted, uses the caller session's org.")),
+            )],
+            vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn spawn_org_session_tool() -> MCPTool {
+    MCPTool {
+        name: "spawnOrgAgent".to_string(),
+        title: Some("Spawn Org Agent (Alias)".to_string()),
+        description: "Compatibility alias for startSession(includeCurrentOrg=true). Spawns a child session that explicitly belongs to the caller's org so it appears in Org view and, unless workspaceOverride is provided, shares the explicit org root workspace by default.".to_string(),
+        input_schema: object_prop(
+            vec![
+                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then copy the returned ID.")),
+                ("task".to_string(), string_prop_required("The specific task description for the org member session.")),
+                ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, the child inherits the explicit org root workspace by default."))),
                 ("maxDepth".to_string(), integer_prop(Some(0), None, Some("Override the delegation depth limit for this child session. If omitted, inherit the caller's maxDepth when present; otherwise leave the depth limit unset."))),
                 ("maxFanout".to_string(), integer_prop(Some(0), None, Some("Override the delegation fanout limit for this child session. If omitted, inherit the caller's maxFanout when present; otherwise leave the fanout limit unset."))),
                 ("waitForResult".to_string(), boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. If omitted/false (default), return immediately with session metadata."))),

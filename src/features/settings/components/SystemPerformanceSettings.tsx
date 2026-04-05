@@ -263,6 +263,69 @@ export function SystemPerformanceSettings({
               )}
             </p>
           </div>
+
+          <div className="min-w-0">
+            <label className="block text-muted-foreground mb-2 font-medium">
+              {t(
+                'settings.system.scheduledTaskMinimumInterval',
+                'Scheduled Task Minimum Interval (Min)',
+              )}
+            </label>
+            <Input
+              type="number"
+              placeholder={t(
+                'settings.system.placeholders.scheduledTaskMinimumInterval',
+                '0 = disabled',
+              )}
+              min={0}
+              value={localSystemSettings.scheduledTaskMinimumIntervalMinutes}
+              onChange={(e) =>
+                onChange(
+                  'scheduledTaskMinimumIntervalMinutes',
+                  parseInt(e.target.value, 10) || 0,
+                )
+              }
+              className="bg-background border text-foreground w-full max-w-xs"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(
+                'settings.system.scheduledTaskMinimumIntervalDescription',
+                'Minimum allowed interval for new or re-enabled scheduled tasks. Set 0 to disable the guard.',
+              )}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <label className="block text-muted-foreground mb-2 font-medium">
+              {t(
+                'settings.system.maxScheduledTaskGroups',
+                'Max Scheduled Task Groups',
+              )}
+            </label>
+            <Input
+              type="number"
+              placeholder={t(
+                'settings.system.placeholders.maxScheduledTaskGroups',
+                'e.g., 10',
+              )}
+              min={1}
+              max={100}
+              value={localSystemSettings.maxScheduledTaskGroups}
+              onChange={(e) =>
+                onChange(
+                  'maxScheduledTaskGroups',
+                  parseInt(e.target.value, 10) || 10,
+                )
+              }
+              className="bg-background border text-foreground w-full max-w-xs"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(
+                'settings.system.maxScheduledTaskGroupsDescription',
+                'Maximum number of distinct scheduled task groups allowed across recurring teamwork automation.',
+              )}
+            </p>
+          </div>
         </div>
       </div>
 
