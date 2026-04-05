@@ -133,3 +133,8 @@
 - **Woven (useSkillsDirectory):** Implemented derived state to compute and return an `effectiveDir` during render, which the parent (`GeneralTab`) uses for presentation and verification.
 - **AgentPlanningUpdates:** Eradicated the "Prop Hoarder" anti-pattern in `PlanningToastSummary` by removing 7 localized string props passed down from the parent.
 - **Woven (AgentPlanningUpdates):** Implemented the Custom Hook Pattern by calling `useTranslation()` directly inside `PlanningToastSummary`, allowing it to manage its own localization dependencies.
+## 2026-04-05 - [AgentDraftChatView / AgentModelPicker] **Eradicated:** [Unstable Reference (Inline arrow function in memoized component)] **Woven:** [Callback Pattern]
+
+- Eradicated an inline arrow function `onConfigUpdate` passed directly to the deeply memoized `AgentModelPicker` component.
+- Extracted the configuration update logic into a `useCallback` hook named `handleConfigUpdate` returned from `useAgentDraftChat`.
+- **Renders Saved:** Eliminated redundant renders of `AgentModelPicker` caused by referential inequality of the arrow function prop on every render cycle.

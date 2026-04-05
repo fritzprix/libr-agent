@@ -601,6 +601,14 @@ export function useAgentDraftChat() {
     ],
   );
 
+  const handleConfigUpdate = useCallback(
+    (model: string, provider: string) => {
+      setOverrideModel(model);
+      setOverrideProvider(provider);
+    },
+    [],
+  );
+
   return {
     assistant,
     isLoadingAssistant,
@@ -633,5 +641,6 @@ export function useAgentDraftChat() {
     onTypeSelect,
     onArgSelect,
     onDismiss,
+    handleConfigUpdate,
   };
 }

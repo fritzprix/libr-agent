@@ -72,9 +72,7 @@ function DraftChatInner() {
     setInput,
     isSubmitting,
     overrideModel,
-    setOverrideModel,
     overrideProvider,
-    setOverrideProvider,
     builtinServices,
     mcpServers,
     pendingFiles,
@@ -97,6 +95,7 @@ function DraftChatInner() {
     onTypeSelect,
     onArgSelect,
     onDismiss,
+    handleConfigUpdate,
   } = useAgentDraftChat();
 
   // Auto-resize textarea - Mirrored from AgentChatInput
@@ -355,10 +354,7 @@ function DraftChatInner() {
                   settings?.preferredModel?.provider ||
                   'openai'
                 }
-                onConfigUpdate={(model, provider) => {
-                  setOverrideModel(model);
-                  setOverrideProvider(provider);
-                }}
+                onConfigUpdate={handleConfigUpdate}
                 className="w-full max-w-xs shadow-sm"
               />
               <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/30 font-bold font-sans">
