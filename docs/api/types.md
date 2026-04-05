@@ -2,7 +2,7 @@
 
 This document provides definitions for the core data structures used in LibrAgent, covering both the Rust backend and the TypeScript frontend.
 
-## Rust Backend Types (`src-tauri/src/mcp.rs`)
+## Rust Backend Types (`src-tauri/src/mcp/types.rs`)
 
 These types are central to the MCP server management and tool communication logic.
 
@@ -10,7 +10,7 @@ These types are central to the MCP server management and tool communication logi
 
 **Purpose**: Defines the configuration for launching and connecting to an MCP server.
 
-**Source**: [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs)
+**Source**: [`src-tauri/src/mcp/types.rs`](../../src-tauri/src/mcp/types.rs)
 
 **Fields**:
 
@@ -39,7 +39,7 @@ const config = {
 
 **Purpose**: Represents a single tool provided by an MCP server.
 
-**Source**: [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs)
+**Source**: [`src-tauri/src/mcp/types.rs`](../../src-tauri/src/mcp/types.rs)
 
 **Fields**:
 
@@ -56,7 +56,7 @@ const config = {
 
 **Purpose**: Encapsulates the result of a tool call, following the JSON-RPC 2.0 specification.
 
-**Source**: [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs)
+**Source**: [`src-tauri/src/mcp/types.rs`](../../src-tauri/src/mcp/types.rs)
 
 **Fields**:
 
@@ -71,7 +71,7 @@ const config = {
 
 **Purpose**: A detailed, serializable representation of a JSON schema, used for defining tool inputs and outputs.
 
-**Source**: [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs)
+**Source**: [`src-tauri/src/mcp/types.rs`](../../src-tauri/src/mcp/types.rs)
 
 **Structure**: This is a complex enum (`JSONSchemaType`) that can represent all standard JSON schema types (`string`, `number`, `object`, `array`, etc.) with their respective validation keywords.
 
