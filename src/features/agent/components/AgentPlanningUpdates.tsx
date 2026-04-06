@@ -85,7 +85,9 @@ function PlanningToastSummary({
     }
 
     // Sort by original order to maintain context
-    return result.sort((a, b) => todoIndexMap.get(a.id)! - todoIndexMap.get(b.id)!);
+    return result.sort(
+      (a, b) => todoIndexMap.get(a.id)! - todoIndexMap.get(b.id)!,
+    );
   }, [todos, previousTodos]);
 
   const firstVisibleIndex =
