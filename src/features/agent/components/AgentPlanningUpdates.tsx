@@ -61,10 +61,15 @@ function PlanningToastSummary({
       return todos.slice(-5);
     }
 
+    // Use a precomputed O(1) index lookup in the sort callback instead of
+    // repeated O(N) position scans. This keeps the sort at O(N log N) and
+    // reduces main-thread JavaScript work during streaming updates.
+    const todoIndexMap = new Map(todos.map((t, i) => [t.id, i]));
+
     if (relevant.length >= 5) {
       // If many things changed, show the last 5 of those
       return relevant
-        .sort((a, b) => todos.indexOf(a) - todos.indexOf(b))
+        .sort((a, b) => todoIndexMap.get(a.id)! - todoIndexMap.get(b.id)!)
         .slice(-5);
     }
 
@@ -80,7 +85,7 @@ function PlanningToastSummary({
     }
 
     // Sort by original order to maintain context
-    return result.sort((a, b) => todos.indexOf(a) - todos.indexOf(b));
+    return result.sort((a, b) => todoIndexMap.get(a.id)! - todoIndexMap.get(b.id)!);
   }, [todos, previousTodos]);
 
   const firstVisibleIndex =
