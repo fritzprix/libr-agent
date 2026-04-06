@@ -10,6 +10,7 @@ pub mod message_repository;
 pub mod planning_repository;
 pub mod playbook_repository;
 pub mod scheduled_task_repository;
+pub mod session_org_context;
 pub mod session_repository;
 pub mod settings_repository;
 
@@ -32,6 +33,7 @@ pub use scheduled_task_repository::{
     CreateScheduledTaskParams, ScheduledTaskRepository, SqliteScheduledTaskRepository,
     UpdateScheduledTaskParams,
 };
+pub use session_org_context::build_explicit_org_layer_context;
 pub use session_repository::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };

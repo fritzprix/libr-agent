@@ -3,7 +3,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
-use crate::repositories::{SessionMetadata, SessionRepository, SqliteSessionRepository};
+use crate::repositories::{build_explicit_org_layer_context, SqliteSessionRepository};
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
@@ -63,84 +63,9 @@ impl AgentServer {
 
     async fn build_org_layer_context(&self) -> Result<Option<String>, String> {
         let repo = SqliteSessionRepository::new(self.get_db().clone());
-        let session = repo
-            .get_session(&self.session_id)
+        build_explicit_org_layer_context(&repo, &self.session_id)
             .await
-            .map_err(|error| format!("Failed to load session for org context: {}", error))?;
-
-        let Some(session) = session else {
-            return Ok(None);
-        };
-
-        let Some(org_name) = session.org_name.clone() else {
-            return Ok(None);
-        };
-        let Some(org_id) = session.org_id.clone() else {
-            return Ok(None);
-        };
-        let Some(org_root_session_id) = session.org_root_session_id.clone() else {
-            return Ok(None);
-        };
-
-        let all_sessions = repo
-            .get_all_sessions()
-            .await
-            .map_err(|error| format!("Failed to load org layer context: {}", error))?;
-
-        let depth = session.depth.unwrap_or(0);
-        let parent = session
-            .parent_session_id
-            .as_ref()
-            .and_then(|parent_id| find_session(&all_sessions, parent_id));
-
-        let siblings: Vec<&SessionMetadata> = all_sessions
-            .iter()
-            .filter(|candidate| candidate.id != session.id)
-            .filter(|candidate| candidate.org_id.as_deref() == Some(org_id.as_str()))
-            .filter(|candidate| {
-                candidate.org_root_session_id.as_deref() == Some(org_root_session_id.as_str())
-            })
-            .filter(|candidate| candidate.depth == session.depth)
-            .filter(|candidate| candidate.parent_session_id == session.parent_session_id)
-            .take(5)
-            .collect();
-
-        let mut parts = vec![
-            "## Explicit Org Layer".to_string(),
-            String::new(),
-            format!("- Org: {}", org_name),
-            format!("- Depth: {}", depth),
-        ];
-
-        if let Some(parent_session) = parent {
-            parts.push(format!(
-                "- Parent: {}",
-                format_session_label(parent_session)
-            ));
-        }
-
-        if !siblings.is_empty() {
-            parts.push("- Siblings at same depth:".to_string());
-            for sibling in siblings {
-                parts.push(format!("  - {}", format_session_label(sibling)));
-            }
-        }
-
-        Ok(Some(parts.join("\n")))
-    }
-}
-
-fn find_session<'a>(
-    sessions: &'a [SessionMetadata],
-    session_id: &str,
-) -> Option<&'a SessionMetadata> {
-    sessions.iter().find(|session| session.id == session_id)
-}
-
-fn format_session_label(session: &SessionMetadata) -> String {
-    match session.name.as_deref() {
-        Some(name) if !name.is_empty() => format!("{} — {}", session.id, name),
-        _ => session.id.clone(),
+            .map_err(|error| format!("Failed to load org layer context: {}", error))
     }
 }
 

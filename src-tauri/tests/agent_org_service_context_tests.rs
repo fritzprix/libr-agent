@@ -1,11 +1,8 @@
 mod common;
 
-use std::sync::Arc;
-
-use tauri_mcp_agent_lib::mcp::builtin::agent::AgentServer;
-use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::repositories::{
-    SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
+    build_explicit_org_layer_context, SessionMetadata, SessionRepository, SessionStatus,
+    SqliteSessionRepository,
 };
 
 fn build_session(
@@ -94,31 +91,28 @@ async fn org_service_context_includes_only_local_org_layer_for_org_sessions() {
     .await
     .expect("different depth session should persist");
 
-    let server = AgentServer::new("child-a".to_string(), Arc::new(db), None)
+    let context = build_explicit_org_layer_context(&repo, "child-a")
         .await
-        .expect("agent server should initialize");
-
-    let context = server.get_service_context(None).await;
+        .expect("org layer context should build")
+        .expect("org session should receive org layer context");
 
     assert!(
-        context.context_prompt.contains("## Explicit Org Layer"),
+        context.contains("## Explicit Org Layer"),
         "org sessions should get an explicit org layer section"
     );
-    assert!(context.context_prompt.contains("- Org: Alpha Org"));
-    assert!(context.context_prompt.contains("- Depth: 1"));
-    assert!(context
-        .context_prompt
-        .contains("- Parent: root — Root Coordinator"));
+    assert!(context.contains("- Org: Alpha Org"));
+    assert!(context.contains("- Depth: 1"));
+    assert!(context.contains("- Parent: root — Root Coordinator"));
     assert!(
-        context.context_prompt.contains("  - child-b — Writer"),
+        context.contains("  - child-b — Writer"),
         "same-depth sibling should appear in local org layer"
     );
     assert!(
-        !context.context_prompt.contains("other-depth"),
+        !context.contains("other-depth"),
         "deeper descendants must not leak into the local org layer"
     );
     assert!(
-        !context.context_prompt.contains("None"),
+        !context.contains("None"),
         "prompt should not contain useless placeholder values"
     );
 }
@@ -140,14 +134,12 @@ async fn org_service_context_omits_org_section_for_non_org_sessions() {
     .await
     .expect("solo session should persist");
 
-    let server = AgentServer::new("solo".to_string(), Arc::new(db), None)
+    let context = build_explicit_org_layer_context(&repo, "solo")
         .await
-        .expect("agent server should initialize");
-
-    let context = server.get_service_context(None).await;
+        .expect("org layer context should build");
 
     assert!(
-        !context.context_prompt.contains("## Explicit Org Layer"),
+        context.is_none(),
         "non-org sessions should not receive an org section"
     );
 }
@@ -169,14 +161,12 @@ async fn org_service_context_omits_org_section_when_root_session_id_is_missing()
     .await
     .expect("partial org session should persist");
 
-    let server = AgentServer::new("partial-org".to_string(), Arc::new(db), None)
+    let context = build_explicit_org_layer_context(&repo, "partial-org")
         .await
-        .expect("agent server should initialize");
-
-    let context = server.get_service_context(None).await;
+        .expect("org layer context should build");
 
     assert!(
-        !context.context_prompt.contains("## Explicit Org Layer"),
+        context.is_none(),
         "sessions missing org_root_session_id must not receive org context"
     );
 }
