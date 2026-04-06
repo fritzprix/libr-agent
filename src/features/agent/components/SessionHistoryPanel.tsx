@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,6 +72,22 @@ export function SessionHistoryPanel({
     () => new Set(),
   );
 
+  // Track previous prop values for adjusting state during render
+  const [prevSessions, setPrevSessions] = useState(sessions);
+
+  let effectiveSelectedLineageId = selectedLineageId;
+
+  if (sessions !== prevSessions) {
+    setPrevSessions(sessions);
+    if (selectedLineageId) {
+      const stillExists = sessions.some((s) => s.lineageId === selectedLineageId);
+      if (!stillExists) {
+        setSelectedLineageId(null);
+        effectiveSelectedLineageId = null;
+      }
+    }
+  }
+
   const defaultHeading =
     heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
   const defaultDescription =
@@ -96,14 +112,14 @@ export function SessionHistoryPanel({
     searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
 
   const baseSessions = useMemo(() => {
-    if (!selectedLineageId) {
+    if (!effectiveSelectedLineageId) {
       return deferredSessions;
     }
 
     return deferredSessions.filter(
-      (session) => session.lineageId === selectedLineageId,
+      (session) => session.lineageId === effectiveSelectedLineageId,
     );
-  }, [deferredSessions, selectedLineageId]);
+  }, [deferredSessions, effectiveSelectedLineageId]);
 
   const segmentedSessions = useMemo(() => {
     if (activeTab === 'bookmarked') {
@@ -131,19 +147,6 @@ export function SessionHistoryPanel({
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
   }, [activeStatusFilter, deferredSearchQuery, segmentedSessions]);
-
-  useEffect(() => {
-    if (!selectedLineageId) {
-      return;
-    }
-
-    const stillExists = sessions.some(
-      (session) => session.lineageId === selectedLineageId,
-    );
-    if (!stillExists) {
-      setSelectedLineageId(null);
-    }
-  }, [selectedLineageId, sessions]);
 
   const descendantCounts = useMemo(
     () => buildDescendantCounts(sessions),
@@ -185,17 +188,20 @@ export function SessionHistoryPanel({
     return expandedIds;
   }, [baseSessions, filtersActive, matchedSessions]);
 
-  useEffect(() => {
-    if (autoExpandedAncestorIds.size === 0) {
-      return;
-    }
+  // Track previous prop values for adjusting state during render
+  const [prevAutoExpanded, setPrevAutoExpanded] = useState<Set<string>>(() => new Set());
 
-    setExpandedSessionIds((prev) => {
-      const next = new Set(prev);
-      autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
-      return next;
-    });
-  }, [autoExpandedAncestorIds]);
+  let effectiveExpandedSessionIds = expandedSessionIds;
+
+  if (autoExpandedAncestorIds !== prevAutoExpanded) {
+    setPrevAutoExpanded(autoExpandedAncestorIds);
+    if (autoExpandedAncestorIds.size > 0) {
+      const nextExpandedIds = new Set(effectiveExpandedSessionIds);
+      autoExpandedAncestorIds.forEach((id) => nextExpandedIds.add(id));
+      setExpandedSessionIds(nextExpandedIds);
+      effectiveExpandedSessionIds = nextExpandedIds;
+    }
+  }
 
   const displayRows = useMemo(() => {
     type SessionRow = {
@@ -294,7 +300,7 @@ export function SessionHistoryPanel({
         : undefined;
       const hasExpandableChildren = visibleChildren.length > 0;
       const isExpanded = hasExpandableChildren
-        ? expandedSessionIds.has(session.id)
+        ? effectiveExpandedSessionIds.has(session.id)
         : false;
 
       rows.push({
