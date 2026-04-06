@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -31,75 +30,56 @@ export function OrgCard({ org }: OrgCardProps) {
 
   return (
     <Card className="overflow-hidden border-border/70 bg-card shadow-sm shadow-black/5 transition-shadow hover:shadow-md">
-      <CardHeader className="gap-4 border-b bg-muted/20">
-        <div className="space-y-1">
+      <CardHeader className="gap-4 overflow-hidden border-b bg-muted/20">
+        <div className="min-w-0 space-y-3">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {t('orgHistory.cardLabel', 'Explicit Org')}
           </p>
-          <CardTitle className="flex items-center gap-2 text-xl leading-tight">
-            <Building2 className="h-5 w-5 text-primary" />
-            <span className="truncate">{org.orgName}</span>
-          </CardTitle>
-          <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span>
+          <div className="min-w-0 space-y-2 overflow-hidden">
+            <CardTitle className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden pr-2 text-xl leading-tight">
+              <Building2 className="h-5 w-5 shrink-0 text-primary" />
+              <span className="truncate pr-2">{org.orgName}</span>
+            </CardTitle>
+            <div className="max-w-full overflow-hidden">
+              <Badge
+                variant="outline"
+                className={cn(
+                  'inline-flex max-w-full overflow-hidden align-top',
+                  rootBadge.className,
+                )}
+              >
+                <span className="truncate">
+                  {t(
+                    `sessionHistory.status.${org.rootSession.status}`,
+                    rootBadge.label,
+                  )}
+                </span>
+              </Badge>
+            </div>
+          </div>
+          <div className="space-y-1 overflow-hidden pr-3 text-sm text-muted-foreground">
+            <div
+              className="max-w-full truncate pr-2"
+              title={org.rootSession.name ?? org.orgRootSessionId}
+            >
               {t('orgHistory.rootLabel', 'Root Session')}:{' '}
               <span className="font-medium text-foreground">
                 {org.rootSession.name ?? org.orgRootSessionId}
               </span>
-            </span>
-            <span className="hidden sm:inline">•</span>
-            <span className="truncate">ID {org.orgId}</span>
-          </CardDescription>
+            </div>
+            <div className="max-w-full truncate pr-2" title={ts.tooltip}>
+              {t('orgHistory.updatedLabel', 'Updated')}:{' '}
+              {ts.relative ?? ts.display}
+            </div>
+          </div>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-5 pt-6">
-        <OrgStatTiles
-          memberCount={org.memberCount}
-          busyCount={org.busyCount}
-          updatedAt={org.updatedAt}
-        />
-
-        <div className="rounded-xl border bg-muted/15 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                {t('orgHistory.rootSection', 'Root Session')}
-              </div>
-              <div className="mt-1 truncate text-sm font-semibold">
-                {org.rootSession.name ?? org.orgRootSessionId}
-              </div>
-            </div>
-            <Badge
-              variant="outline"
-              className={cn('shrink-0', rootBadge.className)}
-            >
-              {t(
-                `sessionHistory.status.${org.rootSession.status}`,
-                rootBadge.label,
-              )}
-            </Badge>
-          </div>
-
-          <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div className="rounded-lg bg-background/80 px-3 py-2">
-              <span className="font-medium text-foreground">
-                {t('orgHistory.rootId', 'Root ID')}
-              </span>
-              <div className="mt-1 truncate">{org.orgRootSessionId}</div>
-            </div>
-            <div className="rounded-lg bg-background/80 px-3 py-2">
-              <span className="font-medium text-foreground">
-                {t('orgHistory.lastUpdated', 'Last updated')}
-              </span>
-              <div className="mt-1 truncate" title={ts.tooltip}>
-                {ts.display}
-              </div>
-            </div>
-          </div>
-        </div>
+        <OrgStatTiles memberCount={org.memberCount} busyCount={org.busyCount} />
 
         <OrgLineageSnapshot
+          rootSession={org.rootSession}
           members={org.members}
           orgRootSessionId={org.orgRootSessionId}
         />

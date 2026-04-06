@@ -25,7 +25,6 @@ function OrgCardSkeleton() {
           <Skeleton className="h-20 rounded-xl" />
           <Skeleton className="h-20 rounded-xl" />
         </div>
-        <Skeleton className="h-28 w-full rounded-xl" />
         <Skeleton className="h-16 w-full" />
       </CardContent>
     </Card>
@@ -118,4 +117,3 @@ export default function Org() {
     </div>
   );
 }
-
