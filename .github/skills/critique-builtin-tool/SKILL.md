@@ -285,10 +285,10 @@ PREREQUISITE: Resource must exist (created via createResource)"
 
 **Principle:** Tool description and parameter description have distinct responsibilities. Repeating information in both wastes the agent's token budget and increases hallucination risk (conflicting or stale duplicates).
 
-| Layer | Responsibility |
-|---|---|
-| **Tool description** | *What* the tool does — purpose, behavior, constraints, output |
-| **Parameter description** | *What to put in this field* — format, accepted values, examples |
+| Layer                     | Responsibility                                                  |
+| ------------------------- | --------------------------------------------------------------- |
+| **Tool description**      | _What_ the tool does — purpose, behavior, constraints, output   |
+| **Parameter description** | _What to put in this field_ — format, accepted values, examples |
 
 **What to Look For:**
 
@@ -347,16 +347,16 @@ Constraints that can be expressed in JSON Schema MUST be encoded there, not in d
 
 This rule applies to **both** tool descriptions AND parameter descriptions — neither layer should repeat what the schema already encodes.
 
-| Constraint type | Encode in schema | Also in description/param desc? |
-|---|---|---|
-| String length limit | `string_prop(None, Some(500), ...)` | ❌ No — schema is authoritative |
-| Integer range | `integer_prop(Some(1), Some(100), ...)` | ❌ No |
-| Default value | second arg in `integer_prop_with_default(..., 30, ...)` | ❌ No — `(default 30)` is redundant |
-| Enum allowed values (bare list) | `enum_prop(vec!["a","b","c"], ...)` | ❌ No — listing values in text is triple duplication |
-| Enum semantics (what each value does) | Cannot be expressed in schema | ✅ Yes — explains behaviour, not just names |
-| Required vs optional | `required: vec!["field"]` in `object_prop` | ❌ No |
-| Pattern / format | `JSONSchemaType::String { pattern: Some(...) }` | Only if pattern is opaque |
-| Cross-field rules | Cannot be expressed in JSON Schema | ✅ Yes — must go in description |
+| Constraint type                       | Encode in schema                                        | Also in description/param desc?                      |
+| ------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| String length limit                   | `string_prop(None, Some(500), ...)`                     | ❌ No — schema is authoritative                      |
+| Integer range                         | `integer_prop(Some(1), Some(100), ...)`                 | ❌ No                                                |
+| Default value                         | second arg in `integer_prop_with_default(..., 30, ...)` | ❌ No — `(default 30)` is redundant                  |
+| Enum allowed values (bare list)       | `enum_prop(vec!["a","b","c"], ...)`                     | ❌ No — listing values in text is triple duplication |
+| Enum semantics (what each value does) | Cannot be expressed in schema                           | ✅ Yes — explains behaviour, not just names          |
+| Required vs optional                  | `required: vec!["field"]` in `object_prop`              | ❌ No                                                |
+| Pattern / format                      | `JSONSchemaType::String { pattern: Some(...) }`         | Only if pattern is opaque                            |
+| Cross-field rules                     | Cannot be expressed in JSON Schema                      | ✅ Yes — must go in description                      |
 
 ```rust
 // ❌ VIOLATION: Constraint in description, not schema
@@ -393,6 +393,7 @@ integer_prop_with_default(Some(0), Some(3600), 30,
 **Tool description ↔ Param description cross-direction rule:**
 
 The duplication problem runs both ways:
+
 - Tool description must NOT copy content from param descriptions
 - Param descriptions must NOT copy content from tool description
 
@@ -492,14 +493,14 @@ return Ok(operation_failed_error(
 ```markdown
 ## Compliance Audit: [ServerName] Builtin Tools
 
-| Rule                           | Status   | Grade | Evidence  |
-| ------------------------------ | -------- | ----- | --------- |
-| 1. Immutable ID Rule           | ✅/⚠️/🔴 | A-F   | [Details] |
-| 2. Hallucination Firewall      | ✅/⚠️/🔴 | A-F   | [Details] |
-| 3. Dual-Channel Response       | ✅/⚠️/🔴 | A-F   | [Details] |
-| 4. AI-Native Descriptions      | ✅/⚠️/🔴 | A-F   | [Details] |
-| 4b. Description/Param Split    | ✅/⚠️/🔴 | A-F   | [Details] |
-| 5. Success Hint Pattern        | ✅/⚠️/🔴 | A-F   | [Details] |
+| Rule                        | Status   | Grade | Evidence  |
+| --------------------------- | -------- | ----- | --------- |
+| 1. Immutable ID Rule        | ✅/⚠️/🔴 | A-F   | [Details] |
+| 2. Hallucination Firewall   | ✅/⚠️/🔴 | A-F   | [Details] |
+| 3. Dual-Channel Response    | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4. AI-Native Descriptions   | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4b. Description/Param Split | ✅/⚠️/🔴 | A-F   | [Details] |
+| 5. Success Hint Pattern     | ✅/⚠️/🔴 | A-F   | [Details] |
 
 **Overall Grade:** [A-F] - [Summary]
 ```

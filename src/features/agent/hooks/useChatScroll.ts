@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useThrottle } from '@/hooks/useThrottle';
 import type { Message } from '@/models/chat';
 
@@ -17,11 +23,15 @@ export function useChatScroll({ messages }: UseChatScrollProps) {
   const isProgrammaticScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
-  const programmaticScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const programmaticScrollTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   const setAutoScroll = useCallback((enabled: boolean) => {
     autoScrollEnabledRef.current = enabled;
-    setAutoScrollEnabled((current) => (current === enabled ? current : enabled));
+    setAutoScrollEnabled((current) =>
+      current === enabled ? current : enabled,
+    );
   }, []);
 
   const clearProgrammaticScrollTimeout = useCallback(() => {
