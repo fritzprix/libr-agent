@@ -61,10 +61,16 @@ function PlanningToastSummary({
       return todos.slice(-5);
     }
 
+    // ⚡ Bolt: Performance Optimization
+    // Replaced O(N) array.indexOf() inside the O(N log N) sort callback
+    // with an O(1) Map lookup. This reduces total sorting complexity from
+    // O(N^2 log N) to O(N log N), preventing layout thrashing during streaming updates.
+    const todoIndexMap = new Map(todos.map((t, i) => [t.id, i]));
+
     if (relevant.length >= 5) {
       // If many things changed, show the last 5 of those
       return relevant
-        .sort((a, b) => todos.indexOf(a) - todos.indexOf(b))
+        .sort((a, b) => todoIndexMap.get(a.id)! - todoIndexMap.get(b.id)!)
         .slice(-5);
     }
 
@@ -80,7 +86,7 @@ function PlanningToastSummary({
     }
 
     // Sort by original order to maintain context
-    return result.sort((a, b) => todos.indexOf(a) - todos.indexOf(b));
+    return result.sort((a, b) => todoIndexMap.get(a.id)! - todoIndexMap.get(b.id)!);
   }, [todos, previousTodos]);
 
   const firstVisibleIndex =
