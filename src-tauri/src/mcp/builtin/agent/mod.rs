@@ -78,6 +78,9 @@ impl AgentServer {
         let Some(org_id) = session.org_id.clone() else {
             return Ok(None);
         };
+        let Some(org_root_session_id) = session.org_root_session_id.clone() else {
+            return Ok(None);
+        };
 
         let all_sessions = repo
             .get_all_sessions()
@@ -94,6 +97,9 @@ impl AgentServer {
             .iter()
             .filter(|candidate| candidate.id != session.id)
             .filter(|candidate| candidate.org_id.as_deref() == Some(org_id.as_str()))
+            .filter(|candidate| {
+                candidate.org_root_session_id.as_deref() == Some(org_root_session_id.as_str())
+            })
             .filter(|candidate| candidate.depth == session.depth)
             .filter(|candidate| candidate.parent_session_id == session.parent_session_id)
             .take(5)

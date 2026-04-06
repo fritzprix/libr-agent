@@ -594,7 +594,9 @@ impl WorkspaceServer {
                     .end_anchor
                     .as_ref()
                     .expect("end_anchor required for multi-line replace/delete");
-                let (expected_end_hash, _) = match parse_anchor(expected_end_anchor) {
+                let (expected_end_hash, expected_end_prefix) = match parse_anchor(
+                    expected_end_anchor,
+                ) {
                     Some(parts) => parts,
                     None => {
                         return Ok(guided_error(
@@ -620,6 +622,25 @@ impl WorkspaceServer {
                         ErrorCategory::InvalidInput,
                         format!(
                             "STALE END ANCHOR on line {} (range boundary changed)",
+                            edit.end_line
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run readFile with showLineAnchors=true to get the current end anchor"
+                            .to_string(),
+                        "Rebuild the edit with an updated endAnchor".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+                // Also validate the prefix hash so that drift in lines *before*
+                // the end line (but within the edited range) is caught.
+                let actual_end_prefix = &prefix_hashes[edit.end_line - 1];
+                if actual_end_prefix != expected_end_prefix {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "STALE END ANCHOR on line {} (earlier content changed before range boundary)",
                             edit.end_line
                         ),
                         ToolGroup::Workspace,

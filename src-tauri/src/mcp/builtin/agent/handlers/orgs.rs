@@ -163,22 +163,12 @@ pub async fn get_org(
             .then_with(|| left.created_at.cmp(&right.created_at))
     });
 
-    let root_session = match members
-        .iter()
-        .find(|session| {
-            session
-                .org_root_session_id
-                .as_deref()
-                .is_some_and(|root_id| root_id == session.id)
-        })
-        .or_else(|| {
-            members.iter().find(|session| {
-                session
-                    .org_root_session_id
-                    .as_deref()
-                    .is_some_and(|root_id| root_id == caller_session.id)
-            })
-        }) {
+    let root_session = match members.iter().find(|session| {
+        session
+            .org_root_session_id
+            .as_deref()
+            .is_some_and(|root_id| root_id == session.id)
+    }) {
         Some(root_session) => root_session,
         None => return Ok(invalid_explicit_org_result(&target_org_id)),
     };

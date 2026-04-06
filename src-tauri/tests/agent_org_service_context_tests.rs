@@ -151,3 +151,32 @@ async fn org_service_context_omits_org_section_for_non_org_sessions() {
         "non-org sessions should not receive an org section"
     );
 }
+
+#[tokio::test]
+async fn org_service_context_omits_org_section_when_root_session_id_is_missing() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+
+    repo.upsert_session(&build_session(
+        "partial-org",
+        "Partial Org Session",
+        None,
+        Some(0),
+        Some("org-alpha"),
+        Some("Alpha Org"),
+        None,
+    ))
+    .await
+    .expect("partial org session should persist");
+
+    let server = AgentServer::new("partial-org".to_string(), Arc::new(db), None)
+        .await
+        .expect("agent server should initialize");
+
+    let context = server.get_service_context(None).await;
+
+    assert!(
+        !context.context_prompt.contains("## Explicit Org Layer"),
+        "sessions missing org_root_session_id must not receive org context"
+    );
+}

@@ -75,7 +75,8 @@ describe('Org', () => {
 
     expect(screen.getByText('Org View')).toBeInTheDocument();
     expect(screen.getByText('Research Org')).toBeInTheDocument();
-    expect(screen.getByText(/2 members/)).toBeInTheDocument();
+    expect(screen.getByText('Members')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.queryByText('Solo Session')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume Root Session' }));

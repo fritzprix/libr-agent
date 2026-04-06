@@ -117,6 +117,34 @@ pub fn is_restricted_system_path(path: &std::path::Path) -> bool {
 
 pub struct AgentService;
 
+pub fn normalize_explicit_org(
+    org_id: Option<String>,
+    org_name: Option<String>,
+    org_root_session_id: Option<String>,
+) -> Result<Option<(String, String, String)>, String> {
+    match (org_id, org_name, org_root_session_id) {
+        (None, None, None) => Ok(None),
+        (Some(org_id), Some(org_name), Some(org_root_session_id)) => {
+            let org_id = org_id.trim().to_string();
+            let org_name = org_name.trim().to_string();
+            let org_root_session_id = org_root_session_id.trim().to_string();
+
+            if org_id.is_empty() || org_name.is_empty() || org_root_session_id.is_empty() {
+                return Err(
+                    "Explicit org metadata must include non-empty orgId, orgName, and orgRootSessionId together"
+                        .to_string(),
+                );
+            }
+
+            Ok(Some((org_id, org_name, org_root_session_id)))
+        }
+        _ => Err(
+            "Explicit org metadata must include orgId, orgName, and orgRootSessionId together"
+                .to_string(),
+        ),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SendSessionMessageResponse {
     pub message_id: String,
@@ -181,20 +209,11 @@ impl AgentService {
             }
         });
 
-        let explicit_org = match (
+        let explicit_org = normalize_explicit_org(
             body.org_id.clone(),
             body.org_name.clone(),
             body.org_root_session_id.clone(),
-        ) {
-            (Some(org_id), Some(org_name), Some(org_root_session_id)) => {
-                Some((org_id, org_name, org_root_session_id))
-            }
-            (None, None, None) => None,
-            _ => return Err(
-                "Explicit org metadata must include orgId, orgName, and orgRootSessionId together"
-                    .to_string(),
-            ),
-        };
+        )?;
 
         let lineage_meta = if let Some(parent_id) = parent_session_id.clone() {
             let store = lineage_store().read().await;

@@ -63,7 +63,8 @@ impl ScheduledTaskService {
             normalized_schedule_timezone,
             governance,
         )?;
-        let (group_id, group_name) = normalize_group_fields(input.group_id, input.group_name)?;
+        let (group_id, group_name) =
+            normalize_group_fields_with_repo(repo, input.group_id, input.group_name).await?;
         enforce_group_limit(repo, group_id.as_deref(), None, governance).await?;
         let next_run_at = compute_next_run_for_schedule_timezone(
             &input.cron_expression,
@@ -177,7 +178,15 @@ impl ScheduledTaskService {
         }
         params.group_id = Some(effective_group_id.clone());
         params.group_name = Some(effective_group_name.clone());
-        enforce_group_limit(repo, effective_group_id.as_deref(), Some(id), governance).await?;
+
+        // Only enforce group cap when the group is actually changing. If the
+        // effective group ID is the same as the existing one we are not creating a
+        // new group, so filtering out the current task would produce a false
+        // "cap exceeded" error when the task is the sole member of that group.
+        let group_has_changed = effective_group_id.as_deref() != existing.group_id.as_deref();
+        if group_has_changed {
+            enforce_group_limit(repo, effective_group_id.as_deref(), Some(id), governance).await?;
+        }
 
         repo.update_scheduled_task(id, params)
             .await
@@ -361,13 +370,68 @@ fn normalize_group_fields(
 
     match (group_id, normalized_group_name) {
         (None, None) => Ok((None, None)),
-        (Some(_group_id), None) => Err("groupId requires groupName".to_string()),
+        // groupId-only is handled by the async variant; this sync path
+        // requires groupName to be present when provided.
+        (Some(_group_id), None) => Err(
+            "groupId requires groupName (or use groupId-only join via createScheduledTask)"
+                .to_string(),
+        ),
         (group_id, Some(group_name)) => {
             let normalized_group_id = group_id
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| slugify_group_name(&group_name));
             Ok((Some(normalized_group_id), Some(group_name)))
+        }
+    }
+}
+
+/// Async variant of normalize_group_fields that resolves groupName from the
+/// repository when only groupId is provided, matching the team-sprint contract:
+/// "first task supplies groupName to create; subsequent tasks join with groupId only."
+async fn normalize_group_fields_with_repo(
+    repo: &dyn ScheduledTaskRepository,
+    group_id: Option<String>,
+    group_name: Option<String>,
+) -> Result<(Option<String>, Option<String>), String> {
+    let normalized_group_name = group_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    match (group_id, normalized_group_name) {
+        (None, None) => Ok((None, None)),
+        // groupName only → auto-generate groupId from the name.
+        (None, Some(group_name)) => {
+            let group_id = slugify_group_name(&group_name);
+            Ok((Some(group_id), Some(group_name)))
+        }
+        // Both provided → normalize normally.
+        (Some(group_id), Some(group_name)) => {
+            let normalized_id = group_id.trim().to_string();
+            if normalized_id.is_empty() {
+                return Err("groupId cannot be an empty string".to_string());
+            }
+            Ok((Some(normalized_id), Some(group_name)))
+        }
+        // groupId only → resolve groupName from an existing task in that group.
+        (Some(group_id), None) => {
+            let normalized_id = group_id.trim().to_string();
+            if normalized_id.is_empty() {
+                return Err("groupId cannot be an empty string".to_string());
+            }
+            let tasks = repo
+                .list_scheduled_tasks(None)
+                .await
+                .map_err(|e| e.to_string())?;
+            let resolved_name = tasks
+                .into_iter()
+                .find(|task| task.group_id.as_deref() == Some(normalized_id.as_str()))
+                .and_then(|task| task.group_name)
+                .ok_or_else(|| format!(
+                    "groupId '{}' does not match any existing group. Provide groupName to create a new group.",
+                    normalized_id
+                ))?;
+            Ok((Some(normalized_id), Some(resolved_name)))
         }
     }
 }

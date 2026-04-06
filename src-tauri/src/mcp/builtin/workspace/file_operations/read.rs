@@ -195,10 +195,15 @@ impl WorkspaceServer {
                     )
                 };
 
+                let first_hint = if show_line_anchors {
+                    "Use replaceLines or deleteLines with the start-line anchor; for ranges, also copy endAnchor from the final line".to_string()
+                } else {
+                    "Rerun with showLineAnchors=true to get anchors for precise line editing (replaceLines, deleteLines, insertAfterLine)".to_string()
+                };
                 let hint = SuccessHint::new(
                     text_message,
                     vec![
-                        "Use replaceLines or deleteLines with the start-line anchor; for ranges, also copy endAnchor from the final line".to_string(),
+                        first_hint,
                         "Use insertAfterLine with afterLine and the anchor from the line after which content should be inserted".to_string(),
                         "writeFile for full file replacement".to_string(),
                     ],
@@ -363,16 +368,11 @@ async fn read_file_lines_range(
     Ok(result_lines.join("\n"))
 }
 
-/// Format lines with pipe-separated line numbers (LLM-friendly format)
+/// Format test lines as either anchor lines or raw file content.
 ///
-/// Uses visual separation to prevent confusion between metadata and code:
-/// ```text
-/// 10 | def calculate_sum(a, b):
-/// 11 |     return a + b
-/// 12 |
-/// ```
-///
-/// Note: Preserves ALL empty lines for accurate indentation/structure visibility
+/// When `show_anchors` is true the output uses the `{N}:{anchor}|{content}`
+/// format. Otherwise it returns raw content without synthetic line numbers.
+/// Empty lines are preserved in both modes.
 #[cfg(test)]
 fn format_lines_with_numbers(lines: &[(usize, String)], show_anchors: bool) -> String {
     if lines.is_empty() {
