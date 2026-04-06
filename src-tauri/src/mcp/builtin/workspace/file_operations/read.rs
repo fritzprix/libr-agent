@@ -1,5 +1,8 @@
 use super::super::WorkspaceServer;
-use super::utils::{compute_line_hash, detect_language, format_file_size, LARGE_FILE_THRESHOLD};
+use super::utils::{
+    detect_language, format_file_size, format_hashline, initial_prefix_hash_state,
+    update_prefix_hash_state, LARGE_FILE_THRESHOLD,
+};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -60,8 +63,8 @@ impl WorkspaceServer {
             .get("endLine")
             .and_then(|v| v.as_u64())
             .map(|n| n as usize);
-        let show_line_hashes = args
-            .get("showLineHashes")
+        let show_line_anchors = args
+            .get("showLineAnchors")
             .and_then(|v| v.as_bool())
             .unwrap_or(false); // Default OFF: reduce noise unless precise editing is needed
 
@@ -164,7 +167,7 @@ impl WorkspaceServer {
         // Use read_file_lines_range for all file reading to ensure consistent
         // handling of large files (spawn_blocking) and formatting.
         let content =
-            read_file_lines_range(&safe_path, start_line, end_line, show_line_hashes).await;
+            read_file_lines_range(&safe_path, start_line, end_line, show_line_anchors).await;
 
         match content {
             Ok(content) => {
@@ -179,10 +182,9 @@ impl WorkspaceServer {
                 let line_count = content.lines().count();
 
                 // Format response for clean markdown rendering
-                let text_message = if show_line_hashes {
-                    // Hashline mode: {N}:{hash}|{content} — stable anchors for editFile
+                let text_message = if show_line_anchors {
                     format!(
-                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nHashline: `{{N}}:{{hash}}|{{content}}` — pass hash as `line_hash` in editFile",
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — use anchors with replaceLines, insertAfterLine, or deleteLines",
                         path_str, size_str, line_count, content
                     )
                 } else {
@@ -193,11 +195,16 @@ impl WorkspaceServer {
                     )
                 };
 
+                let first_hint = if show_line_anchors {
+                    "Use replaceLines or deleteLines with the start-line anchor; for ranges, also copy endAnchor from the final line".to_string()
+                } else {
+                    "Rerun with showLineAnchors=true to get anchors for precise line editing (replaceLines, deleteLines, insertAfterLine)".to_string()
+                };
                 let hint = SuccessHint::new(
                     text_message,
                     vec![
-                        "editFile: copy line_hash from prefix (e.g. 'a3' from '42:a3|...')"
-                            .to_string(),
+                        first_hint,
+                        "Use insertAfterLine with afterLine and the anchor from the line after which content should be inserted".to_string(),
                         "writeFile for full file replacement".to_string(),
                     ],
                 );
@@ -236,7 +243,7 @@ async fn read_file_lines_range(
     path: &std::path::Path,
     start_line: Option<usize>,
     end_line: Option<usize>,
-    show_line_hashes: bool,
+    show_line_anchors: bool,
 ) -> Result<String, String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -256,6 +263,7 @@ async fn read_file_lines_range(
             let mut result_lines = Vec::new();
             let mut current_line = 1;
             let mut total_lines = 0;
+            let mut prefix_state = initial_prefix_hash_state();
 
             use std::io::BufRead;
             for line_result in reader.lines() {
@@ -269,7 +277,13 @@ async fn read_file_lines_range(
                 total_lines += 1;
 
                 if current_line >= start && current_line <= end {
-                    result_lines.push((current_line, line));
+                    if show_line_anchors {
+                        result_lines.push(format_hashline(current_line, &line, &mut prefix_state));
+                    } else {
+                        result_lines.push(line);
+                    }
+                } else if show_line_anchors {
+                    prefix_state = update_prefix_hash_state(prefix_state, &line);
                 }
 
                 if current_line > end {
@@ -294,10 +308,7 @@ async fn read_file_lines_range(
                 ));
             }
 
-            Ok::<_, String>(format_lines_with_numbers(
-                &result_lines,
-                show_line_hashes,
-            ))
+            Ok::<_, String>(result_lines.join("\n"))
         })
         .await
         .map_err(|e| format!("Task join error: {}", e))??;
@@ -314,13 +325,20 @@ async fn read_file_lines_range(
     let mut result_lines = Vec::new();
     let mut current_line = 1;
     let mut total_lines = 0;
+    let mut prefix_state = initial_prefix_hash_state();
 
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
                 total_lines += 1;
                 if current_line >= start && current_line <= end {
-                    result_lines.push((current_line, line));
+                    if show_line_anchors {
+                        result_lines.push(format_hashline(current_line, &line, &mut prefix_state));
+                    } else {
+                        result_lines.push(line);
+                    }
+                } else if show_line_anchors {
+                    prefix_state = update_prefix_hash_state(prefix_state, &line);
                 }
 
                 if current_line > end {
@@ -347,34 +365,26 @@ async fn read_file_lines_range(
         ));
     }
 
-    Ok(format_lines_with_numbers(&result_lines, show_line_hashes))
+    Ok(result_lines.join("\n"))
 }
 
-/// Format lines with pipe-separated line numbers (LLM-friendly format)
+/// Format test lines as either anchor lines or raw file content.
 ///
-/// Uses visual separation to prevent confusion between metadata and code:
-/// ```text
-/// 10 | def calculate_sum(a, b):
-/// 11 |     return a + b
-/// 12 |
-/// ```
-///
-/// Note: Preserves ALL empty lines for accurate indentation/structure visibility
-fn format_lines_with_numbers(lines: &[(usize, String)], show_hashes: bool) -> String {
+/// When `show_anchors` is true the output uses the `{N}:{anchor}|{content}`
+/// format. Otherwise it returns raw content without synthetic line numbers.
+/// Empty lines are preserved in both modes.
+#[cfg(test)]
+fn format_lines_with_numbers(lines: &[(usize, String)], show_anchors: bool) -> String {
     if lines.is_empty() {
         return String::new();
     }
 
-    if show_hashes {
-        // Hashline format: "{N}:{hash}|{content}"
-        // The hash is a stable 2-char FNV-1a fingerprint of the line content.
-        // Agents reference it in editFile via `line_hash` to detect staleness.
+    if show_anchors {
+        // Anchor format: "{N}:{anchor}|{content}"
+        let mut prefix_state = initial_prefix_hash_state();
         return lines
             .iter()
-            .map(|(line_num, content)| {
-                let hash = compute_line_hash(content);
-                format!("{}:{}|{}", line_num, hash, content)
-            })
+            .map(|(line_num, content)| format_hashline(*line_num, content, &mut prefix_state))
             .collect::<Vec<_>>()
             .join("\n");
     }
@@ -439,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_lines_hashline_format() {
+    fn test_format_lines_anchor_format() {
         let lines = vec![
             (11, "function hello() {".to_string()),
             (22, "  return \"world\";".to_string()),
@@ -448,21 +458,23 @@ mod tests {
 
         let result = format_lines_with_numbers(&lines, true);
 
-        // Each line must be {N}:{2-char-hex}|{content}
+        // Each line must be {N}:{6-char-anchor}|{content}
         let result_lines: Vec<&str> = result.lines().collect();
         assert_eq!(result_lines.len(), 3);
 
-        // Verify format: starts with line number, colon, 2 hex chars, pipe
+        // Verify format: starts with line number, colon, 6 hex chars, pipe
         for line in &result_lines {
             let parts: Vec<&str> = line.splitn(2, '|').collect();
-            assert_eq!(parts.len(), 2, "Hashline must contain '|' separator");
+            assert_eq!(parts.len(), 2, "Anchored line must contain '|' separator");
             let prefix = parts[0];
-            let colon_pos = prefix.find(':').expect("Hashline prefix must contain ':'");
-            let hash_part = &prefix[colon_pos + 1..];
-            assert_eq!(hash_part.len(), 2, "Hash must be 2 hex chars");
+            let colon_pos = prefix
+                .find(':')
+                .expect("Anchored line prefix must contain ':'");
+            let anchor = &prefix[colon_pos + 1..];
+            assert_eq!(anchor.len(), 6, "Anchor must be 6 hex chars");
             assert!(
-                hash_part.chars().all(|c| c.is_ascii_hexdigit()),
-                "Hash must be hex digits"
+                anchor.chars().all(|c| c.is_ascii_hexdigit()),
+                "Anchor must be hex digits"
             );
         }
 

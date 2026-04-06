@@ -8,4 +8,6 @@ pub struct SystemSettings {
     pub active_session_retention_hours: Option<u64>,
     pub http_server_port: Option<u16>,
     pub http_server_expose: Option<bool>,
+    pub scheduled_task_minimum_interval_minutes: Option<u64>,
+    pub max_scheduled_task_groups: Option<u64>,
 }

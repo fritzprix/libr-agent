@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_summary_text, find_preflight_compaction_split_index,
     merge_consecutive_user_messages, resolve_context_management_settings,
-    should_trigger_background_compaction, uses_compaction_strategy,
+    should_skip_same_tail_compaction, should_trigger_background_compaction,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -195,6 +196,40 @@ fn test_preflight_compaction_split_after_removing_incomplete_tool_chains() {
 
     let idx = find_preflight_compaction_split_index(&cleaned);
     assert_eq!(idx, cleaned.len());
+}
+
+#[test]
+fn test_same_tail_compaction_skips_duplicate_when_no_compact_summary_exists() {
+    let messages = vec![
+        make_message("m0", "assistant", "Earlier context"),
+        make_message("m1", "user", "Latest request"),
+    ];
+
+    assert!(should_skip_same_tail_compaction(&messages, 1));
+}
+
+#[test]
+fn test_same_tail_compaction_allows_follow_up_compaction_after_summary_injection() {
+    let mut summary = make_message("m0", "user", "Compacted summary");
+    summary.id = "compact-summary-test".to_string();
+
+    let messages = vec![
+        summary,
+        make_message("m1", "assistant", "Large preserved context"),
+        make_message("m2", "user", "Latest request"),
+    ];
+
+    assert!(!should_skip_same_tail_compaction(&messages, 2));
+}
+
+#[test]
+fn test_same_tail_compaction_stops_when_only_existing_summary_is_left_to_compact() {
+    let mut summary = make_message("m0", "user", "Compacted summary");
+    summary.id = "compact-summary-test".to_string();
+
+    let messages = vec![summary, make_message("m1", "user", "Latest request")];
+
+    assert!(should_skip_same_tail_compaction(&messages, 1));
 }
 
 #[test]

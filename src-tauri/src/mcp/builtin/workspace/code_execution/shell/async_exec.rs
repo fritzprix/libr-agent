@@ -290,9 +290,7 @@ impl WorkspaceServer {
 
 • Process ID: {}
 • Command: {}
-• Mode: Asynchronous (non-blocking)
-
-💡 Next Steps:",
+• Mode: Asynchronous (non-blocking)",
                 process_id, command
             ),
             vec![

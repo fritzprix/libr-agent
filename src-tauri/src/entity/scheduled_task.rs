@@ -20,10 +20,16 @@ pub struct Model {
     pub schedule_timezone: String,
     /// Assistant (agent) that owns and executes this task
     pub assistant_id: String,
+    /// Optional scheduled task group identity for grouped recurring automation
+    pub group_id: Option<String>,
+    /// Human-readable group name shown in grouped schedule UX
+    pub group_name: Option<String>,
     /// Message to inject as a user turn; supports @playbook:name, @skill:name mentions
     pub message: String,
     /// Whether tools should execute without approval
     pub yolo_mode: bool,
+    /// Session that created this task through agent tooling, if any
+    pub created_by_session_id: Option<String>,
     /// Reused session ID — populated after first run, None for fresh tasks
     pub session_id: Option<String>,
     /// Optional workspace override path applied to the pinned session at execution time

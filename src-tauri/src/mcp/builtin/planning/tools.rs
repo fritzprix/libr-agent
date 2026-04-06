@@ -59,7 +59,7 @@ fn clear_goal_tool() -> MCPTool {
     MCPTool {
         name: "clearGoal".to_string(),
         title: Some("Clear Goal".to_string()),
-        description: "Clear the current goal. Use when finishing or abandoning the current goal."
+        description: "Clear the current goal when the objective is complete or no longer relevant."
             .to_string(),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
@@ -71,12 +71,12 @@ fn add_todo_tool() -> MCPTool {
     MCPTool {
         name: "addTodo".to_string(),
         title: Some("Add Todo".to_string()),
-        description: "Add a simple todo item. No subtasks, no nesting - flat structure only. Use to track individual tasks.".to_string(),
+        description: "Add a todo item. Flat structure only — no subtasks or nesting.".to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "description".to_string(),
-                    string_prop_required("The task to be done."),
+                    string_prop(None, Some(500), Some("The task to be done.")),
                 ),
                 (
                     "priority".to_string(),
@@ -99,15 +99,12 @@ fn update_todo_tool() -> MCPTool {
     MCPTool {
         name: "updateTodo".to_string(),
         title: Some("Update Todo".to_string()),
-        description: r#"Update a todo's status or cancel (remove) it, identified by its unique todoId.
+        description: r#"Update a todo's status or permanently remove it.
 
-action:
-  'done'    — Mark as completed (stays in list for progress tracking).
-  'pending' — Mark as incomplete (reopen a previously completed todo).
-  'cancel'  — Permanently remove the todo. Use only when the task should never have existed.
-
-Prefer 'done' over 'cancel' — completed todos preserve history.
-Get todo IDs from getCurrentState."#
+action semantics:
+  'done'    — Completes the todo; stays in list for history.
+  'pending' — Reopens a previously completed todo.
+  'cancel'  — Permanently removes it. Only when the task should never have existed; prefer 'done' to preserve history."#
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -124,7 +121,7 @@ Get todo IDs from getCurrentState."#
                     enum_prop(
                         vec!["done", "pending", "cancel"],
                         "done",
-                        Some("The action to perform on the todo: 'done', 'pending', or 'cancel'."),
+                        Some("Action to apply (default: 'done')."),
                     ),
                 ),
                 (
@@ -148,7 +145,8 @@ fn clear_session_tool() -> MCPTool {
     MCPTool {
         name: "clearSession".to_string(),
         title: Some("Clear Session".to_string()),
-        description: "Clear all session state (goal, todos, and scratchpad items). Use to reset everything and start fresh.".to_string(),
+        description: "Clear all session planning state (goal and todos). Use to reset the plan and start fresh."
+            .to_string(),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -159,7 +157,7 @@ fn get_current_state_tool() -> MCPTool {
     MCPTool {
         name: "getCurrentState".to_string(),
         title: Some("Get Current State".to_string()),
-        description: "Get current planning state including Goal and Todos as human-readable text. Use when you need detailed visibility into current planning state beyond what's shown in the system context.".to_string(),
+        description: "Get current planning state (goal and todos). Use when you need detailed visibility beyond what's shown in the system context.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -181,7 +179,7 @@ fn reflect_tool() -> MCPTool {
     MCPTool {
         name: "reflect".to_string(),
         title: Some("Reflect".to_string()),
-        description: "Critically reflect on progress after completing todos. Evaluate what went wrong or could be improved, then commit to a corrective next action.".to_string(),
+        description: "Record a structured self-critique after completing todos, then commit to a concrete corrective action.".to_string(),
         input_schema: object_prop(
             vec![
                 (

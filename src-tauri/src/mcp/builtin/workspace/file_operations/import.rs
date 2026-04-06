@@ -134,10 +134,16 @@ impl WorkspaceServer {
         if has_errors && !has_success {
             // Entirely failed
             Ok(guided_error(
-                ErrorCategory::InternalError,
+                ErrorCategory::OperationFailed,
                 &result_text,
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Verify each srcAbsPath exists and is readable on the local filesystem".to_string(),
+                "Use listDirectory to confirm the destination path inside the workspace"
+                    .to_string(),
+                "Retry with one file first to isolate the failing item".to_string(),
+            ])
             .to_mcp_result())
         } else {
             // Partially or fully successful

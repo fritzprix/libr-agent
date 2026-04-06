@@ -45,9 +45,11 @@ interface ScheduledTaskModalProps {
     cronExpression: string;
     scheduleTimezone: 'local';
     assistantId: string;
+    groupName: string | null;
     message: string;
     yoloMode: boolean;
     workspaceOverride: string | null;
+    clearGroup?: boolean;
   }) => Promise<void>;
 }
 
@@ -94,9 +96,11 @@ interface ScheduledTaskFormProps {
     cronExpression: string;
     scheduleTimezone: 'local';
     assistantId: string;
+    groupName: string | null;
     message: string;
     yoloMode: boolean;
     workspaceOverride: string | null;
+    clearGroup?: boolean;
   }) => Promise<void>;
 }
 
@@ -135,6 +139,7 @@ function ScheduledTaskForm({
     : hasAssistant(task?.assistantId)
       ? task.assistantId
       : assistants[0]?.id;
+  const [groupName, setGroupName] = useState(task?.groupName ?? '');
   const [message, setMessage] = useState(task?.message ?? '');
   const [yoloMode, setYoloMode] = useState(task?.yoloMode ?? false);
   const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
@@ -244,9 +249,11 @@ function ScheduledTaskForm({
         cronExpression: cronExpression.trim(),
         scheduleTimezone: 'local',
         assistantId: effectiveAssistantId,
+        groupName: groupName.trim() || null,
         message: message.trim(),
         yoloMode,
         workspaceOverride,
+        clearGroup: Boolean(task?.groupName) && !groupName.trim(),
       });
       onClose();
     } catch (e: unknown) {
@@ -324,6 +331,27 @@ function ScheduledTaskForm({
             value={cronExpression}
             onChange={setCronExpression}
           />
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="task-group-name">
+            {t('scheduledTasks.modal.groupNameLabel', 'Task Group')}
+          </Label>
+          <Input
+            id="task-group-name"
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            placeholder={t(
+              'scheduledTasks.modal.groupNamePlaceholder',
+              'Optional: e.g. Research Team',
+            )}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'scheduledTasks.modal.groupNameHint',
+              'Use a group name to bundle related recurring tasks into one teamwork automation cluster.',
+            )}
+          </p>
         </div>
 
         <div className="grid gap-1.5">

@@ -6,14 +6,17 @@ pub fn create_session_tool() -> MCPTool {
     MCPTool {
         name: "createSession".to_string(),
         title: None,
-        description: "Create a new browser session for this agent.
+        description: "Create or replace the active browser session for this agent.
 
-⚠️ WORKFLOW:
-1. Call createSession FIRST before any other browser operations
-2. Use the returned session ID for all subsequent browser tools
-3. Session automatically closes if agent terminates
+Behavior:
+1. Call createSession before browser tools if no active session exists
+2. Other browser tools automatically use the active session stored by the backend
+3. If a session already exists, createSession closes it and starts a fresh one
+4. Session automatically closes if the agent terminates
 
-Returns: Session ID (e.g., 'abc123...') - use this ID for all other browser tools"
+If `url` is omitted, the session opens https://www.google.com.
+
+Returns a success message confirming the active session is ready."
             .to_string(),
         input_schema: object_prop(
             vec![(
@@ -21,7 +24,7 @@ Returns: Session ID (e.g., 'abc123...') - use this ID for all other browser tool
                 string_prop(
                     None,
                     None,
-                    Some("Initial URL to open (default: about:blank)"),
+                    Some("Initial URL to open in the new active session (default: https://www.google.com)"),
                 ),
             )],
             vec![],
@@ -37,9 +40,13 @@ pub fn navigate_to_url_tool() -> MCPTool {
     MCPTool {
         name: "navigateToUrl".to_string(),
         title: None,
-        description: "Navigate to a specific URL in the browser session.
+        description: "Navigate the active browser session to a specific URL.
 
-The browser session is managed automatically by the backend. Simply provide the URL and the system will handle the navigation.
+Behavior:
+- Requires an active session created by `createSession`
+- Reuses that same session; it does not create a new one
+- Replaces the current page and invalidates previously extracted page content
+- Returns navigation status plus the live page title and URL, not full page content
 
 ⚠️ Error Handling:
 - 403/401: Page blocks automated access - abandon and search elsewhere
@@ -48,7 +55,8 @@ The browser session is managed automatically by the backend. Simply provide the 
 
 Next Steps:
 - Use `content` to read page content
-- Use listInteractable to see clickable elements".to_string(),
+- Use listInteractable to see clickable elements"
+            .to_string(),
         input_schema: object_prop(
             vec![(
                 "url".to_string(),
@@ -263,7 +271,7 @@ pub fn close_session_tool() -> MCPTool {
 pub fn goto_tool() -> MCPTool {
     let mut tool = navigate_to_url_tool();
     tool.name = "goto".to_string();
-    tool.description = "Navigate to a URL. Provide `url` (required).\n\n⚠️ Error Handling:\n- 403/401: blocked - abandon and search elsewhere\n- 404: not found - check URL\n- Timeout: try different URL\n\nNext: Use `content` to read page.".to_string();
+    tool.description = "Navigate the active browser session to a URL. Provide `url` (required).\n\nBehavior:\n- Requires an active session from `createSession`\n- Reuses the same session; does not create a new one\n- Replaces the current page and clears previously extracted page content\n- Returns page state (title + URL), not full page content\n\nNext: Use `content` to read the new page.".to_string();
     tool
 }
 
@@ -271,7 +279,7 @@ pub fn goto_tool() -> MCPTool {
 pub fn content_tool() -> MCPTool {
     let mut tool = extract_web_content_tool();
     tool.name = "content".to_string();
-    tool.description = "Get page content.\n    - No args: Extracts fresh content from the current page.\n    - `page`: Reads a specific page number from previously extracted cache.".to_string();
+    tool.description = "Get content from the active browser session.\n    - No args: Extracts fresh content from the current page.\n    - `page`: Reads a specific page number from the most recently extracted cache.\n\nNavigation tools such as `goto`, `back`, and `forward` invalidate the previous extracted-content cache.".to_string();
     tool.input_schema = object_prop(
         vec![
             (

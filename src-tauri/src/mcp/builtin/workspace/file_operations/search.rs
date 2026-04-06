@@ -1,5 +1,8 @@
 use super::super::WorkspaceServer;
-use super::utils::{compute_line_hash, detect_language, format_file_size};
+use super::utils::{
+    compute_anchor, detect_language, format_file_size, initial_prefix_hash_state,
+    update_prefix_hash_state,
+};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -41,8 +44,8 @@ impl WorkspaceServer {
             .get("ignoreCase")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let show_line_hashes = args
-            .get("showLineHashes")
+        let show_line_anchors = args
+            .get("showLineAnchors")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -130,7 +133,7 @@ impl WorkspaceServer {
                 &regex,
                 query_str,
                 glob_pat.as_ref(),
-                show_line_hashes,
+                show_line_anchors,
                 ignore_case,
             )
             .await
@@ -140,7 +143,7 @@ impl WorkspaceServer {
                 search_path,
                 &regex,
                 query_str,
-                show_line_hashes,
+                show_line_anchors,
                 ignore_case,
             )
             .await
@@ -384,17 +387,22 @@ impl WorkspaceServer {
         };
 
         let mut matches = Vec::new();
+        let mut prefix_state = initial_prefix_hash_state();
         for (idx, line) in content.lines().enumerate() {
             if regex.is_match(line) {
                 if show_hashes {
+                    let anchor = compute_anchor(line, &mut prefix_state);
                     matches.push(json!({
                         "line": idx + 1,
-                        "hash": compute_line_hash(line),
+                        "anchor": anchor,
                         "text": line
                     }));
                 } else {
                     matches.push(json!({ "line": idx + 1, "text": line }));
+                    prefix_state = update_prefix_hash_state(prefix_state, line);
                 }
+            } else {
+                prefix_state = update_prefix_hash_state(prefix_state, line);
             }
         }
 
@@ -432,8 +440,8 @@ impl WorkspaceServer {
             for m in matches.iter().take(matches_to_show) {
                 let line_num = m.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
                 let text = m.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                if let Some(hash) = m.get("hash").and_then(|v| v.as_str()) {
-                    s.push_str(&format!("{}:{}|{}\n", line_num, hash, text));
+                if let Some(anchor) = m.get("anchor").and_then(|v| v.as_str()) {
+                    s.push_str(&format!("{}:{}|{}\n", line_num, anchor, text));
                 } else {
                     s.push_str(&format!("Line {}: {}\n", line_num, text));
                 }
@@ -448,9 +456,11 @@ impl WorkspaceServer {
             }
 
             if show_hashes {
-                s.push_str("Use the format `N:hash|content` for `editFile`.\n");
+                s.push_str("Use the returned anchors with replaceLines, insertAfterLine, or deleteLines. For range replacement/deletion, also copy endAnchor from the exact end line.\n");
             } else {
-                s.push_str("Run with `showLineHashes: true` to get hashes for `editFile`.\n");
+                s.push_str(
+                    "Run with `showLineAnchors: true` to get anchors for targeted editing tools.\n",
+                );
             }
             s
         };
@@ -586,17 +596,22 @@ impl WorkspaceServer {
             };
 
             let mut hits = Vec::new();
+            let mut prefix_state = initial_prefix_hash_state();
             for (idx, line) in content.lines().enumerate() {
                 if regex.is_match(line) {
                     if show_hashes {
+                        let anchor = compute_anchor(line, &mut prefix_state);
                         hits.push(json!({
                             "line": idx + 1,
-                            "hash": compute_line_hash(line),
+                            "anchor": anchor,
                             "text": line
                         }));
                     } else {
                         hits.push(json!({ "line": idx + 1, "text": line }));
+                        prefix_state = update_prefix_hash_state(prefix_state, line);
                     }
+                } else {
+                    prefix_state = update_prefix_hash_state(prefix_state, line);
                 }
             }
 
@@ -658,8 +673,8 @@ impl WorkspaceServer {
             for hit in fm.hits.iter().take(5) {
                 let line_num = hit.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
                 let t = hit.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                if let Some(hash) = hit.get("hash").and_then(|v| v.as_str()) {
-                    text.push_str(&format!("- {}:{}|`{}`\n", line_num, hash, t.trim()));
+                if let Some(anchor) = hit.get("anchor").and_then(|v| v.as_str()) {
+                    text.push_str(&format!("{}:{}|{}\n", line_num, anchor, t));
                 } else {
                     text.push_str(&format!("- L{}: `{}`\n", line_num, t.trim()));
                 }
@@ -740,9 +755,16 @@ impl WorkspaceServer {
         let mut next_steps = vec![
             "Use search with a specific file path to see all matches in that file".to_string(),
         ];
-        if !show_hashes {
-            next_steps
-                .push("Run with `showLineHashes: true` to get hashes for `editFile`.".to_string());
+        if show_hashes {
+            next_steps.push(
+                "Use the returned anchors with replaceLines, insertAfterLine, or deleteLines; add endAnchor for range replacement/deletion"
+                    .to_string(),
+            );
+        } else {
+            next_steps.push(
+                "Run with `showLineAnchors: true` to get anchors for targeted editing tools."
+                    .to_string(),
+            );
         }
 
         Ok(SuccessHint::new(text, next_steps).to_mcp_result_with_data(Some(structured)))

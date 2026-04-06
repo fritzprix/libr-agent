@@ -51,12 +51,18 @@ Assume these rules:
 - Assistant-scoped skills come from the assistant you choose for `agentId`.
 - Global skills remain available to both parent and child.
 
+If the parent is running inside a task-force workspace, check `.libragent/teamwork.json` before delegating:
+
+- If `executionSubstrate.mode` is `"org"`, prefer `startSession(..., includeCurrentOrg=true)` and `workspaceOverride` so the child joins the org and shares the workspace. Switch to `team-org` for org-specific operating rules.
+- If `executionSubstrate.mode` is `"scheduled"`, the delegation is likely a scheduled wake-up. Follow `team-sprint` for group management instead of ad-hoc delegation.
+
 Important limitations:
 
 - Do **not** assume `agent.md` exists. Workspace behavior instructions are loaded from the first non-empty file among `agents.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`.
 - Persona / tone instructions are loaded separately from the first non-empty file among `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, and `soul.md`.
 - Both persona and workspace instruction content are cached for the session lifetime until the stable prompt cache is invalidated.
-- `startSession` can override the child workspace with `workspaceOverride`, but it does not magically copy parent files or prompt state.
+- `startSession` can override the child workspace with `workspaceOverride`; files and prompt state still follow the child session.
+- Default to each session's own workspace. Use `workspaceOverride` when the child should work in the same workspace as the parent or another already-existing workspace.
 
 ## 3. Prepare the Handoff
 
@@ -77,7 +83,7 @@ If the child needs a specific skill workflow, prefer one of these approaches:
 - rely on a global skill that both sessions can access
 - copy the critical procedure into the task text if the workflow is short
 
-Do **not** say "use the same workspace context as me" unless you have explicit proof that the child session was created with a shared workspace path outside the normal `startSession` flow.
+Say "use the same workspace as this session" only when you intentionally started the child in that shared workspace.
 
 ## 4. Start and Manage the Child Session
 
@@ -85,7 +91,7 @@ Use the builtin agent tools deliberately:
 
 - `list(type="configs")` to find the right assistant and prefer its returned ID
 - `startSession(agentId="...", task="...", waitForResult=false)` when you have the ID
-- `startSession(agentId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a specific workspace
+- `startSession(agentId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
 - `checkSession(sessionId)` to poll
 - `checkSession(sessionId, wait=true)` when you want to block until a terminal result
 - `messageToSession(sessionId, message)` to correct course or provide more input

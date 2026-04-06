@@ -53,6 +53,9 @@ fn mock_agent_config(aliases: Option<Vec<&str>>) -> AgentConfig {
         parent_session_id: None,
         lineage_id: None,
         depth: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
     }
 }
 

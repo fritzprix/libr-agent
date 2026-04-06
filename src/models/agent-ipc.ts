@@ -154,6 +154,9 @@ export interface AgentSessionMetadata {
   depth?: number;
   maxDepth?: number;
   maxFanout?: number;
+  orgId?: string;
+  orgName?: string;
+  orgRootSessionId?: string;
   createdAt: number;
   updatedAt?: number;
   lastViewedAt?: number;

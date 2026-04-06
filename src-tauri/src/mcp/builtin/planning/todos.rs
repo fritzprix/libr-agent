@@ -214,7 +214,10 @@ pub async fn check_todo(
             vec![]
         }
     } else {
-        vec!["Use updateTodo(index=N, action='done') to mark as done when completed".to_string()]
+        vec![format!(
+            "Use updateTodo(todoId={}, action='done') to mark as done when completed",
+            todo_id
+        )]
     };
 
     let hint = SuccessHint::new(
@@ -308,7 +311,10 @@ pub async fn cancel_todo(
             "Removed todo #{}: {}{}",
             todo_id, todo_content, summary_text
         ),
-        vec![],
+        vec![
+            "Use addTodo to create a replacement if needed".to_string(),
+            "Use getCurrentState to verify the updated task list".to_string(),
+        ],
     );
 
     Ok(hint.to_mcp_result_with_data(Some(json!({

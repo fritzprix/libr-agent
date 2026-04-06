@@ -185,20 +185,19 @@ fn extract_builtin_tool_ids_respects_explicit_allowlist() {
     );
 
     let tool_ids = extract_builtin_tool_ids(&config);
-// Core non-optional builtins are always present
-assert!(tool_ids.contains(&"planning".to_string()));
-assert!(tool_ids.contains(&"workspace".to_string()));
-// Optional builtins not in the explicit list must be absent
-assert!(
-    !tool_ids.contains(&"browser".to_string()),
-    "Optional `browser` must be excluded when not in allowlist"
-);
-assert!(
-    !tool_ids.contains(&"scheduled_task".to_string()),
-    "Optional `scheduled_task` must be excluded when not in allowlist"
-);
-}
 
+    // Core non-optional builtins are always present
+    assert!(tool_ids.contains(&"planning".to_string()));
+    assert!(tool_ids.contains(&"workspace".to_string()));
+    // Optional builtins not in the explicit list must be absent
+    assert!(
+        !tool_ids.contains(&"browser".to_string()),
+        "Optional `browser` must be excluded when not in allowlist"
+    );
+    assert!(
+        !tool_ids.contains(&"scheduled_task".to_string()),
+        "Optional `scheduled_task` must be excluded when not in allowlist"
+    );
     assert!(
         !tool_ids.contains(&"bootstrap".to_string()),
         "Optional `bootstrap` must be excluded when not in allowlist"

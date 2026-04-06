@@ -16,6 +16,8 @@ pub struct CreateScheduledTaskArgs {
     cron_expression: String,
     schedule_timezone: Option<String>,
     assistant_id: String,
+    group_id: Option<String>,
+    group_name: Option<String>,
     message: String,
     yolo_mode: Option<bool>,
     workspace_override: Option<String>,
@@ -42,10 +44,13 @@ pub struct UpdateScheduledTaskArgs {
     cron_expression: Option<String>,
     schedule_timezone: Option<String>,
     assistant_id: Option<String>,
+    group_id: Option<String>,
+    group_name: Option<String>,
     message: Option<String>,
     yolo_mode: Option<bool>,
     workspace_override: Option<String>,
     clear_workspace_override: Option<bool>,
+    clear_group: Option<bool>,
     enabled: Option<bool>,
 }
 
@@ -59,6 +64,7 @@ pub struct ToggleScheduledTaskArgs {
 pub async fn handle_create_scheduled_task(
     _server: &ScheduledTaskServer,
     args: Value,
+    session_id: Option<String>,
 ) -> Result<crate::mcp::types::MCPResult, String> {
     let args: CreateScheduledTaskArgs = match parse_args(args, "createScheduledTask") {
         Ok(value) => value,
@@ -83,8 +89,11 @@ pub async fn handle_create_scheduled_task(
                 .schedule_timezone
                 .unwrap_or_else(|| default_schedule_timezone().to_string()),
             assistant_id: args.assistant_id,
+            group_id: args.group_id,
+            group_name: args.group_name,
             message: args.message,
             yolo_mode: args.yolo_mode.unwrap_or(false),
+            created_by_session_id: session_id,
             workspace_override: args.workspace_override,
         },
     )
@@ -242,6 +251,12 @@ pub async fn handle_update_scheduled_task(
             ToolGroup::ScheduledTask,
         ));
     }
+    if args.clear_group.unwrap_or(false) && (args.group_id.is_some() || args.group_name.is_some()) {
+        return Ok(invalid_input_error(
+            "groupId/groupName and clearGroup=true cannot be used together",
+            ToolGroup::ScheduledTask,
+        ));
+    }
 
     if let Some(assistant_id) = args.assistant_id.as_deref() {
         if let Err(result) = validate_assistant_id(assistant_id).await {
@@ -277,6 +292,11 @@ pub async fn handle_update_scheduled_task(
         "assistantId",
         args.assistant_id.is_some(),
     );
+    collect_changed_field(
+        &mut changed_fields,
+        "group",
+        args.group_id.is_some() || args.group_name.is_some() || args.clear_group.is_some(),
+    );
     collect_changed_field(&mut changed_fields, "message", args.message.is_some());
     collect_changed_field(&mut changed_fields, "yoloMode", args.yolo_mode.is_some());
     collect_changed_field(
@@ -302,6 +322,16 @@ pub async fn handle_update_scheduled_task(
             cron_expression: args.cron_expression,
             schedule_timezone: args.schedule_timezone,
             assistant_id: args.assistant_id,
+            group_id: if args.clear_group.unwrap_or(false) {
+                Some(None)
+            } else {
+                args.group_id.map(Some)
+            },
+            group_name: if args.clear_group.unwrap_or(false) {
+                Some(None)
+            } else {
+                args.group_name.map(Some)
+            },
             message: args.message,
             yolo_mode: args.yolo_mode,
             workspace_override,

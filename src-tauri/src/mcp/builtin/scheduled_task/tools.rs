@@ -44,6 +44,22 @@ fn create_scheduled_task_tool() -> MCPTool {
                     string_prop(Some(1), Some(120), Some("Assistant configuration ID to run.")),
                 ),
                 (
+                    "groupId".to_string(),
+                    string_prop(
+                        Some(1),
+                        Some(120),
+                        Some("Optional scheduled task group ID. Provide this to join an existing group."),
+                    ),
+                ),
+                (
+                    "groupName".to_string(),
+                    string_prop(
+                        Some(1),
+                        Some(120),
+                        Some("Optional human-readable scheduled task group name."),
+                    ),
+                ),
+                (
                     "message".to_string(),
                     string_prop(
                         Some(1),
@@ -165,6 +181,22 @@ fn update_scheduled_task_tool() -> MCPTool {
                     ),
                 ),
                 (
+                    "groupId".to_string(),
+                    string_prop(
+                        Some(1),
+                        Some(120),
+                        Some("Optional scheduled task group ID. Provide together with groupName to move to a different group."),
+                    ),
+                ),
+                (
+                    "groupName".to_string(),
+                    string_prop(
+                        Some(1),
+                        Some(120),
+                        Some("Optional scheduled task group name."),
+                    ),
+                ),
+                (
                     "message".to_string(),
                     string_prop(
                         Some(1),
@@ -187,6 +219,10 @@ fn update_scheduled_task_tool() -> MCPTool {
                 (
                     "clearWorkspaceOverride".to_string(),
                     boolean_prop(Some("Set true to remove the workspace override.")),
+                ),
+                (
+                    "clearGroup".to_string(),
+                    boolean_prop(Some("Set true to remove scheduled task group metadata.")),
                 ),
                 (
                     "enabled".to_string(),

@@ -4,6 +4,7 @@ import {
   Bot,
   BrainCircuit,
   History,
+  Network,
   Settings,
   Users,
   BookOpen,
@@ -244,6 +245,18 @@ export default function AppSidebar() {
                   >
                     <History className="shrink-0" />
                     <span>{t('sidebar.history')}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname.startsWith('/org')}
+                  tooltip={t('sidebar.org', 'Org')}
+                >
+                  <Link to="/org" className="flex w-full items-center gap-2">
+                    <Network className="shrink-0" />
+                    <span>{t('sidebar.org', 'Org')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

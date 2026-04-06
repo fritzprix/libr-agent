@@ -1,11 +1,20 @@
 ---
 name: task-force-builder
-description: Build and scaffold a multi-agent collaboration workspace with the right coordination model, shared operating files, and role-specific skills. Use when a user wants to create a team, crew, task force, asynchronous collaboration loop, specialist handoff workflow, or reusable shared workspace for multiple agents.
+description: Build and scaffold a multi-agent collaboration workspace with the right coordination model, shared operating files, and role-specific skills. Use when a user wants to create a team, crew, task force, asynchronous collaboration loop, specialist handoff workflow, or reusable shared workspace for multiple agents, then route execution to the right teamwork skill.
 ---
 
 # Task Force Builder
 
-Build a task force only when the work is genuinely multi-track. If one capable agent can finish the job cleanly, do not manufacture a committee.
+Build a task force only when the work is genuinely multi-track. If one capable agent can finish the job cleanly, use one agent.
+
+## Non-Negotiable Rules
+
+1. **One team, one workspace.** The coordinator and shared files stay in the same workspace.
+2. **Scaffold in the current workspace.** Create `./agents.md`, `./MISSION.md`, `./ROLES.md`, and `./coordination/` there.
+3. **Keep coordination in that same workspace.**
+4. **Use deterministic scaffolding first.** `scripts/init_task_force.py` is the default path.
+5. **Refresh happens later.** Changes to `agents.md` or workspace skills do not take effect in the current turn.
+6. **Route execution explicitly.** Keep framework-specific operating rules in the specialist skill that matches the chosen substrate.
 
 ## Operating Rule
 
@@ -38,16 +47,46 @@ Pick exactly one primary model:
 - **Hub-and-spoke** - use when one coordinator must integrate outputs from several workers.
 - **Swarm** - use when exploration is open-ended and agents can safely work from a shared board.
 
-Do not mix models unless the user explicitly needs a hybrid. Hybrid systems get messy fast.
+Use one primary model unless the task clearly needs a hybrid.
+
+### 2.5 Choose the execution substrate separately
+
+Coordination model and execution substrate are not the same thing.
+
+Pick the execution substrate that matches the job:
+
+- **Plain child sessions** - use `startSession(...)` for one-off delegation that does not need org visibility.
+- **Explicit org lineage** - use `createOrg(...)` once from the root session, then use `startSession(..., includeCurrentOrg=true)` when the child should appear in Org view. Org-visible children should normally share the coordinator's workspace.
+- **Scheduled task groups** - use `createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
+
+Keep these separate:
+
+- **Org** is for explicit lineage-based teamwork and org UX.
+- **Org** should normally share the coordinator's workspace so every member sees the same SSOT files.
+- **Scheduled task groups** are for recurring automation and policy-governed background collaboration.
+- A recurring task group may wake a coordinator session, but that does not make the scheduled group an org.
+
+### 2.6 Route to the specialist skill
+
+After choosing the execution substrate, route to the matching specialist skill:
+
+- **Plain child sessions** - stay here and use `subagent-session-delegation` when child-session mechanics matter.
+- **Explicit org lineage** - switch to `team-org`.
+- **Scheduled task groups** - switch to `team-sprint`.
+
+`task-force-builder` decides and scaffolds. The specialist skill handles the execution-specific operating rules.
 
 ### 3. Create the workspace contract
 
-Create the workspace and the shared files first. At minimum create:
+Create the shared files in the current workspace first. At minimum create:
 
 ```text
-{workspace-root}/
+./
+├── agents.md
 ├── MISSION.md
 ├── ROLES.md
+├── .libragent/
+│   └── teamwork.json
 ├── skills/
 │   └── {role-skill}/SKILL.md
 ├── docs/
@@ -58,6 +97,15 @@ Create the workspace and the shared files first. At minimum create:
     ├── RISKS.md
     └── DISCUSSION.md
 ```
+
+The scaffold must preserve:
+
+- the original user request
+- the teamwork objective
+- the chosen collaboration framework
+- the canonical file ownership and operating rules
+
+The coordinator continues in that same workspace after scaffolding.
 
 Use the file contracts in [coordination-contract.md](references/coordination-contract.md).
 
@@ -78,17 +126,33 @@ When you do create role skills, use [expert-skill-template.md](references/expert
 
 Every specialist must follow this loop:
 
-1. Read `MISSION.md` and `ROLES.md`.
+1. Read `agents.md`, `MISSION.md`, and `ROLES.md`.
 2. Check `coordination/KANBAN.md` before starting.
 3. Claim or update a task before doing meaningful work.
 4. Write findings or status changes to the proper coordination file.
 5. Leave a concrete handoff in `coordination/HANDOFF.md`.
 
-Do not let agents freestyle their own coordination rules. That is how teams turn into soup.
+Shared files are the coordination contract. Keep the loop explicit.
 
 ### 6. Handle persistence honestly
 
-If recurring execution is needed, prepare the workspace and role skills so they can be driven by scheduled sessions later. If scheduled-task creation is not available to the active agent, still build the workspace to be scheduler-ready and tell the user which loops should be scheduled manually.
+If recurring execution is needed, switch to `team-sprint` and define the loops explicitly with the `scheduled_task` builtin tools. Use `createScheduledTask(...)` to create the first grouped loop with a clear `groupName`, then use `groupId` plus the other scheduled-task tools to extend, inspect, pause, or retune the group.
+
+Refresh behavior:
+
+- `agents.md` changes do **not** instantly rewrite the current session prompt
+- new workspace skills apply in a later execution step, not retroactively in the same turn
+
+After scaffolding or constitution edits, state when the updated rules become effective.
+
+## Tool Hygiene Rules
+
+When you execute the scaffold:
+
+1. Bootstrap in the current workspace.
+2. Use portable commands and the available tools.
+3. Match the editing primitive to the change size.
+4. Use `workspaceOverride` only when a child must work in a different workspace.
 
 ## Design Rules
 
@@ -119,31 +183,46 @@ Force the team to record:
 
 If the task force cannot surface blocked state, it is not robust.
 
-## Bootstrap Options
+## Bootstrap
 
-For deterministic scaffolding, run:
+Prefer deterministic scaffolding:
 
 ```bash
 python scripts/init_task_force.py \
-  --output /absolute/path/to/workspace \
+  --output . \
+  --team-name "Research Strike Team" \
   --objective "Build a reusable research and implementation team" \
+  --request "Research the space, structure findings, and hand implementation-ready guidance to coding specialists." \
   --framework hub-and-spoke \
   --role "Coordinator:Own planning, prioritization, and integration" \
   --role "Researcher:Collect evidence and update docs/RESEARCH.md" \
   --role "Implementer:Turn approved plans into code and tests"
 ```
 
-After scaffolding, edit the generated files so they match the real task instead of shipping boilerplate nonsense.
+Use `.` for `--output` when you are scaffolding the current teamwork run.
+
+Then review and tighten:
+
+- `agents.md`
+- `MISSION.md`
+- `ROLES.md`
+- `.libragent/teamwork.json`
+
+The scaffold is the constitution. Tighten it before handing work to specialists.
 
 ## Quick Checks Before You Finish
 
 Before announcing success, verify:
 
 1. the chosen framework matches the task shape
-2. each role has a non-overlapping responsibility
-3. the coordination files tell agents exactly where to read and write
-4. every important artifact has an owner
-5. the handoff path between roles is obvious
+2. the original user request is preserved in the scaffold
+3. each role has a non-overlapping responsibility
+4. `agents.md` tells agents exactly where to read and write
+5. every important artifact has an owner
+6. the handoff path between roles is obvious
+7. the execution substrate and follow-up specialist skill are explicit: plain child sessions, `team-org`, or `team-sprint`
+8. refresh semantics are written down so agents know that updated rules apply only in a later execution step
+9. the governing session is still working in the workspace where it created the constitution
 
 ## References
 

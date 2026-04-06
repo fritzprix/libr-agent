@@ -1,6 +1,6 @@
 
 import { expect, test, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { ScheduledTasksPage } from '@/features/scheduled-tasks/ScheduledTasksPage';
 
@@ -14,8 +14,11 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         cronExpression: '* * * * *',
         scheduleTimezone: 'local',
         assistantId: 'ast-1',
+        groupId: 'group-1',
+        groupName: 'Research Team',
         message: 'Hello World',
         yoloMode: false,
+        createdBySessionId: null,
         sessionId: null,
         workspaceOverride: '/tmp/scheduled-task-workspace',
         enabled: true,
@@ -23,6 +26,25 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         createdAt: Date.now(),
         updatedAt: Date.now(),
         nextRunAt: Date.now() + 60000,
+      },
+      {
+        id: 'task-2',
+        name: 'Solo Task',
+        cronExpression: '0 9 * * *',
+        scheduleTimezone: 'local',
+        assistantId: 'ast-1',
+        groupId: null,
+        groupName: null,
+        message: 'Review metrics',
+        yoloMode: false,
+        createdBySessionId: null,
+        sessionId: null,
+        workspaceOverride: null,
+        enabled: false,
+        lastRunAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        nextRunAt: Date.now() + 120000,
       },
     ],
     loading: false,
@@ -100,7 +122,7 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
-test('ScheduledTasksPage renders tooltips for edit and delete buttons', async () => {
+test('ScheduledTasksPage renders grouped and standalone scheduled task sections', async () => {
   render(<ScheduledTasksPage />);
 
   // Wait for tasks to load
@@ -124,7 +146,32 @@ test('ScheduledTasksPage renders tooltips for edit and delete buttons', async ()
   expect(tooltips.length).toBeGreaterThanOrEqual(2);
 
   // Verify Tooltip content matches short labels
-  expect(screen.getByText('scheduledTasks.editTask')).toBeInTheDocument();
-  expect(screen.getByText('scheduledTasks.deleteTask')).toBeInTheDocument();
+  expect(screen.getAllByText('scheduledTasks.editTask')).toHaveLength(2);
+  expect(screen.getAllByText('scheduledTasks.deleteTask')).toHaveLength(2);
   expect(screen.getByText('/tmp/scheduled-task-workspace')).toBeInTheDocument();
+  expect(
+    screen.getByText('scheduledTasks.groupBadge Research Team'),
+  ).toBeInTheDocument();
+  expect(screen.getByText('scheduledTasks.groupsTitle')).toBeInTheDocument();
+  expect(screen.getByText('scheduledTasks.personalTitle')).toBeInTheDocument();
+  expect(screen.getByText('Solo Task')).toBeInTheDocument();
+
+  const groupedSection = screen
+    .getByText('scheduledTasks.groupsTitle')
+    .closest('section');
+  const standaloneSection = screen
+    .getByText('scheduledTasks.personalTitle')
+    .closest('section');
+
+  expect(groupedSection).not.toBeNull();
+  expect(standaloneSection).not.toBeNull();
+
+  expect(within(groupedSection as HTMLElement).getByText('Test Task 1')).toBeInTheDocument();
+  expect(
+    within(groupedSection as HTMLElement).queryByText('Solo Task'),
+  ).not.toBeInTheDocument();
+  expect(within(standaloneSection as HTMLElement).getByText('Solo Task')).toBeInTheDocument();
+  expect(
+    within(standaloneSection as HTMLElement).queryByText('Test Task 1'),
+  ).not.toBeInTheDocument();
 });

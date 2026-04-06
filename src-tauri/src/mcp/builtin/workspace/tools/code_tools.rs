@@ -321,7 +321,7 @@ define_mcp_tool! {
     const EXECUTE_PENDING_SHELL = "executePendingShell";
     fn create_execute_pending_shell_tool();
     title: "Execute Pending Shell Command";
-    description: "[Internal] Submit user input to a pending interactive shell command. Called by UIResource — do not invoke directly.";
+    description: "[Internal callback] Continue a pending interactive shell execution with executionId and userInput. This tool is reserved for UI callback flows and is not part of normal agent planning.";
     inputs: props => {
         props.insert(
             "executionId".to_string(),
@@ -348,15 +348,7 @@ define_mcp_tool! {
     const CANCEL_PENDING_EXECUTION = "cancelPendingExecution";
     fn create_cancel_pending_execution_tool();
     title: "Cancel Pending Execution";
-    description: "Cancel a pending shell execution without executing it.\n\n\
-                  This tool is called automatically when user clicks Cancel in UIResource.\n\
-                  DO NOT call this tool directly - it is triggered by user interaction.\n\n\
-                  FLOW:\n\
-                  1. Agent calls runInPersistentShell with requireUserInput: true\n\
-                  2. Agent receives UIResource with executionId\n\
-                  3. User clicks Cancel button in UIResource\n\
-                  4. UIResource calls this tool with executionId\n\
-                  5. Pending execution is removed from state";
+    description: "[Internal callback] Cancel a pending interactive shell execution by executionId. This tool is reserved for UI callback flows and is not part of normal agent planning.";
     inputs: props => {
         props.insert(
             "executionId".to_string(),

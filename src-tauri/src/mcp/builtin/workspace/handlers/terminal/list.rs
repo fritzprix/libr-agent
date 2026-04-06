@@ -1,4 +1,4 @@
-use crate::mcp::builtin::error_guidance::{SuccessHint, ToolGroup};
+use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::workspace::terminal_manager;
 use crate::mcp::builtin::workspace::WorkspaceServer;
 use crate::mcp::types::MCPResult;
@@ -114,8 +114,8 @@ impl WorkspaceServer {
                 .join("\n\n")
         };
 
-        // Build context-aware guidance based on process statuses
-        let guidance_lines = if total > 0 {
+        // Build context-aware next actions based on process statuses
+        let next_actions = if total > 0 {
             let first_process = processes.first();
             let first_id = first_process
                 .and_then(|p| p.get("process_id"))
@@ -126,62 +126,56 @@ impl WorkspaceServer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let mut lines = vec![format!(
-                "- Use waitForProcess('{}', 0) to check status",
+            let mut actions = vec![format!(
+                "Use waitForProcess('{}', 0) to check status",
                 first_id
             )];
 
             // Add appropriate readProcessOutput guidance based on status
             match first_status {
                 "failed" => {
-                    lines.push(format!(
-                        "- Use readProcessOutput('{}', 'stderr') to view error details",
+                    actions.push(format!(
+                        "Use readProcessOutput('{}', 'stderr') to view error details",
                         first_id
                     ));
                 }
                 "finished" => {
-                    lines.push(format!(
-                        "- Use readProcessOutput('{}', 'stdout') to view output",
+                    actions.push(format!(
+                        "Use readProcessOutput('{}', 'stdout') to view output",
                         first_id
                     ));
                 }
                 "running" => {
-                    lines.push(format!(
-                        "- Use readProcessOutput('{}', 'stdout') to view output",
+                    actions.push(format!(
+                        "Use readProcessOutput('{}', 'stdout') to view output",
                         first_id
                     ));
-                    lines.push(format!(
-                        "- Use stopProcess('{}') to terminate running process",
+                    actions.push(format!(
+                        "Use stopProcess('{}') to terminate running process",
                         first_id
                     ));
                 }
                 _ => {
-                    lines.push(format!(
-                        "- Use readProcessOutput('{}', 'stdout') to view output",
+                    actions.push(format!(
+                        "Use readProcessOutput('{}', 'stdout') to view output",
                         first_id
                     ));
                 }
             }
 
-            lines.join("\n")
+            actions
         } else {
-            "- No processes to manage".to_string()
+            Vec::new()
         };
 
         let summary = format!(
             "Found {} processes ({} running, {} finished)
 
-{}
-
-💡 Next Steps:
 {}",
-            total, running, finished, process_list, guidance_lines
+            total, running, finished, process_list
         );
 
-        let hint = SuccessHint::new(
-            summary,
-            SuccessHint::for_tool("listProcesses", ToolGroup::Workspace),
-        );
+        let hint = SuccessHint::new(summary, next_actions);
 
         Ok(hint.to_mcp_result_with_data(Some(response)))
     }

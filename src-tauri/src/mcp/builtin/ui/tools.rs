@@ -1,46 +1,6 @@
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
-/// Create a simple data visualization
-pub fn visualize_data_tool() -> MCPTool {
-    let data_item_schema = object_prop(
-        vec![
-            (
-                "label".to_string(),
-                string_prop_required("Data point label"),
-            ),
-            (
-                "value".to_string(),
-                number_prop(None, None, Some("Data point value")),
-            ),
-        ],
-        vec!["label".to_string(), "value".to_string()],
-        None,
-    );
-
-    MCPTool {
-        name: "visualizeData".to_string(),
-        title: Some("Visualize Data".to_string()),
-        description: "Create a simple data visualization (bar or line chart).".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "type".to_string(),
-                    enum_prop_required(vec!["bar", "line"], "Type of chart to create"),
-                ),
-                (
-                    "data".to_string(),
-                    array_schema(data_item_schema, Some("Data points")),
-                ),
-            ],
-            vec!["type".to_string(), "data".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
 /// Render arbitrary content (HTML or Markdown) with interactive elements
 pub fn present_interactive_tool() -> MCPTool {
     let interaction_schema = object_prop(
@@ -71,17 +31,11 @@ pub fn present_interactive_tool() -> MCPTool {
     MCPTool {
         name: "presentInteractive".to_string(),
         title: Some("Present Interactive Content".to_string()),
-        description: "Render HTML or Markdown content with integrated interactive elements (text input, select, or multiselect).
+        description: "Render HTML or Markdown content with optional interactive elements.
 
 Use this as the default UI presentation tool.
 - For display-only content, omit `interaction`
-- For content plus immediate user response, include `interaction`
-
-Parameters:
-- `content`: The HTML or Markdown string to render (required)
- - `format`: 'html' | 'markdown' | 'auto' (default: 'auto' — treated as Markdown unless explicitly set to 'html')
-- `title`: Optional title shown above the content
-- `interaction`: Configuration for the interactive section (prompt, type, options)"
+- For user response after content display, include `interaction`"
             .to_string(),
         input_schema: object_prop(
             vec![

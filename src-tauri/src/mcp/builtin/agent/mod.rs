@@ -3,6 +3,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
+use crate::repositories::{build_explicit_org_layer_context, SqliteSessionRepository};
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
@@ -59,6 +60,13 @@ impl AgentServer {
             icon: None,
         }
     }
+
+    async fn build_org_layer_context(&self) -> Result<Option<String>, String> {
+        let repo = SqliteSessionRepository::new(self.get_db().clone());
+        build_explicit_org_layer_context(&repo, &self.session_id)
+            .await
+            .map_err(|error| format!("Failed to load org layer context: {}", error))
+    }
 }
 
 pub const NAME: &str = "agent";
@@ -89,7 +97,10 @@ impl BuiltinMCPServer for AgentServer {
             "create" => handlers::create_agent(self, args).await,
             "update" => handlers::update_agent(self, args, Some(session_id.clone())).await,
             "list" => handlers::list_agents_or_sessions(self, args, &session_id).await,
+            "createOrg" => handlers::create_org(self, args, &session_id).await,
+            "getOrg" => handlers::get_org(self, args, &session_id).await,
             "startSession" => handlers::start_session(self, args, &session_id).await,
+            "spawnOrgAgent" => handlers::spawn_org_agent(self, args, &session_id).await,
             "messageToSession" => handlers::message_to_session(self, args, &session_id).await,
             "checkSession" => handlers::check_session(self, args, &session_id).await,
             "stopSession" => handlers::stop_session(self, args, &session_id).await,
@@ -157,15 +168,25 @@ impl BuiltinMCPServer for AgentServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let context_prompt = concat!(
+        let mut context_prompt = concat!(
             "# System Capability Reference\n\n",
             "- Use `tool__list` to view capabilities callable in your current session.\n",
             "- Use `agent__list` to inspect specialist agent configurations and existing delegations.\n",
-            "- Use `agent__startSession(agentId=\"ID\", task=\"...\")` when you want to delegate work to a specialist agent.\n",
+            "- Use `agent__createOrg(name=\"...\")` from a root session when you want an explicit org lineage.\n",
+            "- Use `agent__startSession(agentId=\"ID\", task=\"...\")` for normal delegation.\n",
+            "- Use `agent__startSession(..., includeCurrentOrg=true)` when the child should inherit the current explicit org, appear in Org view, and share the org root workspace by default.\n",
+            "- `agent__spawnOrgAgent(...)` remains available as a compatibility alias for `startSession(..., includeCurrentOrg=true)`.\n",
             "- If an agent is paused or errors, use `agent__messageToSession` to resume/retry it.\n",
         )
         .to_string();
 
-        ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Stable)
+        let mut volatility = ContextVolatility::Stable;
+        if let Ok(Some(org_layer_context)) = self.build_org_layer_context().await {
+            context_prompt.push('\n');
+            context_prompt.push_str(&org_layer_context);
+            volatility = ContextVolatility::Medium;
+        }
+
+        ServiceContext::new(context_prompt).with_volatility(volatility)
     }
 }

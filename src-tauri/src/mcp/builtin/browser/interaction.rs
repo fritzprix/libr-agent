@@ -345,7 +345,7 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
                 &e,
                 vec![
                     "The page may have returned unexpected data".to_string(),
-                    "Try refreshing the page with `goto`".to_string(),
+                    "If the page is stale or broken, use `goto` with a URL to replace the current page in this session.".to_string(),
                     "Use `content` to verify page structure".to_string(),
                 ],
                 ToolGroup::Browser,

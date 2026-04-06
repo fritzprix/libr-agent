@@ -253,6 +253,28 @@ impl ErrorGuidance {
                 "Use scratchpad__update to modify existing notes".to_string(),
             ],
 
+            // Media tool errors
+            (ErrorCategory::InvalidInput, ToolGroup::Media) => vec![
+                "Provide a valid URL (https://...) or a workspace-relative path".to_string(),
+                "Supported image formats: JPEG, PNG, GIF, WebP, BMP, SVG".to_string(),
+                "Supported audio formats: MP3, WAV, OGG, AAC, FLAC, WEBM".to_string(),
+            ],
+            (ErrorCategory::OperationFailed, ToolGroup::Media) => vec![
+                "Verify the URL is publicly accessible and returns a 200 response".to_string(),
+                "Check that the file size is under 20 MB".to_string(),
+                "For local files, use a workspace-relative path instead".to_string(),
+            ],
+            (ErrorCategory::PermissionDenied, ToolGroup::Media) => vec![
+                "The file path must be inside the session workspace".to_string(),
+                "Use a relative path such as 'screenshots/image.png'".to_string(),
+                "Use listDirectory() to confirm the file location within the workspace".to_string(),
+            ],
+            (ErrorCategory::ResourceNotFound, ToolGroup::Media) => vec![
+                "Use listDirectory() to verify the file exists in the workspace".to_string(),
+                "Check for typos in the path".to_string(),
+                "Use a workspace-relative path (e.g. 'images/photo.png')".to_string(),
+            ],
+
             // Generic fallbacks
             (ErrorCategory::MissingRequiredParam, _) => vec![
                 "Check the tool documentation for required parameters".to_string(),
@@ -395,17 +417,22 @@ impl SuccessHint {
             ],
             ("readFile", ToolGroup::Workspace) => vec![
                 "Use writeFile to modify the content".to_string(),
-                "Use editFile to make targeted edits".to_string(),
+                "Use replaceLines, insertAfterLine, or deleteLines to make targeted edits"
+                    .to_string(),
             ],
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
+                "Use search with filePattern to narrow down names".to_string(),
             ],
-            ("editFile", ToolGroup::Workspace) => vec![
+            (
+                "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
+                ToolGroup::Workspace,
+            ) => vec![
                 "Use readFile to verify your edits".to_string(),
                 "Use runShell to execute the updated code".to_string(),
             ],
-            ("search" | "searchFiles", ToolGroup::Workspace) => vec![
+            ("search", ToolGroup::Workspace) => vec![
                 "Use readFile on interesting matches".to_string(),
                 "Use listDirectory to explore the surrounding module".to_string(),
             ],

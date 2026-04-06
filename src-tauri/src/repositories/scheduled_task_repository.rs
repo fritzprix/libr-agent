@@ -16,8 +16,11 @@ pub struct CreateScheduledTaskParams {
     pub cron_expression: String,
     pub schedule_timezone: String,
     pub assistant_id: String,
+    pub group_id: Option<String>,
+    pub group_name: Option<String>,
     pub message: String,
     pub yolo_mode: bool,
+    pub created_by_session_id: Option<String>,
     pub workspace_override: Option<String>,
     pub next_run_at: Option<i64>,
 }
@@ -28,6 +31,8 @@ pub struct UpdateScheduledTaskParams {
     pub cron_expression: Option<String>,
     pub schedule_timezone: Option<String>,
     pub assistant_id: Option<String>,
+    pub group_id: Option<Option<String>>,
+    pub group_name: Option<Option<String>>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
     pub workspace_override: Option<Option<String>>,
@@ -110,8 +115,11 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             cron_expression: Set(params.cron_expression),
             schedule_timezone: Set(params.schedule_timezone),
             assistant_id: Set(params.assistant_id),
+            group_id: Set(params.group_id),
+            group_name: Set(params.group_name),
             message: Set(params.message),
             yolo_mode: Set(params.yolo_mode),
+            created_by_session_id: Set(params.created_by_session_id),
             session_id: Set(None),
             workspace_override: Set(params.workspace_override),
             enabled: Set(true),
@@ -171,6 +179,12 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         }
         if let Some(v) = params.assistant_id {
             active.assistant_id = Set(v);
+        }
+        if let Some(v) = params.group_id {
+            active.group_id = Set(v);
+        }
+        if let Some(v) = params.group_name {
+            active.group_name = Set(v);
         }
         if let Some(v) = params.message {
             active.message = Set(v);
