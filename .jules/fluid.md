@@ -31,3 +31,5 @@
 ## 2026-03-24 - [MCPServerDialog, ServerToolsModal] **Bottleneck:** [Premature dialog closures allowed when user clicks outside modal while saving or loading is in progress] **Flow Restored:** [Added isSaving and isLoading state checks inside onOpenChange handlers to prevent closure until actions complete]
 
 ## 2026-04-01 - [AssistantEditor/MCPServersTab] **Bottleneck:** [Render Jank: filtering active servers directly in the render cycle blocking typing] **Flow Restored:** [Applied `useDeferredValue` and transparency transition to keep the typing experience buttery smooth]
+
+## 2026-04-05 - [SettingsPage] **Bottleneck:** [UI freeze/Stuck loading state] Factory reset button clicked but the loading state `isResetting` never toggled to `false` when exceptions were thrown because of missing `finally` block. **Flow Restored:** Added missing `finally` block to `handleFactoryReset` to reset `isResetting` to `false` even if an error occurs.
