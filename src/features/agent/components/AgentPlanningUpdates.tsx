@@ -61,10 +61,9 @@ function PlanningToastSummary({
       return todos.slice(-5);
     }
 
-    // ⚡ Bolt: Performance Optimization
-    // Replaced O(N) array.indexOf() inside the O(N log N) sort callback
-    // with an O(1) Map lookup. This reduces total sorting complexity from
-    // O(N^2 log N) to O(N log N), preventing layout thrashing during streaming updates.
+    // Use a precomputed O(1) index lookup in the sort callback instead of
+    // repeated O(N) position scans. This keeps the sort at O(N log N) and
+    // reduces main-thread JavaScript work during streaming updates.
     const todoIndexMap = new Map(todos.map((t, i) => [t.id, i]));
 
     if (relevant.length >= 5) {
