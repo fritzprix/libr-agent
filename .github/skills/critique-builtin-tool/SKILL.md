@@ -281,6 +281,165 @@ PREREQUISITE: Resource must exist (created via createResource)"
 
 ---
 
+### ✂️ **Auditing Rule 4b: Description / Parameter Separation**
+
+**Principle:** Tool description and parameter description have distinct responsibilities. Repeating information in both wastes the agent's token budget and increases hallucination risk (conflicting or stale duplicates).
+
+| Layer | Responsibility |
+|---|---|
+| **Tool description** | *What* the tool does — purpose, behavior, constraints, output |
+| **Parameter description** | *What to put in this field* — format, accepted values, examples |
+
+**What to Look For:**
+
+```rust
+// ❌ VIOLATION: Source examples duplicated in both layers
+MCPTool {
+    description: r#"Fetch an image from a URL or workspace-relative path.
+
+**Supported sources:**
+- Web URLs: `https://example.com/photo.jpg`        // ← repeated below
+- Workspace-relative paths: `screenshots/img.png`  // ← repeated below
+"#,
+    // param repeats exactly the same examples
+    input_schema: string_prop_required(
+        "URL or workspace-relative path (e.g. https://example.com/photo.jpg or screenshots/img.png).",
+    ),
+}
+```
+
+```rust
+// ✅ COMPLIANT: Each layer owns its content
+MCPTool {
+    description: r#"Fetch an image and include it in the conversation so you can visually analyse it.
+
+**Supported formats:** JPEG, PNG, GIF, WebP, BMP, SVG   // constraint belongs here
+
+**Notes:**
+- Maximum file size: 20 MB.                             // constraint belongs here
+- Local paths must be inside the session workspace."#,
+
+    // param owns: format spec + examples
+    input_schema: string_prop_required(
+        "URL or workspace-relative path of the image to fetch \
+         (e.g. https://example.com/photo.jpg or screenshots/capture.png).",
+    ),
+}
+```
+
+**Audit Checklist:**
+
+- [ ] Tool description does NOT list param examples (URL examples, path examples)
+- [ ] Tool description does NOT describe input format (that belongs in the param)
+- [ ] Tool description does NOT re-state param description semantics (mode meanings, enum semantics)
+- [ ] Parameter description does NOT re-state the tool's purpose or constraints
+- [ ] Parameter description does NOT repeat schema-encoded constraints (max, min, default, enum values)
+- [ ] Supported format lists belong in tool description (apply to the whole tool, not one param)
+- [ ] File size / access restrictions belong in tool description (behavioral constraints)
+- [ ] Concrete input examples (e.g. `https://...`) belong in parameter description only
+- [ ] **Numeric/length constraints encoded in JSON Schema, NOT in description text**
+- [ ] **Default values NOT repeated in param descriptions when already in schema `default` field**
+- [ ] **Enum semantics (what each value does) are acceptable; bare value lists are not**
+
+**Rule 4b Extension — Schema Contract First**
+
+Constraints that can be expressed in JSON Schema MUST be encoded there, not in description text. Description text is a fallback for constraints the schema cannot express.
+
+This rule applies to **both** tool descriptions AND parameter descriptions — neither layer should repeat what the schema already encodes.
+
+| Constraint type | Encode in schema | Also in description/param desc? |
+|---|---|---|
+| String length limit | `string_prop(None, Some(500), ...)` | ❌ No — schema is authoritative |
+| Integer range | `integer_prop(Some(1), Some(100), ...)` | ❌ No |
+| Default value | second arg in `integer_prop_with_default(..., 30, ...)` | ❌ No — `(default 30)` is redundant |
+| Enum allowed values (bare list) | `enum_prop(vec!["a","b","c"], ...)` | ❌ No — listing values in text is triple duplication |
+| Enum semantics (what each value does) | Cannot be expressed in schema | ✅ Yes — explains behaviour, not just names |
+| Required vs optional | `required: vec!["field"]` in `object_prop` | ❌ No |
+| Pattern / format | `JSONSchemaType::String { pattern: Some(...) }` | Only if pattern is opaque |
+| Cross-field rules | Cannot be expressed in JSON Schema | ✅ Yes — must go in description |
+
+```rust
+// ❌ VIOLATION: Constraint in description, not schema
+string_prop_required("The task description. Maximum 500 characters.")
+//                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+//                                          This belongs in maxLength, not here
+
+// ✅ CORRECT: Constraint encoded in schema
+string_prop(None, Some(500), Some("The task description."))
+//               ^^^^^^^^
+//               maxLength: 500 — LLMs reading the schema see this automatically
+
+// ❌ VIOLATION: Enum values re-listed in description (bare list adds nothing)
+enum_prop(vec!["done", "pending", "cancel"], "done",
+    Some("Action: 'done', 'pending', or 'cancel'."))
+
+// ❌ VIOLATION: Default value re-stated in param description
+integer_prop_with_default(Some(0), Some(3600), 30,
+    Some("Timeout in seconds (default 30)."))
+//                                 ^^^^^^^^^^ already in schema default
+
+// ✅ CORRECT: Enum semantics (not bare list) — explains what each value does
+enum_prop(vec!["tail", "head"], "tail",
+    Some("'tail' reads last N lines, 'head' reads first N lines"))
+//       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//       Values appear in schema; this adds the semantic meaning → acceptable
+
+// ✅ CORRECT: No redundant default or values
+integer_prop_with_default(Some(0), Some(3600), 30,
+    Some("Timeout in seconds. Use 0 to return current status immediately."))
+//        ^^^^^^^^ constraint-free prose; the behaviour of 0 is not in schema
+```
+
+**Tool description ↔ Param description cross-direction rule:**
+
+The duplication problem runs both ways:
+- Tool description must NOT copy content from param descriptions
+- Param descriptions must NOT copy content from tool description
+
+```
+// ❌ VIOLATION: Tool description re-states all param semantics
+writeFile description:
+  - mode='create': fails if file already exists
+  - mode='overwrite': replaces entire content, returns a diff   ← copied from mode param
+  - mode='append': adds content to the end                      ← copied from mode param
+mode param: "Write mode. 'create' fails if exists, 'overwrite' replaces, 'append' adds."
+
+// ✅ CORRECT: Tool description adds ONLY what param descriptions don't cover
+writeFile description: "Create, overwrite, or append content to a file. mode='overwrite' returns a diff."
+//                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//                                                                        Unique fact not in the mode param desc
+mode param: "Write mode. If omitted, defaults to 'create'. 'create' fails if the file already exists,
+             'overwrite' replaces the entire file, and 'append' adds content to the end."
+```
+
+**Test:** "Could this constraint be removed from the description without losing information, because the schema already encodes it?" → If yes, remove it from the description.
+
+**Common Duplication Patterns:**
+
+```
+❌ description: "Fetch image from a URL or path. Supported sources: URLs, paths."
+   param:       "URL or path of the image to fetch."
+   → "URL or path" stated twice
+
+❌ description: "...  examples: https://x.com/a.jpg or screenshots/img.png"
+   param:       "(e.g. https://x.com/a.jpg or screenshots/img.png)"
+   → Same examples copy-pasted
+
+❌ description: lists all mode='X': behaviour semantics for every enum value
+   param:       already has the full semantics for the mode parameter
+   → tool description is copying param description content
+
+❌ param:       "Number of lines to read (max 100)"
+   schema:      integer_prop_with_default(Some(1), Some(100), 20, ...)
+   → (max 100) is redundant; schema encodes it
+
+✅ description: "Fetch an image and include it in the conversation."
+   param:       "URL or workspace-relative path (e.g. https://x.com/a.jpg or screenshots/img.png)."
+   → Clean split: purpose in description, format+examples in param
+```
+
+---
+
 ### 💡 **Auditing Rule 5: Success Hint Pattern**
 
 **What to Look For:**
@@ -333,13 +492,14 @@ return Ok(operation_failed_error(
 ```markdown
 ## Compliance Audit: [ServerName] Builtin Tools
 
-| Rule                      | Status   | Grade | Evidence  |
-| ------------------------- | -------- | ----- | --------- |
-| 1. Immutable ID Rule      | ✅/⚠️/🔴 | A-F   | [Details] |
-| 2. Hallucination Firewall | ✅/⚠️/🔴 | A-F   | [Details] |
-| 3. Dual-Channel Response  | ✅/⚠️/🔴 | A-F   | [Details] |
-| 4. AI-Native Descriptions | ✅/⚠️/🔴 | A-F   | [Details] |
-| 5. Success Hint Pattern   | ✅/⚠️/🔴 | A-F   | [Details] |
+| Rule                           | Status   | Grade | Evidence  |
+| ------------------------------ | -------- | ----- | --------- |
+| 1. Immutable ID Rule           | ✅/⚠️/🔴 | A-F   | [Details] |
+| 2. Hallucination Firewall      | ✅/⚠️/🔴 | A-F   | [Details] |
+| 3. Dual-Channel Response       | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4. AI-Native Descriptions      | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4b. Description/Param Split    | ✅/⚠️/🔴 | A-F   | [Details] |
+| 5. Success Hint Pattern        | ✅/⚠️/🔴 | A-F   | [Details] |
 
 **Overall Grade:** [A-F] - [Summary]
 ```

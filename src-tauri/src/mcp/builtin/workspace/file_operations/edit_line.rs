@@ -72,6 +72,24 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        // Batch mode: edits array provided directly.
+        if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+            let tagged: Vec<Value> = edits
+                .iter()
+                .map(|e| {
+                    let mut item = e.clone();
+                    item["action"] = json!("REPLACE");
+                    item
+                })
+                .collect();
+            let delegated = json!({
+                "path": args.get("path").cloned().unwrap_or(Value::Null),
+                "edits": tagged,
+            });
+            return self.handle_edit_file(delegated, session_id).await;
+        }
+
+        // Single-edit (flat params) — wrap and delegate.
         let delegated = json!({
             "path": args.get("path").cloned().unwrap_or(Value::Null),
             "edits": [{
@@ -92,6 +110,34 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        // Batch mode: edits array provided directly.
+        if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+            let tagged: Vec<Value> = edits
+                .iter()
+                .map(|e| {
+                    let mut item = json!({
+                        "action": "INSERT_AFTER",
+                        "line": e.get("afterLine").cloned().unwrap_or(Value::Null),
+                        "new_value": e.get("new_value").cloned().unwrap_or(Value::Null),
+                        "anchor": e.get("anchor").cloned().unwrap_or(Value::Null),
+                    });
+                    // Preserve any extra fields the caller may have included.
+                    if let (Some(obj), Some(src)) = (item.as_object_mut(), e.as_object()) {
+                        for (k, v) in src {
+                            obj.entry(k).or_insert_with(|| v.clone());
+                        }
+                    }
+                    item
+                })
+                .collect();
+            let delegated = json!({
+                "path": args.get("path").cloned().unwrap_or(Value::Null),
+                "edits": tagged,
+            });
+            return self.handle_edit_file(delegated, session_id).await;
+        }
+
+        // Single-edit (flat params) — wrap and delegate.
         let delegated = json!({
             "path": args.get("path").cloned().unwrap_or(Value::Null),
             "edits": [{
@@ -110,6 +156,24 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        // Batch mode: edits array provided directly.
+        if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+            let tagged: Vec<Value> = edits
+                .iter()
+                .map(|e| {
+                    let mut item = e.clone();
+                    item["action"] = json!("DELETE");
+                    item
+                })
+                .collect();
+            let delegated = json!({
+                "path": args.get("path").cloned().unwrap_or(Value::Null),
+                "edits": tagged,
+            });
+            return self.handle_edit_file(delegated, session_id).await;
+        }
+
+        // Single-edit (flat params) — wrap and delegate.
         let delegated = json!({
             "path": args.get("path").cloned().unwrap_or(Value::Null),
             "edits": [{

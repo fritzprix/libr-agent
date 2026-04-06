@@ -17,7 +17,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
         enum_prop(
             vec!["tail", "head"],
             "tail",
-            Some("Read mode: 'tail' for last N lines, 'head' for first N lines"),
+            Some("Read mode: 'tail' reads last N lines, 'head' reads first N lines"),
         ),
     );
 
@@ -27,7 +27,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
             Some(1),
             Some(100),
             20,
-            Some("Number of lines to read (max 100)"),
+            Some("Number of lines to read"),
         ),
     );
 
@@ -47,8 +47,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
     MCPTool {
         name: "readProcessOutput".to_string(),
         title: Some("Read Process Output".to_string()),
-        description: "Read stdout or stderr from a background process (max 100 lines).\n\
-                      mode=tail (default): last N lines. mode=head: first N lines. start_line/end_line: specific range."
+        description: "Read captured stdout or stderr from a background process."
             .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
@@ -70,15 +69,14 @@ pub fn create_wait_for_process_tool() -> MCPTool {
             Some(0),
             Some(3600),
             30,
-            Some("Timeout in seconds (default 30). Use 0 to return current status immediately without blocking."),
+            Some("Timeout in seconds. Use 0 to return current status immediately without blocking."),
         ),
     );
 
     MCPTool {
         name: "waitForProcess".to_string(),
         title: Some("Wait For Process".to_string()),
-        description: "Block until a background process finishes (default timeout=30s). Returns status and metadata.\n\
-                      timeout=0: return current status immediately without blocking."
+        description: "Block until a background process finishes or times out. Returns process status and metadata."
             .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
@@ -95,14 +93,14 @@ pub fn create_list_processes_tool() -> MCPTool {
         enum_prop(
             vec!["all", "running", "finished"],
             "all",
-            Some("Filter by status: 'all' (default), 'running', or 'finished'"),
+            Some("Filter by status"),
         ),
     );
 
     MCPTool {
         name: "listProcesses".to_string(),
         title: Some("List Processes".to_string()),
-        description: "List background processes in this session. Filter by 'all' (default), 'running', or 'finished'."
+        description: "List background processes in this session."
             .to_string(),
         input_schema: object_schema(props, vec![]),
         output_schema: None,

@@ -56,4 +56,5 @@ pub enum ToolGroup {
     ScheduledTask,
     Tool, // Unified Tool Domain (MCP Manager)
     Bootstrap,
+    Media,
 }

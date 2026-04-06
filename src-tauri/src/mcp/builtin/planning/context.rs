@@ -15,7 +15,11 @@ pub struct TodoDTO {
     pub subtasks: Vec<TodoDTO>,
 }
 
-pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> ServiceContext {
+pub async fn get_service_context(
+    _db: &DatabaseConnection,
+    session_id: &str,
+    include_checked: bool,
+) -> ServiceContext {
     let repo = get_planning_repository();
 
     // 1. Fetch Active Goal
@@ -26,11 +30,14 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
 
     let goal = goal_model.map(|g| g.goal_text);
 
-    // 2. Fetch Todos (All, ordered by CreatedAt)
-    let todos = repo.list_todos(session_id, true).await.unwrap_or_else(|e| {
-        log::error!("Failed to fetch todos: {}", e);
-        Vec::new()
-    });
+    // 2. Fetch Todos (include_checked controls whether completed todos are returned)
+    let todos = repo
+        .list_todos(session_id, include_checked)
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Failed to fetch todos: {}", e);
+            Vec::new()
+        });
 
     // Build flat Todo list for structured state
     // We keep the subtasks field empty for API compatibility with frontend

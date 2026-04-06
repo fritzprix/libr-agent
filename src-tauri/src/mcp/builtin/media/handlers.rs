@@ -218,17 +218,55 @@ pub async fn handle_see_content(
 ) -> Result<MCPResult, String> {
     let url_str = match args.get("url").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-        Some(_) => return Ok(missing_param_error("url", ToolGroup::Workspace)),
-        None => return Ok(missing_param_error("url", ToolGroup::Workspace)),
+        _ => return Ok(missing_param_error("url", ToolGroup::Media)),
     };
 
-    let (bytes, content_type_header) = match parse_source(&url_str)? {
-        ContentSource::Http(url) => fetch_http_bytes(&url).await?,
-        ContentSource::LocalFile(raw_path) => {
-            let resolved = resolve_local_path(&raw_path, &workspace_dir);
-            ensure_within_workspace(&resolved, &workspace_dir)?;
-            let data = read_local_bytes(&resolved).await?;
-            (data, None)
+    let (bytes, content_type_header) = {
+        let source = match parse_source(&url_str) {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Invalid source '{url_str}': {e}"),
+                    ToolGroup::Media,
+                )
+                .to_mcp_result())
+            }
+        };
+        match source {
+            ContentSource::Http(url) => match fetch_http_bytes(&url).await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        format!("Failed to fetch from '{url_str}': {e}"),
+                        ToolGroup::Media,
+                    )
+                    .to_mcp_result())
+                }
+            },
+            ContentSource::LocalFile(raw_path) => {
+                let resolved = resolve_local_path(&raw_path, &workspace_dir);
+                if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
+                    return Ok(guided_error(
+                        ErrorCategory::PermissionDenied,
+                        e,
+                        ToolGroup::Media,
+                    )
+                    .to_mcp_result());
+                }
+                match read_local_bytes(&resolved).await {
+                    Ok(data) => (data, None),
+                    Err(e) => {
+                        return Ok(guided_error(
+                            ErrorCategory::ResourceNotFound,
+                            e,
+                            ToolGroup::Media,
+                        )
+                        .to_mcp_result())
+                    }
+                }
+            }
         }
     };
 
@@ -242,7 +280,7 @@ pub async fn handle_see_content(
                      Ensure the URL/path points to a supported image format \
                      (JPEG, PNG, GIF, WebP, BMP, SVG)."
                 ),
-                ToolGroup::Workspace,
+                ToolGroup::Media,
             )
             .to_mcp_result());
         }
@@ -252,7 +290,7 @@ pub async fn handle_see_content(
         return Ok(guided_error(
             ErrorCategory::InvalidInput,
             format!("URL does not point to an image (detected MIME type: {mime_type})."),
-            ToolGroup::Workspace,
+            ToolGroup::Media,
         )
         .to_mcp_result());
     }
@@ -263,7 +301,7 @@ pub async fn handle_see_content(
     Ok(MCPResult {
         content: Some(vec![
             MCPContent::Text {
-                text: format!("Image loaded: {url_str}\nType: {mime_type} | Size: {size_kb} KB"),
+                text: format!("✓ Image loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
                 is_error: None,
             },
             MCPContent::Image {
@@ -286,17 +324,55 @@ pub async fn handle_listen_content(
 ) -> Result<MCPResult, String> {
     let url_str = match args.get("url").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-        Some(_) => return Ok(missing_param_error("url", ToolGroup::Workspace)),
-        None => return Ok(missing_param_error("url", ToolGroup::Workspace)),
+        _ => return Ok(missing_param_error("url", ToolGroup::Media)),
     };
 
-    let (bytes, content_type_header) = match parse_source(&url_str)? {
-        ContentSource::Http(url) => fetch_http_bytes(&url).await?,
-        ContentSource::LocalFile(raw_path) => {
-            let resolved = resolve_local_path(&raw_path, &workspace_dir);
-            ensure_within_workspace(&resolved, &workspace_dir)?;
-            let data = read_local_bytes(&resolved).await?;
-            (data, None)
+    let (bytes, content_type_header) = {
+        let source = match parse_source(&url_str) {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Invalid source '{url_str}': {e}"),
+                    ToolGroup::Media,
+                )
+                .to_mcp_result())
+            }
+        };
+        match source {
+            ContentSource::Http(url) => match fetch_http_bytes(&url).await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        format!("Failed to fetch from '{url_str}': {e}"),
+                        ToolGroup::Media,
+                    )
+                    .to_mcp_result())
+                }
+            },
+            ContentSource::LocalFile(raw_path) => {
+                let resolved = resolve_local_path(&raw_path, &workspace_dir);
+                if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
+                    return Ok(guided_error(
+                        ErrorCategory::PermissionDenied,
+                        e,
+                        ToolGroup::Media,
+                    )
+                    .to_mcp_result());
+                }
+                match read_local_bytes(&resolved).await {
+                    Ok(data) => (data, None),
+                    Err(e) => {
+                        return Ok(guided_error(
+                            ErrorCategory::ResourceNotFound,
+                            e,
+                            ToolGroup::Media,
+                        )
+                        .to_mcp_result())
+                    }
+                }
+            }
         }
     };
 
@@ -310,7 +386,7 @@ pub async fn handle_listen_content(
                      Ensure the URL/path points to a supported audio format \
                      (MP3, WAV, OGG, AAC, FLAC, WEBM)."
                 ),
-                ToolGroup::Workspace,
+                ToolGroup::Media,
             )
             .to_mcp_result());
         }
@@ -320,7 +396,7 @@ pub async fn handle_listen_content(
         return Ok(guided_error(
             ErrorCategory::InvalidInput,
             format!("URL does not point to an audio file (detected MIME type: {mime_type})."),
-            ToolGroup::Workspace,
+            ToolGroup::Media,
         )
         .to_mcp_result());
     }
@@ -331,11 +407,7 @@ pub async fn handle_listen_content(
     Ok(MCPResult {
         content: Some(vec![
             MCPContent::Text {
-                text: format!(
-                    "Audio loaded: {url_str}\nType: {mime_type} | Size: {size_kb} KB\n\n\
-                     Note: Audio content is only understood by models with native audio input \
-                     support (e.g., GPT-4o Audio Preview). Other models will not interpret the audio."
-                ),
+                text: format!("✓ Audio loaded ({size_kb} KB, {mime_type})\n\nSource: {url_str}"),
                 is_error: None,
             },
             MCPContent::Audio {

@@ -41,11 +41,7 @@ pub fn create_read_file_tool() -> MCPTool {
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file.
-
-- For general reading: just provide the 'path'.
-        - For precise editing: set 'showLineAnchors: true' to get `anchor` values for replaceLines, insertAfterLine, or deleteLines.
-- For large files: use 'startLine' and 'endLine' to read specific segments."
+        description: "Read the contents of a file. Use showLineAnchors=true before calling edit tools (replaceLines, insertAfterLine, deleteLines, editFile) to obtain anchor values."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -83,14 +79,7 @@ pub fn create_write_file_tool() -> MCPTool {
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create, overwrite, or append content to a file.
-
-- if 'mode' is omitted, the tool defaults to mode='create'
-- mode='create': fails if file already exists
-- mode='overwrite': replaces entire content, returns a diff
-- mode='append': adds content to the end of the file
-
-Tip: omit 'mode' when you want safe create-only behavior."
+        description: "Create, overwrite, or append content to a file. mode='overwrite' returns a diff of the changes."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
@@ -210,11 +199,10 @@ pub fn create_search_tool() -> MCPTool {
         title: Some("Search Workspace".to_string()),
         description: "Search for files by name, or search inside files for text patterns.
 
-- To find files: search({path: '.', filePattern: '*.rs'})
-- To search text inside a specific file: search({path: 'src/main.rs', query: 'fn main'})
-- To search text inside files matching a pattern: search({path: '.', query: 'TODO', filePattern: '*.ts'})
-
-Use the returned anchors directly in replaceLines, insertAfterLine, or deleteLines.".to_string(),
+- Omit 'query' to find files by name only; use 'filePattern' for glob filtering.
+- Provide 'query' (regex) to search inside file contents; combine with 'filePattern' to restrict which files are searched.
+- Set 'showLineAnchors: true' to include edit anchors for use with replaceLines, insertAfterLine, or deleteLines."
+            .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -275,23 +263,66 @@ pub fn create_replace_lines_tool() -> MCPTool {
         ),
     );
 
+    // Batch mode: `edits` array where each item has the same fields as the
+    // flat single-edit parameters above.
+    let mut replace_item_props = HashMap::new();
+    replace_item_props.insert(
+        "line".to_string(),
+        integer_prop(Some(1), None, Some("Start line number (1-based).")),
+    );
+    replace_item_props.insert(
+        "endLine".to_string(),
+        integer_prop(
+            Some(1),
+            None,
+            Some("End line for a multi-line range (inclusive). Defaults to 'line'."),
+        ),
+    );
+    replace_item_props.insert(
+        "new_value".to_string(),
+        string_prop(None, None, Some("Replacement content. May include \\n.")),
+    );
+    replace_item_props.insert(
+        "anchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Opaque anchor from readFile(showLineAnchors=true) for the start line."),
+        ),
+    );
+    replace_item_props.insert(
+        "endAnchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Required when endLine creates a multi-line range."),
+        ),
+    );
+    props.insert(
+        "edits".to_string(),
+        array_schema(
+            object_schema(
+                replace_item_props,
+                vec![
+                    "line".to_string(),
+                    "anchor".to_string(),
+                    "new_value".to_string(),
+                ],
+            ),
+            Some("Batch mode: provide multiple replacements to apply atomically. All anchors are validated before any write. Edits must not overlap. Cannot be combined with flat single-edit parameters."),
+        ),
+    );
+
     MCPTool {
         name: "replaceLines".to_string(),
         title: Some("Replace Lines".to_string()),
         description: "Replace one line or a contiguous line range with new content.
 
-- Use this when existing lines should be swapped out.
-- For a range replacement, provide line, endLine, anchor, endAnchor, and new_value.
-- For a single-line replacement, provide line, anchor, and new_value."
+Use flat params (line/anchor/new_value) for a single edit, or the `edits` array for multiple atomic replacements — cannot combine both modes."
             .to_string(),
         input_schema: object_schema(
             props,
-            vec![
-                "path".to_string(),
-                "line".to_string(),
-                "anchor".to_string(),
-                "new_value".to_string(),
-            ],
+            vec!["path".to_string()],
         ),
         output_schema: None,
         annotations: None,
@@ -337,22 +368,49 @@ pub fn create_insert_after_line_tool() -> MCPTool {
         ),
     );
 
+    // Batch mode array items.
+    let mut insert_item_props = HashMap::new();
+    insert_item_props.insert(
+        "afterLine".to_string(),
+        integer_prop(
+            Some(0),
+            None,
+            Some("Insert after this line. Use 0 to insert at the very beginning of the file."),
+        ),
+    );
+    insert_item_props.insert(
+        "new_value".to_string(),
+        string_prop(None, None, Some("Content to insert. May include \\n.")),
+    );
+    insert_item_props.insert(
+        "anchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Required when afterLine targets an existing line. Omit only when afterLine is 0."),
+        ),
+    );
+    props.insert(
+        "edits".to_string(),
+        array_schema(
+            object_schema(
+                insert_item_props,
+                vec!["afterLine".to_string(), "new_value".to_string()],
+            ),
+            Some("Batch mode: provide multiple insertions to apply atomically. All anchors are validated before any write. Edits must not overlap. Cannot be combined with flat single-edit parameters."),
+        ),
+    );
+
     MCPTool {
         name: "insertAfterLine".to_string(),
         title: Some("Insert After Line".to_string()),
         description: "Insert new content after a specific line without replacing existing content.
 
-- Use afterLine: 0 to insert at the top of the file.
-- Use anchor from the exact target line when inserting after an existing line.
-- The referenced line stays intact; new content is inserted below it."
+Use flat params (afterLine/anchor/new_value) for a single insertion, or the `edits` array for multiple atomic insertions — cannot combine both modes."
             .to_string(),
         input_schema: object_schema(
             props,
-            vec![
-                "path".to_string(),
-                "afterLine".to_string(),
-                "new_value".to_string(),
-            ],
+            vec!["path".to_string()],
         ),
         output_schema: None,
         annotations: None,
@@ -402,18 +460,152 @@ pub fn create_delete_lines_tool() -> MCPTool {
         ),
     );
 
+    // Batch mode array items.
+    let mut delete_item_props = HashMap::new();
+    delete_item_props.insert(
+        "line".to_string(),
+        integer_prop(Some(1), None, Some("Start line number (1-based).")),
+    );
+    delete_item_props.insert(
+        "endLine".to_string(),
+        integer_prop(
+            Some(1),
+            None,
+            Some("End line for a multi-line range (inclusive). Defaults to 'line'."),
+        ),
+    );
+    delete_item_props.insert(
+        "anchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Opaque anchor from readFile(showLineAnchors=true) for the start line."),
+        ),
+    );
+    delete_item_props.insert(
+        "endAnchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Required when endLine creates a multi-line range."),
+        ),
+    );
+    props.insert(
+        "edits".to_string(),
+        array_schema(
+            object_schema(
+                delete_item_props,
+                vec!["line".to_string(), "anchor".to_string()],
+            ),
+            Some("Batch mode: provide multiple deletions to apply atomically. All anchors are validated before any write. Edits must not overlap. Cannot be combined with flat single-edit parameters."),
+        ),
+    );
+
     MCPTool {
         name: "deleteLines".to_string(),
         title: Some("Delete Lines".to_string()),
         description: "Delete one line or a contiguous line range.
 
-- Use line and anchor for single-line deletion.
-- Add endLine and endAnchor for multi-line deletion.
-- This removes the targeted lines entirely."
+Use flat params (line/anchor) for a single deletion, or the `edits` array for multiple atomic deletions — cannot combine both modes."
             .to_string(),
         input_schema: object_schema(
             props,
-            vec!["path".to_string(), "line".to_string(), "anchor".to_string()],
+            vec!["path".to_string()],
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn create_edit_file_tool() -> MCPTool {
+    // Build the schema for a single edit item inside the `edits` array.
+    let mut edit_item_props = HashMap::new();
+    edit_item_props.insert(
+        "action".to_string(),
+        enum_prop_required(
+            vec!["REPLACE", "INSERT_AFTER", "DELETE"],
+            "Edit action. REPLACE: swap lines with new_value. INSERT_AFTER: insert below the anchor line. DELETE: remove lines.",
+        ),
+    );
+    edit_item_props.insert(
+        "line".to_string(),
+        integer_prop(
+            Some(0),
+            None,
+            Some("Target line number (1-based). Use 0 only with INSERT_AFTER to prepend at file top."),
+        ),
+    );
+    edit_item_props.insert(
+        "endLine".to_string(),
+        integer_prop(
+            Some(1),
+            None,
+            Some("Inclusive end line for a multi-line REPLACE or DELETE range. Omit for single-line operations. Cannot be used with INSERT_AFTER."),
+        ),
+    );
+    edit_item_props.insert(
+        "new_value".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Replacement or insertion content. Required for REPLACE and INSERT_AFTER. Omit for DELETE. May contain \\n to span multiple lines."),
+        ),
+    );
+    edit_item_props.insert(
+        "anchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Opaque anchor for the start line from readFile(showLineAnchors=true). Required for all operations except INSERT_AFTER with line=0."),
+        ),
+    );
+    edit_item_props.insert(
+        "endAnchor".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Opaque anchor for the end line. Required when endLine is set for a multi-line REPLACE or DELETE."),
+        ),
+    );
+
+    let edit_item_schema = object_schema(
+        edit_item_props,
+        vec!["action".to_string(), "line".to_string()],
+    );
+
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to edit (from workspace root)"),
+        ),
+    );
+    props.insert(
+        "edits".to_string(),
+        array_schema(
+            edit_item_schema,
+            Some("Ordered list of edit operations to apply atomically. All anchors are validated against the original file before any change is written. Edits must not overlap."),
+        ),
+    );
+
+    MCPTool {
+        name: "editFile".to_string(),
+        title: Some("Edit File (Batch)".to_string()),
+        description: "Apply multiple line edits to a file atomically in a single operation.
+
+PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values.
+
+HOW IT WORKS: Edits are applied bottom-to-top so line numbers remain stable within the batch.
+
+WHEN TO USE vs. SINGLE-EDIT TOOLS:
+- Use editFile when making 2+ edits to the same file — saves round-trips.
+- Use replaceLines / insertAfterLine / deleteLines for single targeted edits."
+            .to_string(),
+        input_schema: object_schema(
+            props,
+            vec!["path".to_string(), "edits".to_string()],
         ),
         output_schema: None,
         annotations: None,

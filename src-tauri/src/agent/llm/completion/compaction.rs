@@ -70,6 +70,19 @@ pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
     }
 }
 
+pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
+    let has_compact_summary = messages
+        .first()
+        .map(|message| message.id.starts_with("compact-summary-"))
+        .unwrap_or(false);
+
+    if !has_compact_summary {
+        return true;
+    }
+
+    split_idx <= 1
+}
+
 pub(crate) async fn trigger_background_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
@@ -98,7 +111,7 @@ pub(crate) async fn trigger_background_compaction(
     let last_compacted_tail = handles.last_compacted_tail_id_arc.read().await.clone();
     let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
 
-    if same_tail {
+    if same_tail && should_skip_same_tail_compaction(messages, split_idx) {
         handles.compact_in_flight_arc.store(false, Ordering::SeqCst);
         log::debug!(
             "⏭️ Compaction skipped (same tail): session={}, tail={}",
@@ -298,7 +311,9 @@ pub(crate) async fn try_trigger_preflight_compaction(
 
     let current_tail_id = messages.last().map(|m| m.id.clone());
     let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
-    if current_tail_id.as_deref() == last_compacted_tail.as_deref() {
+    if current_tail_id.as_deref() == last_compacted_tail.as_deref()
+        && should_skip_same_tail_compaction(messages, split_idx)
+    {
         compact_in_flight_arc.store(false, Ordering::SeqCst);
         return Ok(false);
     }

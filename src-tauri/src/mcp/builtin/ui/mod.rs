@@ -12,9 +12,7 @@ use std::sync::{Arc, Mutex};
 pub mod tools;
 
 // Embed templates
-const BAR_CHART_TEMPLATE: &str = include_str!("templates/bar-chart.hbs");
 const CIRCUIT_BREAK_TEMPLATE: &str = include_str!("templates/circuit-break.hbs");
-const LINE_CHART_TEMPLATE: &str = include_str!("templates/line-chart.hbs");
 const PRESENT_INTERACTIVE_TEMPLATE: &str = include_str!("templates/present-interactive.hbs");
 
 #[derive(Debug)]
@@ -34,13 +32,7 @@ impl UiServer {
 
         // Register templates
         handlebars
-            .register_template_string("bar-chart", BAR_CHART_TEMPLATE)
-            .unwrap();
-        handlebars
             .register_template_string("circuit-break", CIRCUIT_BREAK_TEMPLATE)
-            .unwrap();
-        handlebars
-            .register_template_string("line-chart", LINE_CHART_TEMPLATE)
             .unwrap();
         handlebars
             .register_template_string("present-interactive", PRESENT_INTERACTIVE_TEMPLATE)
@@ -87,230 +79,6 @@ impl UiServer {
         })
     }
 
-    fn visualize_data(&self, args: Value) -> Result<MCPResult, String> {
-        let type_ = match args.get("type").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("type", ToolGroup::UI)),
-        };
-
-        // Validate type
-        if !["bar", "line"].contains(&type_) {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "Invalid visualization type '{}'. Supported: bar, line",
-                    type_
-                ),
-                ToolGroup::UI,
-            )
-            .with_guidance(vec![
-                "Choose 'bar' for categories or 'line' for trends".to_string()
-            ])
-            .to_mcp_result());
-        }
-
-        let data_points = match args.get("data").and_then(|v| v.as_array()) {
-            Some(arr) => arr,
-            None => return Ok(missing_param_error("data", ToolGroup::UI)),
-        };
-
-        if data_points.is_empty() {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                "Visualization data array cannot be empty",
-                ToolGroup::UI,
-            )
-            .with_guidance(vec![
-                "Provide at least one data point with label and value".to_string()
-            ])
-            .to_mcp_result());
-        }
-
-        let width = 600;
-        let height = 300;
-        let padding = 40;
-
-        // Parse data
-        struct DataPoint {
-            label: String,
-            value: f64,
-        }
-
-        let mut parsed_data = Vec::new();
-        let mut max_value = f64::MIN;
-        let mut min_value = 0.0; // Start from 0 for bar charts usually
-
-        for point in data_points {
-            let label = point
-                .get("label")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let value = point.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            if value > max_value {
-                max_value = value;
-            }
-            if value < min_value {
-                min_value = value;
-            }
-            parsed_data.push(DataPoint { label, value });
-        }
-
-        if max_value == min_value {
-            max_value = min_value + 1.0;
-        }
-
-        let range = max_value - min_value;
-        let available_height = (height - 2 * padding) as f64;
-        let available_width = (width - 2 * padding) as f64;
-
-        let mut template_data = json!({
-            "svgWidth": width,
-            "svgHeight": height,
-        });
-
-        match type_ {
-            "bar" => {
-                let bar_width = available_width / parsed_data.len() as f64;
-                let bar_gap = bar_width * 0.2;
-                let actual_bar_width = bar_width - bar_gap;
-
-                let mut bars_html = String::new();
-
-                for (i, point) in parsed_data.iter().enumerate() {
-                    let x = padding as f64 + (i as f64 * bar_width) + (bar_gap / 2.0);
-                    let bar_height = ((point.value - min_value) / range) * available_height;
-                    let y = (height - padding) as f64 - bar_height;
-
-                    // Bar rect
-                    bars_html.push_str(&format!(
-                        r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" rx="4" />"#,
-                        x, y, actual_bar_width, bar_height, "#3b82f6"
-                    ));
-
-                    // Label
-                    bars_html.push_str(&format!(
-                        "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"12\" fill=\"#6b7280\">{}</text>",
-                        x + actual_bar_width / 2.0, height - padding + 20, html_escape::encode_text(&point.label)
-                    ));
-
-                    // Value
-                    bars_html.push_str(&format!(
-                        "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"12\" fill=\"#374151\">{}</text>",
-                        x + actual_bar_width / 2.0, y - 5.0, point.value
-                    ));
-                }
-
-                template_data
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("barsHtml".to_string(), json!(bars_html));
-
-                let handlebars = self.handlebars.lock().unwrap();
-                let html = match handlebars.render("bar-chart", &template_data) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        return Ok(guided_error(
-                            ErrorCategory::OperationFailed,
-                            format!("Failed to render bar chart: {}", e),
-                            ToolGroup::UI,
-                        )
-                        .with_guidance(vec![
-                            "Verify data format (label/value pairs) is correct".to_string(),
-                            "Ensure all values are numeric".to_string(),
-                        ])
-                        .to_mcp_result());
-                    }
-                };
-
-                Ok(crate::mcp::builtin::utils::create_resource_response(
-                    &format!("ui://chart/{}", uuid::Uuid::new_v4()),
-                    "text/html",
-                    &html,
-                    "ui",
-                    "visualizeData",
-                    None,
-                ))
-            }
-            "line" => {
-                let step_x = available_width / (parsed_data.len() - 1).max(1) as f64;
-
-                let mut points_str = String::new();
-                let mut labels_html = String::new();
-
-                for (i, point) in parsed_data.iter().enumerate() {
-                    let x = padding as f64 + (i as f64 * step_x);
-                    let y = (height - padding) as f64
-                        - (((point.value - min_value) / range) * available_height);
-
-                    if i > 0 {
-                        points_str.push(' ');
-                    }
-                    points_str.push_str(&format!("{},{}", x, y));
-
-                    // Point circle
-                    labels_html.push_str(&format!(
-                        "<circle cx=\"{}\" cy=\"{}\" r=\"4\" fill=\"#3b82f6\" />",
-                        x, y
-                    ));
-
-                    // Label
-                    labels_html.push_str(&format!(
-                        "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"12\" fill=\"#6b7280\">{}</text>",
-                        x, height - padding + 20, html_escape::encode_text(&point.label)
-                    ));
-
-                    // Value
-                    labels_html.push_str(&format!(
-                        "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"12\" fill=\"#374151\">{}</text>",
-                        x, y - 10.0, point.value
-                    ));
-                }
-
-                template_data
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("points".to_string(), json!(points_str));
-                template_data
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("labelsHtml".to_string(), json!(labels_html));
-
-                let handlebars = self.handlebars.lock().unwrap();
-                let html = match handlebars.render("line-chart", &template_data) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        return Ok(guided_error(
-                            ErrorCategory::OperationFailed,
-                            format!("Failed to render line chart: {}", e),
-                            ToolGroup::UI,
-                        )
-                        .with_guidance(vec![
-                            "Verify data format (label/value pairs) is correct".to_string(),
-                            "Ensure all values are numeric".to_string(),
-                        ])
-                        .to_mcp_result());
-                    }
-                };
-
-                Ok(crate::mcp::builtin::utils::create_resource_response(
-                    &format!("ui://chart/{}", uuid::Uuid::new_v4()),
-                    "text/html",
-                    &html,
-                    "ui",
-                    "visualizeData",
-                    None,
-                ))
-            }
-            _ => Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!("Unsupported visualization type: {}", type_),
-                ToolGroup::UI,
-            )
-            .with_guidance(vec!["Supported types: bar, line".to_string()])
-            .to_mcp_result()),
-        }
-    }
     fn circuit_break(&self, args: Value) -> Result<MCPResult, String> {
         let tool_name = match args.get("toolName").and_then(|v| v.as_str()) {
             Some(v) => v,
@@ -489,6 +257,10 @@ impl UiServer {
                             "interaction.options must be an array of strings",
                             ToolGroup::UI,
                         )
+                        .with_guidance(vec![
+                            "Provide options as a JSON array: [\"Option A\", \"Option B\"]"
+                                .to_string(),
+                        ])
                         .to_mcp_result());
                     }
                 };
@@ -626,7 +398,6 @@ impl BuiltinMCPServer for UiServer {
     ) -> Result<MCPResult, String> {
         match tool_name {
             "getUserAnswer" => self.get_user_answer(args),
-            "visualizeData" => self.visualize_data(args),
             "circuitBreak" => self.circuit_break(args),
             "resumeCircuitBreak" => self.resume_circuit_break(args),
             "presentInteractive" => self.present_interactive(args),

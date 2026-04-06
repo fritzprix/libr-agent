@@ -11,9 +11,8 @@ Use this map to find the main code surfaces for the teamwork refactor.
 
 What is missing:
 
-- `agents.md` generation in the scaffold
-- writing the original user request and teamwork base information into the scaffold
-- stronger constitution guidance in the meta-skill
+- stronger `primary_artifact` naming per role (currently always `*_NOTES.md`)
+- `schemaVersion` upgrade path for `teamwork.json`
 
 ## Scheduled task backend
 

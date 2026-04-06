@@ -7,6 +7,36 @@ import json
 import re
 from pathlib import Path
 
+SUBSTRATE_PLAIN = "plain-child-sessions"
+SUBSTRATE_ORG = "org"
+SUBSTRATE_SCHEDULED = "scheduled"
+
+SUBSTRATE_CHOICES = [SUBSTRATE_PLAIN, SUBSTRATE_ORG, SUBSTRATE_SCHEDULED]
+
+SUBSTRATE_DISPLAY = {
+    SUBSTRATE_PLAIN: (
+        "Plain child sessions via startSession(...). "
+        "Use subagent-session-delegation for delegation mechanics when needed."
+    ),
+    SUBSTRATE_ORG: (
+        "Explicit org lineage via createOrg(...) once from the root session, "
+        "then startSession(..., includeCurrentOrg=true) for org-visible children. "
+        "Org-visible children share the coordinator's workspace by default. "
+        "Follow team-org for org-specific operating rules."
+    ),
+    SUBSTRATE_SCHEDULED: (
+        "Scheduled task groups via createScheduledTask(...) and related scheduled_task tools. "
+        "Use a stable groupName for the first task and groupId for subsequent tasks in the same group. "
+        "Follow team-sprint for scheduled-group operating rules."
+    ),
+}
+
+SUBSTRATE_SPECIALIST_SKILL = {
+    SUBSTRATE_PLAIN: "subagent-session-delegation",
+    SUBSTRATE_ORG: "team-org",
+    SUBSTRATE_SCHEDULED: "team-sprint",
+}
+
 
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
@@ -99,9 +129,11 @@ def build_agents_instructions(
     framework: str,
     original_request: str,
     roles: list[tuple[str, str]],
-    execution_substrate: str,
+    substrate_mode: str = SUBSTRATE_PLAIN,
 ) -> str:
     role_names = ", ".join(name for name, _ in roles) if roles else "Coordinator"
+    substrate_text = SUBSTRATE_DISPLAY[substrate_mode]
+    specialist_skill = SUBSTRATE_SPECIALIST_SKILL[substrate_mode]
     return f"""# Team Workspace Instructions
 
 This workspace is the canonical operating system for the current teamwork run.
@@ -120,7 +152,9 @@ This workspace is the canonical operating system for the current teamwork run.
 
 ## Execution Substrate
 
-{execution_substrate}
+{substrate_text}
+
+Active specialist skill: `{specialist_skill}`
 
 ## Execution Specialist Skills
 
@@ -145,16 +179,17 @@ This workspace is the canonical operating system for the current teamwork run.
 
 ## Required Operating Rules
 
-1. Read `MISSION.md`, `ROLES.md`, and `coordination/KANBAN.md` before meaningful work.
-2. Claim or update work in `coordination/KANBAN.md` before starting execution.
-3. Write durable status changes to the canonical coordination files, not only to chat.
-4. Append handoffs to `coordination/HANDOFF.md` instead of rewriting previous entries.
-5. Promote durable choices into `coordination/DECISIONS.md`; do not leave final decisions buried in `coordination/DISCUSSION.md`.
-6. Record blockers and active risks honestly in `coordination/KANBAN.md` and `coordination/RISKS.md`.
-7. Stay inside your role boundary. Do not silently rewrite another role's primary artifact.
-8. The governing coordinator must keep working in this workspace.
-9. If the scaffold is incomplete or stale, repair the workspace constitution before pushing new directives.
-10. If this teamwork run later uses explicit org lineage, org-visible child sessions should normally share this workspace.
+1. Read `.libragent/teamwork.json` to confirm the active execution substrate before working.
+2. Read `MISSION.md`, `ROLES.md`, and `coordination/KANBAN.md` before meaningful work.
+3. Claim or update work in `coordination/KANBAN.md` before starting execution.
+4. Write durable status changes to the canonical coordination files, not only to chat.
+5. Append handoffs to `coordination/HANDOFF.md` instead of rewriting previous entries.
+6. Promote durable choices into `coordination/DECISIONS.md`; do not leave final decisions buried in `coordination/DISCUSSION.md`.
+7. Record blockers and active risks honestly in `coordination/KANBAN.md` and `coordination/RISKS.md`.
+8. Stay inside your role boundary. Do not silently rewrite another role's primary artifact.
+9. The governing coordinator must keep working in this workspace.
+10. If the scaffold is incomplete or stale, repair the workspace constitution before pushing new directives.
+11. If this teamwork run uses explicit org lineage, org-visible child sessions should normally share this workspace.
 
 ## Refresh And Resume Notes
 
@@ -170,7 +205,10 @@ def build_teamwork_manifest(
     original_request: str,
     framework: str,
     roles: list[tuple[str, str]],
+    execution_substrate: str = SUBSTRATE_PLAIN,
 ) -> str:
+    is_org = execution_substrate == SUBSTRATE_ORG
+    is_scheduled = execution_substrate == SUBSTRATE_SCHEDULED
     manifest = {
         "schemaVersion": 2,
         "teamName": team_name,
@@ -178,7 +216,8 @@ def build_teamwork_manifest(
         "originalUserRequest": original_request,
         "framework": framework,
         "executionSubstrate": {
-            "mode": "plain-child-sessions",
+            "mode": execution_substrate,
+            "specialistSkill": SUBSTRATE_SPECIALIST_SKILL[execution_substrate],
             "workspacePolicy": {
                 "plainChildSessions": "isolated-by-default",
                 "explicitOrgLineage": "share-coordinator-workspace-by-default",
@@ -190,7 +229,7 @@ def build_teamwork_manifest(
                 "scheduledTaskGroups": "team-sprint",
             },
             "orgLineage": {
-                "intended": False,
+                "intended": is_org,
                 "rootAction": "createOrg",
                 "childAction": "startSession",
                 "childArgs": {"includeCurrentOrg": True},
@@ -198,7 +237,7 @@ def build_teamwork_manifest(
                 "workspaceSharing": "inherit-root-workspace-by-default",
             },
             "scheduledTaskGroups": {
-                "intended": False,
+                "intended": is_scheduled,
                 "notes": "Use scheduled task groups for recurring or cron-like collaboration, not org lineage.",
             },
         },
@@ -243,6 +282,18 @@ def main() -> None:
         help="Primary collaboration model",
     )
     parser.add_argument(
+        "--execution-substrate",
+        choices=SUBSTRATE_CHOICES,
+        default=SUBSTRATE_PLAIN,
+        help=(
+            "Execution substrate for this task force. "
+            f"Choices: {', '.join(SUBSTRATE_CHOICES)}. "
+            "Defaults to plain-child-sessions. "
+            "Use 'org' for explicit org lineage (team-org). "
+            "Use 'scheduled' for recurring automation (team-sprint)."
+        ),
+    )
+    parser.add_argument(
         "--role",
         action="append",
         type=parse_role,
@@ -258,11 +309,8 @@ def main() -> None:
     role_definitions = args.role or [
         ("Coordinator", "Refine the team structure and assign work")
     ]
-    execution_substrate = (
-        "Plain child sessions by default. "
-        "Use createOrg(...) plus startSession(..., includeCurrentOrg=true) when explicit org lineage is required, then follow team-org; org-visible children should normally share the coordinator's workspace. "
-        "Use createScheduledTask(...) and related scheduled_task tools for recurring automation, then follow team-sprint."
-    )
+    substrate_mode = args.execution_substrate
+    substrate_text = SUBSTRATE_DISPLAY[substrate_mode]
 
     write(
         workspace / "MISSION.md",
@@ -280,10 +328,15 @@ def main() -> None:
 ## Collaboration Model
 {args.framework}
 
+## Execution Substrate
+{substrate_text}
+
+Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
+
 ## Execution Notes
-- Default execution substrate: plain child sessions via `startSession(...)`
-- Explicit org lineage: `createOrg(...)` once from the root, then `startSession(..., includeCurrentOrg=true)` for org-visible children, sharing the coordinator's workspace by default, then follow `team-org`
-- Recurring automation: `createScheduledTask(...)` and related scheduled-task tools, kept separate from org lineage, then follow `team-sprint`
+- Plain child sessions: `startSession(...)`, use `subagent-session-delegation` for delegation mechanics
+- Explicit org lineage: `createOrg(...)` once from root, then `startSession(..., includeCurrentOrg=true)`, follow `team-org`
+- Recurring automation: `createScheduledTask(...)` and related scheduled-task tools, follow `team-sprint`
 
 ## Definition of Done
 - Replace this list with concrete success criteria.
@@ -311,7 +364,7 @@ def main() -> None:
                 responsibility,
                 args.objective,
                 primary_artifact,
-                execution_substrate,
+                substrate_text,
             ),
         )
         write(
@@ -327,7 +380,7 @@ def main() -> None:
             args.framework,
             original_request,
             role_definitions,
-            execution_substrate,
+            substrate_mode,
         ),
     )
     write(
@@ -338,6 +391,7 @@ def main() -> None:
             original_request,
             args.framework,
             role_definitions,
+            substrate_mode,
         ),
     )
 

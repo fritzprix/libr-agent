@@ -51,6 +51,11 @@ Assume these rules:
 - Assistant-scoped skills come from the assistant you choose for `agentId`.
 - Global skills remain available to both parent and child.
 
+If the parent is running inside a task-force workspace, check `.libragent/teamwork.json` before delegating:
+
+- If `executionSubstrate.mode` is `"org"`, prefer `startSession(..., includeCurrentOrg=true)` and `workspaceOverride` so the child joins the org and shares the workspace. Switch to `team-org` for org-specific operating rules.
+- If `executionSubstrate.mode` is `"scheduled"`, the delegation is likely a scheduled wake-up. Follow `team-sprint` for group management instead of ad-hoc delegation.
+
 Important limitations:
 
 - Do **not** assume `agent.md` exists. Workspace behavior instructions are loaded from the first non-empty file among `agents.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`.
