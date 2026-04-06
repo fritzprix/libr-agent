@@ -106,6 +106,7 @@ export default function SettingsPage() {
           'Failed to perform factory reset. See logs for details.',
         ),
       );
+    } finally {
       setIsResetting(false);
     }
   };

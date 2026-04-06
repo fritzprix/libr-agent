@@ -88,7 +88,8 @@ export type AIModelLookupService = AIModelDiscoveryService;
 export type AIContextCompactionService = AICompactionService;
 
 export interface IAIService
-  extends AIStreamingService,
+  extends
+    AIStreamingService,
     AISamplingService,
     AIModelDiscoveryService,
     AIToolSupportService,
