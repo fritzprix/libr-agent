@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Tauri Commands
 
 This document provides a comprehensive reference for the primary Tauri commands available in LibrAgent. Commands are grouped by domain and are located in `src-tauri/src/commands/`.
@@ -86,6 +87,37 @@ try {
 }
 ```
 
+---
+
+### agent_update_session_config
+
+**Purpose**: Updates the configuration (system prompt, tools) of an active agent session mid-flight.
+
+**Source**: `src-tauri/src/commands/agent_commands.rs`
+
+**Parameters**:
+
+- `request: UpdateSessionConfigRequest`
+  - `sessionId: String` - Active session ID.
+  - `agentConfig: AgentConfig` - The new configuration to apply.
+
+**Returns**:
+
+- `Result<SessionResponse, String>` - Returns status success on update.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+await invoke('agent_update_session_config', {
+  request: {
+    sessionId: 'session-123',
+    agentConfig: { systemPrompt: 'New prompt', tools: [] },
+  },
+});
+```
+
 ## Session Management
 
 ### remove_session
@@ -113,6 +145,23 @@ try {
   console.error('Failed to remove session:', error);
 }
 ```
+
+---
+
+### messages_search
+
+**Purpose**: Searches through past messages across all sessions based on query keywords.
+
+**Source**: `src-tauri/src/commands/messages_commands.rs`
+
+**Parameters**:
+
+- `query: String` - Search string.
+- `limit: Option<i32>` - Maximum results to return.
+
+**Returns**:
+
+- `Result<Vec<Message>, String>` - A list of messages matching the query.
 
 ## MCP Integration
 
@@ -178,6 +227,84 @@ const servers = await invoke<string[]>('list_builtin_servers');
 **Returns**:
 
 - `Vec<MCPTool>` - A list of tools (currently empty).
+
+---
+
+## Workspace Management
+
+### set_workspace_override
+
+**Purpose**: Explicitly overrides the default workspace path for a specific session, allowing it to operate in a user-selected directory.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Parameters**:
+
+- `sessionId: String` - The session ID.
+- `path: String` - The absolute path to the local directory.
+
+**Returns**:
+
+- `Result<(), String>` - Resolves on success.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+await invoke('set_workspace_override', {
+  sessionId: 'session-123',
+  path: '/home/user/my-project',
+});
+```
+
+---
+
+### list_workspace_files
+
+**Purpose**: Lists all files within the session's workspace directory, useful for file management and context.
+
+**Source**: `src-tauri/src/commands/workspace_commands.rs`
+
+**Parameters**:
+
+- `sessionId: String` - The active session ID.
+
+**Returns**:
+
+- `Result<Vec<String>, String>` - List of file paths relative to the workspace root.
+
+---
+
+## Browser Automation
+
+### create_browser_session
+
+**Purpose**: Spawns a new headless (or visible) browser window session controlled by the agent.
+
+**Source**: `src-tauri/src/commands/browser_commands.rs`
+
+**Parameters**:
+
+- `sessionId: String` - The agent session ID tying the browser to the agent.
+- `url: Option<String>` - Optional initial URL to load.
+- `headless: bool` - Whether to run headless (default: false).
+
+**Returns**:
+
+- `Result<String, String>` - Returns the unique browser session identifier.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+const browserId = await invoke('create_browser_session', {
+  sessionId: 'session-123',
+  url: 'https://github.com',
+  headless: true,
+});
+```
 
 ---
 
