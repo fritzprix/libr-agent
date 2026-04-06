@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-04-06
+
+### 🚀 Features
+
+- **Team Workspace, Org, and Scheduling Expansion**: Added the new teamwork/org session model with richer org history views, chart-backed lineage summaries, and scheduled-task grouping/governance so multi-agent collaboration is easier to organize and inspect.
+- **Sharper Agent and Workspace Tooling**: Refined builtin agent, planning, browser, media, UI, and workspace tool flows, including split workspace editing surfaces and improved tool guidance for more capable agent execution.
+- **Settings and Form UX Polish**: Smoothed out settings responsiveness and refreshed shared input/label patterns so forms and configuration screens feel faster and more consistent.
+
+### 🐛 Fixes
+
+- **Planning Todo Reliability**: Corrected planning `todoId` schema behavior and related workflow handling so agents are less likely to target invalid todos or stall on planning actions.
+- **Agent Workflow Stability**: Fixed assorted regressions around agent event handling, status updates, and workspace/tool interactions to keep long-running sessions and scheduled-task flows steadier.
+
+### 🔧 Internal
+
+- **Architecture Refactor for Teamwork**: Landed the large teamwork refactor across session metadata, repositories, MCP builtin services, and scheduled-task plumbing to support the new org-centric model cleanly.
+- **Regression Coverage and Developer Tooling**: Expanded Rust/frontend test coverage around org context, tool discovery, workspace anchors, scheduling policies, and LLM event flows, while adding bundled skill and documentation updates.
+- **Dependency and Maintenance Updates**: Refreshed supporting Rust/Tauri dependencies and continued cleanup across AI service contracts, release tooling, and workspace internals.
+
 ## [0.6.31] - 2026-04-04
 
 ### 🚀 Features
