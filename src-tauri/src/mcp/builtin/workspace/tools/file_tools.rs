@@ -106,7 +106,7 @@ pub fn create_list_directory_tool() -> MCPTool {
 - listDirectory('.') — workspace root
 - listDirectory('src/components') — subdirectory
 
-Returns names and types (file/directory). Use searchFiles for glob-based filtering."
+Returns names and types (file/directory). Use search with filePattern when you need glob-style filtering."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -197,12 +197,7 @@ pub fn create_search_tool() -> MCPTool {
     MCPTool {
         name: "search".to_string(),
         title: Some("Search Workspace".to_string()),
-        description: "Search for files by name, or search inside files for text patterns.
-
-- Omit 'query' to find files by name only; use 'filePattern' for glob filtering.
-- Provide 'query' (regex) to search inside file contents; combine with 'filePattern' to restrict which files are searched.
-- Set 'showLineAnchors: true' to include edit anchors for use with replaceLines, insertAfterLine, or deleteLines."
-            .to_string(),
+        description: "Search workspace files by name or content.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -387,7 +382,9 @@ pub fn create_insert_after_line_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required when afterLine targets an existing line. Omit only when afterLine is 0."),
+            Some(
+                "Required when afterLine targets an existing line. Omit only when afterLine is 0.",
+            ),
         ),
     );
     props.insert(
@@ -518,6 +515,12 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
 }
 
 pub fn create_edit_file_tool() -> MCPTool {
+    // Compatibility-only batch delegator:
+    // editFile remains implemented because older callers and internal batching still route
+    // through it, but we intentionally prefer the three dedicated mutation tools for normal
+    // model-facing discovery. The reason is contract clarity: action=REPLACE / INSERT_AFTER /
+    // DELETE each require different fields and invariants, so splitting them into separate
+    // tools keeps each exposed schema narrow and predictable for planning.
     // Build the schema for a single edit item inside the `edits` array.
     let mut edit_item_props = HashMap::new();
     edit_item_props.insert(
@@ -597,68 +600,14 @@ pub fn create_edit_file_tool() -> MCPTool {
 
 PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values.
 
-HOW IT WORKS: Edits are applied bottom-to-top so line numbers remain stable within the batch.
+Edits are applied bottom-to-top so line numbers stay stable within the batch.
 
-WHEN TO USE vs. SINGLE-EDIT TOOLS:
-- Use editFile when making 2+ edits to the same file — saves round-trips.
-- Use replaceLines / insertAfterLine / deleteLines for single targeted edits."
+Use editFile when making multiple edits to the same file. Use replaceLines / insertAfterLine / deleteLines for a single targeted edit."
             .to_string(),
         input_schema: object_schema(
             props,
             vec!["path".to_string(), "edits".to_string()],
         ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn create_search_files_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the directory to search in (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "pattern".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Glob pattern to match file names (e.g., '*.rs', 'src/**/*.ts')"),
-        ),
-    );
-    props.insert(
-        "max_depth".to_string(),
-        integer_prop(
-            Some(1),
-            Some(100),
-            Some("Maximum depth to traverse (optional)"),
-        ),
-    );
-    props.insert(
-        "file_type".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Type of files to search: 'file', 'dir', or 'both' (default: 'both')"),
-        ),
-    );
-
-    MCPTool {
-        name: "searchFiles".to_string(),
-        title: Some("Search Files by Name".to_string()),
-        description: "Find files and directories by glob pattern. Returns paths, not content.
-
-- searchFiles({pattern: '*.rs'}) — all Rust files in root
-- searchFiles({pattern: 'src/**/*.ts'}) — recursive TS files
-- Use `**` for recursive search
-
-For searching text inside files, use search."
-            .to_string(),
-        input_schema: object_schema(props, vec!["pattern".to_string()]),
         output_schema: None,
         annotations: None,
     }

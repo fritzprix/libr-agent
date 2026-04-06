@@ -124,8 +124,9 @@ impl WorkspaceServer {
 
                 let hint = SuccessHint::new(
                     format!(
-                        "Read {} lines from {} {}:\n\n{}",
+                        "Read {} lines from process {} ({} {}):\n\n{}",
                         lines_vec.len(),
+                        process_id,
                         stream,
                         mode,
                         content_display

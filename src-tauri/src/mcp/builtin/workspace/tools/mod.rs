@@ -13,6 +13,12 @@ pub fn file_tools() -> Vec<MCPTool> {
         file_tools::create_list_directory_tool(),
         file_tools::create_import_files_tool(),
         file_tools::create_search_tool(),
+        // Intentionally do NOT expose editFile in normal tool discovery.
+        // editFile multiplexes three different contracts (REPLACE / INSERT_AFTER / DELETE)
+        // behind an action discriminator, which makes the agent-facing contract broader and
+        // less predictable than the dedicated tools below. Keep it dispatchable for
+        // compatibility/batching internals, but steer model planning toward the explicit
+        // per-operation tools whose schemas match a single mutation contract.
         file_tools::create_replace_lines_tool(),
         file_tools::create_insert_after_line_tool(),
         file_tools::create_delete_lines_tool(),

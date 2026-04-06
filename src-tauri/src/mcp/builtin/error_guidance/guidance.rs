@@ -423,6 +423,7 @@ impl SuccessHint {
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
+                "Use search with filePattern to narrow down names".to_string(),
             ],
             (
                 "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
@@ -431,7 +432,7 @@ impl SuccessHint {
                 "Use readFile to verify your edits".to_string(),
                 "Use runShell to execute the updated code".to_string(),
             ],
-            ("search" | "searchFiles", ToolGroup::Workspace) => vec![
+            ("search", ToolGroup::Workspace) => vec![
                 "Use readFile on interesting matches".to_string(),
                 "Use listDirectory to explore the surrounding module".to_string(),
             ],

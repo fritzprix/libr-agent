@@ -1,3 +1,5 @@
+use serde_json::json;
+
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 
@@ -45,10 +47,33 @@ fn list_tool() -> MCPTool {
         description: "List available agent configurations or active sub-agent sessions. Use this to discover specialized agents by name or description.".to_string(),
         input_schema: object_prop(
             vec![
-                ("type".to_string(), string_prop(None, None, Some("What to list: 'configs' (default) or 'sessions' (sub-agents of current session). If omitted, lists agent configurations."))),
+                (
+                    "type".to_string(),
+                    enum_prop(
+                        vec!["configs", "sessions"],
+                        "configs",
+                        Some("Whether to list agent configurations or delegated sessions."),
+                    ),
+                ),
                 ("query".to_string(), string_prop(None, None, Some("Search term to filter agent configurations by name or description. If omitted, no text filtering is applied."))),
-                ("limit".to_string(), integer_prop(Some(1), Some(100), Some("Maximum number of items to return. If omitted, default: 20."))),
-                ("offset".to_string(), integer_prop(Some(0), None, Some("Pagination offset (0-based). If omitted, start from the beginning. Default: 0."))),
+                (
+                    "limit".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(100),
+                        20,
+                        Some("Maximum number of items to return."),
+                    ),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop_with_default(
+                        Some(0),
+                        None,
+                        0,
+                        Some("Pagination offset (0-based)."),
+                    ),
+                ),
             ],
             vec![],
             None,
@@ -108,8 +133,16 @@ fn start_session_tool() -> MCPTool {
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a normal child uses its default isolated workspace; an org-visible child (`includeCurrentOrg=true`) inherits the explicit org root workspace by default."))),
                 ("maxDepth".to_string(), integer_prop(Some(0), None, Some("Override the delegation depth limit for this child session. If omitted, inherit the caller's maxDepth when present; otherwise leave the depth limit unset."))),
                 ("maxFanout".to_string(), integer_prop(Some(0), None, Some("Override the delegation fanout limit for this child session. If omitted, inherit the caller's maxFanout when present; otherwise leave the fanout limit unset."))),
-                ("includeCurrentOrg".to_string(), boolean_prop(Some("If true, the child inherits the caller's explicit org identity and will appear in Org view. This only works when the current session already belongs to an explicit org. If omitted/false, create a normal child session with no explicit org membership."))),
-                ("waitForResult".to_string(), boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. If omitted/false (default), return immediately with session metadata."))),
+                ("includeCurrentOrg".to_string(), {
+                    let mut schema = boolean_prop(Some("If true, the child inherits the caller's explicit org identity and will appear in Org view. This only works when the current session already belongs to an explicit org."));
+                    schema.default = Some(json!(false));
+                    schema
+                }),
+                ("waitForResult".to_string(), {
+                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer."));
+                    schema.default = Some(json!(false));
+                    schema
+                }),
             ],
             vec!["agentId".to_string(), "task".to_string()],
             None,
@@ -167,7 +200,11 @@ fn spawn_org_session_tool() -> MCPTool {
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, the child inherits the explicit org root workspace by default."))),
                 ("maxDepth".to_string(), integer_prop(Some(0), None, Some("Override the delegation depth limit for this child session. If omitted, inherit the caller's maxDepth when present; otherwise leave the depth limit unset."))),
                 ("maxFanout".to_string(), integer_prop(Some(0), None, Some("Override the delegation fanout limit for this child session. If omitted, inherit the caller's maxFanout when present; otherwise leave the fanout limit unset."))),
-                ("waitForResult".to_string(), boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. If omitted/false (default), return immediately with session metadata."))),
+                ("waitForResult".to_string(), {
+                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer."));
+                    schema.default = Some(json!(false));
+                    schema
+                }),
             ],
             vec!["agentId".to_string(), "task".to_string()],
             None,
@@ -211,8 +248,20 @@ fn check_session_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to check.")),
-                ("wait".to_string(), boolean_prop(Some("If true, block until the session reaches a terminal state. If omitted/false (default), return the latest known status immediately without waiting."))),
-                ("timeout".to_string(), integer_prop(Some(1), Some(3600), Some("Maximum seconds to wait when `wait` is true. If omitted, default: 3600. Ignored when `wait` is omitted or false."))),
+                ("wait".to_string(), {
+                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal state."));
+                    schema.default = Some(json!(false));
+                    schema
+                }),
+                (
+                    "timeout".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(3600),
+                        3600,
+                        Some("Maximum seconds to wait when `wait` is true. Ignored when `wait` is false."),
+                    ),
+                ),
             ],
             vec!["sessionId".to_string()],
             None,

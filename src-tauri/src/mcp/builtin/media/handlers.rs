@@ -248,12 +248,10 @@ pub async fn handle_see_content(
             ContentSource::LocalFile(raw_path) => {
                 let resolved = resolve_local_path(&raw_path, &workspace_dir);
                 if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
-                    return Ok(guided_error(
-                        ErrorCategory::PermissionDenied,
-                        e,
-                        ToolGroup::Media,
-                    )
-                    .to_mcp_result());
+                    return Ok(
+                        guided_error(ErrorCategory::PermissionDenied, e, ToolGroup::Media)
+                            .to_mcp_result(),
+                    );
                 }
                 match read_local_bytes(&resolved).await {
                     Ok(data) => (data, None),
@@ -354,12 +352,10 @@ pub async fn handle_listen_content(
             ContentSource::LocalFile(raw_path) => {
                 let resolved = resolve_local_path(&raw_path, &workspace_dir);
                 if let Err(e) = ensure_within_workspace(&resolved, &workspace_dir) {
-                    return Ok(guided_error(
-                        ErrorCategory::PermissionDenied,
-                        e,
-                        ToolGroup::Media,
-                    )
-                    .to_mcp_result());
+                    return Ok(
+                        guided_error(ErrorCategory::PermissionDenied, e, ToolGroup::Media)
+                            .to_mcp_result(),
+                    );
                 }
                 match read_local_bytes(&resolved).await {
                     Ok(data) => (data, None),

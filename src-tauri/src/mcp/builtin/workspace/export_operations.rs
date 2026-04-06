@@ -170,7 +170,7 @@ impl WorkspaceServer {
             )
             .guidance(vec![
                 "Use listDirectory('.') to verify workspace-relative paths".to_string(),
-                "Use searchFiles(pattern) to find the exact file or directory name".to_string(),
+                "Use search with filePattern to find the exact file or directory name".to_string(),
                 "Export paths must be relative to the workspace root".to_string(),
             ])
             .to_mcp_result());
@@ -280,9 +280,10 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use listDirectory or searchFiles to verify the selected paths contain readable files"
+                "Use listDirectory or search to verify the selected paths contain readable files"
                     .to_string(),
-                "Directories are allowed, but only readable files inside them are added".to_string(),
+                "Directories are allowed, but only readable files inside them are added"
+                    .to_string(),
                 "Retry with a smaller, known-good set of workspace-relative paths".to_string(),
             ])
             .to_mcp_result());

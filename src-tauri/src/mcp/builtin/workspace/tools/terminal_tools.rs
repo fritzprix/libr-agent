@@ -23,12 +23,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
 
     props.insert(
         "lines".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(100),
-            20,
-            Some("Number of lines to read"),
-        ),
+        integer_prop_with_default(Some(1), Some(100), 20, Some("Number of lines to read")),
     );
 
     props.insert(
@@ -47,8 +42,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
     MCPTool {
         name: "readProcessOutput".to_string(),
         title: Some("Read Process Output".to_string()),
-        description: "Read captured stdout or stderr from a background process."
-            .to_string(),
+        description: "Read captured stdout or stderr from a background process.".to_string(),
         input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
         annotations: None,
@@ -69,7 +63,9 @@ pub fn create_wait_for_process_tool() -> MCPTool {
             Some(0),
             Some(3600),
             30,
-            Some("Timeout in seconds. Use 0 to return current status immediately without blocking."),
+            Some(
+                "Timeout in seconds. Use 0 to return current status immediately without blocking.",
+            ),
         ),
     );
 
@@ -100,8 +96,7 @@ pub fn create_list_processes_tool() -> MCPTool {
     MCPTool {
         name: "listProcesses".to_string(),
         title: Some("List Processes".to_string()),
-        description: "List background processes in this session."
-            .to_string(),
+        description: "List background processes in this session.".to_string(),
         input_schema: object_schema(props, vec![]),
         output_schema: None,
         annotations: None,
