@@ -1,0 +1,4 @@
+[advisories]
+# sqlx/SeaORM pull in rsa via unused MySQL support that remains in Cargo.lock.
+# There is no patched rsa release available, and LibrAgent uses SQLite only here.
+ignore = ["RUSTSEC-2023-0071"]

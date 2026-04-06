@@ -41,7 +41,8 @@ target
 .mcp.json
 
 # Local machine-specific Cargo config (e.g. memory/codegen tuning for low-RAM machines)
-src-tauri/.cargo/
+src-tauri/.cargo/*
+!src-tauri/.cargo/audit.toml
 
 # Additional ignores added on review (caches, local env, coverage, editor/runtime artifacts)
 
