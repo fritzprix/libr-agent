@@ -729,14 +729,20 @@ fn test_grounded_total_tokens_no_grounding() {
 #[test]
 fn test_grounded_total_tokens_with_grounding() {
     let msg1 = make_message_simple("user", "Hello");
-    let mut msg2 = make_message_simple("assistant", "Hi there");
-    msg2.usage = Some(json!({ "totalTokens": 100 }));
+    let mut grounded = make_message_simple("assistant", "Hi there");
+    grounded.usage = Some(json!({ "totalTokens": 100 }));
 
     let msg3 = make_message_simple("user", "A very long new message");
-    let messages = vec![msg1, msg2, msg3.clone()];
+    let messages = vec![msg1.clone(), grounded.clone(), msg3.clone()];
 
     let tokens = calculate_grounded_total_tokens(&messages, 50, 50);
-    let expected = 100 + estimate_tokens_bpe(&msg3);
+    let grounded_estimate = 100 + estimate_tokens_bpe(&msg3);
+    let full_bpe_estimate = estimate_tokens_bpe(&msg1)
+        + estimate_tokens_bpe(&grounded)
+        + estimate_tokens_bpe(&msg3)
+        + 50
+        + 50;
+    let expected = grounded_estimate.max(full_bpe_estimate);
     assert_eq!(tokens, expected);
 }
 
@@ -764,6 +770,29 @@ fn test_grounded_total_tokens_ignores_grounding_after_compaction() {
         + 5;
 
     assert_eq!(tokens, expected);
+}
+
+#[test]
+fn test_grounded_total_tokens_never_undercuts_current_full_bpe_estimate() {
+    let intro = make_message_simple("user", "Hello");
+    let mut grounded = make_message_simple("assistant", "Hi there");
+    grounded.usage = Some(json!({ "totalTokens": 8 }));
+    let tail = make_message_simple(
+        "user",
+        "This session context and tool payload changed after the grounded turn.",
+    );
+
+    let messages = vec![intro.clone(), grounded, tail.clone()];
+
+    let full_bpe_estimate = estimate_tokens_bpe(&intro)
+        + estimate_tokens_bpe(&messages[1])
+        + estimate_tokens_bpe(&tail)
+        + 80
+        + 120;
+
+    let tokens = calculate_grounded_total_tokens(&messages, 80, 120);
+
+    assert_eq!(tokens, full_bpe_estimate);
 }
 
 #[test]

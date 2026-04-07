@@ -22,6 +22,7 @@ Examples:
 import os
 import sys
 import argparse
+import tempfile
 from pathlib import Path
 
 
@@ -39,6 +40,11 @@ def get_log_path():
         return Path.home() / "Library" / "Logs" / app_id / log_file
     else:  # Linux
         return Path.home() / ".local" / "share" / app_id / "logs" / log_file
+
+
+def get_default_output_path():
+    """Keep generated extracts out of the skill directory by default."""
+    return Path(tempfile.gettempdir()) / "libragent-log-extract.txt"
 
 
 def extract_by_pattern(lines, pattern, context_count=5):
@@ -114,8 +120,7 @@ Examples:
     )
     parser.add_argument(
         "-o", "--output",
-        default="log.txt",
-        help="Output file name (default: log.txt)"
+        help="Output file path (default: OS temp dir)"
     )
     parser.add_argument(
         "--log-path",
@@ -158,7 +163,7 @@ Examples:
         output_lines = [line.rstrip() for line in lines]
     
     # Write output
-    output_path = Path(args.output)
+    output_path = Path(args.output) if args.output else get_default_output_path()
     try:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(output_lines))

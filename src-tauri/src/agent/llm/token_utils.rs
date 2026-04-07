@@ -171,6 +171,8 @@ pub fn calculate_grounded_total_tokens(
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> usize {
+    let message_tokens: usize = messages.iter().map(estimate_tokens_bpe).sum();
+    let full_estimate = message_tokens + system_prompt_tokens + tools_tokens;
     let mut grounded_index = None;
     let mut base_tokens = 0;
 
@@ -207,19 +209,19 @@ pub fn calculate_grounded_total_tokens(
             for msg in &messages[idx + 1..] {
                 incremental_tokens += estimate_tokens_bpe(msg);
             }
+            let grounded_estimate = base_tokens + incremental_tokens;
+            let final_estimate = grounded_estimate.max(full_estimate);
             log::debug!(
-                "Using grounded token estimation. base={}, inc={}, final={}",
+                "Using grounded token estimation. base={}, inc={}, grounded={}, full_bpe={}, final={}",
                 base_tokens,
                 incremental_tokens,
-                base_tokens + incremental_tokens
+                grounded_estimate,
+                full_estimate,
+                final_estimate
             );
-            return base_tokens + incremental_tokens;
+            return final_estimate;
         }
     }
-
-    // Fallback: Full BPE estimation
-    let message_tokens: usize = messages.iter().map(estimate_tokens_bpe).sum();
-    let full_estimate = message_tokens + system_prompt_tokens + tools_tokens;
 
     log::debug!(
         "Using full BPE token estimation. msg={}, sys={}, tools={}, final={}",

@@ -7,6 +7,9 @@ description: Extract and analyze LibrAgent debug logs with pattern matching and 
 
 Extract and analyze LibrAgent debug logs for troubleshooting and analysis.
 
+> Generated log extracts are working files, not skill content. Keep them in your
+> workspace or OS temp directory, never inside this skill folder.
+
 ## Quick Start
 
 Extract logs using the Python script:
@@ -21,8 +24,8 @@ python scripts/extract_logs.py --pattern "[ERROR]" --context 5
 # Extract planning logs
 python scripts/extract_logs.py --pattern "PLANNING" -n 5000
 
-# Save to custom file
-python scripts/extract_logs.py --pattern "[WARN]" -o warnings.txt
+# Save to a custom file outside the skill directory
+python scripts/extract_logs.py --pattern "[WARN]" -o /path/to/output/warnings.txt
 ```
 
 ## Log File Location
@@ -137,6 +140,9 @@ python scripts/extract_logs.py --pattern "<session-id>" --context 5 -o session.t
 
 ## Output Format
 
+By default, `extract_logs.py` writes to your OS temp directory so extracted
+logs do not bloat this skill package.
+
 ### Pattern Match Output
 
 When using `--pattern`, output includes:
@@ -167,3 +173,4 @@ Without `--pattern`, outputs raw log lines preserving original format.
 - Combine `-n` with `--pattern` to search recent logs only
 - Check [log_patterns.md](references/log_patterns.md) for component-specific patterns
 - For performance issues, search for "Duration:" or "elapsed" patterns
+- Do not save generated `.log` or `.txt` extracts into this skill directory
