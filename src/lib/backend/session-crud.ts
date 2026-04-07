@@ -107,10 +107,7 @@ export async function getSession(id: string): Promise<Session | undefined> {
 
 export async function listSessions(): Promise<Session[]> {
   const dtos = await safeInvoke<SessionDto[]>('agent_get_all_sessions');
-  // Sort desc by updated
-  return dtos
-    .map(deserializeSession)
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  return dtos.map(deserializeSession);
 }
 
 export async function deleteSession(id: string): Promise<void> {

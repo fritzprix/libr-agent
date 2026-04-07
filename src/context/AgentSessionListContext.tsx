@@ -225,12 +225,6 @@ export function AgentSessionListProvider({
           pendingApprovalCount: 0,
         };
       });
-      // Sort by updated at desc (or created at desc)
-      sessionList.sort((a, b) => {
-        const timeA = a.updatedAt?.getTime() || a.createdAt.getTime();
-        const timeB = b.updatedAt?.getTime() || b.createdAt.getTime();
-        return timeB - timeA;
-      });
 
       setSessions((prev) => {
         const pendingApprovalCounts = new Map(

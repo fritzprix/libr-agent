@@ -141,9 +141,7 @@ export const dbUtils = {
 
   // --- Sessions ---
   getAllSessions: async (): Promise<Session[]> => {
-    // Order by updatedAt desc
-    const all = await sessionsBackend.listSessions();
-    return all.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    return sessionsBackend.listSessions();
   },
   clearAllSessions: async (): Promise<void> => {
     const all = await sessionsBackend.listSessions();

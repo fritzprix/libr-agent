@@ -151,10 +151,11 @@ impl SessionRepository for InMemorySessionRepository {
 
     /// Get all sessions stored in memory
     ///
-    /// Returns sessions in arbitrary order (HashMap iteration order).
+    /// Returns sessions ordered by updated_at descending.
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
         let sessions = self.sessions.read().await;
-        let result: Vec<SessionMetadata> = sessions.values().cloned().collect();
+        let mut result: Vec<SessionMetadata> = sessions.values().cloned().collect();
+        result.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         log::debug!("InMemory: Get all sessions -> {} sessions", result.len());
         Ok(result)
     }
