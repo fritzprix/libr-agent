@@ -44,7 +44,7 @@ function createAttachmentHintPayload(
   return attachment;
 }
 
-function estimateTextTokens(text: string): number {
+export function estimateTextTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 

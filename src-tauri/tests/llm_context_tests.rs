@@ -2,9 +2,9 @@ use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_summary_text, find_preflight_compaction_split_index,
-    merge_consecutive_user_messages, resolve_context_management_settings,
-    should_skip_same_tail_compaction, should_trigger_background_compaction,
-    uses_compaction_strategy,
+    find_selected_preflight_compaction_split_index, merge_consecutive_user_messages,
+    resolve_context_management_settings, should_skip_same_tail_compaction,
+    should_trigger_background_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -230,6 +230,135 @@ fn test_same_tail_compaction_stops_when_only_existing_summary_is_left_to_compact
     let messages = vec![summary, make_message("m1", "user", "Latest request")];
 
     assert!(should_skip_same_tail_compaction(&messages, 1));
+}
+
+#[test]
+fn test_same_tail_compaction_keeps_skipping_after_summary_injection_without_new_tail() {
+    let mut summary = make_message("m0", "user", "Compacted summary");
+    summary.id = "compact-summary-test".to_string();
+
+    let messages = vec![
+        summary,
+        make_message("m1", "assistant", "Large preserved context"),
+        make_message("m2", "user", "Latest request"),
+    ];
+
+    assert!(should_skip_same_tail_compaction(&messages, 1));
+}
+
+#[test]
+fn test_selected_preflight_compaction_split_moves_older_preserved_tail_into_summary() {
+    let mut summary = make_message("m0", "user", "Earlier compact summary");
+    summary.id = "compact-summary-test".to_string();
+
+    let older_preserved = make_message("m1", "assistant", "Older preserved tail");
+    let latest_user = make_message("m2", "user", "Latest request");
+
+    let split_idx = find_selected_preflight_compaction_split_index(
+        &[summary, older_preserved, latest_user.clone()],
+        &[latest_user],
+    );
+
+    assert_eq!(split_idx, 2);
+}
+
+#[test]
+fn test_select_messages_within_context_lossy_trims_oversized_latest_message() {
+    let messages = vec![make_message(
+        "m0",
+        "user",
+        &format!("header\n{}\nfooter", "huge middle ".repeat(6000)),
+    )];
+
+    let selected = select_messages_within_context(
+        &messages,
+        "openai",
+        Some(512),
+        Some(&SelectionOptions::default()),
+        Some(&ModelContextInfo {
+            context_window: 4096,
+        }),
+    );
+
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].id, "m0");
+    let text = match &selected[0].content[0] {
+        MCPContent::Text { text, .. } => text,
+        _ => panic!("expected trimmed text content"),
+    };
+    assert!(text.contains("trimmed middle of message content"));
+    assert!(text.contains("header"));
+    assert!(text.contains("footer"));
+}
+
+#[test]
+fn test_select_messages_within_context_preserves_tool_chain_block() {
+    let intro = make_message("m0", "user", "Need analysis");
+
+    let mut assistant = make_message("m1", "assistant", "Calling tool");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{\"big\":\"payload\"}".to_string(),
+        },
+    }]);
+
+    let mut tool_result = make_message("m2", "tool", &"tool result ".repeat(2000));
+    tool_result.tool_call_id = Some("call_A".to_string());
+
+    let follow_up = make_message("m3", "assistant", "Tool completed successfully.");
+
+    let selected = select_messages_within_context(
+        &[intro, assistant.clone(), tool_result, follow_up.clone()],
+        "openai",
+        Some(1200),
+        Some(&SelectionOptions::default()),
+        Some(&ModelContextInfo {
+            context_window: 8192,
+        }),
+    );
+
+    assert!(selected.iter().any(|message| message.id == assistant.id));
+    assert!(selected.iter().any(|message| message.id == follow_up.id));
+    assert!(selected
+        .iter()
+        .any(|message| message.tool_call_id.as_deref() == Some("call_A")));
+}
+
+#[test]
+fn test_select_messages_within_context_omits_multimodal_payloads_with_placeholder() {
+    let mut message = make_message("m0", "user", "Inspect this artifact");
+    message.content.push(MCPContent::Image {
+        data: Some("image-bytes".to_string()),
+        uri: None,
+        mime_type: "image/png".to_string(),
+    });
+    message.content.push(MCPContent::Audio {
+        data: Some("audio-bytes".to_string()),
+        uri: None,
+        mime_type: "audio/mp3".to_string(),
+    });
+
+    let selected = select_messages_within_context(
+        &[message],
+        "openai",
+        Some(256),
+        Some(&SelectionOptions::default()),
+        Some(&ModelContextInfo {
+            context_window: 4096,
+        }),
+    );
+
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].content.len(), 1);
+    let text = match &selected[0].content[0] {
+        MCPContent::Text { text, .. } => text,
+        _ => panic!("expected flattened text content"),
+    };
+    assert!(text.contains("[multimodal content omitted during lossy trim]"));
+    assert!(text.contains("Inspect this artifact"));
 }
 
 #[test]

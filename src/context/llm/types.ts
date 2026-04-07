@@ -62,6 +62,9 @@ export interface CompactRequest {
   messages: Message[];
   fromId: string;
   toId: string;
+  targetMaxTokens?: number;
+  hardMaxTokens?: number;
+  maxRecursivePasses?: number;
   parentRequest?: CompactionParentRequest;
   resumeCompletionAfterCompact: boolean;
 }

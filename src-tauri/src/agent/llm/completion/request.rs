@@ -18,15 +18,15 @@ use crate::agent::llm::types::{
 };
 
 use super::compaction::{
-    find_preflight_compaction_split_index, should_trigger_background_compaction,
-    trigger_background_compaction, try_trigger_preflight_compaction,
+    find_preflight_compaction_split_index, find_selected_preflight_compaction_split_index,
+    should_trigger_background_compaction, trigger_background_compaction,
+    try_trigger_preflight_compaction, PreflightCompactionOptions,
 };
 use super::context::{load_context_management_settings, uses_compaction_strategy};
 
 #[derive(Debug)]
 pub(crate) struct OverflowPreflight {
     pub(crate) preserved_tail_tokens: usize,
-    pub(crate) total_tokens: usize,
     pub(crate) reserved_tokens: usize,
     pub(crate) safety_margin: usize,
     pub(crate) compactable_split_idx: usize,
@@ -43,17 +43,11 @@ pub(crate) fn build_overflow_preflight(
         .iter()
         .map(crate::agent::llm::token_utils::estimate_tokens_bpe)
         .sum();
-    let total_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
-        messages,
-        system_prompt_tokens,
-        tools_tokens,
-    );
     let safety_margin =
         crate::agent::llm::token_utils::calculate_context_safety_margin(safe_input_token_limit);
 
     OverflowPreflight {
         preserved_tail_tokens,
-        total_tokens,
         reserved_tokens: system_prompt_tokens + tools_tokens,
         safety_margin,
         compactable_split_idx,
@@ -607,6 +601,17 @@ pub async fn request_llm_completion(
             .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
             .unwrap_or(0);
 
+        let context_options = crate::agent::llm::context_selector::SelectionOptions {
+            system_prompt: combined_system_prompt.clone(),
+            tools_json: tools_json.clone(),
+            max_messages: None,
+            max_tool_calls_per_message: Some(if provider == "gemini" {
+                100
+            } else {
+                tool_call_group_visible_count
+            }),
+        };
+
         let compactable_split_idx = find_preflight_compaction_split_index(&messages);
         let preflight = build_overflow_preflight(
             &messages,
@@ -616,9 +621,35 @@ pub async fn request_llm_completion(
             compactable_split_idx,
         );
 
-        let preserved_tail_projected_tokens =
-            preflight.reserved_tokens + preflight.preserved_tail_tokens + preflight.safety_margin;
-        if preserved_tail_projected_tokens > safe_input_token_limit {
+        let selected_messages = crate::agent::llm::context_selector::select_messages_within_context(
+            &final_messages,
+            &provider,
+            Some(safe_input_token_limit),
+            Some(&context_options),
+            Some(&crate::agent::llm::context_selector::ModelContextInfo {
+                context_window: model_max_limit,
+            }),
+        );
+
+        let total_estimated_tokens =
+            crate::agent::llm::token_utils::calculate_grounded_total_tokens(
+                &selected_messages,
+                system_prompt_tokens + session_context_tokens,
+                tools_tokens,
+            );
+
+        let selected_projected_tokens = total_estimated_tokens + preflight.safety_margin;
+        let latest_message_id = messages.last().map(|message| message.id.clone());
+        let preserves_latest_message = latest_message_id.as_ref().is_some_and(|latest_id| {
+            selected_messages
+                .iter()
+                .any(|message| &message.id == latest_id)
+        });
+
+        if !preserves_latest_message {
+            let preserved_tail_projected_tokens = preflight.reserved_tokens
+                + preflight.preserved_tail_tokens
+                + preflight.safety_margin;
             let mut context = serde_json::Map::new();
             context.insert(
                 "projectedTokens".to_string(),
@@ -645,22 +676,36 @@ pub async fn request_llm_completion(
             );
         }
 
-        let projected_total_tokens = preflight.total_tokens + preflight.safety_margin;
-        if projected_total_tokens > safe_input_token_limit {
+        if selected_projected_tokens > safe_input_token_limit {
+            let selected_compaction_split_idx =
+                find_selected_preflight_compaction_split_index(&messages, &selected_messages);
             if try_trigger_preflight_compaction(
                 active_sessions,
                 app_handle,
                 &session_id,
                 &session_name,
                 &messages,
-                compaction_parent_request.clone(),
+                PreflightCompactionOptions {
+                    split_idx_override: Some(selected_compaction_split_idx),
+                    target_max_tokens: Some(
+                        crate::agent::llm::token_utils::calculate_compact_target_budget(
+                            safe_input_token_limit,
+                        ),
+                    ),
+                    hard_max_tokens: Some(
+                        crate::agent::llm::token_utils::calculate_compact_hard_max_budget(
+                            safe_input_token_limit,
+                        ),
+                    ),
+                    parent_request: compaction_parent_request.clone(),
+                },
             )
             .await?
             {
                 log::info!(
-                    "⏸️ Pausing LLM request until compaction completes: session={}, projected_total={}, limit={}, margin={}",
+                    "⏸️ Pausing LLM request until compaction completes: session={}, projected_selected={}, limit={}, margin={}",
                     session_id,
-                    projected_total_tokens,
+                    selected_projected_tokens,
                     safe_input_token_limit,
                     preflight.safety_margin
                 );
@@ -670,7 +715,7 @@ pub async fn request_llm_completion(
             let mut context = serde_json::Map::new();
             context.insert(
                 "projectedTokens".to_string(),
-                serde_json::json!(projected_total_tokens),
+                serde_json::json!(selected_projected_tokens),
             );
             context.insert(
                 "effectiveLimit".to_string(),
@@ -680,8 +725,8 @@ pub async fn request_llm_completion(
                 AgentRuntimeError::new(
                     AgentRuntimeErrorType::ContextLimitError,
                     format!(
-                        "Conversation context still exceeds the configured limit even after reserving safety margin (projected {} > limit {}). Wait for compaction or reduce recent input size.",
-                        projected_total_tokens, safe_input_token_limit
+                        "Conversation context still exceeds the configured limit even after lossy trim and reserving safety margin (projected {} > limit {}). Wait for compaction or reduce recent input size.",
+                        selected_projected_tokens, safe_input_token_limit
                     ),
                 )
                 .with_code("CONTEXT_LIMIT_EXCEEDED")
@@ -715,33 +760,7 @@ pub async fn request_llm_completion(
             .await?;
         }
 
-        let context_options = crate::agent::llm::context_selector::SelectionOptions {
-            system_prompt: combined_system_prompt.clone(),
-            tools_json: tools_json.clone(),
-            max_messages: None,
-            max_tool_calls_per_message: Some(if provider == "gemini" {
-                100
-            } else {
-                tool_call_group_visible_count
-            }),
-        };
-
-        final_messages = crate::agent::llm::context_selector::select_messages_within_context(
-            &final_messages,
-            &provider,
-            Some(safe_input_token_limit),
-            Some(&context_options),
-            Some(&crate::agent::llm::context_selector::ModelContextInfo {
-                context_window: model_max_limit,
-            }),
-        );
-
-        let total_estimated_tokens =
-            crate::agent::llm::token_utils::calculate_grounded_total_tokens(
-                &final_messages,
-                system_prompt_tokens + session_context_tokens,
-                tools_tokens,
-            );
+        final_messages = selected_messages;
 
         context_usage = Some(serde_json::json!({
             "totalTokens": total_estimated_tokens,

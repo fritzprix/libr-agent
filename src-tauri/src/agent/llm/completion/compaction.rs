@@ -44,6 +44,13 @@ pub(crate) struct BackgroundCompactionHandles {
     pub(crate) last_compacted_tail_id_arc: Arc<RwLock<Option<String>>>,
 }
 
+pub(crate) struct PreflightCompactionOptions {
+    pub(crate) split_idx_override: Option<usize>,
+    pub(crate) target_max_tokens: Option<usize>,
+    pub(crate) hard_max_tokens: Option<usize>,
+    pub(crate) parent_request: Option<CompactionParentRequest>,
+}
+
 /// Determines the compactable prefix for preflight compaction.
 ///
 /// Unlike background compaction, preflight compaction must preserve the newest
@@ -68,6 +75,33 @@ pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
         Some(_) => std::cmp::min(messages.len().saturating_sub(1), unresolved_boundary),
         None => 0,
     }
+}
+
+/// Uses the selector result to expand the compactable prefix beyond the fixed
+/// preflight boundary whenever older preserved-tail blocks can safely move into
+/// compaction input. The first selected raw message becomes the boundary.
+pub fn find_selected_preflight_compaction_split_index(
+    messages: &[Message],
+    selected_messages: &[Message],
+) -> usize {
+    if messages.is_empty() || selected_messages.is_empty() {
+        return 0;
+    }
+
+    let first_selected_id = selected_messages.iter().find_map(|message| {
+        messages
+            .iter()
+            .any(|candidate| candidate.id == message.id)
+            .then_some(&message.id)
+    });
+
+    first_selected_id
+        .and_then(|selected_id| {
+            messages
+                .iter()
+                .position(|message| &message.id == selected_id)
+        })
+        .unwrap_or_else(|| find_preflight_compaction_split_index(messages))
 }
 
 pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
@@ -149,6 +183,9 @@ pub(crate) async fn trigger_background_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
+        target_max_tokens: None,
+        hard_max_tokens: None,
+        max_recursive_passes: None,
         parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
         resume_completion_after_compact: false,
     };
@@ -256,22 +293,16 @@ pub(crate) async fn try_trigger_preflight_compaction(
     session_id: &str,
     session_name: &str,
     messages: &[Message],
-    parent_request: Option<CompactionParentRequest>,
+    options: PreflightCompactionOptions,
 ) -> Result<bool, String> {
     if messages.len() <= 1 {
         return Ok(false);
     }
 
-    let split_idx = find_preflight_compaction_split_index(messages);
+    let split_idx = options
+        .split_idx_override
+        .unwrap_or_else(|| find_preflight_compaction_split_index(messages));
     if split_idx == 0 {
-        return Ok(false);
-    }
-    if split_idx == 1
-        && messages
-            .first()
-            .map(|message| message.id.starts_with("compact-summary-"))
-            .unwrap_or(false)
-    {
         return Ok(false);
     }
 
@@ -347,7 +378,11 @@ pub(crate) async fn try_trigger_preflight_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
-        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
+        target_max_tokens: options.target_max_tokens,
+        hard_max_tokens: options.hard_max_tokens,
+        max_recursive_passes: Some(1),
+        parent_request: resolve_parent_request(active_sessions, session_id, options.parent_request)
+            .await,
         resume_completion_after_compact: true,
     };
     let log_from_id = compact_event.from_id.clone();
@@ -416,7 +451,12 @@ pub async fn trigger_preflight_compaction_for_session(
         session_id,
         &session_name,
         &merged_messages,
-        None,
+        PreflightCompactionOptions {
+            split_idx_override: None,
+            target_max_tokens: None,
+            hard_max_tokens: None,
+            parent_request: None,
+        },
     )
     .await
 }

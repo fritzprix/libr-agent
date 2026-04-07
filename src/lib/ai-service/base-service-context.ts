@@ -1,5 +1,6 @@
 import type { Message } from '@/models/chat';
 import type { ContextInjectionResult } from './types';
+import type { CompactOptions } from './base-service-shared';
 import type { SyntheticSessionContextMessageOptions } from './base-service-shared';
 
 const SESSION_CONTEXT_BACKGROUND_HEADER =
@@ -7,21 +8,50 @@ const SESSION_CONTEXT_BACKGROUND_HEADER =
 
 const SESSION_CONTEXT_BACKGROUND_FOOTER = '[End of session context]';
 
-export function buildCompactionInstruction(messages: Message[]): string {
+interface CompactionInstructionOptions
+  extends Pick<CompactOptions, 'targetMaxTokens' | 'hardMaxTokens'> {
+  recursivePass?: boolean;
+}
+
+export function buildCompactionInstruction(
+  messages: Message[],
+  options?: CompactionInstructionOptions,
+): string {
+  const targetLine = options?.targetMaxTokens
+    ? `Aim for <= ${options.targetMaxTokens} tokens in the final summary.`
+    : undefined;
+  const hardMaxLine = options?.hardMaxTokens
+    ? `Hard max: ${options.hardMaxTokens} tokens. If you are close, compress harder rather than preserving prose.`
+    : undefined;
+
   let instruction =
     'Summarise the previous conversation history concisely using structured Markdown.\n\n' +
     'Organize the summary into clear sections (e.g., "Key Decisions", "Context", "Tool Results", "Pending Actions") ' +
     'to preserve all information needed to continue the conversation effectively.\n\n' +
-    'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
+    [
+      targetLine,
+      hardMaxLine,
+      'Preserve action-critical facts: user intent, decisions, IDs, file paths, error messages, tool outcomes, and unresolved next steps.',
+      'Aggressively remove repetition, stale narration, verbose prose, and bulky raw output once the essential fact has been captured.',
+      'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.',
+    ]
+      .filter(Boolean)
+      .join('\n');
 
   const firstMsg = messages[0];
   if (firstMsg?.id.startsWith('compact-summary-')) {
     instruction =
-      'The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n' +
-      'CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary ' +
-      'MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. ' +
-      'Do NOT compress, omit, or paraphrase the prior summary — treat it as an immutable residual that carries forward in full. ' +
-      'Your new summary = (prior summary, preserved completely) + (new messages, summarised).\n\n' +
+      'The first message is a previously accumulated compact summary that represents earlier conversation history.\n\n' +
+      'Treat that prior summary as authoritative source material, but you MAY rewrite and compress it further. ' +
+      'Do not preserve it verbatim if doing so wastes budget. Preserve the facts, not the wording.\n\n' +
+      'Compression priorities:\n' +
+      '1. Keep user goals, decisions, IDs, paths, errors, tool outcomes, and pending actions.\n' +
+      '2. Dedupe repeated facts across the prior summary and newer messages.\n' +
+      '3. Collapse stale implementation detail and bulky raw output into short factual statements.\n' +
+      '4. Prefer terse bullets over narrative prose.\n\n' +
+      (options?.recursivePass
+        ? 'This is a bounded recursive compaction pass because the prior summary was still too large. Compress aggressively and keep only continuation-critical facts.\n\n'
+        : '') +
       instruction;
   }
 

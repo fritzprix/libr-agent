@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import { BaseAIService, stableStringify } from '../base-service';
+import { buildCompactionInstruction } from '../base-service-context';
 import { AIServiceError, AIServiceProvider } from '../types';
 
 class TestBaseAIService extends BaseAIService<string, string> {
   private compactChunks: string[] = [''];
+  private compactChunkBatches: string[][] = [];
+  private compactCallCount = 0;
 
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Empty;
@@ -49,7 +52,10 @@ class TestBaseAIService extends BaseAIService<string, string> {
   ): AsyncGenerator<string, void, void> {
     void messages;
     void options;
-    for (const chunk of this.compactChunks) {
+    this.compactCallCount += 1;
+    const chunks =
+      this.compactChunkBatches.shift() ?? this.compactChunks;
+    for (const chunk of chunks) {
       yield chunk;
     }
   }
@@ -62,6 +68,14 @@ class TestBaseAIService extends BaseAIService<string, string> {
 
   public setCompactChunks(chunks: string[]): void {
     this.compactChunks = chunks;
+  }
+
+  public setCompactChunkBatches(batches: string[][]): void {
+    this.compactChunkBatches = [...batches];
+  }
+
+  public getCompactCallCount(): number {
+    return this.compactCallCount;
   }
 }
 
@@ -218,6 +232,68 @@ describe('BaseAIService.compact', () => {
 
     await expect(service.compact(createMessages())).rejects.toBeInstanceOf(
       AIServiceError,
+    );
+  });
+
+  it('performs one bounded recursive squeeze when the first summary exceeds target budget', async () => {
+    const service = new TestBaseAIService('test-key');
+    service.setCompactChunkBatches([
+      [JSON.stringify({ content: 'x'.repeat(2400) })],
+      [JSON.stringify({ content: 'tight summary' })],
+    ]);
+
+    await expect(
+      service.compact(createMessages(), {
+        targetMaxTokens: 200,
+        hardMaxTokens: 800,
+        maxRecursivePasses: 1,
+      }),
+    ).resolves.toBe('tight summary');
+    expect(service.getCompactCallCount()).toBe(2);
+  });
+
+  it('fails when bounded recursive compaction still exceeds the hard cap', async () => {
+    const service = new TestBaseAIService('test-key');
+    service.setCompactChunkBatches([
+      [JSON.stringify({ content: 'x'.repeat(2400) })],
+      [JSON.stringify({ content: 'y'.repeat(2400) })],
+    ]);
+
+    await expect(
+      service.compact(createMessages(), {
+        targetMaxTokens: 200,
+        hardMaxTokens: 300,
+        maxRecursivePasses: 1,
+      }),
+    ).rejects.toThrow(/hard cap/);
+    expect(service.getCompactCallCount()).toBe(2);
+  });
+});
+
+describe('buildCompactionInstruction', () => {
+  it('includes bounded recursive compaction guidance for prior summaries', () => {
+    const instruction = buildCompactionInstruction(
+      [
+        {
+          id: 'compact-summary-session-1',
+          sessionId: 'session-1',
+          threadId: 'session-1',
+          role: 'user',
+          content: [{ type: 'text', text: 'Previous compact summary' }],
+        },
+      ],
+      {
+        targetMaxTokens: 200,
+        hardMaxTokens: 300,
+        recursivePass: true,
+      },
+    );
+
+    expect(instruction).toContain('Aim for <= 200 tokens');
+    expect(instruction).toContain('Hard max: 300 tokens');
+    expect(instruction).toContain('Preserve the facts, not the wording');
+    expect(instruction).toContain(
+      'This is a bounded recursive compaction pass',
     );
   });
 });

@@ -39,6 +39,9 @@ export interface CompactOptions {
   systemPrompt?: string;
   sessionContext?: string;
   availableTools?: MCPTool[];
+  targetMaxTokens?: number;
+  hardMaxTokens?: number;
+  maxRecursivePasses?: number;
 }
 
 export interface SampleTextOptions {

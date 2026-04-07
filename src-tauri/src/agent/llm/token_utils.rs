@@ -39,6 +39,20 @@ pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
     five_percent.clamp(1024, 8192)
 }
 
+pub fn calculate_usable_context_budget(effective_limit: usize) -> usize {
+    (effective_limit as f64 * 0.9).floor() as usize
+}
+
+pub fn calculate_compact_target_budget(effective_limit: usize) -> usize {
+    let ratio_target = (effective_limit as f64 * 0.125).floor() as usize;
+    ratio_target.clamp(1024, 4096)
+}
+
+pub fn calculate_compact_hard_max_budget(effective_limit: usize) -> usize {
+    let ratio_cap = (effective_limit as f64 * 0.25).floor() as usize;
+    ratio_cap.clamp(1536, 6144)
+}
+
 /// Estimates the token count for a given message using BPE or character fallback.
 /// Translates `estimateTokensBPE` from TS.
 pub fn estimate_tokens_bpe(message: &Message) -> usize {
@@ -89,6 +103,65 @@ pub fn estimate_tokens_bpe(message: &Message) -> usize {
 
     let text = format!("{}: {}", message.role, parts.join(" "));
     estimate_text_tokens(&text)
+}
+
+pub fn estimate_message_selection_tokens(message: &Message) -> usize {
+    let base_tokens = estimate_tokens_bpe(message);
+    let mut multiplier = 1.0_f64;
+    let mut additive = 0usize;
+
+    if message.role == "tool" {
+        multiplier = multiplier.max(1.25);
+        additive += 64;
+    }
+
+    if message
+        .tool_calls
+        .as_ref()
+        .is_some_and(|calls| !calls.is_empty())
+    {
+        multiplier = multiplier.max(1.2);
+        additive += 48;
+    }
+
+    if message.tool_use.is_some() {
+        multiplier = multiplier.max(1.15);
+        additive += 48;
+    }
+
+    if message.attachments.is_some() {
+        multiplier = multiplier.max(1.2);
+        additive += 128;
+    }
+
+    if message.content.iter().any(|content| {
+        matches!(
+            content,
+            MCPContent::Resource { .. } | MCPContent::ToolCall { .. }
+        )
+    }) {
+        multiplier = multiplier.max(1.2);
+        additive += 48;
+    }
+
+    if message
+        .content
+        .iter()
+        .any(|content| matches!(content, MCPContent::Image { .. } | MCPContent::Audio { .. }))
+    {
+        multiplier = multiplier.max(1.35);
+        additive += 256;
+    }
+
+    if message
+        .content
+        .iter()
+        .any(|content| matches!(content, MCPContent::Text { text, .. } if text.contains("```")))
+    {
+        multiplier = multiplier.max(1.2);
+    }
+
+    ((base_tokens as f64) * multiplier).ceil() as usize + additive
 }
 
 /// Calculates a grounded token estimate by finding the last assistant message with

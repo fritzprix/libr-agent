@@ -165,10 +165,16 @@ describe('LLMServiceContext – Core', () => {
         wrapper: TestWrapper,
       });
 
-      // Mock streaming response with delay to make status observable
+      let releaseStream!: () => void;
+      const streamGate = new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+
+      // Keep the stream open until the test explicitly releases it so the
+      // transient "streaming" state is observable deterministically.
       mockStreamChat.mockImplementation(async function* () {
         yield JSON.stringify({ content: 'Hello' });
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await streamGate;
         yield JSON.stringify({ content: ' world' });
       });
 
@@ -193,9 +199,6 @@ describe('LLMServiceContext – Core', () => {
           'openai',
           'test-key',
         );
-
-        // Wait a bit for streaming state to be set
-        await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
       // Should be streaming during execution
@@ -206,6 +209,7 @@ describe('LLMServiceContext – Core', () => {
       });
 
       await act(async () => {
+        releaseStream();
         await promise;
       });
 

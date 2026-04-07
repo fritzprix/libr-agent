@@ -151,6 +151,12 @@ pub struct CompactRequest {
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,
+    /// Preferred target size for the generated compact summary.
+    pub target_max_tokens: Option<usize>,
+    /// Absolute cap for the generated compact summary.
+    pub hard_max_tokens: Option<usize>,
+    /// Maximum number of extra frontend-side recursive squeeze passes.
+    pub max_recursive_passes: Option<u8>,
     /// The exact parent workflow request layout to replay for cache-friendly compaction.
     pub parent_request: Option<CompactionParentRequest>,
     /// When true, Rust is waiting for this compaction to complete before retrying

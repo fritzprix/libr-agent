@@ -18,6 +18,27 @@ static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEng
 pub struct MessageService;
 
 impl MessageService {
+    pub fn filter_duplicate_injected_messages(
+        existing_messages: &[Message],
+        incoming_messages: &[Message],
+    ) -> Vec<Message> {
+        let mut known_message_ids = existing_messages
+            .iter()
+            .map(|message| message.id.clone())
+            .collect::<std::collections::HashSet<_>>();
+
+        incoming_messages
+            .iter()
+            .filter_map(|message| {
+                if known_message_ids.insert(message.id.clone()) {
+                    Some(message.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Delete a single message by ID.
     /// Also removes the message from the in-memory cache of active sessions to maintain consistency.
     pub async fn delete_message(
@@ -266,15 +287,40 @@ impl MessageService {
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
+        let mut accepted_messages = Vec::new();
+
         // 3. Add messages to in-memory cache
         {
             let mut session_messages = session.messages.write().await;
+            let deduped_messages =
+                Self::filter_duplicate_injected_messages(&session_messages, &messages);
+            let deduped_message_ids = deduped_messages
+                .iter()
+                .map(|message| message.id.as_str())
+                .collect::<std::collections::HashSet<_>>();
+
             for msg in &messages {
+                if !deduped_message_ids.contains(msg.id.as_str()) {
+                    log::warn!(
+                        "Skipping duplicate injected message for session {}: {}",
+                        session_id,
+                        msg.id
+                    );
+                }
+            }
+
+            for msg in &deduped_messages {
                 session_messages.push(msg.clone());
+                accepted_messages.push(msg.clone());
                 if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
                     session_messages.remove(0);
                 }
             }
+        }
+
+        if accepted_messages.is_empty() {
+            drop(sessions);
+            return Ok(());
         }
 
         // 4. Emit MessageAdded events immediately, or queue as pending for the running workflow
@@ -282,7 +328,7 @@ impl MessageService {
             // Drop session lock before I/O operations
             drop(sessions);
 
-            for msg in &messages {
+            for msg in &accepted_messages {
                 let event = crate::agent::events::AgentEvent::MessageAdded {
                     session_id: session_id.to_string(),
                     message: Box::new(msg.clone()),
@@ -293,21 +339,21 @@ impl MessageService {
         } else {
             // Track these message IDs as pending (will emit when workflow picks them up)
             let mut pending_events = session.pending_events.write().await;
-            for msg in &messages {
+            for msg in &accepted_messages {
                 pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
             }
             log::info!(
                 "Marked {} messages as pending for session: {} (IDs: {:?})",
-                messages.len(),
+                accepted_messages.len(),
                 session_id,
-                messages.iter().map(|m| &m.id).collect::<Vec<_>>()
+                accepted_messages.iter().map(|m| &m.id).collect::<Vec<_>>()
             );
             drop(pending_events);
             drop(sessions);
         }
 
         // 5. Persist to DB asynchronously
-        let msgs_for_db = messages.clone();
+        let msgs_for_db = accepted_messages.clone();
         tokio::spawn(async move {
             let repo = get_message_repository();
             for msg in msgs_for_db {

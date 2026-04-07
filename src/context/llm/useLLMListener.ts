@@ -412,6 +412,9 @@ export function useLLMListener({
             messages: rawMessages,
             fromId,
             toId,
+            targetMaxTokens,
+            hardMaxTokens,
+            maxRecursivePasses,
             parentRequest,
             resumeCompletionAfterCompact,
           } = event.payload;
@@ -449,6 +452,9 @@ export function useLLMListener({
               systemPrompt: parentRequest?.systemPrompt,
               sessionContext: parentRequest?.sessionContext,
               availableTools: parentRequest?.availableTools,
+              targetMaxTokens,
+              hardMaxTokens,
+              maxRecursivePasses,
             });
             await handleCompactResponse(sessionId, fromId, toId, summary);
             setCompactedRangeForSession(sessionId, { fromId, toId });

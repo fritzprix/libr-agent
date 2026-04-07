@@ -34,6 +34,23 @@ pub enum TaskSessionResolution {
     Create(String),
 }
 
+const CONTEXT_LIMIT_ROTATION_MARKERS: [&str; 2] = [
+    "The newest non-compactable context is too large for the configured context window",
+    "Conversation context still exceeds the configured limit even after reserving safety margin",
+];
+
+pub fn should_recreate_task_session_after_error(
+    error: &str,
+    has_pinned_session: bool,
+    is_new_session: bool,
+) -> bool {
+    has_pinned_session
+        && !is_new_session
+        && CONTEXT_LIMIT_ROTATION_MARKERS
+            .iter()
+            .any(|marker| error.contains(marker))
+}
+
 /// Decide how a scheduled task should obtain its execution session.
 ///
 /// Resolution order:
@@ -77,6 +94,71 @@ async fn sync_task_workspace_override(
     } else {
         WorkspaceService::cancel_override(session_id).await
     }
+}
+
+async fn create_task_session(
+    manager: &AgentSessionManager,
+    task: &crate::entity::scheduled_task::Model,
+    agent_config: &AgentConfig,
+    session_id: String,
+) -> Result<String, String> {
+    let task_name = format!("⏰ {}", task.name);
+    manager
+        .create_session(
+            session_id.clone(),
+            Some(task_name),
+            None,
+            None,
+            agent_config.clone(),
+        )
+        .await?;
+
+    if task.yolo_mode {
+        if let Err(e) = manager.set_yolo_mode(&session_id, true).await {
+            log::warn!(
+                "⏰ Failed to set YOLO mode for new session {}: {}",
+                session_id,
+                e
+            );
+        }
+    }
+
+    Ok(session_id)
+}
+
+fn build_scheduled_task_message(
+    task: &crate::entity::scheduled_task::Model,
+    session_id: &str,
+    now_ts: i64,
+) -> Message {
+    let run_message_id = build_scheduled_task_message_id(&task.id, session_id, now_ts);
+    Message {
+        id: run_message_id,
+        session_id: session_id.to_string(),
+        role: "user".to_string(),
+        content: vec![MCPContent::Text {
+            text: task.message.clone(),
+            is_error: None,
+        }],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: Some(task.assistant_id.clone()),
+        usage: None,
+        attachments: None,
+        tool_use: None,
+        created_at: now_ts,
+        updated_at: now_ts,
+        source: Some("scheduled_task".to_string()),
+        error: None,
+        metadata: None,
+    }
+}
+
+pub fn build_scheduled_task_message_id(task_id: &str, session_id: &str, now_ts: i64) -> String {
+    format!("scheduled-task-run:{}:{}:{}", task_id, session_id, now_ts)
 }
 
 /// Execute all tasks whose `next_run_at <= now_ms`.
@@ -148,7 +230,7 @@ async fn execute_task(
     )
     .await?;
 
-    let (session_id, is_new_session) = match resolution {
+    let (mut session_id, mut is_new_session) = match resolution {
         TaskSessionResolution::ReuseActive(sid) => {
             // Ensure YOLO mode is synced even for reused sessions
             if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
@@ -171,26 +253,10 @@ async fn execute_task(
             }
             (sid, false)
         }
-        TaskSessionResolution::Create(sid) => {
-            let task_name = format!("⏰ {}", task.name);
-            manager
-                .create_session(
-                    sid.clone(),
-                    Some(task_name),
-                    None,
-                    None,
-                    agent_config.clone(),
-                )
-                .await?;
-
-            // Apply YOLO mode from task to the new session
-            if task.yolo_mode {
-                if let Err(e) = manager.set_yolo_mode(&sid, true).await {
-                    log::warn!("⏰ Failed to set YOLO mode for new session {}: {}", sid, e);
-                }
-            }
-            (sid, true)
-        }
+        TaskSessionResolution::Create(sid) => (
+            create_task_session(manager, task, &agent_config, sid).await?,
+            true,
+        ),
     };
 
     // ── 3. Skip if session is currently running ───────────────────────────────
@@ -223,33 +289,41 @@ async fn execute_task(
 
     // ── 5. Inject message and trigger workflow ────────────────────────────────
     let now_ts = chrono::Utc::now().timestamp_millis();
-    let user_message = Message {
-        id: Uuid::new_v4().to_string(),
-        session_id: session_id.clone(),
-        role: "user".to_string(),
-        content: vec![MCPContent::Text {
-            text: task.message.clone(),
-            is_error: None,
-        }],
-        tool_calls: None,
-        tool_call_id: None,
-        is_streaming: None,
-        thinking: None,
-        thinking_signature: None,
-        assistant_id: Some(task.assistant_id.clone()),
-        usage: None,
-        attachments: None,
-        tool_use: None,
-        created_at: now_ts,
-        updated_at: now_ts,
-        source: Some("scheduled_task".to_string()),
-        error: None,
-        metadata: None,
-    };
+    let user_message = build_scheduled_task_message(task, &session_id, now_ts);
 
-    manager
+    if let Err(error) = manager
         .inject_messages(session_id.clone(), vec![user_message], true)
-        .await?;
+        .await
+    {
+        if should_recreate_task_session_after_error(
+            &error,
+            task.session_id.is_some(),
+            is_new_session,
+        ) {
+            let stale_session_id = session_id.clone();
+            let rotated_session_id =
+                create_task_session(manager, task, &agent_config, Uuid::new_v4().to_string())
+                    .await?;
+            sync_task_workspace_override(&rotated_session_id, task.workspace_override.as_deref())
+                .await?;
+
+            let retry_message = build_scheduled_task_message(task, &rotated_session_id, now_ts);
+            log::warn!(
+                "⏰ Rotating scheduled task '{}' from session {} to fresh session {} after context-limit failure",
+                task.name,
+                stale_session_id,
+                rotated_session_id
+            );
+            manager
+                .inject_messages(rotated_session_id.clone(), vec![retry_message], true)
+                .await?;
+
+            session_id = rotated_session_id;
+            is_new_session = true;
+        } else {
+            return Err(error);
+        }
+    }
 
     // ── 6. Record the run and schedule the next fire time ─────────────────────
     let next_run_at = compute_next_run_for_schedule_timezone(
@@ -258,7 +332,7 @@ async fn execute_task(
         &task.schedule_timezone,
     )?;
     let repo = get_scheduled_task_repository();
-    let new_session_id = is_new_session.then_some(session_id);
+    let new_session_id = is_new_session.then_some(session_id.clone());
     repo.record_run(&task.id, new_session_id, now_ms, next_run_at)
         .await
         .map_err(|e| format!("Failed to record run: {e}"))?;
