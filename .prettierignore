@@ -10,6 +10,7 @@ src/**/*.test.tsx
 src-tauri/
 public/
 .venv/
+tmp/
 
 # Handlebars templates (preserve formatting and doctype)
 *.hbs

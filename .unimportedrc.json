@@ -5,6 +5,7 @@
     "**/node_modules/**",
     "**/dist/**",
     "**/target/**",
+    "tmp/**",
     "**/*.test.*",
     "**/*.stories.*",
     "**/vite-env.d.ts",
