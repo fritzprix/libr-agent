@@ -29,6 +29,7 @@ import { CodeBlock } from './components/CodeBlock';
 import { MarkdownText } from './components/MarkdownText';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
 import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 
 const logger = getLogger('AgentMessageRenderer');
 const DISPLAY_MEDIA_CACHE_MAX_BYTES = 64 * 1024 * 1024;
@@ -471,35 +472,47 @@ function ImageContentRenderer({
   return (
     <div className="group relative inline-block max-w-full">
       {/* Quick Action Buttons - Visible on hover */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-10 bg-background/80 backdrop-blur-sm p-1 rounded-md border border-border shadow-sm">
-        <button
-          type="button"
-          onClick={handleCopy}
-          disabled={!canCopyImage}
-          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          title={
-            canCopyImage
-              ? 'Copy Image'
-              : 'Image clipboard is not supported in this environment'
-          }
-          aria-label="Copy image to clipboard"
-        >
-          {copied ? (
-            <Check size={16} className="text-emerald-500" />
-          ) : (
-            <Copy size={16} />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
-          title="Download Image"
-          aria-label="Download image"
-        >
-          <Download size={16} />
-        </button>
-      </div>
+      <TooltipProvider>
+        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-10 bg-background/80 backdrop-blur-sm p-1 rounded-md border border-border shadow-sm">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={canCopyImage ? -1 : 0} className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  disabled={!canCopyImage}
+                  className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  aria-label="Copy image to clipboard"
+                >
+                  {copied ? (
+                    <Check size={16} className="text-emerald-500" />
+                  ) : (
+                    <Copy size={16} />
+                  )}
+                </button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {canCopyImage
+                ? 'Copy Image'
+                : 'Image clipboard is not supported in this environment'}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                aria-label="Download image"
+              >
+                <Download size={16} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Download Image</TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
 
       <img
         key={itemKey}
