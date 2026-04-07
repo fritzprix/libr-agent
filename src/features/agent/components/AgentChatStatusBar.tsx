@@ -64,12 +64,12 @@ export function AgentChatStatusBar() {
     usage: null,
   });
 
-  useEffect(() => {
+  if (sessionId !== persistedMetrics.sessionId) {
     setPersistedMetrics({
       sessionId,
       usage: null,
     });
-  }, [sessionId]);
+  }
 
   useEffect(() => {
     if (!sessionId || !metrics) {
