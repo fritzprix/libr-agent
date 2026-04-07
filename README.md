@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # 🤖 LibrAgent
 
 > **A lightweight, stateful platform for autonomous AI agents.**
@@ -69,6 +71,7 @@ The platform is designed to be expanded via community standards.
 
 LibrAgent is a powerful platform, and we provide detailed documentation to help you get the most out of it.
 
+- **[Getting Started](docs/guides/getting-started.md)**: A guide to setting up your environment and connecting your first MCP server.
 - **[Navigation Guide](docs/guides/navigation-guide.md)**: A map of the application's structure, explaining how to use routes like `/assistants` (Assistant Profiles) and `/playbooks` (Workflow Templates) to manage your agents.
 - **[Architecture Guide](docs/architecture/agent-workflow-architecture.md)**: Detailed overview of how LibrAgent works under the hood.
 
