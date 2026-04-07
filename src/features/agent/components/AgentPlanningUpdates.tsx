@@ -61,10 +61,12 @@ function PlanningToastSummary({
       return todos.slice(-5);
     }
 
+    const indexMap = new Map(todos.map((t, index) => [t.id, index]));
+
     if (relevant.length >= 5) {
       // If many things changed, show the last 5 of those
       return relevant
-        .sort((a, b) => todos.indexOf(a) - todos.indexOf(b))
+        .sort((a, b) => (indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0))
         .slice(-5);
     }
 
@@ -80,7 +82,7 @@ function PlanningToastSummary({
     }
 
     // Sort by original order to maintain context
-    return result.sort((a, b) => todos.indexOf(a) - todos.indexOf(b));
+    return result.sort((a, b) => (indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0));
   }, [todos, previousTodos]);
 
   const firstVisibleIndex =
