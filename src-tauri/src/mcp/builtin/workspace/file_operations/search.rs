@@ -48,8 +48,60 @@ impl WorkspaceServer {
             .get("showLineAnchors")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
-        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let limit_raw = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50);
+        if !(1..=1000).contains(&limit_raw) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Invalid pagination parameter: limit must be between 1 and 1000, got {}",
+                    limit_raw
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Set limit to a value between 1 and 1000".to_string(),
+                "Use offset to paginate through additional results".to_string(),
+            ])
+            .to_mcp_result());
+        }
+        let limit = match usize::try_from(limit_raw) {
+            Ok(value) => value,
+            Err(_) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Invalid pagination parameter: limit is too large for this platform ({})",
+                        limit_raw
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Set limit to a value between 1 and 1000".to_string(),
+                    "Use smaller page sizes when paginating search results".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
+
+        let offset_raw = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+        let offset = match usize::try_from(offset_raw) {
+            Ok(value) => value,
+            Err(_) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Invalid pagination parameter: offset is too large for this platform ({})",
+                        offset_raw
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Set offset to a smaller non-negative value".to_string(),
+                    "Use limit and offset together to page through results".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
 
         // Security validation
         let file_manager = self.get_file_manager(session_id.clone());

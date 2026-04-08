@@ -14,8 +14,14 @@ impl WorkspaceServer {
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
-        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let requested_limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100);
+        let requested_offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+        let limit = usize::try_from(requested_limit)
+            .unwrap_or(usize::MAX)
+            .clamp(1, 500);
+        let offset = usize::try_from(requested_offset)
+            .unwrap_or(usize::MAX)
+            .min(100_000);
 
         let file_manager = self.get_file_manager(session_id.clone());
         let safe_path = match file_manager
@@ -125,7 +131,6 @@ impl WorkspaceServer {
                         let icon = match type_ {
                             "directory" => "📁 dir",
                             "file" => "📄 file",
-                            "symlink" => "🔗 symlink",
                             _ => "❓ other",
                         };
 
