@@ -60,6 +60,25 @@ pub(crate) fn build_overflow_preflight(
     }
 }
 
+pub fn build_compact_context_selection_options(
+    system_prompt: Option<String>,
+    tools_json: Option<String>,
+    provider: &str,
+    tool_call_group_visible_count: usize,
+) -> crate::agent::llm::context_selector::SelectionOptions {
+    crate::agent::llm::context_selector::SelectionOptions {
+        system_prompt,
+        tools_json,
+        max_messages: None,
+        max_tool_calls_per_message: Some(if provider == "gemini" {
+            100
+        } else {
+            tool_call_group_visible_count
+        }),
+        pin_first_user_message: false,
+    }
+}
+
 const COMPACT_TOOL_SNAPSHOT_LIMIT: usize = 5;
 const COMPACT_ARGUMENT_PREVIEW_LIMIT: usize = 96;
 const COMPACT_RESULT_PREVIEW_LIMIT: usize = 140;
@@ -715,16 +734,12 @@ pub async fn request_llm_completion(
             .await?;
         }
 
-        let context_options = crate::agent::llm::context_selector::SelectionOptions {
-            system_prompt: combined_system_prompt.clone(),
-            tools_json: tools_json.clone(),
-            max_messages: None,
-            max_tool_calls_per_message: Some(if provider == "gemini" {
-                100
-            } else {
-                tool_call_group_visible_count
-            }),
-        };
+        let context_options = build_compact_context_selection_options(
+            combined_system_prompt.clone(),
+            tools_json.clone(),
+            &provider,
+            tool_call_group_visible_count,
+        );
 
         final_messages = crate::agent::llm::context_selector::select_messages_within_context(
             &final_messages,
