@@ -48,6 +48,8 @@ impl WorkspaceServer {
             .get("showLineAnchors")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
         // Security validation
         let file_manager = self.get_file_manager(session_id.clone());
@@ -86,7 +88,7 @@ impl WorkspaceServer {
                 }
             };
             return self
-                .search_files_only(&safe_path, search_path, pattern)
+                .search_files_only(&safe_path, search_path, pattern, limit, offset)
                 .await;
         }
 
@@ -135,6 +137,8 @@ impl WorkspaceServer {
                 glob_pat.as_ref(),
                 show_line_anchors,
                 ignore_case,
+                limit,
+                offset,
             )
             .await
         } else {
@@ -145,6 +149,8 @@ impl WorkspaceServer {
                 query_str,
                 show_line_anchors,
                 ignore_case,
+                limit,
+                offset,
             )
             .await
         }
@@ -155,6 +161,8 @@ impl WorkspaceServer {
         root_path: &Path,
         display_path: &str,
         pattern: &str,
+        limit: usize,
+        offset: usize,
     ) -> Result<MCPResult, String> {
         use walkdir::WalkDir;
 
@@ -246,49 +254,68 @@ impl WorkspaceServer {
             }
         }
 
-        let result_text = if results.is_empty() {
-            format!(
-                "**🔍 File Search: No matches found**\n\n\
-                Pattern: `{}`\n\
-                Search Path: `{}`\n\n\
-                **Next Steps:**\n\
-                - Verify the pattern syntax (use glob format like `*.txt` or `**/*.rs`)\n\
-                - Use listDirectory to explore available files",
-                pattern, display_path
+        let total_matches = results.len();
+        let paginated_results: Vec<_> = results.into_iter().skip(offset).take(limit).collect();
+        let has_more = offset + paginated_results.len() < total_matches;
+
+        let (result_text, next_steps) = if total_matches == 0 {
+            (
+                format!(
+                    "**🔍 File Search: No matches found**\n\n\
+                    Pattern: `{}`\n\
+                    Search Path: `{}`",
+                    pattern, display_path
+                ),
+                vec![
+                    "Verify the pattern syntax (use glob format like `*.txt` or `**/*.rs`)".to_string(),
+                    "Use listDirectory to explore available files".to_string(),
+                ]
             )
         } else {
             let mut text = format!(
                 "**🔍 File Search: {} file(s) found**\n\n\
                 Pattern: `{}`\n\
                 Search Path: `{}`\n\n",
-                results.len(),
+                total_matches,
                 pattern,
                 display_path
             );
 
-            text.push_str("**Matches:**\n");
-            for item in results.iter().take(50) {
+            text.push_str("| Type | Path | Size |\n|---|---|---|\n");
+
+            for item in &paginated_results {
                 let p = item.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                 let t = item.get("type").and_then(|v| v.as_str()).unwrap_or("?");
-                let icon = if t == "file" { "📄" } else { "📁" };
+                let icon = if t == "file" { "📄 file" } else { "📁 dir" };
                 if let Some(size) = item.get("size").and_then(|v| v.as_u64()) {
                     text.push_str(&format!(
-                        "- {} `{}` ({})\n",
+                        "| {} | `{}` | {} |\n",
                         icon,
                         p,
                         format_file_size(size)
                     ));
                 } else {
-                    text.push_str(&format!("- {} `{}`\n", icon, p));
+                    text.push_str(&format!("| {} | `{}` | - |\n", icon, p));
                 }
             }
 
-            if results.len() > 50 {
+            if has_more {
                 text.push_str(&format!(
-                    "\n*Showing first 50 of {} total matches*\n",
-                    results.len()
+                    "\n*(Showing {} to {} of {} total matches. Call search with offset: {} to see more)*\n",
+                    offset + 1,
+                    offset + paginated_results.len(),
+                    total_matches,
+                    offset + limit
+                ));
+            } else if offset > 0 {
+                text.push_str(&format!(
+                    "\n*(Showing {} to {} of {} total matches)*\n",
+                    offset + 1,
+                    offset + paginated_results.len(),
+                    total_matches
                 ));
             }
+
             if skipped_heavy_dirs > 0 {
                 text.push_str(&format!(
                     "\n*Skipped {} heavyweight director{} (`{}`)*\n",
@@ -308,18 +335,22 @@ impl WorkspaceServer {
                     },
                 ));
             }
-            text
+            (text, vec![
+                "Refine search query or filePattern if too many results were returned".to_string(),
+                "Use offset and limit to paginate through results if truncated".to_string(),
+                "Use search on specific directories to narrow down".to_string(),
+            ])
         };
 
-        Ok(MCPResult::success_with_data(
-            &result_text,
-            json!({
-                "matches": results,
-                "skipped_directories": skipped_heavy_dirs + skipped_gitignored_dirs,
-                "skipped_heavyweight_directories": skipped_heavy_dirs,
-                "skipped_gitignored_directories": skipped_gitignored_dirs,
-            }),
-        ))
+        Ok(SuccessHint::new(result_text, next_steps).to_mcp_result_with_data(Some(json!({
+            "matches": paginated_results,
+            "total_matches": total_matches,
+            "offset": offset,
+            "limit": limit,
+            "skipped_directories": skipped_heavy_dirs + skipped_gitignored_dirs,
+            "skipped_heavyweight_directories": skipped_heavy_dirs,
+            "skipped_gitignored_directories": skipped_gitignored_dirs,
+        }))))
     }
 
     async fn search_content_in_file(
@@ -330,6 +361,8 @@ impl WorkspaceServer {
         query: &str,
         show_hashes: bool,
         ignore_case: bool,
+        limit: usize,
+        offset: usize,
     ) -> Result<MCPResult, String> {
         let max_size = effective_search_content_file_size_limit();
         if let Ok(metadata) = tokio::fs::metadata(file_path).await {
@@ -408,7 +441,11 @@ impl WorkspaceServer {
 
         let language = detect_language(file_path);
 
-        let text_output = if matches.is_empty() {
+        let total_matches = matches.len();
+        let paginated_matches: Vec<_> = matches.into_iter().skip(offset).take(limit).collect();
+        let has_more = offset + paginated_matches.len() < total_matches;
+
+        let text_output = if total_matches == 0 {
             format!(
                 "**🔍 Search Results: No matches found**\n\n\
                 Pattern: `{}`\n\
@@ -425,19 +462,18 @@ impl WorkspaceServer {
         } else {
             let mut s = format!(
                 "**🔍 Search Results: {} match(es) found**\n\n",
-                matches.len()
+                total_matches
             );
             s.push_str(&format!(
                 "File: `{}`\nPattern: `{}`\n\n",
                 display_path, query
             ));
 
-            let matches_to_show = matches.len().min(50);
             s.push_str("```");
             s.push_str(language);
             s.push('\n');
 
-            for m in matches.iter().take(matches_to_show) {
+            for m in &paginated_matches {
                 let line_num = m.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
                 let text = m.get("text").and_then(|v| v.as_str()).unwrap_or("");
                 if let Some(anchor) = m.get("anchor").and_then(|v| v.as_str()) {
@@ -448,10 +484,20 @@ impl WorkspaceServer {
             }
             s.push_str("```\n\n");
 
-            if matches.len() > 50 {
+            if has_more {
                 s.push_str(&format!(
-                    "*Showing first 50 of {} total matches*\n\n",
-                    matches.len()
+                    "*(Showing {} to {} of {} total matches. Call search with offset: {} to see more)*\n\n",
+                    offset + 1,
+                    offset + paginated_matches.len(),
+                    total_matches,
+                    offset + limit
+                ));
+            } else if offset > 0 {
+                s.push_str(&format!(
+                    "*(Showing {} to {} of {} total matches)*\n\n",
+                    offset + 1,
+                    offset + paginated_matches.len(),
+                    total_matches
                 ));
             }
 
@@ -467,7 +513,12 @@ impl WorkspaceServer {
 
         Ok(MCPResult::success_with_data(
             &text_output,
-            json!({ "matches": matches }),
+            json!({
+                "matches": paginated_matches,
+                "total_matches": total_matches,
+                "offset": offset,
+                "limit": limit
+            }),
         ))
     }
 
@@ -481,6 +532,8 @@ impl WorkspaceServer {
         file_pattern: Option<&glob::Pattern>,
         show_hashes: bool,
         ignore_case: bool,
+        limit: usize,
+        offset: usize,
     ) -> Result<MCPResult, String> {
         use walkdir::WalkDir;
 
@@ -668,7 +721,11 @@ impl WorkspaceServer {
             options_str
         );
 
-        for fm in file_matches.iter().take(10) {
+        let total_files = file_matches.len();
+        let paginated_files: Vec<_> = file_matches.into_iter().skip(offset).take(limit).collect();
+        let has_more = offset + paginated_files.len() < total_files;
+
+        for fm in &paginated_files {
             text.push_str(&format!("### `{}`\n", fm.rel_path));
             for hit in fm.hits.iter().take(5) {
                 let line_num = hit.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -688,10 +745,20 @@ impl WorkspaceServer {
             text.push('\n');
         }
 
-        if file_matches.len() > 10 {
+        if has_more {
             text.push_str(&format!(
-                "*... and {} more files with matches*\n",
-                file_matches.len() - 10
+                "*(Showing {} to {} of {} total files with matches. Call search with offset: {} to see more)*\n",
+                offset + 1,
+                offset + paginated_files.len(),
+                total_files,
+                offset + limit
+            ));
+        } else if offset > 0 {
+            text.push_str(&format!(
+                "*(Showing {} to {} of {} total files with matches)*\n",
+                offset + 1,
+                offset + paginated_files.len(),
+                total_files
             ));
         }
         if skipped_heavy_dirs > 0
@@ -738,15 +805,17 @@ impl WorkspaceServer {
             "pattern": query,
             "directory": display_path,
             "files_searched": files_searched,
-            "files_with_matches": file_matches.len(),
+            "files_with_matches": total_files,
             "total_matches": total_hits,
+            "offset": offset,
+            "limit": limit,
             "skipped_directories": skipped_heavy_dirs + skipped_gitignored_dirs,
             "skipped_heavyweight_directories": skipped_heavy_dirs,
             "skipped_gitignored_directories": skipped_gitignored_dirs,
             "skipped_binary_files": skipped_binary_files,
             "skipped_large_files": skipped_large_files,
             "max_file_size": max_size,
-            "results": file_matches.iter().map(|fm| json!({
+            "results": paginated_files.iter().map(|fm| json!({
                 "file": fm.rel_path,
                 "matches": fm.hits,
             })).collect::<Vec<_>>(),

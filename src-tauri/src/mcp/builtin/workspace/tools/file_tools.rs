@@ -97,6 +97,22 @@ pub fn create_list_directory_tool() -> MCPTool {
             Some("Relative path to the directory to list (from workspace root)"),
         ),
     );
+    props.insert(
+        "limit".to_string(),
+        integer_prop(
+            Some(1),
+            Some(1000),
+            Some("Maximum number of items to return (default: 100)"),
+        ),
+    );
+    props.insert(
+        "offset".to_string(),
+        integer_prop(
+            Some(0),
+            None,
+            Some("Number of items to skip for pagination (default: 0)"),
+        ),
+    );
 
     MCPTool {
         name: "listDirectory".to_string(),
@@ -165,6 +181,22 @@ pub fn create_search_tool() -> MCPTool {
             Some(1),
             Some(1000),
             Some("Relative path to the file or directory to search (from workspace root)"),
+        ),
+    );
+    props.insert(
+        "limit".to_string(),
+        integer_prop(
+            Some(1),
+            Some(1000),
+            Some("Maximum number of results to return (default: 50)"),
+        ),
+    );
+    props.insert(
+        "offset".to_string(),
+        integer_prop(
+            Some(0),
+            None,
+            Some("Number of results to skip for pagination (default: 0)"),
         ),
     );
     props.insert(
