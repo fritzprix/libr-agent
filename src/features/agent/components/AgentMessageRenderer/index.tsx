@@ -477,7 +477,7 @@ function ImageContentRenderer({
           type="button"
           onClick={handleCopy}
           disabled={!canCopyImage}
-          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           title={
             canCopyImage
               ? 'Copy Image'
@@ -494,7 +494,7 @@ function ImageContentRenderer({
         <button
           type="button"
           onClick={handleDownload}
-          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           title="Download Image"
           aria-label="Download image"
         >
