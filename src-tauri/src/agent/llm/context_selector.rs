@@ -15,6 +15,7 @@ pub struct SelectionOptions {
     pub tools_json: Option<String>,
     pub max_messages: Option<usize>,
     pub max_tool_calls_per_message: Option<usize>,
+    pub pin_first_user_message: bool,
 }
 
 /// Selected Context Result
@@ -684,7 +685,10 @@ pub fn select_messages_within_context(
     let mut pinned_message: Option<Message> = None;
     let mut pinned_message_tokens = 0;
 
-    if !batched_messages.is_empty() && batched_messages[0].role == "user" {
+    if options.is_some_and(|selection| selection.pin_first_user_message)
+        && !batched_messages.is_empty()
+        && batched_messages[0].role == "user"
+    {
         pinned_message = Some(batched_messages[0].clone());
         pinned_message_tokens =
             token_utils::estimate_message_selection_tokens(&batched_messages[0]);

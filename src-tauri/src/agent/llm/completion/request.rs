@@ -610,6 +610,7 @@ pub async fn request_llm_completion(
             } else {
                 tool_call_group_visible_count
             }),
+            pin_first_user_message: false,
         };
 
         let compactable_split_idx = find_preflight_compaction_split_index(&messages);

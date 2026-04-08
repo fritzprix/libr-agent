@@ -292,6 +292,52 @@ fn test_select_messages_within_context_lossy_trims_oversized_latest_message() {
 }
 
 #[test]
+fn test_select_messages_within_context_does_not_pin_first_user_by_default() {
+    let summary = make_message("compact-summary-test", "user", "Earlier compact summary");
+    let older_user = make_message("m1", "user", "Older preserved user tail");
+    let latest_user = make_message("m2", "user", "Latest request");
+
+    let selected_messages = select_messages_within_context(
+        &[summary.clone(), older_user.clone(), latest_user.clone()],
+        "openai",
+        Some(4096),
+        Some(&SelectionOptions::default()),
+        Some(&ModelContextInfo {
+            context_window: 8192,
+        }),
+    );
+
+    assert_eq!(selected_messages.len(), 3);
+    assert_eq!(selected_messages[0].id, summary.id);
+    assert_eq!(selected_messages[1].id, older_user.id);
+    assert_eq!(selected_messages[2].id, latest_user.id);
+}
+
+#[test]
+fn test_select_messages_within_context_can_pin_first_user_when_enabled() {
+    let summary = make_message("compact-summary-test", "user", "Earlier compact summary");
+    let older_user = make_message("m1", "user", "Older preserved user tail");
+    let latest_user = make_message("m2", "user", "Latest request");
+
+    let selected_messages = select_messages_within_context(
+        &[summary, older_user, latest_user],
+        "openai",
+        Some(4096),
+        Some(&SelectionOptions {
+            pin_first_user_message: true,
+            ..SelectionOptions::default()
+        }),
+        Some(&ModelContextInfo {
+            context_window: 8192,
+        }),
+    );
+
+    assert_eq!(selected_messages.len(), 2);
+    assert_eq!(selected_messages[0].id, "merged_compact-summary-test_m1");
+    assert_eq!(selected_messages[1].id, "m2");
+}
+
+#[test]
 fn test_select_messages_within_context_preserves_tool_chain_block() {
     let intro = make_message("m0", "user", "Need analysis");
 
