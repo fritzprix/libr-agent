@@ -353,6 +353,7 @@ impl WorkspaceServer {
         }))))
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn search_content_in_file(
         &self,
         file_path: &Path,
