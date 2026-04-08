@@ -24,10 +24,10 @@ this file should be updated with it.
 
 The system supports two context strategies:
 
-| Strategy | Behavior | Primary path |
-| --- | --- | --- |
-| `window` | Sliding window over recent messages only. No summary persistence. | `select_recent_messages_fifo()` |
-| `compact` | Async compaction with persisted summary + recent tail. | `request_llm_completion()` + `select_messages_within_context()` + compaction pipeline |
+| Strategy  | Behavior                                                          | Primary path                                                                          |
+| --------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `window`  | Sliding window over recent messages only. No summary persistence. | `select_recent_messages_fifo()`                                                       |
+| `compact` | Async compaction with persisted summary + recent tail.            | `request_llm_completion()` + `select_messages_within_context()` + compaction pipeline |
 
 ### Contract
 
