@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-04-08
+
+### 🚀 Features
+
+- **Safer and Clearer Agent Message UI**: Added stronger keyboard-focus treatment for image actions and improved link handling so message content feels more polished and trustworthy during navigation.
+- **Effective Context Visibility**: Clarified the agent context meter to reflect Rust's effective request-time context calculation, making compaction-aware usage easier to understand during long sessions.
+
+### 🐛 Fixes
+
+- **Security: Hardened External Link Sanitization**: Blocked unsafe and scheme-relative URLs in markdown and resource links, closing XSS-style fallback paths in rendered agent content.
+- **Compact Mode Contract Alignment**: Fixed compact-mode context accounting and selector behavior so frontend and Rust stay aligned on what counts toward the real request budget.
+
+### 🔧 Internal
+
+- **Workspace Tool Response Cleanup**: Refined workspace directory/search pagination and response shaping to keep large tool outputs more efficient and easier for agents to consume.
+- **Release and UI Maintenance**: Refreshed supporting UI primitives, styling details, and compaction documentation to match the current product behavior more accurately.
+
 ## [0.7.0] - 2026-04-06
 
 ### 🚀 Features

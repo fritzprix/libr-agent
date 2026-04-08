@@ -34,7 +34,7 @@ pub fn create_read_file_tool() -> MCPTool {
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Optional: include opaque edit anchors for each line (e.g. '42:a31f2c|...'). Use anchors with replaceLines, insertAfterLine, and deleteLines.",
+            "Optional: include opaque edit anchors for each line (e.g. '42:a31f2c|...'). For edit tools, copy only the 6-character anchor between ':' and '|', not the line number or line content.",
         )),
     );
 
@@ -222,7 +222,7 @@ pub fn create_search_tool() -> MCPTool {
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Include edit anchors in results for use with replaceLines, insertAfterLine, or deleteLines (default: false)",
+            "Include edit anchors in results for use with replaceLines, insertAfterLine, or deleteLines (default: false). For edit tools, copy only the 6-character anchor between ':' and '|'.",
         )),
     );
 
@@ -278,7 +278,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required. Use the opaque anchor from the start line in readFile(showLineAnchors=true) or search(showLineAnchors=true)."),
+            Some("Required. Use only the 6-character opaque anchor from the start line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
     props.insert(
@@ -286,7 +286,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required when endLine creates a multi-line replacement range. Use the opaque anchor from the exact end line in readFile(showLineAnchors=true) or search(showLineAnchors=true)."),
+            Some("Required when endLine creates a multi-line replacement range. Use only the 6-character opaque anchor from the exact end line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
 
@@ -314,7 +314,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Opaque anchor from readFile(showLineAnchors=true) for the start line."),
+            Some("6-character opaque anchor from readFile(showLineAnchors=true) for the start line. Do not include the line number or '|content'."),
         ),
     );
     replace_item_props.insert(
@@ -322,7 +322,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required when endLine creates a multi-line range."),
+            Some("Required when endLine creates a multi-line range. Use only the 6-character anchor from the end line, not the full 'N:anchor|content' string."),
         ),
     );
     props.insert(
@@ -390,7 +390,7 @@ pub fn create_insert_after_line_tool() -> MCPTool {
             None,
             None,
             Some(
-                "Required when afterLine targets an existing line. Omit only when afterLine is 0.",
+                "Required when afterLine targets an existing line. Use only the 6-character anchor from readFile(showLineAnchors=true) or search(showLineAnchors=true). Omit only when afterLine is 0.",
             ),
         ),
     );
@@ -415,7 +415,7 @@ pub fn create_insert_after_line_tool() -> MCPTool {
             None,
             None,
             Some(
-                "Required when afterLine targets an existing line. Omit only when afterLine is 0.",
+                "Required when afterLine targets an existing line. Use only the 6-character anchor from readFile(showLineAnchors=true) or search(showLineAnchors=true). Omit only when afterLine is 0.",
             ),
         ),
     );
@@ -477,7 +477,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required. Use the opaque anchor from the start line in readFile(showLineAnchors=true) or search(showLineAnchors=true)."),
+            Some("Required. Use only the 6-character opaque anchor from the start line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
     props.insert(
@@ -485,7 +485,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required when endLine creates a multi-line deletion range. Use the opaque anchor from the exact end line in readFile(showLineAnchors=true) or search(showLineAnchors=true)."),
+            Some("Required when endLine creates a multi-line deletion range. Use only the 6-character opaque anchor from the exact end line in readFile(showLineAnchors=true) or search(showLineAnchors=true). Do not include the line number or '|content'."),
         ),
     );
 
@@ -508,7 +508,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Opaque anchor from readFile(showLineAnchors=true) for the start line."),
+            Some("6-character opaque anchor from readFile(showLineAnchors=true) for the start line. Do not include the line number or '|content'."),
         ),
     );
     delete_item_props.insert(
@@ -516,7 +516,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Required when endLine creates a multi-line range."),
+            Some("Required when endLine creates a multi-line range. Use only the 6-character anchor from the end line, not the full 'N:anchor|content' string."),
         ),
     );
     props.insert(
@@ -591,7 +591,7 @@ pub fn create_edit_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Opaque anchor for the start line from readFile(showLineAnchors=true). Required for all operations except INSERT_AFTER with line=0."),
+            Some("6-character opaque anchor for the start line from readFile(showLineAnchors=true). Required for all operations except INSERT_AFTER with line=0. Do not include the line number or '|content'."),
         ),
     );
     edit_item_props.insert(
@@ -599,7 +599,7 @@ pub fn create_edit_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Opaque anchor for the end line. Required when endLine is set for a multi-line REPLACE or DELETE."),
+            Some("6-character opaque anchor for the end line. Required when endLine is set for a multi-line REPLACE or DELETE. Do not include the line number or '|content'."),
         ),
     );
 
@@ -630,7 +630,7 @@ pub fn create_edit_file_tool() -> MCPTool {
         title: Some("Edit File (Batch)".to_string()),
         description: "Apply multiple line edits to a file atomically in a single operation.
 
-PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values.
+PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values. For anchors, pass only the 6 hex characters between ':' and '|'.
 
 Edits are applied bottom-to-top so line numbers stay stable within the batch.
 

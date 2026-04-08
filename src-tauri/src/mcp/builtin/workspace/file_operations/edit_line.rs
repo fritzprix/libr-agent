@@ -405,8 +405,8 @@ impl WorkspaceServer {
                 .guidance(vec![
                     "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) first"
                         .to_string(),
-                    "Copy the exact start-line anchor from the form N:anchor|content".to_string(),
-                    "If the edit also uses endLine for a range, copy endAnchor from the exact final line"
+                    "Copy only the 6-character start-line anchor from the form N:anchor|content (the part between ':' and '|')".to_string(),
+                    "If the edit also uses endLine for a range, copy only the 6-character endAnchor from the exact final line"
                         .to_string(),
                     "Only INSERT_AFTER with line: 0 may omit anchors".to_string(),
                 ])
@@ -548,7 +548,7 @@ impl WorkspaceServer {
                     .guidance(vec![
                         "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
                             .to_string(),
-                        "Copy the anchor exactly from the returned N:anchor|content line"
+                        "Copy only the 6-character anchor from the returned N:anchor|content line (the part between ':' and '|')"
                             .to_string(),
                     ])
                     .to_mcp_result());
@@ -610,7 +610,7 @@ impl WorkspaceServer {
                     .guidance(vec![
                         "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
                             .to_string(),
-                        "Copy endAnchor exactly from the returned N:anchor|content line".to_string(),
+                        "Copy only the 6-character endAnchor from the returned N:anchor|content line (the part between ':' and '|')".to_string(),
                     ])
                     .to_mcp_result());
                     }
