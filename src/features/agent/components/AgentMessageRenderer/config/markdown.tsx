@@ -109,15 +109,30 @@ export const STATIC_MARKDOWN_COMPONENTS: Omit<
       {children}
     </em>
   ),
-  a: ({ children, href, ...props }: MarkdownReflessProps<'a'>) => (
-    <a
-      href={href}
-      className="text-primary hover:text-primary/90 underline font-medium"
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ children, href, ...props }: MarkdownReflessProps<'a'>) => {
+    // Security check: Disable links that use unsafe protocols (e.g. javascript:)
+    const lowerHref = href?.toLowerCase() || '';
+    const isSafeUrl =
+      lowerHref.startsWith('http://') ||
+      lowerHref.startsWith('https://') ||
+      lowerHref.startsWith('mailto:') ||
+      lowerHref.startsWith('tel:') ||
+      lowerHref.startsWith('/') ||
+      lowerHref.startsWith('#');
+
+    if (!isSafeUrl) {
+      return <span className="text-muted-foreground">{children}</span>;
+    }
+    return (
+      <a
+        href={href}
+        className="text-primary hover:text-primary/90 underline font-medium"
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
 };

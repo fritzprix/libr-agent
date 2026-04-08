@@ -713,6 +713,22 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
+
+    // Security check: Only allow safe URLs to prevent protocol-based attacks (e.g. javascript:)
+    const lowerUrl = url.toLowerCase();
+    const isSafeUrl =
+      lowerUrl.startsWith('http://') ||
+      lowerUrl.startsWith('https://') ||
+      lowerUrl.startsWith('mailto:') ||
+      lowerUrl.startsWith('tel:') ||
+      lowerUrl.startsWith('/') ||
+      lowerUrl.startsWith('#');
+
+    if (!isSafeUrl) {
+      logger.warn('Blocked attempt to open unsafe URL', { url });
+      return;
+    }
+
     try {
       await openExternalUrl(url);
     } catch {
