@@ -7,12 +7,25 @@ pub struct ModelContextInfo {
 }
 
 /// Options for message selection
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SelectionOptions {
     pub system_prompt: Option<String>,
     pub tools_json: Option<String>,
     pub max_messages: Option<usize>,
     pub max_tool_calls_per_message: Option<usize>,
+    pub pin_first_user_message: bool,
+}
+
+impl Default for SelectionOptions {
+    fn default() -> Self {
+        Self {
+            system_prompt: None,
+            tools_json: None,
+            max_messages: None,
+            max_tool_calls_per_message: None,
+            pin_first_user_message: true,
+        }
+    }
 }
 
 /// Selected Context Result
@@ -290,6 +303,9 @@ pub fn select_messages_within_context(
     options: Option<&SelectionOptions>,
     model_info: Option<&ModelContextInfo>,
 ) -> Vec<Message> {
+    let pin_first_user_message = options
+        .map(|o| o.pin_first_user_message)
+        .unwrap_or(true);
     let max_tool_calls = options
         .and_then(|o| o.max_tool_calls_per_message)
         .unwrap_or(4);
@@ -312,7 +328,8 @@ pub fn select_messages_within_context(
     let mut pinned_message: Option<Message> = None;
     let mut pinned_message_tokens = 0;
 
-    if !batched_messages.is_empty() && batched_messages[0].role == "user" {
+    if pin_first_user_message && !batched_messages.is_empty() && batched_messages[0].role == "user"
+    {
         pinned_message = Some(batched_messages[0].clone());
         pinned_message_tokens = token_utils::estimate_tokens_bpe(&batched_messages[0]);
     }
