@@ -303,9 +303,7 @@ pub fn select_messages_within_context(
     options: Option<&SelectionOptions>,
     model_info: Option<&ModelContextInfo>,
 ) -> Vec<Message> {
-    let pin_first_user_message = options
-        .map(|o| o.pin_first_user_message)
-        .unwrap_or(true);
+    let pin_first_user_message = options.map(|o| o.pin_first_user_message).unwrap_or(true);
     let max_tool_calls = options
         .and_then(|o| o.max_tool_calls_per_message)
         .unwrap_or(4);
