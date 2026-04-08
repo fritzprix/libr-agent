@@ -471,7 +471,7 @@ function ImageContentRenderer({
   return (
     <div className="group relative inline-block max-w-full">
       {/* Quick Action Buttons - Visible on hover */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 focus-visible:opacity-100 transition-opacity z-10 bg-background/80 backdrop-blur-sm p-1 rounded-md border border-border shadow-sm">
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-10 bg-background/80 backdrop-blur-sm p-1 rounded-md border border-border shadow-sm">
         <button
           type="button"
           onClick={handleCopy}
