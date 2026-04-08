@@ -29,6 +29,7 @@ import { CodeBlock } from './components/CodeBlock';
 import { MarkdownText } from './components/MarkdownText';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
 import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
+import { isSafeExternalUrl } from './utils/url';
 
 const logger = getLogger('AgentMessageRenderer');
 const DISPLAY_MEDIA_CACHE_MAX_BYTES = 64 * 1024 * 1024;
@@ -713,6 +714,13 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
+
+    // Security check: Only allow safe URLs to prevent protocol-based attacks (e.g. javascript:)
+    if (!isSafeExternalUrl(url)) {
+      logger.warn('Blocked attempt to open unsafe URL', { url });
+      return;
+    }
+
     try {
       await openExternalUrl(url);
     } catch {
