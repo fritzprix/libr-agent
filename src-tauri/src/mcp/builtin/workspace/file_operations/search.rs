@@ -267,18 +267,17 @@ impl WorkspaceServer {
                     pattern, display_path
                 ),
                 vec![
-                    "Verify the pattern syntax (use glob format like `*.txt` or `**/*.rs`)".to_string(),
+                    "Verify the pattern syntax (use glob format like `*.txt` or `**/*.rs`)"
+                        .to_string(),
                     "Use listDirectory to explore available files".to_string(),
-                ]
+                ],
             )
         } else {
             let mut text = format!(
                 "**🔍 File Search: {} file(s) found**\n\n\
                 Pattern: `{}`\n\
                 Search Path: `{}`\n\n",
-                total_matches,
-                pattern,
-                display_path
+                total_matches, pattern, display_path
             );
 
             text.push_str("| Type | Path | Size |\n|---|---|---|\n");
@@ -335,22 +334,28 @@ impl WorkspaceServer {
                     },
                 ));
             }
-            (text, vec![
-                "Refine search query or filePattern if too many results were returned".to_string(),
-                "Use offset and limit to paginate through results if truncated".to_string(),
-                "Use search on specific directories to narrow down".to_string(),
-            ])
+            (
+                text,
+                vec![
+                    "Refine search query or filePattern if too many results were returned"
+                        .to_string(),
+                    "Use offset and limit to paginate through results if truncated".to_string(),
+                    "Use search on specific directories to narrow down".to_string(),
+                ],
+            )
         };
 
-        Ok(SuccessHint::new(result_text, next_steps).to_mcp_result_with_data(Some(json!({
-            "matches": paginated_results,
-            "total_matches": total_matches,
-            "offset": offset,
-            "limit": limit,
-            "skipped_directories": skipped_heavy_dirs + skipped_gitignored_dirs,
-            "skipped_heavyweight_directories": skipped_heavy_dirs,
-            "skipped_gitignored_directories": skipped_gitignored_dirs,
-        }))))
+        Ok(
+            SuccessHint::new(result_text, next_steps).to_mcp_result_with_data(Some(json!({
+                "matches": paginated_results,
+                "total_matches": total_matches,
+                "offset": offset,
+                "limit": limit,
+                "skipped_directories": skipped_heavy_dirs + skipped_gitignored_dirs,
+                "skipped_heavyweight_directories": skipped_heavy_dirs,
+                "skipped_gitignored_directories": skipped_gitignored_dirs,
+            }))),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

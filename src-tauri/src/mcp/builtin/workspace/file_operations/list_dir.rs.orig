@@ -111,7 +111,7 @@ impl WorkspaceServer {
 
                 let mut table_lines = vec![
                     "| Type | Name | Size |".to_string(),
-                    "|---|---|---|".to_string(),
+                    "|---|---|---|".to_string()
                 ];
 
                 let item_lines: Vec<String> = paginated_items
@@ -171,7 +171,10 @@ impl WorkspaceServer {
 
                 info!(
                     "Successfully listed directory: {:?} ({} items, offset: {}, limit: {})",
-                    safe_path, total_items, offset, limit
+                    safe_path,
+                    total_items,
+                    offset,
+                    limit
                 );
 
                 // ✅ ENHANCED: Clear messaging for empty directories
