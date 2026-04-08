@@ -132,6 +132,27 @@ Behavior:
 3. Selection decisions must be based on the same budgeting model used by the
    request path, not on ad hoc UI estimates.
 
+### Frontend observability note
+
+The current UI "Effective Context" gauge is **not** a raw-history meter.
+
+- the displayed percentage is based on Rust-emitted `contextUsage`
+- that value represents the **request-time assembled payload after compact-summary
+  reinjection and recent-tail selection**
+- it is measured against `safe_input_token_limit`, not against the total size of
+  all persisted session history
+
+Implication:
+
+- raw session history may be far larger than the UI percentage suggests
+- the gauge is expected to drop sharply after compaction because the next request
+  is built from `[compact-summary] + [selected recent tail]`
+
+Current frontend behavior also resets the in-memory displayed token count to `0`
+immediately after a successful compact response, and then replaces it on the next
+LLM request with the newly computed Rust `contextUsage`. This creates a visible
+"drop" in the gauge, but it does not mean Rust lost context state.
+
 ---
 
 ## 7. Compact Summary Persistence and Reinjection

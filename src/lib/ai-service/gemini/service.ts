@@ -240,7 +240,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       messages,
       options,
     );
-
     try {
       const normalizedContextInjection = createEphemeralSessionContextInjection(
         options.systemPrompt,
