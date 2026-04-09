@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import type { Message } from '@/models/chat';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import equal from 'fast-deep-equal';
 import { useTranslation } from 'react-i18next';
@@ -229,35 +230,42 @@ export function AgentPlanningUpdates() {
     }
   }, [session?.id]);
 
-  useAgentMessageTrigger(
-    () => {
-      updateServiceContexts().catch((error: unknown) => {
-        logger.error('Failed to refresh planning contexts after tool update', {
-          sessionId: session?.id,
-          error,
-        });
+  const triggerCallback = useCallback(() => {
+    updateServiceContexts().catch((error: unknown) => {
+      logger.error('Failed to refresh planning contexts after tool update', {
+        sessionId: session?.id,
+        error,
       });
-    },
-    {
+    });
+  }, [session?.id, updateServiceContexts]);
+
+  const triggerOptions = useMemo(
+    () => ({
       debounceMs: 200,
-      messageFilter: (message) => {
+      messageFilter: (message: Message) => {
         if (!session?.id || message.sessionId !== session.id) return false;
 
-        // Filter: only trigger context updates for successful planning-related tool calls
-        if (message.role === 'tool' && message.tool_use && !message.error) {
-          const toolName = message.tool_use.name;
-          if (
-            toolName.startsWith('planning__') ||
-            toolName.startsWith('scratchpad__')
-          ) {
-            return true;
-          }
+        // Tool result messages are emitted with role === 'tool' and tool_call_id.
+        // Refresh contexts after any successful tool completion so planning and
+        // scratchpad state stay in sync even when the backend does not attach
+        // tool_use metadata to tool result messages.
+        if (
+          message.role === 'tool' &&
+          typeof message.tool_call_id === 'string' &&
+          message.tool_call_id.length > 0 &&
+          !message.error &&
+          message.metadata?.toolError !== true
+        ) {
+          return true;
         }
 
         return false;
       },
-    },
+    }),
+    [session?.id],
   );
+
+  useAgentMessageTrigger(triggerCallback, triggerOptions);
 
   useEffect(() => {
     if (!session?.id) {
