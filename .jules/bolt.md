@@ -78,6 +78,11 @@
 **Learning:** `AppSidebar` was calling `.sort()` on arrays returned from a map (`childrenByParent`) during every render. Because the map was built from an already-sorted array, the child arrays naturally maintained their sort order. Calling `.sort()` was not only a redundant O(K log K) computation but also mutated the map's arrays in-place during the React render phase, which violates React's pure render rules.
 **Action:** When building adjacency lists or parent-child maps from initially sorted arrays, rely on the preserved sorting order. Never call `.sort()` on derived arrays within a render loop as it causes both unnecessary computation and in-place mutation.
 
+## 2026-10-25 - Safe localized sorting of Adjacency Maps
+
+**Learning:** `SessionHistoryPanel` needed to sort its `childrenByParent` derived map, but could not pre-sort `baseSessions` because the sorting logic itself (`sortByCurrentOrder`) depended on descendant counts calculated *after* the map was built. Doing `.sort()` inside the `walk` function during render caused repeated O(K log K) sorting.
+**Action:** When an adjacency map cannot be built from a pre-sorted array due to circular sorting dependencies, perform a one-time in-place sort of the map's values immediately after its construction inside the `useMemo` block (e.g., `for (const children of childrenByParent.values()) children.sort(...)`). This keeps the sort out of the recursive `walk` traversal and guarantees each child array is sorted only once per `useMemo` recomputation.
+
 ## 2024-05-26 - Incomplete Formatter Consolidation
 
 **Learning:** Reusable formatter caches are often re-implemented in multiple component files instead of a centralized utility file, fragmenting the cache and increasing overall memory footprint.
