@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import equal from 'fast-deep-equal';
-import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui';
@@ -14,7 +14,6 @@ import {
   type PlanningState,
   type ScratchpadState,
 } from '@/models/planning';
-import type { AgentEventPayload } from '@/context/agent-session/types';
 
 const logger = getLogger('AgentPlanningUpdates');
 
@@ -204,12 +203,6 @@ function PlanningToastSummary({
   );
 }
 
-function isPlanningRelatedTool(toolName: string): boolean {
-  return (
-    toolName.startsWith('planning__') || toolName.startsWith('scratchpad__')
-  );
-}
-
 export function AgentPlanningUpdates() {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
@@ -218,7 +211,6 @@ export function AgentPlanningUpdates() {
   const previousPlanningRef = useRef<PlanningState | undefined>(undefined);
   const previousScratchpadRef = useRef<ScratchpadState | undefined>(undefined);
   const hasHydratedRef = useRef(false);
-  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const planningState = useMemo(
     () => parsePlanningState(serviceContexts.planning?.structuredState),
@@ -234,59 +226,38 @@ export function AgentPlanningUpdates() {
       hasHydratedRef.current = false;
       previousPlanningRef.current = undefined;
       previousScratchpadRef.current = undefined;
-      return;
     }
+  }, [session?.id]);
 
-    let unlisten: (() => void) | undefined;
-    let isMounted = true;
-
-    const initListener = async () => {
-      unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-        if (!isMounted || event.payload.type !== 'toolExecutionCompleted') {
-          return;
-        }
-
-        if (
-          event.payload.sessionId !== session.id ||
-          !event.payload.success ||
-          !isPlanningRelatedTool(event.payload.toolName)
-        ) {
-          return;
-        }
-
-        if (refreshTimeoutRef.current) {
-          clearTimeout(refreshTimeoutRef.current);
-        }
-
-        const toolName = event.payload.toolName;
-
-        refreshTimeoutRef.current = setTimeout(() => {
-          updateServiceContexts().catch((error: unknown) => {
-            logger.error(
-              'Failed to refresh planning contexts after tool update',
-              {
-                sessionId: session.id,
-                toolName,
-                error,
-              },
-            );
-          });
-        }, 200);
+  useAgentMessageTrigger(
+    () => {
+      updateServiceContexts().catch((error: unknown) => {
+        logger.error('Failed to refresh planning contexts after tool update', {
+          sessionId: session?.id,
+          error,
+        });
       });
-    };
+    },
+    {
+      debounceMs: 200,
+      messageFilter: (message) => {
+        if (!session?.id || message.sessionId !== session.id) return false;
 
-    initListener().catch((error: unknown) => {
-      logger.error('Failed to initialize planning update listener', error);
-    });
+        // Filter: only trigger context updates for successful planning-related tool calls
+        if (message.role === 'tool' && message.tool_use && !message.error) {
+          const toolName = message.tool_use.name;
+          if (
+            toolName.startsWith('planning__') ||
+            toolName.startsWith('scratchpad__')
+          ) {
+            return true;
+          }
+        }
 
-    return () => {
-      isMounted = false;
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-      unlisten?.();
-    };
-  }, [session?.id, updateServiceContexts]);
+        return false;
+      },
+    },
+  );
 
   useEffect(() => {
     if (!session?.id) {
