@@ -556,6 +556,27 @@ function DraftChatInner() {
                             isAttachmentLoading) &&
                             'cursor-not-allowed',
                         )}
+                        aria-label={
+                          (!input.trim() && !hasAttachedFiles) ||
+                          isSubmitting ||
+                          isAttachmentLoading
+                            ? t('agent.input.sendAriaLabel', 'Send message')
+                            : undefined
+                        }
+                        aria-disabled={
+                          (!input.trim() && !hasAttachedFiles) ||
+                          isSubmitting ||
+                          isAttachmentLoading
+                            ? true
+                            : undefined
+                        }
+                        role={
+                          (!input.trim() && !hasAttachedFiles) ||
+                          isSubmitting ||
+                          isAttachmentLoading
+                            ? 'button'
+                            : undefined
+                        }
                       >
                         <Button
                           type="submit"
@@ -566,7 +587,7 @@ function DraftChatInner() {
                           }
                           size="icon"
                           className={cn(
-                            'w-full h-full shadow-lg transition-all active:scale-95',
+                            'shadow-lg transition-all active:scale-95',
                             ((!input.trim() && !hasAttachedFiles) ||
                               isSubmitting ||
                               isAttachmentLoading) &&

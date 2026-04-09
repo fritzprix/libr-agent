@@ -419,15 +419,17 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0',
                   isSendDisabled && 'cursor-not-allowed',
                 )}
+                aria-label={
+                  isSendDisabled ? t('agent.input.sendAriaLabel') : undefined
+                }
+                aria-disabled={isSendDisabled ? true : undefined}
+                role={isSendDisabled ? 'button' : undefined}
               >
                 <Button
                   type="submit"
                   disabled={isSendDisabled}
                   size="icon"
-                  className={cn(
-                    'w-full h-full',
-                    isSendDisabled && 'pointer-events-none',
-                  )}
+                  className={cn(isSendDisabled && 'pointer-events-none')}
                   aria-label={t('agent.input.sendAriaLabel')}
                   title={t('agent.input.sendAriaLabel')}
                 >
