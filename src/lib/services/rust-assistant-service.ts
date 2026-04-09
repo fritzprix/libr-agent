@@ -77,19 +77,11 @@ export class RustAssistantService implements IAssistantService {
 
   async search(query: string, limit = 10): Promise<Assistant[]> {
     try {
-      // For now, we'll do client-side filtering since we fetch all anyway.
-      // In the future, we should implement server-side search.
-      const all = await this.getAll();
-      const lowerQuery = query.toLowerCase();
-
-      return all
-        .filter(
-          (a) =>
-            a.name.toLowerCase().includes(lowerQuery) ||
-            a.description?.toLowerCase().includes(lowerQuery) ||
-            a.systemPrompt.toLowerCase().includes(lowerQuery),
-        )
-        .slice(0, limit);
+      const dtos = await safeInvoke<AssistantDto[]>('search_assistants', {
+        query,
+        limit,
+      });
+      return dtos.map(mapDtoToAssistant);
     } catch (error) {
       logger.error('Failed to search assistants', error);
       throw error;

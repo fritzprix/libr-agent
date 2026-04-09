@@ -60,6 +60,40 @@ impl AssistantService {
             .map_err(|e| format!("Failed to get assistant: {}", e))
     }
 
+    pub async fn search_assistants(
+        repo: &dyn AssistantRepository,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<AssistantModel>, String> {
+        let all = repo
+            .list_assistants()
+            .await
+            .map_err(|e| format!("Failed to list assistants: {}", e))?;
+
+        let lower_query = query.to_lowercase();
+
+        let filtered: Vec<AssistantModel> = all
+            .into_iter()
+            .filter(|model| {
+                let name_matches = model.name.to_lowercase().contains(&lower_query);
+
+                let (desc_matches, prompt_matches) = if let Ok(config) = serde_json::from_str::<Value>(&model.config) {
+                    let desc = config.get("description").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                    let prompt = config.get("systemPrompt").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+
+                    (desc.contains(&lower_query), prompt.contains(&lower_query))
+                } else {
+                    (false, false)
+                };
+
+                name_matches || desc_matches || prompt_matches
+            })
+            .take(limit)
+            .collect();
+
+        Ok(filtered)
+    }
+
     pub async fn batch_upsert_assistants(
         repo: &dyn AssistantRepository,
         assistants: Vec<AssistantUpsertPayload>,

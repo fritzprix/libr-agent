@@ -44,7 +44,7 @@ use commands::agent_commands::{
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
-    update_assistant,
+    search_assistants, update_assistant,
 };
 use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
@@ -269,6 +269,7 @@ pub fn run() {
                 delete_assistant,
                 list_assistants,
                 get_assistant,
+                search_assistants,
                 batch_upsert_assistants,
                 create_mcp_server_config,
                 update_mcp_server_config,
