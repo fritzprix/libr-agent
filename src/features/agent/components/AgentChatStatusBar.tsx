@@ -161,6 +161,8 @@ export function AgentChatStatusBar() {
 
   const [isRetrying, setIsRetrying] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
+  const canUpdateSessionConfig =
+    workflowStatus === 'idle' || workflowStatus === 'error';
 
   const handleRetry = async () => {
     if (isRetrying) return;
@@ -354,12 +356,12 @@ export function AgentChatStatusBar() {
             <AgentModelPicker
               currentModel={session.model}
               currentProvider={session.provider}
-              disabled={workflowStatus !== 'idle'}
+              disabled={!canUpdateSessionConfig}
               onConfigUpdate={async (model, provider) => {
                 if (
                   !session.id ||
                   !session.assistant ||
-                  workflowStatus !== 'idle'
+                  !canUpdateSessionConfig
                 )
                   return;
 
@@ -400,8 +402,22 @@ export function AgentChatStatusBar() {
 
                   // Update local session state
                   updateSessionConfig(model, provider);
+                  if (workflowStatus === 'error') {
+                    toast.success(
+                      t(
+                        'agent.statusBar.configUpdatedRecoveryHint',
+                        'Model updated. Retry to recover the session.',
+                      ),
+                    );
+                  }
                 } catch (e) {
                   logger.error('Failed to update session config', e);
+                  toast.error(
+                    t(
+                      'agent.statusBar.configUpdateError',
+                      'Failed to update the model configuration.',
+                    ),
+                  );
                 }
               }}
             />

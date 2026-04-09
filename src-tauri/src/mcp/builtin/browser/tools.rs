@@ -125,7 +125,8 @@ pub fn extract_web_content_tool() -> MCPTool {
         title: None,
         description: "Extract the content of the current page as markdown. Large pages are automatically paginated.
 
-For pages > 3000 tokens, content is split into pages. Use content(page) to read subsequent pages.".to_string(),
+For pages > 3000 tokens, content is split into cached pages. To continue after `[Page 1/N]`, use `content({ page: 2 })`.
+Do not scroll just to read the next cached page.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -200,7 +201,11 @@ pub fn scroll_page_tool() -> MCPTool {
     MCPTool {
         name: "scrollPage".to_string(),
         title: None,
-        description: "Scroll the page to a specific position.".to_string(),
+        description: "Scroll the page to a specific position.
+
+Use this for interaction or lazy-loaded pages. It does not advance cached `content` pages.
+If `content({})` returned `[Page 1/N]`, use `content({ page: 2 })` instead of scrolling."
+            .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -271,7 +276,7 @@ pub fn close_session_tool() -> MCPTool {
 pub fn goto_tool() -> MCPTool {
     let mut tool = navigate_to_url_tool();
     tool.name = "goto".to_string();
-    tool.description = "Navigate the active browser session to a URL. Provide `url` (required).\n\nBehavior:\n- Requires an active session from `createSession`\n- Reuses the same session; does not create a new one\n- Replaces the current page and clears previously extracted page content\n- Returns page state (title + URL), not full page content\n\nNext: Use `content` to read the new page.".to_string();
+    tool.description = "Navigate the active browser session to a URL. Provide `url` (required).\n\nBehavior:\n- Requires an active session from `createSession`\n- Reuses the same session; does not create a new one\n- Replaces the current page and clears previously extracted page content\n- Returns page state (title + URL), not full page content\n\nNext: Use `content({})` to read the new page. After navigation, old `content({ page: N })` cache pages are no longer valid.".to_string();
     tool
 }
 
@@ -279,7 +284,7 @@ pub fn goto_tool() -> MCPTool {
 pub fn content_tool() -> MCPTool {
     let mut tool = extract_web_content_tool();
     tool.name = "content".to_string();
-    tool.description = "Get content from the active browser session.\n    - No args: Extracts fresh content from the current page.\n    - `page`: Reads a specific page number from the most recently extracted cache.\n\nNavigation tools such as `goto`, `back`, and `forward` invalidate the previous extracted-content cache.".to_string();
+    tool.description = "Get content from the active browser session.\n- No args: Extract fresh content from the current page.\n- `page`: Read a specific page number from the most recently extracted cache.\n\nPagination is cache-based, not scroll-based.\nIf the response says `[Page 1/N]`, continue with `content({ page: 2 })`.\nRepeating `content({})` on the same page usually returns `[Content Unchanged]`, not the next page.\n\nNavigation tools such as `goto`, `back`, and `forward` invalidate the previous extracted-content cache.".to_string();
     tool.input_schema = object_prop(
         vec![
             (
