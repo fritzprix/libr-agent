@@ -223,6 +223,48 @@ async fn search_respects_nested_gitignore_rules_during_recursive_content_search(
 }
 
 #[tokio::test]
+async fn search_nested_star_gitignore_does_not_hide_sibling_files() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-nested-star-gitignore";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join(".venv")).expect("venv dir");
+    std::fs::write(workspace_dir.join(".venv/.gitignore"), "*\n").expect("write nested gitignore");
+    std::fs::write(workspace_dir.join(".venv/hidden.txt"), "needle\n").expect("write hidden file");
+    std::fs::write(workspace_dir.join("README.md"), "needle in readme\n")
+        .expect("write visible file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("README.md"),
+        "sibling files outside the nested gitignore scope should remain searchable: {text}"
+    );
+    assert!(
+        !text.contains(".venv/hidden.txt"),
+        "nested '*' gitignore should only hide files in its own directory: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["files_with_matches"], json!(1));
+    assert_eq!(structured["files_searched"], json!(1));
+}
+
+#[tokio::test]
 async fn search_rejects_single_files_that_exceed_content_limit() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-large-file-limit";
