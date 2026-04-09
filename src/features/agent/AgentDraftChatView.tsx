@@ -474,20 +474,35 @@ function DraftChatInner() {
 
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isSubmitting || isAttachmentLoading}
-                        className="mb-1 h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/5 shrink-0 transition-colors"
-                        aria-label={t(
-                          'fileAttachment.attachFiles',
-                          'Attach files',
+                      <span
+                        tabIndex={
+                          isSubmitting || isAttachmentLoading ? 0 : undefined
+                        }
+                        className={cn(
+                          'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0 h-8 w-8',
+                          (isSubmitting || isAttachmentLoading) &&
+                            'cursor-not-allowed',
                         )}
                       >
-                        <Paperclip className="h-4 w-4" />
-                      </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isSubmitting || isAttachmentLoading}
+                          className={cn(
+                            'h-full w-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors',
+                            (isSubmitting || isAttachmentLoading) &&
+                              'pointer-events-none',
+                          )}
+                          aria-label={t(
+                            'fileAttachment.attachFiles',
+                            'Attach files',
+                          )}
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent>
                       {t('fileAttachment.attachFiles', 'Attach files')}
@@ -526,26 +541,49 @@ function DraftChatInner() {
 
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        type="submit"
-                        disabled={
+                      <span
+                        tabIndex={
                           (!input.trim() && !hasAttachedFiles) ||
                           isSubmitting ||
                           isAttachmentLoading
+                            ? 0
+                            : undefined
                         }
-                        size="icon"
-                        className="mb-1 shrink-0 shadow-lg transition-all active:scale-95"
-                        aria-label={t(
-                          'agent.input.sendAriaLabel',
-                          'Send message',
+                        className={cn(
+                          'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0',
+                          ((!input.trim() && !hasAttachedFiles) ||
+                            isSubmitting ||
+                            isAttachmentLoading) &&
+                            'cursor-not-allowed',
                         )}
                       >
-                        {isSubmitting || isAttachmentLoading ? (
-                          <Loader2 className="animate-spin h-4 w-4" />
-                        ) : (
-                          <Send className="h-4 w-4" />
-                        )}
-                      </Button>
+                        <Button
+                          type="submit"
+                          disabled={
+                            (!input.trim() && !hasAttachedFiles) ||
+                            isSubmitting ||
+                            isAttachmentLoading
+                          }
+                          size="icon"
+                          className={cn(
+                            'w-full h-full shadow-lg transition-all active:scale-95',
+                            ((!input.trim() && !hasAttachedFiles) ||
+                              isSubmitting ||
+                              isAttachmentLoading) &&
+                              'pointer-events-none',
+                          )}
+                          aria-label={t(
+                            'agent.input.sendAriaLabel',
+                            'Send message',
+                          )}
+                        >
+                          {isSubmitting || isAttachmentLoading ? (
+                            <Loader2 className="animate-spin h-4 w-4" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent>
                       {t('agent.input.sendTooltip', 'Send')}
