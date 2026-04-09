@@ -132,6 +132,7 @@ export class AIServiceFactory {
 
     // Dispose of old instance if it exists
     if (existing) {
+      this.disposeProviderResources(existing.service, effectiveApiKey);
       existing.service.dispose();
       this.instances.delete(instanceKey);
     }
@@ -191,6 +192,7 @@ export class AIServiceFactory {
    */
   static disposeAll(): void {
     for (const instance of this.instances.values()) {
+      this.disposeProviderResources(instance.service, instance.apiKey);
       instance.service.dispose();
     }
     this.instances.clear();
@@ -205,9 +207,19 @@ export class AIServiceFactory {
     for (const instanceKey of this.instances.keys()) {
       const instance = this.instances.get(instanceKey);
       if (instance && now - instance.created >= this.INSTANCE_TTL) {
+        this.disposeProviderResources(instance.service, instance.apiKey);
         instance.service.dispose();
         this.instances.delete(instanceKey);
       }
+    }
+  }
+
+  private static disposeProviderResources(
+    service: IAIService,
+    apiKey: string,
+  ): void {
+    if (service instanceof GeminiService) {
+      GeminiService.purgeSharedContextCache(apiKey);
     }
   }
 }

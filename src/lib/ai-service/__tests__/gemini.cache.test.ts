@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeminiService } from '../gemini';
+import { AIServiceFactory } from '../factory';
+import { AIServiceProvider } from '../types';
 import type { MCPTool } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
@@ -103,6 +105,8 @@ function createTool(description: string): MCPTool {
 
 describe('GeminiService context cache', () => {
   beforeEach(() => {
+    GeminiService.resetSharedContextCacheForTests();
+    AIServiceFactory.disposeAll();
     vi.clearAllMocks();
     let cacheCounter = 0;
 
@@ -172,6 +176,69 @@ describe('GeminiService context cache', () => {
     expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
   });
 
+  it('uses the lower Gemini 2.5 flash threshold for explicit cache eligibility', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(4000),
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
+  it('uses the higher Gemini 2.5 pro threshold for explicit cache eligibility', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-pro',
+      systemPrompt: 'A'.repeat(15000),
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
+  it('keeps the conservative fallback threshold for older Gemini models', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-1.5-pro',
+      systemPrompt: 'A'.repeat(15000),
+    }));
+
+    expect(createCacheMock).not.toHaveBeenCalled();
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string; systemInstruction?: Array<{ text: string }> };
+    };
+    expect(firstCall.config?.cachedContent).toBeUndefined();
+    expect(firstCall.config?.systemInstruction).toEqual([
+      { text: 'A'.repeat(15000) },
+    ]);
+  });
+
+  it('keeps the conservative fallback threshold for unknown Gemini models', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-experimental-foo',
+      systemPrompt: 'A'.repeat(15000),
+    }));
+
+    expect(createCacheMock).not.toHaveBeenCalled();
+  });
+
   it('treats UTF-8 heavy stable prefixes as cacheable based on encoded size', async () => {
     const service = new GeminiService('test-key');
     const messages = [createUserMessage('hello')];
@@ -189,7 +256,7 @@ describe('GeminiService context cache', () => {
     expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
   });
 
-  it('skips cached-content mode when tool usage is explicitly disabled', async () => {
+  it('keeps cached-content mode when tool usage is explicitly disabled', async () => {
     const service = new GeminiService('test-key');
     const messages = [createUserMessage('hello')];
     const tool = createTool('D'.repeat(131072));
@@ -201,16 +268,104 @@ describe('GeminiService context cache', () => {
       disableToolUse: true,
     }));
 
-    expect(createCacheMock).not.toHaveBeenCalled();
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
 
     const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
       config?: {
         cachedContent?: string;
         toolConfig?: { functionCallingConfig?: { mode?: string } };
+        systemInstruction?: Array<{ text: string }>;
       };
     };
-    expect(firstCall.config?.cachedContent).toBeUndefined();
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(firstCall.config?.systemInstruction).toBeUndefined();
     expect(firstCall.config?.toolConfig?.functionCallingConfig?.mode).toBe(
+      'NONE',
+    );
+  });
+
+  it('keeps Gemini tool declarations visible when tool usage is disabled and cache is skipped', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+    const tool = createTool('short tool description');
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'short stable prompt',
+      availableTools: [tool],
+      disableToolUse: true,
+    }));
+
+    expect(createCacheMock).not.toHaveBeenCalled();
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: {
+        cachedContent?: string;
+        tools?: unknown[];
+        toolConfig?: { functionCallingConfig?: { mode?: string } };
+        systemInstruction?: Array<{ text: string }>;
+      };
+    };
+
+    expect(firstCall.config?.cachedContent).toBeUndefined();
+    expect(firstCall.config?.tools).toBeDefined();
+    expect(firstCall.config?.systemInstruction).toEqual([
+      { text: 'short stable prompt' },
+    ]);
+    expect(firstCall.config?.toolConfig?.functionCallingConfig?.mode).toBe(
+      'NONE',
+    );
+  });
+
+  it('falls back once without cachedContent when Gemini rejects tool-disabled cached content', async () => {
+    generateContentStreamMock
+      .mockRejectedValueOnce(
+        new Error(
+          'Invalid request: cachedContent cannot be combined with toolConfig function calling mode NONE',
+        ),
+      )
+      .mockResolvedValueOnce(createEmptyStream());
+
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+    const tool = createTool('D'.repeat(131072));
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+      availableTools: [tool],
+      disableToolUse: true,
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    expect(generateContentStreamMock).toHaveBeenCalledTimes(2);
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: {
+        cachedContent?: string;
+        toolConfig?: { functionCallingConfig?: { mode?: string } };
+        systemInstruction?: Array<{ text: string }>;
+      };
+    };
+    const secondCall = generateContentStreamMock.mock.calls[1]?.[0] as {
+      config?: {
+        cachedContent?: string;
+        tools?: unknown[];
+        toolConfig?: { functionCallingConfig?: { mode?: string } };
+        systemInstruction?: Array<{ text: string }>;
+      };
+    };
+
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(firstCall.config?.toolConfig?.functionCallingConfig?.mode).toBe(
+      'NONE',
+    );
+    expect(secondCall.config?.cachedContent).toBeUndefined();
+    expect(secondCall.config?.tools).toBeDefined();
+    expect(secondCall.config?.systemInstruction).toEqual([
+      { text: 'A'.repeat(131072) },
+    ]);
+    expect(secondCall.config?.toolConfig?.functionCallingConfig?.mode).toBe(
       'NONE',
     );
   });
@@ -265,6 +420,109 @@ describe('GeminiService context cache', () => {
 
     expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
     expect(secondCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
+  it('retains cached-content entries across GeminiService disposal', async () => {
+    const messages = [createUserMessage('hello')];
+    const firstService = new GeminiService('test-key');
+
+    await consumeStream(firstService.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    }));
+
+    firstService.dispose();
+
+    const secondService = new GeminiService('test-key');
+    await consumeStream(secondService.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    expect(deleteCacheMock).not.toHaveBeenCalled();
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    const secondCall = generateContentStreamMock.mock.calls[1]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(secondCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
+  it('survives the frontend factory lifecycle that disposes before the next turn', async () => {
+    const messages = [createUserMessage('hello')];
+    const firstService = AIServiceFactory.getService(
+      AIServiceProvider.Gemini,
+      'test-key',
+    );
+
+    await consumeStream(firstService.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    }));
+
+    firstService.dispose();
+
+    const secondService = AIServiceFactory.getService(
+      AIServiceProvider.Gemini,
+      'test-key',
+    );
+
+    expect(secondService).toBe(firstService);
+
+    await consumeStream(secondService.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    expect(deleteCacheMock).not.toHaveBeenCalled();
+  });
+
+  it('purges shared cached-content entries on real factory teardown', async () => {
+    const messages = [createUserMessage('hello')];
+    const firstService = AIServiceFactory.getService(
+      AIServiceProvider.Gemini,
+      'test-key',
+    );
+
+    await consumeStream(firstService.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    }));
+
+    AIServiceFactory.disposeAll();
+
+    expect(deleteCacheMock).toHaveBeenCalledTimes(1);
+    expect(deleteCacheMock).toHaveBeenCalledWith({
+      name: 'cachedContents/1',
+    });
+
+    const secondService = AIServiceFactory.getService(
+      AIServiceProvider.Gemini,
+      'test-key',
+    );
+
+    await consumeStream(secondService.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(2);
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    const secondCall = generateContentStreamMock.mock.calls[1]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(secondCall.config?.cachedContent).toBe('cachedContents/2');
   });
 
   it('moves volatile session context into a synthetic tail message for Gemini', () => {
