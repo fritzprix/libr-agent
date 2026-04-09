@@ -127,41 +127,15 @@ describe('RustAssistantService', () => {
   });
 
   describe('search', () => {
-    it('should filter correctly by name, description, and systemPrompt', async () => {
+    it('should pass query and limit to safeInvoke', async () => {
       const assistant2 = { ...mockAssistantDto, id: '2', name: 'Other Name', config: { description: 'Match Desc', systemPrompt: 'No Match', deletionProtected: false } };
-      const assistant3 = { ...mockAssistantDto, id: '3', name: 'No Match', config: { description: 'No Match', systemPrompt: 'Match Prompt', deletionProtected: false } };
 
-      vi.mocked(safeInvoke).mockResolvedValue([mockAssistantDto, assistant2, assistant3]);
+      vi.mocked(safeInvoke).mockResolvedValue([assistant2]);
 
-      // Match name
-      const nameRes = await service.search('Assistant 1');
+      const nameRes = await service.search('match desc', 10);
+      expect(safeInvoke).toHaveBeenCalledWith('search_assistants', { query: 'match desc', limit: 10 });
       expect(nameRes.length).toBe(1);
-      expect(nameRes[0].id).toBe('1');
-
-      // Match desc
-      const descRes = await service.search('match desc');
-      expect(descRes.length).toBe(1);
-      expect(descRes[0].id).toBe('2');
-
-      // Match prompt
-      const promptRes = await service.search('match prompt');
-      expect(promptRes.length).toBe(1);
-      expect(promptRes[0].id).toBe('3');
-    });
-
-    it('should respect the limit parameter', async () => {
-      vi.mocked(safeInvoke).mockResolvedValue([mockAssistantDto, mockAssistantDto, mockAssistantDto]);
-
-      const result = await service.search('Assistant 1', 2);
-      expect(result.length).toBe(2);
-    });
-
-    it('should fall back to empty description safely', async () => {
-      const noDescAssistant = { ...mockAssistantDto, config: { ...mockAssistantDto.config, description: undefined } };
-      vi.mocked(safeInvoke).mockResolvedValue([noDescAssistant]);
-
-      const result = await service.search('Assistant 1');
-      expect(result.length).toBe(1);
+      expect(nameRes[0].id).toBe('2');
     });
 
     it('should log and throw an error on failure', async () => {
