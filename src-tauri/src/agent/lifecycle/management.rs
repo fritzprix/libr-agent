@@ -6,6 +6,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -23,11 +24,40 @@ pub async fn resume_session(
     session_id: &str,
 ) -> Result<SessionMetadata, String> {
     // Get session metadata from database using injected repository
-    let session = session_repo
+    let mut session = session_repo
         .get_session(session_id)
         .await
         .map_err(|e| format!("Failed to get session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    if let Some(workspace_override) = session.workspace_override.as_deref() {
+        let path = PathBuf::from(workspace_override);
+        if path.is_dir() {
+            if let Ok(session_manager) = crate::session::get_session_manager() {
+                if let Err(e) = session_manager
+                    .register_session_override(session_id, path)
+                    .await
+                {
+                    log::warn!(
+                        "Failed to pre-register workspace override for resumed session {}: {}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+        } else {
+            log::warn!(
+                "Persisted workspace override '{}' for session {} no longer exists or is not a directory; \
+                 clearing it and falling back to default workspace.",
+                workspace_override,
+                session_id
+            );
+            let _ = session_repo
+                .update_workspace_override(session_id, None)
+                .await;
+            session.workspace_override = None;
+        }
+    }
 
     // Deserialize agent config
     let agent_config = if let Some(config_json) = &session.agent_config {

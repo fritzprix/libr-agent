@@ -13,7 +13,7 @@ interface FileTreeNodeProps {
   node: FileNode;
   depth?: number;
   onToggle: (node: FileNode) => void;
-  onOpen: (node: FileNode) => void;
+  onOpen?: (node: FileNode) => void;
 }
 
 export const FileTreeNode = ({
@@ -27,6 +27,7 @@ export const FileTreeNode = ({
       ? FolderOpen
       : Folder
     : File;
+  const isInteractive = node.isDirectory || Boolean(onOpen);
 
   return (
     <div className="select-none">
@@ -37,7 +38,7 @@ export const FileTreeNode = ({
           // Keep mouse click behavior for padding area
           if (node.isDirectory) {
             onToggle(node);
-          } else {
+          } else if (onOpen) {
             onOpen(node);
           }
         }}
@@ -66,24 +67,29 @@ export const FileTreeNode = ({
         )}
 
         <div
-          role="button"
-          tabIndex={0}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          role={isInteractive ? 'button' : undefined}
+          tabIndex={isInteractive ? 0 : undefined}
+          className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            isInteractive ? 'cursor-pointer' : ''
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             if (node.isDirectory) {
               onToggle(node);
-            } else {
+            } else if (onOpen) {
               onOpen(node);
             }
           }}
           onKeyDown={(e) => {
+            if (!isInteractive) {
+              return;
+            }
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               e.stopPropagation();
               if (node.isDirectory) {
                 onToggle(node);
-              } else {
+              } else if (onOpen) {
                 onOpen(node);
               }
             }

@@ -57,8 +57,9 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   );
   const chatInputRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previousWorkflowStatusRef = useRef(workflowStatus);
   const { subscribe } = useDnDContext();
-  const { skills } = useScopedSkills({
+  const { skills, refresh: refreshSkills } = useScopedSkills({
     assistantId: session?.assistant?.id,
     sessionId: session?.id,
   });
@@ -103,6 +104,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     refetchSessionFiles,
   } = useAgentFileAttachment();
 
+  const refreshScopedSkills = useCallback(async () => {
+    await refreshSkills();
+  }, [refreshSkills]);
+
   const { input, setInput, isSubmitting, handleSubmit } = useChatSubmit({
     session,
     submit,
@@ -110,6 +115,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     commitPendingFiles,
     clearPendingFiles,
     refetchSessionFiles,
+    onSubmitted: refreshScopedSkills,
   });
 
   const attachedFiles = pendingFiles;
@@ -166,6 +172,19 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     }
   }, [input]);
 
+  useEffect(() => {
+    const previousWorkflowStatus = previousWorkflowStatusRef.current;
+    previousWorkflowStatusRef.current = workflowStatus;
+
+    if (
+      session?.id &&
+      workflowStatus === 'idle' &&
+      previousWorkflowStatus !== 'idle'
+    ) {
+      void refreshScopedSkills();
+    }
+  }, [refreshScopedSkills, session?.id, workflowStatus]);
+
   const handleAgentInputChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInput(e.target.value);
@@ -176,6 +195,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     },
     [setInput, onTokenInputChange],
   );
+
+  const handleFocus = useCallback(() => {
+    void refreshScopedSkills();
+  }, [refreshScopedSkills]);
 
   // Handle Enter/Shift+Enter for line breaks and submission
   const handleKeyDown = useCallback(
@@ -364,6 +387,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           ref={textareaRef}
           value={input}
           onChange={handleAgentInputChange}
+          onFocus={handleFocus}
           onKeyDown={handleKeyDown}
           placeholder={inputPlaceholder}
           className={inputClassName}

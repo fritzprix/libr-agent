@@ -23,6 +23,27 @@ pub struct WorkspaceFileItem {
 pub struct WorkspaceService;
 
 impl WorkspaceService {
+    async fn sync_active_session_workspace_override(
+        session_id: &str,
+        workspace_override: Option<String>,
+    ) {
+        let Some(active_sessions) = crate::state::try_get_active_sessions() else {
+            return;
+        };
+
+        let cached_stable_prompt = {
+            let mut active = active_sessions.write().await;
+            let Some(session) = active.get_mut(session_id) else {
+                return;
+            };
+
+            session.metadata.workspace_override = workspace_override;
+            session.cached_stable_prompt.clone()
+        };
+
+        *cached_stable_prompt.write().await = None;
+    }
+
     /// Lists files and directories in the current session's workspace.
     pub async fn list_files(
         path: Option<String>,
@@ -202,7 +223,7 @@ impl WorkspaceService {
         // so runtime and persisted state stay consistent.
         let session_repo = crate::state::get_session_repository();
         session_repo
-            .update_workspace_override(session_id, Some(override_str))
+            .update_workspace_override(session_id, Some(override_str.clone()))
             .await
             .map_err(|e| format!("Failed to persist workspace override: {}", e))?;
 
@@ -210,6 +231,13 @@ impl WorkspaceService {
         session_manager
             .set_workspace_override(session_id, override_path)
             .await?;
+
+        Self::sync_active_session_workspace_override(session_id, Some(override_str)).await;
+        crate::agent::events::emit_resource_updated(
+            "session",
+            "update",
+            Some(session_id.to_string()),
+        );
 
         Ok(())
     }
@@ -233,6 +261,13 @@ impl WorkspaceService {
         session_manager
             .remove_workspace_override(session_id)
             .await?;
+
+        Self::sync_active_session_workspace_override(session_id, None).await;
+        crate::agent::events::emit_resource_updated(
+            "session",
+            "update",
+            Some(session_id.to_string()),
+        );
 
         Ok(())
     }

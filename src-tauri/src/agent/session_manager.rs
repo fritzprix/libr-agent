@@ -201,23 +201,6 @@ impl AgentSessionManager {
         )
         .await?;
 
-        // Re-register workspace override if present in metadata
-        if let Some(ref override_path) = result.workspace_override {
-            if let Ok(workspace_manager) = crate::session::get_session_manager() {
-                let path = std::path::PathBuf::from(override_path);
-                if let Err(e) = workspace_manager
-                    .register_session_override(session_id, path)
-                    .await
-                {
-                    log::warn!(
-                        "Failed to re-register workspace override for session {}: {}",
-                        session_id,
-                        e
-                    );
-                }
-            }
-        }
-
         let pending_events = {
             let mut evs = Vec::new();
             let active = self.active_sessions.read().await;

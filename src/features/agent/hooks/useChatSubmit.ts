@@ -22,6 +22,7 @@ interface UseChatSubmitProps {
   refetchSessionFiles: ReturnType<
     typeof useAgentResourceAttachment
   >['refetchSessionFiles'];
+  onSubmitted?: () => void | Promise<void>;
 }
 
 export function useChatSubmit({
@@ -31,6 +32,7 @@ export function useChatSubmit({
   commitPendingFiles,
   clearPendingFiles,
   refetchSessionFiles,
+  onSubmitted,
 }: UseChatSubmitProps) {
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -133,6 +135,8 @@ export function useChatSubmit({
             );
           });
         }
+
+        await onSubmitted?.();
       } catch (err) {
         // Restore input on error
         setInput(currentInput);
@@ -149,6 +153,7 @@ export function useChatSubmit({
       clearPendingFiles,
       submit,
       refetchSessionFiles,
+      onSubmitted,
     ],
   );
 

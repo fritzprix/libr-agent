@@ -462,6 +462,12 @@ pub fn get_active_sessions() -> &'static Arc<TokioRwLock<HashMap<String, AgentSe
         .expect("ACTIVE_SESSIONS not initialized. Call init_active_sessions() first.")
 }
 
+/// Return the active sessions map when initialization has already completed.
+pub fn try_get_active_sessions() -> Option<&'static Arc<TokioRwLock<HashMap<String, AgentSession>>>>
+{
+    ACTIVE_SESSIONS.get()
+}
+
 /// Retrieve the `cancel_pending` flag Arc for the given session, or `None` if the
 /// session is not currently active.  Holds the read-lock only for the duration of
 /// the clone — very cheap.  Callers can then poll the AtomicBool without holding
