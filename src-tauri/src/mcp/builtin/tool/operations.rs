@@ -479,15 +479,9 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let limit = args
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(50) as usize;
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
-    let offset = args
-        .get("offset")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as usize;
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
     let include_internal = matches!(scope, "internal" | "all");
     let include_external = matches!(scope, "external" | "all");
@@ -499,7 +493,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
     };
 
     struct MatchedTool {
-        source: String,     // "Builtin" or "External: <server_name>"
+        source: String, // "Builtin" or "External: <server_name>"
         name: String,
         description: String,
         status: String,
@@ -653,7 +647,8 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         )
     };
 
-    let mut body = String::from("| Source | Tool Name | Status | Description |\n|---|---|---|---|\n");
+    let mut body =
+        String::from("| Source | Tool Name | Status | Description |\n|---|---|---|---|\n");
     for t in &paginated_tools {
         let desc = if t.description.len() > 80 {
             let mut end = 77;
@@ -678,7 +673,10 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             s.replace("|", "\\|").replace('\n', " ")
         };
 
-        body.push_str(&format!("| {} | {} | {} | {} |\n", source, name, status_str, desc));
+        body.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            source, name, status_str, desc
+        ));
     }
 
     if offset + limit < total_tools {
