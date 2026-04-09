@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2026-04-09
+
+### 🚀 Features
+
+- **Settings Workflow Overhaul**: Reorganized Settings into clearer General / AI Models / Chat / System / Advanced areas, added sticky tab state, discard support, unsaved-change guarding, and stronger destructive-action handling so configuration changes feel safer and less chaotic.
+- **Smarter Model and Tool Guidance**: Improved Gemini prompt-cache handling, expanded browser tool guidance around cached pagination, and refined tool inventory browsing so agents get clearer instructions when reading content or discovering tools.
+
+### 🐛 Fixes
+
+- **Settings That Actually Match Reality**: Removed misleading or unused settings such as the session workspace capacity cap, wired retry-related model settings into live runtime behavior, and clarified restart-required system settings inline.
+- **Assistant Search and Tool Inventory Reliability**: Moved assistant searching into the Rust backend, fixed stale search clearing behavior, and corrected tool-list pagination/counting so empty external servers no longer skew results.
+- **Accessibility and Agent UI Polish**: Improved disabled-button tooltip behavior, status-bar recovery, and keyboard-focus labeling across agent chat controls so the interface is steadier and more accessible.
+
+### 🔧 Internal
+
+- **Search, Settings, and Agent Refactors**: Split large search and Gemini service logic into cleaner modules, continued cleanup across planning-update event handling, and added focused regression coverage for settings danger-zone confirmation and related UI behavior.
+
 ## [0.7.1] - 2026-04-08
 
 ### 🚀 Features
