@@ -223,6 +223,24 @@ pub fn list_tools_tool() -> MCPTool {
                         "If true (default: false), fetch live external server metadata. If omitted/false, use cached metadata from the last verification.",
                     )),
                 ),
+                (
+                    "limit".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(200),
+                        50,
+                        Some("Maximum number of tools to return. Default: 50."),
+                    ),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop_with_default(
+                        Some(0),
+                        None,
+                        0,
+                        Some("Number of tools to skip for pagination. Default: 0."),
+                    ),
+                ),
             ],
             vec![],
             None,

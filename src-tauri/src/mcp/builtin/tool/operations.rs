@@ -479,6 +479,16 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v.clamp(1, 200))
+        .unwrap_or(50);
+    let limit = limit.min(usize::MAX as u64) as usize;
+
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+    let offset = offset.min(usize::MAX as u64) as usize;
+
     let include_internal = matches!(scope, "internal" | "all");
     let include_external = matches!(scope, "external" | "all");
     let session_view = availability == "session";
@@ -488,66 +498,41 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         load_session_tool_access(None).await
     };
 
-    let mut result_sections: Vec<String> = Vec::new();
-    let mut total_tools = 0usize;
-    let mut sections_added = 0usize;
+    struct MatchedTool {
+        source: String, // "Builtin" or "External: <server_name>"
+        name: String,
+        description: String,
+        status: String,
+        guidance: Option<String>,
+    }
+
+    let mut all_matched_tools: Vec<MatchedTool> = Vec::new();
     let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
 
     // --- Internal (builtin) tools ---
     if include_internal {
         let all_tools = crate::mcp::server::tools::get_all_static_builtin_tools();
-        let matched: Vec<_> = all_tools
-            .iter()
-            .filter(|t| {
-                query.is_empty()
-                    || t.name.to_lowercase().contains(&query)
-                    || t.description.to_lowercase().contains(&query)
-            })
-            .collect();
+        for t in all_tools {
+            if query.is_empty()
+                || t.name.to_lowercase().contains(&query)
+                || t.description.to_lowercase().contains(&query)
+            {
+                let server_alias = t.name.split("__").next().unwrap_or(&t.name);
+                let (status, guidance) = if session_view {
+                    let (s, g) = access.builtin_status(server_alias);
+                    (s.to_string(), g.map(|g| g.to_string()))
+                } else {
+                    ("".to_string(), None)
+                };
 
-        if !matched.is_empty() {
-            let lines: Vec<String> = if query.is_empty() {
-                // Compact view when no query is specified
-                let names: Vec<String> = matched.iter().map(|t| t.name.clone()).collect();
-                vec![format!("Tools: {}", names.join(", "))]
-            } else {
-                // Detailed view
-                matched
-                    .iter()
-                    .map(|t| {
-                        // Truncate description to keep output compact
-                        let desc = if t.description.len() > 80 {
-                            let mut end = 77;
-                            while end > 0 && !t.description.is_char_boundary(end) {
-                                end -= 1;
-                            }
-                            format!("{}...", &t.description[..end])
-                        } else {
-                            t.description.clone()
-                        };
-                        if session_view {
-                            let server_alias = t.name.split("__").next().unwrap_or(&t.name);
-                            let (status, guidance) = access.builtin_status(server_alias);
-                            match guidance {
-                                Some(guidance) => {
-                                    format!("• {} {} — {}\n  {}", t.name, status, desc, guidance)
-                                }
-                                None => format!("• {} {} — {}", t.name, status, desc),
-                            }
-                        } else {
-                            format!("• {} — {}", t.name, desc)
-                        }
-                    })
-                    .collect()
-            };
-
-            result_sections.push(format!(
-                "## Builtin Tools ({} matched)\n{}",
-                matched.len(),
-                lines.join("\n")
-            ));
-            total_tools += matched.len();
-            sections_added += 1;
+                all_matched_tools.push(MatchedTool {
+                    source: "Builtin".to_string(),
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    status,
+                    guidance,
+                });
+            }
         }
     }
 
@@ -595,98 +580,65 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             let server_matches_query =
                 query.is_empty() || model.name.to_lowercase().contains(&query);
 
-            let matched_tools: Vec<&Value> = if query.is_empty() {
-                cached_tools.iter().collect()
-            } else {
-                cached_tools
-                    .iter()
-                    .filter(|t| {
-                        let name_match = t["name"]
-                            .as_str()
-                            .map(|n| n.to_lowercase().contains(&query))
-                            .unwrap_or(false);
-                        let desc_match = t["description"]
-                            .as_str()
-                            .map(|d| d.to_lowercase().contains(&query))
-                            .unwrap_or(false);
-                        name_match || desc_match || server_matches_query
-                    })
-                    .collect()
-            };
+            let mut matched_in_server = false;
+            for t in &cached_tools {
+                let name = t["name"].as_str().unwrap_or("?");
+                let desc = t["description"].as_str().unwrap_or("");
 
-            // Display the server if it matches the query, even if no tools matched.
-            // If the server matches the query, matched_tools will contain ALL tools of that server due to `|| server_matches_query` above.
-            // However, if the server has NO tools cached/available, matched_tools is empty. We still want to show the server.
-            let should_display = !matched_tools.is_empty() || server_matches_query;
+                let name_match = name.to_lowercase().contains(&query);
+                let desc_match = desc.to_lowercase().contains(&query);
 
-            if should_display {
-                let verify_note = if force_verify { " [live]" } else { " [cached]" };
-
-                let server_desc = config_opt
-                    .as_ref()
-                    .and_then(|c| c.metadata.as_ref())
-                    .and_then(|m| m.description.as_deref())
-                    .map(|d| format!("  Description: {}\n", d))
-                    .unwrap_or_default();
-
-                let tool_list_str = if matched_tools.is_empty() {
-                    if tools_json_str.is_none() {
-                        "  (No tools cached. Run with forceVerify=true to discover tools)"
-                            .to_string()
+                if query.is_empty() || name_match || desc_match || server_matches_query {
+                    let (status, guidance) = if session_view {
+                        let (s, g) = access.external_status(&model.id, &model.name);
+                        (s.to_string(), g.map(|g| g.to_string()))
                     } else {
-                        "  (No tools provided by this server)".to_string()
-                    }
-                } else if query.is_empty() {
-                    // Compact view for tools
-                    let names: Vec<String> = matched_tools
-                        .iter()
-                        .map(|t| {
-                            let name = t["name"].as_str().unwrap_or("?");
-                            if session_view {
-                                let (status, _) = access.external_status(&model.id, &model.name);
-                                format!("{} {}", name, status)
-                            } else {
-                                name.to_string()
-                            }
-                        })
-                        .collect();
-                    format!("  Tools: {}", names.join(", "))
+                        ("".to_string(), None)
+                    };
+
+                    all_matched_tools.push(MatchedTool {
+                        source: format!("External: {}", model.name),
+                        name: name.to_string(),
+                        description: desc.to_string(),
+                        status,
+                        guidance,
+                    });
+                    matched_in_server = true;
+                }
+            }
+
+            if !matched_in_server && server_matches_query {
+                let status = if session_view {
+                    let (s, _) = access.external_status(&model.id, &model.name);
+                    s.to_string()
                 } else {
-                    // Detailed view
-                    let tool_lines: Vec<String> = matched_tools
-                        .iter()
-                        .map(|t| {
-                            let name = t["name"].as_str().unwrap_or("?");
-                            let desc = t["description"].as_str().unwrap_or("");
-                            if session_view {
-                                let (status, guidance) =
-                                    access.external_status(&model.id, &model.name);
-                                match guidance {
-                                    Some(guidance) => {
-                                        format!("• {} {} — {}\n  {}", name, status, desc, guidance)
-                                    }
-                                    None => format!("• {} {} — {}", name, status, desc),
-                                }
-                            } else {
-                                format!("• {} — {}", name, desc)
-                            }
-                        })
-                        .collect();
-                    tool_lines.join("\n")
+                    "".to_string()
                 };
 
-                result_sections.push(format!(
-                    "## External: {}{} (ID: {})\n{}{}",
-                    model.name, verify_note, model.id, server_desc, tool_list_str
-                ));
-                total_tools += matched_tools.len();
-                sections_added += 1;
+                let desc = if tools_json_str.is_none() {
+                    "(No tools cached. Run with forceVerify=true to discover tools)"
+                } else {
+                    "(No tools provided by this server)"
+                };
+
+                all_matched_tools.push(MatchedTool {
+                    source: format!("External: {}", model.name),
+                    name: "-".to_string(),
+                    description: desc.to_string(),
+                    status,
+                    guidance: None,
+                });
+            }
+
+            if matched_in_server || server_matches_query {
                 found_external_ids.push((model.name.clone(), model.id.clone()));
             }
         }
     }
 
-    if sections_added == 0 {
+    let total_tools = all_matched_tools.len();
+
+    if total_tools == 0 {
         let hint_text = if query.is_empty() {
             "No tools found. Use registerServer to add external MCP servers.".to_string()
         } else {
@@ -706,6 +658,23 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .to_mcp_result());
     }
 
+    if offset >= total_tools {
+        return Ok(SuccessHint::new(
+            format!(
+                "Offset {} exceeds total matches ({}). Try calling again with offset: 0",
+                offset, total_tools
+            ),
+            vec!["Reset offset to 0".to_string()],
+        )
+        .to_mcp_result());
+    }
+
+    let paginated_tools: Vec<_> = all_matched_tools
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect();
+
     let header = if query.is_empty() {
         format!(
             "Found {} tools (scope: {}, availability: {}):\n\n",
@@ -718,10 +687,55 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         )
     };
 
-    let body = result_sections.join("\n\n");
+    let mut body =
+        String::from("| Source | Tool Name | Status | Description |\n|---|---|---|---|\n");
+    for t in &paginated_tools {
+        let desc = if t.description.len() > 80 {
+            let mut end = 77;
+            while end > 0 && !t.description.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &t.description[..end])
+        } else {
+            t.description.clone()
+        };
+        // Escape pipes and newlines for markdown tables
+        let desc = desc.replace("|", "\\|").replace('\n', " ");
+        let name = t.name.replace("|", "\\|").replace('\n', " ");
+        let source = t.source.replace("|", "\\|").replace('\n', " ");
+        let status_str = if t.status.is_empty() {
+            "-".to_string()
+        } else {
+            let mut s = t.status.clone();
+            if let Some(ref g) = t.guidance {
+                s.push_str(&format!(" — _{}_", g));
+            }
+            s.replace("|", "\\|").replace('\n', " ")
+        };
+
+        body.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            source, name, status_str, desc
+        ));
+    }
+
+    if offset.saturating_add(limit) < total_tools {
+        body.push_str(&format!(
+            "\n*(Showing {} to {} of {} total matches. Call this tool again with offset: {} to see more)*",
+            offset + 1,
+            offset + paginated_tools.len(),
+            total_tools,
+            offset.saturating_add(limit)
+        ));
+    }
 
     let external_action = if !found_external_ids.is_empty() {
-        let ids_list: Vec<String> = found_external_ids
+        // De-duplicate external ids just in case.
+        let mut unique_ids = found_external_ids.clone();
+        unique_ids.sort();
+        unique_ids.dedup();
+
+        let ids_list: Vec<String> = unique_ids
             .iter()
             .map(|(name, id)| format!("  • {} → \"{}\"", name, id))
             .collect();
