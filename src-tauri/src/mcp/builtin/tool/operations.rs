@@ -479,9 +479,15 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v.clamp(1, 200))
+        .unwrap_or(50);
+    let limit = limit.min(usize::MAX as u64) as usize;
 
-    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+    let offset = offset.min(usize::MAX as u64) as usize;
 
     let include_internal = matches!(scope, "internal" | "all");
     let include_external = matches!(scope, "external" | "all");
@@ -601,6 +607,29 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 }
             }
 
+            if !matched_in_server && server_matches_query {
+                let status = if session_view {
+                    let (s, _) = access.external_status(&model.id, &model.name);
+                    s.to_string()
+                } else {
+                    "".to_string()
+                };
+
+                let desc = if tools_json_str.is_none() {
+                    "(No tools cached. Run with forceVerify=true to discover tools)"
+                } else {
+                    "(No tools provided by this server)"
+                };
+
+                all_matched_tools.push(MatchedTool {
+                    source: format!("External: {}", model.name),
+                    name: "-".to_string(),
+                    description: desc.to_string(),
+                    status,
+                    guidance: None,
+                });
+            }
+
             if matched_in_server || server_matches_query {
                 found_external_ids.push((model.name.clone(), model.id.clone()));
             }
@@ -625,6 +654,17 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 "Use availability='inventory' to browse platform/server inventory regardless of current session access".to_string(),
                 "Use listTools to browse all available tools".to_string(),
             ],
+        )
+        .to_mcp_result());
+    }
+
+    if offset >= total_tools {
+        return Ok(SuccessHint::new(
+            format!(
+                "Offset {} exceeds total matches ({}). Try calling again with offset: 0",
+                offset, total_tools
+            ),
+            vec!["Reset offset to 0".to_string()],
         )
         .to_mcp_result());
     }
@@ -668,7 +708,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         } else {
             let mut s = t.status.clone();
             if let Some(ref g) = t.guidance {
-                s.push_str(&format!("<br/>_{}_", g));
+                s.push_str(&format!(" — _{}_", g));
             }
             s.replace("|", "\\|").replace('\n', " ")
         };
@@ -679,13 +719,13 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         ));
     }
 
-    if offset + limit < total_tools {
+    if offset.saturating_add(limit) < total_tools {
         body.push_str(&format!(
             "\n*(Showing {} to {} of {} total matches. Call this tool again with offset: {} to see more)*",
             offset + 1,
             offset + paginated_tools.len(),
             total_tools,
-            offset + limit
+            offset.saturating_add(limit)
         ));
     }
 

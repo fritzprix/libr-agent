@@ -225,17 +225,19 @@ pub fn list_tools_tool() -> MCPTool {
                 ),
                 (
                     "limit".to_string(),
-                    integer_prop(
+                    integer_prop_with_default(
                         Some(1),
                         Some(200),
+                        50,
                         Some("Maximum number of tools to return. Default: 50."),
                     ),
                 ),
                 (
                     "offset".to_string(),
-                    integer_prop(
+                    integer_prop_with_default(
                         Some(0),
                         None,
+                        0,
                         Some("Number of tools to skip for pagination. Default: 0."),
                     ),
                 ),
