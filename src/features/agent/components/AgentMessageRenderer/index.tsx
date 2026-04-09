@@ -29,6 +29,7 @@ import { CodeBlock } from './components/CodeBlock';
 import { MarkdownText } from './components/MarkdownText';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
 import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
+import { isSafeExternalUrl } from './utils/url';
 
 const logger = getLogger('AgentMessageRenderer');
 const DISPLAY_MEDIA_CACHE_MAX_BYTES = 64 * 1024 * 1024;
@@ -476,7 +477,7 @@ function ImageContentRenderer({
           type="button"
           onClick={handleCopy}
           disabled={!canCopyImage}
-          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           title={
             canCopyImage
               ? 'Copy Image'
@@ -493,7 +494,7 @@ function ImageContentRenderer({
         <button
           type="button"
           onClick={handleDownload}
-          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center justify-center p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           title="Download Image"
           aria-label="Download image"
         >
@@ -713,6 +714,13 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
+
+    // Security check: Only allow safe URLs to prevent protocol-based attacks (e.g. javascript:)
+    if (!isSafeExternalUrl(url)) {
+      logger.warn('Blocked attempt to open unsafe URL', { url });
+      return;
+    }
+
     try {
       await openExternalUrl(url);
     } catch {

@@ -184,7 +184,7 @@ impl WorkspaceServer {
                 // Format response for clean markdown rendering
                 let text_message = if show_line_anchors {
                     format!(
-                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — use anchors with replaceLines, insertAfterLine, or deleteLines",
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — for edit tools, pass only `{{anchor}}` (the 6 hex characters between `:` and `|`), not `{{N}}:` or `|{{content}}`",
                         path_str, size_str, line_count, content
                     )
                 } else {
@@ -196,7 +196,7 @@ impl WorkspaceServer {
                 };
 
                 let first_hint = if show_line_anchors {
-                    "Use replaceLines or deleteLines with the start-line anchor; for ranges, also copy endAnchor from the final line".to_string()
+                    "Use replaceLines or deleteLines with only the 6-character start-line anchor; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
                 } else {
                     "Rerun with showLineAnchors=true to get anchors for precise line editing (replaceLines, deleteLines, insertAfterLine)".to_string()
                 };

@@ -1,7 +1,5 @@
 import platform
 import psutil
-import socket
-import os
 import sys
 
 def get_size(bytes, suffix="B"):
@@ -108,7 +106,7 @@ def get_network_info():
     return network_data
 
 if __name__ == "__main__":
-    print("Gathering System Information...\n")
+    print("Gathering System Information...\n", file=sys.stderr)
     import json
     
     report = {

@@ -4,6 +4,7 @@ import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 import { calculateCacheHitPercent } from './token-metrics';
 import { formatNumber } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface ContextUsage {
   totalTokens: number;
@@ -25,6 +26,7 @@ function ContextGauge({
   contextWindow,
   modelMaxContext,
 }: ContextUsage) {
+  const { t } = useTranslation();
   const pct = Math.min(totalTokens / contextWindow, 1);
   const pctDisplay = (pct * 100).toFixed(0);
 
@@ -40,11 +42,29 @@ function ContextGauge({
 
   const tooltipTitle =
     modelMaxContext && modelMaxContext !== contextWindow
-      ? `Context: ${formatNumber(totalTokens)} / ${formatNumber(contextWindow)} tokens (Effective Limit)\nModel Max: ${formatNumber(modelMaxContext)} tokens`
-      : `Context: ${formatNumber(totalTokens)} / ${formatNumber(contextWindow)} tokens (${pctDisplay}%)`;
+      ? t('agent.statusBar.effectiveContextTooltipWithModelMax', {
+          totalTokens: formatNumber(totalTokens),
+          contextWindow: formatNumber(contextWindow),
+          modelMaxContext: formatNumber(modelMaxContext),
+          pctDisplay,
+          defaultValue:
+            'Effective Context: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nEffective Limit: {{contextWindow}} tokens\nModel Max: {{modelMaxContext}} tokens\nSource of truth: Rust request-time context assembly after compaction/selection.',
+        })
+      : t('agent.statusBar.effectiveContextTooltip', {
+          totalTokens: formatNumber(totalTokens),
+          contextWindow: formatNumber(contextWindow),
+          pctDisplay,
+          defaultValue:
+            'Effective Context: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nSource of truth: Rust request-time context assembly after compaction/selection.',
+        });
 
   return (
     <div className="flex items-center gap-1.5 mt-0.5" title={tooltipTitle}>
+      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+        {t('agent.statusBar.effectiveContextLabel', {
+          defaultValue: 'Effective Context',
+        })}
+      </span>
       <div className="h-1 w-20 rounded-full bg-muted overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-500 ${barColor}`}

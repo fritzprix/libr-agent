@@ -50,4 +50,26 @@ describe('TokenMetricsBadge', () => {
 
     expect(screen.getByTestId('cache-hit-indicator')).toHaveTextContent('cache');
   });
+
+  it('labels the gauge as effective context when Rust context usage is provided', () => {
+    const usage: TokenUsage = {
+      promptTokens: 1200,
+      completionTokens: 120,
+      totalTokens: 1320,
+      details: {},
+    };
+
+    render(
+      <TokenMetricsBadge
+        usage={usage}
+        contextUsage={{
+          totalTokens: 25822,
+          contextWindow: 49152,
+          modelMaxContext: 65536,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Effective Context')).toBeInTheDocument();
+  });
 });

@@ -5,6 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { MarkdownReflessProps } from '../types';
+import { isSafeExternalUrl } from '../utils/url';
 
 export const REMARK_PLUGINS = [remarkGfm, remarkMath];
 export const REHYPE_PLUGINS = [rehypeKatex];
@@ -109,15 +110,21 @@ export const STATIC_MARKDOWN_COMPONENTS: Omit<
       {children}
     </em>
   ),
-  a: ({ children, href, ...props }: MarkdownReflessProps<'a'>) => (
-    <a
-      href={href}
-      className="text-primary hover:text-primary/90 underline font-medium"
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ children, href, ...props }: MarkdownReflessProps<'a'>) => {
+    // Security check: Disable links that use unsafe protocols (e.g. javascript:)
+    if (!isSafeExternalUrl(href)) {
+      return <span className="text-muted-foreground">{children}</span>;
+    }
+    return (
+      <a
+        href={href}
+        className="text-primary hover:text-primary/90 underline font-medium"
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
 };

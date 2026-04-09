@@ -311,12 +311,14 @@ export function SystemPerformanceSettings({
               min={1}
               max={100}
               value={localSystemSettings.maxScheduledTaskGroups}
-              onChange={(e) =>
-                onChange(
-                  'maxScheduledTaskGroups',
-                  parseInt(e.target.value, 10) || 10,
-                )
-              }
+              onChange={(e) => {
+                const parsedValue = Number.parseInt(e.target.value, 10);
+                const nextValue = Number.isNaN(parsedValue)
+                  ? 10
+                  : Math.min(100, Math.max(1, parsedValue));
+
+                onChange('maxScheduledTaskGroups', nextValue);
+              }}
               className="bg-background border text-foreground w-full max-w-xs"
             />
             <p className="text-xs text-muted-foreground mt-1">
