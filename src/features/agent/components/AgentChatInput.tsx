@@ -376,22 +376,33 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         {isBusy ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                type="button"
-                onClick={handleCancel}
-                variant="ghost"
-                size="icon"
-                className="mb-1 h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
-                disabled={pendingCancel}
-                aria-label={t('agent.input.cancelAriaLabel')}
-                title={t('agent.input.cancelAriaLabel')}
-              >
-                {pendingCancel ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Square className="h-4 w-4" />
+              <span
+                tabIndex={pendingCancel ? 0 : undefined}
+                className={cn(
+                  'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0 h-8 w-8',
+                  pendingCancel && 'cursor-not-allowed',
                 )}
-              </Button>
+              >
+                <Button
+                  type="button"
+                  onClick={handleCancel}
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'h-full w-full text-destructive hover:bg-destructive/10',
+                    pendingCancel && 'pointer-events-none',
+                  )}
+                  disabled={pendingCancel}
+                  aria-label={t('agent.input.cancelAriaLabel')}
+                  title={t('agent.input.cancelAriaLabel')}
+                >
+                  {pendingCancel ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-4 w-4" />
+                  )}
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent>
               {pendingCancel
@@ -402,20 +413,33 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                type="submit"
-                disabled={isSendDisabled}
-                size="icon"
-                className="mb-1 shrink-0"
-                aria-label={t('agent.input.sendAriaLabel')}
-                title={t('agent.input.sendAriaLabel')}
-              >
-                {hasProcessingFiles ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
+              <span
+                tabIndex={isSendDisabled ? 0 : undefined}
+                className={cn(
+                  'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0',
+                  isSendDisabled && 'cursor-not-allowed',
                 )}
-              </Button>
+                aria-label={
+                  isSendDisabled ? t('agent.input.sendAriaLabel') : undefined
+                }
+                aria-disabled={isSendDisabled ? true : undefined}
+                role={isSendDisabled ? 'button' : undefined}
+              >
+                <Button
+                  type="submit"
+                  disabled={isSendDisabled}
+                  size="icon"
+                  className={cn(isSendDisabled && 'pointer-events-none')}
+                  aria-label={t('agent.input.sendAriaLabel')}
+                  title={t('agent.input.sendAriaLabel')}
+                >
+                  {hasProcessingFiles ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent>{t('agent.input.sendTooltip')}</TooltipContent>
           </Tooltip>
