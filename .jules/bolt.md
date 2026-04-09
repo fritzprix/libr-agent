@@ -81,7 +81,7 @@
 ## 2026-10-25 - Safe localized sorting of Adjacency Maps
 
 **Learning:** `SessionHistoryPanel` needed to sort its `childrenByParent` derived map, but could not pre-sort `baseSessions` because the sorting logic itself (`sortByCurrentOrder`) depended on descendant counts calculated *after* the map was built. Doing `.sort()` inside the `walk` function during render caused repeated O(K log K) sorting.
-**Action:** When an adjacency map cannot be built from a pre-sorted array due to circular sorting dependencies, perform a one-time in-place sort of the map's values immediately after its construction inside the `useMemo` block (e.g., `for (const children of childrenByParent.values()) children.sort(...)`). This safely moves the mutation outside the React render path and guarantees arrays are only sorted once.
+**Action:** When an adjacency map cannot be built from a pre-sorted array due to circular sorting dependencies, perform a one-time in-place sort of the map's values immediately after its construction inside the `useMemo` block (e.g., `for (const children of childrenByParent.values()) children.sort(...)`). This keeps the sort out of the recursive `walk` traversal and guarantees each child array is sorted only once per `useMemo` recomputation.
 
 ## 2024-05-26 - Incomplete Formatter Consolidation
 
