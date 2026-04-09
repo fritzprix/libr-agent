@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn test_error_with_mcp_content_preserves_guided_error_text() {
         let guided_text =
-            "STALE HASH on line 28 — retry with line_hash: 'ab'\n  → swap hash and retry NOW";
+            "STALE ANCHOR on line 28 — retry with anchor: 'ab12cd'\n  → refresh anchors and retry NOW";
         let content = vec![MCPContent::Text {
             text: guided_text.to_string(),
             is_error: Some(true),

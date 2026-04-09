@@ -1,8 +1,9 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    build_compact_summary_text, find_preflight_compaction_split_index,
-    merge_consecutive_user_messages, resolve_context_management_settings,
+    build_compact_context_selection_options, build_compact_summary_text,
+    find_preflight_compaction_split_index, merge_consecutive_user_messages,
+    resolve_context_management_settings, should_skip_same_tail_compaction,
     should_trigger_background_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
@@ -195,6 +196,40 @@ fn test_preflight_compaction_split_after_removing_incomplete_tool_chains() {
 
     let idx = find_preflight_compaction_split_index(&cleaned);
     assert_eq!(idx, cleaned.len());
+}
+
+#[test]
+fn test_same_tail_compaction_skips_duplicate_when_no_compact_summary_exists() {
+    let messages = vec![
+        make_message("m0", "assistant", "Earlier context"),
+        make_message("m1", "user", "Latest request"),
+    ];
+
+    assert!(should_skip_same_tail_compaction(&messages, 1));
+}
+
+#[test]
+fn test_same_tail_compaction_allows_follow_up_compaction_after_summary_injection() {
+    let mut summary = make_message("m0", "user", "Compacted summary");
+    summary.id = "compact-summary-test".to_string();
+
+    let messages = vec![
+        summary,
+        make_message("m1", "assistant", "Large preserved context"),
+        make_message("m2", "user", "Latest request"),
+    ];
+
+    assert!(!should_skip_same_tail_compaction(&messages, 2));
+}
+
+#[test]
+fn test_same_tail_compaction_stops_when_only_existing_summary_is_left_to_compact() {
+    let mut summary = make_message("m0", "user", "Compacted summary");
+    summary.id = "compact-summary-test".to_string();
+
+    let messages = vec![summary, make_message("m1", "user", "Latest request")];
+
+    assert!(should_skip_same_tail_compaction(&messages, 1));
 }
 
 #[test]
@@ -418,6 +453,71 @@ fn test_select_messages_keeps_single_pinned_user_message_when_it_fits() {
     let selected = select_messages_within_context(&msgs, "gemini", Some(1000), None, None);
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].id, "msg0");
+}
+
+#[test]
+fn test_select_messages_can_disable_first_user_pinning() {
+    let msgs = vec![
+        make_message("msg0", "user", "oldest user context"),
+        make_message("msg1", "assistant", "assistant reply"),
+        make_message("msg2", "user", "latest user context"),
+    ];
+
+    let options = SelectionOptions {
+        max_messages: Some(2),
+        pin_first_user_message: false,
+        ..SelectionOptions::default()
+    };
+
+    let selected =
+        select_messages_within_context(&msgs, "gemini", Some(5000), Some(&options), None);
+    assert_eq!(selected.len(), 2);
+    assert_eq!(selected[0].id, "msg1");
+    assert_eq!(selected[1].id, "msg2");
+}
+
+#[test]
+fn test_select_messages_without_pinning_does_not_merge_first_and_latest_user_messages() {
+    let msgs = vec![
+        make_message("msg0", "user", "initial user context"),
+        make_message("msg1", "assistant", "assistant reply"),
+        make_message("msg2", "user", "latest user context"),
+    ];
+
+    let options = SelectionOptions {
+        max_messages: Some(1),
+        pin_first_user_message: false,
+        ..SelectionOptions::default()
+    };
+
+    let selected =
+        select_messages_within_context(&msgs, "gemini", Some(5000), Some(&options), None);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].id, "msg2");
+}
+
+#[test]
+fn test_compact_mode_selection_options_disable_first_user_pinning() {
+    let options = build_compact_context_selection_options(
+        Some("system".to_string()),
+        Some("tools".to_string()),
+        "openai",
+        7,
+    );
+
+    assert_eq!(options.system_prompt.as_deref(), Some("system"));
+    assert_eq!(options.tools_json.as_deref(), Some("tools"));
+    assert_eq!(options.max_messages, None);
+    assert_eq!(options.max_tool_calls_per_message, Some(7));
+    assert!(!options.pin_first_user_message);
+}
+
+#[test]
+fn test_compact_mode_selection_options_keep_gemini_tool_visibility_contract() {
+    let options = build_compact_context_selection_options(None, None, "gemini", 7);
+
+    assert_eq!(options.max_tool_calls_per_message, Some(100));
+    assert!(!options.pin_first_user_message);
 }
 
 #[test]

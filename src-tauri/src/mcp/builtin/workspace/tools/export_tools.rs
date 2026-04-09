@@ -22,9 +22,9 @@ pub fn create_export_tool() -> MCPTool {
     MCPTool {
         name: "export".to_string(),
         title: Some("Export Files".to_string()),
-        description: "Export one or more files/directories for download with an interactive UI.\n\
-                      - If you pass a single file, it's exported as a raw file.\n\
-                      - If you pass multiple files or any directory, they are automatically compressed into a ZIP package."
+        description: "Export one or more workspace files/directories and return a downloadable HTML resource.\n\
+                      - A single file is exported as-is.\n\
+                      - Multiple paths or any directory are packaged as a ZIP."
             .to_string(),
         input_schema: object_schema(props, vec!["paths".to_string()]),
         output_schema: None,

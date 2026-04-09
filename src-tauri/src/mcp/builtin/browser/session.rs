@@ -180,9 +180,12 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else {
             (
-                format!("Browser session created. Page loaded: {}", url),
+                format!(
+                    "Browser session created and set as active. Initial page loaded: {}",
+                    url
+                ),
                 vec![
-                    "Use `content` to read the page content".to_string(),
+                    "Use `content` to read the current page content".to_string(),
                     "Use listInteractable to see interactive elements".to_string(),
                 ],
             )
@@ -190,7 +193,11 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     } else {
         (
             format!("Browser session created. {}", status_msg),
-            vec!["Use `goto` to load a webpage".to_string()],
+            vec![
+                "Use `goto` to navigate this active session to a webpage".to_string(),
+                "Or call createSession with a `url` next time to open the first page immediately"
+                    .to_string(),
+            ],
         )
     };
 

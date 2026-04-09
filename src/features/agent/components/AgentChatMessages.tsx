@@ -37,7 +37,9 @@ export function AgentChatMessages() {
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
   // Use custom hooks for side effects
-  const { messagesEndRef, scrollContainerRef } = useChatScroll({ messages });
+  const { messagesEndRef, scrollContainerRef, contentRef } = useChatScroll({
+    messages,
+  });
   useFileRefetcher({ messages, refetchSessionFiles });
 
   // Group messages for display
@@ -94,7 +96,10 @@ export function AgentChatMessages() {
           className: 'h-full w-full',
         }}
       >
-        <div className="p-4 pb-32 flex flex-col gap-6 min-h-full">
+        <div
+          ref={contentRef}
+          className="p-4 pb-32 flex flex-col gap-6 min-h-full"
+        >
           {groupedMessages.map((groupedMessage) => {
             if (groupedMessage.type === 'tool_group') {
               return (

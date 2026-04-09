@@ -183,6 +183,21 @@ impl ErrorGuidance {
                 "Verify data format is valid for visualization".to_string(),
                 "Try a simpler UI component".to_string(),
             ],
+            (ErrorCategory::ResourceNotFound, ToolGroup::ScheduledTask) => vec![
+                "Use listScheduledTasks() to see available scheduled task IDs".to_string(),
+                "Retry with an exact task ID copied from listScheduledTasks()".to_string(),
+                "Use getScheduledTask(id) to inspect a task before mutating it".to_string(),
+            ],
+            (ErrorCategory::InvalidInput, ToolGroup::ScheduledTask) => vec![
+                "Verify cronExpression, assistantId, and workspaceOverride values".to_string(),
+                "Use an absolute directory path for workspaceOverride".to_string(),
+                "Use scheduleTimezone of 'local' or 'utc'".to_string(),
+            ],
+            (ErrorCategory::OperationFailed, ToolGroup::ScheduledTask) => vec![
+                "Use listScheduledTasks() to inspect the current schedule state".to_string(),
+                "Use getScheduledTask(id) to verify the target task before retrying".to_string(),
+                "Check whether the target assistant still exists".to_string(),
+            ],
 
             // MCP Manager tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Tool) => vec![
@@ -236,6 +251,28 @@ impl ErrorGuidance {
             (ErrorCategory::InvalidState, ToolGroup::Scratchpad) => vec![
                 "Use scratchpad__clear to remove old items".to_string(),
                 "Use scratchpad__update to modify existing notes".to_string(),
+            ],
+
+            // Media tool errors
+            (ErrorCategory::InvalidInput, ToolGroup::Media) => vec![
+                "Provide a valid URL (https://...) or a workspace-relative path".to_string(),
+                "Supported image formats: JPEG, PNG, GIF, WebP, BMP, SVG".to_string(),
+                "Supported audio formats: MP3, WAV, OGG, AAC, FLAC, WEBM".to_string(),
+            ],
+            (ErrorCategory::OperationFailed, ToolGroup::Media) => vec![
+                "Verify the URL is publicly accessible and returns a 200 response".to_string(),
+                "Check that the file size is under 20 MB".to_string(),
+                "For local files, use a workspace-relative path instead".to_string(),
+            ],
+            (ErrorCategory::PermissionDenied, ToolGroup::Media) => vec![
+                "The file path must be inside the session workspace".to_string(),
+                "Use a relative path such as 'screenshots/image.png'".to_string(),
+                "Use listDirectory() to confirm the file location within the workspace".to_string(),
+            ],
+            (ErrorCategory::ResourceNotFound, ToolGroup::Media) => vec![
+                "Use listDirectory() to verify the file exists in the workspace".to_string(),
+                "Check for typos in the path".to_string(),
+                "Use a workspace-relative path (e.g. 'images/photo.png')".to_string(),
             ],
 
             // Generic fallbacks
@@ -380,17 +417,22 @@ impl SuccessHint {
             ],
             ("readFile", ToolGroup::Workspace) => vec![
                 "Use writeFile to modify the content".to_string(),
-                "Use editFile to make targeted edits".to_string(),
+                "Use replaceLines, insertAfterLine, or deleteLines to make targeted edits"
+                    .to_string(),
             ],
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
+                "Use search with filePattern to narrow down names".to_string(),
             ],
-            ("editFile", ToolGroup::Workspace) => vec![
+            (
+                "editFile" | "replaceLines" | "insertAfterLine" | "deleteLines",
+                ToolGroup::Workspace,
+            ) => vec![
                 "Use readFile to verify your edits".to_string(),
                 "Use runShell to execute the updated code".to_string(),
             ],
-            ("search" | "searchFiles", ToolGroup::Workspace) => vec![
+            ("search", ToolGroup::Workspace) => vec![
                 "Use readFile on interesting matches".to_string(),
                 "Use listDirectory to explore the surrounding module".to_string(),
             ],
@@ -417,6 +459,33 @@ impl SuccessHint {
             ("spawnAgent", ToolGroup::Agent) => vec![
                 "Use awaitAgent with the session ID to wait for completion".to_string(),
                 "Use getChildAgents to see all active sub-agents".to_string(),
+            ],
+            ("createScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to inspect the created schedule".to_string(),
+                "Use listScheduledTasks() to coordinate related recurring tasks".to_string(),
+            ],
+            ("listScheduledTasks", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to inspect one task in detail".to_string(),
+                "Use updateScheduledTask(id, ...) to revise a selected schedule".to_string(),
+            ],
+            ("getScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use updateScheduledTask(id, ...) to revise the schedule".to_string(),
+                "Use toggleScheduledTask(id, enabled=false) to pause it without deleting"
+                    .to_string(),
+            ],
+            ("updateScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to confirm the persisted next run".to_string(),
+                "Use toggleScheduledTask(id, enabled=false) if the updated schedule should pause"
+                    .to_string(),
+            ],
+            ("toggleScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use getScheduledTask(id) to confirm the new enabled state".to_string(),
+                "Use updateScheduledTask(id, ...) if the schedule itself must change".to_string(),
+            ],
+            ("deleteScheduledTask", ToolGroup::ScheduledTask) => vec![
+                "Use listScheduledTasks() to verify the remaining schedule set".to_string(),
+                "Create a replacement with createScheduledTask(...) if removal was intentional"
+                    .to_string(),
             ],
 
             // Tool Management (Unified)

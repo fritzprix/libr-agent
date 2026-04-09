@@ -14,6 +14,14 @@ impl WorkspaceServer {
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let requested_limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100);
+        let requested_offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+        let limit = usize::try_from(requested_limit)
+            .unwrap_or(usize::MAX)
+            .clamp(1, 500);
+        let offset = usize::try_from(requested_offset)
+            .unwrap_or(usize::MAX)
+            .min(100_000);
 
         let file_manager = self.get_file_manager(session_id.clone());
         let safe_path = match file_manager
@@ -103,11 +111,17 @@ impl WorkspaceServer {
                 });
 
                 // ✅ ENHANCED: Format listing with emojis, types, and sizes for AI visibility
-                const MAX_ITEMS_DISPLAY: usize = 100;
+                let total_items = items.len();
+                let paginated_items: Vec<_> = items.into_iter().skip(offset).take(limit).collect();
+                let has_more = offset + paginated_items.len() < total_items;
 
-                let item_lines: Vec<String> = items
+                let mut table_lines = vec![
+                    "| Type | Name | Size |".to_string(),
+                    "|---|---|---|".to_string(),
+                ];
+
+                let item_lines: Vec<String> = paginated_items
                     .iter()
-                    .take(MAX_ITEMS_DISPLAY)
                     .map(|item| {
                         let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                         let type_ = item.get("type").and_then(|v| v.as_str()).unwrap_or("?");
@@ -115,66 +129,89 @@ impl WorkspaceServer {
 
                         // Use emoji icons for visual clarity
                         let icon = match type_ {
-                            "directory" => "📁",
-                            "file" => "📄",
-                            "symlink" => "🔗",
-                            _ => "❓",
+                            "directory" => "📁 dir",
+                            "file" => "📄 file",
+                            _ => "❓ other",
                         };
 
                         // Format size in human-readable way
                         let size_str = if let Some(s) = size {
                             if s < 1024 {
-                                format!(" ({}B)", s)
+                                format!("{}B", s)
                             } else if s < 1024 * 1024 {
-                                format!(" ({:.1}KB)", s as f64 / 1024.0)
+                                format!("{:.1}KB", s as f64 / 1024.0)
                             } else {
-                                format!(" ({:.1}MB)", s as f64 / 1024.0 / 1024.0)
+                                format!("{:.1}MB", s as f64 / 1024.0 / 1024.0)
                             }
                         } else {
-                            "".to_string()
+                            "-".to_string()
                         };
 
-                        format!("{} [{}] {}{}", icon, type_, name, size_str)
+                        format!("| {} | `{}` | {} |", icon, name, size_str)
                     })
                     .collect();
+                table_lines.extend(item_lines);
+
+                let listing_str = table_lines.join("\n");
 
                 // Add truncation note if needed
-                let truncation_note = if items.len() > MAX_ITEMS_DISPLAY {
-                    format!("\n\n... and {} more items", items.len() - MAX_ITEMS_DISPLAY)
+                let truncation_note = if has_more {
+                    format!(
+                        "\n\n*(Showing {} to {} of {} items. Call listDirectory with offset: {} to see more)*",
+                        offset + 1,
+                        offset + paginated_items.len(),
+                        total_items,
+                        offset + limit
+                    )
+                } else if offset > 0 {
+                    format!(
+                        "\n\n*(Showing {} to {} of {} items)*",
+                        offset + 1,
+                        offset + paginated_items.len(),
+                        total_items
+                    )
                 } else {
                     String::new()
                 };
 
                 info!(
-                    "Successfully listed directory: {:?} ({} items)",
-                    safe_path,
-                    items.len()
+                    "Successfully listed directory: {:?} ({} items, offset: {}, limit: {})",
+                    safe_path, total_items, offset, limit
                 );
 
                 // ✅ ENHANCED: Clear messaging for empty directories
-                let hint = if items.is_empty() {
+                let hint = if total_items == 0 {
                     SuccessHint::new(
                         format!(
                             "Directory listing for '{}':\n\n(This directory is empty)\n\n💡 Next Steps:\n- Use writeFile('{}/filename.txt', content) to create a file\n- Use listDirectory('{}') to verify the directory exists\n- This is a valid empty directory",
                             path_str, path_str, path_str
                         ),
-                        vec![],
+                        vec![
+                            format!("Use writeFile('{}/filename.txt', content) to create a file", path_str),
+                            format!("Use listDirectory('{}') to verify the directory exists", path_str)
+                        ],
                     )
                 } else {
-                    let listing_str = item_lines.join("\n");
                     SuccessHint::new(
                         format!(
                             "Directory listing for '{}':\n\n{}{}\n\n💡 Next Steps:\n- Use readFile('{}/filename') to read a file\n- Use listDirectory('{}/subdir') to explore subdirectories\n- Use search to search for content in files",
                             path_str, listing_str, truncation_note, path_str, path_str
                         ),
-                        vec![],
+                        vec![
+                            format!("Use readFile('{}/filename') to read a file", path_str),
+                            format!("Use listDirectory('{}/subdir') to explore subdirectories", path_str),
+                            "Use search to search for content in files".to_string()
+                        ],
                     )
                 };
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "items": items,
+                    "items": paginated_items,
                     "path": path_str,
-                    "count": items.len()
+                    "count": paginated_items.len(),
+                    "total_count": total_items,
+                    "offset": offset,
+                    "limit": limit
                 }))))
             }
             Err(e) => {

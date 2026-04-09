@@ -227,6 +227,23 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(())
     }
 
+    async fn update_org_identity(
+        &self,
+        session_id: &str,
+        org_id: Option<String>,
+        org_name: Option<String>,
+        org_root_session_id: Option<String>,
+    ) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.org_id = org_id;
+            session.org_name = org_name;
+            session.org_root_session_id = org_root_session_id;
+            session.updated_at = chrono::Utc::now().timestamp_millis();
+        }
+        Ok(())
+    }
+
     async fn update_last_viewed_at(
         &self,
         session_id: &str,
@@ -289,6 +306,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             created_at: 1234567890,
             updated_at: 1234567890,
             last_viewed_at: None,
@@ -325,6 +345,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             created_at: 100,
             updated_at: 100,
             last_viewed_at: None,
@@ -373,6 +396,9 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
             created_at: 100,
             updated_at: 100,
             last_viewed_at: None,
@@ -414,6 +440,9 @@ mod tests {
                 depth: None,
                 max_depth: None,
                 max_fanout: None,
+                org_id: None,
+                org_name: None,
+                org_root_session_id: None,
                 created_at: 100,
                 updated_at: 100,
                 last_viewed_at: None,
@@ -450,6 +479,9 @@ mod tests {
                 depth: None,
                 max_depth: None,
                 max_fanout: None,
+                org_id: None,
+                org_name: None,
+                org_root_session_id: None,
                 created_at: 100,
                 updated_at: 100,
                 last_viewed_at: None,
@@ -500,6 +532,9 @@ mod tests {
                     depth: None,
                     max_depth: None,
                     max_fanout: None,
+                    org_id: None,
+                    org_name: None,
+                    org_root_session_id: None,
                     yolo_mode: false,
                     workspace_override: None,
                 };

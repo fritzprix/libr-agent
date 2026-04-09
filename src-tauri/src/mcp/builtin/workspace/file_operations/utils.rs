@@ -4,19 +4,19 @@ use tracing::error;
 // Large files can block the async runtime during line enumeration
 pub const LARGE_FILE_THRESHOLD: u64 = 1_048_576; // 1 MB in bytes
 
-/// Compute a 2-char hex content hash for hashline format.
+const FNV_OFFSET: u32 = 2_166_136_261;
+const FNV_PRIME: u32 = 16_777_619;
+const LINE_HASH_LEN: usize = 2;
+const PREFIX_HASH_LEN: usize = 4;
+const ANCHOR_LEN: usize = LINE_HASH_LEN + PREFIX_HASH_LEN;
+
+/// Compute a 2-char hex content hash for anchor generation.
 ///
 /// Uses FNV-1a 32-bit with output folding to produce a stable 2-char identifier
-/// per line. This hash is embedded into `readFile` output when `showLineHashes`
-/// is enabled, and validated by `editFile` via the `line_hash` field to
+/// per line. This hash is embedded into opaque line anchors when `showLineAnchors`
+/// is enabled, and validated by `editFile` after parsing the agent-facing anchor.
 /// detect file staleness before applying edits.
-///
-/// Format produced: `{line_number}:{hash}|{content}`
-/// Example:         `42:a3|fn handle_request() {`
 pub fn compute_line_hash(content: &str) -> String {
-    const FNV_OFFSET: u32 = 2_166_136_261;
-    const FNV_PRIME: u32 = 16_777_619;
-
     let mut hash = FNV_OFFSET;
     for byte in content.bytes() {
         hash ^= byte as u32;
@@ -27,13 +27,58 @@ pub fn compute_line_hash(content: &str) -> String {
     format!("{:02x}", folded)
 }
 
-/// Format content as hashlines: `{N}:{hash}|{line}` for each line.
-/// Agents can use the hash directly as `line_hash` in editFile.
+/// Initial rolling state for prefix-hash computation.
+pub fn initial_prefix_hash_state() -> u32 {
+    FNV_OFFSET
+}
+
+/// Update rolling prefix-hash state with a single line plus its trailing newline.
+pub fn update_prefix_hash_state(mut state: u32, content: &str) -> u32 {
+    for byte in content.bytes().chain(std::iter::once(b'\n')) {
+        state ^= byte as u32;
+        state = state.wrapping_mul(FNV_PRIME);
+    }
+    state
+}
+
+/// Fold rolling prefix state to a compact 4-char hex identifier.
+pub fn format_prefix_hash(state: u32) -> String {
+    let folded = ((state >> 16) ^ (state & 0xFFFF)) as u16;
+    format!("{:04x}", folded)
+}
+
+pub fn make_anchor(line_hash: &str, prefix_hash: &str) -> String {
+    format!("{}{}", line_hash, prefix_hash)
+}
+
+pub fn parse_anchor(anchor: &str) -> Option<(&str, &str)> {
+    if anchor.len() != ANCHOR_LEN || !anchor.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+
+    Some(anchor.split_at(LINE_HASH_LEN))
+}
+
+pub fn compute_anchor(content: &str, prefix_state: &mut u32) -> String {
+    let line_hash = compute_line_hash(content);
+    *prefix_state = update_prefix_hash_state(*prefix_state, content);
+    let prefix_hash = format_prefix_hash(*prefix_state);
+    make_anchor(&line_hash, &prefix_hash)
+}
+
+/// Format a single anchored line and advance the rolling prefix state.
+pub fn format_hashline(line_number: usize, content: &str, prefix_state: &mut u32) -> String {
+    let anchor = compute_anchor(content, prefix_state);
+    format!("{}:{}|{}", line_number, anchor, content)
+}
+
+/// Format content as anchored lines: `{N}:{anchor}|{line}` for each line.
 pub fn format_as_hashlines(content: &str) -> String {
+    let mut prefix_state = initial_prefix_hash_state();
     content
         .lines()
         .enumerate()
-        .map(|(i, line)| format!("{}:{}|{}", i + 1, compute_line_hash(line), line))
+        .map(|(i, line)| format_hashline(i + 1, line, &mut prefix_state))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -295,6 +340,20 @@ mod tests {
     }
 
     #[test]
+    fn test_anchor_changes_when_earlier_content_changes() {
+        let original = format_as_hashlines("alpha\nbeta\ngamma");
+        let changed = format_as_hashlines("alpha!\nbeta\ngamma");
+
+        let original_third = original.lines().nth(2).unwrap();
+        let changed_third = changed.lines().nth(2).unwrap();
+
+        let original_parts: Vec<&str> = original_third.splitn(2, '|').collect();
+        let changed_parts: Vec<&str> = changed_third.splitn(2, '|').collect();
+
+        assert_ne!(original_parts[0], changed_parts[0]);
+    }
+
+    #[test]
     fn test_format_as_hashlines_format() {
         let content = "fn foo() {\n    let x = 1;\n}";
         let result = format_as_hashlines(content);
@@ -302,22 +361,22 @@ mod tests {
         assert_eq!(lines.len(), 3);
 
         for (i, line) in lines.iter().enumerate() {
-            // Each line must be: {N}:{2-char-hex}|{content}
-            let colon = line.find(':').expect("must contain ':'");
+            // Each line must be: {N}:{6-char-anchor}|{content}
+            let colon = line.find(':').expect("must contain first ':'");
             let pipe = line.find('|').expect("must contain '|'");
             assert!(pipe > colon, "pipe must come after colon");
 
             let line_num: usize = line[..colon].parse().expect("prefix must be a number");
             assert_eq!(line_num, i + 1, "line numbers must be 1-based");
 
-            let hash_part = &line[colon + 1..pipe];
-            assert_eq!(hash_part.len(), 2, "hash section must be 2 chars");
-            assert!(hash_part.chars().all(|c| c.is_ascii_hexdigit()));
+            let anchor = &line[colon + 1..pipe];
+            assert_eq!(anchor.len(), ANCHOR_LEN, "anchor section must be 6 chars");
+            assert!(anchor.chars().all(|c| c.is_ascii_hexdigit()));
         }
     }
 
     #[test]
-    fn test_format_as_hashlines_hash_matches_compute_line_hash() {
+    fn test_format_as_hashlines_anchor_starts_with_compute_line_hash() {
         let content = "hello world\nrust is great";
         let result = format_as_hashlines(content);
         let lines: Vec<&str> = result.lines().collect();
@@ -326,7 +385,8 @@ mod tests {
             let hashline = lines[i];
             let pipe = hashline.find('|').unwrap();
             let colon = hashline.find(':').unwrap();
-            let embedded_hash = &hashline[colon + 1..pipe];
+            let anchor = &hashline[colon + 1..pipe];
+            let embedded_hash = &anchor[..LINE_HASH_LEN];
             let expected_hash = compute_line_hash(raw_line);
             assert_eq!(
                 embedded_hash,
@@ -349,5 +409,16 @@ mod tests {
             "content after first pipe must be verbatim: got '{}'",
             line
         );
+    }
+
+    #[test]
+    fn test_parse_anchor_round_trips() {
+        let mut prefix_state = initial_prefix_hash_state();
+        let anchor = compute_anchor("alpha", &mut prefix_state);
+        let (line_hash, prefix_hash) = parse_anchor(&anchor).expect("valid anchor");
+
+        assert_eq!(line_hash.len(), LINE_HASH_LEN);
+        assert_eq!(prefix_hash.len(), PREFIX_HASH_LEN);
+        assert_eq!(anchor, make_anchor(line_hash, prefix_hash));
     }
 }

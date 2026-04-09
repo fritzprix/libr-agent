@@ -619,8 +619,14 @@ impl BuiltinMCPServer for WorkspaceServer {
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "importFiles" => self.handle_import_files(args, session_id).await,
             "search" => self.handle_search(args, session_id).await,
+            // Compatibility dispatch only: editFile stays callable for older clients and
+            // internal batching paths, but it is intentionally hidden from normal tool
+            // discovery because its action-based union contract is broader than the explicit
+            // replaceLines / insertAfterLine / deleteLines tools.
             "editFile" => self.handle_edit_file(args, session_id).await,
-            "replaceLines" => self.handle_edit_file(args, session_id).await,
+            "replaceLines" => self.handle_replace_lines(args, session_id).await,
+            "insertAfterLine" => self.handle_insert_after_line(args, session_id).await,
+            "deleteLines" => self.handle_delete_lines(args, session_id).await,
             // Code execution tools
             // Note: Python/TypeScript execution were removed from the public tool
             // interface to avoid external runtime dependencies and to prevent

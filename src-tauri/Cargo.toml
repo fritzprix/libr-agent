@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.6.31"
+version = "0.7.1"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -47,7 +47,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 path-clean = "1.0"
 tempfile = "3.27"
-thiserror = "1.0"
+thiserror = "2.0"
 tracing = "0.1"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -89,7 +89,7 @@ sea-orm-migration = { version = "1.1", features = ["sqlx-sqlite", "runtime-tokio
 migration = { path = "migration" }
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 tauri-plugin-mcp-bridge = "0.10.0"
-sqlite-vec = "0.1.7"
+sqlite-vec = "0.1.9"
 fastembed = "5.13.0"
 
 [dev-dependencies]

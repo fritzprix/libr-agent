@@ -100,9 +100,17 @@ impl BuiltinMCPServer for PlanningServer {
                 }
             }
             "getCurrentState" => {
-                // Reuse get_service_context but return as tool result
-                let context =
-                    context::get_service_context(self.db.as_ref(), &target_session_id).await;
+                // Extract optional include_checked param (defaults to true)
+                let include_checked = args
+                    .get("include_checked")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let context = context::get_service_context(
+                    self.db.as_ref(),
+                    &target_session_id,
+                    include_checked,
+                )
+                .await;
                 Ok(MCPResult::success_with_data(
                     &context.context_prompt,
                     context.structured_state.clone().unwrap_or(json!({})),
@@ -138,6 +146,7 @@ impl BuiltinMCPServer for PlanningServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        context::get_service_context(self.db.as_ref(), &self.session_id).await
+        // Service context always includes completed todos for full planning visibility
+        context::get_service_context(self.db.as_ref(), &self.session_id, true).await
     }
 }

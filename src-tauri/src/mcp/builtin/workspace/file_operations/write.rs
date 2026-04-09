@@ -109,7 +109,7 @@ impl WorkspaceServer {
                         path_str
                     ),
                     format!(
-                        "Use editFile(\"{}\", [{{line, line_hash, new_value}}]) for targeted edits instead of rewriting the whole file.",
+                        "Use replaceLines, insertAfterLine, or deleteLines for targeted edits to \"{}\" instead of rewriting the whole file.",
                         path_str
                     ),
                 ])
@@ -179,16 +179,16 @@ impl WorkspaceServer {
                     ));
 
                     if file_exists && mode == "overwrite" {
-                        // Show diff then hashlines of new content for immediate editing
+                        // Show diff then anchored lines of new content for immediate editing
                         use super::utils::format_file_diff;
                         let diff_output = format_file_diff(&old_content, content, path_str);
                         message.push_str(&diff_output);
                         message.push_str(&format!(
-                            "\nCurrent hashlines:\n```\n{}\n```\n",
+                            "\nCurrent anchors:\n```\n{}\n```\n",
                             format_as_hashlines(content)
                         ));
                     } else {
-                        // New file — show hashlines so agent can immediately use editFile
+                        // New file — show anchors so agent can immediately use targeted editing tools
                         let max_display_lines = 100;
                         let max_display_bytes = 51200; // 50KB
                         let content_lines: Vec<&str> = content.lines().collect();
@@ -238,7 +238,7 @@ impl WorkspaceServer {
                     || path_str.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "Use editFile for targeted edits to \"{}\"",
+                        "Use replaceLines, insertAfterLine, or deleteLines for targeted edits to \"{}\"",
                         path_str
                     ));
                 }

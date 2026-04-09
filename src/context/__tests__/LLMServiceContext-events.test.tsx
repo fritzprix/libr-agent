@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
@@ -137,23 +137,25 @@ describe('LLMServiceContext – Event Handling', () => {
     });
 
     // Trigger event
-    await eventHandler?.({
-      payload: {
-        sessionId: 'test-session',
-        messages: [
-          {
-            id: 'msg1',
-            sessionId: 'test-session',
-            threadId: 'test-session',
-            role: 'user',
-            content: [{ type: 'text', text: 'Hello' }],
-            createdAt: new Date(),
-          },
-        ],
-        model: 'gpt-4',
-        provider: 'openai',
-        apiKey: 'test-key',
-      },
+    await act(async () => {
+      await eventHandler?.({
+        payload: {
+          sessionId: 'test-session',
+          messages: [
+            {
+              id: 'msg1',
+              sessionId: 'test-session',
+              threadId: 'test-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'Hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model: 'gpt-4',
+          provider: 'openai',
+          apiKey: 'test-key',
+        },
+      });
     });
 
     await waitFor(() => {
@@ -187,14 +189,16 @@ describe('LLMServiceContext – Event Handling', () => {
     });
 
     // Trigger event
-    await eventHandler?.({
-      payload: {
-        sessionId: 'test-session',
-        messages: [],
-        model: 'gpt-4',
-        provider: 'openai',
-        apiKey: 'test-key',
-      },
+    await act(async () => {
+      await eventHandler?.({
+        payload: {
+          sessionId: 'test-session',
+          messages: [],
+          model: 'gpt-4',
+          provider: 'openai',
+          apiKey: 'test-key',
+        },
+      });
     });
 
     await waitFor(() => {
@@ -239,27 +243,29 @@ describe('LLMServiceContext – Event Handling', () => {
       expect(eventHandler).toBeDefined();
     });
 
-    await eventHandler?.({
-      payload: {
-        sessionId: 'test-session',
-        messages: [
-          {
-            id: 'msg1',
-            sessionId: 'test-session',
-            threadId: 'test-session',
-            role: 'user',
-            content: [{ type: 'text', text: 'Hello' }],
-            createdAt: new Date(),
+    await act(async () => {
+      await eventHandler?.({
+        payload: {
+          sessionId: 'test-session',
+          messages: [
+            {
+              id: 'msg1',
+              sessionId: 'test-session',
+              threadId: 'test-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'Hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model: 'gpt-4',
+          provider: 'openai',
+          contextUsage: {
+            totalTokens: 100,
+            contextWindow: 4096,
+            modelMaxContext: 128000,
           },
-        ],
-        model: 'gpt-4',
-        provider: 'openai',
-        contextUsage: {
-          totalTokens: 100,
-          contextWindow: 4096,
-          modelMaxContext: 128000,
         },
-      },
+      });
     });
 
     await waitFor(() => {
@@ -313,27 +319,29 @@ describe('LLMServiceContext – Event Handling', () => {
       expect(eventHandler).toBeDefined();
     });
 
-    await eventHandler?.({
-      payload: {
-        sessionId: 'window-session',
-        messages: [
-          {
-            id: 'msg1',
-            sessionId: 'window-session',
-            threadId: 'window-session',
-            role: 'user',
-            content: [{ type: 'text', text: 'Hello' }],
-            createdAt: new Date(),
+    await act(async () => {
+      await eventHandler?.({
+        payload: {
+          sessionId: 'window-session',
+          messages: [
+            {
+              id: 'msg1',
+              sessionId: 'window-session',
+              threadId: 'window-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'Hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model: 'gpt-4',
+          provider: 'openai',
+          contextUsage: {
+            totalTokens: 100,
+            contextWindow: 4096,
+            modelMaxContext: 128000,
           },
-        ],
-        model: 'gpt-4',
-        provider: 'openai',
-        contextUsage: {
-          totalTokens: 100,
-          contextWindow: 4096,
-          modelMaxContext: 128000,
         },
-      },
+      });
     });
 
     await waitFor(() => {

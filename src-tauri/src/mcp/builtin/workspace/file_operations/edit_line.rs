@@ -1,10 +1,13 @@
 use super::super::WorkspaceServer;
-use super::utils::{compute_line_hash, read_file_as_string};
+use super::utils::{
+    compute_line_hash, format_hashline, format_prefix_hash, initial_prefix_hash_state,
+    parse_anchor, read_file_as_string, update_prefix_hash_state,
+};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// A single edit operation.
 #[derive(Debug, Clone)]
@@ -12,8 +15,8 @@ struct LineEdit {
     start_line: usize, // 1-based. 0 is allowed for INSERT_AFTER at top.
     end_line: usize,   // 1-based, inclusive.
     new_value: String,
-    start_hash: Option<String>,
-    end_hash: Option<String>,
+    start_anchor: Option<String>,
+    end_anchor: Option<String>,
     action: EditAction,
 }
 
@@ -22,6 +25,15 @@ enum EditAction {
     Replace,
     InsertAfter,
     Delete,
+}
+
+fn requires_existing_line_anchor(edit: &LineEdit) -> bool {
+    !(edit.action == EditAction::InsertAfter && edit.start_line == 0)
+}
+
+fn requires_end_hash(edit: &LineEdit) -> bool {
+    matches!(edit.action, EditAction::Replace | EditAction::Delete)
+        && edit.end_line > edit.start_line
 }
 
 /// Pure apply function — applies sorted edits (high → low) to a slice of lines.
@@ -55,6 +67,127 @@ fn apply_edits(orig_lines: &[&str], edits: &[LineEdit]) -> Vec<String> {
 }
 
 impl WorkspaceServer {
+    pub async fn handle_replace_lines(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        // Batch mode: edits array provided directly.
+        if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+            let tagged: Vec<Value> = edits
+                .iter()
+                .map(|e| {
+                    let mut item = e.clone();
+                    item["action"] = json!("REPLACE");
+                    item
+                })
+                .collect();
+            let delegated = json!({
+                "path": args.get("path").cloned().unwrap_or(Value::Null),
+                "edits": tagged,
+            });
+            return self.handle_edit_file(delegated, session_id).await;
+        }
+
+        // Single-edit (flat params) — wrap and delegate.
+        let delegated = json!({
+            "path": args.get("path").cloned().unwrap_or(Value::Null),
+            "edits": [{
+                "action": "REPLACE",
+                "line": args.get("line").cloned().unwrap_or(Value::Null),
+                "endLine": args.get("endLine").cloned().unwrap_or(Value::Null),
+                "new_value": args.get("new_value").cloned().unwrap_or(Value::Null),
+                "anchor": args.get("anchor").cloned().unwrap_or(Value::Null),
+                "endAnchor": args.get("endAnchor").cloned().unwrap_or(Value::Null)
+            }]
+        });
+
+        self.handle_edit_file(delegated, session_id).await
+    }
+
+    pub async fn handle_insert_after_line(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        // Batch mode: edits array provided directly.
+        if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+            let tagged: Vec<Value> = edits
+                .iter()
+                .map(|e| {
+                    let mut item = json!({
+                        "action": "INSERT_AFTER",
+                        "line": e.get("afterLine").cloned().unwrap_or(Value::Null),
+                        "new_value": e.get("new_value").cloned().unwrap_or(Value::Null),
+                        "anchor": e.get("anchor").cloned().unwrap_or(Value::Null),
+                    });
+                    // Preserve any extra fields the caller may have included.
+                    if let (Some(obj), Some(src)) = (item.as_object_mut(), e.as_object()) {
+                        for (k, v) in src {
+                            obj.entry(k).or_insert_with(|| v.clone());
+                        }
+                    }
+                    item
+                })
+                .collect();
+            let delegated = json!({
+                "path": args.get("path").cloned().unwrap_or(Value::Null),
+                "edits": tagged,
+            });
+            return self.handle_edit_file(delegated, session_id).await;
+        }
+
+        // Single-edit (flat params) — wrap and delegate.
+        let delegated = json!({
+            "path": args.get("path").cloned().unwrap_or(Value::Null),
+            "edits": [{
+                "action": "INSERT_AFTER",
+                "line": args.get("afterLine").cloned().unwrap_or(Value::Null),
+                "new_value": args.get("new_value").cloned().unwrap_or(Value::Null),
+                "anchor": args.get("anchor").cloned().unwrap_or(Value::Null)
+            }]
+        });
+
+        self.handle_edit_file(delegated, session_id).await
+    }
+
+    pub async fn handle_delete_lines(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        // Batch mode: edits array provided directly.
+        if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+            let tagged: Vec<Value> = edits
+                .iter()
+                .map(|e| {
+                    let mut item = e.clone();
+                    item["action"] = json!("DELETE");
+                    item
+                })
+                .collect();
+            let delegated = json!({
+                "path": args.get("path").cloned().unwrap_or(Value::Null),
+                "edits": tagged,
+            });
+            return self.handle_edit_file(delegated, session_id).await;
+        }
+
+        // Single-edit (flat params) — wrap and delegate.
+        let delegated = json!({
+            "path": args.get("path").cloned().unwrap_or(Value::Null),
+            "edits": [{
+                "action": "DELETE",
+                "line": args.get("line").cloned().unwrap_or(Value::Null),
+                "endLine": args.get("endLine").cloned().unwrap_or(Value::Null),
+                "anchor": args.get("anchor").cloned().unwrap_or(Value::Null),
+                "endAnchor": args.get("endAnchor").cloned().unwrap_or(Value::Null)
+            }]
+        });
+
+        self.handle_edit_file(delegated, session_id).await
+    }
+
     pub async fn handle_edit_file(
         &self,
         args: Value,
@@ -77,8 +210,8 @@ impl WorkspaceServer {
                 .guidance(vec![
                     "Replace:      [{\"line\": 10, \"action\": \"REPLACE\", \"new_value\": \"text\"}]".to_string(),
                     "Insert-top:   [{\"line\": 0, \"action\": \"INSERT_AFTER\", \"new_value\": \"header\"}]".to_string(),
-                    "Delete range: [{\"line\": 10, \"endLine\": 15, \"action\": \"DELETE\"}]".to_string(),
-                    "Use readFile(showLineHashes=true) to get line + hash values first".to_string(),
+                    "Delete range: [{\"line\": 10, \"endLine\": 15, \"action\": \"DELETE\", \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                    "Use readFile(showLineAnchors=true) to get anchor values first".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -231,26 +364,7 @@ impl WorkspaceServer {
 
             // `new_value` extraction
             let new_value = match edit_obj.get("new_value").and_then(|v| v.as_str()) {
-                Some(s) => {
-                    // Forbid \n in single-line replace mode only
-                    if action == EditAction::Replace && end_line == start_line && s.contains('\n') {
-                        return Ok(guided_error(
-                            ErrorCategory::InvalidInput,
-                            format!(
-                                "Edit at index {}: single-line REPLACE cannot contain \\n",
-                                idx
-                            ),
-                            ToolGroup::Workspace,
-                        )
-                        .guidance(vec![
-                            "To replace multiple lines: add 'endLine'".to_string(),
-                            "To insert new lines after a line: use action: 'INSERT_AFTER'"
-                                .to_string(),
-                        ])
-                        .to_mcp_result());
-                    }
-                    s.to_string()
-                }
+                Some(s) => s.to_string(),
                 None => {
                     if action == EditAction::Delete {
                         String::new()
@@ -268,23 +382,65 @@ impl WorkspaceServer {
                 }
             };
 
-            let start_hash = edit_obj
-                .get("line_hash")
-                .or_else(|| edit_obj.get("startHash"))
+            let start_anchor = edit_obj
+                .get("anchor")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let end_hash = edit_obj
-                .get("endHash")
+            let end_anchor = edit_obj
+                .get("endAnchor")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+
+            let requires_anchor = !(action == EditAction::InsertAfter && start_line == 0);
+            if requires_anchor && start_anchor.is_none() {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Edit at index {} targets existing content and requires 'anchor'",
+                        idx
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) first"
+                        .to_string(),
+                    "Copy only the 6-character start-line anchor from the form N:anchor|content (the part between ':' and '|')".to_string(),
+                    "If the edit also uses endLine for a range, copy only the 6-character endAnchor from the exact final line"
+                        .to_string(),
+                    "Only INSERT_AFTER with line: 0 may omit anchors".to_string(),
+                ])
+                .to_mcp_result());
+            }
+
+            if matches!(action, EditAction::Replace | EditAction::Delete)
+                && end_line > start_line
+                && end_anchor.is_none()
+            {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Edit at index {} uses 'endLine' and requires 'endAnchor' for the exact end line",
+                        idx
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) first"
+                        .to_string(),
+                    "Copy the start-line anchor as 'anchor' and the final-line anchor as 'endAnchor'"
+                        .to_string(),
+                    "Only multi-line REPLACE and DELETE need 'endAnchor'".to_string(),
+                ])
+                .to_mcp_result());
+            }
 
             edits.push(LineEdit {
                 start_line,
                 end_line,
                 new_value,
-                start_hash,
-                end_hash,
+                start_anchor,
+                end_anchor,
                 action,
             });
         }
@@ -332,9 +488,21 @@ impl WorkspaceServer {
 
         let orig_lines: Vec<&str> = original_content.lines().collect();
         let line_count = orig_lines.len();
+        let mut prefix_state = initial_prefix_hash_state();
+        let prefix_hashes: Vec<String> = orig_lines
+            .iter()
+            .map(|line| {
+                prefix_state = update_prefix_hash_state(prefix_state, line);
+                format_prefix_hash(prefix_state)
+            })
+            .collect();
 
         // --- Validate all edits against file content ---
         for edit in &edits {
+            if !requires_existing_line_anchor(edit) {
+                continue;
+            }
+
             if edit.start_line > line_count {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
@@ -362,40 +530,127 @@ impl WorkspaceServer {
             }
 
             // Hash validation
-            if edit.start_line > 0 {
-                if let Some(ref expected) = edit.start_hash {
-                    let actual = orig_lines[edit.start_line - 1];
-                    let actual_hash = compute_line_hash(actual);
-                    if actual_hash != *expected {
-                        return Ok(guided_error(
-                            ErrorCategory::InvalidInput,
-                            format!(
-                                "STALE HASH on line {} (current: {})",
-                                edit.start_line, actual_hash
-                            ),
-                            ToolGroup::Workspace,
-                        )
-                        .to_mcp_result());
-                    }
+            let expected_anchor = edit
+                .start_anchor
+                .as_ref()
+                .expect("start_anchor required for existing-line edits");
+            let (expected_hash, expected_prefix) = match parse_anchor(expected_anchor) {
+                Some(parts) => parts,
+                None => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Invalid anchor for line {}: expected 6-character hexadecimal code",
+                            edit.start_line
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
+                            .to_string(),
+                        "Copy only the 6-character anchor from the returned N:anchor|content line (the part between ':' and '|')"
+                            .to_string(),
+                    ])
+                    .to_mcp_result());
                 }
+            };
+            let actual = orig_lines[edit.start_line - 1];
+            let actual_hash = compute_line_hash(actual);
+            if actual_hash != expected_hash {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "STALE ANCHOR on line {} (current line content changed)",
+                        edit.start_line
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Run readFile with showLineAnchors=true to get current anchors".to_string(),
+                    "Rebuild the edit using the latest anchor".to_string(),
+                ])
+                .to_mcp_result());
+            }
 
-                // Validate endHash when a range edit spans multiple lines
-                if edit.end_line > edit.start_line {
-                    if let Some(ref expected) = edit.end_hash {
-                        let actual = orig_lines[edit.end_line - 1];
-                        let actual_hash = compute_line_hash(actual);
-                        if actual_hash != *expected {
-                            return Ok(guided_error(
-                                ErrorCategory::InvalidInput,
-                                format!(
-                                    "STALE HASH on end line {} (current: {})",
-                                    edit.end_line, actual_hash
-                                ),
-                                ToolGroup::Workspace,
-                            )
-                            .to_mcp_result());
-                        }
+            let actual_prefix_hash = &prefix_hashes[edit.start_line - 1];
+            if actual_prefix_hash != expected_prefix {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "STALE ANCHOR on line {} (earlier content changed before this line)",
+                        edit.start_line
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Run readFile with showLineAnchors=true to get current anchors".to_string(),
+                    "Rebuild the edit using the latest anchor".to_string(),
+                ])
+                .to_mcp_result());
+            }
+
+            if requires_end_hash(edit) {
+                let expected_end_anchor = edit
+                    .end_anchor
+                    .as_ref()
+                    .expect("end_anchor required for multi-line replace/delete");
+                let (expected_end_hash, expected_end_prefix) = match parse_anchor(
+                    expected_end_anchor,
+                ) {
+                    Some(parts) => parts,
+                    None => {
+                        return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Invalid endAnchor for line {}: expected 6-character hexadecimal code",
+                            edit.end_line
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
+                            .to_string(),
+                        "Copy only the 6-character endAnchor from the returned N:anchor|content line (the part between ':' and '|')".to_string(),
+                    ])
+                    .to_mcp_result());
                     }
+                };
+                let actual_end_line = orig_lines[edit.end_line - 1];
+                let actual_end_hash = compute_line_hash(actual_end_line);
+                if actual_end_hash != expected_end_hash {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "STALE END ANCHOR on line {} (range boundary changed)",
+                            edit.end_line
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run readFile with showLineAnchors=true to get the current end anchor"
+                            .to_string(),
+                        "Rebuild the edit with an updated endAnchor".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+                // Also validate the prefix hash so that drift in lines *before*
+                // the end line (but within the edited range) is caught.
+                let actual_end_prefix = &prefix_hashes[edit.end_line - 1];
+                if actual_end_prefix != expected_end_prefix {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "STALE END ANCHOR on line {} (earlier content changed before range boundary)",
+                            edit.end_line
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run readFile with showLineAnchors=true to get the current end anchor"
+                            .to_string(),
+                        "Rebuild the edit with an updated endAnchor".to_string(),
+                    ])
+                    .to_mcp_result());
                 }
             }
         }
@@ -424,7 +679,7 @@ impl WorkspaceServer {
 
         self.invalidate_context_cache().await;
 
-        // --- Success response with summary, diff, and new hashlines ---
+        // --- Success response with summary, diff, and new anchors ---
         let edit_summary = edits
             .iter()
             .map(|e| match e.action {
@@ -452,6 +707,12 @@ impl WorkspaceServer {
         );
 
         let new_content_lines: Vec<&str> = new_content.lines().collect();
+        let mut full_prefix_state = initial_prefix_hash_state();
+        let full_hashlines: Vec<String> = new_content_lines
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| format_hashline(idx + 1, line, &mut full_prefix_state))
+            .collect();
         let mut sorted_asc = edits.clone();
         sorted_asc.sort_by_key(|e| e.start_line);
 
@@ -470,18 +731,7 @@ impl WorkspaceServer {
             };
 
             let end_in_new = (start_in_new + n_lines).min(new_content_lines.len());
-            let section: Vec<String> = new_content_lines[start_in_new..end_in_new]
-                .iter()
-                .enumerate()
-                .map(|(i, line)| {
-                    format!(
-                        "{}:{}|{}",
-                        start_in_new + i + 1,
-                        compute_line_hash(line),
-                        line
-                    )
-                })
-                .collect();
+            let section: Vec<String> = full_hashlines[start_in_new..end_in_new].to_vec();
             new_hash_sections.push(section.join("\n"));
 
             let orig_len = if edit.action == EditAction::InsertAfter {
@@ -493,9 +743,9 @@ impl WorkspaceServer {
         }
 
         let hint = SuccessHint::new(
-            format!("✓ Applied {} edit(s) to '{}'\n\nChanges:\n{}\n\nSummary: {}\n\nNew hashlines:\n```\n{}\n```", edits.len(), path_str, edit_summary, diff_summary, new_hash_sections.join("\n...\n")),
+            format!("✓ Applied {} edit(s) to '{}'\n\nChanges:\n{}\n\nSummary: {}\n\nNew anchors:\n```\n{}\n```", edits.len(), path_str, edit_summary, diff_summary, new_hash_sections.join("\n...\n")),
             vec![
-                "Hashes above are current — use directly in the next editFile call".to_string(),
+                "Anchors above are current — use anchor for the start line, and add endAnchor when a range edit includes endLine".to_string(),
                 "Use readFile only if you need broader context beyond the edited lines".to_string(),
             ],
         );
@@ -513,8 +763,8 @@ mod tests {
             start_line: line,
             end_line: line,
             new_value: val.to_string(),
-            start_hash: None,
-            end_hash: None,
+            start_anchor: None,
+            end_anchor: None,
             action,
         }
     }

@@ -22,6 +22,9 @@ use tauri_mcp_agent_lib::mcp::builtin::service_id::{
 use tauri_mcp_agent_lib::mcp::builtin::tool::tools as tool_tools;
 use tauri_mcp_agent_lib::mcp::builtin::ui::tools as ui_tools;
 use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
+use tauri_mcp_agent_lib::mcp::server::tools::{
+    get_static_tools_for_server, list_available_builtin_server_definitions,
+};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -50,6 +53,9 @@ fn mock_agent_config(aliases: Option<Vec<&str>>) -> AgentConfig {
         parent_session_id: None,
         lineage_id: None,
         depth: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
     }
 }
 
@@ -272,6 +278,62 @@ fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
 }
 
 #[test]
+fn scheduled_task_service_is_registered_as_optional_builtin() {
+    assert_eq!(
+        BuiltinServiceId::from_alias("scheduled_task"),
+        Some(BuiltinServiceId::ScheduledTask)
+    );
+    assert_eq!(
+        BuiltinServiceId::from_alias("scheduled-task"),
+        Some(BuiltinServiceId::ScheduledTask)
+    );
+
+    let entry = BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .find(|entry| entry.variant == BuiltinServiceId::ScheduledTask)
+        .expect("scheduled_task must be registered");
+
+    assert_eq!(entry.canonical, "scheduled_task");
+    assert!(entry.optional, "scheduled_task should remain opt-in");
+    assert!(
+        !CORE_BUILTIN_SERVICE_ALIASES.contains(&"scheduled_task"),
+        "scheduled_task must not be treated as core"
+    );
+}
+
+#[test]
+fn scheduled_task_static_tool_surface_is_exposed() {
+    let tools = get_static_tools_for_server("scheduled_task");
+    let tool_names: Vec<String> = tools.iter().map(|tool| tool.name.clone()).collect();
+
+    assert_eq!(
+        tools.len(),
+        6,
+        "scheduled_task should expose six public tools"
+    );
+    for expected in [
+        "createScheduledTask",
+        "listScheduledTasks",
+        "getScheduledTask",
+        "updateScheduledTask",
+        "toggleScheduledTask",
+        "deleteScheduledTask",
+    ] {
+        assert!(
+            tool_names.iter().any(|name| name == expected),
+            "missing scheduled_task tool: {expected}"
+        );
+    }
+
+    let server_info = list_available_builtin_server_definitions()
+        .into_iter()
+        .find(|info| info.name == "scheduled_task")
+        .expect("scheduled_task must appear in builtin server definitions");
+    assert_eq!(server_info.tool_count, 6);
+    assert_eq!(server_info.metadata.display_name, "Scheduled Tasks");
+}
+
+#[test]
 fn tool_is_enabled_even_with_empty_alias_list() {
     // Empty explicit list → only core aliases should be enabled.
     let config = mock_agent_config(Some(vec![]));
@@ -304,6 +366,7 @@ fn builtin_service_id_serializes_to_canonical_name() {
         (BuiltinServiceId::Attachments, "attachments"),
         (BuiltinServiceId::Ui, "ui"),
         (BuiltinServiceId::Browser, "browser"),
+        (BuiltinServiceId::ScheduledTask, "scheduled_task"),
         (BuiltinServiceId::Bootstrap, "bootstrap"),
         (BuiltinServiceId::Tool, "tool"),
     ];
@@ -340,6 +403,7 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::attachments::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
+        builtin::scheduled_task::NAME,
         builtin::bootstrap::NAME,
         builtin::media::NAME,
         builtin::tool::NAME,
@@ -374,6 +438,7 @@ fn builtin_server_names_are_unique() {
         builtin::attachments::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
+        builtin::scheduled_task::NAME,
         builtin::bootstrap::NAME,
         builtin::media::NAME,
         builtin::tool::NAME,
@@ -420,6 +485,7 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Attachments => builtin::attachments::NAME,
             BuiltinServiceId::Ui => builtin::ui::NAME,
             BuiltinServiceId::Browser => builtin::browser::NAME,
+            BuiltinServiceId::ScheduledTask => builtin::scheduled_task::NAME,
             BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,
             BuiltinServiceId::Tool => builtin::tool::NAME,
             BuiltinServiceId::Media => builtin::media::NAME,

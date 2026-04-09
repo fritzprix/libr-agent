@@ -303,7 +303,11 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
 
     let hint = SuccessHint::new(
         result,
-        vec!["Navigate to a different URL with `goto` if needed".to_string()],
+        vec![
+            "Use `content` to inspect the current page.".to_string(),
+            "Use `goto` only if you need to replace the current page in this same active session."
+                .to_string(),
+        ],
     );
     Ok(hint.to_mcp_result())
 }

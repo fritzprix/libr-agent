@@ -13,7 +13,15 @@ pub fn file_tools() -> Vec<MCPTool> {
         file_tools::create_list_directory_tool(),
         file_tools::create_import_files_tool(),
         file_tools::create_search_tool(),
-        file_tools::create_edit_file_tool(),
+        // Intentionally do NOT expose editFile in normal tool discovery.
+        // editFile multiplexes three different contracts (REPLACE / INSERT_AFTER / DELETE)
+        // behind an action discriminator, which makes the agent-facing contract broader and
+        // less predictable than the dedicated tools below. Keep it dispatchable for
+        // compatibility/batching internals, but steer model planning toward the explicit
+        // per-operation tools whose schemas match a single mutation contract.
+        file_tools::create_replace_lines_tool(),
+        file_tools::create_insert_after_line_tool(),
+        file_tools::create_delete_lines_tool(),
     ]
 }
 
@@ -28,10 +36,6 @@ pub fn code_tools() -> Vec<MCPTool> {
         code_tools::create_execute_shell_tool(), // Unix: runInPersistentShell, Windows: runInPersistentPowerShell
         // Background process execution (platform-agnostic)
         code_tools::create_spawn_process_tool(), // Async: background processes
-        // 2nd tool for interactive shell execution (Two-Tool Pattern)
-        code_tools::create_execute_pending_shell_tool(),
-        // Cancel tool for interactive shell execution
-        code_tools::create_cancel_pending_execution_tool(),
     ]
 }
 
@@ -60,10 +64,9 @@ mod tests {
     #[test]
     fn test_code_tools_returns_platform_tool() {
         let tools = code_tools();
-        // Updated to expect same tool counts by platform after CMD removal:
-        // runShell/runPowerShell, runInPersistentShell/runInPersistentPowerShell,
-        // spawnProcess, executePendingShell, cancelPendingExecution = 5 tools
-        assert_eq!(tools.len(), 5);
+        // Model-facing tools only: isolated shell, persistent shell, and background processes.
+        // Interactive callback tools stay dispatchable but are intentionally hidden from discovery.
+        assert_eq!(tools.len(), 3);
 
         let primary_tool = &tools[0];
         #[cfg(unix)]

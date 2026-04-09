@@ -387,10 +387,46 @@ impl WorkspaceServer {
 
             let success = exit_code == 0;
 
-            let hint = SuccessHint::new(
-                format!("Interactive command executed (exit code: {})", exit_code),
-                SuccessHint::for_tool("executePendingShell", ToolGroup::Workspace),
-            );
+            let result_text = if success {
+                if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
+                    format!(
+                        "Interactive command executed successfully (exit code: {})",
+                        exit_code
+                    )
+                } else if redacted_stderr.is_empty() {
+                    format!(
+                        "Interactive command executed successfully (exit code: {})\n\nSTDOUT:\n{}",
+                        exit_code, redacted_stdout
+                    )
+                } else if redacted_stdout.is_empty() {
+                    format!(
+                        "Interactive command executed successfully (exit code: {})\n\nSTDERR:\n{}",
+                        exit_code, redacted_stderr
+                    )
+                } else {
+                    format!(
+                        "Interactive command executed successfully (exit code: {})\n\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                        exit_code, redacted_stdout, redacted_stderr
+                    )
+                }
+            } else if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
+                format!("Interactive command failed (exit code: {})", exit_code)
+            } else if redacted_stderr.is_empty() {
+                format!(
+                    "Interactive command failed (exit code: {})\n\nSTDOUT:\n{}",
+                    exit_code, redacted_stdout
+                )
+            } else if redacted_stdout.is_empty() {
+                format!(
+                    "Interactive command failed (exit code: {})\n\nSTDERR:\n{}",
+                    exit_code, redacted_stderr
+                )
+            } else {
+                format!(
+                    "Interactive command failed (exit code: {})\n\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                    exit_code, redacted_stdout, redacted_stderr
+                )
+            };
 
             let response_data = serde_json::json!({
                 "exit_code": exit_code,
@@ -399,7 +435,18 @@ impl WorkspaceServer {
                 "status": if success { "success" } else { "failed" }
             });
 
-            Ok(hint.to_mcp_result_with_data(Some(response_data)))
+            if success {
+                let hint = SuccessHint::new(
+                    result_text,
+                    SuccessHint::for_tool("executePendingShell", ToolGroup::Workspace),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(response_data)))
+            } else {
+                Ok(MCPResult::informational_with_data(
+                    &result_text,
+                    response_data,
+                ))
+            }
         } else {
             // Async mode: Return process_id immediately and spawn monitoring task
             let process_id = cuid2::create_id();

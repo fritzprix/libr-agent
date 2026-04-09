@@ -8,6 +8,7 @@ import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
 import { toast } from 'sonner';
 
 const downloadMediaFileMock = vi.fn();
+const openExternalUrlMock = vi.fn();
 
 vi.mock('@/lib/backend/workspace', () => ({
   readLocalFileAsBase64: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock('sonner', () => ({
 // Mock contexts and hooks
 vi.mock('@/hooks/use-rust-backend', () => ({
   useRustBackend: () => ({
-    openExternalUrl: vi.fn(),
+    openExternalUrl: openExternalUrlMock,
     downloadMediaFile: downloadMediaFileMock,
   }),
 }));
@@ -86,6 +87,7 @@ describe('AgentMessageRenderer', () => {
   beforeEach(() => {
     writeClipboardMock.mockReset();
     downloadMediaFileMock.mockReset();
+    openExternalUrlMock.mockReset();
     vi.mocked(readLocalFileAsBase64).mockReset();
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
@@ -331,5 +333,43 @@ describe('AgentMessageRenderer', () => {
         fileUrl: undefined,
       });
     });
+  });
+
+  it('blocks unsafe URLs in resource-link click handler', async () => {
+    const content: MCPContent[] = [
+      {
+        type: 'resource_link',
+        uri: 'javascript:alert(1)',
+        name: 'Malicious Link',
+      },
+    ];
+
+    render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    const link = await screen.findByText('Malicious Link');
+    fireEvent.click(link);
+
+    expect(openExternalUrlMock).not.toHaveBeenCalled();
+  });
+
+  it('renders unsafe protocols in Markdown as inert text', async () => {
+    const content: MCPContent[] = [
+      {
+        type: 'text',
+        text: '[Malicious Link](javascript:alert("XSS"))',
+      },
+    ];
+
+    render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    // It should render the text but not as an <a> tag
+    const linkText = await screen.findByText('Malicious Link');
+    expect(linkText.tagName).toBe('SPAN');
+    expect(linkText).toHaveClass('text-muted-foreground');
+    expect(screen.queryByRole('link', { name: 'Malicious Link' })).not.toBeInTheDocument();
   });
 });

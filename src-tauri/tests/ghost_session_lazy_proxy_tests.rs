@@ -195,6 +195,10 @@ fn extract_builtin_tool_ids_respects_explicit_allowlist() {
         "Optional `browser` must be excluded when not in allowlist"
     );
     assert!(
+        !tool_ids.contains(&"scheduled_task".to_string()),
+        "Optional `scheduled_task` must be excluded when not in allowlist"
+    );
+    assert!(
         !tool_ids.contains(&"bootstrap".to_string()),
         "Optional `bootstrap` must be excluded when not in allowlist"
     );

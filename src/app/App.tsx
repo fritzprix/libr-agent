@@ -28,6 +28,7 @@ const AgentDraftChatView = lazy(
 const AssistantList = lazy(() => import('@/features/assistant/List'));
 const PlaybookList = lazy(() => import('@/features/playbook/List'));
 const History = lazy(() => import('@/features/history/History'));
+const Org = lazy(() => import('@/features/history/Org'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const MCPServerPage = lazy(
   () => import('@/features/mcp-servers/MCPServerPage'),
@@ -140,6 +141,7 @@ function App() {
                                       path="/history/search"
                                       element={<History />}
                                     />
+                                    <Route path="/org" element={<Org />} />
                                     <Route
                                       path="/settings"
                                       element={<SettingsPage />}

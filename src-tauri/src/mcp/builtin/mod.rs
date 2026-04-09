@@ -18,6 +18,7 @@ pub mod knowledge;
 pub mod media;
 pub mod planning;
 pub mod playbook;
+pub mod scheduled_task;
 pub mod scratchpad;
 pub mod service_id;
 pub mod session_api;

@@ -455,12 +455,13 @@ export function useLLMListener({
             resetContextUsageForSession(sessionId);
             logger.info(`✅ Compact summary stored: session=${sessionId}`);
           } catch (error) {
+            const compactRuntimeError = toAgentRuntimeError(error);
             logger.error(
               `Compact LLM call failed: session=${sessionId}`,
-              error,
+              compactRuntimeError,
             );
             setAwaitingCompactForSession(sessionId, false);
-            await handleCompactError(sessionId, toAgentRuntimeError(error));
+            await handleCompactError(sessionId, compactRuntimeError);
           }
         },
       );
