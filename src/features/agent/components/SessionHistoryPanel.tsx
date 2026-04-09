@@ -268,6 +268,10 @@ export function SessionHistoryPanel({
       return b.createdAt.getTime() - a.createdAt.getTime();
     };
 
+    for (const children of childrenByParent.values()) {
+      children.sort(sortByCurrentOrder);
+    }
+
     const roots = baseSessions
       .filter((session) => {
         if (!visibleIds.has(session.id)) {
@@ -283,9 +287,9 @@ export function SessionHistoryPanel({
     const rows: SessionRow[] = [];
 
     const walk = (session: AgentSession, nestingLevel: number) => {
-      const visibleChildren = (childrenByParent.get(session.id) || [])
-        .filter((child) => visibleIds.has(child.id))
-        .sort(sortByCurrentOrder);
+      const visibleChildren = (childrenByParent.get(session.id) || []).filter(
+        (child) => visibleIds.has(child.id),
+      );
       const parentName = session.parentSessionId
         ? sessionById.get(session.parentSessionId)?.name ||
           t('sessionHistory.card.fallbackName', 'Session {{id}}', {
