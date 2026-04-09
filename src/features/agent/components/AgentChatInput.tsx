@@ -382,6 +382,11 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0 h-8 w-8',
                   pendingCancel && 'cursor-not-allowed',
                 )}
+                aria-label={
+                  pendingCancel ? t('agent.input.cancelAriaLabel') : undefined
+                }
+                aria-disabled={pendingCancel ? true : undefined}
+                role={pendingCancel ? 'button' : undefined}
               >
                 <Button
                   type="button"

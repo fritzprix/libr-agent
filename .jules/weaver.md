@@ -137,5 +137,5 @@
 ## 2026-04-09 - [AgentPlanningUpdates] **Eradicated:** [God useEffect block / Unrelated Event Subscription] **Woven:** [Custom Hook Pattern (useAgentMessageTrigger)]
 
 - **AgentPlanningUpdates:** Extracted the complex Tauri event listener ('agent:event') and debouncing logic from a monolithic `useEffect` into the `useAgentMessageTrigger` custom hook.
-- Added strict filtering via `messageFilter` to only trigger context updates for successful planning-related tool calls by checking `message.role === 'tool'`, `message.tool_use.name`, and ensuring `!message.error`.
-- **Benefits:** Decoupled event subscription from component rendering logic, prevented unnecessary updates on unrelated tool executions, and standardized event handling across the chat interface.
+- Added strict filtering via `messageFilter` to trigger context updates only for successful tool-result messages by checking `message.role === 'tool'`, `message.tool_call_id`, `!message.error`, and `message.metadata?.toolError !== true`.
+- **Benefits:** Decoupled event subscription from component rendering logic, standardized event handling across the chat interface, and avoided refreshes from failed tool executions.

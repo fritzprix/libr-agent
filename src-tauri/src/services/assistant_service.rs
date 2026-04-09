@@ -165,8 +165,8 @@ mod tests {
         async fn update_assistant(
             &self,
             _id: &str,
-            _name: String,
-            _config: String,
+            _name: Option<String>,
+            _config: Option<String>,
         ) -> Result<AssistantModel, DbError> {
             unimplemented!()
         }

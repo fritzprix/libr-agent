@@ -483,6 +483,19 @@ function DraftChatInner() {
                           (isSubmitting || isAttachmentLoading) &&
                             'cursor-not-allowed',
                         )}
+                        aria-label={
+                          isSubmitting || isAttachmentLoading
+                            ? t('fileAttachment.attachFiles', 'Attach files')
+                            : undefined
+                        }
+                        aria-disabled={
+                          isSubmitting || isAttachmentLoading ? true : undefined
+                        }
+                        role={
+                          isSubmitting || isAttachmentLoading
+                            ? 'button'
+                            : undefined
+                        }
                       >
                         <Button
                           type="button"

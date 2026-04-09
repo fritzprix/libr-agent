@@ -636,9 +636,14 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         }
     }
 
-    let total_tools = all_matched_tools.len();
+    let total_results = all_matched_tools.len();
+    let total_tools = all_matched_tools
+        .iter()
+        .filter(|tool| tool.name != "-")
+        .count();
+    let total_server_rows = total_results.saturating_sub(total_tools);
 
-    if total_tools == 0 {
+    if total_results == 0 {
         let hint_text = if query.is_empty() {
             "No tools found. Use registerServer to add external MCP servers.".to_string()
         } else {
@@ -658,11 +663,11 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .to_mcp_result());
     }
 
-    if offset >= total_tools {
+    if offset >= total_results {
         return Ok(SuccessHint::new(
             format!(
-                "Offset {} exceeds total matches ({}). Try calling again with offset: 0",
-                offset, total_tools
+                "Offset {} exceeds total results ({}). Try calling again with offset: 0",
+                offset, total_results
             ),
             vec!["Reset offset to 0".to_string()],
         )
@@ -675,15 +680,24 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .take(limit)
         .collect();
 
+    let result_summary = if total_server_rows > 0 {
+        format!(
+            "{} tools and {} matching servers without cached tools",
+            total_tools, total_server_rows
+        )
+    } else {
+        format!("{} tools", total_tools)
+    };
+
     let header = if query.is_empty() {
         format!(
-            "Found {} tools (scope: {}, availability: {}):\n\n",
-            total_tools, scope, availability
+            "Found {} (scope: {}, availability: {}):\n\n",
+            result_summary, scope, availability
         )
     } else {
         format!(
-            "Found {} tools matching '{}' (scope: {}, availability: {}):\n\n",
-            total_tools, query, scope, availability
+            "Found {} matching '{}' (scope: {}, availability: {}):\n\n",
+            result_summary, query, scope, availability
         )
     };
 
@@ -719,12 +733,12 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         ));
     }
 
-    if offset.saturating_add(limit) < total_tools {
+    if offset.saturating_add(limit) < total_results {
         body.push_str(&format!(
-            "\n*(Showing {} to {} of {} total matches. Call this tool again with offset: {} to see more)*",
+            "\n*(Showing {} to {} of {} total results. Call this tool again with offset: {} to see more)*",
             offset + 1,
             offset + paginated_tools.len(),
-            total_tools,
+            total_results,
             offset.saturating_add(limit)
         ));
     }
