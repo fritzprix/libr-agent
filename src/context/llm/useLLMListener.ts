@@ -29,6 +29,10 @@ import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
 import type { CompactRequest, CompletionRequest } from './types';
 import { isAbortError } from './types';
+import {
+  applyServiceRuntimeConfig,
+  buildServiceRuntimeConfig,
+} from './service-runtime-config';
 
 const logger = getLogger('useLLMListener');
 
@@ -442,13 +446,19 @@ export function useLLMListener({
             settings.serviceConfigs?.[provider] ?? {};
 
           try {
+            const runtimeConfig = buildServiceRuntimeConfig(
+              settings,
+              providerConfig,
+            );
             const service: AIContextCompactionService =
               AIServiceFactory.getService(provider, apiKey, providerConfig);
+            applyServiceRuntimeConfig(service, runtimeConfig);
             const summary = await service.compact(messages, {
               modelName: model,
               systemPrompt: parentRequest?.systemPrompt,
               sessionContext: parentRequest?.sessionContext,
               availableTools: parentRequest?.availableTools,
+              config: runtimeConfig,
             });
             await handleCompactResponse(sessionId, fromId, toId, summary);
             setCompactedRangeForSession(sessionId, { fromId, toId });

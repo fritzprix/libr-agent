@@ -97,10 +97,10 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let system_settings = repositories::init_repositories(&db).await;
 
         let index_freq_mins = system_settings.search_index_frequency_minutes.unwrap_or(5);
-        let retention_hours = system_settings.active_session_retention_hours.unwrap_or(24);
+        let retention_hours = 24;
 
         info!(
-            "⚙️ System Configuration: Index Frequency = {}m, Retention = {}h",
+            "⚙️ System Configuration: Index Frequency = {}m, Workspace Retention = {}h",
             index_freq_mins, retention_hours
         );
 

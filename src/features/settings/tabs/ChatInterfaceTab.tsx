@@ -5,7 +5,7 @@ import {
   DisplaySettings,
   ContextStrategy,
 } from '@/context/SettingsContext';
-import { Input, Slider } from '@/components/ui';
+import { Button, Input, Slider } from '@/components/ui';
 
 interface ChatInterfaceTabProps {
   localContextStrategy: ContextStrategy;
@@ -43,6 +43,22 @@ function ChatInterfaceTabComponent({
   onDisplaySettingsChange,
 }: ChatInterfaceTabProps) {
   const { t } = useTranslation('common');
+
+  const updateToolCallCount = (delta: number) => {
+    onToolCallGroupVisibleCountChange(
+      Math.min(20, Math.max(1, localToolCallGroupVisibleCount + delta)),
+    );
+  };
+
+  const updateDiffContextLines = (delta: number) => {
+    onAdvancedSettingsChange(
+      'diffContextLines',
+      Math.min(
+        10,
+        Math.max(1, (localAdvancedSettings.diffContextLines ?? 3) + delta),
+      ),
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -153,19 +169,29 @@ function ChatInterfaceTabComponent({
               'Tool Calls Visible Count',
             )}
           </label>
-          <Input
-            type="number"
-            placeholder="e.g., 4"
-            min={1}
-            max={20}
-            value={localToolCallGroupVisibleCount}
-            onChange={(e) =>
-              onToolCallGroupVisibleCountChange(
-                parseInt(e.target.value, 10) || 4,
-              )
-            }
-            className="bg-background border text-foreground w-full max-w-xs"
-          />
+          <div className="flex max-w-xs items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 w-9 px-0"
+              onClick={() => updateToolCallCount(-1)}
+              disabled={localToolCallGroupVisibleCount <= 1}
+            >
+              -
+            </Button>
+            <div className="flex h-9 min-w-[4rem] items-center justify-center rounded-md border bg-background px-3 text-sm font-medium">
+              {localToolCallGroupVisibleCount}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 w-9 px-0"
+              onClick={() => updateToolCallCount(1)}
+              disabled={localToolCallGroupVisibleCount >= 20}
+            >
+              +
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground mt-1">
             {t(
               'settings.toolCallGroupVisibleCountDescription',
@@ -178,20 +204,29 @@ function ChatInterfaceTabComponent({
           <label className="block text-muted-foreground mb-2 font-medium">
             {t('settings.chatInterface.diffContextLines', 'Diff Context Lines')}
           </label>
-          <Input
-            type="number"
-            placeholder="e.g., 3"
-            min={1}
-            max={10}
-            value={localAdvancedSettings.diffContextLines ?? 3}
-            onChange={(e) =>
-              onAdvancedSettingsChange(
-                'diffContextLines',
-                parseInt(e.target.value, 10) || 3,
-              )
-            }
-            className="bg-background border text-foreground w-full max-w-xs"
-          />
+          <div className="flex max-w-xs items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 w-9 px-0"
+              onClick={() => updateDiffContextLines(-1)}
+              disabled={(localAdvancedSettings.diffContextLines ?? 3) <= 1}
+            >
+              -
+            </Button>
+            <div className="flex h-9 min-w-[4rem] items-center justify-center rounded-md border bg-background px-3 text-sm font-medium">
+              {localAdvancedSettings.diffContextLines ?? 3}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 w-9 px-0"
+              onClick={() => updateDiffContextLines(1)}
+              disabled={(localAdvancedSettings.diffContextLines ?? 3) >= 10}
+            >
+              +
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground mt-1">
             {t(
               'settings.chatInterface.diffContextLinesDescription',

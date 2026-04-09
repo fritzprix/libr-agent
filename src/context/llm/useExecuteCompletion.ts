@@ -31,6 +31,10 @@ import type {
   MCPToolCallContent,
 } from '@/lib/mcp';
 import type { Settings } from '@/lib/services/settings-service';
+import {
+  applyServiceRuntimeConfig,
+  buildServiceRuntimeConfig,
+} from './service-runtime-config';
 
 const logger = getLogger('useExecuteCompletion');
 
@@ -158,6 +162,11 @@ export function useExecuteCompletion({
         apiKey ?? '',
         providerConfig,
       );
+      const runtimeConfig = buildServiceRuntimeConfig(
+        settingsRef.current,
+        providerConfig,
+      );
+      applyServiceRuntimeConfig(service, runtimeConfig);
       activeServicesRef.current.set(sessionId, service);
 
       // Get existing streaming message (already set by event listener)
@@ -174,6 +183,7 @@ export function useExecuteCompletion({
       try {
         // Build config
         const config: AIServiceConfig = {
+          ...runtimeConfig,
           maxTokens:
             maxTokens ||
             settingsRef.current.advanced?.defaultMaxOutputTokens ||

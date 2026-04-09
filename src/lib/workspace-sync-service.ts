@@ -17,14 +17,11 @@ export async function syncFileToWorkspace(
 ): Promise<string> {
   const settings = await settingsService.getSettings();
   const maxFileUploadBytes = settings.system.maxFileUploadSizeMB * 1024 * 1024;
-  const workspaceCapBytes = settings.system.workspaceCapacityMB * 1024 * 1024;
-  // Effective max size for a single file is the smaller of the two (safe default logic)
-  const effectiveLimit = Math.min(maxFileUploadBytes, workspaceCapBytes);
 
   // Validate file size before processing
-  if (file.size > effectiveLimit) {
+  if (file.size > maxFileUploadBytes) {
     throw new Error(
-      `File size ${file.size} bytes exceeds maximum allowed size ${effectiveLimit} bytes`,
+      `File size ${file.size} bytes exceeds maximum allowed size ${maxFileUploadBytes} bytes`,
     );
   }
 

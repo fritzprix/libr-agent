@@ -3,7 +3,12 @@ import { useState, useRef } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
+import {
+  Slider,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui';
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button, Input } from '@/components/ui';
@@ -25,6 +30,18 @@ interface GeneralTabProps {
   onChange: (lang: string) => void;
   skillsDirectory?: string;
   onSkillsDirectoryChange: (path: string) => void;
+  localMaxFileUploadSizeMB: number;
+  onMaxFileUploadSizeChange: (value: number) => void;
+}
+
+const STORAGE_PRESETS_MB = [10, 25, 50, 100, 250, 500] as const;
+
+function findNearestStorageIndex(value: number): number {
+  return STORAGE_PRESETS_MB.reduce((bestIndex, preset, index) => {
+    const bestDistance = Math.abs(STORAGE_PRESETS_MB[bestIndex] - value);
+    const nextDistance = Math.abs(preset - value);
+    return nextDistance < bestDistance ? index : bestIndex;
+  }, 0);
 }
 
 function GeneralTabComponent({
@@ -32,6 +49,8 @@ function GeneralTabComponent({
   onChange,
   skillsDirectory,
   onSkillsDirectoryChange,
+  localMaxFileUploadSizeMB,
+  onMaxFileUploadSizeChange,
 }: GeneralTabProps) {
   const { t } = useTranslation('common');
   const { effectiveDir, verificationStatus, skills, errorMessage } =
@@ -235,6 +254,57 @@ function GeneralTabComponent({
         </p>
       </div>
 
+      <div className="border-t pt-6">
+        <h3 className="mb-4 text-lg font-medium text-foreground">
+          {t('settings.system.fileWorkspace', 'File & Workspace')}
+        </h3>
+        <div className="grid grid-cols-1 gap-6">
+          <div className="min-w-0 rounded-xl border border-border/70 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <label className="block text-muted-foreground font-medium">
+                {t(
+                  'settings.system.maxFileUploadSize',
+                  'Max File Upload Size (MB)',
+                )}
+              </label>
+              <span className="rounded-md bg-primary/10 px-2 py-1 text-sm font-mono text-primary">
+                {`${localMaxFileUploadSizeMB} MB`}
+              </span>
+            </div>
+            <Slider
+              min={0}
+              max={STORAGE_PRESETS_MB.length - 1}
+              step={1}
+              value={[findNearestStorageIndex(localMaxFileUploadSizeMB)]}
+              onValueChange={([index]) =>
+                onMaxFileUploadSizeChange(STORAGE_PRESETS_MB[index] ?? 50)
+              }
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              {STORAGE_PRESETS_MB.map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant={
+                    preset === localMaxFileUploadSizeMB ? 'default' : 'outline'
+                  }
+                  className="h-8 px-2 text-xs"
+                  onClick={() => onMaxFileUploadSizeChange(preset)}
+                >
+                  {`${preset} MB`}
+                </Button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t(
+                'settings.system.maxFileUploadSizeDescription',
+                'Maximum size for a single file upload. Increase if you often work with large documents.',
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <SkillsListModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -248,7 +318,9 @@ export default React.memo(GeneralTabComponent, (prev, next) => {
   return (
     prev.localLanguage === next.localLanguage &&
     prev.skillsDirectory === next.skillsDirectory &&
+    prev.localMaxFileUploadSizeMB === next.localMaxFileUploadSizeMB &&
     prev.onChange === next.onChange &&
-    prev.onSkillsDirectoryChange === next.onSkillsDirectoryChange
+    prev.onSkillsDirectoryChange === next.onSkillsDirectoryChange &&
+    prev.onMaxFileUploadSizeChange === next.onMaxFileUploadSizeChange
   );
 });
