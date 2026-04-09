@@ -46,6 +46,7 @@ pub async fn get_assistant(id: String) -> Result<Option<AssistantDto>, String> {
 
 #[command]
 pub async fn search_assistants(query: String, limit: usize) -> Result<Vec<AssistantDto>, String> {
+    let limit = limit.clamp(1, 100);
     let assistants =
         AssistantService::search_assistants(get_assistant_repository(), &query, limit).await?;
     Ok(assistants.into_iter().map(|a| a.into()).collect())
