@@ -1,4 +1,3 @@
-use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
     duplicate_error, guided_error, invalid_input_error, not_found_error, ErrorCategory,
     SuccessHint, ToolGroup,
@@ -244,7 +243,11 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
             server.invalidate_cache().await;
 
             // Emit resource updated event for frontend cache revalidation
-            events::emit_resource_updated("assistant", "create", Some(id.clone()));
+            crate::agent::tauri_events::emit_resource_updated(
+                "assistant",
+                "create",
+                Some(id.clone()),
+            );
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
@@ -393,7 +396,11 @@ pub async fn update_assistant(
             server.invalidate_cache().await;
 
             // Emit resource updated event for frontend cache revalidation
-            events::emit_resource_updated("assistant", "update", Some(request.id.clone()));
+            crate::agent::tauri_events::emit_resource_updated(
+                "assistant",
+                "update",
+                Some(request.id.clone()),
+            );
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
@@ -505,7 +512,11 @@ pub async fn delete_assistant(
             server.invalidate_cache().await;
 
             // Emit resource updated event for frontend cache revalidation
-            events::emit_resource_updated("assistant", "delete", Some(request.id.clone()));
+            crate::agent::tauri_events::emit_resource_updated(
+                "assistant",
+                "delete",
+                Some(request.id.clone()),
+            );
 
             let hint = SuccessHint::new(
                 format!("Agent configuration '{}' deleted successfully", request.id),

@@ -2,8 +2,8 @@ use crate::agent::channel_routing::ChannelRouteCandidate;
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
-use crate::agent::events::TauriEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -241,7 +241,7 @@ impl AgentSessionManager {
 
         // Emit the existing pending approvals
         for event in pending_events {
-            if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&self.app_handle, event) {
                 log::error!("Failed to re-emit pending approval event on resume: {}", e);
             }
         }
@@ -401,7 +401,7 @@ impl AgentSessionManager {
             let event = crate::agent::events::AgentEvent::WorkflowStarted {
                 session_id: session_id.clone(),
             };
-            if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&self.app_handle, event) {
                 log::error!(
                     "Failed to emit WorkflowStarted event during injection: {}",
                     e
@@ -769,6 +769,7 @@ impl AgentSessionManager {
 
     /// Clear the compact in-flight flag for a session (called on success or error).
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
-        compact::clear_compact_in_flight(&self.active_sessions, session_id).await;
+        crate::agent::compact_recovery::clear_compact_in_flight(&self.active_sessions, session_id)
+            .await;
     }
 }

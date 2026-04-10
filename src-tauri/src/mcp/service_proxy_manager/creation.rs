@@ -107,7 +107,7 @@ impl MCPServiceProxyManager {
                     step: step.to_string(),
                     status,
                 };
-                if let Err(e) = crate::agent::events::emit_agent_event(app, event) {
+                if let Err(e) = crate::agent::tauri_events::emit_agent_event(app, event) {
                     log::warn!("Failed to emit initialization status: {}", e);
                 }
             }
@@ -374,7 +374,7 @@ impl MCPServiceProxyManager {
                             step: step.to_string(),
                             status,
                         };
-                        if let Err(e) = crate::agent::events::emit_agent_event(app, event) {
+                        if let Err(e) = crate::agent::tauri_events::emit_agent_event(app, event) {
                             log::warn!("Failed to emit initialization status: {}", e);
                         }
                     }
@@ -413,7 +413,7 @@ impl MCPServiceProxyManager {
                                     status,
                                 };
                                 if let Err(e) =
-                                    crate::agent::events::emit_agent_event(app_h, event)
+                                    crate::agent::tauri_events::emit_agent_event(app_h, event)
                                 {
                                     log::warn!("Failed to emit initialization status: {}", e);
                                 }

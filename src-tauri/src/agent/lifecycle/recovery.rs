@@ -1,6 +1,7 @@
 use crate::agent::context::registry::ContextRegistry;
-use crate::agent::events::{AgentEventDispatcher, TauriEventDispatcher};
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;

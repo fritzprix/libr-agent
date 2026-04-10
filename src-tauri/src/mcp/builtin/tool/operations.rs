@@ -1,4 +1,3 @@
-use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -165,7 +164,11 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
     // External servers are now created per-session through MCPServiceProxyManager
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "create", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "create",
+        Some(name.to_string()),
+    );
 
     let hint = SuccessHint::new(
         format!(
@@ -219,7 +222,11 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     }
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "delete", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "delete",
+        Some(name.to_string()),
+    );
 
     let hint = SuccessHint::new(
         format!("Excluded server '{}' from configuration", name),
@@ -317,7 +324,11 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     // Configuration updates take effect when servers are next started in a session
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "update", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "update",
+        Some(name.to_string()),
+    );
 
     let hint = SuccessHint::new(
         format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
@@ -364,7 +375,11 @@ pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     let latency_ms = start_time.elapsed().as_millis();
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "verify", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "verify",
+        Some(name.to_string()),
+    );
 
     match verification_result {
         Ok((tool_count, tools_json)) => {

@@ -742,7 +742,7 @@ pub async fn handle_tool_result(
                         tool_name: tool_name.clone(),
                         success: !is_error && success,
                     };
-                    let _ = crate::agent::events::emit_agent_event(app_handle, event);
+                    let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
                 }
 
                 log::debug!(

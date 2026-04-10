@@ -1,7 +1,8 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
-use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::state::{AgentSession, SessionStatusTransition};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};

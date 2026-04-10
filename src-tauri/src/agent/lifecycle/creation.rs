@@ -251,7 +251,11 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     log::info!("Created agent session: {}", session_id);
 
     // Emit resource updated event for frontend cache revalidation
-    crate::agent::events::emit_resource_updated("session", "create", Some(session_id.clone()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "session",
+        "create",
+        Some(session_id.clone()),
+    );
 
     Ok(session)
 }

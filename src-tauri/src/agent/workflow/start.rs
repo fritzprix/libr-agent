@@ -132,7 +132,7 @@ pub async fn start_workflow(
         session_id: session_id.clone(),
     };
     log::info!("Emitting WorkflowStarted event for session: {}", session_id);
-    match crate::agent::events::emit_agent_event(app_handle, event) {
+    match crate::agent::tauri_events::emit_agent_event(app_handle, event) {
         Ok(()) => log::info!("✅ WorkflowStarted event emitted successfully"),
         Err(e) => {
             log::error!("❌ Failed to emit WorkflowStarted event: {}", e);

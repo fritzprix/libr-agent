@@ -14,11 +14,12 @@ use tokio::sync::RwLock;
 use super::circuit_breaker;
 use super::completion::{request_llm_completion, trigger_post_response_compaction_if_needed};
 use super::tool_execution;
-use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, PostResponseCompactionPressure,
 };
 use crate::agent::state::DeferredWorkflowStep;
+use crate::agent::tauri_events::TauriEventDispatcher;
 
 async fn calculate_post_response_compaction_pressure(
     assistant_message: &Message,
@@ -156,7 +157,7 @@ pub async fn handle_llm_response(
         let event = crate::agent::events::AgentEvent::WorkflowStarted {
             session_id: session_id.clone(),
         };
-        crate::agent::events::emit_agent_event(app_handle, event)
+        crate::agent::tauri_events::emit_agent_event(app_handle, event)
             .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
     }
 
@@ -285,7 +286,7 @@ pub async fn handle_llm_response(
         session_id: session_id.clone(),
         message: Box::new(assistant_message.clone()),
     };
-    crate::agent::events::emit_agent_event(app_handle, message_added_event)
+    crate::agent::tauri_events::emit_agent_event(app_handle, message_added_event)
         .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
     // 3. Persist to DB asynchronously
@@ -347,7 +348,7 @@ pub async fn handle_llm_response(
                 )
                 .with_code("EMPTY_LLM_RESPONSE"),
             };
-            crate::agent::events::emit_agent_event(app_handle, error_event)
+            crate::agent::tauri_events::emit_agent_event(app_handle, error_event)
                 .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
             return Ok(post_response_compaction_pressure.clone());
         }
@@ -402,7 +403,7 @@ pub async fn handle_llm_response(
                     session_id: session_id.clone(),
                     reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
                 };
-                crate::agent::events::emit_agent_event(app_handle, event)
+                crate::agent::tauri_events::emit_agent_event(app_handle, event)
                     .map_err(|e| format!("Failed to emit event: {}", e))?;
 
                 log::info!(
@@ -574,7 +575,7 @@ pub async fn handle_llm_response(
             session_id: session_id.clone(),
             reason: crate::agent::events::WorkflowCompletionReason::Natural,
         };
-        crate::agent::events::emit_agent_event(app_handle, event)
+        crate::agent::tauri_events::emit_agent_event(app_handle, event)
             .map_err(|e| format!("Failed to emit event: {}", e))?;
 
         log::info!("Completed workflow for session: {}", session_id);

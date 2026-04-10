@@ -3,6 +3,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use tauri_mcp_agent_lib::agent::compact_recovery::{
+    handle_compact_error_state, CompactErrorAction,
+};
 use tauri_mcp_agent_lib::agent::concurrency::{
     ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
     DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
@@ -13,7 +16,6 @@ use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
-use tauri_mcp_agent_lib::agent::session_manager::handle_compact_error_with_dispatcher;
 use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEventManager};
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
@@ -154,7 +156,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     let dispatcher = RecordingDispatcher::default();
     let error = AgentRuntimeError::new(AgentRuntimeErrorType::RateLimitError, "LLM rate limit hit");
 
-    handle_compact_error_with_dispatcher(
+    let action = handle_compact_error_state(
         &session_repo,
         &active_sessions,
         &dispatcher,
@@ -163,6 +165,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     )
     .await
     .expect("compact error handling should succeed");
+    assert_eq!(action, CompactErrorAction::None);
 
     let persisted = repo
         .get_session(session_id)
@@ -234,7 +237,7 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     )])));
     let dispatcher = RecordingDispatcher::default();
 
-    handle_compact_error_with_dispatcher(
+    let action = handle_compact_error_state(
         &session_repo,
         &active_sessions,
         &dispatcher,
@@ -243,6 +246,7 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     )
     .await
     .expect("compact error handling should succeed");
+    assert_eq!(action, CompactErrorAction::None);
 
     let persisted = repo
         .get_session(session_id)

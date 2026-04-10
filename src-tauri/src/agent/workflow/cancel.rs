@@ -79,7 +79,7 @@ pub async fn terminate_session(
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
     };
-    crate::agent::events::emit_agent_event(app_handle, event)
+    crate::agent::tauri_events::emit_agent_event(app_handle, event)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Terminated workflow for session: {}", session_id);
@@ -161,7 +161,7 @@ pub async fn cancel_workflow(
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
     };
-    crate::agent::events::emit_agent_event(app_handle, event)
+    crate::agent::tauri_events::emit_agent_event(app_handle, event)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Cancelled workflow for session: {}", session_id);

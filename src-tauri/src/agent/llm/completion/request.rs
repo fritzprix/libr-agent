@@ -353,7 +353,7 @@ pub async fn request_llm_completion(
             session_id: session_id.clone(),
             message: Box::new(msg.clone()),
         };
-        let _ = crate::agent::events::emit_agent_event(app_handle, event);
+        let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
     }
 
     // 3. Read messages from in-memory cache (now includes the drained pending messages)
