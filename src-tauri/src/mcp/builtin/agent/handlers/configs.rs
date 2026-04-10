@@ -159,16 +159,16 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             desc_clean
         };
         let name_clean = agent.name.replace('|', "\\|").replace('\n', " ");
-        let capabilities = format_capability_list(&builtins).replace('|', "\\|").replace('\n', " ");
-        let servers = format_external_server_refs(&external_ids, &server_name_lookup).replace('|', "\\|").replace('\n', " ");
+        let capabilities = format_capability_list(&builtins)
+            .replace('|', "\\|")
+            .replace('\n', " ");
+        let servers = format_external_server_refs(&external_ids, &server_name_lookup)
+            .replace('|', "\\|")
+            .replace('\n', " ");
 
         text_summary.push_str(&format!(
             "| {} | `{}` | {} | {} | {} |\n",
-            name_clean,
-            agent.id,
-            capabilities,
-            servers,
-            desc_trunc
+            name_clean, agent.id, capabilities, servers, desc_trunc
         ));
 
         results.push(json!({
@@ -241,9 +241,21 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         message.push_str("| Name | Session ID | Status |\n");
         message.push_str("|---|---|---|\n");
         for result in &results {
-            let name_clean = result["name"].as_str().unwrap_or("").replace('|', "\\|").replace('\n', " ");
-            let id_clean = result["id"].as_str().unwrap_or("").replace('|', "\\|").replace('\n', " ");
-            let status_clean = result["status"].as_str().unwrap_or("").replace('|', "\\|").replace('\n', " ");
+            let name_clean = result["name"]
+                .as_str()
+                .unwrap_or("")
+                .replace('|', "\\|")
+                .replace('\n', " ");
+            let id_clean = result["id"]
+                .as_str()
+                .unwrap_or("")
+                .replace('|', "\\|")
+                .replace('\n', " ");
+            let status_clean = result["status"]
+                .as_str()
+                .unwrap_or("")
+                .replace('|', "\\|")
+                .replace('\n', " ");
             message.push_str(&format!(
                 "| {} | `{}` | {} |\n",
                 name_clean, id_clean, status_clean
