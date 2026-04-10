@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.3] - 2026-04-10
+
+### 🚀 Features
+
+- **Draft Workspace Preview and File Mentions**: Added a draft workspace preview surface with smarter file-tree shaping and mention handling so agents can inspect and reference staged workspace files more comfortably before sending.
+
+### 🐛 Fixes
+
+- **Compaction Retry Recovery**: Fixed a same-tail retry edge case in context compaction so long-running sessions can retrigger compaction instead of getting stuck past the configured limit.
+- **Provider Tool-Result Prompt Inflation**: Stopped structured tool metadata and JSON-looking tool text from being promoted into provider prompt payloads, fixing Gemini prompt bloat and aligning tool-result handling across providers.
+
+### 🔧 Internal
+
+- **Targeted Diagnostics and Regression Coverage**: Added focused logs and regression tests around compaction telemetry, Gemini usage accounting, and provider tool-result conversion to make future prompt-drift issues easier to catch.
+
 ## [0.7.2] - 2026-04-09
 
 ### 🚀 Features
