@@ -111,7 +111,28 @@ pub(crate) async fn load_context_management_settings() -> ContextManagementSetti
         }
     }
 
-    resolve_context_management_settings(legacy_settings_blob.as_ref(), &direct_settings)
+    let mut direct_keys: Vec<String> = direct_settings.keys().cloned().collect();
+    direct_keys.sort();
+
+    let settings =
+        resolve_context_management_settings(legacy_settings_blob.as_ref(), &direct_settings);
+
+    log::info!(
+        "🧭 Loaded context management settings: strategy={}, window_size={}, max_input_context={}, tool_call_group_visible_count={}, model_max_limit={}, legacy_blob_present={}, direct_keys={}",
+        settings.context_strategy,
+        settings.window_size,
+        settings.max_input_context,
+        settings.tool_call_group_visible_count,
+        settings.model_max_limit,
+        legacy_settings_blob.is_some(),
+        if direct_keys.is_empty() {
+            "<none>".to_string()
+        } else {
+            direct_keys.join(",")
+        }
+    );
+
+    settings
 }
 
 pub fn uses_compaction_strategy(context_strategy: &str) -> bool {

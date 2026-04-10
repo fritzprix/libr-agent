@@ -69,7 +69,7 @@ describe('normalizeRustMessage', () => {
 });
 
 describe('tool result helpers', () => {
-  it('prefers structured tool result metadata for LLM-facing text', () => {
+  it('uses only content text for LLM-facing tool results', () => {
     const message: Message = {
       id: 'tool-1',
       sessionId: 'session-1',
@@ -87,19 +87,25 @@ describe('tool result helpers', () => {
       },
     };
 
-    expect(formatToolResultForLlm(message)).toBe(
-      JSON.stringify({
-        toolName: 'checkSession',
-        status: 'idle',
-        responseStatus: 'success',
-        result: 'Final answer',
-      }),
-    );
+    expect(formatToolResultForLlm(message)).toBe('Human summary only');
     expect(parseToolResultForLlm(message)).toEqual({
-      toolName: 'checkSession',
-      status: 'idle',
-      responseStatus: 'success',
-      result: 'Final answer',
+      result: 'Human summary only',
+    });
+  });
+
+  it('does not auto-parse JSON-looking tool text', () => {
+    const message: Message = {
+      id: 'tool-2',
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'tool',
+      tool_call_id: 'call_2',
+      content: [{ type: 'text', text: '{"temp":25}' }],
+    };
+
+    expect(formatToolResultForLlm(message)).toBe('{"temp":25}');
+    expect(parseToolResultForLlm(message)).toEqual({
+      result: '{"temp":25}',
     });
   });
 });

@@ -33,6 +33,108 @@ import {
   formatSessionContextAsBackgroundReference,
 } from '../base-service-context';
 import { GeminiContextCacheManager } from './cache-manager';
+import type { MCPContent } from '@/lib/mcp';
+
+function summarizeLibrAgentMessages(messages: Message[]): {
+  count: number;
+  roleCounts: Record<string, number>;
+  compactSummaryCount: number;
+  syntheticSessionContextCount: number;
+  textChars: number;
+  textBytes: number;
+  idsPreview: string[];
+} {
+  const encoder = new TextEncoder();
+  const roleCounts: Record<string, number> = {};
+  let compactSummaryCount = 0;
+  let syntheticSessionContextCount = 0;
+  let textChars = 0;
+  let textBytes = 0;
+
+  for (const message of messages) {
+    roleCounts[message.role] = (roleCounts[message.role] ?? 0) + 1;
+    if (message.id.startsWith('compact-summary-')) {
+      compactSummaryCount += 1;
+    }
+    if (message.id.startsWith('gemini-session-context-')) {
+      syntheticSessionContextCount += 1;
+    }
+    const text = Array.isArray(message.content)
+      ? message.content
+          .filter(
+            (part): part is MCPContent & { type: 'text'; text: string } => {
+              return part.type === 'text' && typeof part.text === 'string';
+            },
+          )
+          .map((part) => part.text)
+          .join('\n')
+      : '';
+    textChars += text.length;
+    textBytes += encoder.encode(text).length;
+  }
+
+  return {
+    count: messages.length,
+    roleCounts,
+    compactSummaryCount,
+    syntheticSessionContextCount,
+    textChars,
+    textBytes,
+    idsPreview: messages.slice(0, 6).map((message) => message.id),
+  };
+}
+
+function summarizeGeminiContents(contents: Content[]): {
+  count: number;
+  roleCounts: Record<string, number>;
+  textPartCount: number;
+  textChars: number;
+  textBytes: number;
+  inlineDataPartCount: number;
+  functionCallPartCount: number;
+  functionResponsePartCount: number;
+} {
+  const encoder = new TextEncoder();
+  const roleCounts: Record<string, number> = {};
+  let textPartCount = 0;
+  let textChars = 0;
+  let textBytes = 0;
+  let inlineDataPartCount = 0;
+  let functionCallPartCount = 0;
+  let functionResponsePartCount = 0;
+
+  for (const content of contents) {
+    const role = content.role ?? 'unknown';
+    roleCounts[role] = (roleCounts[role] ?? 0) + 1;
+    for (const part of content.parts ?? []) {
+      if ('text' in part && typeof part.text === 'string') {
+        textPartCount += 1;
+        textChars += part.text.length;
+        textBytes += encoder.encode(part.text).length;
+      }
+      if ('inlineData' in part && part.inlineData) {
+        inlineDataPartCount += 1;
+      }
+      if ('functionCall' in part && part.functionCall) {
+        functionCallPartCount += 1;
+      }
+      if ('functionResponse' in part && part.functionResponse) {
+        functionResponsePartCount += 1;
+      }
+    }
+  }
+
+  return {
+    count: contents.length,
+    roleCounts,
+    textPartCount,
+    textChars,
+    textBytes,
+    inlineDataPartCount,
+    functionCallPartCount,
+    functionResponsePartCount,
+  };
+}
 
 /**
  * An AI service implementation for interacting with Google's Gemini models.
@@ -245,6 +347,28 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         requiresToolOverride,
         shouldUseCache,
         cachedContentName,
+      });
+
+      const requestMessageSummary = summarizeLibrAgentMessages(
+        normalizedContextInjection.messages,
+      );
+      const geminiContentSummary = summarizeGeminiContents(geminiMessages);
+      const encoder = new TextEncoder();
+
+      this.logger.info('Gemini request assembly breakdown', {
+        model,
+        usesCachedContent: Boolean(cachedContentName),
+        cachedContentName,
+        shouldUseCache,
+        disableToolUse: options.disableToolUse ?? false,
+        forceToolUse: options.forceToolUse ?? false,
+        librAgentMessages: requestMessageSummary,
+        geminiContents: geminiContentSummary,
+        stablePrefixLength: stablePrefix.length,
+        stablePrefixBytes: encoder.encode(stablePrefix).length,
+        toolsPayloadLength: toolsPayload.length,
+        toolsPayloadBytes: encoder.encode(toolsPayload).length,
+        toolDeclarationCount,
       });
 
       let thinkingConfig: GeminiServiceConfig['thinkingConfig'];

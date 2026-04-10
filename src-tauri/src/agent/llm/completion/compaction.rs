@@ -199,12 +199,27 @@ pub async fn maybe_trigger_post_idle_compaction(
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
-
-    if !should_trigger_background_compaction(
+    let compact_threshold =
+        crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
+    let should_trigger = should_trigger_background_compaction(
         usage_total_tokens,
         safe_input_token_limit,
         &settings.context_strategy,
-    ) {
+    );
+
+    log::info!(
+        "🧮 Post-idle compaction evaluation: session={}, total_tokens={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, compact_threshold={}, should_trigger={}",
+        session_id,
+        usage_total_tokens,
+        settings.context_strategy,
+        settings.max_input_context,
+        settings.model_max_limit,
+        safe_input_token_limit,
+        compact_threshold,
+        should_trigger
+    );
+
+    if !should_trigger {
         return Ok(false);
     }
 

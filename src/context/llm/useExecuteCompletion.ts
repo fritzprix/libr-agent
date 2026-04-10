@@ -592,6 +592,15 @@ export function useExecuteCompletion({
           sessionId,
           contentLength: content.length,
           toolCallCount: finalToolCalls.length,
+          finalUsage: finalUsage
+            ? {
+                promptTokens: finalUsage.promptTokens,
+                completionTokens: finalUsage.completionTokens,
+                totalTokens: finalUsage.totalTokens,
+                cachedPromptTokens: finalUsage.cachedPromptTokens,
+                details: finalUsage.details,
+              }
+            : undefined,
         });
 
         const hasContent =

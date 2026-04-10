@@ -610,6 +610,8 @@ pub async fn request_llm_completion(
 
     if uses_compaction_strategy(&context_strategy) {
         let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
+        let compact_threshold =
+            crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
         let tools_json = available_tools
             .as_ref()
             .map(|t| serde_json::to_string(t).unwrap_or_default());
@@ -634,9 +636,45 @@ pub async fn request_llm_completion(
             safe_input_token_limit,
             compactable_split_idx,
         );
-
         let preserved_tail_projected_tokens =
             preflight.reserved_tokens + preflight.preserved_tail_tokens + preflight.safety_margin;
+        let projected_total_tokens = preflight.total_tokens + preflight.safety_margin;
+        let current_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
+            &messages,
+            system_prompt_tokens + session_context_tokens,
+            tools_tokens,
+        );
+        let should_trigger_background = should_trigger_background_compaction(
+            current_tokens,
+            safe_input_token_limit,
+            &context_strategy,
+        );
+
+        log::info!(
+            "🧮 Preflight compaction evaluation: session={}, provider={}, model={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, compact_threshold={}, message_count={}, compactable_split_idx={}, system_prompt_tokens={}, session_context_tokens={}, tools_tokens={}, reserved_tokens={}, preserved_tail_tokens={}, historical_total_tokens={}, safety_margin={}, preserved_tail_projected_tokens={}, projected_total_tokens={}, current_tokens={}, should_trigger_background={}",
+            session_id,
+            provider,
+            model,
+            context_strategy,
+            max_input_context,
+            model_max_limit,
+            safe_input_token_limit,
+            compact_threshold,
+            messages.len(),
+            compactable_split_idx,
+            system_prompt_tokens,
+            session_context_tokens,
+            tools_tokens,
+            preflight.reserved_tokens,
+            preflight.preserved_tail_tokens,
+            preflight.total_tokens,
+            preflight.safety_margin,
+            preserved_tail_projected_tokens,
+            projected_total_tokens,
+            current_tokens,
+            should_trigger_background
+        );
+
         if preserved_tail_projected_tokens > safe_input_token_limit {
             let mut context = serde_json::Map::new();
             context.insert(
@@ -664,7 +702,6 @@ pub async fn request_llm_completion(
             );
         }
 
-        let projected_total_tokens = preflight.total_tokens + preflight.safety_margin;
         if projected_total_tokens > safe_input_token_limit {
             if try_trigger_preflight_compaction(
                 active_sessions,
@@ -708,17 +745,7 @@ pub async fn request_llm_completion(
             );
         }
 
-        let current_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
-            &messages,
-            system_prompt_tokens + session_context_tokens,
-            tools_tokens,
-        );
-
-        if should_trigger_background_compaction(
-            current_tokens,
-            safe_input_token_limit,
-            &context_strategy,
-        ) {
+        if should_trigger_background {
             let _ = trigger_background_compaction(
                 active_sessions,
                 app_handle,
@@ -763,6 +790,13 @@ pub async fn request_llm_completion(
             "contextWindow": safe_input_token_limit,
             "modelMaxContext": model_max_limit,
         }));
+        log::info!(
+            "📏 Emitting context usage telemetry: session={}, total_tokens={}, context_window={}, model_max_context={}",
+            session_id,
+            total_estimated_tokens,
+            safe_input_token_limit,
+            model_max_limit
+        );
     } else {
         final_messages = crate::agent::llm::context_selector::select_recent_messages_fifo(
             &messages,

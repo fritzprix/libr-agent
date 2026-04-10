@@ -11,7 +11,6 @@ export {
 } from './utils/general';
 export {
   extractMediaContent,
-  extractStructuredToolResult,
   formatToolResultForLlm,
   parseToolResultForLlm,
   processMessageContent,
