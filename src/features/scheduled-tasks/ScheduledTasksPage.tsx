@@ -247,17 +247,17 @@ export function ScheduledTasksPage() {
                 </h2>
               </div>
               {groupedSections.map((group) => {
-                const groupEnabledCount = group.tasks.filter(
-                  (task) => task.enabled,
-                ).length;
+                const groupEnabledCount = group.tasks.reduce(
+                  (count, task) => (task.enabled ? count + 1 : count),
+                  0,
+                );
+                // group.tasks is already sorted by nextRunAt via compareScheduledTasks
+                // and groupedSections filtering ensures enabled tasks are sorted logically.
+                // We just need the first task with an upcoming run time.
                 const nextGroupRun =
-                  group.tasks
-                    .filter((task) => task.enabled && task.nextRunAt !== null)
-                    .sort((left, right) => {
-                      if (left.nextRunAt === null) return 1;
-                      if (right.nextRunAt === null) return -1;
-                      return left.nextRunAt - right.nextRunAt;
-                    })[0]?.nextRunAt ?? null;
+                  group.tasks.find(
+                    (task) => task.enabled && task.nextRunAt !== null,
+                  )?.nextRunAt ?? null;
 
                 return (
                   <Card key={group.key} className="gap-4 py-4">
