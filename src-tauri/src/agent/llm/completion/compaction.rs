@@ -77,7 +77,10 @@ pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) 
         .unwrap_or(false);
 
     if !has_compact_summary {
-        return true;
+        // Without a persisted compact summary at the head, a same-tail retry is
+        // still meaningful: the previous compaction may have failed or been
+        // abandoned before Rust stored the summary record.
+        return false;
     }
 
     split_idx <= 1

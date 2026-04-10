@@ -199,13 +199,13 @@ fn test_preflight_compaction_split_after_removing_incomplete_tool_chains() {
 }
 
 #[test]
-fn test_same_tail_compaction_skips_duplicate_when_no_compact_summary_exists() {
+fn test_same_tail_compaction_allows_retry_when_no_compact_summary_exists() {
     let messages = vec![
         make_message("m0", "assistant", "Earlier context"),
         make_message("m1", "user", "Latest request"),
     ];
 
-    assert!(should_skip_same_tail_compaction(&messages, 1));
+    assert!(!should_skip_same_tail_compaction(&messages, 1));
 }
 
 #[test]

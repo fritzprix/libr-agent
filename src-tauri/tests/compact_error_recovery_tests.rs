@@ -124,7 +124,7 @@ fn build_agent_session(
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compact_in_flight: Arc::new(AtomicBool::new(true)),
-        last_compacted_tail_id: Arc::new(RwLock::new(None)),
+        last_compacted_tail_id: Arc::new(RwLock::new(Some("tail-before-error".to_string()))),
         awaiting_compact_completion: Arc::new(AtomicBool::new(awaiting_compact_completion)),
         compact_started_at_ms: Arc::new(RwLock::new(None)),
         expected_response_id: Arc::new(RwLock::new(None)),
@@ -178,6 +178,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     assert!(!session
         .awaiting_compact_completion
         .load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(*session.last_compacted_tail_id.read().await, None);
     drop(active);
 
     let compact_states = dispatcher.compact_states();
@@ -257,6 +258,7 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     assert!(!session
         .awaiting_compact_completion
         .load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(*session.last_compacted_tail_id.read().await, None);
     drop(active);
 
     assert_eq!(dispatcher.compact_states().len(), 1);

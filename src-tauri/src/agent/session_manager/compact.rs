@@ -7,24 +7,41 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-pub async fn clear_compact_in_flight(
+async fn clear_compaction_state(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
+    clear_last_compacted_tail_id: bool,
 ) {
-    let compact_started_at_ms_handle = {
+    let handles = {
         let active = active_sessions.read().await;
         active.get(session_id).map(|session| {
             session.compact_in_flight.store(false, Ordering::SeqCst);
             session
                 .awaiting_compact_completion
                 .store(false, Ordering::SeqCst);
-            session.compact_started_at_ms.clone()
+            (
+                session.compact_started_at_ms.clone(),
+                clear_last_compacted_tail_id.then(|| session.last_compacted_tail_id.clone()),
+            )
         })
     };
 
-    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        *compact_started_at_ms_handle.write().await = None;
+    let Some((compact_started_at_ms_handle, last_compacted_tail_id_handle)) = handles else {
+        return;
+    };
+
+    if let Some(last_compacted_tail_id_handle) = last_compacted_tail_id_handle {
+        *last_compacted_tail_id_handle.write().await = None;
     }
+
+    *compact_started_at_ms_handle.write().await = None;
+}
+
+pub async fn clear_compact_in_flight(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    clear_compaction_state(active_sessions, session_id, false).await;
 }
 
 pub async fn handle_compact_error_with_dispatcher(
@@ -65,7 +82,7 @@ pub async fn handle_compact_error_with_dispatcher(
         .and_then(|details| details.error_code.as_deref())
         .unwrap_or("none");
 
-    clear_compact_in_flight(active_sessions, &session_id).await;
+    clear_compaction_state(active_sessions, &session_id, true).await;
 
     let state_event = crate::agent::llm::types::CompactStateEvent {
         session_id: session_id.clone(),
