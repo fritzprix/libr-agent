@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.4] - 2026-04-10
+
+### 🐛 Fixes
+
+- **More Reliable Long-Context Recovery**: Tightened compaction preflight and context-budget handling so long-running sessions recover more cleanly when they hit context pressure instead of drifting into inconsistent retry states.
+- **Gemini Cache Alignment**: Refined Gemini request prefix caching and related preflight behavior so cache reuse stays more stable across repeated requests.
+- **Windows CI Stability**: Fixed a Windows-only Rust integration test crash in compact-recovery coverage, keeping the release pipeline consistent across platforms.
+
+### 🔧 Internal
+
+- **Large File Read Guidance Cleanup**: Improved chunking guidance and supporting tests around large workspace reads so agent/tool behavior is easier to reason about and validate.
+
 ## [0.7.3] - 2026-04-10
 
 ### 🚀 Features

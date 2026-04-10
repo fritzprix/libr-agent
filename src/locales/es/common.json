@@ -681,7 +681,8 @@
       "uploading": "Cargando...",
       "dropFiles": "Suelte los archivos aquí o haga clic para cargar",
       "dropFolderHint": "Suelte una carpeta aquí para establecerla como espacio de trabajo",
-      "dropDirToastError": "Suelte los directorios en el área central para establecer la anulación del espacio de trabajo."
+      "dropDirToastError": "Suelte los directorios en el área central para establecer la anulación del espacio de trabajo.",
+      "dropMixedFoldersError": "Suelte archivos para importarlos o una sola carpeta para establecer la anulación del espacio de trabajo."
     },
     "statusBar": {
       "retryError": "Error al reintentar el mensaje",
