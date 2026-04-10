@@ -137,6 +137,10 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
+    if total > 0 {
+        text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
+        text_summary.push_str("|---|---|---|---|---|\n");
+    }
 
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
@@ -148,13 +152,23 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
         let external_ids = extract_string_list(config.get("mcpServerIds"));
         let external_labels = resolve_external_server_labels(&external_ids, &server_name_lookup);
 
+        let desc_clean = desc.replace('|', "\\|").replace('\n', " ");
+        let desc_trunc = if desc_clean.chars().count() > 100 {
+            format!("{}...", desc_clean.chars().take(97).collect::<String>())
+        } else {
+            desc_clean
+        };
+        let name_clean = agent.name.replace('|', "\\|").replace('\n', " ");
+        let capabilities = format_capability_list(&builtins).replace('|', "\\|").replace('\n', " ");
+        let servers = format_external_server_refs(&external_ids, &server_name_lookup).replace('|', "\\|").replace('\n', " ");
+
         text_summary.push_str(&format!(
-            "- **{}** (ID: `{}`)\n  Description: {}\n  Builtin Capabilities: {}\n  External MCP Servers: {}\n\n",
-            agent.name,
+            "| {} | `{}` | {} | {} | {} |\n",
+            name_clean,
             agent.id,
-            desc,
-            format_capability_list(&builtins),
-            format_external_server_refs(&external_ids, &server_name_lookup)
+            capabilities,
+            servers,
+            desc_trunc
         ));
 
         results.push(json!({
@@ -222,13 +236,17 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     }
 
-    let mut message = format!("Found {} sub-agent sessions.", results.len());
+    let mut message = format!("Found {} sub-agent sessions.\n\n", results.len());
     if !results.is_empty() {
-        message.push_str("\n\nActive roster:\n");
+        message.push_str("| Name | Session ID | Status |\n");
+        message.push_str("|---|---|---|\n");
         for result in &results {
+            let name_clean = result["name"].as_str().unwrap_or("").replace('|', "\\|").replace('\n', " ");
+            let id_clean = result["id"].as_str().unwrap_or("").replace('|', "\\|").replace('\n', " ");
+            let status_clean = result["status"].as_str().unwrap_or("").replace('|', "\\|").replace('\n', " ");
             message.push_str(&format!(
-                "- {} (ID: {}) status={}\n",
-                result["name"], result["id"], result["status"]
+                "| {} | `{}` | {} |\n",
+                name_clean, id_clean, status_clean
             ));
         }
     }
