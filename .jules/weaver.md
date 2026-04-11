@@ -139,3 +139,14 @@
 - **AgentPlanningUpdates:** Extracted the complex Tauri event listener ('agent:event') and debouncing logic from a monolithic `useEffect` into the `useAgentMessageTrigger` custom hook.
 - Added strict filtering via `messageFilter` to trigger context updates only for successful tool-result messages by checking `message.role === 'tool'`, `message.tool_call_id`, `!message.error`, and `message.metadata?.toolError !== true`.
 - **Benefits:** Decoupled event subscription from component rendering logic, standardized event handling across the chat interface, and avoided refreshes from failed tool executions.
+
+## 2026-04-10 - [SessionHistoryPanel] **Eradicated:** [Effect State Sync] **Woven:** [Adjusting State During Render]
+
+- **SessionHistoryPanel:** Eradicated the anti-pattern where two `useEffect` hooks monitored state (`sessions` and `autoExpandedAncestorIds`) and then imperatively triggered state updates to reset `selectedLineageId` and update `expandedSessionIds`.
+- **Woven:** Implemented direct render-phase state adjustment. Replaced the `selectedLineageId` check with an inline `if` statement. Tracked `prevAutoExpandedAncestorIds` via `useState` and compared it against `autoExpandedAncestorIds` during render to safely update the expanded sessions set without relying on effects.
+- **Benefits:** Prevents double-renders caused by cascading effect updates, aligns with React's pure render logic, and guarantees state atomicity within a single pass.
+
+## 2026-04-10 - [SessionHistoryPanel Follow-up] **Eradicated:** [Adjusting State During Render] **Woven:** [Derived State]
+
+- **SessionHistoryPanel:** Replaced the "Adjusting State During Render" pattern for `selectedLineageId` with pure derived state. Instead of tracking previous sessions and modifying state during the render cycle, the effective `selectedLineageId` is now computed via `useMemo` strictly based on `selectedLineageIdState` and `sessions`.
+- **Action:** Whenever state strictly depends on a prop, favor pure derived computation (`useMemo`) over state mutation (even render-phase mutation) to preserve complete functional purity.

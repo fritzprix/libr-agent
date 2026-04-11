@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,12 +65,24 @@ export function SessionHistoryPanel({
   emptyStateSubtitle,
 }: SessionHistoryPanelProps) {
   const { t } = useTranslation('common');
-  const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
-    null,
-  );
+  const [selectedLineageIdState, setSelectedLineageIdState] = useState<
+    string | null
+  >(null);
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [prevAutoExpandedAncestorIds, setPrevAutoExpandedAncestorIds] =
+    useState<Set<string>>(() => new Set());
+
+  // Derive the effective selectedLineageId to ensure it still exists in the sessions
+  // without needing an effect-based state synchronization loop.
+  const selectedLineageId = useMemo(() => {
+    if (!selectedLineageIdState) return null;
+    const stillExists = sessions.some(
+      (session) => session.lineageId === selectedLineageIdState,
+    );
+    return stillExists ? selectedLineageIdState : null;
+  }, [selectedLineageIdState, sessions]);
 
   const defaultHeading =
     heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
@@ -132,19 +144,6 @@ export function SessionHistoryPanel({
     });
   }, [activeStatusFilter, deferredSearchQuery, segmentedSessions]);
 
-  useEffect(() => {
-    if (!selectedLineageId) {
-      return;
-    }
-
-    const stillExists = sessions.some(
-      (session) => session.lineageId === selectedLineageId,
-    );
-    if (!stillExists) {
-      setSelectedLineageId(null);
-    }
-  }, [selectedLineageId, sessions]);
-
   const descendantCounts = useMemo(
     () => buildDescendantCounts(sessions),
     [sessions],
@@ -185,17 +184,16 @@ export function SessionHistoryPanel({
     return expandedIds;
   }, [baseSessions, filtersActive, matchedSessions]);
 
-  useEffect(() => {
-    if (autoExpandedAncestorIds.size === 0) {
-      return;
+  if (autoExpandedAncestorIds !== prevAutoExpandedAncestorIds) {
+    setPrevAutoExpandedAncestorIds(autoExpandedAncestorIds);
+    if (autoExpandedAncestorIds.size > 0) {
+      setExpandedSessionIds((prev) => {
+        const next = new Set(prev);
+        autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
+        return next;
+      });
     }
-
-    setExpandedSessionIds((prev) => {
-      const next = new Set(prev);
-      autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
-      return next;
-    });
-  }, [autoExpandedAncestorIds]);
+  }
 
   const displayRows = useMemo(() => {
     type SessionRow = {
@@ -484,7 +482,7 @@ export function SessionHistoryPanel({
               variant="link"
               size="sm"
               className="h-auto p-0"
-              onClick={() => setSelectedLineageId(null)}
+              onClick={() => setSelectedLineageIdState(null)}
             >
               {t('sessionHistory.showAllLineages', 'Show all lineages')}
             </Button>
@@ -528,7 +526,7 @@ export function SessionHistoryPanel({
                     <Button
                       variant="link"
                       size="sm"
-                      onClick={() => setSelectedLineageId(null)}
+                      onClick={() => setSelectedLineageIdState(null)}
                       className="mt-2"
                     >
                       {t(
@@ -603,7 +601,7 @@ export function SessionHistoryPanel({
                         })
                       }
                       onLineageSelect={(lineageId) =>
-                        setSelectedLineageId((prev) =>
+                        setSelectedLineageIdState((prev) =>
                           prev === lineageId ? null : lineageId,
                         )
                       }
