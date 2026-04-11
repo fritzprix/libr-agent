@@ -295,7 +295,7 @@ pub async fn list(
         }
     } else {
         text_output.push_str(&format!(
-            "Scratchpad Notes (Page {}/{}):\n",
+            "Scratchpad Notes (Page {}/{}):\n| ID | Title | Preview | Tags |\n|---|---|---|---|\n",
             page,
             (total_items as f64 / page_size as f64).ceil() as u64
         ));
@@ -321,9 +321,13 @@ pub async fn list(
             } else {
                 String::new()
             };
+
+            let safe_title = title.replace("|", "\\|").replace('\n', " ");
+            let safe_preview = preview.replace("|", "\\|").replace('\n', " ");
+            let safe_tags = tags_str.replace("|", "\\|").replace('\n', " ");
             text_output.push_str(&format!(
-                "- **ID: {}** | {} | {}{}\n",
-                id, title, preview, tags_str
+                "| `{}` | {} | {} | {} |\n",
+                id, safe_title, safe_preview, safe_tags
             ));
         }
     }
