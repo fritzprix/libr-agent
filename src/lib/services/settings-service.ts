@@ -24,6 +24,7 @@ export interface AdvancedSettings {
   retryDelay: number; // in milliseconds
   diffContextLines: number;
   defaultMaxOutputTokens: number;
+  toolResultInlineLimitBytes: number;
   defaultSessionMaxDepth: number;
   defaultSessionMaxFanout: number;
   // SP2: Global concurrent execution limits (runtime semaphores, not per-parent counts)
@@ -106,6 +107,7 @@ export const DEFAULT_SETTING: Settings = {
     retryDelay: 5000,
     diffContextLines: 3,
     defaultMaxOutputTokens: 8192,
+    toolResultInlineLimitBytes: 16 * 1024,
     defaultSessionMaxDepth: 0,
     defaultSessionMaxFanout: 0,
     maxConcurrentActiveSessions: 4,

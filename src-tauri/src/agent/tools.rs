@@ -2,9 +2,11 @@ use crate::agent::state::AgentSession;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
+use crate::repositories::settings_repository::SettingsRepository;
 use crate::services::WorkspaceService;
 use base64::engine::general_purpose;
 use base64::Engine;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -14,9 +16,11 @@ use url::Url;
 
 use crate::mcp::builtin::service_id::{BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES};
 
-pub const TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES: usize = 64 * 1024;
+pub const TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES: usize = 16 * 1024;
 const TOOL_RESULT_SPILLOVER_DIR: &str = ".libragent/tool-results";
 const TOOL_RESULT_MEDIA_DIR: &str = ".libragent/tool-results/media";
+const MIN_TOOL_RESULT_INLINE_LIMIT_BYTES: usize = 4 * 1024;
+const MAX_TOOL_RESULT_INLINE_LIMIT_BYTES: usize = 256 * 1024;
 
 /// Resolve any alias string (including legacy pre-0.6.0 names) to the current
 /// canonical service name.
@@ -310,17 +314,97 @@ fn sanitize_spillover_identifier(raw: &str) -> String {
     }
 }
 
-fn build_tool_result_spillover_notice(relative_path: &str, original_size_bytes: usize) -> String {
-    format!(
-        "Tool output was too large to inline ({} bytes).\n\nFull output saved to workspace file: `{}`\n\nUse `readFile(\"{}\")` to inspect the complete content.",
-        original_size_bytes, relative_path, relative_path
+fn clamp_tool_result_inline_limit_bytes(limit_bytes: usize) -> usize {
+    limit_bytes.clamp(
+        MIN_TOOL_RESULT_INLINE_LIMIT_BYTES,
+        MAX_TOOL_RESULT_INLINE_LIMIT_BYTES,
     )
+}
+
+pub fn tool_result_preview_headroom_bytes(limit_bytes: usize) -> usize {
+    if limit_bytes <= 4 * 1024 {
+        return 512.min(limit_bytes.saturating_sub(1));
+    }
+
+    (limit_bytes / 8).clamp(1024, 8 * 1024)
+}
+
+pub fn tool_result_preview_content_limit_bytes(limit_bytes: usize) -> usize {
+    limit_bytes.saturating_sub(tool_result_preview_headroom_bytes(limit_bytes))
+}
+
+pub async fn tool_result_inline_limit_bytes() -> usize {
+    let Some(settings_repo) = crate::state::try_get_settings_repository() else {
+        return TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES;
+    };
+
+    match settings_repo.get("advancedSettings").await {
+        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
+            Ok(json) => json
+                .get("toolResultInlineLimitBytes")
+                .and_then(|value| value.as_u64())
+                .map(|value| clamp_tool_result_inline_limit_bytes(value as usize))
+                .unwrap_or(TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES),
+            Err(_) => TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        },
+        _ => TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+    }
+}
+
+fn truncate_to_complete_lines(text: &str, limit: usize) -> (&str, bool) {
+    if text.len() <= limit {
+        return (text, false);
+    }
+
+    let mut boundary = limit.min(text.len());
+    while boundary > 0 && !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+
+    let truncated = &text[..boundary];
+    match truncated.rfind('\n') {
+        Some(pos) if pos > 0 => (&truncated[..pos], true),
+        _ => (truncated, true),
+    }
+}
+
+fn count_preview_lines(text: &str) -> usize {
+    text.lines().count()
+}
+
+fn build_tool_result_spillover_notice(
+    relative_path: &str,
+    original_size_bytes: usize,
+    preview_line_count: usize,
+) -> String {
+    let mut notice = format!(
+        "\n\n... [output truncated: total size {} bytes] ...\n\nFull output saved to workspace file: `{}`\nRead it in chunks with `readFile({{\"path\": \"{}\", \"startLine\": 1, \"endLine\": 200}})`.\nDo not call `readFile({{\"path\": \"{}\"}})` on the saved file without `startLine` and `endLine`; that will just truncate again.",
+        original_size_bytes, relative_path, relative_path, relative_path
+    );
+
+    if preview_line_count > 0 {
+        let next_start_line = preview_line_count + 1;
+        let next_end_line = next_start_line + 199;
+        notice.push_str(&format!(
+            "\nTo continue after the inline preview, call `readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}})`.",
+            relative_path, next_start_line, next_end_line
+        ));
+    } else {
+        notice.push_str(&format!(
+            "\nStart with a narrow range such as `readFile({{\"path\": \"{}\", \"startLine\": 1, \"endLine\": 50}})` and keep narrowing if needed.",
+            relative_path
+        ));
+    }
+
+    notice
 }
 
 pub async fn spill_oversized_tool_result_messages(
     session_id: &str,
     messages: Vec<Message>,
 ) -> Result<Vec<Message>, String> {
+    let inline_limit_bytes = tool_result_inline_limit_bytes().await;
+    let preview_limit_bytes = tool_result_preview_content_limit_bytes(inline_limit_bytes);
     let mut processed_messages = Vec::with_capacity(messages.len());
 
     for mut message in messages {
@@ -335,9 +419,7 @@ pub async fn spill_oversized_tool_result_messages(
         let mut next_content = Vec::with_capacity(message.content.len());
         for (content_index, content) in message.content.into_iter().enumerate() {
             match content {
-                MCPContent::Text { text, is_error }
-                    if text.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES =>
-                {
+                MCPContent::Text { text, is_error } if text.len() > inline_limit_bytes => {
                     let relative_path = format!(
                         "{}/{}-{}-{}.txt",
                         TOOL_RESULT_SPILLOVER_DIR,
@@ -365,8 +447,19 @@ pub async fn spill_oversized_tool_result_messages(
                         text.len()
                     );
 
+                    let (preview, _) = truncate_to_complete_lines(&text, preview_limit_bytes);
+                    let preview_line_count = count_preview_lines(preview);
+
                     next_content.push(MCPContent::Text {
-                        text: build_tool_result_spillover_notice(&relative_path, text.len()),
+                        text: format!(
+                            "{}{}",
+                            preview,
+                            build_tool_result_spillover_notice(
+                                &relative_path,
+                                text.len(),
+                                preview_line_count
+                            )
+                        ),
                         is_error,
                     });
                 }
