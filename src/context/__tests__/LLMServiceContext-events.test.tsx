@@ -259,11 +259,6 @@ describe('LLMServiceContext – Event Handling', () => {
           ],
           model: 'gpt-4',
           provider: 'openai',
-          contextUsage: {
-            totalTokens: 100,
-            contextWindow: 4096,
-            modelMaxContext: 128000,
-          },
         },
       });
     });
@@ -335,11 +330,6 @@ describe('LLMServiceContext – Event Handling', () => {
           ],
           model: 'gpt-4',
           provider: 'openai',
-          contextUsage: {
-            totalTokens: 100,
-            contextWindow: 4096,
-            modelMaxContext: 128000,
-          },
         },
       });
     });

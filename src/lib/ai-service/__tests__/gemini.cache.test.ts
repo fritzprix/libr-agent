@@ -7,6 +7,7 @@ import type { Message } from '@/models/chat';
 
 const createCacheMock = vi.fn();
 const deleteCacheMock = vi.fn();
+const updateCacheMock = vi.fn();
 const generateContentStreamMock = vi.fn();
 
 vi.mock('@google/genai', () => ({
@@ -14,6 +15,7 @@ vi.mock('@google/genai', () => ({
     caches: {
       create: createCacheMock,
       delete: deleteCacheMock,
+      update: updateCacheMock,
     },
     models: {
       generateContentStream: generateContentStreamMock,
@@ -115,6 +117,7 @@ describe('GeminiService context cache', () => {
       return { name: `cachedContents/${cacheCounter}` };
     });
     deleteCacheMock.mockResolvedValue(undefined);
+    updateCacheMock.mockResolvedValue(undefined);
     generateContentStreamMock.mockResolvedValue(createEmptyStream());
   });
 
@@ -851,5 +854,115 @@ describe('GeminiService context cache', () => {
     expect(toolCallIndex).toBeGreaterThanOrEqual(0);
     expect(textIndex).toBeGreaterThanOrEqual(0);
     expect(toolCallIndex).toBeLessThan(textIndex);
+  });
+
+  it('uses cached content even when forceToolUse is true', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+      availableTools: [createTool('D'.repeat(131072))],
+      forceToolUse: true,
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+
+    const call = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: {
+        cachedContent?: string;
+        toolConfig?: { functionCallingConfig?: { mode?: string } };
+      };
+    };
+    expect(call.config?.cachedContent).toBe('cachedContents/1');
+    expect(call.config?.toolConfig?.functionCallingConfig?.mode).toBe('ANY');
+  });
+
+  it('deduplicates concurrent cache creation calls for the same key', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+    const options = {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    };
+
+    // Fire two requests simultaneously — only one cache creation should occur.
+    await Promise.all([
+      consumeStream(service.streamChat(messages, options)),
+      consumeStream(service.streamChat(messages, options)),
+    ]);
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    expect(generateContentStreamMock).toHaveBeenCalledTimes(2);
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    const secondCall = generateContentStreamMock.mock.calls[1]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(secondCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
+  it('renews remote TTL when cache entry exceeds renewal threshold', async () => {
+    vi.useFakeTimers();
+
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+    const options = {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    };
+
+    // First request: creates cache entry.
+    await consumeStream(service.streamChat(messages, options));
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    expect(updateCacheMock).not.toHaveBeenCalled();
+
+    // Advance time past the 30-minute renewal threshold.
+    vi.advanceTimersByTime(31 * 60 * 1000);
+
+    // Second request: should use existing entry AND trigger renewal.
+    await consumeStream(service.streamChat(messages, options));
+    expect(createCacheMock).toHaveBeenCalledTimes(1); // no new creation
+    // Renewal fires asynchronously; run all pending microtasks.
+    await vi.runAllTimersAsync();
+    expect(updateCacheMock).toHaveBeenCalledTimes(1);
+    expect(updateCacheMock).toHaveBeenCalledWith({
+      name: 'cachedContents/1',
+      config: { ttl: '3600s' },
+    });
+
+    vi.useRealTimers();
+  });
+
+  it('falls back without cachedContent and invalidates local entry on generic cached-content API error', async () => {
+    generateContentStreamMock
+      .mockRejectedValueOnce(
+        new Error('RESOURCE_EXHAUSTED: cachedContent is no longer available'),
+      )
+      .mockResolvedValueOnce(createEmptyStream());
+
+    const service = new GeminiService('test-key');
+    const messages = [createUserMessage('hello')];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'A'.repeat(131072),
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+    expect(generateContentStreamMock).toHaveBeenCalledTimes(2);
+    // Local entry should be invalidated (remote delete attempted).
+    expect(deleteCacheMock).toHaveBeenCalledTimes(1);
+    expect(deleteCacheMock).toHaveBeenCalledWith({ name: 'cachedContents/1' });
+
+    const secondCall = generateContentStreamMock.mock.calls[1]?.[0] as {
+      config?: { cachedContent?: string; systemInstruction?: Array<{ text: string }> };
+    };
+    expect(secondCall.config?.cachedContent).toBeUndefined();
+    expect(secondCall.config?.systemInstruction).toBeDefined();
   });
 });

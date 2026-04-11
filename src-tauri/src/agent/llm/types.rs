@@ -121,8 +121,14 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
-    /// Token usage gauge telemetry to drive frontend UI (e.g. context window fill bar).
-    pub context_usage: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostResponseCompactionPressure {
+    pub total_tokens: usize,
+    pub context_window: usize,
+    pub model_max_context: usize,
 }
 
 /// Prompt-layout fields from the parent workflow request that should be reused
@@ -147,7 +153,13 @@ pub struct CompactRequest {
     pub session_id: String,
     /// Human-readable session name for toast display. Falls back to a short session ID prefix.
     pub session_name: String,
-    /// Messages to summarize (fromId..=toId inclusive)
+    /// Messages to summarize for the next compact summary.
+    ///
+    /// Initial compaction in a session:
+    ///   [raw compactable prefix]
+    ///
+    /// Subsequent compactions:
+    ///   [synthetic previous compact-summary message] + [raw message delta since last compaction]
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,

@@ -2,6 +2,7 @@ import { safeInvoke } from '@/lib/backend/core';
 import type {
   AgentResponse,
   AgentRuntimeError,
+  HandleLLMResponseData,
   ExecuteUiTauriActionRequest,
 } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
@@ -16,11 +17,14 @@ import { createId } from '@paralleldrive/cuid2';
 export async function handleLLMResponse(
   sessionId: string,
   assistantMessage: RustMessage,
-): Promise<void> {
-  await safeInvoke<AgentResponse>('agent_handle_llm_response', {
-    sessionId,
-    assistantMessage,
-  });
+): Promise<AgentResponse<HandleLLMResponseData>> {
+  return safeInvoke<AgentResponse<HandleLLMResponseData>>(
+    'agent_handle_llm_response',
+    {
+      sessionId,
+      assistantMessage,
+    },
+  );
 }
 
 /**

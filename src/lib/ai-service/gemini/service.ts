@@ -156,7 +156,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     this.genAI = new GoogleGenAI({
       apiKey: this.apiKey,
     });
-    this.cacheManager = new GeminiContextCacheManager(this.genAI, this.apiKey);
+    this.cacheManager = new GeminiContextCacheManager(
+      this.genAI,
+      this.apiKey,
+      this.withRetry.bind(this),
+    );
   }
 
   static purgeSharedContextCache(apiKey: string): void {
@@ -298,17 +302,12 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
       const toolDeclarationCount =
         geminiTools?.[0]?.functionDeclarations.length ?? 0;
-      const requiresToolOverride =
-        Boolean(geminiTools) && options.forceToolUse === true;
-      const canUseCachedContent = !requiresToolOverride;
-      const shouldUseCache =
-        canUseCachedContent &&
-        this.cacheManager.shouldAttemptContextCache(
-          model,
-          stablePrefix,
-          toolsPayload,
-          toolDeclarationCount,
-        );
+      const shouldUseCache = this.cacheManager.shouldAttemptContextCache(
+        model,
+        stablePrefix,
+        toolsPayload,
+        toolDeclarationCount,
+      );
       let cachedContentName: string | undefined;
       let cacheKey: string | undefined;
 
@@ -343,8 +342,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         toolsPayload,
         toolDeclarationCount,
         cacheKey,
-        canUseCachedContent,
-        requiresToolOverride,
         shouldUseCache,
         cachedContentName,
       });
@@ -469,17 +466,18 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       } catch (error) {
         if (
           cachedContentName &&
-          options.disableToolUse &&
-          this.shouldRetryWithoutCachedContentForToolDisabledRequest(error)
+          cacheKey &&
+          this.shouldRetryWithoutCachedContent(error)
         ) {
           this.logger.warn(
-            'Gemini rejected cached-content request with tool disabling; retrying once without cachedContent.',
+            'Gemini rejected cached-content request; retrying once without cachedContent.',
             {
               model,
               cachedContentName,
               error,
             },
           );
+          await this.cacheManager.invalidateEntry(cacheKey, 'api-rejection');
           result = await this.withRetry(async () => {
             return createStream(createGeminiConfig(undefined));
           });
@@ -520,32 +518,16 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     }
   }
 
-  private shouldRetryWithoutCachedContentForToolDisabledRequest(
-    error: unknown,
-  ): boolean {
+  private shouldRetryWithoutCachedContent(error: unknown): boolean {
     if (!(error instanceof Error)) {
       return false;
     }
 
     const message = error.message.toLowerCase();
-    const mentionsCachedContent =
+    return (
       message.includes('cachedcontent') ||
       message.includes('cached content') ||
-      message.includes('cached_content');
-    const mentionsToolConfig =
-      message.includes('toolconfig') ||
-      message.includes('tool config') ||
-      message.includes('functioncallingconfig') ||
-      message.includes('function calling') ||
-      message.includes('tool');
-    const looksLikeInvalidRequest =
-      message.includes('invalid') ||
-      message.includes('unsupported') ||
-      message.includes('not allowed') ||
-      message.includes('bad request');
-
-    return (
-      mentionsCachedContent && mentionsToolConfig && looksLikeInvalidRequest
+      message.includes('cached_content')
     );
   }
 

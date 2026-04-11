@@ -1,7 +1,7 @@
 use super::AgentSessionManager;
 use crate::agent::events::AgentEventDispatcher;
-use crate::agent::state::AgentSession;
-use crate::repositories::{CompactContextRecord, SessionRepository};
+use crate::agent::state::{AgentSession, DeferredWorkflowStep};
+use crate::repositories::{CompactContextRecord, SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -19,14 +19,23 @@ async fn clear_compaction_state(
             session
                 .awaiting_compact_completion
                 .store(false, Ordering::SeqCst);
+            session
+                .finalize_workflow_after_compact
+                .store(false, Ordering::SeqCst);
             (
                 session.compact_started_at_ms.clone(),
                 clear_last_compacted_tail_id.then(|| session.last_compacted_tail_id.clone()),
+                session.deferred_workflow_step.clone(),
             )
         })
     };
 
-    let Some((compact_started_at_ms_handle, last_compacted_tail_id_handle)) = handles else {
+    let Some((
+        compact_started_at_ms_handle,
+        last_compacted_tail_id_handle,
+        deferred_workflow_step_handle,
+    )) = handles
+    else {
         return;
     };
 
@@ -34,6 +43,7 @@ async fn clear_compaction_state(
         *last_compacted_tail_id_handle.write().await = None;
     }
 
+    *deferred_workflow_step_handle.write().await = None;
     *compact_started_at_ms_handle.write().await = None;
 }
 
@@ -51,11 +61,21 @@ pub async fn handle_compact_error_with_dispatcher(
     session_id: String,
     error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<(), String> {
-    let (was_awaiting, session_name, compact_started_at_ms_handle) = {
+    let (
+        was_awaiting,
+        should_finalize_after_compact,
+        deferred_workflow_step,
+        session_name,
+        compact_started_at_ms_handle,
+    ) = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             (
                 session.awaiting_compact_completion.load(Ordering::SeqCst),
+                session
+                    .finalize_workflow_after_compact
+                    .load(Ordering::SeqCst),
+                session.deferred_workflow_step.read().await.clone(),
                 session
                     .metadata
                     .name
@@ -64,7 +84,13 @@ pub async fn handle_compact_error_with_dispatcher(
                 Some(session.compact_started_at_ms.clone()),
             )
         } else {
-            (false, session_id.chars().take(8).collect::<String>(), None)
+            (
+                false,
+                false,
+                None,
+                session_id.chars().take(8).collect::<String>(),
+                None,
+            )
         }
     };
     let elapsed_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
@@ -109,9 +135,9 @@ pub async fn handle_compact_error_with_dispatcher(
         error.display_message
     );
 
-    if was_awaiting {
+    if was_awaiting || deferred_workflow_step.is_some() {
         log::warn!(
-            "Preflight compaction failed for session {}. Failing workflow.",
+            "Blocking compaction failed for session {}. Failing workflow.",
             session_id
         );
         crate::agent::llm::finalize_workflow_error_with_dispatcher(
@@ -122,6 +148,22 @@ pub async fn handle_compact_error_with_dispatcher(
             error,
         )
         .await?;
+    } else if should_finalize_after_compact {
+        if let Some(app_handle) = crate::state::get_app_handle() {
+            crate::agent::lifecycle::update_session_status(
+                session_repo,
+                active_sessions,
+                app_handle,
+                &session_id,
+                SessionStatus::Idle,
+            )
+            .await?;
+        }
+
+        dispatcher.emit_agent_event(crate::agent::events::AgentEvent::WorkflowCompleted {
+            session_id,
+            reason: crate::agent::events::WorkflowCompletionReason::Natural,
+        })?;
     }
 
     Ok(())
@@ -168,27 +210,148 @@ pub async fn handle_compact_response(
     };
     manager.save_compact_context(session_id, record).await?;
 
-    let should_resume_completion = {
+    let (should_resume_completion, should_finalize_after_compact, deferred_workflow_step) = {
         let active = manager.active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| {
+        if let Some(session) = active.get(session_id) {
+            (
                 session
                     .awaiting_compact_completion
-                    .swap(false, Ordering::SeqCst)
-            })
-            .unwrap_or(false)
+                    .swap(false, Ordering::SeqCst),
+                session
+                    .finalize_workflow_after_compact
+                    .swap(false, Ordering::SeqCst),
+                session.deferred_workflow_step.write().await.take(),
+            )
+        } else {
+            (false, false, None)
+        }
     };
 
     log::info!(
-        "📌 Compact completion decision for session {}: should_resume_completion={}",
+        "📌 Compact completion decision for session {}: should_resume_completion={}, should_finalize_after_compact={}, deferred_step={}",
         session_id,
-        should_resume_completion
+        should_resume_completion,
+        should_finalize_after_compact,
+        deferred_workflow_step.is_some()
     );
 
     clear_compact_in_flight(&manager.active_sessions, session_id).await;
 
-    if should_resume_completion {
+    if let Some(deferred_workflow_step) = deferred_workflow_step {
+        match deferred_workflow_step {
+            DeferredWorkflowStep::RequestCompletion => {
+                log::info!(
+                    "▶️ Resuming deferred LLM completion after compaction for session {}",
+                    session_id
+                );
+                let session_repo = manager.session_repo.clone();
+                let active_sessions = manager.active_sessions.clone();
+                let proxy_manager = manager.proxy_manager.clone();
+                let app_handle = manager.app_handle.clone();
+                let resume_session_id = session_id.to_string();
+
+                tokio::spawn(async move {
+                    if let Err(error) = crate::agent::llm::request_llm_completion(
+                        &session_repo,
+                        &active_sessions,
+                        &proxy_manager,
+                        &app_handle,
+                        resume_session_id.clone(),
+                    )
+                    .await
+                    {
+                        log::error!(
+                            "Failed to resume deferred LLM completion after compaction for session {}: {}",
+                            resume_session_id,
+                            error
+                        );
+
+                        if let Err(handle_error) = crate::agent::llm::handle_llm_error(
+                            &session_repo,
+                            &active_sessions,
+                            &app_handle,
+                            resume_session_id.clone(),
+                            error,
+                        )
+                        .await
+                        {
+                            log::error!(
+                                "Failed to surface deferred post-compaction resume error for session {}: {}",
+                                resume_session_id,
+                                handle_error
+                            );
+                        }
+                    }
+                });
+            }
+            DeferredWorkflowStep::ExecuteToolCalls {
+                assistant_message_id,
+                tool_calls,
+            } => {
+                log::info!(
+                    "▶️ Resuming deferred tool execution after compaction for session {} (assistant_message={}, tool_calls={})",
+                    session_id,
+                    assistant_message_id,
+                    tool_calls.len()
+                );
+
+                {
+                    let mut active = manager.active_sessions.write().await;
+                    if let Some(session) = active.get_mut(session_id) {
+                        let expected_tool_call_ids: std::collections::HashSet<String> =
+                            tool_calls.iter().map(|tc| tc.id.clone()).collect();
+                        session.pending_execution =
+                            Some(crate::agent::state::PendingToolExecution {
+                                message_id: assistant_message_id.clone(),
+                                total_expected: tool_calls.len(),
+                                results: Vec::new(),
+                                tool_names: tool_calls
+                                    .iter()
+                                    .map(|tc| (tc.id.clone(), tc.function.name.clone()))
+                                    .collect(),
+                                expected_tool_call_ids,
+                                completed_tool_call_ids: std::collections::HashSet::new(),
+                            });
+                    }
+                }
+
+                let session_repo = manager.session_repo.clone();
+                let active_sessions = manager.active_sessions.clone();
+                let proxy_manager = manager.proxy_manager.clone();
+                let app_handle = manager.app_handle.clone();
+                let resume_session_id = session_id.to_string();
+
+                tokio::spawn(async move {
+                    crate::agent::llm::tool_execution::execute_tool_calls(
+                        session_repo,
+                        active_sessions,
+                        proxy_manager,
+                        app_handle,
+                        resume_session_id,
+                        tool_calls,
+                    )
+                    .await;
+                });
+            }
+            DeferredWorkflowStep::FinalizeWorkflow { reason } => {
+                crate::agent::lifecycle::update_session_status(
+                    &manager.session_repo,
+                    &manager.active_sessions,
+                    &manager.app_handle,
+                    session_id,
+                    SessionStatus::Idle,
+                )
+                .await?;
+
+                let event = crate::agent::events::AgentEvent::WorkflowCompleted {
+                    session_id: session_id.to_string(),
+                    reason,
+                };
+                crate::agent::events::emit_agent_event(&manager.app_handle, event)
+                    .map_err(|e| format!("Failed to emit event: {}", e))?;
+            }
+        }
+    } else if should_resume_completion {
         log::info!(
             "▶️ Resuming blocked LLM completion after compaction for session {}",
             session_id
@@ -232,6 +395,22 @@ pub async fn handle_compact_response(
                 }
             }
         });
+    } else if should_finalize_after_compact {
+        crate::agent::lifecycle::update_session_status(
+            &manager.session_repo,
+            &manager.active_sessions,
+            &manager.app_handle,
+            session_id,
+            SessionStatus::Idle,
+        )
+        .await?;
+
+        let event = crate::agent::events::AgentEvent::WorkflowCompleted {
+            session_id: session_id.to_string(),
+            reason: crate::agent::events::WorkflowCompletionReason::Natural,
+        };
+        crate::agent::events::emit_agent_event(&manager.app_handle, event)
+            .map_err(|e| format!("Failed to emit event: {}", e))?;
     }
 
     Ok(())

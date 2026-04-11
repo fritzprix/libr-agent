@@ -6,20 +6,30 @@ import {
   getSharedGeminiContextCacheStore,
 } from './cache-store';
 
+type RetryFn = <T>(fn: () => Promise<T>) => Promise<T>;
+
 export class GeminiContextCacheManager {
   private static readonly DEFAULT_MIN_CACHEABLE_PREFIX_TOKENS = 32768;
   private static readonly FLASH_MIN_CACHEABLE_PREFIX_TOKENS = 1024;
   private static readonly PRO_MIN_CACHEABLE_PREFIX_TOKENS = 4096;
   private static readonly MAX_CONTEXT_CACHE_ENTRIES = 8;
   private static readonly CONTEXT_CACHE_TTL_MS = 55 * 60 * 1000;
+  /** Proactively renew remote TTL when entry is older than this. */
+  private static readonly CACHE_RENEWAL_THRESHOLD_MS = 30 * 60 * 1000;
   private static readonly contextCacheStore =
     getSharedGeminiContextCacheStore();
 
   private logger = getLogger('GeminiService.contextCacheManager');
+  /** Deduplicates concurrent cache-creation calls for the same key. */
+  private readonly inflightCacheCreations = new Map<
+    string,
+    Promise<string | undefined>
+  >();
 
   constructor(
     private readonly genAI: GoogleGenAI,
     private readonly cacheNamespace: string,
+    private readonly withRetry?: RetryFn,
   ) {}
 
   static purgeSharedContextCache(apiKey: string): void {
@@ -76,8 +86,8 @@ export class GeminiContextCacheManager {
   }
 
   static supportsToolsForModel(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
+    // Match gemini-1.5 and any gemini-2.x / gemini-3.x / etc.
+    return /gemini-(1\.[5-9]|[2-9])/.test(modelName.toLowerCase());
   }
 
   shouldAttemptContextCache(
@@ -124,8 +134,6 @@ export class GeminiContextCacheManager {
     toolsPayload: string;
     toolDeclarationCount: number;
     cacheKey?: string;
-    canUseCachedContent: boolean;
-    requiresToolOverride: boolean;
     shouldUseCache: boolean;
     cachedContentName?: string;
   }): void {
@@ -154,8 +162,6 @@ export class GeminiContextCacheManager {
       toolDeclarationCount: args.toolDeclarationCount,
       cacheableTokenEstimate,
       minCacheablePrefixTokens,
-      canUseCachedContent: args.canUseCachedContent,
-      requiresToolOverride: args.requiresToolOverride,
       shouldUseCache: args.shouldUseCache,
       cachedContentName: args.cachedContentName,
       cacheHit: Boolean(args.cachedContentName),
@@ -192,11 +198,71 @@ export class GeminiContextCacheManager {
       return null;
     }
 
+    // Proactively renew remote TTL when entry is approaching the midpoint of
+    // its remote lifetime so long sessions don't churn through cache misses.
+    if (age >= GeminiContextCacheManager.CACHE_RENEWAL_THRESHOLD_MS) {
+      void this.renewContextCacheEntry(cacheKey, entry);
+    }
+
     entry.lastUsedAt = Date.now();
     return entry;
   }
 
+  /** Renews the remote TTL for a cache entry (fire-and-forget). */
+  private async renewContextCacheEntry(
+    cacheKey: string,
+    entry: { name: string; createdAt: number; lastUsedAt: number },
+  ): Promise<void> {
+    try {
+      await this.genAI.caches.update({
+        name: entry.name,
+        config: { ttl: '3600s' },
+      });
+      entry.createdAt = Date.now();
+      this.logger.debug('Renewed Gemini context cache TTL', {
+        cacheKey,
+        cachedContentName: entry.name,
+      });
+    } catch (error) {
+      this.logger.debug('Failed to renew Gemini context cache TTL', {
+        cacheKey,
+        cachedContentName: entry.name,
+        error,
+      });
+    }
+  }
+
   async createContextCacheEntry(
+    cacheKey: string,
+    model: string,
+    stablePrefix: string,
+    geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>,
+  ): Promise<string | undefined> {
+    // Dedup concurrent requests for the same cache key so we don't create
+    // redundant remote cache entries.
+    const inflight = this.inflightCacheCreations.get(cacheKey);
+    if (inflight) {
+      this.logger.debug('Reusing inflight cache creation for key', {
+        cacheKey,
+      });
+      return inflight;
+    }
+
+    const creation = this._doCreateContextCacheEntry(
+      cacheKey,
+      model,
+      stablePrefix,
+      geminiTools,
+    );
+    this.inflightCacheCreations.set(cacheKey, creation);
+    try {
+      return await creation;
+    } finally {
+      this.inflightCacheCreations.delete(cacheKey);
+    }
+  }
+
+  private async _doCreateContextCacheEntry(
     cacheKey: string,
     model: string,
     stablePrefix: string,
@@ -214,14 +280,20 @@ export class GeminiContextCacheManager {
         },
       );
 
-      const cacheResponse = await this.genAI.caches.create({
-        model,
-        config: {
-          systemInstruction: stablePrefix,
-          tools: geminiTools,
-          ttl: '3600s',
-        },
-      });
+      const doCreate = () =>
+        this.genAI.caches.create({
+          model,
+          config: {
+            systemInstruction: stablePrefix,
+            tools: geminiTools,
+            ttl: '3600s',
+          },
+        });
+
+      const cacheResponse = this.withRetry
+        ? await this.withRetry(doCreate)
+        : await doCreate();
+
       const cacheName = cacheResponse.name;
       if (!cacheName) {
         throw new Error('Gemini cache creation returned no cache name');
@@ -253,6 +325,14 @@ export class GeminiContextCacheManager {
       );
       return undefined;
     }
+  }
+
+  /**
+   * Removes a cache entry from both local store and remote API. Useful when
+   * the API rejects a request that references a stale or invalid cached content.
+   */
+  async invalidateEntry(cacheKey: string, reason: string): Promise<void> {
+    await this.removeContextCacheEntry(cacheKey, reason);
   }
 
   private async evictContextCacheOverflow(): Promise<void> {

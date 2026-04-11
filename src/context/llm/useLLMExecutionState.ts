@@ -1,12 +1,10 @@
+import type { CompactionPressure } from '@/models/agent-ipc';
 import { useCallback, useState } from 'react';
 
 export function useLLMExecutionState() {
-  // Context window usage per session for gauge display
-  const [contextUsageMap, setContextUsageMap] = useState<
-    ReadonlyMap<
-      string,
-      { totalTokens: number; contextWindow: number; modelMaxContext?: number }
-    >
+  // Last post-response compaction-pressure SSOT per session for the status-bar gauge.
+  const [compactionPressureMap, setCompactionPressureMap] = useState<
+    ReadonlyMap<string, CompactionPressure>
   >(new Map());
 
   // Tracks which sessions have an async compaction in-flight
@@ -66,7 +64,7 @@ export function useLLMExecutionState() {
   );
 
   const clearSessionState = useCallback((sessionId: string) => {
-    setContextUsageMap((prev) => {
+    setCompactionPressureMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
       return next;
@@ -89,34 +87,32 @@ export function useLLMExecutionState() {
   }, []);
 
   /**
-   * Clears in-memory context usage state for ALL sessions.
+   * Clears all in-memory compact-session state for ALL sessions.
    * Called when the global context strategy changes.
    */
   const clearAllCompactState = useCallback(() => {
-    setContextUsageMap(new Map());
+    setCompactionPressureMap(new Map());
     setCompactingMap(new Map());
     setCompactedRangeMap(new Map());
     setAwaitingCompactMap(new Map());
   }, []);
 
   /**
-   * Resets the token count for a session to 0 after compaction completes.
-   * Keeps contextWindow/modelMaxContext so the gauge still renders correctly
-   * (showing 0%) until the next LLM call provides the real post-compact estimate.
+   * Clears the last post-response compaction pressure after compaction completes.
+   * The old pre-compaction pressure would be stale and misleading at that point.
    */
-  const resetContextUsageForSession = useCallback((sessionId: string) => {
-    setContextUsageMap((prev) => {
-      const existing = prev.get(sessionId);
-      if (!existing) return prev;
+  const clearCompactionPressureForSession = useCallback((sessionId: string) => {
+    setCompactionPressureMap((prev) => {
+      if (!prev.has(sessionId)) return prev;
       const next = new Map(prev);
-      next.set(sessionId, { ...existing, totalTokens: 0 });
+      next.delete(sessionId);
       return next;
     });
   }, []);
 
   return {
-    contextUsageMap,
-    setContextUsageMap,
+    compactionPressureMap,
+    setCompactionPressureMap,
     compactingMap,
     setCompactingMap,
     compactedRangeMap,
@@ -128,11 +124,12 @@ export function useLLMExecutionState() {
     setAwaitingCompact,
     clearSessionState,
     clearAllCompactState,
-    resetContextUsageForSession,
+    clearCompactionPressureForSession,
     isCompacting: (sessionId: string) => compactingMap.get(sessionId) === true,
     isAwaitingCompact: (sessionId: string) =>
       awaitingCompactMap.get(sessionId) === true,
-    getContextUsage: (sessionId: string) => contextUsageMap.get(sessionId),
+    getCompactionPressure: (sessionId: string) =>
+      compactionPressureMap.get(sessionId),
     getCompactedRange: (sessionId: string) => compactedRangeMap.get(sessionId),
   };
 }

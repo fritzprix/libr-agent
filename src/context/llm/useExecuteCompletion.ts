@@ -63,14 +63,6 @@ interface UseExecuteCompletionProps {
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
   updateSessionStatus: (sessionId: string, status: SessionStatus) => void;
-  setContextUsageMap: React.Dispatch<
-    React.SetStateAction<
-      ReadonlyMap<
-        string,
-        { totalTokens: number; contextWindow: number; modelMaxContext?: number }
-      >
-    >
-  >;
 }
 
 export function useExecuteCompletion({
@@ -78,7 +70,6 @@ export function useExecuteCompletion({
   streamingMessages,
   setStreamingMessages,
   updateSessionStatus,
-  setContextUsageMap,
 }: UseExecuteCompletionProps) {
   // Track active service instances for cleanup
   const activeServicesRef = useRef<Map<string, AICompletionExecutionService>>(
@@ -121,11 +112,6 @@ export function useExecuteCompletion({
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
-      contextUsage?: {
-        totalTokens: number;
-        contextWindow: number;
-        modelMaxContext?: number;
-      },
     ): Promise<Message> => {
       logger.info('🚀 Executing completion request', {
         sessionId,
@@ -228,19 +214,6 @@ export function useExecuteCompletion({
 
         enrichedMessages = await prepareMessagesForLLM(safeMessages);
 
-        // 3. Set telemetries
-        if (contextUsage) {
-          setContextUsageMap((prev) => {
-            const next = new Map(prev);
-            next.set(sessionId, {
-              totalTokens: contextUsage.totalTokens,
-              contextWindow: contextUsage.contextWindow,
-              modelMaxContext: contextUsage.modelMaxContext,
-            });
-            return next;
-          });
-        }
-
         // ── Execute Stream ───────────────────────────────────────────────────
         updateSessionStatus(sessionId, 'streaming');
 
@@ -281,32 +254,33 @@ export function useExecuteCompletion({
           enrichedMessages,
         );
 
-        // Keep a lightweight frontend guard for the provider-specific payload
-        // shape prepared in this process. Rust remains the source of truth for
-        // compaction and context occupancy decisions.
-        if (settingsRef.current.contextStrategy === 'compact') {
-          const effectiveContextLimit =
-            contextUsage?.contextWindow ??
-            modelInfo.contextWindow ??
-            128 * 1024;
-          const projectedPayloadTokens = estimatePayloadTokens(
-            effectiveSystemPrompt,
+        if (settingsRef.current.contextStrategy !== 'window') {
+          const effectiveLimit = Math.min(
+            modelInfo.contextWindow,
+            settingsRef.current.maxInputContext,
+          );
+          const safeLimit =
+            effectiveLimit - calculateContextSafetyMargin(effectiveLimit);
+          const estimatedPayloadTokens = estimatePayloadTokens(
+            [effectiveSystemPrompt, effectiveSessionContext]
+              .filter((value): value is string => typeof value === 'string')
+              .join('\n\n') || undefined,
             effectiveMessages,
             availableTools,
           );
-          const safetyMargin = calculateContextSafetyMargin(
-            effectiveContextLimit,
-          );
 
-          if (projectedPayloadTokens + safetyMargin > effectiveContextLimit) {
+          if (estimatedPayloadTokens > safeLimit) {
             throw createExecutionError(
               'CONTEXT_LIMIT_ERROR',
-              `Prepared payload exceeds the effective context limit (${projectedPayloadTokens + safetyMargin} > ${effectiveContextLimit}). Reduce the newest input or attachment payload and retry.`,
-              'prepared_payload_too_large',
+              `Prepared payload exceeds the effective context limit (${estimatedPayloadTokens} > ${safeLimit} tokens after safety margin).`,
+              'prepared_payload_over_context_limit',
               {
-                projectedPayloadTokens,
-                safetyMargin,
-                effectiveContextLimit,
+                sessionId,
+                estimatedPayloadTokens,
+                effectiveLimit,
+                safeLimit,
+                modelContextWindow: modelInfo.contextWindow,
+                configuredMaxInputContext: settingsRef.current.maxInputContext,
               },
             );
           }

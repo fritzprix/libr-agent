@@ -39,6 +39,19 @@ pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
     five_percent.clamp(1024, 8192)
 }
 
+fn usage_metric_as_usize(usage: &serde_json::Value, key: &str) -> Option<usize> {
+    usage
+        .as_object()?
+        .get(key)
+        .and_then(|value| value.as_u64().map(|n| n as usize))
+        .or_else(|| {
+            usage
+                .as_object()?
+                .get(key)
+                .and_then(|value| value.as_f64().map(|n| n as usize))
+        })
+}
+
 /// Estimates the token count for a given message using BPE or character fallback.
 /// Translates `estimateTokensBPE` from TS.
 pub fn estimate_tokens_bpe(message: &Message) -> usize {
@@ -157,4 +170,163 @@ pub fn calculate_grounded_total_tokens(
     );
 
     full_estimate
+}
+
+/// Derives the BPE-to-provider tokenizer calibration ratio from the most recent
+/// API-grounded anchor.
+///
+/// Uses `usage.promptTokens` (the API-accurate pure-input token count) as the
+/// numerator, and the local BPE estimate of that exact same input content as the
+/// denominator. This produces a session-specific correction factor that adapts at
+/// runtime to whichever provider tokenizer is actually in use.
+///
+/// For providers like Gemini (SentencePiece), `promptTokens` is typically ~37% lower
+/// than the equivalent cl100k_base BPE count, yielding a ratio of ~0.63.
+///
+/// Using `promptTokens` rather than `totalTokens` keeps the ratio stable: the input
+/// side grows monotonically and represents a large corpus, while `completionTokens`
+/// swings wildly per turn and would add noise to the ratio.
+///
+/// Returns 1.0 when no valid anchor exists (no calibration possible on first turn).
+pub fn derive_bpe_calibration_ratio(
+    messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> f64 {
+    for (i, msg) in messages.iter().enumerate().rev() {
+        if msg.role == "assistant" {
+            if let Some(usage) = &msg.usage {
+                if let Some(pt) = usage.get("promptTokens").and_then(|v| v.as_f64()) {
+                    let prompt_tokens = pt as usize;
+                    if prompt_tokens > 0 {
+                        let has_summary_before = messages[..i]
+                            .iter()
+                            .any(|m| m.id.starts_with("compact-summary-"));
+                        if !has_summary_before {
+                            // BPE of messages[0..i] = all content fed as INPUT to this turn
+                            // (excludes the anchor's own assistant output)
+                            let bpe_input: usize =
+                                messages[..i].iter().map(estimate_tokens_bpe).sum::<usize>()
+                                    + system_prompt_tokens
+                                    + tools_tokens;
+                            if bpe_input > 0 {
+                                return prompt_tokens as f64 / bpe_input as f64;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    1.0
+}
+
+/// Estimates the current context token count anchored on the API-reported
+/// `promptTokens` from the most recent grounded assistant message.
+///
+/// Formula (when anchor exists):
+/// ```text
+/// ratio    = promptTokens(anchor) / BPE(messages_before_anchor + sys + tools)
+/// estimate = promptTokens(anchor) + BPE(messages[anchor_idx..]) * ratio
+/// ```
+///
+/// - `promptTokens(anchor)` is the API-accurate count of all input fed to the model
+///   at that turn — the error-free base.
+/// - `messages[anchor_idx..]` covers the anchor's own assistant output plus every
+///   message added since — the content whose size must be estimated.
+/// - Applying `ratio` to that BPE corrects for the ~37% overcount of cl100k_base
+///   relative to provider tokenizers such as Gemini SentencePiece.
+///
+/// Unlike anchoring on `totalTokens`, this approach derives the calibration ratio
+/// purely from the input side, which is large and grows monotonically, giving a
+/// more stable ratio than one that includes noisy per-turn `completionTokens`.
+///
+/// Falls back to full BPE when no grounded anchor is available.
+pub fn calculate_prompt_anchored_total_tokens(
+    messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> usize {
+    for (i, msg) in messages.iter().enumerate().rev() {
+        if msg.role == "assistant" {
+            if let Some(usage) = &msg.usage {
+                if let Some(pt) = usage.get("promptTokens").and_then(|v| v.as_f64()) {
+                    let prompt_tokens = pt as usize;
+                    if prompt_tokens > 0 {
+                        let has_summary_before = messages[..i]
+                            .iter()
+                            .any(|m| m.id.starts_with("compact-summary-"));
+                        if !has_summary_before {
+                            let bpe_input: usize =
+                                messages[..i].iter().map(estimate_tokens_bpe).sum::<usize>()
+                                    + system_prompt_tokens
+                                    + tools_tokens;
+                            let ratio = if bpe_input > 0 {
+                                prompt_tokens as f64 / bpe_input as f64
+                            } else {
+                                1.0
+                            };
+                            // BPE of anchor's own output + all subsequent messages —
+                            // everything added after the model processed its input.
+                            let bpe_output: usize =
+                                messages[i..].iter().map(estimate_tokens_bpe).sum();
+                            let calibrated_output = (bpe_output as f64 * ratio).ceil() as usize;
+                            log::debug!(
+                                "prompt-anchored estimate: prompt_tokens={}, bpe_input={}, ratio={:.4}, bpe_output={}, calibrated_output={}, total={}",
+                                prompt_tokens,
+                                bpe_input,
+                                ratio,
+                                bpe_output,
+                                calibrated_output,
+                                prompt_tokens + calibrated_output
+                            );
+                            return prompt_tokens + calibrated_output;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: full BPE — no API anchor available yet (e.g. first turn).
+    let message_tokens: usize = messages.iter().map(estimate_tokens_bpe).sum();
+    let full_estimate = message_tokens + system_prompt_tokens + tools_tokens;
+    log::debug!(
+        "full-BPE fallback (no promptTokens anchor): msg={}, sys={}, tools={}, total={}",
+        message_tokens,
+        system_prompt_tokens,
+        tools_tokens,
+        full_estimate
+    );
+    full_estimate
+}
+
+/// Computes the post-response compaction trigger total from the provider-reported
+/// input size plus a slightly conservative output estimate. This keeps the
+/// compaction decision anchored to real prompt usage while biasing the output side
+/// upward enough to avoid awkward near-limit misses.
+pub fn calculate_post_response_compaction_tokens(message: &Message) -> Option<usize> {
+    if message.role != "assistant" {
+        return None;
+    }
+
+    let usage = message.usage.as_ref()?;
+    let prompt_tokens = usage_metric_as_usize(usage, "promptTokens")?;
+    if prompt_tokens == 0 {
+        return None;
+    }
+
+    let measured_output_tokens = usage_metric_as_usize(usage, "completionTokens").or_else(|| {
+        usage_metric_as_usize(usage, "totalTokens")
+            .and_then(|total_tokens| total_tokens.checked_sub(prompt_tokens))
+    });
+
+    let conservative_output_tokens = if let Some(output_tokens) = measured_output_tokens {
+        let safety_bias = (output_tokens as f64 * 0.05).ceil() as usize;
+        output_tokens.saturating_add(safety_bias)
+    } else {
+        estimate_tokens_bpe(message)
+    };
+
+    Some(prompt_tokens.saturating_add(conservative_output_tokens))
 }

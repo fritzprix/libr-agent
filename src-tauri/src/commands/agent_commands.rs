@@ -495,14 +495,18 @@ pub async fn agent_handle_llm_response(
 
     log::debug!("📥 Full message received: {:#?}", message);
 
-    manager
+    let compaction_pressure = manager
         .handle_llm_response(session_id.clone(), message)
         .await?;
 
     Ok(AgentResponse {
         success: true,
         message: format!("LLM response processed for session: {}", session_id),
-        data: None,
+        data: compaction_pressure.map(|pressure| {
+            serde_json::json!({
+                "compactionPressure": pressure
+            })
+        }),
     })
 }
 

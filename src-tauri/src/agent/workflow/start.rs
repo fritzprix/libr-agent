@@ -108,6 +108,10 @@ pub async fn start_workflow(
             session
                 .awaiting_compact_completion
                 .store(false, Ordering::SeqCst);
+            session
+                .finalize_workflow_after_compact
+                .store(false, Ordering::SeqCst);
+            *session.deferred_workflow_step.write().await = None;
         }
     }
 

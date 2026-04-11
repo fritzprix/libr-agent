@@ -66,7 +66,7 @@ vi.mock('@/context/LLMServiceContext', () => ({
   useLLMService: () => ({
     isCompacting: vi.fn(() => false),
     isAwaitingCompact: vi.fn(() => false),
-    getContextUsage: vi.fn(() => undefined),
+    getCompactionPressure: vi.fn(() => undefined),
   }),
 }));
 

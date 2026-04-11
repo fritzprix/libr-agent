@@ -126,6 +126,8 @@ fn build_agent_session(
         compact_in_flight: Arc::new(AtomicBool::new(true)),
         last_compacted_tail_id: Arc::new(RwLock::new(Some("tail-before-error".to_string()))),
         awaiting_compact_completion: Arc::new(AtomicBool::new(awaiting_compact_completion)),
+        finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
+        deferred_workflow_step: Arc::new(RwLock::new(None)),
         compact_started_at_ms: Arc::new(RwLock::new(None)),
         expected_response_id: Arc::new(RwLock::new(None)),
         cached_stable_prompt: Arc::new(RwLock::new(None)),

@@ -79,7 +79,7 @@ async function handleCompactEvent(
     summary: string,
   ) => Promise<void>,
   handleCompactError: (sessionId: string, error: unknown) => Promise<void>,
-  resetContextUsageForSession: (sessionId: string) => void,
+  clearCompactionPressureForSession: (sessionId: string) => void,
   setCompactedRangeForSession: (
     sessionId: string,
     range: { fromId: string; toId: string },
@@ -110,7 +110,7 @@ async function handleCompactEvent(
     });
     await handleCompactResponse(sessionId, fromId, toId, summary);
     setCompactedRangeForSession(sessionId, { fromId, toId });
-    resetContextUsageForSession(sessionId);
+    clearCompactionPressureForSession(sessionId);
   } catch {
     await handleCompactError(sessionId, {} as unknown);
   }
@@ -308,7 +308,7 @@ describe('compact request handler', () => {
     const getService = vi.fn().mockReturnValue({ compact: compactService });
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     const handleCompactError = vi.fn().mockResolvedValue(undefined);
-    const resetContextUsageForSession = vi.fn();
+    const clearCompactionPressureForSession = vi.fn();
     const setCompactedRangeForSession = vi.fn();
 
     await handleCompactEvent(
@@ -332,7 +332,7 @@ describe('compact request handler', () => {
       getService,
       handleCompactResponse,
       handleCompactError,
-      resetContextUsageForSession,
+      clearCompactionPressureForSession,
       setCompactedRangeForSession,
     );
 

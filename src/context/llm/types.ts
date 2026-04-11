@@ -1,5 +1,6 @@
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
+import type { CompactionPressure } from '@/models/agent-ipc';
 
 /**
  * Returns true if the error is an intentional abort (user cancel via AbortController).
@@ -40,12 +41,6 @@ export interface CompletionRequest {
   temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
-  /** Rust-estimated context occupancy telemetry for compact-strategy UI/gauges. */
-  contextUsage?: {
-    totalTokens: number;
-    contextWindow: number;
-    modelMaxContext?: number;
-  };
 }
 
 export interface CompactionParentRequest {
@@ -106,11 +101,6 @@ export interface LLMServiceContextValue {
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
-    contextUsage?: {
-      totalTokens: number;
-      contextWindow: number;
-      modelMaxContext?: number;
-    },
   ) => Promise<Message>;
 
   /**
@@ -137,12 +127,8 @@ export interface LLMServiceContextValue {
   /** Returns true if the session is blocked waiting for compaction to finish */
   isAwaitingCompact: (sessionId: string) => boolean;
 
-  /** Current context window usage for the session (compact strategy only) */
-  getContextUsage: (
-    sessionId: string,
-  ) =>
-    | { totalTokens: number; contextWindow: number; modelMaxContext?: number }
-    | undefined;
+  /** Last post-response compaction pressure emitted by Rust for this session. */
+  getCompactionPressure: (sessionId: string) => CompactionPressure | undefined;
 
   /** Compacted message range for the session, used to render a chat divider */
   getCompactedRange: (
