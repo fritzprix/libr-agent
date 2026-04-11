@@ -20,7 +20,6 @@ export interface GeminiServiceConfig {
   systemInstruction?: Array<{ text: string }>;
   maxOutputTokens?: number;
   temperature?: number;
-  cachedContent?: string;
   thinkingConfig?: {
     thinkingBudget?: number; // -1 (dynamic) | 0 (disabled) | positive number (token count)
     includeThoughts?: boolean; // Include thinking process in response
