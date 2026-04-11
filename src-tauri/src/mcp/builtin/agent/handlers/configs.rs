@@ -226,9 +226,21 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
     if !results.is_empty() {
         message.push_str("\n\nActive roster:\n| Name | ID | Status |\n|---|---|---|\n");
         for result in &results {
-            let name = result["name"].as_str().unwrap_or("Unnamed").replace("|", "\\|").replace('\n', " ");
-            let id = result["id"].as_str().unwrap_or("").replace("|", "\\|").replace('\n', " ");
-            let status = result["status"].as_str().unwrap_or("").replace("|", "\\|").replace('\n', " ");
+            let name = result["name"]
+                .as_str()
+                .unwrap_or("Unnamed")
+                .replace("|", "\\|")
+                .replace('\n', " ");
+            let id = result["id"]
+                .as_str()
+                .unwrap_or("")
+                .replace("|", "\\|")
+                .replace('\n', " ");
+            let status = result["status"]
+                .as_str()
+                .unwrap_or("")
+                .replace("|", "\\|")
+                .replace('\n', " ");
 
             message.push_str(&format!("| {} | `{}` | {} |\n", name, id, status));
         }

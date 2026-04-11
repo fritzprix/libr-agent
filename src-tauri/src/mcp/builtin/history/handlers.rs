@@ -663,11 +663,23 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
         lines.push("No sessions matched the filters.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("Sessions:\n| Name | ID | Status | Messages | Updated At |\n|---|---|---|---|---|".to_string());
+        lines.push(
+            "Sessions:\n| Name | ID | Status | Messages | Updated At |\n|---|---|---|---|---|"
+                .to_string(),
+        );
         for session in &page.items {
-            let name = session.name.as_deref().unwrap_or("Unnamed session").replace("|", "\\|").replace('\n', " ");
+            let name = session
+                .name
+                .as_deref()
+                .unwrap_or("Unnamed session")
+                .replace("|", "\\|")
+                .replace('\n', " ");
             let id = session.session_id.replace("|", "\\|").replace('\n', " ");
-            let status = session.status.to_string().replace("|", "\\|").replace('\n', " ");
+            let status = session
+                .status
+                .to_string()
+                .replace("|", "\\|")
+                .replace('\n', " ");
 
             lines.push(format!(
                 "| {} | `{}` | {} | {} | {} |",
