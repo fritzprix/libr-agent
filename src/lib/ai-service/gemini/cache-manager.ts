@@ -1,4 +1,4 @@
-import { GoogleGenAI, FunctionDeclaration } from '@google/genai';
+import { GoogleGenAI, FunctionDeclaration, Content } from '@google/genai';
 import { getLogger } from '../../logger';
 import { stableHashKeyPart } from '../base-service';
 import {
@@ -94,6 +94,7 @@ export class GeminiContextCacheManager {
     model: string,
     stablePrefix: string,
     toolsPayload: string,
+    cachedContentsPayload: string,
     toolDeclarationCount: number,
   ): boolean {
     if (!GeminiContextCacheManager.supportsToolsForModel(model)) {
@@ -103,6 +104,7 @@ export class GeminiContextCacheManager {
     const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
       stablePrefix,
       toolsPayload,
+      cachedContentsPayload,
       toolDeclarationCount,
     );
     return (
@@ -114,17 +116,23 @@ export class GeminiContextCacheManager {
   estimateCacheablePrefixTokens(
     stablePrefix: string,
     toolsPayload: string,
+    cachedContentsPayload: string,
     toolDeclarationCount: number,
   ): number {
     const encoder = new TextEncoder();
     const stablePrefixBytes = encoder.encode(stablePrefix).length;
     const toolsPayloadBytes = encoder.encode(toolsPayload).length;
+    const cachedContentsBytes = encoder.encode(cachedContentsPayload).length;
     const textTokenEstimate = Math.ceil(stablePrefixBytes / 3.5);
     const structuredTokenEstimate = Math.ceil(toolsPayloadBytes / 2.5);
+    const cachedContentsTokenEstimate = Math.ceil(cachedContentsBytes / 3.5);
     const toolDeclarationOverhead = toolDeclarationCount * 32;
 
     return (
-      textTokenEstimate + structuredTokenEstimate + toolDeclarationOverhead
+      textTokenEstimate +
+      structuredTokenEstimate +
+      cachedContentsTokenEstimate +
+      toolDeclarationOverhead
     );
   }
 
@@ -132,6 +140,8 @@ export class GeminiContextCacheManager {
     model: string;
     stablePrefix: string;
     toolsPayload: string;
+    cachedContentsPayload: string;
+    cachedContentCount: number;
     toolDeclarationCount: number;
     cacheKey?: string;
     shouldUseCache: boolean;
@@ -140,6 +150,7 @@ export class GeminiContextCacheManager {
     const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
       args.stablePrefix,
       args.toolsPayload,
+      args.cachedContentsPayload,
       args.toolDeclarationCount,
     );
     const minCacheablePrefixTokens =
@@ -149,6 +160,9 @@ export class GeminiContextCacheManager {
     const encoder = new TextEncoder();
     const stablePrefixBytes = encoder.encode(args.stablePrefix).length;
     const toolsPayloadBytes = encoder.encode(args.toolsPayload).length;
+    const cachedContentsBytes = encoder.encode(
+      args.cachedContentsPayload,
+    ).length;
 
     this.logger.info('Gemini prompt cache metadata', {
       model: args.model,
@@ -159,6 +173,9 @@ export class GeminiContextCacheManager {
       stablePrefixBytes,
       toolsPayloadLength: args.toolsPayload.length,
       toolsPayloadBytes,
+      cachedContentCount: args.cachedContentCount,
+      cachedContentsPayloadLength: args.cachedContentsPayload.length,
+      cachedContentsBytes,
       toolDeclarationCount: args.toolDeclarationCount,
       cacheableTokenEstimate,
       minCacheablePrefixTokens,
@@ -172,11 +189,13 @@ export class GeminiContextCacheManager {
     model: string,
     stablePrefix: string,
     toolsPayload: string,
+    cachedContentsPayload: string,
   ): string {
     return [
       model,
       stableHashKeyPart(stablePrefix),
       stableHashKeyPart(toolsPayload),
+      stableHashKeyPart(cachedContentsPayload),
     ].join(':');
   }
 
@@ -236,6 +255,7 @@ export class GeminiContextCacheManager {
     cacheKey: string,
     model: string,
     stablePrefix: string,
+    cachedContents: Content[],
     geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>,
   ): Promise<string | undefined> {
     // Dedup concurrent requests for the same cache key so we don't create
@@ -252,6 +272,7 @@ export class GeminiContextCacheManager {
       cacheKey,
       model,
       stablePrefix,
+      cachedContents,
       geminiTools,
     );
     this.inflightCacheCreations.set(cacheKey, creation);
@@ -266,6 +287,7 @@ export class GeminiContextCacheManager {
     cacheKey: string,
     model: string,
     stablePrefix: string,
+    cachedContents: Content[],
     geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>,
   ): Promise<string | undefined> {
     try {
@@ -275,6 +297,7 @@ export class GeminiContextCacheManager {
           model,
           cacheKey,
           stablePrefixLength: stablePrefix.length,
+          cachedContentCount: cachedContents.length,
           toolDeclarationCount:
             geminiTools?.[0]?.functionDeclarations.length ?? 0,
         },
@@ -286,6 +309,7 @@ export class GeminiContextCacheManager {
           config: {
             systemInstruction: stablePrefix,
             tools: geminiTools,
+            contents: cachedContents.length > 0 ? cachedContents : undefined,
             ttl: '3600s',
           },
         });

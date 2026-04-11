@@ -88,6 +88,56 @@ function createUserMessage(text: string): Message {
   };
 }
 
+function createAssistantMessage(id: string, text: string): Message {
+  return {
+    id,
+    sessionId: 'session-1',
+    threadId: 'thread-1',
+    role: 'assistant',
+    content: [{ type: 'text', text }],
+  };
+}
+
+function createAssistantToolCallMessage(
+  id: string,
+  toolCallId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Message {
+  return {
+    id,
+    sessionId: 'session-1',
+    threadId: 'thread-1',
+    role: 'assistant',
+    content: [],
+    tool_calls: [
+      {
+        id: toolCallId,
+        type: 'function',
+        function: {
+          name: toolName,
+          arguments: JSON.stringify(args),
+        },
+      },
+    ],
+  };
+}
+
+function createToolResultMessage(
+  id: string,
+  toolCallId: string,
+  text: string,
+): Message {
+  return {
+    id,
+    sessionId: 'session-1',
+    threadId: 'thread-1',
+    role: 'tool',
+    tool_call_id: toolCallId,
+    content: [{ type: 'text', text }],
+  };
+}
+
 function createTool(description: string): MCPTool {
   return {
     name: 'workspace__readFile',
@@ -177,6 +227,110 @@ describe('GeminiService context cache', () => {
       config?: { cachedContent?: string };
     };
     expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+  });
+
+  it('caches the frozen conversation prefix and sends only the current user turn as live contents', async () => {
+    const service = new GeminiService('test-key');
+    const messages = [
+      createUserMessage('history question'),
+      createAssistantMessage('msg-history-assistant', 'A'.repeat(10000)),
+      {
+        ...createUserMessage('current question'),
+        id: 'msg-current-user',
+      },
+    ];
+
+    await consumeStream(service.streamChat(messages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'Stable system prompt',
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+
+    const createCall = createCacheMock.mock.calls[0]?.[0] as {
+      config?: {
+        systemInstruction?: string;
+        contents?: Array<{ role?: string; parts?: Array<{ text?: string }> }>;
+      };
+    };
+    const streamCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string; systemInstruction?: Array<{ text: string }> };
+      contents?: Array<{ role?: string; parts?: Array<{ text?: string }> }>;
+    };
+
+    expect(createCall.config?.systemInstruction).toBe('Stable system prompt');
+    expect(createCall.config?.contents).toEqual([
+      { role: 'user', parts: [{ text: 'history question' }] },
+      { role: 'model', parts: [{ text: 'A'.repeat(10000) }] },
+    ]);
+    expect(streamCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(streamCall.config?.systemInstruction).toBeUndefined();
+    expect(streamCall.contents).toEqual([
+      { role: 'user', parts: [{ text: 'current question' }] },
+    ]);
+  });
+
+  it('reuses the same cached prefix across tool-loop turns for the same active user request', async () => {
+    const service = new GeminiService('test-key');
+    const firstTurnMessages = [
+      createUserMessage('history question'),
+      createAssistantMessage('msg-history-assistant', 'B'.repeat(10000)),
+      {
+        ...createUserMessage('current question'),
+        id: 'msg-current-user',
+      },
+    ];
+    const secondTurnMessages = [
+      ...firstTurnMessages,
+      createAssistantToolCallMessage(
+        'msg-tool-call',
+        'call_1',
+        'workspace__readFile',
+        { path: 'README.md' },
+      ),
+      createToolResultMessage('msg-tool-result', 'call_1', 'file contents'),
+    ];
+
+    await consumeStream(service.streamChat(firstTurnMessages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'Stable system prompt',
+    }));
+    await consumeStream(service.streamChat(secondTurnMessages, {
+      modelName: 'gemini-2.5-flash',
+      systemPrompt: 'Stable system prompt',
+    }));
+
+    expect(createCacheMock).toHaveBeenCalledTimes(1);
+
+    const firstCall = generateContentStreamMock.mock.calls[0]?.[0] as {
+      config?: { cachedContent?: string };
+    };
+    const secondCall = generateContentStreamMock.mock.calls[1]?.[0] as {
+      config?: { cachedContent?: string };
+      contents?: Array<{
+        role?: string;
+        parts?: Array<{
+          text?: string;
+          functionCall?: { name?: string };
+          functionResponse?: { name?: string };
+        }>;
+      }>;
+    };
+
+    expect(firstCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(secondCall.config?.cachedContent).toBe('cachedContents/1');
+    expect(secondCall.contents?.[0]).toMatchObject({
+      role: 'user',
+      parts: [{ text: 'current question' }],
+    });
+    expect(secondCall.contents?.[1]).toMatchObject({
+      role: 'model',
+      parts: [{ functionCall: { name: 'workspace__readFile' } }],
+    });
+    expect(secondCall.contents?.[2]).toMatchObject({
+      role: 'user',
+      parts: [{ functionResponse: { name: 'workspace__readFile' } }],
+    });
   });
 
   it('uses the lower Gemini 2.5 flash threshold for explicit cache eligibility', async () => {

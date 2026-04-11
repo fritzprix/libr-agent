@@ -136,6 +136,35 @@ function summarizeGeminiContents(contents: Content[]): {
   };
 }
 
+function splitGeminiCachedPrefix(messages: Message[]): {
+  cacheableMessages: Message[];
+  liveMessages: Message[];
+} {
+  const lastNonSyntheticUserIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(
+      ({ message }) =>
+        message.role === 'user' &&
+        !message.id.startsWith('gemini-session-context-'),
+    )?.index;
+
+  if (
+    lastNonSyntheticUserIndex === undefined ||
+    lastNonSyntheticUserIndex <= 0
+  ) {
+    return {
+      cacheableMessages: [],
+      liveMessages: messages,
+    };
+  }
+
+  return {
+    cacheableMessages: messages.slice(0, lastNonSyntheticUserIndex),
+    liveMessages: messages.slice(lastNonSyntheticUserIndex),
+  };
+}
+
 /**
  * An AI service implementation for interacting with Google's Gemini models.
  */
@@ -277,8 +306,15 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         },
       );
 
-      const geminiMessages = this.convertMessages(
+      const { cacheableMessages, liveMessages } = splitGeminiCachedPrefix(
         normalizedContextInjection.messages,
+      );
+      const cacheableGeminiContents = this.convertMessages(
+        cacheableMessages,
+        normalizedContextInjection.systemPrompt,
+      );
+      const geminiMessages = this.convertMessages(
+        liveMessages,
         normalizedContextInjection.systemPrompt,
       );
       if (geminiMessages.length === 0) {
@@ -300,12 +336,14 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       // --- CONTEXT CACHING ABSTRACTION BEGIN ---
       const stablePrefix = normalizedContextInjection.systemPrompt ?? '';
       const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
+      const cachedContentsPayload = stableStringify(cacheableGeminiContents);
       const toolDeclarationCount =
         geminiTools?.[0]?.functionDeclarations.length ?? 0;
       const shouldUseCache = this.cacheManager.shouldAttemptContextCache(
         model,
         stablePrefix,
         toolsPayload,
+        cachedContentsPayload,
         toolDeclarationCount,
       );
       let cachedContentName: string | undefined;
@@ -316,6 +354,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
           model,
           stablePrefix,
           toolsPayload,
+          cachedContentsPayload,
         );
         const existingEntry =
           await this.cacheManager.getUsableContextCacheEntry(
@@ -330,6 +369,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
             cacheKey,
             model,
             stablePrefix,
+            cacheableGeminiContents,
             geminiTools,
           );
         }
@@ -340,6 +380,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         model,
         stablePrefix,
         toolsPayload,
+        cachedContentsPayload,
+        cachedContentCount: cacheableGeminiContents.length,
         toolDeclarationCount,
         cacheKey,
         shouldUseCache,
@@ -365,6 +407,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         stablePrefixBytes: encoder.encode(stablePrefix).length,
         toolsPayloadLength: toolsPayload.length,
         toolsPayloadBytes: encoder.encode(toolsPayload).length,
+        cachedPrefixContents: summarizeGeminiContents(cacheableGeminiContents),
+        liveTailContents: geminiContentSummary,
         toolDeclarationCount,
       });
 

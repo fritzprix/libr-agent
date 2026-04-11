@@ -18,6 +18,26 @@ use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactionParentRequest, CompletionRequest,
 };
 
+async fn trigger_preflight_compaction_or_error(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<bool, AgentRuntimeError> {
+    super::compaction::trigger_preflight_compaction_for_session(
+        active_sessions,
+        app_handle,
+        session_id,
+    )
+    .await
+    .map_err(|error| {
+        AgentRuntimeError::new(
+            AgentRuntimeErrorType::AiServiceError,
+            format!("Failed to trigger Rust preflight compaction: {}", error),
+        )
+        .with_code("PREFLIGHT_COMPACTION_TRIGGER_FAILED")
+    })
+}
+
 pub fn build_compact_context_selection_options(
     system_prompt: Option<String>,
     tools_json: Option<String>,
@@ -541,6 +561,9 @@ pub async fn request_llm_completion(
     );
 
     let mut final_messages = messages.clone();
+    let tools_json = available_tools
+        .as_ref()
+        .map(|tools| serde_json::to_string(tools).unwrap_or_default());
     let combined_system_prompt = match (&system_prompt, &session_context) {
         (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
         (Some(sp), None) => Some(sp.clone()),
@@ -550,9 +573,6 @@ pub async fn request_llm_completion(
 
     if uses_compaction_strategy(&context_strategy) {
         let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-        let tools_json = available_tools
-            .as_ref()
-            .map(|t| serde_json::to_string(t).unwrap_or_default());
         let context_options = build_compact_context_selection_options(
             combined_system_prompt.clone(),
             tools_json.clone(),
@@ -582,7 +602,30 @@ pub async fn request_llm_completion(
         );
     }
 
+    let compaction_parent_request = Some(CompactionParentRequest {
+        model: model.clone(),
+        provider: provider.clone(),
+        system_prompt: system_prompt.clone(),
+        session_context: session_context.clone(),
+        available_tools: available_tools.clone(),
+    });
+
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            let mut last_completion_request = session.last_completion_request.write().await;
+            *last_completion_request = compaction_parent_request.clone();
+        }
+    }
+
     if final_messages.is_empty() {
+        if uses_compaction_strategy(&context_strategy)
+            && trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
+                .await?
+        {
+            return Ok(());
+        }
+
         let message = if uses_compaction_strategy(&context_strategy) {
             "No messages fit within the effective context window. Increase the context limit or reduce the pinned/latest message size and retry."
         } else {
@@ -594,13 +637,58 @@ pub async fn request_llm_completion(
         );
     }
 
-    let compaction_parent_request = Some(CompactionParentRequest {
-        model: model.clone(),
-        provider: provider.clone(),
-        system_prompt: system_prompt.clone(),
-        session_context: session_context.clone(),
-        available_tools: available_tools.clone(),
-    });
+    if uses_compaction_strategy(&context_strategy) {
+        let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
+        let system_prompt_tokens = combined_system_prompt
+            .as_ref()
+            .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
+            .unwrap_or(0);
+        let tools_tokens = tools_json
+            .as_ref()
+            .map(|json| crate::agent::llm::token_utils::estimate_text_tokens(json))
+            .unwrap_or(0);
+        let conservative_preflight_tokens =
+            crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+                &final_messages,
+                system_prompt_tokens,
+                tools_tokens,
+            );
+
+        if conservative_preflight_tokens >= safe_input_token_limit {
+            log::info!(
+                "⛔ Rust preflight blocked LLM request: session={}, conservative_prompt_tokens={}, safe_input_token_limit={}, compact_summary_injected={}, selected_message_count={}",
+                session_id,
+                conservative_preflight_tokens,
+                safe_input_token_limit,
+                compact_summary_injected,
+                final_messages.len()
+            );
+
+            if trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
+                .await?
+            {
+                return Ok(());
+            }
+
+            return Err(
+                AgentRuntimeError::new(
+                    AgentRuntimeErrorType::ContextLimitError,
+                    format!(
+                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens).",
+                        conservative_preflight_tokens, safe_input_token_limit
+                    ),
+                )
+                .with_code("RUST_PREFLIGHT_CONTEXT_LIMIT")
+                .with_original_error(serde_json::json!({
+                    "sessionId": session_id,
+                    "conservativePromptTokens": conservative_preflight_tokens,
+                    "safeInputTokenLimit": safe_input_token_limit,
+                    "compactSummaryInjected": compact_summary_injected,
+                    "selectedMessageCount": final_messages.len(),
+                })),
+            );
+        }
+    }
 
     // 4. Generate response message ID and store in session for matching
     let response_message_id = cuid2::create_id();
@@ -609,8 +697,6 @@ pub async fn request_llm_completion(
         if let Some(session) = active.get(&session_id) {
             let mut expected_id = session.expected_response_id.write().await;
             *expected_id = Some(response_message_id.clone());
-            let mut last_completion_request = session.last_completion_request.write().await;
-            *last_completion_request = compaction_parent_request.clone();
         }
     }
 

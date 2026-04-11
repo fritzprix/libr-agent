@@ -109,6 +109,15 @@ fn test_find_preflight_compaction_split_index_preserves_latest_user_turn() {
 }
 
 #[test]
+fn test_find_preflight_compaction_split_index_preserves_latest_non_tool_turn() {
+    let earlier = make_message("m0", "user", "Earlier user context");
+    let latest_assistant = make_message("m1", "assistant", "Latest non-tool turn");
+
+    let idx = find_preflight_compaction_split_index(&[earlier, latest_assistant]);
+    assert_eq!(idx, 1);
+}
+
+#[test]
 fn test_find_preflight_compaction_split_index_allows_compacting_latest_tool_result() {
     let intro = make_message("m0", "user", "Need analysis");
 
@@ -677,10 +686,7 @@ fn test_grounded_total_tokens_with_grounding() {
 }
 
 #[test]
-fn test_grounded_total_tokens_ignores_grounding_after_compaction() {
-    // After compaction, Step A rebuilds as [compact-summary, ...tail].
-    // compact-summary appears BEFORE the grounded assistant message,
-    // so calculate_grounded_total_tokens must fall back to full BPE.
+fn test_grounded_total_tokens_keeps_summary_aware_anchor_after_compaction() {
     let mut summary = make_message_simple("system", "Summary...");
     summary.id = "compact-summary-123".to_string();
 
@@ -689,17 +695,137 @@ fn test_grounded_total_tokens_ignores_grounding_after_compaction() {
 
     let tail = make_message_simple("user", "Hello");
 
-    // compact-summary (idx 0) is BEFORE grounded assistant (idx 1) → BPE fallback
     let messages = vec![summary.clone(), grounded.clone(), tail.clone()];
 
     let tokens = calculate_grounded_total_tokens(&messages, 10, 5);
-    let expected = estimate_tokens_bpe(&summary)
-        + estimate_tokens_bpe(&grounded)
-        + estimate_tokens_bpe(&tail)
-        + 10
-        + 5;
+    let expected = 100 + estimate_tokens_bpe(&tail);
 
     assert_eq!(tokens, expected);
+}
+
+#[test]
+fn test_prompt_anchor_calibration_keeps_summary_aware_anchor_after_compaction() {
+    let mut summary = make_message_simple("user", "Compacted summary");
+    summary.id = "compact-summary-123".to_string();
+
+    let intro = make_message_simple("user", "Existing tail before grounded response");
+    let mut grounded = make_message_simple("assistant", "Grounded assistant output");
+    grounded.usage = Some(json!({ "promptTokens": 200 }));
+
+    let messages = vec![summary.clone(), intro.clone(), grounded];
+
+    let bpe_input = estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&intro) + 10 + 5;
+    let expected_ratio = 200.0 / bpe_input as f64;
+
+    let ratio = derive_bpe_calibration_ratio(&messages, 10, 5);
+    assert!((ratio - expected_ratio).abs() < 1e-9);
+}
+
+#[test]
+fn test_prompt_anchored_total_tokens_keeps_summary_aware_anchor_after_compaction() {
+    let mut summary = make_message_simple("user", "Compacted summary");
+    summary.id = "compact-summary-123".to_string();
+
+    let intro = make_message_simple("user", "Existing tail before grounded response");
+    let mut grounded = make_message_simple("assistant", "Grounded assistant output");
+    grounded.usage = Some(json!({ "promptTokens": 200 }));
+    let tail = make_message_simple("user", "Fresh delta after anchor");
+
+    let messages = vec![
+        summary.clone(),
+        intro.clone(),
+        grounded.clone(),
+        tail.clone(),
+    ];
+
+    let bpe_input = estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&intro) + 10 + 5;
+    let ratio = 200.0 / bpe_input as f64;
+    let bpe_output = estimate_tokens_bpe(&grounded) + estimate_tokens_bpe(&tail);
+    let expected = 200 + (bpe_output as f64 * ratio).ceil() as usize;
+
+    let tokens = calculate_prompt_anchored_total_tokens(&messages, 10, 5);
+    assert_eq!(tokens, expected);
+}
+
+#[test]
+fn test_conservative_preflight_prompt_tokens_biases_anchor_delta_upward() {
+    let summary = make_message("compact-summary-1", "user", "Compacted summary");
+    let intro = make_message("intro", "user", "Stable tail before anchor");
+    let mut grounded = make_message("assistant-anchor", "assistant", "Grounded output");
+    grounded.usage = Some(json!({ "promptTokens": 240 }));
+    let tail = make_message("tail", "user", "Fresh delta after anchor");
+
+    let messages = vec![
+        summary.clone(),
+        intro.clone(),
+        grounded.clone(),
+        tail.clone(),
+    ];
+    let bpe_input = estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&intro) + 10 + 5;
+    let ratio = 240.0 / bpe_input as f64;
+    let delta_bpe = estimate_tokens_bpe(&grounded) + estimate_tokens_bpe(&tail);
+    let anchored_total = 240 + (delta_bpe as f64 * ratio).ceil() as usize;
+    let expected = 240 + (delta_bpe as f64 * ratio * 1.05).ceil() as usize;
+
+    let conservative = calculate_conservative_preflight_prompt_tokens(&messages, 10, 5);
+    assert_eq!(conservative, expected);
+    assert!(conservative >= anchored_total);
+}
+
+#[test]
+fn test_conservative_preflight_prompt_tokens_fallback_biases_full_estimate_upward() {
+    let messages = vec![
+        make_message("m1", "user", "Hello"),
+        make_message("m2", "assistant", "No grounded usage yet"),
+    ];
+    let base = messages.iter().map(estimate_tokens_bpe).sum::<usize>() + 10 + 5;
+    let conservative = calculate_conservative_preflight_prompt_tokens(&messages, 10, 5);
+
+    assert_eq!(conservative, (base as f64 * 1.05).ceil() as usize);
+}
+
+#[test]
+fn test_conservative_preflight_prompt_tokens_uses_latest_prompt_anchor() {
+    let earlier_user = make_message("u1", "user", "Earlier context");
+    let older_anchor_clone_for_bpe;
+    let mut older_anchor = make_message("a1", "assistant", "Older grounded output");
+    older_anchor.usage = Some(json!({ "promptTokens": 120 }));
+    older_anchor_clone_for_bpe = older_anchor.clone();
+
+    let newer_user = make_message("u2", "user", "Newer context that should define the anchor");
+    let mut latest_anchor = make_message("a2", "assistant", "Latest grounded output");
+    latest_anchor.usage = Some(json!({ "promptTokens": 260 }));
+
+    let tail = make_message("u3", "user", "Tail delta after latest anchor");
+    let messages = vec![
+        earlier_user.clone(),
+        older_anchor,
+        newer_user.clone(),
+        latest_anchor.clone(),
+        tail.clone(),
+    ];
+
+    let bpe_input = estimate_tokens_bpe(&earlier_user)
+        + estimate_tokens_bpe(&older_anchor_clone_for_bpe)
+        + estimate_tokens_bpe(&newer_user)
+        + 10
+        + 5;
+    let ratio = 260.0 / bpe_input as f64;
+    let delta_bpe = estimate_tokens_bpe(&latest_anchor) + estimate_tokens_bpe(&tail);
+    let expected = 260 + (delta_bpe as f64 * ratio * 1.05).ceil() as usize;
+    let stale_anchor_ratio = 120.0 / (estimate_tokens_bpe(&earlier_user) + 10 + 5) as f64;
+    let stale_anchor_estimate = 120
+        + ((estimate_tokens_bpe(&older_anchor_clone_for_bpe)
+            + estimate_tokens_bpe(&newer_user)
+            + estimate_tokens_bpe(&latest_anchor)
+            + estimate_tokens_bpe(&tail)) as f64
+            * stale_anchor_ratio
+            * 1.05)
+            .ceil() as usize;
+
+    let actual = calculate_conservative_preflight_prompt_tokens(&messages, 10, 5);
+    assert_eq!(actual, expected);
+    assert_ne!(actual, stale_anchor_estimate);
 }
 
 #[test]

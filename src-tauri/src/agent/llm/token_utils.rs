@@ -39,6 +39,8 @@ pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
     five_percent.clamp(1024, 8192)
 }
 
+const CONSERVATIVE_DELTA_SAFETY_MULTIPLIER: f64 = 1.05;
+
 fn usage_metric_as_usize(usage: &serde_json::Value, key: &str) -> Option<usize> {
     usage
         .as_object()?
@@ -50,6 +52,45 @@ fn usage_metric_as_usize(usage: &serde_json::Value, key: &str) -> Option<usize> 
                 .get(key)
                 .and_then(|value| value.as_f64().map(|n| n as usize))
         })
+}
+
+fn find_latest_assistant_usage_anchor(messages: &[Message], key: &str) -> Option<(usize, usize)> {
+    for (index, message) in messages.iter().enumerate().rev() {
+        if message.role != "assistant" {
+            continue;
+        }
+
+        if let Some(usage) = message.usage.as_ref() {
+            if let Some(value) = usage_metric_as_usize(usage, key) {
+                if value > 0 {
+                    return Some((index, value));
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn get_prompt_anchor_ratio(
+    messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> Option<(usize, usize, f64)> {
+    let (anchor_index, prompt_tokens) =
+        find_latest_assistant_usage_anchor(messages, "promptTokens")?;
+    let bpe_input: usize = messages[..anchor_index]
+        .iter()
+        .map(estimate_tokens_bpe)
+        .sum::<usize>()
+        + system_prompt_tokens
+        + tools_tokens;
+    let ratio = if bpe_input > 0 {
+        prompt_tokens as f64 / bpe_input as f64
+    } else {
+        1.0
+    };
+    Some((anchor_index, prompt_tokens, ratio))
 }
 
 /// Estimates the token count for a given message using BPE or character fallback.
@@ -111,50 +152,20 @@ pub fn calculate_grounded_total_tokens(
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> usize {
-    let mut grounded_index = None;
-    let mut base_tokens = 0;
-
-    // Search backwards for the most recent message with valid API usage
-    for (i, msg) in messages.iter().enumerate().rev() {
-        if msg.role == "assistant" {
-            if let Some(usage) = &msg.usage {
-                if let Some(total) = usage.get("totalTokens").and_then(|v| v.as_f64()) {
-                    let total_usize = total as usize;
-                    if total_usize > 0 {
-                        grounded_index = Some(i);
-                        base_tokens = total_usize;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(idx) = grounded_index {
-        // Check if a compact summary appears BEFORE the grounded assistant.
-        // After compaction, Step A rebuilds messages as [compact-summary, ...tail].
-        // The compact-summary is always at index 0, so it will be at a position
-        // before any assistant message — checking after the grounded point would
-        // never find it and would cause the stale pre-compact usage value to be
-        // used as the base, keeping the token estimate artificially high and
-        // triggering repeated compaction.
-        let has_summary_before_grounded = messages[..idx]
+    if let Some((anchor_index, base_tokens)) =
+        find_latest_assistant_usage_anchor(messages, "totalTokens")
+    {
+        let incremental_tokens: usize = messages[anchor_index + 1..]
             .iter()
-            .any(|m| m.id.starts_with("compact-summary-"));
-
-        if !has_summary_before_grounded {
-            let mut incremental_tokens = 0;
-            for msg in &messages[idx + 1..] {
-                incremental_tokens += estimate_tokens_bpe(msg);
-            }
-            log::debug!(
-                "Using grounded token estimation. base={}, inc={}, final={}",
-                base_tokens,
-                incremental_tokens,
-                base_tokens + incremental_tokens
-            );
-            return base_tokens + incremental_tokens;
-        }
+            .map(estimate_tokens_bpe)
+            .sum();
+        log::debug!(
+            "Using grounded token estimation. base={}, inc={}, final={}",
+            base_tokens,
+            incremental_tokens,
+            base_tokens + incremental_tokens
+        );
+        return base_tokens + incremental_tokens;
     }
 
     // Fallback: Full BPE estimation
@@ -193,30 +204,10 @@ pub fn derive_bpe_calibration_ratio(
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> f64 {
-    for (i, msg) in messages.iter().enumerate().rev() {
-        if msg.role == "assistant" {
-            if let Some(usage) = &msg.usage {
-                if let Some(pt) = usage.get("promptTokens").and_then(|v| v.as_f64()) {
-                    let prompt_tokens = pt as usize;
-                    if prompt_tokens > 0 {
-                        let has_summary_before = messages[..i]
-                            .iter()
-                            .any(|m| m.id.starts_with("compact-summary-"));
-                        if !has_summary_before {
-                            // BPE of messages[0..i] = all content fed as INPUT to this turn
-                            // (excludes the anchor's own assistant output)
-                            let bpe_input: usize =
-                                messages[..i].iter().map(estimate_tokens_bpe).sum::<usize>()
-                                    + system_prompt_tokens
-                                    + tools_tokens;
-                            if bpe_input > 0 {
-                                return prompt_tokens as f64 / bpe_input as f64;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if let Some((_anchor_index, _prompt_tokens, ratio)) =
+        get_prompt_anchor_ratio(messages, system_prompt_tokens, tools_tokens)
+    {
+        return ratio;
     }
     1.0
 }
@@ -247,45 +238,25 @@ pub fn calculate_prompt_anchored_total_tokens(
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> usize {
-    for (i, msg) in messages.iter().enumerate().rev() {
-        if msg.role == "assistant" {
-            if let Some(usage) = &msg.usage {
-                if let Some(pt) = usage.get("promptTokens").and_then(|v| v.as_f64()) {
-                    let prompt_tokens = pt as usize;
-                    if prompt_tokens > 0 {
-                        let has_summary_before = messages[..i]
-                            .iter()
-                            .any(|m| m.id.starts_with("compact-summary-"));
-                        if !has_summary_before {
-                            let bpe_input: usize =
-                                messages[..i].iter().map(estimate_tokens_bpe).sum::<usize>()
-                                    + system_prompt_tokens
-                                    + tools_tokens;
-                            let ratio = if bpe_input > 0 {
-                                prompt_tokens as f64 / bpe_input as f64
-                            } else {
-                                1.0
-                            };
-                            // BPE of anchor's own output + all subsequent messages —
-                            // everything added after the model processed its input.
-                            let bpe_output: usize =
-                                messages[i..].iter().map(estimate_tokens_bpe).sum();
-                            let calibrated_output = (bpe_output as f64 * ratio).ceil() as usize;
-                            log::debug!(
-                                "prompt-anchored estimate: prompt_tokens={}, bpe_input={}, ratio={:.4}, bpe_output={}, calibrated_output={}, total={}",
-                                prompt_tokens,
-                                bpe_input,
-                                ratio,
-                                bpe_output,
-                                calibrated_output,
-                                prompt_tokens + calibrated_output
-                            );
-                            return prompt_tokens + calibrated_output;
-                        }
-                    }
-                }
-            }
-        }
+    if let Some((anchor_index, prompt_tokens, ratio)) =
+        get_prompt_anchor_ratio(messages, system_prompt_tokens, tools_tokens)
+    {
+        // BPE of anchor's own output + all subsequent messages — everything added
+        // after the model processed the anchor turn's input.
+        let bpe_output: usize = messages[anchor_index..]
+            .iter()
+            .map(estimate_tokens_bpe)
+            .sum();
+        let calibrated_output = (bpe_output as f64 * ratio).ceil() as usize;
+        log::debug!(
+            "prompt-anchored estimate: prompt_tokens={}, ratio={:.4}, bpe_output={}, calibrated_output={}, total={}",
+            prompt_tokens,
+            ratio,
+            bpe_output,
+            calibrated_output,
+            prompt_tokens + calibrated_output
+        );
+        return prompt_tokens + calibrated_output;
     }
 
     // Fallback: full BPE — no API anchor available yet (e.g. first turn).
@@ -299,6 +270,51 @@ pub fn calculate_prompt_anchored_total_tokens(
         full_estimate
     );
     full_estimate
+}
+
+/// Estimates the next request input size conservatively enough for a Rust-owned
+/// pre-send hard gate.
+///
+/// When a grounded `promptTokens` anchor exists, that anchor already includes the
+/// stable prompt prefix (compact summary, system prompt, session context, tool
+/// schema, and selected history up to that turn). The only part we need to
+/// estimate conservatively is the delta added after the anchor.
+pub fn calculate_conservative_preflight_prompt_tokens(
+    messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> usize {
+    if let Some((anchor_index, prompt_tokens, ratio)) =
+        get_prompt_anchor_ratio(messages, system_prompt_tokens, tools_tokens)
+    {
+        let delta_bpe: usize = messages[anchor_index..]
+            .iter()
+            .map(estimate_tokens_bpe)
+            .sum();
+        let conservative_delta =
+            ((delta_bpe as f64 * ratio) * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
+        log::debug!(
+            "conservative preflight estimate: prompt_tokens={}, ratio={:.4}, delta_bpe={}, conservative_delta={}, total={}",
+            prompt_tokens,
+            ratio,
+            delta_bpe,
+            conservative_delta,
+            prompt_tokens + conservative_delta
+        );
+        return prompt_tokens + conservative_delta;
+    }
+
+    let full_estimate = messages.iter().map(estimate_tokens_bpe).sum::<usize>()
+        + system_prompt_tokens
+        + tools_tokens;
+    let conservative_total =
+        (full_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
+    log::debug!(
+        "conservative preflight fallback (no promptTokens anchor): base={}, total={}",
+        full_estimate,
+        conservative_total
+    );
+    conservative_total
 }
 
 /// Computes the post-response compaction trigger total from the provider-reported

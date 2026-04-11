@@ -12,14 +12,9 @@ import {
   parseStreamChunk,
 } from '@/lib/ai-service/stream-events';
 import { getLogger } from '@/lib/logger';
-import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
-import {
-  calculateContextSafetyMargin,
-  estimatePayloadTokens,
-  prepareMessagesForLLM,
-} from '@/lib/message-preprocessor';
+import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
 import { isAbortError } from './types';
 import type { Message, MessageError, ToolCall } from '@/models/chat';
@@ -177,28 +172,6 @@ export function useExecuteCompletion({
           temperature: temperature,
         };
 
-        // Get model metadata
-        let modelInfo: ModelInfo | null =
-          (await service.listModels()).find((m) => m.name === model) || null;
-        if (!modelInfo) {
-          modelInfo =
-            llmConfigManager.getModel(provider, model) ??
-            ({
-              contextWindow: 64 * 1024,
-              supportReasoning: false,
-              supportTools: false,
-              cost: { input: 0, output: 0 },
-              name: model,
-            } as ModelInfo);
-        }
-
-        logger.info('Model Info for Token Limit Calculation', {
-          sessionId,
-          provider,
-          model,
-          modelInfo,
-        });
-
         // ── Prepare context messages based on selected strategy ─────────────
         let enrichedMessages: Message[];
 
@@ -253,38 +226,6 @@ export function useExecuteCompletion({
           sessionContext,
           enrichedMessages,
         );
-
-        if (settingsRef.current.contextStrategy !== 'window') {
-          const effectiveLimit = Math.min(
-            modelInfo.contextWindow,
-            settingsRef.current.maxInputContext,
-          );
-          const safeLimit =
-            effectiveLimit - calculateContextSafetyMargin(effectiveLimit);
-          const estimatedPayloadTokens = estimatePayloadTokens(
-            [effectiveSystemPrompt, effectiveSessionContext]
-              .filter((value): value is string => typeof value === 'string')
-              .join('\n\n') || undefined,
-            effectiveMessages,
-            availableTools,
-          );
-
-          if (estimatedPayloadTokens > safeLimit) {
-            throw createExecutionError(
-              'CONTEXT_LIMIT_ERROR',
-              `Prepared payload exceeds the effective context limit (${estimatedPayloadTokens} > ${safeLimit} tokens after safety margin).`,
-              'prepared_payload_over_context_limit',
-              {
-                sessionId,
-                estimatedPayloadTokens,
-                effectiveLimit,
-                safeLimit,
-                modelContextWindow: modelInfo.contextWindow,
-                configuredMaxInputContext: settingsRef.current.maxInputContext,
-              },
-            );
-          }
-        }
 
         const streamGenerator = service.streamChat(effectiveMessages, {
           modelName: model,

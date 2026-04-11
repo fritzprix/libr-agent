@@ -53,6 +53,7 @@ Frontend must not decide:
 - what message slice should be compacted
 - whether the next workflow step should be deferred
 - how compact-summary state is persisted or reinjected
+- whether a compact-mode request is safe to send
 
 ---
 
@@ -143,6 +144,19 @@ While compaction is active:
 
 Completion of compaction is the gate that releases the deferred step.
 
+### Rust-owned preflight gate
+
+For compact mode, Rust owns the final pre-send hard gate.
+
+1. Rust assembles the candidate request payload and computes the authoritative
+   conservative preflight estimate.
+2. If that estimate exceeds the send budget, Rust must not emit the completion
+   request yet.
+3. Rust should synchronously arm preflight compaction first, then retry with the
+   rebuilt post-compaction payload.
+4. Frontend may perform provider-specific prompt injection, but it is not the
+   authority for compact-mode send/no-send decisions.
+
 ---
 
 ## 7. Effective Context Limit
@@ -217,6 +231,21 @@ ratio = promptTokens(anchor) / BPE(messages_before_anchor + sys + tools)
 estimate = promptTokens(anchor) + BPE(messages[anchor_idx..]) * ratio
 ```
 
+### Summary-aware anchor rule
+
+`promptTokens(anchor)` already includes every stable input component that was sent
+at that turn:
+
+- compact-summary reinjection, if present
+- system prompt
+- session context
+- tool schema
+- the selected message tail up to the anchor turn
+
+Therefore, once a grounded anchor exists, the estimator should treat those
+stable inputs as already-accounted-for base state and primarily estimate only the
+delta added after the anchor.
+
 ### Why promptTokens is the anchor
 
 `promptTokens` is preferred over `totalTokens` because:
@@ -225,6 +254,20 @@ estimate = promptTokens(anchor) + BPE(messages[anchor_idx..]) * ratio
 2. it grows monotonically with request history
 3. it is less noisy than a total-based ratio that includes variable completion
    output
+
+### Contract
+
+1. The latest assistant turn with valid `usage.promptTokens > 0` is the preferred
+   request-time anchor.
+2. A compact-summary message **before** that grounded assistant does **not**
+   invalidate the anchor by itself.
+3. If the stable prompt layout is preserved, the estimator should reuse the
+   anchor's reported input tokens as the base and estimate primarily the
+   incremental delta after that anchor.
+4. Full-BPE estimation is an exception path for turns with no grounded anchor,
+   not the default strategy after compaction.
+5. Rust preflight should apply a conservative upward bias to the estimated
+   post-anchor delta before deciding whether the next request may be sent.
 
 ### Post-response trigger estimate
 
