@@ -250,14 +250,17 @@ export function ScheduledTasksPage() {
                 const groupEnabledCount = group.tasks.filter(
                   (task) => task.enabled,
                 ).length;
-                const nextGroupRun =
-                  group.tasks
-                    .filter((task) => task.enabled && task.nextRunAt !== null)
-                    .sort((left, right) => {
-                      if (left.nextRunAt === null) return 1;
-                      if (right.nextRunAt === null) return -1;
-                      return left.nextRunAt - right.nextRunAt;
-                    })[0]?.nextRunAt ?? null;
+                // ⚡ Bolt: O(N) single-pass minimum calculation prevents redundant intermediate
+                // array allocation from .filter() and expensive O(N log N) .sort() on every render
+                const nextGroupRun = group.tasks.reduce<number | null>(
+                  (min, task) => {
+                    if (!task.enabled || task.nextRunAt === null) return min;
+                    return min === null || task.nextRunAt < min
+                      ? task.nextRunAt
+                      : min;
+                  },
+                  null,
+                );
 
                 return (
                   <Card key={group.key} className="gap-4 py-4">

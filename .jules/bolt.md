@@ -87,3 +87,7 @@
 
 **Learning:** Reusable formatter caches are often re-implemented in multiple component files instead of a centralized utility file, fragmenting the cache and increasing overall memory footprint.
 **Action:** When centralizing `Intl` formats in a `utils` file, ensure you support `locale` variations by storing instances in a `Map` within the central utility function, so that various localized formats can be safely cached and reused without recreating localized formatters locally in components.
+## 2024-05-27 - Redundant Sorting for Min/Max Extraction
+
+**Learning:** `ScheduledTasksPage` was calling `.filter().sort()` inside a loop during every render specifically to extract the minimum `nextRunAt` timestamp. This forced an unnecessary O(N log N) computation and allocated intermediate arrays just to find a single minimum value.
+**Action:** When extracting a minimum or maximum value from a list in a React render loop, use a single-pass `Array.prototype.reduce()` to explicitly calculate the value in O(N). Avoid using `.find()` unless upstream sorting is strictly guaranteed and explicitly intended for this purpose, and never redundantly sort with `.filter().sort()[0]`.
