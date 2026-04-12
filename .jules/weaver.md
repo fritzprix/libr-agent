@@ -139,3 +139,6 @@
 - **AgentPlanningUpdates:** Extracted the complex Tauri event listener ('agent:event') and debouncing logic from a monolithic `useEffect` into the `useAgentMessageTrigger` custom hook.
 - Added strict filtering via `messageFilter` to trigger context updates only for successful tool-result messages by checking `message.role === 'tool'`, `message.tool_call_id`, `!message.error`, and `message.metadata?.toolError !== true`.
 - **Benefits:** Decoupled event subscription from component rendering logic, standardized event handling across the chat interface, and avoided refreshes from failed tool executions.
+## 2026-04-12 - [SessionHistoryPanel]
+**Learning:** When a user-overridable state needs to respond to prop changes (like default expansions based on filters), using the 'Adjusting State During Render' pattern correctly synchronizes state without breaking functional purity, while pure derived computation (like useMemo) handles strict dependency state (like selected IDs).
+**Action:** Always prefer 'Adjusting State During Render' over 'useEffect' for one-way syncs to avoid extra render cycles and action-effect chains.
