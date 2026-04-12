@@ -359,6 +359,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
     session_name: &str,
     messages: &[Message],
     parent_request: Option<CompactionParentRequest>,
+    resume_completion_after_compact: bool,
 ) -> Result<bool, String> {
     if messages.len() <= 1 {
         return Ok(false);
@@ -390,7 +391,9 @@ pub(crate) async fn try_trigger_preflight_compaction(
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok();
     if !claimed_in_flight {
-        awaiting_compact_arc.store(true, Ordering::SeqCst);
+        if resume_completion_after_compact {
+            awaiting_compact_arc.store(true, Ordering::SeqCst);
+        }
         let state_event = crate::agent::llm::types::CompactStateEvent {
             session_id: session_id.to_string(),
             session_name: Some(session_name.to_string()),
@@ -401,10 +404,17 @@ pub(crate) async fn try_trigger_preflight_compaction(
         app_handle
             .emit("llm:compact-state", state_event)
             .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))?;
-        log::info!(
-            "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
-            session_id
-        );
+        if resume_completion_after_compact {
+            log::info!(
+                "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
+                session_id
+            );
+        } else {
+            log::info!(
+                "⏳ Reusing in-flight compaction without resume-after-compact: session={}, mode=manual",
+                session_id
+            );
+        }
         return Ok(true);
     }
 
@@ -432,7 +442,9 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(false);
     };
 
-    awaiting_compact_arc.store(true, Ordering::SeqCst);
+    if resume_completion_after_compact {
+        awaiting_compact_arc.store(true, Ordering::SeqCst);
+    }
     *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
@@ -451,7 +463,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         from_id,
         to_id,
         parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
-        resume_completion_after_compact: true,
+        resume_completion_after_compact,
     };
     let log_from_id = compact_event.from_id.clone();
     let log_to_id = compact_event.to_id.clone();
@@ -470,17 +482,31 @@ pub(crate) async fn try_trigger_preflight_compaction(
         .emit("llm:compact-request", compact_event)
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))?;
 
-    log::info!(
-        "⏸️ Preflight compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
-        session_id,
-        log_from_id,
-        log_to_id,
-        split_idx,
-        compacted_delta_count,
-        reused_prior_summary,
-        current_tail_id.as_deref().unwrap_or("?"),
-        started_at_ms
-    );
+    if resume_completion_after_compact {
+        log::info!(
+            "⏸️ Preflight compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            session_id,
+            log_from_id,
+            log_to_id,
+            split_idx,
+            compacted_delta_count,
+            reused_prior_summary,
+            current_tail_id.as_deref().unwrap_or("?"),
+            started_at_ms
+        );
+    } else {
+        log::info!(
+            "🧰 Manual compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            session_id,
+            log_from_id,
+            log_to_id,
+            split_idx,
+            compacted_delta_count,
+            reused_prior_summary,
+            current_tail_id.as_deref().unwrap_or("?"),
+            started_at_ms
+        );
+    }
 
     Ok(true)
 }
@@ -522,6 +548,49 @@ pub async fn trigger_preflight_compaction_for_session(
         &session_name,
         &merged_messages,
         None,
+        true,
+    )
+    .await
+}
+
+pub async fn trigger_manual_compaction_for_session(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<bool, String> {
+    let (session_name, messages) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let session_name = session
+            .metadata
+            .name
+            .clone()
+            .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
+
+        let messages = session
+            .messages
+            .read()
+            .await
+            .iter()
+            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        (session_name, messages)
+    };
+
+    let merged_messages = super::request::merge_consecutive_user_messages(messages);
+    try_trigger_preflight_compaction(
+        active_sessions,
+        app_handle,
+        session_id,
+        &session_name,
+        &merged_messages,
+        None,
+        false,
     )
     .await
 }

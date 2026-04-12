@@ -179,7 +179,7 @@ impl BuiltinMCPServer for AgentServer {
             "- Use `agent__startSession(agentId=\"ID\", task=\"...\")` for normal delegation.\n",
             "- Use `agent__startSession(..., includeCurrentOrg=true)` when the child should inherit the current explicit org, appear in Org view, and share the org root workspace by default.\n",
             "- `agent__spawnOrgAgent(...)` remains available as a compatibility alias for `startSession(..., includeCurrentOrg=true)`.\n",
-            "- Use `agent__compactSessionContext(sessionId=\"...\")` to refresh the stored compact summary for another active delegated session before sending more work.\n",
+            "- Use `agent__compactSessionContext(sessionId=\"...\")` to refresh the stored compact summary for another delegated session before sending more work.\n",
             "- If an agent is paused or errors, use `agent__messageToSession` to resume/retry it.\n",
         )
         .to_string();

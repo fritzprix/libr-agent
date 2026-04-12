@@ -338,14 +338,14 @@ pub async fn compact_session_context(
     if caller_session_id == session_id {
         return Ok(self_target_session_action_result(
             "compactSessionContext",
-            "Self-compaction is not allowed via compactSessionContext.",
-            vec![
-                "Current-session compaction remains backend-managed to avoid recursive compaction loops"
+                "Self-compaction is not allowed via compactSessionContext.",
+                vec![
+                    "Current-session compaction remains backend-managed to avoid recursive compaction loops"
+                        .to_string(),
+                "Use this tool only when you want to refresh another delegated session's compact summary"
                     .to_string(),
-                "Use this tool only when you want to refresh another active delegated session's compact summary"
-                    .to_string(),
-            ],
-        ));
+                ],
+            ));
     }
 
     let target_session = match manager.get_session(&session_id).await? {
@@ -376,26 +376,23 @@ pub async fn compact_session_context(
     }
 
     let previous_record = manager.get_compact_context(&session_id).await?;
-    let triggered = match manager.trigger_manual_preflight_compaction(&session_id).await {
+    let is_active = {
+        let active_sessions = manager.active_sessions_arc();
+        let active = active_sessions.read().await;
+        active.contains_key(&session_id)
+    };
+
+    if !is_active {
+        log::info!(
+            "Auto-resuming inactive session before compactSessionContext: {}",
+            session_id
+        );
+        manager.resume_session(&session_id).await?;
+        manager.init_session_with_messages(&session_id).await?;
+    }
+
+    let triggered = match manager.trigger_manual_compaction(&session_id).await {
         Ok(triggered) => triggered,
-        Err(error) if error.contains("Session not found:") => {
-            return Ok(guided_error(
-                ErrorCategory::InvalidState,
-                format!(
-                    "Session {} exists but is not active. compactSessionContext currently works only for active sessions.",
-                    session_id
-                ),
-                ToolGroup::Agent,
-            )
-            .with_guidance(vec![
-                format!(
-                    "Resume or reopen session {} so its in-memory state is available before compacting",
-                    session_id
-                ),
-                "Use this tool for live delegated sessions, not cold history-only records".to_string(),
-            ])
-            .to_mcp_result())
-        }
         Err(error) => return Err(error),
     };
 

@@ -224,6 +224,23 @@ describe('BaseAIService.compact', () => {
 });
 
 describe('buildCompactionInstruction', () => {
+  it('enforces a fixed compact schema and compression rules', () => {
+    const instruction = buildCompactionInstruction([]);
+
+    expect(instruction).toContain('Use EXACTLY these sections in this order');
+    expect(instruction).toContain('1. Stable Context');
+    expect(instruction).toContain('2. Key Decisions & Constraints');
+    expect(instruction).toContain('3. Current State');
+    expect(instruction).toContain('4. Recent Tool Results');
+    expect(instruction).toContain('5. Next Actions');
+    expect(instruction).toContain('Compression rules:');
+    expect(instruction).toContain('Use terse bullet points, not prose paragraphs.');
+    expect(instruction).toContain('Minimize adjectives, adverbs, filler, and repetition.');
+    expect(instruction).toContain('Section limits:');
+    expect(instruction).toContain('Stable Context: at most 6 bullets');
+    expect(instruction).toContain('Recent Tool Results: at most 5 bullets');
+  });
+
   it('treats source-marked compact summaries as residual anchors', () => {
     const instruction = buildCompactionInstruction([
       {
@@ -240,5 +257,8 @@ describe('buildCompactionInstruction', () => {
       'The first message is a previously accumulated compact summary',
     );
     expect(instruction).toContain('CRITICAL RESIDUAL RULE');
+    expect(instruction).toContain(
+      'You may tighten wording, remove duplication, and relocate items into the required sections',
+    );
   });
 });
