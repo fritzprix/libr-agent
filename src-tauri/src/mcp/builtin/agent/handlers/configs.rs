@@ -137,9 +137,14 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
-    if total > 0 {
+    if !paged_agents.is_empty() {
         text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
         text_summary.push_str("|---|---|---|---|---|\n");
+    } else if total > 0 {
+        text_summary.push_str(&format!(
+            "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+            offset, limit
+        ));
     }
 
     for agent in paged_agents {
