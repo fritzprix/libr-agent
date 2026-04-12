@@ -115,7 +115,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                 </p>
               </div>
               {!isInstalled && (
-                <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 transition-opacity">
+                <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 group-focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
                     {preset.command} {preset.args?.[0]}
                   </code>
