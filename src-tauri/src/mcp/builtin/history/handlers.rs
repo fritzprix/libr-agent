@@ -663,15 +663,38 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
         lines.push("No sessions matched the filters.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("Sessions:".to_string());
+        lines.push("| Name | ID | Status | Messages | Updated At |".to_string());
+        lines.push("|---|---|---|---|---|".to_string());
         for session in &page.items {
+            let name = session
+                .name
+                .as_deref()
+                .unwrap_or("Unnamed session")
+                .replace('|', "\\|")
+                .replace('\n', " ");
+            let id = session.session_id.replace('|', "\\|");
+            let status = session.status.replace('|', "\\|");
+
             lines.push(format!(
-                "- {} (ID: {}) status={} messages={} updatedAt={}",
-                session.name.as_deref().unwrap_or("Unnamed session"),
-                session.session_id,
-                session.status,
-                session.message_count,
-                session.updated_at
+                "| `{}` | `{}` | {} | {} | {} |",
+                name, id, status, session.message_count, session.updated_at
+            ));
+        }
+
+        if page.page < page.total_pages {
+            lines.push(String::new());
+            lines.push(format!(
+                "*(Showing page {} of {}. Call this tool again with page: {} to see more)*",
+                page.page,
+                page.total_pages,
+                page.page + 1
+            ));
+        } else if page.total_pages > 1 {
+            lines.push(String::new());
+            lines.push(format!(
+                "*(Showing page {} of {}. End of results)*",
+                page.page,
+                page.total_pages
             ));
         }
     }
@@ -709,15 +732,36 @@ fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
         lines.push("This session has no messages on the requested page.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("Messages:".to_string());
+        lines.push("| Message ID | Role | Created At | Chars | Preview |".to_string());
+        lines.push("|---|---|---|---|---|".to_string());
         for message in &response.messages.items {
+            let msg_id = message.message_id.replace('|', "\\|");
+            let role = message.role.replace('|', "\\|");
+            let preview = message
+                .content_preview
+                .replace('\n', " ")
+                .replace('|', "\\|");
+
             lines.push(format!(
-                "- {} [{}] createdAt={} chars={}\n  Preview: {}",
-                message.message_id,
-                message.role,
-                message.created_at,
-                message.content_length,
-                message.content_preview.replace('\n', " ")
+                "| `{}` | {} | {} | {} | {} |",
+                msg_id, role, message.created_at, message.content_length, preview
+            ));
+        }
+
+        if response.messages.page < response.messages.total_pages {
+            lines.push(String::new());
+            lines.push(format!(
+                "*(Showing page {} of {}. Call this tool again with page: {} to see more)*",
+                response.messages.page,
+                response.messages.total_pages,
+                response.messages.page + 1
+            ));
+        } else if response.messages.total_pages > 1 {
+            lines.push(String::new());
+            lines.push(format!(
+                "*(Showing page {} of {}. End of results)*",
+                response.messages.page,
+                response.messages.total_pages
             ));
         }
     }
@@ -761,22 +805,45 @@ fn render_search_text(page: &Page<HistorySearchMatch>, caller_session_id: &str) 
         lines.push("No matches found for the requested filters.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("Matches:".to_string());
+        lines.push("| Session | Locality | Message | Role | Score | Chars | Snippet |".to_string());
+        lines.push("|---|---|---|---|---|---|---|".to_string());
         for item in &page.items {
             let locality = if item.session_id == caller_session_id {
                 "current-session"
             } else {
                 "other-session"
             };
+            let session_id = item.session_id.replace('|', "\\|");
+            let message_id = item.message_id.replace('|', "\\|");
+            let role = item.role.replace('|', "\\|");
+            let snippet = item.snippet.replace('\n', " ").replace('|', "\\|");
+
             lines.push(format!(
-                "- session={} ({}) message={} [{}] score={:.3} chars={}\n  Snippet: {}",
-                item.session_id,
+                "| `{}` | {} | `{}` | {} | {:.3} | {} | {} |",
+                session_id,
                 locality,
-                item.message_id,
-                item.role,
+                message_id,
+                role,
                 item.score,
                 item.content_length,
-                item.snippet.replace('\n', " ")
+                snippet
+            ));
+        }
+
+        if page.page < page.total_pages {
+            lines.push(String::new());
+            lines.push(format!(
+                "*(Showing page {} of {}. Call this tool again with page: {} to see more)*",
+                page.page,
+                page.total_pages,
+                page.page + 1
+            ));
+        } else if page.total_pages > 1 {
+            lines.push(String::new());
+            lines.push(format!(
+                "*(Showing page {} of {}. End of results)*",
+                page.page,
+                page.total_pages
             ));
         }
     }
