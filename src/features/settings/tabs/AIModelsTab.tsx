@@ -329,7 +329,13 @@ function AIModelsTabComponent({
 }
 
 export default React.memo(AIModelsTabComponent, (prev, next) => {
+  // Regression guard:
+  // Provider cards are controlled by serviceConfigs. If this comparator skips
+  // serviceConfigs changes, provider URL/key inputs become effectively read-only
+  // because the child cards never receive the updated value prop.
   return (
+    prev.serviceConfigs === next.serviceConfigs &&
+    prev.providerEntries === next.providerEntries &&
     prev.localPreferredModel.provider === next.localPreferredModel.provider &&
     prev.localPreferredModel.model === next.localPreferredModel.model &&
     prev.localFallbackModel?.provider === next.localFallbackModel?.provider &&

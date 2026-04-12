@@ -14,6 +14,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         spawn_org_session_tool(),
         message_to_session_tool(),
         check_session_tool(),
+        compact_session_context_tool(),
         stop_session_tool(),
     ]
 }
@@ -279,6 +280,35 @@ fn stop_session_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to stop.")),
+            ],
+            vec!["sessionId".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn compact_session_context_tool() -> MCPTool {
+    MCPTool {
+        name: "compactSessionContext".to_string(),
+        title: Some("Compact Another Session Context".to_string()),
+        description: "Force a compaction pass for another active delegated session and wait for the compact summary result. Cross-session only: you cannot compact the current session with this tool. Use it when a child session has accumulated too much history and you want to refresh its stored compact summary before sending more work.".to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "sessionId".to_string(),
+                    string_prop_required("ID of the target delegated session to compact. Must not be the current session."),
+                ),
+                (
+                    "timeout".to_string(),
+                    integer_prop_with_default(
+                        Some(5),
+                        Some(300),
+                        60,
+                        Some("Maximum seconds to wait for the compaction to finish and return the new compact summary."),
+                    ),
+                ),
             ],
             vec!["sessionId".to_string()],
             None,

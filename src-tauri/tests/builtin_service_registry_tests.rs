@@ -560,6 +560,24 @@ fn agent_create_tool_name_is_unprefixed() {
 }
 
 #[test]
+fn compact_session_context_tool_schema_is_exposed() {
+    let compact_tool = agent_tools::all_tools()
+        .into_iter()
+        .find(|tool| tool.name == "compactSessionContext")
+        .expect("compactSessionContext tool must exist");
+    let props = extract_object_properties(&compact_tool.input_schema, "compactSessionContext");
+
+    assert!(
+        props.contains_key("sessionId"),
+        "compactSessionContext input_schema must include 'sessionId'"
+    );
+    assert!(
+        props.contains_key("timeout"),
+        "compactSessionContext input_schema must include 'timeout'"
+    );
+}
+
+#[test]
 fn tool_transport_schema_allows_env_and_header_maps() {
     let register_tool = tool_tools::register_server_tool();
     let props = extract_object_properties(&register_tool.input_schema, "register");

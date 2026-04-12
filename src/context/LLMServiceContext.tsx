@@ -13,6 +13,7 @@ import { useSettings } from './SettingsContext';
 import { useLLMExecution } from './llm/useLLMExecution';
 import { useLLMListener } from './llm/useLLMListener';
 import type { LLMServiceContextValue, SessionStatus } from './llm/types';
+import { getAgentCompactContext } from '@/lib/backend/agent-commands';
 
 // Re-export types for consumers
 export type {
@@ -156,6 +157,27 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     setAwaitingCompactForSession: setAwaitingCompact,
   });
 
+  const refreshCompactedRange = useCallback(
+    async (sessionId: string) => {
+      try {
+        const compactContext = await getAgentCompactContext(sessionId);
+        if (!compactContext) {
+          setCompactedRange(sessionId, undefined);
+          return;
+        }
+
+        setCompactedRange(sessionId, {
+          fromId: compactContext.fromId,
+          toId: compactContext.toId,
+          summary: compactContext.summary,
+        });
+      } catch (error) {
+        logger.warn('Failed to refresh compacted range', { sessionId, error });
+      }
+    },
+    [setCompactedRange],
+  );
+
   const value: LLMServiceContextValue = {
     streamingMessages,
     getSessionStatus,
@@ -166,6 +188,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     isAwaitingCompact,
     getCompactionPressure,
     getCompactedRange,
+    refreshCompactedRange,
     clearSessionState,
     clearAllCompactState,
   };

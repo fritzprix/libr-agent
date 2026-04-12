@@ -159,7 +159,7 @@ pub struct CompactRequest {
     ///   [raw compactable prefix]
     ///
     /// Subsequent compactions:
-    ///   [synthetic previous compact-summary message] + [raw message delta since last compaction]
+    ///   [synthetic previous compact-summary anchor] + [raw message delta since last compaction]
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,

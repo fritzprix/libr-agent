@@ -137,6 +137,28 @@ describe('AIServiceFactory', () => {
       expect(OpenAIService).toHaveBeenCalledTimes(2);
     });
 
+    it('should create a new instance if baseUrl is different', () => {
+      const service1 = AIServiceFactory.getService(
+        AIServiceProvider.Ollama,
+        '',
+        { baseUrl: 'http://old-host:11434' },
+      );
+      const service2 = AIServiceFactory.getService(
+        AIServiceProvider.Ollama,
+        '',
+        { baseUrl: 'http://new-host:11434' },
+      );
+
+      expect(service1).not.toBe(service2);
+      expect(OllamaService).toHaveBeenCalledTimes(2);
+      expect(OllamaService).toHaveBeenNthCalledWith(1, 'ollama-local', {
+        baseUrl: 'http://old-host:11434',
+      });
+      expect(OllamaService).toHaveBeenNthCalledWith(2, 'ollama-local', {
+        baseUrl: 'http://new-host:11434',
+      });
+    });
+
     it('should expire cached instance after INSTANCE_TTL', () => {
       const service1 = AIServiceFactory.getService(AIServiceProvider.OpenAI, 'test-key');
 

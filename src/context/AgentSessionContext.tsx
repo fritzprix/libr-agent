@@ -8,6 +8,7 @@ import { useAgentSessionListActions } from './AgentSessionListContext';
 import { useAgentSessionState as useAgentSessionStateLogic } from './agent-session/useAgentSessionState';
 import { useAgentSessionEvents } from './agent-session/useAgentSessionEvents';
 import { useAgentSessionActionsLogic } from './agent-session/useAgentSessionActions';
+import { useLLMService } from './LLMServiceContext';
 import type {
   AgentSessionStateContextValue,
   AgentSessionActionsContextValue,
@@ -36,7 +37,12 @@ export function AgentSessionProvider({
 }: AgentSessionProviderProps) {
   const { markSessionViewed, clearPendingApproval } =
     useAgentSessionListActions();
+  const { refreshCompactedRange } = useLLMService();
   const stateProps = useAgentSessionStateLogic();
+
+  React.useEffect(() => {
+    void refreshCompactedRange(sessionId);
+  }, [refreshCompactedRange, sessionId]);
 
   const persistViewedAt = useCallback(
     async (viewedAt = new Date()) => {
@@ -63,12 +69,6 @@ export function AgentSessionProvider({
         });
 
         const msgs: Message[] = page.items.map(rustMessageToMessage);
-
-        logger.info(`Loaded ${msgs.length} messages for session ${sid}`, {
-          messageCount: msgs.length,
-          firstMessage: msgs[0]?.id,
-          lastMessage: msgs[msgs.length - 1]?.id,
-        });
 
         stateProps.setters.setMessages(msgs);
       } catch (err) {

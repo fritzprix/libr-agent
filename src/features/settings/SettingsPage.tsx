@@ -2,6 +2,7 @@ import equal from 'fast-deep-equal';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BrainCircuit, Loader2 } from 'lucide-react';
+import { mutate } from 'swr';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +39,13 @@ import AdvancedTab from './tabs/AdvancedTab';
 import DevTab from './tabs/DevTab';
 
 const logger = getLogger('SettingsPage');
+
+const invalidateModelCaches = async () => {
+  await Promise.all([
+    mutate((key) => Array.isArray(key) && key[0] === 'local-models'),
+    mutate((key) => Array.isArray(key) && key[0] === 'models'),
+  ]);
+};
 
 type SettingsTabValue =
   | 'general'
@@ -335,6 +343,10 @@ export default function SettingsPage() {
       }
 
       await save();
+      // Provider model lists depend on saved base URL / API key settings.
+      // Revalidate those caches after save so pickers switch to the new endpoint
+      // instead of waiting for a later manual refresh or SWR dedupe expiry.
+      await invalidateModelCaches();
 
       if (networkSettingsChanged) {
         toast.info(
