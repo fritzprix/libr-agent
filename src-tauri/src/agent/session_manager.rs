@@ -775,10 +775,7 @@ impl AgentSessionManager {
     }
 
     /// Trigger a non-resuming manual compaction pass for an already-active session.
-    pub async fn trigger_manual_compaction(
-        &self,
-        session_id: &str,
-    ) -> Result<bool, String> {
+    pub async fn trigger_manual_compaction(&self, session_id: &str) -> Result<bool, String> {
         crate::agent::llm::trigger_manual_compaction_for_session(
             &self.active_sessions,
             &self.app_handle,
