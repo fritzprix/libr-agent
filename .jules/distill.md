@@ -1,9 +1,3 @@
-## 2026-04-08 - Pagination Strategy
-
-**Learning:** Returning an unpaginated raw JSON array dumps excessive tokens into the LLM context, but completely dropping records confuses the agent if they are needed later.
-**Action:** When implementing pagination, always return `offset` and `total_matches` alongside `paginated_results`. Always convert the paginated JSON results into a dense Markdown table (like `| Type | Path | Size |`) injected into the text output rather than just returning raw JSON. Add explicit truncation notes (e.g. `*(Showing 1 to 50 of 120 total matches. Call search with offset: 50 to see more)*`) to explicitly guide the LLM on how to fetch more.
-
-## 2026-04-09 - Markdown Table Construction
-
-**Learning:** When building Markdown tables manually in Rust for MCP tool responses, fields like `description` or `status` may contain newlines (`\n`) or unescaped pipes (`|`) which will break the table formatting and cause rendering issues.
-**Action:** Always sanitize strings using `.replace("|", "\\|").replace('\n', " ")` before interpolating them into a manual Markdown table row.
+## 2024-05-24 - [Avoid over-formatting list handlers with redundant markdown blocks]
+**Learning:** Returning nested Markdown tables directly to LLM without explicitly declaring backticks for data constraints (such as `agent.id` and `sessionId`) reduces parsing stability and drops vital constraints.
+**Action:** When refactoring MCP Tools for tabular data, always explicitly quote ID fields and maintain strict structure without repeating conditional checks (`if !results.is_empty()`) for block-level additions.
