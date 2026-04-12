@@ -251,9 +251,9 @@ export function ScheduledTasksPage() {
                   (count, task) => (task.enabled ? count + 1 : count),
                   0,
                 );
-                // group.tasks is already sorted by nextRunAt via compareScheduledTasks
-                // and groupedSections filtering ensures enabled tasks are sorted logically.
-                // We just need the first task with an upcoming run time.
+                // group.tasks is already sorted via compareScheduledTasks.
+                // This lookup relies on that ordering, so the first enabled task
+                // with a non-null nextRunAt is the group's earliest upcoming run.
                 const nextGroupRun =
                   group.tasks.find(
                     (task) => task.enabled && task.nextRunAt !== null,
