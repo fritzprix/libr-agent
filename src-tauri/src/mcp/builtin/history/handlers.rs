@@ -693,8 +693,7 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
             lines.push(String::new());
             lines.push(format!(
                 "*(Showing page {} of {}. End of results)*",
-                page.page,
-                page.total_pages
+                page.page, page.total_pages
             ));
         }
     }
@@ -760,8 +759,7 @@ fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
             lines.push(String::new());
             lines.push(format!(
                 "*(Showing page {} of {}. End of results)*",
-                response.messages.page,
-                response.messages.total_pages
+                response.messages.page, response.messages.total_pages
             ));
         }
     }
@@ -820,13 +818,7 @@ fn render_search_text(page: &Page<HistorySearchMatch>, caller_session_id: &str) 
 
             lines.push(format!(
                 "| `{}` | {} | `{}` | {} | {:.3} | {} | {} |",
-                session_id,
-                locality,
-                message_id,
-                role,
-                item.score,
-                item.content_length,
-                snippet
+                session_id, locality, message_id, role, item.score, item.content_length, snippet
             ));
         }
 
@@ -842,8 +834,7 @@ fn render_search_text(page: &Page<HistorySearchMatch>, caller_session_id: &str) 
             lines.push(String::new());
             lines.push(format!(
                 "*(Showing page {} of {}. End of results)*",
-                page.page,
-                page.total_pages
+                page.page, page.total_pages
             ));
         }
     }
