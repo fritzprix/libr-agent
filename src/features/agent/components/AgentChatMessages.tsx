@@ -87,6 +87,10 @@ function groupedMessageContainsBoundary(
     return groupedMessage.message.id === boundaryId;
   }
 
+  if (groupedMessage.type === 'tool_group') {
+    return groupedMessage.coveredMessageIds.includes(boundaryId);
+  }
+
   return groupedMessage.messages.some((message) => message.id === boundaryId);
 }
 

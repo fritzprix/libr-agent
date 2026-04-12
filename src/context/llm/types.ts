@@ -138,4 +138,7 @@ export interface LLMServiceContextValue {
 
   /** Compacted message range for the session, used to render a compaction event card */
   getCompactedRange: (sessionId: string) => CompactedRange | undefined;
+
+  /** Reload persisted compact-context state for a session into frontend memory. */
+  refreshCompactedRange: (sessionId: string) => Promise<void>;
 }

@@ -15,21 +15,24 @@ const baseMessage: Message = {
   content: [{ type: 'text', text: 'Tool call message' }],
 };
 
+const groupedToolMessages: Message[] = [
+  baseMessage,
+  {
+    id: 'tool-1',
+    sessionId: 'session-1',
+    threadId: 'session-1',
+    role: 'tool',
+    tool_call_id: 'call-1',
+    content: [{ type: 'text', text: 'Tool result' }],
+  },
+];
+
 const groupedMessagesMock: GroupedMessage[] = [
   {
     type: 'tool_group',
     message: baseMessage,
-    messages: [
-      baseMessage,
-      {
-        id: 'tool-1',
-        sessionId: 'session-1',
-        threadId: 'session-1',
-        role: 'tool',
-        tool_call_id: 'call-1',
-        content: [{ type: 'text', text: 'Tool result' }],
-      },
-    ],
+    messages: [baseMessage],
+    coveredMessageIds: ['assistant-1', 'tool-1'],
     toolGroup: {
       calls: [
         {
@@ -48,7 +51,7 @@ const groupedMessagesMock: GroupedMessage[] = [
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
-    messages: groupedMessagesMock[0].messages,
+    messages: groupedToolMessages,
     pendingMessages: [],
     error: undefined,
     llmError: undefined,
