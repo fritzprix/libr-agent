@@ -42,6 +42,12 @@ interface CompactPayload {
   };
 }
 
+interface CompactedRange {
+  fromId: string;
+  toId: string;
+  summary?: string;
+}
+
 interface Settings {
   preferredModel: { provider: string; model: string };
   serviceConfigs?: Record<string, { apiKey?: string; baseUrl?: string }>;
@@ -79,10 +85,10 @@ async function handleCompactEvent(
     summary: string,
   ) => Promise<void>,
   handleCompactError: (sessionId: string, error: unknown) => Promise<void>,
-  resetContextUsageForSession: (sessionId: string) => void,
+  clearCompactionPressureForSession: (sessionId: string) => void,
   setCompactedRangeForSession: (
     sessionId: string,
-    range: { fromId: string; toId: string },
+    range: CompactedRange,
   ) => void,
 ): Promise<void> {
   const { sessionId, messages, fromId, toId } = payload;
@@ -109,8 +115,8 @@ async function handleCompactEvent(
       availableTools: payload.parentRequest?.availableTools,
     });
     await handleCompactResponse(sessionId, fromId, toId, summary);
-    setCompactedRangeForSession(sessionId, { fromId, toId });
-    resetContextUsageForSession(sessionId);
+    setCompactedRangeForSession(sessionId, { fromId, toId, summary });
+    clearCompactionPressureForSession(sessionId);
   } catch {
     await handleCompactError(sessionId, {} as unknown);
   }
@@ -308,7 +314,7 @@ describe('compact request handler', () => {
     const getService = vi.fn().mockReturnValue({ compact: compactService });
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     const handleCompactError = vi.fn().mockResolvedValue(undefined);
-    const resetContextUsageForSession = vi.fn();
+    const clearCompactionPressureForSession = vi.fn();
     const setCompactedRangeForSession = vi.fn();
 
     await handleCompactEvent(
@@ -332,7 +338,7 @@ describe('compact request handler', () => {
       getService,
       handleCompactResponse,
       handleCompactError,
-      resetContextUsageForSession,
+      clearCompactionPressureForSession,
       setCompactedRangeForSession,
     );
 
@@ -439,6 +445,7 @@ describe('compact request handler', () => {
     const compactService = vi.fn().mockResolvedValue('A concise summary.');
     const getService = vi.fn().mockReturnValue({ compact: compactService });
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
+    const setCompactedRangeForSession = vi.fn();
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
@@ -447,7 +454,7 @@ describe('compact request handler', () => {
       handleCompactResponse,
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
-      vi.fn(),
+      setCompactedRangeForSession,
     );
 
     expect(handleCompactResponse).toHaveBeenCalledWith(
@@ -456,6 +463,11 @@ describe('compact request handler', () => {
       TO_ID,
       'A concise summary.',
     );
+    expect(setCompactedRangeForSession).toHaveBeenCalledWith(SESSION_ID, {
+      fromId: FROM_ID,
+      toId: TO_ID,
+      summary: 'A concise summary.',
+    });
   });
 
   it('clears in-flight state via handleCompactError on failure', async () => {

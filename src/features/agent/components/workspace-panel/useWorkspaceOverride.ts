@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import {
   getWorkspaceOverride,
@@ -39,22 +39,30 @@ export function useWorkspaceOverride(onOverrideChanged: () => void) {
     }
   }, [session?.id]);
 
-  const handleSetOverride = async () => {
-    if (!workspaceOverride.trim() || !session?.id || isSettingOverride) return;
+  const applyWorkspaceOverride = useCallback(
+    async (overridePath: string) => {
+      if (!overridePath.trim() || !session?.id || isSettingOverride) return;
 
-    setIsSettingOverride(true);
-    try {
-      await setWorkspaceOverride(session.id, workspaceOverride);
-      setIsOverrideActive(true);
-      toast.success(t('agent.workspace.setOverrideSuccess'));
-      onOverrideChanged();
-    } catch (error) {
-      logger.error('Failed to set workspace override', error);
-      toast.error(t('agent.workspace.setOverrideError', { error }));
-    } finally {
-      setIsSettingOverride(false);
-    }
-  };
+      setIsSettingOverride(true);
+      try {
+        await setWorkspaceOverride(session.id, overridePath);
+        setWorkspaceOverridePath(overridePath);
+        setIsOverrideActive(true);
+        toast.success(t('agent.workspace.setOverrideSuccess'));
+        onOverrideChanged();
+      } catch (error) {
+        logger.error('Failed to set workspace override', error);
+        toast.error(t('agent.workspace.setOverrideError', { error }));
+      } finally {
+        setIsSettingOverride(false);
+      }
+    },
+    [isSettingOverride, onOverrideChanged, session?.id, t],
+  );
+
+  const handleSetOverride = useCallback(async () => {
+    await applyWorkspaceOverride(workspaceOverride);
+  }, [applyWorkspaceOverride, workspaceOverride]);
 
   const handleCancelOverride = async () => {
     if (!session?.id || isCancelingOverride) return;
@@ -102,6 +110,7 @@ export function useWorkspaceOverride(onOverrideChanged: () => void) {
     isSettingOverride,
     isCancelingOverride,
     isBrowsing,
+    applyWorkspaceOverride,
     handleSetOverride,
     handleCancelOverride,
     handleBrowseFolder,

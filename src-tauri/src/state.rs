@@ -215,6 +215,11 @@ pub fn get_settings_repository() -> &'static SqliteSettingsRepository {
         .expect("Settings repository not initialized. Call set_settings_repository() first.")
 }
 
+/// Gets a reference to the global settings repository if it has been initialized.
+pub fn try_get_settings_repository() -> Option<&'static SqliteSettingsRepository> {
+    SETTINGS_REPOSITORY.get()
+}
+
 /// Sets the global MCP server repository instance.
 pub fn set_mcp_server_repository(repo: SqliteMCPServerRepository) {
     MCP_SERVER_REPOSITORY
@@ -460,6 +465,12 @@ pub fn get_active_sessions() -> &'static Arc<TokioRwLock<HashMap<String, AgentSe
     ACTIVE_SESSIONS
         .get()
         .expect("ACTIVE_SESSIONS not initialized. Call init_active_sessions() first.")
+}
+
+/// Return the active sessions map when initialization has already completed.
+pub fn try_get_active_sessions() -> Option<&'static Arc<TokioRwLock<HashMap<String, AgentSession>>>>
+{
+    ACTIVE_SESSIONS.get()
 }
 
 /// Retrieve the `cancel_pending` flag Arc for the given session, or `None` if the

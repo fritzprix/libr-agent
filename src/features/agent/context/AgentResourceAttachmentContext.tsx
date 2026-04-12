@@ -77,13 +77,7 @@ export function AgentResourceAttachmentProvider({
     value: { system },
   } = useSettings();
 
-  const maxBytes =
-    Math.min(
-      system?.maxFileUploadSizeMB ?? 50,
-      system?.workspaceCapacityMB ?? 10,
-    ) *
-    1024 *
-    1024;
+  const maxBytes = (system?.maxFileUploadSizeMB ?? 50) * 1024 * 1024;
 
   const [pendingFiles, setPendingFiles] = useState<AttachmentReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);

@@ -1,11 +1,13 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
-use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::state::{AgentSession, SessionStatusTransition};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -23,11 +25,40 @@ pub async fn resume_session(
     session_id: &str,
 ) -> Result<SessionMetadata, String> {
     // Get session metadata from database using injected repository
-    let session = session_repo
+    let mut session = session_repo
         .get_session(session_id)
         .await
         .map_err(|e| format!("Failed to get session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    if let Some(workspace_override) = session.workspace_override.as_deref() {
+        let path = PathBuf::from(workspace_override);
+        if path.is_dir() {
+            if let Ok(session_manager) = crate::session::get_session_manager() {
+                if let Err(e) = session_manager
+                    .register_session_override(session_id, path)
+                    .await
+                {
+                    log::warn!(
+                        "Failed to pre-register workspace override for resumed session {}: {}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+        } else {
+            log::warn!(
+                "Persisted workspace override '{}' for session {} no longer exists or is not a directory; \
+                 clearing it and falling back to default workspace.",
+                workspace_override,
+                session_id
+            );
+            let _ = session_repo
+                .update_workspace_override(session_id, None)
+                .await;
+            session.workspace_override = None;
+        }
+    }
 
     // Deserialize agent config
     let agent_config = if let Some(config_json) = &session.agent_config {
@@ -119,6 +150,8 @@ pub async fn resume_session(
                 compact_in_flight: Arc::new(AtomicBool::new(false)),
                 last_compacted_tail_id: Arc::new(RwLock::new(None)),
                 awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
+                finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
+                deferred_workflow_step: Arc::new(RwLock::new(None)),
                 compact_started_at_ms: Arc::new(RwLock::new(None)),
                 expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),

@@ -5,27 +5,22 @@ import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 import { calculateCacheHitPercent } from './token-metrics';
 import { formatNumber } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
-
-interface ContextUsage {
-  totalTokens: number;
-  contextWindow: number;
-  modelMaxContext?: number;
-}
+import type { CompactionPressure } from '@/models/agent-ipc';
 
 interface TokenMetricsBadgeProps {
   usage: TokenUsage;
   showSpeed?: boolean;
   className?: string;
   compact?: boolean;
-  /** When provided, renders a context-window usage gauge below the metrics. */
-  contextUsage?: ContextUsage;
+  /** When provided, renders the Rust SSOT compaction-pressure gauge below the metrics. */
+  compactionPressure?: CompactionPressure;
 }
 
-function ContextGauge({
+function CompactionPressureGauge({
   totalTokens,
   contextWindow,
   modelMaxContext,
-}: ContextUsage) {
+}: CompactionPressure) {
   const { t } = useTranslation();
   const pct = Math.min(totalTokens / contextWindow, 1);
   const pctDisplay = (pct * 100).toFixed(0);
@@ -42,27 +37,27 @@ function ContextGauge({
 
   const tooltipTitle =
     modelMaxContext && modelMaxContext !== contextWindow
-      ? t('agent.statusBar.effectiveContextTooltipWithModelMax', {
+      ? t('agent.statusBar.compactionPressureTooltipWithModelMax', {
           totalTokens: formatNumber(totalTokens),
           contextWindow: formatNumber(contextWindow),
           modelMaxContext: formatNumber(modelMaxContext),
           pctDisplay,
           defaultValue:
-            'Effective Context: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nEffective Limit: {{contextWindow}} tokens\nModel Max: {{modelMaxContext}} tokens\nSource of truth: Rust request-time context assembly after compaction/selection.',
+            'Compaction Pressure: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nEffective Limit: {{contextWindow}} tokens\nModel Max: {{modelMaxContext}} tokens\nSource of truth: Rust post-response compaction threshold value.',
         })
-      : t('agent.statusBar.effectiveContextTooltip', {
+      : t('agent.statusBar.compactionPressureTooltip', {
           totalTokens: formatNumber(totalTokens),
           contextWindow: formatNumber(contextWindow),
           pctDisplay,
           defaultValue:
-            'Effective Context: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nSource of truth: Rust request-time context assembly after compaction/selection.',
+            'Compaction Pressure: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nSource of truth: Rust post-response compaction threshold value.',
         });
 
   return (
     <div className="flex items-center gap-1.5 mt-0.5" title={tooltipTitle}>
       <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-        {t('agent.statusBar.effectiveContextLabel', {
-          defaultValue: 'Effective Context',
+        {t('agent.statusBar.compactionPressureLabel', {
+          defaultValue: 'Compaction Pressure',
         })}
       </span>
       <div className="h-1 w-20 rounded-full bg-muted overflow-hidden">
@@ -83,7 +78,7 @@ export function TokenMetricsBadge({
   showSpeed: showSpeedProp,
   className = '',
   compact: compactProp,
-  contextUsage,
+  compactionPressure,
 }: TokenMetricsBadgeProps) {
   // Get display preferences from settings
   const { value: settings } = useSettings();
@@ -216,8 +211,9 @@ export function TokenMetricsBadge({
         )}
       </div>
 
-      {/* Context window usage gauge — only shown when contextUsage is provided */}
-      {contextUsage && <ContextGauge {...contextUsage} />}
+      {compactionPressure && (
+        <CompactionPressureGauge {...compactionPressure} />
+      )}
     </div>
   );
 }

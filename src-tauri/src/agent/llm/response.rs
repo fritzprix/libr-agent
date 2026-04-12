@@ -12,10 +12,78 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::circuit_breaker;
-use super::completion::{maybe_trigger_post_idle_compaction, request_llm_completion};
+use super::completion::{request_llm_completion, trigger_post_response_compaction_if_needed};
 use super::tool_execution;
-use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
-use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
+use crate::agent::llm::types::{
+    AgentRuntimeError, AgentRuntimeErrorType, PostResponseCompactionPressure,
+};
+use crate::agent::state::DeferredWorkflowStep;
+use crate::agent::tauri_events::TauriEventDispatcher;
+
+async fn calculate_post_response_compaction_pressure(
+    assistant_message: &Message,
+) -> Option<PostResponseCompactionPressure> {
+    let total_tokens = crate::agent::llm::token_utils::calculate_post_response_compaction_tokens(
+        assistant_message,
+    )?;
+    let settings = crate::agent::llm::completion::load_context_management_settings().await;
+    if !crate::agent::llm::completion::uses_compaction_strategy(&settings.context_strategy) {
+        return None;
+    }
+
+    let context_window = std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    Some(PostResponseCompactionPressure {
+        total_tokens,
+        context_window,
+        model_max_context: settings.model_max_limit,
+    })
+}
+
+async fn defer_for_post_response_compaction_if_needed(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    post_response_compaction_pressure: Option<&PostResponseCompactionPressure>,
+    deferred_step: DeferredWorkflowStep,
+) -> Result<bool, String> {
+    let Some(post_response_compaction_pressure) = post_response_compaction_pressure else {
+        return Ok(false);
+    };
+
+    let (message_snapshot, session_name) = {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            let session_name = session
+                .metadata
+                .name
+                .clone()
+                .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
+            let message_snapshot = session.messages.read().await.clone();
+            (message_snapshot, session_name)
+        } else {
+            (
+                Vec::new(),
+                session_id[..8.min(session_id.len())].to_string(),
+            )
+        }
+    };
+
+    if message_snapshot.is_empty() {
+        return Ok(false);
+    }
+
+    trigger_post_response_compaction_if_needed(
+        active_sessions,
+        app_handle,
+        session_id,
+        &session_name,
+        &message_snapshot,
+        post_response_compaction_pressure.total_tokens,
+        deferred_step,
+    )
+    .await
+}
 
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
@@ -25,7 +93,7 @@ pub async fn handle_llm_response(
     app_handle: &AppHandle,
     session_id: String,
     mut assistant_message: Message,
-) -> Result<(), String> {
+) -> Result<Option<PostResponseCompactionPressure>, String> {
     // Check cancellation and determine whether Idle tool-call entry is allowed
     let allow_idle_tool_entry = assistant_message
         .tool_calls
@@ -89,7 +157,7 @@ pub async fn handle_llm_response(
         let event = crate::agent::events::AgentEvent::WorkflowStarted {
             session_id: session_id.clone(),
         };
-        crate::agent::events::emit_agent_event(app_handle, event)
+        crate::agent::tauri_events::emit_agent_event(app_handle, event)
             .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
     }
 
@@ -189,6 +257,9 @@ pub async fn handle_llm_response(
         assistant_message.content = vec![circuit_break_message];
     }
 
+    let post_response_compaction_pressure =
+        calculate_post_response_compaction_pressure(&assistant_message).await;
+
     // 1. Add assistant message to cache
     {
         let sessions = active_sessions.read().await;
@@ -215,7 +286,7 @@ pub async fn handle_llm_response(
         session_id: session_id.clone(),
         message: Box::new(assistant_message.clone()),
     };
-    crate::agent::events::emit_agent_event(app_handle, message_added_event)
+    crate::agent::tauri_events::emit_agent_event(app_handle, message_added_event)
         .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
     // 3. Persist to DB asynchronously
@@ -277,9 +348,9 @@ pub async fn handle_llm_response(
                 )
                 .with_code("EMPTY_LLM_RESPONSE"),
             };
-            crate::agent::events::emit_agent_event(app_handle, error_event)
+            crate::agent::tauri_events::emit_agent_event(app_handle, error_event)
                 .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
-            return Ok(());
+            return Ok(post_response_compaction_pressure.clone());
         }
 
         // ✅ NEW: Think-only message auto-recurring (Spec requirement 3)
@@ -332,14 +403,14 @@ pub async fn handle_llm_response(
                     session_id: session_id.clone(),
                     reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
                 };
-                crate::agent::events::emit_agent_event(app_handle, event)
+                crate::agent::tauri_events::emit_agent_event(app_handle, event)
                     .map_err(|e| format!("Failed to emit event: {}", e))?;
 
                 log::info!(
                     "Workflow completed with circuit breaker for session: {}",
                     session_id
                 );
-                return Ok(());
+                return Ok(post_response_compaction_pressure.clone());
             }
 
             // Increment thinking_only_count
@@ -355,6 +426,34 @@ pub async fn handle_llm_response(
                 }
             }
 
+            match defer_for_post_response_compaction_if_needed(
+                active_sessions,
+                app_handle,
+                &session_id,
+                post_response_compaction_pressure.as_ref(),
+                DeferredWorkflowStep::RequestCompletion,
+            )
+            .await
+            {
+                Ok(true) => {
+                    log::info!(
+                        "⏸️ Delaying follow-up LLM turn until post-response compaction finishes: session={}, assistant_message={}",
+                        session_id,
+                        assistant_message.id
+                    );
+                    return Ok(post_response_compaction_pressure.clone());
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    log::warn!(
+                        "⚠️ Failed to evaluate post-response compaction for session {} after assistant message {}: {}",
+                        session_id,
+                        assistant_message.id,
+                        error
+                    );
+                }
+            }
+
             // Auto-recurring: trigger next LLM turn
             return request_llm_completion(
                 session_repo,
@@ -364,6 +463,7 @@ pub async fn handle_llm_response(
                 session_id,
             )
             .await
+            .map(|_| post_response_compaction_pressure.clone())
             .map_err(String::from);
         }
 
@@ -386,6 +486,34 @@ pub async fn handle_llm_response(
         };
 
         if has_pending {
+            match defer_for_post_response_compaction_if_needed(
+                active_sessions,
+                app_handle,
+                &session_id,
+                post_response_compaction_pressure.as_ref(),
+                DeferredWorkflowStep::RequestCompletion,
+            )
+            .await
+            {
+                Ok(true) => {
+                    log::info!(
+                        "⏸️ Delaying pending-message continuation until post-response compaction finishes: session={}, assistant_message={}",
+                        session_id,
+                        assistant_message.id
+                    );
+                    return Ok(post_response_compaction_pressure.clone());
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    log::warn!(
+                        "⚠️ Failed to evaluate post-response compaction for session {} after assistant message {}: {}",
+                        session_id,
+                        assistant_message.id,
+                        error
+                    );
+                }
+            }
+
             log::info!(
                 "🔄 Pending messages detected for session {}. Continuing workflow.",
                 session_id
@@ -399,24 +527,41 @@ pub async fn handle_llm_response(
                 session_id,
             )
             .await
+            .map(|_| post_response_compaction_pressure.clone())
             .map_err(String::from);
         }
 
-        let post_idle_compact_candidate = assistant_message
-            .usage
-            .as_ref()
-            .and_then(|usage| usage.get("totalTokens"))
-            .and_then(|value| value.as_u64().map(|n| n as usize))
-            .or_else(|| {
-                assistant_message
-                    .usage
-                    .as_ref()
-                    .and_then(|usage| usage.get("totalTokens"))
-                    .and_then(|value| value.as_f64().map(|n| n as usize))
-            })
-            .map(|usage_total_tokens| (usage_total_tokens, assistant_message.id.clone()));
+        match defer_for_post_response_compaction_if_needed(
+            active_sessions,
+            app_handle,
+            &session_id,
+            post_response_compaction_pressure.as_ref(),
+            DeferredWorkflowStep::FinalizeWorkflow {
+                reason: crate::agent::events::WorkflowCompletionReason::Natural,
+            },
+        )
+        .await
+        {
+            Ok(true) => {
+                log::info!(
+                    "⏸️ Delaying workflow completion until post-response compaction finishes: session={}, assistant_message={}",
+                    session_id,
+                    assistant_message.id
+                );
+                return Ok(post_response_compaction_pressure.clone());
+            }
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!(
+                    "⚠️ Failed to evaluate post-response compaction for session {} after assistant message {}: {}",
+                    session_id,
+                    assistant_message.id,
+                    error
+                );
+            }
+        }
 
-        // No pending messages, finish workflow
+        // No pending messages and no blocking post-response compaction, finish workflow
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,
@@ -430,50 +575,10 @@ pub async fn handle_llm_response(
             session_id: session_id.clone(),
             reason: crate::agent::events::WorkflowCompletionReason::Natural,
         };
-        crate::agent::events::emit_agent_event(app_handle, event)
+        crate::agent::tauri_events::emit_agent_event(app_handle, event)
             .map_err(|e| format!("Failed to emit event: {}", e))?;
 
         log::info!("Completed workflow for session: {}", session_id);
-
-        if let Some((usage_total_tokens, assistant_message_id)) = post_idle_compact_candidate {
-            let (message_snapshot, session_name) = {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&session_id) {
-                    let session_name = session
-                        .metadata
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
-                    let message_snapshot = session.messages.read().await.clone();
-                    (message_snapshot, session_name)
-                } else {
-                    (
-                        Vec::new(),
-                        session_id[..8.min(session_id.len())].to_string(),
-                    )
-                }
-            };
-
-            if !message_snapshot.is_empty() {
-                if let Err(error) = maybe_trigger_post_idle_compaction(
-                    active_sessions,
-                    app_handle,
-                    &session_id,
-                    &session_name,
-                    &message_snapshot,
-                    usage_total_tokens,
-                )
-                .await
-                {
-                    log::warn!(
-                        "⚠️ Failed to evaluate post-idle compaction for session {} after assistant message {}: {}",
-                        session_id,
-                        assistant_message_id,
-                        error
-                    );
-                }
-            }
-        }
     } else {
         // Tools found! Initiate execution
         log::info!(
@@ -487,6 +592,38 @@ pub async fn handle_llm_response(
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
                 *session.thinking_only_count.write().await = 0;
+            }
+        }
+
+        match defer_for_post_response_compaction_if_needed(
+            active_sessions,
+            app_handle,
+            &session_id,
+            post_response_compaction_pressure.as_ref(),
+            DeferredWorkflowStep::ExecuteToolCalls {
+                assistant_message_id: assistant_message.id.clone(),
+                tool_calls: tool_calls.clone(),
+            },
+        )
+        .await
+        {
+            Ok(true) => {
+                log::info!(
+                    "⏸️ Delaying tool execution until post-response compaction finishes: session={}, assistant_message={}, tool_calls={}",
+                    session_id,
+                    assistant_message.id,
+                    tool_calls.len()
+                );
+                return Ok(post_response_compaction_pressure.clone());
+            }
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!(
+                    "⚠️ Failed to evaluate post-response compaction before tool execution for session {} after assistant message {}: {}",
+                    session_id,
+                    assistant_message.id,
+                    error
+                );
             }
         }
 
@@ -543,7 +680,7 @@ pub async fn handle_llm_response(
         });
     }
 
-    Ok(())
+    Ok(post_response_compaction_pressure)
 }
 
 /// Handle LLM error from frontend

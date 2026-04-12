@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { AdvancedSettings, SystemSettings } from '@/context/SettingsContext';
 import { IsolationLevel } from '@/lib/services/settings-service';
 import { Input } from '@/components/ui';
-import { SystemPerformanceSettings } from '../components/SystemPerformanceSettings';
 import { DangerZoneSettings } from '../components/DangerZoneSettings';
 import { AboutSection } from '../components/AboutSection';
 
@@ -12,6 +11,7 @@ interface AdvancedTabProps {
   onChange: (key: keyof AdvancedSettings, value: number) => void;
   systemSettingsProps: {
     localSystemSettings: SystemSettings;
+    networkSettingsChanged: boolean;
     onChange: (
       key: keyof SystemSettings,
       value: number | string | boolean,
@@ -35,287 +35,254 @@ function AdvancedTabComponent({
 
   return (
     <div className="space-y-6">
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t('settings.advanced.maxRetries', 'Max Retry Attempts')}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 1"
-          min={0}
-          max={5}
-          value={localAdvancedSettings.maxRetries}
-          onChange={(e) =>
-            onChange('maxRetries', parseInt(e.target.value, 10) || 0)
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
+      <div>
+        <h3 className="text-lg font-medium text-foreground">
+          {t('settings.advanced.title', 'Advanced Runtime Controls')}
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">
           {t(
-            'settings.advanced.maxRetriesDescription',
-            'Maximum number of retries for failed AI requests.',
+            'settings.advanced.summary',
+            'These settings change runtime safety rails, multi-agent limits, and shell isolation. Most users should leave them alone.',
           )}
         </p>
       </div>
 
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t('settings.advanced.retryDelay', 'Retry Delay (ms)')}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 5000"
-          min={1000}
-          step={1000}
-          value={localAdvancedSettings.retryDelay}
-          onChange={(e) =>
-            onChange('retryDelay', parseInt(e.target.value, 10) || 5000)
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.advanced.defaultSessionMaxDepth',
+              'Session Branching Limit (Advanced)',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="0 = unlimited"
+            min={0}
+            max={64}
+            step={1}
+            value={localAdvancedSettings.defaultSessionMaxDepth ?? 0}
+            onChange={(e) =>
+              onChange(
+                'defaultSessionMaxDepth',
+                parseInt(e.target.value, 10) || 0,
+              )
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.defaultSessionMaxDepthDescription',
+              'Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.',
+            )}
+          </p>
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.advanced.defaultSessionMaxFanout',
+              'Session Child Limit (Advanced)',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="0 = unlimited"
+            min={0}
+            max={64}
+            step={1}
+            value={localAdvancedSettings.defaultSessionMaxFanout ?? 0}
+            onChange={(e) =>
+              onChange(
+                'defaultSessionMaxFanout',
+                parseInt(e.target.value, 10) || 0,
+              )
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.defaultSessionMaxFanoutDescription',
+              'Controls how many direct child sessions each parent can create by default. Set 0 for unlimited. Most users can leave this as-is.',
+            )}
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <h4 className="text-sm font-medium text-foreground">
+          {t('settings.advanced.performance', 'Performance & Concurrency')}
+        </h4>
+        <p className="mt-1 text-xs text-muted-foreground">
           {t(
-            'settings.advanced.retryDelayDescription',
-            'Delay in milliseconds between retry attempts.',
+            'settings.advanced.performanceDescription',
+            'These runtime limits control how many agents and workspace processes can run at once.',
           )}
         </p>
       </div>
 
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t('settings.advanced.circuitBreaker', 'Tool Loop Threshold')}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 3"
-          min={1}
-          max={10}
-          value={localAdvancedSettings.circuitBreakerThreshold}
-          onChange={(e) =>
-            onChange(
-              'circuitBreakerThreshold',
-              parseInt(e.target.value, 10) || 3,
-            )
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.circuitBreakerDescription',
-            'Number of repeated errors or tool calls before triggering the circuit breaker.',
-          )}
-        </p>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.advanced.maxConcurrentActiveSessions',
+              'Max Concurrent Agent Sessions',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="e.g., 4"
+            min={1}
+            max={32}
+            step={1}
+            value={localAdvancedSettings.maxConcurrentActiveSessions ?? 4}
+            onChange={(e) =>
+              onChange(
+                'maxConcurrentActiveSessions',
+                parseInt(e.target.value, 10) || 4,
+              )
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.maxConcurrentActiveSessionsDescription',
+              'Maximum number of agent sessions running their LLM loop simultaneously. Higher values use more API quota and memory.',
+            )}
+          </p>
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.advanced.maxSuspendedSessions',
+              'Max Suspended Agent Sessions',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="e.g., 8"
+            min={1}
+            max={64}
+            step={1}
+            value={localAdvancedSettings.maxSuspendedSessions ?? 8}
+            onChange={(e) =>
+              onChange(
+                'maxSuspendedSessions',
+                parseInt(e.target.value, 10) || 8,
+              )
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.maxSuspendedSessionsDescription',
+              'Maximum number of agent sessions that can be paused waiting for a child agent to complete. Should be ≥ active sessions.',
+            )}
+          </p>
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.advanced.maxConcurrentActiveProcesses',
+              'Max Concurrent Shell Processes',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="e.g., 10"
+            min={1}
+            max={64}
+            step={1}
+            value={localAdvancedSettings.maxConcurrentActiveProcesses ?? 10}
+            onChange={(e) =>
+              onChange(
+                'maxConcurrentActiveProcesses',
+                parseInt(e.target.value, 10) || 10,
+              )
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.maxConcurrentActiveProcessesDescription',
+              'Maximum number of shell/code processes running simultaneously across all agent sessions.',
+            )}
+          </p>
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.advanced.maxSuspendedProcesses',
+              'Max Suspended Shell Processes',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="e.g., 20"
+            min={1}
+            max={128}
+            step={1}
+            value={localAdvancedSettings.maxSuspendedProcesses ?? 20}
+            onChange={(e) =>
+              onChange(
+                'maxSuspendedProcesses',
+                parseInt(e.target.value, 10) || 20,
+              )
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.maxSuspendedProcessesDescription',
+              'Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.',
+            )}
+          </p>
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.advanced.toolResultInlineLimit',
+              'Tool Result Inline Limit (KB)',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="e.g., 16"
+            min={4}
+            max={256}
+            step={1}
+            value={
+              (localAdvancedSettings.toolResultInlineLimitBytes ?? 16 * 1024) /
+              1024
+            }
+            onChange={(e) =>
+              onChange(
+                'toolResultInlineLimitBytes',
+                Math.min(
+                  256 * 1024,
+                  Math.max(
+                    4 * 1024,
+                    (parseInt(e.target.value, 10) || 16) * 1024,
+                  ),
+                ),
+              )
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.toolResultInlineLimitDescription',
+              'Controls how much tool output stays inline before LibrAgent spills the full result to a workspace file. Lower values keep the agent context leaner.',
+            )}
+          </p>
+        </div>
       </div>
 
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t(
-            'settings.advanced.maxOutputTokens',
-            'Max Output Tokens (Default)',
-          )}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 8192"
-          min={256}
-          max={128000}
-          step={256}
-          value={localAdvancedSettings.defaultMaxOutputTokens ?? 8192} // Fallback for transition
-          onChange={(e) =>
-            onChange(
-              'defaultMaxOutputTokens',
-              parseInt(e.target.value, 10) || 8192,
-            )
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.maxOutputTokensDescription',
-            'Default maximum output tokens for new sessions if not specified by assistant.',
-          )}
-        </p>
-      </div>
-
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t(
-            'settings.advanced.defaultSessionMaxDepth',
-            'Session Branching Limit (Advanced)',
-          )}
-        </label>
-        <Input
-          type="number"
-          placeholder="0 = unlimited"
-          min={0}
-          max={64}
-          step={1}
-          value={localAdvancedSettings.defaultSessionMaxDepth ?? 0}
-          onChange={(e) =>
-            onChange(
-              'defaultSessionMaxDepth',
-              parseInt(e.target.value, 10) || 0,
-            )
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.defaultSessionMaxDepthDescription',
-            'Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.',
-          )}
-        </p>
-      </div>
-
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t(
-            'settings.advanced.defaultSessionMaxFanout',
-            'Session Child Limit (Advanced)',
-          )}
-        </label>
-        <Input
-          type="number"
-          placeholder="0 = unlimited"
-          min={0}
-          max={64}
-          step={1}
-          value={localAdvancedSettings.defaultSessionMaxFanout ?? 0}
-          onChange={(e) =>
-            onChange(
-              'defaultSessionMaxFanout',
-              parseInt(e.target.value, 10) || 0,
-            )
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.defaultSessionMaxFanoutDescription',
-            'Controls how many direct child sessions each parent can create by default. Set 0 for unlimited. Most users can leave this as-is.',
-          )}
-        </p>
-      </div>
-
-      {/* SP2: Global Concurrency Control */}
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t(
-            'settings.advanced.maxConcurrentActiveSessions',
-            'Max Concurrent Agent Sessions',
-          )}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 4"
-          min={1}
-          max={32}
-          step={1}
-          value={localAdvancedSettings.maxConcurrentActiveSessions ?? 4}
-          onChange={(e) =>
-            onChange(
-              'maxConcurrentActiveSessions',
-              parseInt(e.target.value, 10) || 4,
-            )
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.maxConcurrentActiveSessionsDescription',
-            'Maximum number of agent sessions running their LLM loop simultaneously. Higher values use more API quota and memory.',
-          )}
-        </p>
-      </div>
-
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t(
-            'settings.advanced.maxSuspendedSessions',
-            'Max Suspended Agent Sessions',
-          )}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 8"
-          min={1}
-          max={64}
-          step={1}
-          value={localAdvancedSettings.maxSuspendedSessions ?? 8}
-          onChange={(e) =>
-            onChange('maxSuspendedSessions', parseInt(e.target.value, 10) || 8)
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.maxSuspendedSessionsDescription',
-            'Maximum number of agent sessions that can be paused waiting for a child agent to complete. Should be ≥ active sessions.',
-          )}
-        </p>
-      </div>
-
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t(
-            'settings.advanced.maxConcurrentActiveProcesses',
-            'Max Concurrent Shell Processes',
-          )}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 10"
-          min={1}
-          max={64}
-          step={1}
-          value={localAdvancedSettings.maxConcurrentActiveProcesses ?? 10}
-          onChange={(e) =>
-            onChange(
-              'maxConcurrentActiveProcesses',
-              parseInt(e.target.value, 10) || 10,
-            )
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.maxConcurrentActiveProcessesDescription',
-            'Maximum number of shell/code processes running simultaneously across all agent sessions.',
-          )}
-        </p>
-      </div>
-
-      <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t(
-            'settings.advanced.maxSuspendedProcesses',
-            'Max Suspended Shell Processes',
-          )}
-        </label>
-        <Input
-          type="number"
-          placeholder="e.g., 20"
-          min={1}
-          max={128}
-          step={1}
-          value={localAdvancedSettings.maxSuspendedProcesses ?? 20}
-          onChange={(e) =>
-            onChange(
-              'maxSuspendedProcesses',
-              parseInt(e.target.value, 10) || 20,
-            )
-          }
-          className="bg-background border text-foreground w-full max-w-xs"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          {t(
-            'settings.advanced.maxSuspendedProcessesDescription',
-            'Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.',
-          )}
-        </p>
-      </div>
-
-      <div className="min-w-0">
+      <div className="min-w-0 rounded-xl border border-border/70 p-4">
         <label className="block text-muted-foreground mb-2 font-medium">
           {t('settings.advanced.shellIsolation', 'Shell Isolation Level')}
         </label>
@@ -356,7 +323,6 @@ function AdvancedTabComponent({
         </p>
       </div>
 
-      <SystemPerformanceSettings {...systemSettingsProps} />
       <AboutSection />
       <DangerZoneSettings {...dangerZoneProps} />
     </div>
@@ -365,14 +331,6 @@ function AdvancedTabComponent({
 
 export default React.memo(AdvancedTabComponent, (prev, next) => {
   return (
-    prev.localAdvancedSettings.maxRetries ===
-      next.localAdvancedSettings.maxRetries &&
-    prev.localAdvancedSettings.retryDelay ===
-      next.localAdvancedSettings.retryDelay &&
-    prev.localAdvancedSettings.circuitBreakerThreshold ===
-      next.localAdvancedSettings.circuitBreakerThreshold &&
-    prev.localAdvancedSettings.defaultMaxOutputTokens ===
-      next.localAdvancedSettings.defaultMaxOutputTokens &&
     prev.localAdvancedSettings.defaultSessionMaxDepth ===
       next.localAdvancedSettings.defaultSessionMaxDepth &&
     prev.localAdvancedSettings.defaultSessionMaxFanout ===
@@ -385,6 +343,8 @@ export default React.memo(AdvancedTabComponent, (prev, next) => {
       next.localAdvancedSettings.maxConcurrentActiveProcesses &&
     prev.localAdvancedSettings.maxSuspendedProcesses ===
       next.localAdvancedSettings.maxSuspendedProcesses &&
+    prev.localAdvancedSettings.toolResultInlineLimitBytes ===
+      next.localAdvancedSettings.toolResultInlineLimitBytes &&
     prev.onChange === next.onChange &&
     prev.systemSettingsProps.localSystemSettings ===
       next.systemSettingsProps.localSystemSettings &&

@@ -209,6 +209,57 @@ describe('Anthropic helper modules', () => {
     });
   });
 
+  it('uses tool content text instead of structured metadata in Anthropic tool results', () => {
+    const messages: Message[] = [
+      {
+        id: 'assistant-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Checking session' }],
+        tool_calls: [
+          {
+            id: 'call_structured',
+            type: 'function',
+            function: {
+              name: 'agent__checkSession',
+              arguments: '{"sessionId":"session-1"}',
+            },
+          },
+        ],
+      },
+      {
+        id: 'tool-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call_structured',
+        content: [{ type: 'text', text: '✓ Session session-1 is terminal.' }],
+        metadata: {
+          structuredContent: {
+            sessionId: 'session-1',
+            status: 'idle',
+            responseStatus: 'success',
+            result: 'Hidden structured payload',
+          },
+        },
+      },
+    ];
+
+    const result = convertToAnthropicMessages(messages);
+
+    expect(result[1]).toMatchObject({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'call_structured',
+          content: '✓ Session session-1 is terminal.',
+        },
+      ],
+    });
+  });
+
   it('batches consecutive tool results into a single user message after one assistant tool_use turn', () => {
     const messages: Message[] = [
       {

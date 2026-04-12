@@ -236,18 +236,32 @@ If a valid record exists and `to_id` is still present in the current message sta
 
 If `to_id` is missing, the in-memory compact cache is invalidated as stale.
 
-### Step B: trigger async compaction
+### Step B: background compaction trigger
 
-If `contextStrategy == "compact"` and grounded token usage exceeds the compact threshold:
+After a completed assistant response, Rust computes post-response compaction pressure from provider-grounded usage:
 
-- threshold = `floor(effective_limit * 0.9)`
-- Rust computes `split_idx = find_compaction_split_index(messages)`
+- base input = `usage.promptTokens`
+- output side = measured output tokens with a small upward safety bias
+- trigger threshold = `floor(effective_limit * 0.9)`
+
+If that pressure exceeds the compact threshold, Rust computes:
+
+- `split_idx = find_compaction_split_index(messages)`
 
 Current implementation detail:
 
 - `find_compaction_split_index()` currently returns `messages.len()`
-- meaning the whole current stack is compacted
-- the future "tail" is whatever new messages arrive after compaction is triggered
+- so the initial compactable prefix is effectively the full current stack
+- but subsequent compaction requests are still **incremental**, not whole-stack repeats
+
+Current compaction payload contract:
+
+- first compaction in a session:
+  - `[raw compactable prefix]`
+- later compactions:
+  - `[previous compact-summary synthetic message] + [raw delta after previous to_id]`
+
+So "whole stack" currently describes the coarse split point for the **first** compaction candidate, not the payload shape of every later compaction request.
 
 #### Guard G1: `compact_in_flight`
 
@@ -261,7 +275,7 @@ Rust stores the last message ID from the stack when compaction is triggered.
 
 If the next candidate request sees the same tail ID, it skips compaction because nothing new has arrived since the last trigger.
 
-### Step C: frontend LLM summary call
+### Step C: frontend summary call
 
 Rust emits:
 
@@ -279,7 +293,7 @@ and returns the summary through:
 - `agent_handle_compact_response` on success
 - `agent_handle_compact_error` on failure
 
-### Step D: store result and clear in-flight state
+### Step D: store result, clear state, and resume deferred workflow if needed
 
 `AgentSessionManager.handle_compact_response()`:
 
@@ -287,8 +301,30 @@ and returns the summary through:
 2. stores it in-memory
 3. upserts it in SQLite
 4. clears `compact_in_flight`
+5. resumes any deferred workflow step
 
-On error, Rust still clears `compact_in_flight` so a later request can retry.
+Compaction is not just a fire-and-forget background side job anymore. Rust may defer and later resume:
+
+- the next LLM completion
+- tool-call execution
+- workflow finalization
+
+On error, Rust still clears compaction state. If the workflow was waiting on compaction, the failure is surfaced as a workflow error instead of being silently ignored.
+
+### Step E: preflight compaction hard gate
+
+Before Rust emits `llm:completion-request`, compact mode now runs a conservative pre-send gate:
+
+- compute `safe_input_token_limit = min(maxInputContext, model_max_limit)`
+- estimate prompt size with `calculate_conservative_preflight_prompt_tokens(...)`
+- if the conservative estimate would overflow the effective limit, Rust does **not** send the request
+
+At that point Rust either:
+
+- triggers blocking preflight compaction and resumes later, or
+- raises `RUST_PREFLIGHT_CONTEXT_LIMIT`
+
+This is the authoritative compact-mode send/no-send decision for Agent V2. The frontend no longer owns that judgment.
 
 ---
 
@@ -334,6 +370,17 @@ The selector is still used for both strategies:
 7. prepend the pinned first user message
 8. merge pinned + selected first user message if they would otherwise be consecutive
 
+### Compact-mode selection override
+
+Compact mode does **not** use the selector with its default pinning behavior.
+
+Current compact-mode options include:
+
+- `max_messages = None`
+- `pin_first_user_message = false`
+
+So the usual "always pin the first user message" rule is intentionally disabled in compact mode. That avoids dragging ancient first-turn content forward after a compact summary already represents the old prefix.
+
 ### Provider-specific integrity guard
 
 Incomplete tool-chain cleanup is currently enabled for:
@@ -352,9 +399,9 @@ Gemini uses a very high `max_tool_calls_per_message` value to avoid splitting tu
 
 When `contextStrategy == "compact"`:
 
-- Rust may trigger async compaction
+- Rust may trigger post-response background compaction
 - Rust still runs the selector with `max_messages = None`
-- the selector remains the final guardrail against oversized requests
+- Rust then runs a conservative preflight hard gate before emit
 
 When `contextStrategy != "compact"`:
 
@@ -373,16 +420,36 @@ Implemented in `src-tauri/src/agent/llm/token_utils.rs`.
 
 - `estimate_text_tokens()`
 - `estimate_tokens_bpe()`
-- `calculate_grounded_total_tokens()`
+- `derive_bpe_calibration_ratio()`
+- `calculate_prompt_anchored_total_tokens()`
+- `calculate_conservative_preflight_prompt_tokens()`
+- `calculate_post_response_compaction_tokens()`
 - `calculate_compact_threshold()`
 
 ### Important behavior
 
 Token estimates use `cl100k_base` when available, with a char-based fallback.
 
-`calculate_grounded_total_tokens()` looks for the most recent assistant message with API-reported usage and uses that as a calibration anchor. This keeps local BPE estimation from drifting too far after long runs.
+Request-time estimation is prompt-anchored and summary-aware:
 
-There is also an explicit guard for compact-summary insertion so stale pre-compact usage does not keep the estimate artificially inflated forever.
+- the latest assistant turn with valid `usage.promptTokens` is the preferred anchor
+- that anchor already includes stable prompt inputs such as compact-summary reinjection, system prompt, session context, and tool schema
+- after that anchor, the estimator primarily needs to account for incremental delta rather than re-estimating the whole rebuilt prompt
+- Rust applies a conservative `1.05` upward bias to the post-anchor delta for preflight gating
+- if no valid prompt anchor exists yet, Rust falls back to full-BPE estimation and applies the same `1.05` safety multiplier
+
+Post-response compaction pressure is estimated separately:
+
+- input side is anchored to provider-reported `promptTokens`
+- output side uses measured completion tokens when available, with a small upward bias
+- this post-response pressure drives background compaction triggering
+
+So there are two distinct estimates now:
+
+- **preflight conservative prompt estimate** for send/no-send gating
+- **post-response compaction pressure** for deciding whether to compact after a completed response
+
+Full-BPE estimation remains the exception path for turns that do not yet have a grounded provider anchor.
 
 ---
 
@@ -488,6 +555,7 @@ That is no longer true for Agent V2.
 
 - Rust owns the orchestration loop
 - Rust triggers compaction and persists summaries
+- Rust owns the final compact-mode pre-send gate
 - frontend only performs the provider API calls
 - the final message stack is assembled in Rust
 
@@ -499,24 +567,20 @@ Frontend utilities and legacy paths may still exist for non-Agent-V2 flows, but 
 
 These are the limitations of the **implemented** system, not the old proposal.
 
-1. **No hard wait at 100%**
-   - The earlier design idea mentioned waiting for compaction if the context fully overflowed.
-   - Current implementation does not block on compact completion.
-   - It triggers async compaction and still relies on the selector as the immediate safety rail.
-
-2. **Whole-stack compaction split**
+1. **Background compaction still uses a coarse split**
    - `find_compaction_split_index()` currently returns `messages.len()`.
-   - There is no smarter semantic split yet.
+   - So the initial compactable prefix is still coarse-grained.
+   - The implementation is incremental across later compactions, but the split heuristic is not yet semantically smart.
 
-3. **Single compact record per session**
+2. **Single compact record per session**
    - Each new summary replaces the previous session record.
    - There is no layered compact-history stack.
 
-4. **Prompt cache wins depend on provider injection strategy**
+3. **Prompt cache wins depend on provider injection strategy**
    - Rust provides a stable/volatile split.
    - Actual prefix-cache benefit still depends on the frontend provider implementation.
 
-5. **`structured_state` is invisible to the model**
+4. **`structured_state` is invisible to the model**
    - If tool authors put critical values only in structured JSON, the model will not see them.
 
 ---
@@ -528,7 +592,8 @@ These are the limitations of the **implemented** system, not the old proposal.
 - `request_llm_completion()` — `src-tauri/src/agent/llm/completion.rs`
 - `build_session_system_prompt_split()` — `src-tauri/src/agent/llm/prompt.rs`
 - `select_messages_within_context()` — `src-tauri/src/agent/llm/context_selector.rs`
-- `handle_compact_response()` — `src-tauri/src/agent/session_manager.rs`
+- `trigger_post_response_compaction_if_needed()` — `src-tauri/src/agent/llm/completion/compaction.rs`
+- `handle_compact_response()` — `src-tauri/src/agent/session_manager/compact.rs`
 
 ### Frontend bridge points
 
@@ -549,6 +614,8 @@ If you are documenting or modifying Agent V2 message context behavior, assume th
 - **Rust owns context management**
 - **frontend executes model calls**
 - **compact summaries are persisted session state**
-- **the selector still remains the final size guard**
+- **Rust preflight is the final compact-mode size gate**
+- **post-response compaction and preflight compaction are different phases**
+- **incremental compaction payloads reuse the prior summary plus raw delta**
 
 If a document says React is the primary compaction orchestrator for agent sessions, that document is outdated.

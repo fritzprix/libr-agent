@@ -13,7 +13,7 @@ import {
   type Message,
   type MessageError,
 } from '@/models/chat';
-import type { AgentRuntimeError } from '@/models/agent-ipc';
+import type { AgentRuntimeError, CompactionPressure } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
@@ -27,8 +27,16 @@ import {
 } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
-import type { CompactRequest, CompletionRequest } from './types';
+import type {
+  CompactRequest,
+  CompactedRange,
+  CompletionRequest,
+} from './types';
 import { isAbortError } from './types';
+import {
+  applyServiceRuntimeConfig,
+  buildServiceRuntimeConfig,
+} from './service-runtime-config';
 
 const logger = getLogger('useLLMListener');
 
@@ -75,6 +83,39 @@ function shouldBypassRetryAndFallback(error: unknown): boolean {
   return false;
 }
 
+function extractCompactionPressure(
+  data: unknown,
+): CompactionPressure | undefined {
+  if (typeof data !== 'object' || data === null) {
+    return undefined;
+  }
+
+  if (!('compactionPressure' in data)) {
+    return undefined;
+  }
+
+  const maybePressure = data.compactionPressure;
+  if (typeof maybePressure !== 'object' || maybePressure === null) {
+    return undefined;
+  }
+  if (
+    !('totalTokens' in maybePressure) ||
+    !('contextWindow' in maybePressure) ||
+    !('modelMaxContext' in maybePressure) ||
+    typeof maybePressure.totalTokens !== 'number' ||
+    typeof maybePressure.contextWindow !== 'number' ||
+    typeof maybePressure.modelMaxContext !== 'number'
+  ) {
+    return undefined;
+  }
+
+  return {
+    totalTokens: maybePressure.totalTokens,
+    contextWindow: maybePressure.contextWindow,
+    modelMaxContext: maybePressure.modelMaxContext,
+  };
+}
+
 interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;
   executeCompletionRequest: (
@@ -88,20 +129,19 @@ interface UseLLMListenerProps {
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
-    contextUsage?: {
-      totalTokens: number;
-      contextWindow: number;
-      modelMaxContext?: number;
-    },
   ) => Promise<Message>;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
-  resetContextUsageForSession: (sessionId: string) => void;
+  setCompactionPressureForSession: (
+    sessionId: string,
+    pressure: CompactionPressure,
+  ) => void;
+  clearCompactionPressureForSession: (sessionId: string) => void;
   setCompactingFromEvent: (sessionId: string, value: boolean) => void;
   setCompactedRangeForSession: (
     sessionId: string,
-    range: { fromId: string; toId: string } | undefined,
+    range: CompactedRange | undefined,
   ) => void;
   setAwaitingCompactForSession: (sessionId: string, value: boolean) => void;
 }
@@ -110,7 +150,8 @@ export function useLLMListener({
   settingsRef,
   executeCompletionRequest,
   setStreamingMessages,
-  resetContextUsageForSession,
+  setCompactionPressureForSession,
+  clearCompactionPressureForSession,
   setCompactingFromEvent,
   setCompactedRangeForSession,
   setAwaitingCompactForSession,
@@ -150,7 +191,6 @@ export function useLLMListener({
             temperature,
             maxTokens,
             availableTools,
-            contextUsage,
           } = event.payload;
 
           // Normalize messages from Rust (camelCase -> snake_case)
@@ -260,7 +300,6 @@ export function useLLMListener({
                     temperature,
                     maxTokens,
                     availableTools,
-                    contextUsage,
                   );
                 } catch (attemptError) {
                   // Abort errors must never be retried — propagate immediately
@@ -335,7 +374,6 @@ export function useLLMListener({
                   temperature,
                   maxTokens,
                   availableTools,
-                  contextUsage,
                 );
               } else {
                 throw primaryError; // No fallback, propagate to outer catch
@@ -361,7 +399,15 @@ export function useLLMListener({
               fullMessage: messageForRust,
             });
 
-            await handleLLMResponse(sessionId, messageForRust);
+            const response = await handleLLMResponse(sessionId, messageForRust);
+            const compactionPressure = extractCompactionPressure(
+              response?.data,
+            );
+            if (compactionPressure) {
+              setCompactionPressureForSession(sessionId, compactionPressure);
+            } else {
+              clearCompactionPressureForSession(sessionId);
+            }
 
             logger.info('LLM response sent back to Rust', { sessionId });
           } catch (error) {
@@ -372,6 +418,7 @@ export function useLLMListener({
             const isAborted = isAbortError(error);
 
             if (isAborted) {
+              clearCompactionPressureForSession(sessionId);
               logger.info(
                 'LLM request aborted due to cancellation, skipping error report to Rust',
                 { sessionId },
@@ -380,6 +427,7 @@ export function useLLMListener({
             }
 
             logger.error('Failed to execute LLM completion', error);
+            clearCompactionPressureForSession(sessionId);
 
             // Report error to Rust
             await handleLLMError(sessionId, toAgentRuntimeError(error));
@@ -442,17 +490,27 @@ export function useLLMListener({
             settings.serviceConfigs?.[provider] ?? {};
 
           try {
+            const runtimeConfig = buildServiceRuntimeConfig(
+              settings,
+              providerConfig,
+            );
             const service: AIContextCompactionService =
               AIServiceFactory.getService(provider, apiKey, providerConfig);
+            applyServiceRuntimeConfig(service, runtimeConfig);
             const summary = await service.compact(messages, {
               modelName: model,
               systemPrompt: parentRequest?.systemPrompt,
               sessionContext: parentRequest?.sessionContext,
               availableTools: parentRequest?.availableTools,
+              config: runtimeConfig,
             });
             await handleCompactResponse(sessionId, fromId, toId, summary);
-            setCompactedRangeForSession(sessionId, { fromId, toId });
-            resetContextUsageForSession(sessionId);
+            setCompactedRangeForSession(sessionId, {
+              fromId,
+              toId,
+              summary,
+            });
+            clearCompactionPressureForSession(sessionId);
             logger.info(`✅ Compact summary stored: session=${sessionId}`);
           } catch (error) {
             const compactRuntimeError = toAgentRuntimeError(error);

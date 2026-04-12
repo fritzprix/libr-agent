@@ -5,94 +5,21 @@ import { Badge } from '@/components/ui';
 
 interface SystemPerformanceSettingsProps {
   localSystemSettings: SystemSettings;
+  networkSettingsChanged: boolean;
   onChange: (key: keyof SystemSettings, value: number | boolean) => void;
 }
 
 export function SystemPerformanceSettings({
   localSystemSettings,
+  networkSettingsChanged,
   onChange,
 }: SystemPerformanceSettingsProps) {
   const { t } = useTranslation('common');
 
   return (
-    <div className="border-t pt-8 mt-4">
-      <h3 className="text-lg font-medium text-foreground mb-4">
-        {t('settings.system.title', 'System & Performance')}
-      </h3>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* File & Workspace */}
-        <div className="space-y-4">
-          <h4 className="text-sm font-medium text-foreground">
-            {t('settings.system.fileWorkspace', 'File & Workspace')}
-          </h4>
-          {/* Max File Upload Size */}
-          <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
-              {t(
-                'settings.system.maxFileUploadSize',
-                'Max File Upload Size (MB)',
-              )}
-            </label>
-            <Input
-              type="number"
-              placeholder={t(
-                'settings.system.placeholders.maxFileUploadSize',
-                'e.g., 50',
-              )}
-              min={1}
-              value={localSystemSettings.maxFileUploadSizeMB}
-              onChange={(e) =>
-                onChange(
-                  'maxFileUploadSizeMB',
-                  parseInt(e.target.value, 10) || 50,
-                )
-              }
-              className="bg-background border text-foreground w-full max-w-xs"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              {t(
-                'settings.system.maxFileUploadSizeDescription',
-                'Maximum size for a single file upload. Increase if you often work with large documents.',
-              )}
-            </p>
-          </div>
-
-          {/* Workspace Capacity */}
-          <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
-              {t(
-                'settings.system.workspaceCapacity',
-                'Workspace Capacity (MB)',
-              )}
-            </label>
-            <Input
-              type="number"
-              placeholder={t(
-                'settings.system.placeholders.workspaceCapacity',
-                'e.g., 10',
-              )}
-              min={1}
-              value={localSystemSettings.workspaceCapacityMB}
-              onChange={(e) =>
-                onChange(
-                  'workspaceCapacityMB',
-                  parseInt(e.target.value, 10) || 10,
-                )
-              }
-              className="bg-background border text-foreground w-full max-w-xs"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              {t(
-                'settings.system.workspaceCapacityDescription',
-                "Total limit for your current workspace's text content.",
-              )}
-            </p>
-          </div>
-        </div>
-
-        {/* Background Tasks */}
-        <div className="space-y-4">
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="space-y-4 rounded-xl border border-border/70 p-4">
           <h4 className="text-sm font-medium text-foreground">
             {t('settings.system.backgroundTasks', 'Background Tasks')}
           </h4>
@@ -231,39 +158,12 @@ export function SystemPerformanceSettings({
               )}
             </p>
           </div>
+        </div>
 
-          {/* Session Retention */}
-          <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
-              {t(
-                'settings.system.activeSessionRetention',
-                'Keep Active Sessions For (Hours)',
-              )}
-            </label>
-            <Input
-              type="number"
-              placeholder={t(
-                'settings.system.placeholders.activeSessionRetention',
-                'e.g., 24',
-              )}
-              min={1}
-              value={localSystemSettings.activeSessionRetentionHours}
-              onChange={(e) =>
-                onChange(
-                  'activeSessionRetentionHours',
-                  parseInt(e.target.value, 10) || 24,
-                )
-              }
-              className="bg-background border text-foreground w-full max-w-xs"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              {t(
-                'settings.system.activeSessionRetentionDescription',
-                'How long to keep session data in fast memory.',
-              )}
-            </p>
-          </div>
-
+        <div className="space-y-4 rounded-xl border border-border/70 p-4">
+          <h4 className="text-sm font-medium text-foreground">
+            {t('settings.system.automation', 'Automation Governance')}
+          </h4>
           <div className="min-w-0">
             <label className="block text-muted-foreground mb-2 font-medium">
               {t(
@@ -331,17 +231,45 @@ export function SystemPerformanceSettings({
         </div>
       </div>
 
-      {/* Network */}
-      <div className="space-y-4">
-        <h4 className="text-sm font-medium text-foreground">
-          {t('settings.system.network', 'Network')}
-        </h4>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            'settings.system.networkRestartNotice',
-            'Changes to HTTP server network settings are applied after restarting the app.',
+      <div className="space-y-4 rounded-xl border border-border/70 p-4">
+        <div className="flex items-center gap-2">
+          <h4 className="text-sm font-medium text-foreground">
+            {t('settings.system.network', 'Network')}
+          </h4>
+          {networkSettingsChanged && (
+            <Badge
+              variant="outline"
+              className="border-warning/30 bg-warning/10 text-warning-foreground"
+            >
+              {t('settings.system.restartRequired', 'Restart required')}
+            </Badge>
           )}
-        </p>
+        </div>
+        <div
+          className={
+            networkSettingsChanged
+              ? 'rounded-lg border border-warning/30 bg-warning/10 px-3 py-2'
+              : ''
+          }
+        >
+          <p
+            className={
+              networkSettingsChanged
+                ? 'text-xs text-warning-foreground'
+                : 'text-xs text-muted-foreground'
+            }
+          >
+            {networkSettingsChanged
+              ? t(
+                  'settings.system.networkRestartPending',
+                  'You changed network settings. Save changes, then restart the app to apply them.',
+                )
+              : t(
+                  'settings.system.networkRestartNotice',
+                  'Changes to HTTP server network settings are applied after restarting the app.',
+                )}
+          </p>
+        </div>
 
         {/* HTTP Server Port */}
         <div className="min-w-0">

@@ -681,7 +681,8 @@
       "uploading": "Wird hochgeladen...",
       "dropFiles": "Dateien hier ablegen oder zum Hochladen klicken",
       "dropFolderHint": "Ordner hier ablegen, um ihn als Arbeitsbereich zu setzen",
-      "dropDirToastError": "Ordner im zentralen Bereich ablegen, um die Arbeitsbereich-Überschreibung zu setzen."
+      "dropDirToastError": "Ordner im zentralen Bereich ablegen, um die Arbeitsbereich-Überschreibung zu setzen.",
+      "dropMixedFoldersError": "Legen Sie Dateien ab, um sie zu importieren, oder einen einzelnen Ordner, um die Arbeitsbereich-Überschreibung zu setzen."
     },
     "statusBar": {
       "retryError": "Fehler beim erneuten Senden der Nachricht",

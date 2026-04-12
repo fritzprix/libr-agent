@@ -58,6 +58,8 @@ interface GeminiUsageMetadata {
   candidatesTokenCount?: number;
   cachedContentTokenCount?: number;
   thoughtsTokenCount?: number;
+  toolUsePromptTokenCount?: number;
+  totalTokenCount?: number;
 }
 
 interface GeminiStreamChunk {
@@ -100,6 +102,7 @@ export async function* processGeminiStream(
     totalTokens: 0,
     details: {} as Record<string, unknown>,
   };
+  let usageUpdateCount = 0;
 
   for await (const chunk of result) {
     if (signal.aborted) {
@@ -138,6 +141,18 @@ export async function* processGeminiStream(
         usageUpdated = true;
       }
 
+      if (chunk.usageMetadata.toolUsePromptTokenCount !== undefined) {
+        currentUsage.details.toolUsePromptTokenCount =
+          chunk.usageMetadata.toolUsePromptTokenCount;
+        usageUpdated = true;
+      }
+
+      if (chunk.usageMetadata.totalTokenCount !== undefined) {
+        currentUsage.details.providerReportedTotalTokenCount =
+          chunk.usageMetadata.totalTokenCount;
+        usageUpdated = true;
+      }
+
       // Add thinking tokens if present (for reasoning models)
       if (chunk.usageMetadata.thoughtsTokenCount !== undefined) {
         currentUsage.details.thoughtsTokenCount =
@@ -148,6 +163,20 @@ export async function* processGeminiStream(
       if (usageUpdated) {
         currentUsage.totalTokens =
           currentUsage.promptTokens + currentUsage.completionTokens;
+        usageUpdateCount += 1;
+        logger.info('Gemini usage metadata update', {
+          usageUpdateCount,
+          promptTokenCount: chunk.usageMetadata.promptTokenCount,
+          cachedContentTokenCount: chunk.usageMetadata.cachedContentTokenCount,
+          candidatesTokenCount: chunk.usageMetadata.candidatesTokenCount,
+          thoughtsTokenCount: chunk.usageMetadata.thoughtsTokenCount,
+          toolUsePromptTokenCount: chunk.usageMetadata.toolUsePromptTokenCount,
+          providerReportedTotalTokenCount: chunk.usageMetadata.totalTokenCount,
+          normalizedPromptTokens: currentUsage.promptTokens,
+          normalizedCompletionTokens: currentUsage.completionTokens,
+          normalizedCachedPromptTokens: currentUsage.cachedPromptTokens,
+          normalizedComputedTotalTokens: currentUsage.totalTokens,
+        });
         yield serializeStreamUsage(currentUsage);
       }
     }

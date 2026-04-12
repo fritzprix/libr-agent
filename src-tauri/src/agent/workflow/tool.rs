@@ -112,7 +112,7 @@ pub async fn continue_workflow_after_tool(
                     session_id: session_id.clone(),
                     reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
                 };
-                let _ = crate::agent::events::emit_agent_event(app_handle, event);
+                let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
                 return Ok(());
             }
 
@@ -162,7 +162,8 @@ pub async fn continue_workflow_after_tool(
                     session_id: session_id.clone(),
                     reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
                 };
-                if let Err(error) = crate::agent::events::emit_agent_event(app_handle, event) {
+                if let Err(error) = crate::agent::tauri_events::emit_agent_event(app_handle, event)
+                {
                     log::error!(
                         "Failed to emit recurring-stop completion event for session {}: {}",
                         session_id,

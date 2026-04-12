@@ -681,7 +681,8 @@
       "uploading": "Téléchargement...",
       "dropFiles": "Déposez les fichiers ici ou cliquez pour télécharger",
       "dropFolderHint": "Déposez un dossier ici pour le définir comme espace de travail",
-      "dropDirToastError": "Déposez les répertoires dans la zone centrale pour définir le remplacement de l'espace de travail."
+      "dropDirToastError": "Déposez les répertoires dans la zone centrale pour définir le remplacement de l'espace de travail.",
+      "dropMixedFoldersError": "Déposez des fichiers pour les importer, ou un seul dossier pour définir le remplacement de l'espace de travail."
     },
     "statusBar": {
       "retryError": "Échec de la nouvelle tentative du message",

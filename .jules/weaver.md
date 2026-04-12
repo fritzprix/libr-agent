@@ -133,3 +133,9 @@
 - **Woven (useSkillsDirectory):** Implemented derived state to compute and return an `effectiveDir` during render, which the parent (`GeneralTab`) uses for presentation and verification.
 - **AgentPlanningUpdates:** Eradicated the "Prop Hoarder" anti-pattern in `PlanningToastSummary` by removing 7 localized string props passed down from the parent.
 - **Woven (AgentPlanningUpdates):** Implemented the Custom Hook Pattern by calling `useTranslation()` directly inside `PlanningToastSummary`, allowing it to manage its own localization dependencies.
+
+## 2026-04-09 - [AgentPlanningUpdates] **Eradicated:** [God useEffect block / Unrelated Event Subscription] **Woven:** [Custom Hook Pattern (useAgentMessageTrigger)]
+
+- **AgentPlanningUpdates:** Extracted the complex Tauri event listener ('agent:event') and debouncing logic from a monolithic `useEffect` into the `useAgentMessageTrigger` custom hook.
+- Added strict filtering via `messageFilter` to trigger context updates only for successful tool-result messages by checking `message.role === 'tool'`, `message.tool_call_id`, `!message.error`, and `message.metadata?.toolError !== true`.
+- **Benefits:** Decoupled event subscription from component rendering logic, standardized event handling across the chat interface, and avoided refreshes from failed tool executions.

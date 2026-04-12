@@ -1,6 +1,12 @@
-import { Content, Part, createPartFromFunctionResponse } from '@google/genai';
+import {
+  Content,
+  Part,
+  createPartFromFunctionResponse,
+  Type,
+  Schema as GeminiSchema,
+} from '@google/genai';
 import { Message } from '@/models/chat';
-import { MCPContent } from '@/lib/mcp';
+import { MCPContent, JSONSchema } from '@/lib/mcp';
 import { getLogger } from '../../logger';
 import {
   processMessageContent,
@@ -412,4 +418,79 @@ export function convertSingleMessage(message: Message): unknown {
     return null;
   }
   return null;
+}
+
+/**
+ * Recursively converts an MCPTool's JSONSchema into the Google GenAI FunctionDeclaration format.
+ * This properly handles nested objects and arrays, preserving all schema information.
+ * @param schema The MCP JSONSchema to convert.
+ * @returns The schema in the format required by Google GenAI SDK.
+ */
+export function convertMCPSchemaToGeminiParameters(
+  schema: JSONSchema,
+): GeminiSchema {
+  // Base case: String type with optional enum
+  if (schema.type === 'string') {
+    const result: GeminiSchema = { type: Type.STRING };
+    if (schema.description) result.description = schema.description;
+    if ('enum' in schema && Array.isArray(schema.enum)) {
+      result.enum = schema.enum as string[];
+    }
+    return result;
+  }
+
+  // Base case: Number types
+  if (schema.type === 'number' || schema.type === 'integer') {
+    const result: GeminiSchema = { type: Type.NUMBER };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Base case: Boolean type
+  if (schema.type === 'boolean') {
+    const result: GeminiSchema = { type: Type.BOOLEAN };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Base case: Null type
+  if (schema.type === 'null') {
+    const result: GeminiSchema = { type: Type.STRING };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Recursive case: Arrays
+  if (schema.type === 'array' && 'items' in schema && schema.items) {
+    const arrayItems = Array.isArray(schema.items)
+      ? schema.items[0]
+      : schema.items;
+    const result: GeminiSchema = {
+      type: Type.ARRAY,
+      items: arrayItems
+        ? convertMCPSchemaToGeminiParameters(arrayItems)
+        : { type: Type.STRING },
+    };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Recursive case: Objects
+  if (schema.type === 'object' && 'properties' in schema && schema.properties) {
+    const geminiProperties: Record<string, GeminiSchema> = {};
+
+    for (const [key, propSchema] of Object.entries(schema.properties)) {
+      geminiProperties[key] = convertMCPSchemaToGeminiParameters(propSchema);
+    }
+
+    const result: GeminiSchema = {
+      type: Type.OBJECT,
+      properties: geminiProperties,
+    };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Fallback for unknown or incomplete types
+  return { type: Type.STRING };
 }

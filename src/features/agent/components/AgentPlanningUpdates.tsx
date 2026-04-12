@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import type { Message } from '@/models/chat';
+import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import equal from 'fast-deep-equal';
-import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui';
@@ -14,7 +15,6 @@ import {
   type PlanningState,
   type ScratchpadState,
 } from '@/models/planning';
-import type { AgentEventPayload } from '@/context/agent-session/types';
 
 const logger = getLogger('AgentPlanningUpdates');
 
@@ -204,12 +204,6 @@ function PlanningToastSummary({
   );
 }
 
-function isPlanningRelatedTool(toolName: string): boolean {
-  return (
-    toolName.startsWith('planning__') || toolName.startsWith('scratchpad__')
-  );
-}
-
 export function AgentPlanningUpdates() {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
@@ -218,7 +212,6 @@ export function AgentPlanningUpdates() {
   const previousPlanningRef = useRef<PlanningState | undefined>(undefined);
   const previousScratchpadRef = useRef<ScratchpadState | undefined>(undefined);
   const hasHydratedRef = useRef(false);
-  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const planningState = useMemo(
     () => parsePlanningState(serviceContexts.planning?.structuredState),
@@ -234,59 +227,45 @@ export function AgentPlanningUpdates() {
       hasHydratedRef.current = false;
       previousPlanningRef.current = undefined;
       previousScratchpadRef.current = undefined;
-      return;
     }
+  }, [session?.id]);
 
-    let unlisten: (() => void) | undefined;
-    let isMounted = true;
-
-    const initListener = async () => {
-      unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-        if (!isMounted || event.payload.type !== 'toolExecutionCompleted') {
-          return;
-        }
-
-        if (
-          event.payload.sessionId !== session.id ||
-          !event.payload.success ||
-          !isPlanningRelatedTool(event.payload.toolName)
-        ) {
-          return;
-        }
-
-        if (refreshTimeoutRef.current) {
-          clearTimeout(refreshTimeoutRef.current);
-        }
-
-        const toolName = event.payload.toolName;
-
-        refreshTimeoutRef.current = setTimeout(() => {
-          updateServiceContexts().catch((error: unknown) => {
-            logger.error(
-              'Failed to refresh planning contexts after tool update',
-              {
-                sessionId: session.id,
-                toolName,
-                error,
-              },
-            );
-          });
-        }, 200);
+  const triggerCallback = useCallback(() => {
+    updateServiceContexts().catch((error: unknown) => {
+      logger.error('Failed to refresh planning contexts after tool update', {
+        sessionId: session?.id,
+        error,
       });
-    };
-
-    initListener().catch((error: unknown) => {
-      logger.error('Failed to initialize planning update listener', error);
     });
-
-    return () => {
-      isMounted = false;
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-      unlisten?.();
-    };
   }, [session?.id, updateServiceContexts]);
+
+  const triggerOptions = useMemo(
+    () => ({
+      debounceMs: 200,
+      messageFilter: (message: Message) => {
+        if (!session?.id || message.sessionId !== session.id) return false;
+
+        // Tool result messages are emitted with role === 'tool' and tool_call_id.
+        // Refresh contexts after any successful tool completion so planning and
+        // scratchpad state stay in sync even when the backend does not attach
+        // tool_use metadata to tool result messages.
+        if (
+          message.role === 'tool' &&
+          typeof message.tool_call_id === 'string' &&
+          message.tool_call_id.length > 0 &&
+          !message.error &&
+          message.metadata?.toolError !== true
+        ) {
+          return true;
+        }
+
+        return false;
+      },
+    }),
+    [session?.id],
+  );
+
+  useAgentMessageTrigger(triggerCallback, triggerOptions);
 
   useEffect(() => {
     if (!session?.id) {

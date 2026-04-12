@@ -22,9 +22,9 @@ export interface ModelChoice {
 export interface AdvancedSettings {
   maxRetries: number;
   retryDelay: number; // in milliseconds
-  circuitBreakerThreshold: number;
   diffContextLines: number;
   defaultMaxOutputTokens: number;
+  toolResultInlineLimitBytes: number;
   defaultSessionMaxDepth: number;
   defaultSessionMaxFanout: number;
   // SP2: Global concurrent execution limits (runtime semaphores, not per-parent counts)
@@ -54,14 +54,12 @@ export type ContextStrategy = 'window' | 'compact';
 
 export interface SystemSettings {
   maxFileUploadSizeMB: number;
-  workspaceCapacityMB: number;
   webActionTimeoutSeconds: number;
   httpServerPort: number;
   httpServerExpose: boolean;
   mcpServerStartupTimeoutSeconds: number;
   mcpToolTimeoutSeconds: number;
   searchIndexFrequencyMinutes: number;
-  activeSessionRetentionHours: number;
   scheduledTaskMinimumIntervalMinutes: number;
   maxScheduledTaskGroups: number;
   shellIsolationLevel: IsolationLevel;
@@ -107,9 +105,9 @@ export const DEFAULT_SETTING: Settings = {
   advanced: {
     maxRetries: 1,
     retryDelay: 5000,
-    circuitBreakerThreshold: 3,
     diffContextLines: 3,
     defaultMaxOutputTokens: 8192,
+    toolResultInlineLimitBytes: 16 * 1024,
     defaultSessionMaxDepth: 0,
     defaultSessionMaxFanout: 0,
     maxConcurrentActiveSessions: 4,
@@ -127,14 +125,12 @@ export const DEFAULT_SETTING: Settings = {
   },
   system: {
     maxFileUploadSizeMB: 50,
-    workspaceCapacityMB: 10,
     webActionTimeoutSeconds: 30,
     httpServerPort: 3030,
     httpServerExpose: false,
     mcpServerStartupTimeoutSeconds: 60,
     mcpToolTimeoutSeconds: 0,
     searchIndexFrequencyMinutes: 5,
-    activeSessionRetentionHours: 24,
     scheduledTaskMinimumIntervalMinutes: 0,
     maxScheduledTaskGroups: 10,
     shellIsolationLevel: 'medium',

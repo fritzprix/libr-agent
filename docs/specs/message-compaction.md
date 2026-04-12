@@ -1,22 +1,21 @@
-# Message Compaction Spec and Contract
+# Message Compaction Contract
 
 ## 1. Scope
 
-This document defines the **current Rust-side contract** for Agent V2 message
-context management on `dev/0.7.x`.
+This document defines the **agreed normative contract** for Agent V2 message
+compaction.
+
+If the implementation differs from this document, the implementation should be
+moved toward this contract rather than treating old behavior as authoritative.
 
 It covers:
 
-- context strategy split (`window` vs `compact`)
-- request-time message stack assembly
-- compaction trigger and recovery behavior
+- context strategy separation
+- compaction timing and workflow sequencing
+- incremental summary folding
+- prompt-cache layout expectations
+- token semantics and limit interpretation
 - compact-summary persistence and reinjection
-- context selection rules and token budgeting
-- provider/tool-chain safety guarantees
-- scheduled-task behavior under the same compaction contract
-
-This document is normative for the current implementation. If the code changes,
-this file should be updated with it.
 
 ---
 
@@ -24,75 +23,143 @@ this file should be updated with it.
 
 The system supports two context strategies:
 
-| Strategy  | Behavior                                                          | Primary path                                                                          |
-| --------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `window`  | Sliding window over recent messages only. No summary persistence. | `select_recent_messages_fifo()`                                                       |
-| `compact` | Async compaction with persisted summary + recent tail.            | `request_llm_completion()` + `select_messages_within_context()` + compaction pipeline |
+| Strategy  | Behavior                                                         | Primary rule                      |
+| --------- | ---------------------------------------------------------------- | --------------------------------- |
+| `window`  | Sliding recent-message window only                               | No persisted summary state        |
+| `compact` | Persisted summary plus recent tail with compaction orchestration | Summary state may be read/written |
 
 ### Contract
 
-1. **`window` mode** remains a plain sliding-window strategy.
-2. **`compact` mode** is the only strategy that may read/write compact-summary
-   state.
-3. The two strategies must remain behaviorally separated. A compact-specific
-   rule must not silently leak into window mode.
+1. `window` mode remains a plain sliding-window strategy.
+2. `compact` mode is the only strategy allowed to persist and reuse compacted
+   summary state.
+3. Compact-specific rules must not silently leak into `window` mode.
 
 ---
 
-## 3. Ownership and Main Code Paths
+## 3. Ownership
 
-Rust owns compaction orchestration.
+Rust owns compaction orchestration and workflow control.
 
-Primary files:
-
-- `src-tauri/src/agent/llm/completion/request.rs`
-- `src-tauri/src/agent/llm/completion/compaction.rs`
-- `src-tauri/src/agent/llm/context_selector.rs`
-- `src-tauri/src/agent/llm/token_utils.rs`
-- `src-tauri/src/agent/llm/response.rs`
-- `src-tauri/src/agent/state.rs`
-
-Frontend acts as the provider bridge for:
+Frontend is only the provider bridge for:
 
 - `llm:completion-request`
 - `llm:compact-request`
+- `llm:compact-state`
 
-The frontend does **not** decide compaction strategy, split points, token
-selection, summary reinjection, or scheduled-task recovery semantics.
+Frontend must not decide:
+
+- when compaction should trigger
+- what message slice should be compacted
+- whether the next workflow step should be deferred
+- how compact-summary state is persisted or reinjected
+- whether a compact-mode request is safe to send
 
 ---
 
-## 4. Request-Time Flow in Compact Mode
+## 4. Core Model
 
-`request_llm_completion()` is the source of truth.
+Compaction is **incremental**, not full-prefix re-summarization.
 
-High-level flow:
+The intended state model is:
 
-1. validate session state
-2. load prompt and context-management settings
-3. drain pending user messages into the in-memory cache
-4. filter recovery-only messages from normal prompt context
-5. resolve references and merge recovery-produced trailing user runs if needed
-6. re-inject a persisted compact summary if the saved range is still valid
-7. compute token state and overflow preflight
-8. optionally trigger preflight compaction and pause the LLM request
-9. optionally trigger background compaction when threshold is crossed
-10. select final messages within the safe limit
-11. emit `llm:completion-request`
+```text
+next_summary = compaction(prev_summary, message_delta_from_last_compaction)
+```
+
+Where:
+
+- `prev_summary` is the persisted compact summary produced by the previous
+  compaction
+- `message_delta_from_last_compaction` is only the raw message delta accumulated
+  since the previous compaction, not the full conversation history
 
 ### Contract
 
-Compaction mode must always build the final LLM stack from:
+1. The summary is the persistent compacted state.
+2. Newly accumulated messages are the delta.
+3. Compaction folds delta into the previous summary.
+4. Compaction should not repeatedly re-send already-compacted raw history when
+   `prev_summary` already represents that history.
+5. The first compaction in a session is the only case where there is no prior
+   summary, so the compactable raw prefix becomes the initial delta baseline.
+
+Equivalent interpretation:
 
 ```text
-[optional compact-summary] + [selected recent tail]
+summary_state <- fold(summary_state, delta_messages)
 ```
 
-The summary is synthetic runtime context, not a user-authored persisted message.
+This is the implemented model for compact mode.
 
 ---
 
-## 5. Effective Context Limit
+## 5. Workflow Timing Contract
+
+Compaction evaluation happens **once per completed assistant response**, not per
+tool call.
+
+Correct sequencing:
+
+```text
+assistant response completed
+-> evaluate post-response compaction need
+-> if compaction required, block next workflow step
+-> run compaction
+-> resume deferred next workflow step
+```
+
+### The deferred next workflow step may be
+
+1. execute tool calls from the completed assistant response
+2. request the next LLM turn
+3. finalize the workflow
+
+### Contract
+
+1. A multi-tool assistant response is still a single response for compaction
+   evaluation purposes.
+2. Compaction must not be evaluated once per individual tool call in the same
+   assistant response.
+3. Tool execution may be deferred until compaction completes if the completed
+   assistant response triggers compaction.
+
+---
+
+## 6. Sync Behavior Contract
+
+Compaction is treated as synchronous from the perspective of workflow control,
+even if the provider call itself is bridged asynchronously through the
+frontend.
+
+### Contract
+
+While compaction is active:
+
+1. compacting state must be visible in runtime/UI state
+2. the next LLM turn must not start
+3. deferred tool execution must not start
+4. workflow completion must not be emitted if compaction has become the blocking
+   next step
+
+Completion of compaction is the gate that releases the deferred step.
+
+### Rust-owned preflight gate
+
+For compact mode, Rust owns the final pre-send hard gate.
+
+1. Rust assembles the candidate request payload and computes the authoritative
+   conservative preflight estimate.
+2. If that estimate exceeds the send budget, Rust must not emit the completion
+   request yet.
+3. Rust should synchronously arm preflight compaction first, then retry with the
+   rebuilt post-compaction payload.
+4. Frontend may perform provider-specific prompt injection, but it is not the
+   authority for compact-mode send/no-send decisions.
+
+---
+
+## 7. Effective Context Limit
 
 Compact mode computes:
 
@@ -100,73 +167,170 @@ Compact mode computes:
 safe_input_token_limit = min(max_input_context, model_max_limit)
 ```
 
-This value is the hard limit for request-side context preparation.
-
 ### Contract
 
-1. System prompt tokens and tool-definition tokens are budgeted before message
-   selection.
-2. Message selection must never intentionally exceed
-   `safe_input_token_limit`.
-3. A context-limit error means compaction/recent selection could not produce a
-   valid stack within that limit.
+1. `safe_input_token_limit` is the configured request-budget target used by
+   compact mode.
+2. System prompt, session context, and tool schema belong to the same effective
+   request budget.
+3. Message selection should aim to keep assembled normal requests within that
+   budget.
+4. If actual submitted prompt size exceeds configured limit, that is a real
+   oversize condition even if the provider still accepts the request because the
+   provider hard max is larger.
 
 ---
 
-## 6. Token Estimation Contract
+## 8. Token Semantics
 
-Token estimation uses `calculate_grounded_total_tokens()`.
+Token semantics must distinguish **provider-reported ground truth** from
+**occupancy estimates used for control/UI**.
 
-Behavior:
+### Ground truth
 
-1. If a recent assistant message has provider-reported `usage.totalTokens`,
-   that value is used as the grounded anchor.
-2. Messages after the grounded point are incrementally estimated via BPE.
-3. If no grounded anchor exists, fallback is full BPE across the candidate
-   stack.
+- `promptTokens` is the provider-reported input token count for the actual
+  submitted request
+- `completionTokens` is the provider-reported output token count when provided
+
+### Estimated / control values
+
+- request-time message selection uses a prompt-anchored occupancy estimate
+- post-response compaction trigger and UI gauge use Rust-emitted compaction
+  pressure
+- compaction pressure uses:
+
+```text
+reported promptTokens + conservative output estimate
+```
 
 ### Contract
 
-1. Grounded usage is preferred over pure local estimation when available.
-2. Tool definitions and prompt text are included in total request budgeting.
-3. Selection decisions must be based on the same budgeting model used by the
-   request path, not on ad hoc UI estimates.
-
-### Frontend observability note
-
-The current UI "Effective Context" gauge is **not** a raw-history meter.
-
-- the displayed percentage is based on Rust-emitted `contextUsage`
-- that value represents the **request-time assembled payload after compact-summary
-  reinjection and recent-tail selection**
-- it is measured against `safe_input_token_limit`, not against the total size of
-  all persisted session history
-
-Implication:
-
-- raw session history may be far larger than the UI percentage suggests
-- the gauge is expected to drop sharply after compaction because the next request
-  is built from `[compact-summary] + [selected recent tail]`
-
-Current frontend behavior also resets the in-memory displayed token count to `0`
-immediately after a successful compact response, and then replaces it on the next
-LLM request with the newly computed Rust `contextUsage`. This creates a visible
-"drop" in the gauge, but it does not mean Rust lost context state.
+1. `promptTokens` is the source of truth for actual submitted input size.
+2. request-time occupancy estimates are control heuristics, not provider-reported
+   request size.
+3. `promptTokens > configured limit` means the real submitted request exceeded
+   the configured limit.
+4. post-response compaction pressure is a conservative occupancy signal for
+   trigger/UI purposes, not a claim about pure submitted input size.
 
 ---
 
-## 7. Compact Summary Persistence and Reinjection
+## 9. Token Estimation Contract
+
+Request-time occupancy estimation uses a prompt-anchored calibration model.
+
+### Formula
+
+Search backward for the latest assistant message with valid
+`usage.promptTokens > 0`.
+
+Then derive:
+
+```text
+ratio = promptTokens(anchor) / BPE(messages_before_anchor + sys + tools)
+estimate = promptTokens(anchor) + BPE(messages[anchor_idx..]) * ratio
+```
+
+### Summary-aware anchor rule
+
+`promptTokens(anchor)` already includes every stable input component that was sent
+at that turn:
+
+- compact-summary reinjection, if present
+- system prompt
+- session context
+- tool schema
+- the selected message tail up to the anchor turn
+
+Therefore, once a grounded anchor exists, the estimator should treat those
+stable inputs as already-accounted-for base state and primarily estimate only the
+delta added after the anchor.
+
+### Why promptTokens is the anchor
+
+`promptTokens` is preferred over `totalTokens` because:
+
+1. it measures pure input tokens
+2. it grows monotonically with request history
+3. it is less noisy than a total-based ratio that includes variable completion
+   output
+
+### Contract
+
+1. The latest assistant turn with valid `usage.promptTokens > 0` is the preferred
+   request-time anchor.
+2. A compact-summary message **before** that grounded assistant does **not**
+   invalidate the anchor by itself.
+3. If the stable prompt layout is preserved, the estimator should reuse the
+   anchor's reported input tokens as the base and estimate primarily the
+   incremental delta after that anchor.
+4. Full-BPE estimation is an exception path for turns with no grounded anchor,
+   not the default strategy after compaction.
+5. Rust preflight should apply a conservative upward bias to the estimated
+   post-anchor delta before deciding whether the next request may be sent.
+
+### Post-response trigger estimate
+
+Post-response compaction decisions use:
+
+```text
+promptTokens + conservative_output_estimate
+```
+
+Where conservative output estimate is:
+
+1. provider-reported `completionTokens`, if available
+2. otherwise `totalTokens - promptTokens`, if available
+3. otherwise local BPE fallback
+4. plus a small upward safety bias
+
+---
+
+## 10. Prompt Cache Contract
+
+Compaction should preserve the same stable prompt layout as normal requests as
+much as possible.
+
+Intended shape:
+
+```text
+next_summary = compaction(
+  prev_summary,
+  composed_layout_of_prompt,
+  tool_schema,
+  tool_call_disable,
+  message_delta_from_last_compaction
+)
+
+next_output = llm_response(
+  prev_summary,
+  composed_layout_of_prompt,
+  tool_schema,
+  tool_call_enable,
+  latest_context
+)
+```
+
+### Contract
+
+1. Compaction should reuse the stable prompt-cache prefix from normal requests.
+2. Tool schema should stay present for cache-layout stability.
+3. Compaction may disable tool use, but should not strip tool schema from the
+   prompt layout merely because tool execution is disabled.
+4. The compaction request and normal request need not be identical, but their
+   stable prefix should remain aligned as much as possible.
+
+Important clarification:
+
+- this contract is about **stable prefix prompt cache reuse**
+- it does **not** imply that compaction requests and normal response requests
+  are byte-for-byte identical payloads
+
+---
+
+## 11. Compact Summary Persistence
 
 Compaction state is session-scoped and persisted.
-
-In-memory session fields:
-
-- `compact_context`
-- `compact_in_flight`
-- `last_compacted_tail_id`
-- `awaiting_compact_completion`
-- `compact_started_at_ms`
-- `last_completion_request`
 
 Persisted record fields:
 
@@ -176,234 +340,103 @@ Persisted record fields:
 - `summary`
 - `created_at`
 
-### Reinjection behavior
+Runtime session state may additionally track:
 
-At request start, if a compact record exists and `to_id` is still present in
-the current stack:
+- in-flight compaction guard
+- deferred workflow step
+- completion blocking state
+- compaction start time / observability
+- last completion request layout for cache-preserving replay
 
-1. Rust creates a synthetic user message:
-   - `id = compact-summary-{session_id}`
-   - `source = "compact-summary"`
-2. Rust replaces the compacted prefix with:
+### Contract
+
+1. There is at most one active compact record per session.
+2. Compact summary is the authoritative compressed history state for compact
+   mode.
+3. Updating compaction should replace the session's active compact record rather
+   than creating nested summary chains.
+
+---
+
+## 12. Reinjection Contract
+
+At request assembly time, if a compact record exists and its `to_id` still
+matches the current message stack, Rust may synthesize:
 
 ```text
 [compact-summary message] + [all messages after to_id]
 ```
 
-If `to_id` is no longer present, the cached compact record is treated as stale
-and invalidated.
-
 ### Contract
 
-1. There is at most one active compact record per session.
-2. Reinjection is valid only if the saved `to_id` still matches the current
+1. Reinjection is session-scoped.
+2. Reinjection is valid only if the persisted range still matches the current
    stack.
-3. Summary reinjection must never create nested summary-on-summary chains.
+3. Reinjection must not create nested summary-on-summary chains.
+4. Summary reinjection is runtime context, not a user-authored persisted chat
+   message.
 
 ---
 
-## 8. Compaction Trigger Contract
+## 13. Why Incremental Compaction Is Required
 
-Compact mode has two trigger classes.
+Even if prompt-cache prefix reuse works correctly, compaction input should still
+stay away from:
 
-### 8.1 Background compaction
+```text
+compaction(raw_compactable_prefix)
+```
 
-When token usage crosses the compact threshold, Rust may launch async
-background compaction.
+and remain at:
 
-### 8.2 Preflight compaction
+```text
+compaction(prev_summary, delta_messages_since_last_compaction)
+```
 
-When a request is already over the safe limit, Rust may trigger preflight
-compaction immediately and pause the LLM request until the compaction result is
-available.
+### Reasons
 
-### Guards
+1. it bounds compaction payload growth
+2. it avoids repeatedly sending already-compacted history
+3. it better matches the intended summary-as-state, delta-as-input model
+4. it remains compatible with stable prompt-cache prefix reuse
 
-The system prevents duplicate or pointless compaction with:
+---
 
-1. `compact_in_flight` — only one in-flight compaction per session
-2. `last_compacted_tail_id` — prevents re-compacting the same unchanged tail
+## 14. Frontend / UI Interpretation
+
+The UI gauge is **Compaction Pressure**, not a raw-history meter.
+
+It represents Rust-emitted post-response compaction pressure, not the total
+persisted session history size and not a separate frontend estimate.
 
 ### Contract
 
-1. Two overlapping compactions for the same session must not run concurrently.
-2. Preflight compaction is allowed to pause a request.
-3. If no new tail exists since the last compaction, the same-tail guard may
-   skip another compaction attempt.
+1. UI should treat Rust-emitted compaction pressure as the SSOT for compact-mode
+   occupancy display.
+2. UI should not reinterpret compact-mode token accounting with a separate local
+   estimator for control decisions.
+3. A sharp drop after compaction is expected because the next request is rebuilt
+   from compact-summary state plus recent tail.
 
 ---
 
-## 9. Context Selection Contract in Compact Mode
+## 15. Currently Confirmed Runtime Behavior
 
-Compact mode uses `select_messages_within_context()`.
+Already confirmed in logs:
 
-Selection behavior:
-
-1. messages may be batched to keep tool call groups coherent
-2. incomplete/orphan tool chains are removed for provider families that require
-   strict tool-call integrity
-3. messages are selected newest-to-oldest until budget is exhausted
-4. final selection order is restored to chronological order
-
-### 9.1 First user message pinning
-
-**Current contract on `dev/0.7.x`:**
-
-- `select_messages_within_context()` supports an explicit
-  `SelectionOptions.pin_first_user_message` flag
-- the default is `true`
-- **compact mode passes `pin_first_user_message: false`**
-- `window` mode does not use this selector and is unaffected
-
-### What "pinning" means
-
-When pinning is enabled, the selector:
-
-1. reserves budget for the first user message
-2. excludes that message from reverse tail scanning
-3. may prepend it back to the final result
-4. may merge it with the first selected user message if both are user turns
-
-When pinning is disabled, none of that special handling applies. The first user
-message is just another candidate in the normal reverse scan.
-
-### Contract
-
-1. **Compact mode must not pin the first user message.**
-2. **Window mode behavior must remain unchanged.**
-3. Disabling pinning must also disable all pinning-derived budget reservation,
-   skip logic, max-message adjustment, and prepend/merge behavior.
-
-This is important: turning off pinning is **not** just a presentation tweak. It
-changes token reservation and final message assembly.
+1. post-response compaction evaluation runs after completed assistant responses
+2. tool execution can be deferred until compaction completes
+3. compact response is stored
+4. deferred tool execution resumes after compaction
 
 ---
 
-## 10. Tool-Chain Safety Contract
+## 16. Alignment Status
 
-For providers with strict tool sequencing requirements, compact-mode selection
-must not leave broken tool chains in the final prompt.
+Core implementation is now aligned with this contract:
 
-Current protected provider family:
-
-- `anthropic`
-- `gemini`
-- `openai`
-- `openrouter`
-- `groq`
-
-Rules:
-
-1. orphan tool results are removed
-2. unresolved assistant tool-call messages are sanitized or dropped from the
-   unstable suffix
-3. the selected prompt must not contain a dangling tool chain that the provider
-   would reject
-
-### Contract
-
-Compaction must preserve provider-valid tool-call structure even when old
-history is summarized away.
-
----
-
-## 11. Error Contract
-
-Context-limit errors in compact mode are explicit runtime errors, not silent
-fallbacks.
-
-Two main cases:
-
-1. **Latest input too large**
-   - newest non-compactable tail alone exceeds the safe limit
-2. **Context limit exceeded after compaction recovery attempt**
-   - even after compaction handling and selection, request still cannot fit
-
-### Contract
-
-1. Compact mode must fail loudly when a valid stack cannot be assembled.
-2. Errors must remain actionable and distinguish between
-   "newest tail is too large" vs "overall context still does not fit".
-3. Failure must not silently switch to a different context strategy.
-
----
-
-## 12. Scheduled Task Contract
-
-Scheduled tasks use the same session context-management rules as normal agent
-sessions.
-
-`src-tauri/src/scheduled/runner.rs` currently:
-
-1. resolves the task session
-2. resumes or creates it
-3. injects the scheduled message
-4. lets the normal workflow/request path handle compact or window context logic
-
-### Contract
-
-1. Scheduled sessions do **not** have a special context-limit rotation path on
-   `dev/0.7.x`.
-2. Scheduled sessions must rely on the same compact/window behavior as normal
-   sessions.
-3. Scheduled execution must not create a fresh session just because compact-mode
-   context handling failed.
-
-This keeps scheduled behavior aligned with regular sessions instead of adding a
-special recovery rule.
-
----
-
-## 13. Behavior Changes Introduced by the Current Contract
-
-The most important current branch-level behavior is:
-
-### Compact mode no longer preserves the oldest user turn by force
-
-Implications:
-
-1. more budget is available for the recent tail
-2. compaction summary becomes the long-term history carrier
-3. recent tool chains and recent user/assistant turns are favored over the
-   oldest raw user message
-
-### Expected tradeoff
-
-If early user intent was not sufficiently captured in the compact summary, it
-may disappear sooner from raw prompt context. That is an intentional tradeoff in
-exchange for a cleaner, strictly recent-tail compaction model.
-
----
-
-## 14. Required Invariants
-
-Any future refactor must preserve these invariants unless this spec is updated:
-
-1. `window` and `compact` remain distinct strategies.
-2. Compact-summary reinjection is session-scoped and validated by `to_id`.
-3. Compact mode does not pin the first user message.
-4. Window mode behavior is unchanged by compact-mode selector rules.
-5. Provider-sensitive tool-chain cleanup remains intact.
-6. Scheduled tasks do not have a special rotation/recreate escape hatch.
-7. Context-limit failures are explicit and actionable, never silent.
-
----
-
-## 15. Files That Define This Contract
-
-Primary implementation:
-
-- `src-tauri/src/agent/llm/completion/request.rs`
-- `src-tauri/src/agent/llm/completion/compaction.rs`
-- `src-tauri/src/agent/llm/context_selector.rs`
-- `src-tauri/src/agent/llm/token_utils.rs`
-- `src-tauri/src/agent/llm/response.rs`
-- `src-tauri/src/agent/state.rs`
-- `src-tauri/src/scheduled/runner.rs`
-
-Primary tests:
-
-- `src-tauri/tests/llm_context_tests.rs`
-
-If behavior changes in these files, this document should be updated in the same
-change.
+1. compaction input is built from `prev_summary + delta_messages_since_last_compaction`
+2. already-compacted raw history is not re-sent as full-prefix raw input
+3. normal requests and compaction requests preserve stable prompt-layout inputs
+   as much as practical while keeping compaction payload bounded
+4. UI gauge uses Rust post-response compaction pressure as the displayed SSOT

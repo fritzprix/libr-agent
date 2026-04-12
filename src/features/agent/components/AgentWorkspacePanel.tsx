@@ -16,6 +16,8 @@ import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
+  checkDroppedPathType,
+  registerDroppedFiles,
   openWorkspaceInExplorer,
   openWorkspaceInTerminal,
 } from '@/lib/backend';
@@ -64,6 +66,7 @@ export function AgentWorkspacePanel() {
     isSettingOverride,
     isCancelingOverride,
     isBrowsing,
+    applyWorkspaceOverride,
     handleSetOverride,
     handleCancelOverride,
     handleBrowseFolder,
@@ -76,6 +79,52 @@ export function AgentWorkspacePanel() {
   const { handleWorkspaceFileDrop } = useWorkspaceFileDrop(
     rootPath,
     handleDropComplete,
+  );
+
+  const handleWorkspacePathDrop = useCallback(
+    async (paths: string[]) => {
+      if (!session?.id || paths.length === 0) return;
+
+      logger.info('Workspace paths dropped for override resolution', {
+        pathCount: paths.length,
+      });
+
+      try {
+        await registerDroppedFiles(paths);
+        const pathTypes = await Promise.all(
+          paths.map((path) => checkDroppedPathType(path)),
+        );
+
+        const hasFiles = pathTypes.includes('file');
+        const hasDirectories = pathTypes.includes('directory');
+
+        if (hasFiles && hasDirectories) {
+          toast.error(t('agent.workspace.dropMixedFoldersError'));
+          return;
+        }
+
+        if (hasFiles) {
+          await handleWorkspaceFileDrop(paths);
+          return;
+        }
+
+        if (paths.length !== 1) {
+          toast.error(t('agent.workspace.dropMixedFoldersError'));
+          return;
+        }
+
+        const [workspacePath] = paths;
+        if (!workspacePath) return;
+
+        await applyWorkspaceOverride(workspacePath);
+      } catch (error) {
+        logger.error('Failed to resolve dropped workspace path', error);
+        const message =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        toast.error(t('agent.workspace.setOverrideError', { error: message }));
+      }
+    },
+    [applyWorkspaceOverride, handleWorkspaceFileDrop, session?.id, t],
   );
 
   // Subscribe to DnD events
@@ -93,7 +142,7 @@ export function AgentWorkspacePanel() {
       } else if (event === 'drop') {
         setDragState({ isOver: false });
         if (payload.paths) {
-          handleWorkspaceFileDrop(payload.paths);
+          void handleWorkspacePathDrop(payload.paths);
         }
       } else if (event === 'leave') {
         setDragState({ isOver: false });
@@ -106,7 +155,7 @@ export function AgentWorkspacePanel() {
       logger.debug('Cleaning up DnD subscription for AgentWorkspacePanel');
       unsub();
     };
-  }, [subscribe, handleWorkspaceFileDrop]);
+  }, [subscribe, handleWorkspacePathDrop]);
 
   const handleOpenInExplorer = async () => {
     if (!session?.id || isOpeningNative || openingNativeLock.current) return;

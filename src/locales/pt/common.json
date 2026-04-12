@@ -681,7 +681,8 @@
       "uploading": "Carregando...",
       "dropFiles": "Solte os arquivos aqui ou clique para carregar",
       "dropFolderHint": "Solte uma pasta aqui para definir como espaço de trabalho",
-      "dropDirToastError": "Solte diretórios na área central para definir a substituição do espaço de trabalho."
+      "dropDirToastError": "Solte diretórios na área central para definir a substituição do espaço de trabalho.",
+      "dropMixedFoldersError": "Solte arquivos para importá-los ou uma única pasta para definir a substituição do espaço de trabalho."
     },
     "statusBar": {
       "retryError": "Falha ao tentar novamente a mensagem",

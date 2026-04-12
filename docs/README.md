@@ -10,6 +10,7 @@ This documentation is divided into the following sections:
 - **[Navigation Guide](./guides/navigation-guide.md)**: A map of the application's internal structure and UI routes to end-user features.
 - **[Assistant System Prompt Guide](./guides/system-prompt-guide.md)**: Guidelines for writing robust and effective system prompts.
 - **[Architecture](./architecture/agent-workflow-architecture.md)**: An overview of the system architecture, data flow, and security considerations.
+- **[Gemini Request Caching Implementation](./architecture/gemini-caching-implementation.md)**: How Gemini request shaping, explicit cached-content reuse, and cache lifecycle management work.
 - **[Session Lineage & Tree UI](./architecture/session-lineage-and-tree-ui.md)**: Design and implementation status for nested sessions, `session_api` MCP integration, and tree-based session UX.
 - **[Agent Vibe Charter](./architecture/agent-vibe-charter.md)**: The operating personality and decision rules for this workspace's agent behavior.
 - **[AI Soul Manifesto](./architecture/ai-soul-manifesto.md)**: Autonomy-first operating doctrine, mission rituals, and recovery principles for agent teams.

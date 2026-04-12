@@ -51,7 +51,11 @@ impl McpServerService {
                 );
             }
 
-            crate::agent::events::emit_resource_updated("mcpServer", "verify", Some(server_id));
+            crate::agent::tauri_events::emit_resource_updated(
+                "mcpServer",
+                "verify",
+                Some(server_id),
+            );
         });
     }
 

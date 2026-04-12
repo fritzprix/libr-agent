@@ -41,7 +41,7 @@ pub fn create_read_file_tool() -> MCPTool {
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file. Use showLineAnchors=true before calling edit tools (replaceLines, insertAfterLine, deleteLines, editFile) to obtain anchor values."
+        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true before calling edit tools (replaceLines, insertAfterLine, deleteLines, editFile) to obtain anchor values."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,

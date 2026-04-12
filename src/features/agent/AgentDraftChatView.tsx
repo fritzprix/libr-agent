@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui';
 import { AgentModelPicker } from './components/AgentModelPicker';
+import { AgentDraftWorkspacePreviewPanel } from './components/AgentDraftWorkspacePreviewPanel';
 import {
   Send,
   Square,
@@ -31,6 +32,7 @@ import {
 } from '@/lib/assistant/runtime-builtins';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
 import { useAgentDraftChat } from './hooks/useAgentDraftChat';
+import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
 
 // Icon mapping helper (since backend returns string IDs)
 const getIconForService = (iconId?: string) => {
@@ -99,6 +101,16 @@ function DraftChatInner() {
     onDismiss,
   } = useAgentDraftChat();
 
+  const fileQuery =
+    stage.kind === 'typing-arg' && stage.typeName === 'file'
+      ? stage.query
+      : null;
+  const workspaceFileResults = useWorkspaceFiles(
+    undefined,
+    fileQuery,
+    workspaceOverride,
+  );
+
   // Auto-resize textarea - Mirrored from AgentChatInput
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -145,47 +157,12 @@ function DraftChatInner() {
 
   return (
     <div className="flex h-full w-full overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]">
-      {/* Workspace Side Panel (Placeholder/Static for Draft) */}
+      {/* Workspace Side Panel */}
       {workspaceOverride && (
-        <div className="w-80 h-full border-r bg-background/95 backdrop-blur flex flex-col animate-in slide-in-from-left duration-300">
-          <div className="px-4 py-3 border-b flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <FolderOpen className="w-4 h-4 text-primary" />
-              <span>Workspace</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-foreground"
-              onClick={() => setWorkspaceOverride(null)}
-              aria-label={t('common:close', 'Close')}
-            >
-              <X className="w-3 h-3" />
-            </Button>
-          </div>
-          <div className="p-4 flex-1 overflow-auto space-y-4">
-            <div>
-              <div className="text-[10px] text-primary font-bold uppercase tracking-wider mb-2">
-                {t(
-                  'agent.draft.workspaceOverrideActive',
-                  'Workspace Override Active',
-                )}
-              </div>
-              <div className="bg-muted/50 p-2 rounded-md font-mono text-[10px] break-all border border-border/50">
-                {workspaceOverride}
-              </div>
-            </div>
-            <div className="p-6 border border-dashed rounded-xl text-center flex flex-col items-center gap-3 bg-muted/20">
-              <Loader2 className="w-5 h-5 text-muted-foreground/40 animate-spin" />
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {t(
-                  'agent.draft.filesWillBeListedAfterStart',
-                  'Files will be listed after session starts',
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
+        <AgentDraftWorkspacePreviewPanel
+          workspacePath={workspaceOverride}
+          onClear={() => setWorkspaceOverride(null)}
+        />
       )}
 
       {/* Main Chat Area */}
@@ -414,12 +391,16 @@ function DraftChatInner() {
               {/* Input Form - Exact match for AgentChatInput formClassName */}
               <div className="relative group">
                 {stage.kind !== 'idle' &&
-                  (typeResults.length > 0 || skillResults.length > 0) && (
+                  (typeResults.length > 0 ||
+                    skillResults.length > 0 ||
+                    workspaceFileResults.length > 0) && (
                     <InputTokenDropdown
                       mode={
                         stage.kind === 'typing-type'
                           ? { kind: 'types', items: typeResults }
-                          : { kind: 'skills', items: skillResults }
+                          : stage.typeName === 'file'
+                            ? { kind: 'files', items: workspaceFileResults }
+                            : { kind: 'skills', items: skillResults }
                       }
                       onSelectType={(typeName) => {
                         const cursorPos =
@@ -474,20 +455,48 @@ function DraftChatInner() {
 
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isSubmitting || isAttachmentLoading}
-                        className="mb-1 h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/5 shrink-0 transition-colors"
-                        aria-label={t(
-                          'fileAttachment.attachFiles',
-                          'Attach files',
+                      <span
+                        tabIndex={
+                          isSubmitting || isAttachmentLoading ? 0 : undefined
+                        }
+                        className={cn(
+                          'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0 h-8 w-8',
+                          (isSubmitting || isAttachmentLoading) &&
+                            'cursor-not-allowed',
                         )}
+                        aria-label={
+                          isSubmitting || isAttachmentLoading
+                            ? t('fileAttachment.attachFiles', 'Attach files')
+                            : undefined
+                        }
+                        aria-disabled={
+                          isSubmitting || isAttachmentLoading ? true : undefined
+                        }
+                        role={
+                          isSubmitting || isAttachmentLoading
+                            ? 'button'
+                            : undefined
+                        }
                       >
-                        <Paperclip className="h-4 w-4" />
-                      </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isSubmitting || isAttachmentLoading}
+                          className={cn(
+                            'h-full w-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors',
+                            (isSubmitting || isAttachmentLoading) &&
+                              'pointer-events-none',
+                          )}
+                          aria-label={t(
+                            'fileAttachment.attachFiles',
+                            'Attach files',
+                          )}
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent>
                       {t('fileAttachment.attachFiles', 'Attach files')}
@@ -511,6 +520,22 @@ function DraftChatInner() {
                     style={textareaStyle}
                     className="flex-1 resize-none bg-transparent outline-none border-none py-3 px-2 text-sm leading-relaxed max-h-32 min-h-[44px] overflow-y-auto transition-colors"
                     onKeyDown={(e) => {
+                      if (
+                        stage.kind !== 'idle' &&
+                        (typeResults.length > 0 ||
+                          skillResults.length > 0 ||
+                          workspaceFileResults.length > 0) &&
+                        [
+                          'ArrowUp',
+                          'ArrowDown',
+                          'Enter',
+                          'Tab',
+                          'Escape',
+                        ].includes(e.key)
+                      ) {
+                        return;
+                      }
+
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         if (
@@ -526,26 +551,70 @@ function DraftChatInner() {
 
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        type="submit"
-                        disabled={
+                      <span
+                        tabIndex={
                           (!input.trim() && !hasAttachedFiles) ||
                           isSubmitting ||
                           isAttachmentLoading
+                            ? 0
+                            : undefined
                         }
-                        size="icon"
-                        className="mb-1 shrink-0 shadow-lg transition-all active:scale-95"
-                        aria-label={t(
-                          'agent.input.sendAriaLabel',
-                          'Send message',
+                        className={cn(
+                          'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0',
+                          ((!input.trim() && !hasAttachedFiles) ||
+                            isSubmitting ||
+                            isAttachmentLoading) &&
+                            'cursor-not-allowed',
                         )}
+                        aria-label={
+                          (!input.trim() && !hasAttachedFiles) ||
+                          isSubmitting ||
+                          isAttachmentLoading
+                            ? t('agent.input.sendAriaLabel', 'Send message')
+                            : undefined
+                        }
+                        aria-disabled={
+                          (!input.trim() && !hasAttachedFiles) ||
+                          isSubmitting ||
+                          isAttachmentLoading
+                            ? true
+                            : undefined
+                        }
+                        role={
+                          (!input.trim() && !hasAttachedFiles) ||
+                          isSubmitting ||
+                          isAttachmentLoading
+                            ? 'button'
+                            : undefined
+                        }
                       >
-                        {isSubmitting || isAttachmentLoading ? (
-                          <Loader2 className="animate-spin h-4 w-4" />
-                        ) : (
-                          <Send className="h-4 w-4" />
-                        )}
-                      </Button>
+                        <Button
+                          type="submit"
+                          disabled={
+                            (!input.trim() && !hasAttachedFiles) ||
+                            isSubmitting ||
+                            isAttachmentLoading
+                          }
+                          size="icon"
+                          className={cn(
+                            'shadow-lg transition-all active:scale-95',
+                            ((!input.trim() && !hasAttachedFiles) ||
+                              isSubmitting ||
+                              isAttachmentLoading) &&
+                              'pointer-events-none',
+                          )}
+                          aria-label={t(
+                            'agent.input.sendAriaLabel',
+                            'Send message',
+                          )}
+                        >
+                          {isSubmitting || isAttachmentLoading ? (
+                            <Loader2 className="animate-spin h-4 w-4" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent>
                       {t('agent.input.sendTooltip', 'Send')}

@@ -92,12 +92,12 @@ describe('GeminiService Tool Result Handling', () => {
             functionResponse: {
                 id: toolCallId,
                 name: toolName,
-                response: { temp: 25 },
+                response: { result: '{"temp":25}' },
             },
         });
     });
 
-    it('should prefer structured tool metadata over plain text for FunctionResponse payloads', () => {
+    it('should ignore structured tool metadata and use plain text for FunctionResponse payloads', () => {
         const toolCallId = 'call_structured';
         const toolName = 'agent__checkSession';
 
@@ -148,12 +148,7 @@ describe('GeminiService Tool Result Handling', () => {
                 id: toolCallId,
                 name: toolName,
                 response: {
-                    toolName: 'checkSession',
-                    sessionId: 'session-1',
-                    status: 'idle',
-                    responseStatus: 'success',
-                    turnCount: 4,
-                    result: 'Final answer',
+                    result: '✓ Session session-1 is terminal.',
                 },
             },
         });

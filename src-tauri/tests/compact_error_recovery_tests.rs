@@ -3,6 +3,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use tauri_mcp_agent_lib::agent::compact_recovery::{
+    handle_compact_error_state, CompactErrorAction,
+};
 use tauri_mcp_agent_lib::agent::concurrency::{
     ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
     DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
@@ -13,7 +16,6 @@ use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
-use tauri_mcp_agent_lib::agent::session_manager::handle_compact_error_with_dispatcher;
 use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEventManager};
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
@@ -124,8 +126,10 @@ fn build_agent_session(
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compact_in_flight: Arc::new(AtomicBool::new(true)),
-        last_compacted_tail_id: Arc::new(RwLock::new(None)),
+        last_compacted_tail_id: Arc::new(RwLock::new(Some("tail-before-error".to_string()))),
         awaiting_compact_completion: Arc::new(AtomicBool::new(awaiting_compact_completion)),
+        finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
+        deferred_workflow_step: Arc::new(RwLock::new(None)),
         compact_started_at_ms: Arc::new(RwLock::new(None)),
         expected_response_id: Arc::new(RwLock::new(None)),
         cached_stable_prompt: Arc::new(RwLock::new(None)),
@@ -152,7 +156,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     let dispatcher = RecordingDispatcher::default();
     let error = AgentRuntimeError::new(AgentRuntimeErrorType::RateLimitError, "LLM rate limit hit");
 
-    handle_compact_error_with_dispatcher(
+    let action = handle_compact_error_state(
         &session_repo,
         &active_sessions,
         &dispatcher,
@@ -161,6 +165,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     )
     .await
     .expect("compact error handling should succeed");
+    assert_eq!(action, CompactErrorAction::None);
 
     let persisted = repo
         .get_session(session_id)
@@ -178,6 +183,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     assert!(!session
         .awaiting_compact_completion
         .load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(*session.last_compacted_tail_id.read().await, None);
     drop(active);
 
     let compact_states = dispatcher.compact_states();
@@ -231,7 +237,7 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     )])));
     let dispatcher = RecordingDispatcher::default();
 
-    handle_compact_error_with_dispatcher(
+    let action = handle_compact_error_state(
         &session_repo,
         &active_sessions,
         &dispatcher,
@@ -240,6 +246,7 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     )
     .await
     .expect("compact error handling should succeed");
+    assert_eq!(action, CompactErrorAction::None);
 
     let persisted = repo
         .get_session(session_id)
@@ -257,6 +264,7 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     assert!(!session
         .awaiting_compact_completion
         .load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(*session.last_compacted_tail_id.read().await, None);
     drop(active);
 
     assert_eq!(dispatcher.compact_states().len(), 1);

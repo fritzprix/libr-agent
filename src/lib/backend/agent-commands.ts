@@ -2,12 +2,22 @@ import { safeInvoke } from '@/lib/backend/core';
 import type {
   AgentResponse,
   AgentRuntimeError,
+  HandleLLMResponseData,
   ExecuteUiTauriActionRequest,
 } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
 import type { MCPTool } from '@/lib/mcp';
 import { createId } from '@paralleldrive/cuid2';
+
+export interface CompactContextRecord {
+  id: string;
+  sessionId: string;
+  fromId: string;
+  toId: string;
+  summary: string;
+  createdAt: number;
+}
 
 /**
  * Handle LLM response from frontend by sending it to Rust backend
@@ -16,11 +26,14 @@ import { createId } from '@paralleldrive/cuid2';
 export async function handleLLMResponse(
   sessionId: string,
   assistantMessage: RustMessage,
-): Promise<void> {
-  await safeInvoke<AgentResponse>('agent_handle_llm_response', {
-    sessionId,
-    assistantMessage,
-  });
+): Promise<AgentResponse<HandleLLMResponseData>> {
+  return safeInvoke<AgentResponse<HandleLLMResponseData>>(
+    'agent_handle_llm_response',
+    {
+      sessionId,
+      assistantMessage,
+    },
+  );
 }
 
 /**
@@ -132,6 +145,14 @@ export async function handleCompactError(
   await safeInvoke<AgentResponse>('agent_handle_compact_error', {
     sessionId,
     error,
+  });
+}
+
+export async function getAgentCompactContext(
+  sessionId: string,
+): Promise<CompactContextRecord | null> {
+  return safeInvoke<CompactContextRecord | null>('agent_get_compact_context', {
+    sessionId,
   });
 }
 

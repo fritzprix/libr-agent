@@ -178,8 +178,11 @@ impl AssistantRepository for SqliteAssistantRepository {
 
         AssistantEntity::find()
             .filter(Expr::cust_with_values(
-                "LOWER(name) LIKE ?",
-                vec![sea_orm::Value::from(query_pattern)],
+                "LOWER(name) LIKE ? OR LOWER(config) LIKE ?",
+                vec![
+                    sea_orm::Value::from(query_pattern.clone()),
+                    sea_orm::Value::from(query_pattern),
+                ],
             ))
             .all(&self.db)
             .await

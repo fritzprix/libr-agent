@@ -18,10 +18,7 @@ interface UseLLMExecutionProps {
 
 export function useLLMExecution(props: UseLLMExecutionProps) {
   const state = useLLMExecutionState();
-  const exec = useExecuteCompletion({
-    ...props,
-    setContextUsageMap: state.setContextUsageMap,
-  });
+  const exec = useExecuteCompletion(props);
 
   return {
     ...state,

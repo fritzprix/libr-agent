@@ -1,5 +1,7 @@
 use crate::agent::state::AgentSession;
+use crate::agent::state::DeferredWorkflowStep;
 use crate::models::chat::Message;
+use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -44,6 +46,75 @@ pub(crate) struct BackgroundCompactionHandles {
     pub(crate) last_compacted_tail_id_arc: Arc<RwLock<Option<String>>>,
 }
 
+fn build_incremental_compact_summary_message(
+    session_id: &str,
+    summary: &str,
+    created_at: i64,
+) -> Message {
+    super::request::build_compact_summary_message(
+        session_id,
+        super::request::build_compact_summary_text(summary, &[]),
+        created_at,
+    )
+}
+
+fn build_compaction_request_payload(
+    session_id: &str,
+    messages: &[Message],
+    split_idx: usize,
+    compact_record: Option<&CompactContextRecord>,
+    created_at: i64,
+) -> Option<(Vec<Message>, String, String, usize, bool)> {
+    if split_idx == 0 {
+        return None;
+    }
+
+    if let Some(record) = compact_record {
+        if let Some(compacted_to_idx) = messages
+            .iter()
+            .position(|message| message.id == record.to_id)
+        {
+            // Incremental compaction input is:
+            //   [previous summary as one synthetic message] + [raw delta since record.to_id]
+            // It is deliberately not the full compactable prefix.
+            let first_delta_message_idx = compacted_to_idx.saturating_add(1);
+            if first_delta_message_idx >= split_idx {
+                return None;
+            }
+
+            let mut compact_messages = Vec::with_capacity(1 + split_idx - first_delta_message_idx);
+            compact_messages.push(build_incremental_compact_summary_message(
+                session_id,
+                &record.summary,
+                created_at,
+            ));
+            compact_messages.extend(messages[first_delta_message_idx..split_idx].iter().cloned());
+
+            return Some((
+                compact_messages,
+                record.from_id.clone(),
+                messages[split_idx - 1].id.clone(),
+                split_idx - first_delta_message_idx,
+                true,
+            ));
+        }
+    }
+
+    // First compaction in a session has no previous compact summary yet, so the
+    // compactable raw prefix becomes the initial delta baseline.
+    let compact_messages = messages[..split_idx].to_vec();
+    Some((
+        compact_messages,
+        messages
+            .first()
+            .map(|message| message.id.clone())
+            .unwrap_or_default(),
+        messages[split_idx - 1].id.clone(),
+        split_idx,
+        false,
+    ))
+}
+
 /// Determines the compactable prefix for preflight compaction.
 ///
 /// Unlike background compaction, preflight compaction must preserve the newest
@@ -73,11 +144,14 @@ pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
 pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
     let has_compact_summary = messages
         .first()
-        .map(|message| message.id.starts_with("compact-summary-"))
+        .map(|message| message.is_compact_summary())
         .unwrap_or(false);
 
     if !has_compact_summary {
-        return true;
+        // Without a persisted compact summary at the head, a same-tail retry is
+        // still meaningful: the previous compaction may have failed or been
+        // abandoned before Rust stored the summary record.
+        return false;
     }
 
     split_idx <= 1
@@ -120,19 +194,37 @@ pub(crate) async fn trigger_background_compaction(
         );
         return Ok(false);
     }
-
-    let compact_msgs = messages[..split_idx].to_vec();
-    let from_id = compact_msgs
-        .first()
-        .map(|m| m.id.clone())
-        .unwrap_or_default();
-    let to_id = compact_msgs
-        .last()
-        .map(|m| m.id.clone())
-        .unwrap_or_default();
+    let started_at_ms = chrono::Utc::now().timestamp_millis();
+    let compact_context_record = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.compact_context.clone())
+    };
+    let compact_context_record = if let Some(compact_context_handle) = compact_context_record {
+        compact_context_handle.read().await.clone()
+    } else {
+        None
+    };
+    let Some((compact_msgs, from_id, to_id, compacted_delta_count, reused_prior_summary)) =
+        build_compaction_request_payload(
+            session_id,
+            messages,
+            split_idx,
+            compact_context_record.as_ref(),
+            started_at_ms,
+        )
+    else {
+        handles.compact_in_flight_arc.store(false, Ordering::SeqCst);
+        log::debug!(
+            "⏭️ Compaction skipped (no new delta beyond previous summary): session={}, tail={}",
+            session_id,
+            current_tail_id.as_deref().unwrap_or("?")
+        );
+        return Ok(false);
+    };
 
     *handles.last_compacted_tail_id_arc.write().await = current_tail_id.clone();
-    let started_at_ms = chrono::Utc::now().timestamp_millis();
     let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
         active
@@ -173,11 +265,13 @@ pub(crate) async fn trigger_background_compaction(
         }
     });
     log::info!(
-        "🔧 Background compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, tail={}, started_at_ms={}",
+        "🔧 Background compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
         session_id,
         log_from_id,
         log_to_id,
         split_idx,
+        compacted_delta_count,
+        reused_prior_summary,
         current_tail_id.as_deref().unwrap_or("?"),
         started_at_ms
     );
@@ -185,48 +279,53 @@ pub(crate) async fn trigger_background_compaction(
     Ok(true)
 }
 
-pub async fn maybe_trigger_post_idle_compaction(
+pub async fn trigger_post_response_compaction_if_needed(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
     session_name: &str,
     messages: &[Message],
     usage_total_tokens: usize,
+    deferred_step: DeferredWorkflowStep,
 ) -> Result<bool, String> {
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let should_trigger = uses_compaction_strategy(&settings.context_strategy)
+        && usage_total_tokens > safe_input_token_limit;
 
-    if !should_trigger_background_compaction(
+    log::info!(
+        "🧮 Post-response compaction evaluation: session={}, total_tokens={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, should_trigger={}",
+        session_id,
         usage_total_tokens,
+        settings.context_strategy,
+        settings.max_input_context,
+        settings.model_max_limit,
         safe_input_token_limit,
-        &settings.context_strategy,
-    ) {
+        should_trigger
+    );
+
+    if !should_trigger {
         return Ok(false);
     }
 
-    let (compact_context_arc, handles) = {
+    let (handles, finalize_workflow_after_compact, deferred_workflow_step_handle) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         (
-            session.compact_context.clone(),
             BackgroundCompactionHandles {
                 compact_in_flight_arc: session.compact_in_flight.clone(),
                 last_compacted_tail_id_arc: session.last_compacted_tail_id.clone(),
             },
+            session.finalize_workflow_after_compact.clone(),
+            session.deferred_workflow_step.clone(),
         )
     };
 
-    if compact_context_arc.read().await.is_some() {
-        log::debug!(
-            "⏭️ Post-idle compaction skipped (summary cached): session={}",
-            session_id
-        );
-        return Ok(false);
-    }
-
+    finalize_workflow_after_compact.store(true, Ordering::SeqCst);
+    *deferred_workflow_step_handle.write().await = Some(deferred_step);
     let triggered = trigger_background_compaction(
         active_sessions,
         app_handle,
@@ -238,9 +337,12 @@ pub async fn maybe_trigger_post_idle_compaction(
     )
     .await?;
 
-    if triggered {
+    if !triggered {
+        finalize_workflow_after_compact.store(false, Ordering::SeqCst);
+        *deferred_workflow_step_handle.write().await = None;
+    } else {
         log::info!(
-            "🧹 Post-idle compaction triggered from completed response usage: session={}, total_tokens={}, limit={}",
+            "🧹 Post-response compaction triggered synchronously from completed response usage: session={}, total_tokens={}, limit={}",
             session_id,
             usage_total_tokens,
             safe_input_token_limit
@@ -257,6 +359,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
     session_name: &str,
     messages: &[Message],
     parent_request: Option<CompactionParentRequest>,
+    resume_completion_after_compact: bool,
 ) -> Result<bool, String> {
     if messages.len() <= 1 {
         return Ok(false);
@@ -266,16 +369,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
     if split_idx == 0 {
         return Ok(false);
     }
-    if split_idx == 1
-        && messages
-            .first()
-            .map(|message| message.id.starts_with("compact-summary-"))
-            .unwrap_or(false)
-    {
-        return Ok(false);
-    }
-
-    let (compact_in_flight_arc, last_compacted_tail_id_arc, awaiting_compact_arc) = {
+    let (
+        compact_in_flight_arc,
+        last_compacted_tail_id_arc,
+        awaiting_compact_arc,
+        compact_context_handle,
+    ) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
@@ -284,6 +383,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
             session.compact_in_flight.clone(),
             session.last_compacted_tail_id.clone(),
             session.awaiting_compact_completion.clone(),
+            session.compact_context.clone(),
         )
     };
 
@@ -291,7 +391,9 @@ pub(crate) async fn try_trigger_preflight_compaction(
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok();
     if !claimed_in_flight {
-        awaiting_compact_arc.store(true, Ordering::SeqCst);
+        if resume_completion_after_compact {
+            awaiting_compact_arc.store(true, Ordering::SeqCst);
+        }
         let state_event = crate::agent::llm::types::CompactStateEvent {
             session_id: session_id.to_string(),
             session_name: Some(session_name.to_string()),
@@ -302,10 +404,17 @@ pub(crate) async fn try_trigger_preflight_compaction(
         app_handle
             .emit("llm:compact-state", state_event)
             .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))?;
-        log::info!(
-            "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
-            session_id
-        );
+        if resume_completion_after_compact {
+            log::info!(
+                "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
+                session_id
+            );
+        } else {
+            log::info!(
+                "⏳ Reusing in-flight compaction without resume-after-compact: session={}, mode=manual",
+                session_id
+            );
+        }
         return Ok(true);
     }
 
@@ -318,19 +427,25 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(false);
     }
 
-    let compact_msgs = messages[..split_idx].to_vec();
-    let from_id = compact_msgs
-        .first()
-        .map(|m| m.id.clone())
-        .unwrap_or_default();
-    let to_id = compact_msgs
-        .last()
-        .map(|m| m.id.clone())
-        .unwrap_or_default();
-
-    awaiting_compact_arc.store(true, Ordering::SeqCst);
-    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let started_at_ms = chrono::Utc::now().timestamp_millis();
+    let compact_context_record = compact_context_handle.read().await.clone();
+    let Some((compact_msgs, from_id, to_id, compacted_delta_count, reused_prior_summary)) =
+        build_compaction_request_payload(
+            session_id,
+            messages,
+            split_idx,
+            compact_context_record.as_ref(),
+            started_at_ms,
+        )
+    else {
+        compact_in_flight_arc.store(false, Ordering::SeqCst);
+        return Ok(false);
+    };
+
+    if resume_completion_after_compact {
+        awaiting_compact_arc.store(true, Ordering::SeqCst);
+    }
+    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
         active
@@ -348,7 +463,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         from_id,
         to_id,
         parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
-        resume_completion_after_compact: true,
+        resume_completion_after_compact,
     };
     let log_from_id = compact_event.from_id.clone();
     let log_to_id = compact_event.to_id.clone();
@@ -367,15 +482,31 @@ pub(crate) async fn try_trigger_preflight_compaction(
         .emit("llm:compact-request", compact_event)
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))?;
 
-    log::info!(
-        "⏸️ Preflight compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, tail={}, started_at_ms={}",
-        session_id,
-        log_from_id,
-        log_to_id,
-        split_idx,
-        current_tail_id.as_deref().unwrap_or("?"),
-        started_at_ms
-    );
+    if resume_completion_after_compact {
+        log::info!(
+            "⏸️ Preflight compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            session_id,
+            log_from_id,
+            log_to_id,
+            split_idx,
+            compacted_delta_count,
+            reused_prior_summary,
+            current_tail_id.as_deref().unwrap_or("?"),
+            started_at_ms
+        );
+    } else {
+        log::info!(
+            "🧰 Manual compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            session_id,
+            log_from_id,
+            log_to_id,
+            split_idx,
+            compacted_delta_count,
+            reused_prior_summary,
+            current_tail_id.as_deref().unwrap_or("?"),
+            started_at_ms
+        );
+    }
 
     Ok(true)
 }
@@ -417,6 +548,49 @@ pub async fn trigger_preflight_compaction_for_session(
         &session_name,
         &merged_messages,
         None,
+        true,
+    )
+    .await
+}
+
+pub async fn trigger_manual_compaction_for_session(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<bool, String> {
+    let (session_name, messages) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let session_name = session
+            .metadata
+            .name
+            .clone()
+            .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
+
+        let messages = session
+            .messages
+            .read()
+            .await
+            .iter()
+            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        (session_name, messages)
+    };
+
+    let merged_messages = super::request::merge_consecutive_user_messages(messages);
+    try_trigger_preflight_compaction(
+        active_sessions,
+        app_handle,
+        session_id,
+        &session_name,
+        &merged_messages,
+        None,
+        false,
     )
     .await
 }

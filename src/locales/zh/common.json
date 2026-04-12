@@ -681,7 +681,8 @@
       "uploading": "正在上传...",
       "dropFiles": "拖放文件至此处或点击上传",
       "dropFolderHint": "拖放文件夹至此处以设为工作区",
-      "dropDirToastError": "将目录拖放到中央区域以设置工作区覆盖。"
+      "dropDirToastError": "将目录拖放到中央区域以设置工作区覆盖。",
+      "dropMixedFoldersError": "拖放文件可导入它们，拖放单个文件夹可设置工作区覆盖。"
     },
     "statusBar": {
       "retryError": "重试消息失败",

@@ -51,7 +51,7 @@ describe('TokenMetricsBadge', () => {
     expect(screen.getByTestId('cache-hit-indicator')).toHaveTextContent('cache');
   });
 
-  it('labels the gauge as effective context when Rust context usage is provided', () => {
+  it('labels the gauge as compaction pressure when Rust SSOT pressure is provided', () => {
     const usage: TokenUsage = {
       promptTokens: 1200,
       completionTokens: 120,
@@ -62,7 +62,7 @@ describe('TokenMetricsBadge', () => {
     render(
       <TokenMetricsBadge
         usage={usage}
-        contextUsage={{
+        compactionPressure={{
           totalTokens: 25822,
           contextWindow: 49152,
           modelMaxContext: 65536,
@@ -70,6 +70,6 @@ describe('TokenMetricsBadge', () => {
       />,
     );
 
-    expect(screen.getByText('Effective Context')).toBeInTheDocument();
+    expect(screen.getByText('Compaction Pressure')).toBeInTheDocument();
   });
 });

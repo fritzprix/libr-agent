@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.5] - 2026-04-12
+
+### 🚀 Features
+
+- **Reorganized Settings Layout**: Moved UI visuals (Font, Metrics, Tool Details) to the General tab and File/Workspace settings to the System tab for a more intuitive configuration experience.
+- **AI & Models UX Polish**: Reordered the AI & Models tab to prioritize model selection at the top, allowing faster primary and fallback LLM adjustments.
+
+### 🐛 Fixes
+
+- **Provider Config and Model Picker Sync**: Fixed an issue where model pickers would fail to refresh immediately after saving new provider API keys or base URLs.
+- **Ollama and Attachments Reliability**: Improved Ollama model listing stability and session-attachment handling for smoother local model workflows.
+- **Compaction Flow Hardening**: Strengthened session compaction logic and UI boundary detection to prevent display drifts and inconsistent states during long conversations.
+
+### 🔧 Internal
+
+- **Implicit Gemini Caching**: Switched the Gemini service to use implicit model caching, streamlining request assembly and improving cache hit reliability.
+- **Session Compaction Tooling**: Introduced new internal tools and anchors for manual session compaction to support advanced context management.
+- **Code Quality and Cleanup**: Standardized Rust compaction file formatting and removed redundant handlers and props from the Settings feature to improve maintainability.
+
+## [0.7.4] - 2026-04-10
+
+### 🐛 Fixes
+
+- **More Reliable Long-Context Recovery**: Tightened compaction preflight and context-budget handling so long-running sessions recover more cleanly when they hit context pressure instead of drifting into inconsistent retry states.
+- **Gemini Cache Alignment**: Refined Gemini request prefix caching and related preflight behavior so cache reuse stays more stable across repeated requests.
+- **Windows CI Stability**: Fixed a Windows-only Rust integration test crash in compact-recovery coverage, keeping the release pipeline consistent across platforms.
+
+### 🔧 Internal
+
+- **Large File Read Guidance Cleanup**: Improved chunking guidance and supporting tests around large workspace reads so agent/tool behavior is easier to reason about and validate.
+
+## [0.7.3] - 2026-04-10
+
+### 🚀 Features
+
+- **Draft Workspace Preview and File Mentions**: Added a draft workspace preview surface with smarter file-tree shaping and mention handling so agents can inspect and reference staged workspace files more comfortably before sending.
+
+### 🐛 Fixes
+
+- **Compaction Retry Recovery**: Fixed a same-tail retry edge case in context compaction so long-running sessions can retrigger compaction instead of getting stuck past the configured limit.
+- **Provider Tool-Result Prompt Inflation**: Stopped structured tool metadata and JSON-looking tool text from being promoted into provider prompt payloads, fixing Gemini prompt bloat and aligning tool-result handling across providers.
+
+### 🔧 Internal
+
+- **Targeted Diagnostics and Regression Coverage**: Added focused logs and regression tests around compaction telemetry, Gemini usage accounting, and provider tool-result conversion to make future prompt-drift issues easier to catch.
+
+## [0.7.2] - 2026-04-09
+
+### 🚀 Features
+
+- **Settings Workflow Overhaul**: Reorganized Settings into clearer General / AI Models / Chat / System / Advanced areas, added sticky tab state, discard support, unsaved-change guarding, and stronger destructive-action handling so configuration changes feel safer and less chaotic.
+- **Smarter Model and Tool Guidance**: Improved Gemini prompt-cache handling, expanded browser tool guidance around cached pagination, and refined tool inventory browsing so agents get clearer instructions when reading content or discovering tools.
+
+### 🐛 Fixes
+
+- **Settings That Actually Match Reality**: Removed misleading or unused settings such as the session workspace capacity cap, wired retry-related model settings into live runtime behavior, and clarified restart-required system settings inline.
+- **Assistant Search and Tool Inventory Reliability**: Moved assistant searching into the Rust backend, fixed stale search clearing behavior, and corrected tool-list pagination/counting so empty external servers no longer skew results.
+- **Accessibility and Agent UI Polish**: Improved disabled-button tooltip behavior, status-bar recovery, and keyboard-focus labeling across agent chat controls so the interface is steadier and more accessible.
+
+### 🔧 Internal
+
+- **Search, Settings, and Agent Refactors**: Split large search and Gemini service logic into cleaner modules, continued cleanup across planning-update event handling, and added focused regression coverage for settings danger-zone confirmation and related UI behavior.
+
 ## [0.7.1] - 2026-04-08
 
 ### 🚀 Features

@@ -13,6 +13,7 @@ import { useSettings } from './SettingsContext';
 import { useLLMExecution } from './llm/useLLMExecution';
 import { useLLMListener } from './llm/useLLMListener';
 import type { LLMServiceContextValue, SessionStatus } from './llm/types';
+import { getAgentCompactContext } from '@/lib/backend/agent-commands';
 
 // Re-export types for consumers
 export type {
@@ -108,11 +109,12 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     cancelCompletionRequest,
     isCompacting,
     isAwaitingCompact,
-    getContextUsage,
+    getCompactionPressure,
     getCompactedRange,
     clearSessionState,
     clearAllCompactState,
-    resetContextUsageForSession,
+    clearCompactionPressureForSession,
+    setCompactionPressureMap,
     setCompacting,
     setCompactedRange,
     setAwaitingCompact,
@@ -142,11 +144,39 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     settingsRef,
     executeCompletionRequest,
     setStreamingMessages,
-    resetContextUsageForSession,
+    setCompactionPressureForSession: (sessionId, pressure) => {
+      setCompactionPressureMap((prev) => {
+        const next = new Map(prev);
+        next.set(sessionId, pressure);
+        return next;
+      });
+    },
+    clearCompactionPressureForSession,
     setCompactingFromEvent: setCompacting,
     setCompactedRangeForSession: setCompactedRange,
     setAwaitingCompactForSession: setAwaitingCompact,
   });
+
+  const refreshCompactedRange = useCallback(
+    async (sessionId: string) => {
+      try {
+        const compactContext = await getAgentCompactContext(sessionId);
+        if (!compactContext) {
+          setCompactedRange(sessionId, undefined);
+          return;
+        }
+
+        setCompactedRange(sessionId, {
+          fromId: compactContext.fromId,
+          toId: compactContext.toId,
+          summary: compactContext.summary,
+        });
+      } catch (error) {
+        logger.warn('Failed to refresh compacted range', { sessionId, error });
+      }
+    },
+    [setCompactedRange],
+  );
 
   const value: LLMServiceContextValue = {
     streamingMessages,
@@ -156,8 +186,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     cancelCompletionRequest,
     isCompacting,
     isAwaitingCompact,
-    getContextUsage,
+    getCompactionPressure,
     getCompactedRange,
+    refreshCompactedRange,
     clearSessionState,
     clearAllCompactState,
   };

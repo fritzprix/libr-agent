@@ -242,11 +242,6 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
           model: 'test-model',
           provider: 'openai',
           apiKey: 'test-key',
-          contextUsage: {
-            totalTokens: 100,
-            contextWindow: 4096,
-            modelMaxContext: 128000,
-          },
         },
       });
     });

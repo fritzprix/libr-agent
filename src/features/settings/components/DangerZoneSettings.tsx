@@ -6,6 +6,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Input,
 } from '@/components/ui';
 import {
   AlertDialog,
@@ -35,15 +36,24 @@ export function DangerZoneSettings({
   const { t } = useTranslation('common');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetConfirmationText, setResetConfirmationText] = useState('');
+
+  const isFactoryResetConfirmed = resetConfirmationText.trim() === 'RESET';
 
   return (
-    <div className="border-t pt-8 mt-4">
+    <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/5 p-6">
       <h3 className="text-lg font-medium text-destructive mb-4 flex items-center gap-2">
         {t('settings.dangerZone.title', '⚠️ Danger Zone')}
       </h3>
+      <p className="mb-6 text-sm text-muted-foreground">
+        {t(
+          'settings.dangerZone.description',
+          'These actions permanently delete local data. Double-check the scope before continuing.',
+        )}
+      </p>
       <div className="space-y-6">
         {/* Delete All Sessions Card */}
-        <Card className="bg-background border border-destructive/20 shadow-sm">
+        <Card className="border border-destructive/25 bg-background shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle className="text-foreground text-base font-medium">
               {t('settings.dataReset.title', 'Data & Reset')}
@@ -122,7 +132,7 @@ export function DangerZoneSettings({
         </Card>
 
         {/* Factory Reset Card */}
-        <Card className="bg-background border border-destructive/20 shadow-sm">
+        <Card className="border border-destructive/25 bg-background shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle className="text-foreground text-base font-medium">
               {t('settings.factoryReset.title', 'Factory Reset')}
@@ -158,9 +168,19 @@ export function DangerZoneSettings({
               </Button>
               <AlertDialog
                 open={resetConfirmOpen}
-                onOpenChange={(open) =>
-                  !open && !isResetting && setResetConfirmOpen(false)
-                }
+                onOpenChange={(open) => {
+                  if (open) {
+                    setResetConfirmOpen(true);
+                    return;
+                  }
+
+                  if (isResetting) {
+                    return;
+                  }
+
+                  setResetConfirmOpen(false);
+                  setResetConfirmationText('');
+                }}
               >
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -177,6 +197,27 @@ export function DangerZoneSettings({
                       )}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-destructive">
+                      {t(
+                        'settings.factoryReset.typeReset',
+                        'Type RESET to enable factory reset.',
+                      )}
+                    </p>
+                    <Input
+                      value={resetConfirmationText}
+                      onChange={(event) =>
+                        setResetConfirmationText(event.target.value)
+                      }
+                      placeholder={t(
+                        'settings.factoryReset.typeResetPlaceholder',
+                        'Type RESET',
+                      )}
+                      className="font-mono"
+                      autoFocus
+                      disabled={isResetting}
+                    />
+                  </div>
                   <AlertDialogFooter>
                     <AlertDialogCancel disabled={isResetting}>
                       {t('common.cancel', 'Cancel')}
@@ -184,9 +225,13 @@ export function DangerZoneSettings({
                     <AlertDialogAction
                       onClick={(e) => {
                         e.preventDefault();
-                        void onReset().then(() => setResetConfirmOpen(false));
+                        void onReset().then(() => {
+                          setResetConfirmOpen(false);
+                          setResetConfirmationText('');
+                        });
                       }}
-                      disabled={isResetting}
+                      disabled={isResetting || !isFactoryResetConfirmed}
+                      className="bg-destructive text-white hover:bg-destructive/90"
                     >
                       {isResetting && (
                         <LoadingSpinner size="sm" className="mr-2" />

@@ -4,10 +4,8 @@ import {
   FunctionCallingConfigMode,
   GoogleGenAI,
   Content,
-  Schema as GeminiSchema,
   Type,
 } from '@google/genai';
-import { JSONSchema } from '@/lib/mcp';
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
@@ -16,14 +14,13 @@ import {
   AIServiceConfig,
   type ContextInjectionResult,
 } from '../types';
-import {
-  BaseAIService,
-  stableHashKeyPart,
-  stableStringify,
-} from '../base-service';
+import { BaseAIService } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
-import { convertToGeminiMessages } from './mapper';
+import {
+  convertToGeminiMessages,
+  convertMCPSchemaToGeminiParameters,
+} from './mapper';
 import {
   mapReasoningEffortToBudget,
   checkThinkingSupport,
@@ -34,27 +31,123 @@ import { processGeminiStream } from './stream';
 import {
   createEphemeralSessionContextInjection,
   formatSessionContextAsBackgroundReference,
+  isCompactSummaryMessage,
 } from '../base-service-context';
+import type { MCPContent } from '@/lib/mcp';
+
+function summarizeLibrAgentMessages(messages: Message[]): {
+  count: number;
+  roleCounts: Record<string, number>;
+  compactSummaryCount: number;
+  syntheticSessionContextCount: number;
+  textChars: number;
+  textBytes: number;
+  idsPreview: string[];
+} {
+  const encoder = new TextEncoder();
+  const roleCounts: Record<string, number> = {};
+  let compactSummaryCount = 0;
+  let syntheticSessionContextCount = 0;
+  let textChars = 0;
+  let textBytes = 0;
+
+  for (const message of messages) {
+    roleCounts[message.role] = (roleCounts[message.role] ?? 0) + 1;
+    if (isCompactSummaryMessage(message)) {
+      compactSummaryCount += 1;
+    }
+    if (message.id.startsWith('gemini-session-context-')) {
+      syntheticSessionContextCount += 1;
+    }
+    const text = Array.isArray(message.content)
+      ? message.content
+          .filter(
+            (part): part is MCPContent & { type: 'text'; text: string } => {
+              return part.type === 'text' && typeof part.text === 'string';
+            },
+          )
+          .map((part) => part.text)
+          .join('\n')
+      : '';
+    textChars += text.length;
+    textBytes += encoder.encode(text).length;
+  }
+
+  return {
+    count: messages.length,
+    roleCounts,
+    compactSummaryCount,
+    syntheticSessionContextCount,
+    textChars,
+    textBytes,
+    idsPreview: messages.slice(0, 6).map((message) => message.id),
+  };
+}
+
+function summarizeGeminiContents(contents: Content[]): {
+  count: number;
+  roleCounts: Record<string, number>;
+  textPartCount: number;
+  textChars: number;
+  textBytes: number;
+  inlineDataPartCount: number;
+  functionCallPartCount: number;
+  functionResponsePartCount: number;
+} {
+  const encoder = new TextEncoder();
+  const roleCounts: Record<string, number> = {};
+  let textPartCount = 0;
+  let textChars = 0;
+  let textBytes = 0;
+  let inlineDataPartCount = 0;
+  let functionCallPartCount = 0;
+  let functionResponsePartCount = 0;
+
+  for (const content of contents) {
+    const role = content.role ?? 'unknown';
+    roleCounts[role] = (roleCounts[role] ?? 0) + 1;
+    for (const part of content.parts ?? []) {
+      if ('text' in part && typeof part.text === 'string') {
+        textPartCount += 1;
+        textChars += part.text.length;
+        textBytes += encoder.encode(part.text).length;
+      }
+      if ('inlineData' in part && part.inlineData) {
+        inlineDataPartCount += 1;
+      }
+      if ('functionCall' in part && part.functionCall) {
+        functionCallPartCount += 1;
+      }
+      if ('functionResponse' in part && part.functionResponse) {
+        functionResponsePartCount += 1;
+      }
+    }
+  }
+
+  return {
+    count: contents.length,
+    roleCounts,
+    textPartCount,
+    textChars,
+    textBytes,
+    inlineDataPartCount,
+    functionCallPartCount,
+    functionResponsePartCount,
+  };
+}
+
+function supportsGeminiToolsForModel(modelName: string): boolean {
+  return /gemini-(1\.[5-9]|[2-9])/.test(modelName.toLowerCase());
+}
 
 /**
  * An AI service implementation for interacting with Google's Gemini models.
  */
 export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
-  private static readonly MIN_CACHEABLE_PREFIX_TOKENS = 32768;
-  private static readonly MAX_CONTEXT_CACHE_ENTRIES = 8;
-  private static readonly CONTEXT_CACHE_TTL_MS = 55 * 60 * 1000;
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
   private readonly CACHE_TTL = 3600000;
-  private readonly cachedContextEntries = new Map<
-    string,
-    {
-      name: string;
-      createdAt: number;
-      lastUsedAt: number;
-    }
-  >();
 
   /**
    * Initializes a new instance of the `GeminiService`.
@@ -82,7 +175,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   convertTools(mcpTools: MCPTool[]): FunctionDeclaration[] {
     return mcpTools.map((mcpTool) => {
       // Convert the entire inputSchema to Gemini format
-      const geminiParams = this.convertMCPSchemaToGeminiParameters(
+      const geminiParams = convertMCPSchemaToGeminiParameters(
         mcpTool.inputSchema,
       );
 
@@ -97,85 +190,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         },
       } satisfies FunctionDeclaration;
     });
-  }
-
-  /**
-   * Recursively converts an MCPTool's JSONSchema into the Google GenAI FunctionDeclaration format.
-   * This properly handles nested objects and arrays, preserving all schema information.
-   * @param schema The MCP JSONSchema to convert.
-   * @returns The schema in the format required by Google GenAI SDK.
-   * @private
-   */
-  private convertMCPSchemaToGeminiParameters(schema: JSONSchema): GeminiSchema {
-    // Base case: String type with optional enum
-    if (schema.type === 'string') {
-      const result: GeminiSchema = { type: Type.STRING };
-      if (schema.description) result.description = schema.description;
-      if ('enum' in schema && Array.isArray(schema.enum)) {
-        result.enum = schema.enum as string[];
-      }
-      return result;
-    }
-
-    // Base case: Number types
-    if (schema.type === 'number' || schema.type === 'integer') {
-      const result: GeminiSchema = { type: Type.NUMBER };
-      if (schema.description) result.description = schema.description;
-      return result;
-    }
-
-    // Base case: Boolean type
-    if (schema.type === 'boolean') {
-      const result: GeminiSchema = { type: Type.BOOLEAN };
-      if (schema.description) result.description = schema.description;
-      return result;
-    }
-
-    // Base case: Null type
-    if (schema.type === 'null') {
-      const result: GeminiSchema = { type: Type.STRING };
-      if (schema.description) result.description = schema.description;
-      return result;
-    }
-
-    // Recursive case: Arrays
-    if (schema.type === 'array' && 'items' in schema && schema.items) {
-      const arrayItems = Array.isArray(schema.items)
-        ? schema.items[0]
-        : schema.items;
-      const result: GeminiSchema = {
-        type: Type.ARRAY,
-        items: arrayItems
-          ? this.convertMCPSchemaToGeminiParameters(arrayItems)
-          : { type: Type.STRING },
-      };
-      if (schema.description) result.description = schema.description;
-      return result;
-    }
-
-    // Recursive case: Objects
-    if (
-      schema.type === 'object' &&
-      'properties' in schema &&
-      schema.properties
-    ) {
-      const geminiProperties: Record<string, GeminiSchema> = {};
-
-      for (const [key, propSchema] of Object.entries(schema.properties)) {
-        geminiProperties[key] =
-          this.convertMCPSchemaToGeminiParameters(propSchema);
-      }
-
-      const result: GeminiSchema = {
-        type: Type.OBJECT,
-        properties: geminiProperties,
-      };
-      if (schema.description) result.description = schema.description;
-      return result;
-    }
-
-    // Fallback for unknown or incomplete types
-    return { type: Type.STRING };
   }
 
   /**
@@ -241,18 +255,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       options,
     );
     try {
-      const normalizedContextInjection = createEphemeralSessionContextInjection(
+      const normalizedContextInjection = this.prepareContextInjection(
         options.systemPrompt,
         options.sessionContext,
         sanitizedMessages,
-        {
-          idPrefix: 'gemini-session-context',
-          contentText: options.sessionContext
-            ? formatSessionContextAsBackgroundReference(options.sessionContext)
-            : undefined,
-        },
       );
-
       const geminiMessages = this.convertMessages(
         normalizedContextInjection.messages,
         normalizedContextInjection.systemPrompt,
@@ -272,72 +279,60 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       const model =
         options.modelName || config.defaultModel || getDefaultModel();
-
-      // --- CONTEXT CACHING ABSTRACTION BEGIN ---
       const stablePrefix = normalizedContextInjection.systemPrompt ?? '';
-      const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
+      const encoder = new TextEncoder();
       const toolDeclarationCount =
         geminiTools?.[0]?.functionDeclarations.length ?? 0;
-      const requiresToolOverride =
-        Boolean(geminiTools) &&
-        (options.forceToolUse === true || options.disableToolUse === true);
-      const canUseCachedContent = !requiresToolOverride;
-      const shouldUseCache =
-        canUseCachedContent &&
-        this.shouldAttemptContextCache(
-          model,
-          stablePrefix,
-          toolsPayload,
-          toolDeclarationCount,
-        );
-      let cachedContentName: string | undefined;
-      let cacheKey: string | undefined;
 
-      if (shouldUseCache) {
-        cacheKey = this.createContextCacheKey(
-          model,
-          stablePrefix,
-          toolsPayload,
-        );
-        const existingEntry = await this.getUsableContextCacheEntry(
-          cacheKey,
-          'preflight validation',
-        );
+      const requestMessageSummary = summarizeLibrAgentMessages(
+        normalizedContextInjection.messages,
+      );
+      const geminiContentSummary = summarizeGeminiContents(geminiMessages);
 
-        if (existingEntry) {
-          cachedContentName = existingEntry.name;
-        } else {
-          cachedContentName = await this.createContextCacheEntry(
-            cacheKey,
-            model,
-            stablePrefix,
-            geminiTools,
-          );
-        }
-      }
-      // --- CONTEXT CACHING ABSTRACTION END ---
-
-      this.logPromptCacheMetadata({
+      this.logger.info('Gemini request assembly breakdown', {
         model,
-        stablePrefix,
-        toolsPayload,
+        implicitCachingEligible: model.startsWith('gemini-2.5-'),
+        disableToolUse: options.disableToolUse ?? false,
+        forceToolUse: options.forceToolUse ?? false,
+        librAgentMessages: requestMessageSummary,
+        geminiContents: geminiContentSummary,
+        stablePrefixLength: stablePrefix.length,
+        stablePrefixBytes: encoder.encode(stablePrefix).length,
         toolDeclarationCount,
-        cacheKey,
-        canUseCachedContent,
-        requiresToolOverride,
-        shouldUseCache,
-        cachedContentName,
       });
 
-      const geminiConfig: GeminiServiceConfig = {
-        responseMimeType: 'text/plain',
-      };
+      let thinkingConfig: GeminiServiceConfig['thinkingConfig'];
+      if (config.enableReasoning) {
+        const modelSupportsThinking = await checkThinkingSupport(
+          model,
+          this.modelCache,
+        );
+        if (modelSupportsThinking) {
+          const thinkingBudget = mapReasoningEffortToBudget(
+            config.reasoningEffort,
+          );
+          thinkingConfig = {
+            thinkingBudget,
+            includeThoughts: true,
+          };
+        }
+      }
 
-      if (cachedContentName) {
-        geminiConfig.cachedContent = cachedContentName;
-      } else {
+      const safetySettings = prepareSafetySettings(config);
+
+      const createGeminiConfig = (): GeminiServiceConfig => {
+        const geminiConfig: GeminiServiceConfig = {
+          responseMimeType: 'text/plain',
+        };
+
         if (geminiTools) {
           geminiConfig.tools = geminiTools;
+        }
+        if (stablePrefix) {
+          geminiConfig.systemInstruction = [{ text: stablePrefix }];
+        }
+
+        if (geminiTools) {
           if (options.disableToolUse) {
             geminiConfig.toolConfig = {
               functionCallingConfig: {
@@ -352,38 +347,25 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
             };
           }
         }
-        if (stablePrefix) {
-          geminiConfig.systemInstruction = [{ text: stablePrefix }];
+
+        if (config.maxTokens) {
+          geminiConfig.maxOutputTokens = config.maxTokens;
         }
-      }
 
-      if (config.maxTokens) {
-        geminiConfig.maxOutputTokens = config.maxTokens;
-      }
-
-      if (config.temperature !== undefined) {
-        geminiConfig.temperature = config.temperature;
-      }
-
-      // Add thinkingConfig for models that support thinking
-      if (config.enableReasoning) {
-        const modelSupportsThinking = await checkThinkingSupport(
-          model,
-          this.modelCache,
-        );
-        if (modelSupportsThinking) {
-          const thinkingBudget = mapReasoningEffortToBudget(
-            config.reasoningEffort,
-          );
-          geminiConfig.thinkingConfig = {
-            thinkingBudget,
-            includeThoughts: true,
-          };
+        if (config.temperature !== undefined) {
+          geminiConfig.temperature = config.temperature;
         }
-      }
 
-      // Configure Gemini safety settings.
-      geminiConfig.safetySettings = prepareSafetySettings(config);
+        if (thinkingConfig) {
+          geminiConfig.thinkingConfig = thinkingConfig;
+        }
+
+        geminiConfig.safetySettings = safetySettings;
+
+        return geminiConfig;
+      };
+
+      const geminiConfig = createGeminiConfig();
 
       // 🔍 Detailed Logging before API Call
       const sysPromptText = geminiConfig.systemInstruction?.[0]?.text || '';
@@ -395,12 +377,16 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         last500Chars: sysPromptText.substring(sysPromptText.length - 500),
       });
 
-      const result = await this.withRetry(async () => {
+      const createStream = async (requestConfig: GeminiServiceConfig) => {
         return this.genAI.models.generateContentStream({
           model: model,
-          config: geminiConfig,
+          config: requestConfig,
           contents: geminiMessages,
         });
+      };
+
+      const result = await this.withRetry(async () => {
+        return createStream(geminiConfig);
       });
 
       if (this.getAbortSignal().aborted) {
@@ -491,8 +477,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
+    return supportsGeminiToolsForModel(modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
@@ -525,210 +510,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     if (!this.cacheTimestamp) return false;
     const age = Date.now() - this.cacheTimestamp;
     return age < this.CACHE_TTL;
-  }
-
-  private shouldAttemptContextCache(
-    model: string,
-    stablePrefix: string,
-    toolsPayload: string,
-    toolDeclarationCount: number,
-  ): boolean {
-    if (!GeminiService.supportsToolsForModel(model)) {
-      return false;
-    }
-
-    const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
-      stablePrefix,
-      toolsPayload,
-      toolDeclarationCount,
-    );
-    return cacheableTokenEstimate >= GeminiService.MIN_CACHEABLE_PREFIX_TOKENS;
-  }
-
-  private estimateCacheablePrefixTokens(
-    stablePrefix: string,
-    toolsPayload: string,
-    toolDeclarationCount: number,
-  ): number {
-    const encoder = new TextEncoder();
-    const stablePrefixBytes = encoder.encode(stablePrefix).length;
-    const toolsPayloadBytes = encoder.encode(toolsPayload).length;
-    const textTokenEstimate = Math.ceil(stablePrefixBytes / 3.5);
-    const structuredTokenEstimate = Math.ceil(toolsPayloadBytes / 2.5);
-    const toolDeclarationOverhead = toolDeclarationCount * 32;
-
-    return (
-      textTokenEstimate + structuredTokenEstimate + toolDeclarationOverhead
-    );
-  }
-
-  private logPromptCacheMetadata(args: {
-    model: string;
-    stablePrefix: string;
-    toolsPayload: string;
-    toolDeclarationCount: number;
-    cacheKey?: string;
-    canUseCachedContent: boolean;
-    requiresToolOverride: boolean;
-    shouldUseCache: boolean;
-    cachedContentName?: string;
-  }): void {
-    const cacheableTokenEstimate = this.estimateCacheablePrefixTokens(
-      args.stablePrefix,
-      args.toolsPayload,
-      args.toolDeclarationCount,
-    );
-    const encoder = new TextEncoder();
-    const stablePrefixBytes = encoder.encode(args.stablePrefix).length;
-    const toolsPayloadBytes = encoder.encode(args.toolsPayload).length;
-
-    this.logger.info('Gemini prompt cache metadata', {
-      model: args.model,
-      cacheKey: args.cacheKey,
-      stablePrefixHash: stableHashKeyPart(args.stablePrefix),
-      toolsHash: stableHashKeyPart(args.toolsPayload),
-      stablePrefixLength: args.stablePrefix.length,
-      stablePrefixBytes,
-      toolsPayloadLength: args.toolsPayload.length,
-      toolsPayloadBytes,
-      toolDeclarationCount: args.toolDeclarationCount,
-      cacheableTokenEstimate,
-      canUseCachedContent: args.canUseCachedContent,
-      requiresToolOverride: args.requiresToolOverride,
-      shouldUseCache: args.shouldUseCache,
-      cachedContentName: args.cachedContentName,
-      cacheHit: Boolean(args.cachedContentName),
-    });
-  }
-
-  private createContextCacheKey(
-    model: string,
-    stablePrefix: string,
-    toolsPayload: string,
-  ): string {
-    return [
-      model,
-      stableHashKeyPart(stablePrefix),
-      stableHashKeyPart(toolsPayload),
-    ].join(':');
-  }
-
-  private async getUsableContextCacheEntry(
-    cacheKey: string,
-    reason: string,
-  ): Promise<{ name: string; createdAt: number; lastUsedAt: number } | null> {
-    const entry = this.cachedContextEntries.get(cacheKey);
-    if (!entry) {
-      return null;
-    }
-
-    const age = Date.now() - entry.createdAt;
-    if (age >= GeminiService.CONTEXT_CACHE_TTL_MS) {
-      await this.removeContextCacheEntry(cacheKey, reason);
-      return null;
-    }
-
-    entry.lastUsedAt = Date.now();
-    return entry;
-  }
-
-  private async createContextCacheEntry(
-    cacheKey: string,
-    model: string,
-    stablePrefix: string,
-    geminiTools?: Array<{ functionDeclarations: FunctionDeclaration[] }>,
-  ): Promise<string | undefined> {
-    try {
-      this.logger.debug(
-        'Creating Gemini context cache for stable prefix and tools',
-        {
-          model,
-          cacheKey,
-          stablePrefixLength: stablePrefix.length,
-          toolDeclarationCount:
-            geminiTools?.[0]?.functionDeclarations.length ?? 0,
-        },
-      );
-
-      const cacheResponse = await this.genAI.caches.create({
-        model,
-        config: {
-          systemInstruction: stablePrefix,
-          tools: geminiTools,
-          ttl: '3600s',
-        },
-      });
-      const cacheName = cacheResponse.name;
-      if (!cacheName) {
-        throw new Error('Gemini cache creation returned no cache name');
-      }
-
-      this.cachedContextEntries.set(cacheKey, {
-        name: cacheName,
-        createdAt: Date.now(),
-        lastUsedAt: Date.now(),
-      });
-      await this.evictContextCacheOverflow();
-
-      this.logger.info(
-        `Gemini context cache created successfully: ${cacheName}`,
-      );
-      return cacheName;
-    } catch (error) {
-      this.logger.warn(
-        'Failed to create Gemini context cache, falling back to standard request. Note: cacheable prefix must exceed Gemini minimum size.',
-        error,
-      );
-      this.cachedContextEntries.delete(cacheKey);
-      return undefined;
-    }
-  }
-
-  private async evictContextCacheOverflow(): Promise<void> {
-    while (
-      this.cachedContextEntries.size > GeminiService.MAX_CONTEXT_CACHE_ENTRIES
-    ) {
-      const oldestEntry = [...this.cachedContextEntries.entries()].reduce(
-        (
-          oldest,
-          current,
-        ): [string, { name: string; createdAt: number; lastUsedAt: number }] =>
-          current[1].lastUsedAt < oldest[1].lastUsedAt ? current : oldest,
-      );
-
-      await this.removeContextCacheEntry(
-        oldestEntry[0],
-        'LRU eviction after cache growth',
-      );
-    }
-  }
-
-  private async removeContextCacheEntry(
-    cacheKey: string,
-    reason: string,
-  ): Promise<void> {
-    const entry = this.cachedContextEntries.get(cacheKey);
-    if (!entry) {
-      return;
-    }
-
-    this.cachedContextEntries.delete(cacheKey);
-
-    try {
-      await this.genAI.caches.delete({ name: entry.name });
-      this.logger.debug('Deleted Gemini context cache entry', {
-        cacheKey,
-        cachedContentName: entry.name,
-        reason,
-      });
-    } catch (error) {
-      this.logger.debug('Failed to delete Gemini context cache entry', {
-        cacheKey,
-        cachedContentName: entry.name,
-        reason,
-        error,
-      });
-    }
   }
 
   /**
@@ -807,13 +588,8 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
   /**
    * @inheritdoc
-   * @description The Gemini SDK does not require explicit resource cleanup.
    */
   dispose(): void {
-    const cacheKeys = [...this.cachedContextEntries.keys()];
-
-    for (const cacheKey of cacheKeys) {
-      void this.removeContextCacheEntry(cacheKey, 'service dispose');
-    }
+    this.logger.debug('Gemini service disposed');
   }
 }

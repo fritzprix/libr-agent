@@ -12,14 +12,9 @@ import {
   parseStreamChunk,
 } from '@/lib/ai-service/stream-events';
 import { getLogger } from '@/lib/logger';
-import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
-import {
-  calculateContextSafetyMargin,
-  estimatePayloadTokens,
-  prepareMessagesForLLM,
-} from '@/lib/message-preprocessor';
+import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
 import { isAbortError } from './types';
 import type { Message, MessageError, ToolCall } from '@/models/chat';
@@ -31,6 +26,10 @@ import type {
   MCPToolCallContent,
 } from '@/lib/mcp';
 import type { Settings } from '@/lib/services/settings-service';
+import {
+  applyServiceRuntimeConfig,
+  buildServiceRuntimeConfig,
+} from './service-runtime-config';
 
 const logger = getLogger('useExecuteCompletion');
 
@@ -59,14 +58,6 @@ interface UseExecuteCompletionProps {
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
   updateSessionStatus: (sessionId: string, status: SessionStatus) => void;
-  setContextUsageMap: React.Dispatch<
-    React.SetStateAction<
-      ReadonlyMap<
-        string,
-        { totalTokens: number; contextWindow: number; modelMaxContext?: number }
-      >
-    >
-  >;
 }
 
 export function useExecuteCompletion({
@@ -74,7 +65,6 @@ export function useExecuteCompletion({
   streamingMessages,
   setStreamingMessages,
   updateSessionStatus,
-  setContextUsageMap,
 }: UseExecuteCompletionProps) {
   // Track active service instances for cleanup
   const activeServicesRef = useRef<Map<string, AICompletionExecutionService>>(
@@ -117,11 +107,6 @@ export function useExecuteCompletion({
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
-      contextUsage?: {
-        totalTokens: number;
-        contextWindow: number;
-        modelMaxContext?: number;
-      },
     ): Promise<Message> => {
       logger.info('🚀 Executing completion request', {
         sessionId,
@@ -158,6 +143,11 @@ export function useExecuteCompletion({
         apiKey ?? '',
         providerConfig,
       );
+      const runtimeConfig = buildServiceRuntimeConfig(
+        settingsRef.current,
+        providerConfig,
+      );
+      applyServiceRuntimeConfig(service, runtimeConfig);
       activeServicesRef.current.set(sessionId, service);
 
       // Get existing streaming message (already set by event listener)
@@ -174,34 +164,13 @@ export function useExecuteCompletion({
       try {
         // Build config
         const config: AIServiceConfig = {
+          ...runtimeConfig,
           maxTokens:
             maxTokens ||
             settingsRef.current.advanced?.defaultMaxOutputTokens ||
             8192,
           temperature: temperature,
         };
-
-        // Get model metadata
-        let modelInfo: ModelInfo | null =
-          (await service.listModels()).find((m) => m.name === model) || null;
-        if (!modelInfo) {
-          modelInfo =
-            llmConfigManager.getModel(provider, model) ??
-            ({
-              contextWindow: 64 * 1024,
-              supportReasoning: false,
-              supportTools: false,
-              cost: { input: 0, output: 0 },
-              name: model,
-            } as ModelInfo);
-        }
-
-        logger.info('Model Info for Token Limit Calculation', {
-          sessionId,
-          provider,
-          model,
-          modelInfo,
-        });
 
         // ── Prepare context messages based on selected strategy ─────────────
         let enrichedMessages: Message[];
@@ -217,19 +186,6 @@ export function useExecuteCompletion({
         });
 
         enrichedMessages = await prepareMessagesForLLM(safeMessages);
-
-        // 3. Set telemetries
-        if (contextUsage) {
-          setContextUsageMap((prev) => {
-            const next = new Map(prev);
-            next.set(sessionId, {
-              totalTokens: contextUsage.totalTokens,
-              contextWindow: contextUsage.contextWindow,
-              modelMaxContext: contextUsage.modelMaxContext,
-            });
-            return next;
-          });
-        }
 
         // ── Execute Stream ───────────────────────────────────────────────────
         updateSessionStatus(sessionId, 'streaming');
@@ -270,37 +226,6 @@ export function useExecuteCompletion({
           sessionContext,
           enrichedMessages,
         );
-
-        // Keep a lightweight frontend guard for the provider-specific payload
-        // shape prepared in this process. Rust remains the source of truth for
-        // compaction and context occupancy decisions.
-        if (settingsRef.current.contextStrategy === 'compact') {
-          const effectiveContextLimit =
-            contextUsage?.contextWindow ??
-            modelInfo.contextWindow ??
-            128 * 1024;
-          const projectedPayloadTokens = estimatePayloadTokens(
-            effectiveSystemPrompt,
-            effectiveMessages,
-            availableTools,
-          );
-          const safetyMargin = calculateContextSafetyMargin(
-            effectiveContextLimit,
-          );
-
-          if (projectedPayloadTokens + safetyMargin > effectiveContextLimit) {
-            throw createExecutionError(
-              'CONTEXT_LIMIT_ERROR',
-              `Prepared payload exceeds the effective context limit (${projectedPayloadTokens + safetyMargin} > ${effectiveContextLimit}). Reduce the newest input or attachment payload and retry.`,
-              'prepared_payload_too_large',
-              {
-                projectedPayloadTokens,
-                safetyMargin,
-                effectiveContextLimit,
-              },
-            );
-          }
-        }
 
         const streamGenerator = service.streamChat(effectiveMessages, {
           modelName: model,
@@ -582,6 +507,15 @@ export function useExecuteCompletion({
           sessionId,
           contentLength: content.length,
           toolCallCount: finalToolCalls.length,
+          finalUsage: finalUsage
+            ? {
+                promptTokens: finalUsage.promptTokens,
+                completionTokens: finalUsage.completionTokens,
+                totalTokens: finalUsage.totalTokens,
+                cachedPromptTokens: finalUsage.cachedPromptTokens,
+                details: finalUsage.details,
+              }
+            : undefined,
         });
 
         const hasContent =

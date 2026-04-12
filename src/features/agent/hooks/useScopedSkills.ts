@@ -1,4 +1,5 @@
 import useSWR from 'swr';
+import { useBackendResource } from '@/context/GlobalEventContext';
 import { getLogger } from '@/lib/logger';
 import { getAggregatedSkills } from '@/lib/backend/skills';
 import type { SkillMetadata } from '@/types/skills';
@@ -18,6 +19,7 @@ export function useScopedSkills(
 ): {
   skills: SkillMetadata[];
   isLoading: boolean;
+  refresh: () => Promise<SkillMetadata[] | undefined>;
 } {
   // Normalise the overloaded first argument
   const assistantId =
@@ -32,14 +34,16 @@ export function useScopedSkills(
     typeof assistantIdOrOptions === 'object' && assistantIdOrOptions !== null
       ? assistantIdOrOptions.sessionId
       : undefined;
+  const swrKey = [
+    'scoped-skills',
+    assistantId ?? '',
+    resolvedWorkspacePath ?? '',
+    sessionId ?? '',
+  ] as const;
+  const usesDynamicScope = Boolean(sessionId || resolvedWorkspacePath);
 
-  const { data, isLoading } = useSWR(
-    [
-      'scoped-skills',
-      assistantId ?? '',
-      resolvedWorkspacePath ?? '',
-      sessionId ?? '',
-    ],
+  const { data, isLoading, mutate } = useSWR(
+    swrKey,
     async ([, scopedAssistantId, scopedWorkspacePath, scopedSessionId]) => {
       try {
         return await getAggregatedSkills(scopedAssistantId || undefined, {
@@ -57,8 +61,16 @@ export function useScopedSkills(
     },
   );
 
+  useBackendResource('session', () => {
+    if (!usesDynamicScope) {
+      return;
+    }
+    void mutate();
+  });
+
   return {
     skills: data ?? [],
     isLoading,
+    refresh: mutate,
   };
 }
