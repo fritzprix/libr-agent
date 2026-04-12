@@ -146,8 +146,6 @@ function AIModelsTabComponent({
           <AgentModelPicker
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
-            // Keep the picker aligned with unsaved provider edits on this page.
-            serviceConfigsOverride={serviceConfigs}
             onConfigUpdate={onPreferredModelChange}
             className="w-full max-w-sm"
           />
@@ -163,8 +161,6 @@ function AIModelsTabComponent({
             currentProvider={
               localFallbackModel?.provider ?? localPreferredModel.provider
             }
-            // Same override for fallback picker; it shares the same provider config form.
-            serviceConfigsOverride={serviceConfigs}
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"
           />
@@ -333,7 +329,13 @@ function AIModelsTabComponent({
 }
 
 export default React.memo(AIModelsTabComponent, (prev, next) => {
+  // Regression guard:
+  // Provider cards are controlled by serviceConfigs. If this comparator skips
+  // serviceConfigs changes, provider URL/key inputs become effectively read-only
+  // because the child cards never receive the updated value prop.
   return (
+    prev.serviceConfigs === next.serviceConfigs &&
+    prev.providerEntries === next.providerEntries &&
     prev.localPreferredModel.provider === next.localPreferredModel.provider &&
     prev.localPreferredModel.model === next.localPreferredModel.model &&
     prev.localFallbackModel?.provider === next.localFallbackModel?.provider &&

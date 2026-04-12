@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
@@ -160,62 +160,56 @@ function AgentChatInner() {
 }
 
 export default function AgentChatView() {
+  const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const { session, isSessionLoading } = useAgentSessionState();
+  const attachmentSessionId = session?.id ?? routeSessionId ?? '';
 
-  if (isSessionLoading) {
-    return (
-      <div className="flex h-full items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-3">
-          {/* Spinner */}
-          <LoadingSpinner
-            size="lg"
-            className="border-4"
-            label={
-              session?.status === 'idle'
-                ? 'Starting session...'
-                : 'Loading session...'
-            }
-          />
+  return (
+    <AgentResourceAttachmentProvider sessionId={attachmentSessionId}>
+      {isSessionLoading ? (
+        <div className="flex h-full items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-3">
+            <LoadingSpinner
+              size="lg"
+              className="border-4"
+              label={
+                session?.status === 'idle'
+                  ? 'Starting session...'
+                  : 'Loading session...'
+              }
+            />
 
-          <div className="flex flex-col items-center gap-1">
-            <div
-              className="text-muted-foreground font-medium animate-pulse"
-              aria-hidden="true"
-            >
-              {session?.status === 'idle'
-                ? 'Starting session...'
-                : 'Loading session...'}
-            </div>
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className="text-muted-foreground font-medium animate-pulse"
+                aria-hidden="true"
+              >
+                {session?.status === 'idle'
+                  ? 'Starting session...'
+                  : 'Loading session...'}
+              </div>
 
-            {/* Granular Progress Step */}
-            <div className="text-xs text-muted-foreground/70 h-4">
-              <InitializationStatusDisplay />
+              <div className="text-xs text-muted-foreground/70 h-4">
+                <InitializationStatusDisplay />
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="flex h-full items-center justify-center p-4">
-        <div className="text-destructive">
-          Session not found or failed to load.
+      ) : !session ? (
+        <div className="flex h-full items-center justify-center p-4">
+          <div className="text-destructive">
+            Session not found or failed to load.
+          </div>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <AgentResourceAttachmentProvider sessionId={session.id}>
-      <AgentChatProvider>
-        <AgentPlanningProvider>
-          <AgentWorkspaceProvider>
-            <AgentChatInner />
-          </AgentWorkspaceProvider>
-        </AgentPlanningProvider>
-      </AgentChatProvider>
+      ) : (
+        <AgentChatProvider>
+          <AgentPlanningProvider>
+            <AgentWorkspaceProvider>
+              <AgentChatInner />
+            </AgentWorkspaceProvider>
+          </AgentPlanningProvider>
+        </AgentChatProvider>
+      )}
     </AgentResourceAttachmentProvider>
   );
 }

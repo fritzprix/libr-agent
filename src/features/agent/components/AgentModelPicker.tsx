@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/select';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { llmConfigManager } from '@/lib/llm-config-manager';
-import type { ServiceConfig } from '@/lib/services/settings-service';
 import { useAgentModels } from '../hooks/useAgentModels';
 
 interface AgentModelPickerProps {
@@ -20,7 +19,6 @@ interface AgentModelPickerProps {
   currentProvider?: string;
   className?: string;
   disabled?: boolean;
-  serviceConfigsOverride?: Partial<Record<AIServiceProvider, ServiceConfig>>;
   onConfigUpdate?: (model: string, provider: string) => void;
 }
 
@@ -29,14 +27,11 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   currentProvider = '',
   className,
   disabled = false,
-  serviceConfigsOverride,
   onConfigUpdate,
 }) => {
   const { t } = useTranslation('common');
-  const { availableModels, isRefreshing, refreshModels } = useAgentModels(
-    currentProvider,
-    serviceConfigsOverride,
-  );
+  const { availableModels, isRefreshing, refreshModels } =
+    useAgentModels(currentProvider);
 
   const modelOptions = useMemo(() => {
     return Object.entries(availableModels).map(([key, value]) => ({
@@ -157,7 +152,6 @@ export const AgentModelPicker = React.memo(
       prev.currentProvider === next.currentProvider &&
       prev.className === next.className &&
       prev.disabled === next.disabled &&
-      prev.serviceConfigsOverride === next.serviceConfigsOverride &&
       prev.onConfigUpdate === next.onConfigUpdate
     );
   },

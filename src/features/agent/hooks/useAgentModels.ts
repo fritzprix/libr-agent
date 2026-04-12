@@ -8,14 +8,10 @@ import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
-import type { ServiceConfig } from '@/lib/services/settings-service';
 
 const logger = getLogger('useAgentModels');
 
-export const useAgentModels = (
-  provider?: string,
-  serviceConfigsOverride?: Partial<Record<AIServiceProvider, ServiceConfig>>,
-) => {
+export const useAgentModels = (provider?: string) => {
   const {
     value: { serviceConfigs },
   } = useSettings();
@@ -27,12 +23,8 @@ export const useAgentModels = (
 
     return {
       ...(serviceConfigs[provider as AIServiceProvider] || {}),
-      ...(serviceConfigsOverride?.[provider as AIServiceProvider] || {}),
     };
-  }, [provider, serviceConfigs, serviceConfigsOverride]);
-  // Settings-page pickers must resolve models from the in-flight form values,
-  // not just the last persisted settings. Otherwise changing Ollama/OpenAI URLs
-  // can leave refresh/select flows stuck on stale endpoints until a full reload.
+  }, [provider, serviceConfigs]);
 
   // Get API key and baseUrl for the selected provider
   const apiKey = useMemo(() => {
