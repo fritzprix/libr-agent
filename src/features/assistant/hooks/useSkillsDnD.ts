@@ -23,27 +23,27 @@ export function useSkillsDnD(
       cardRef,
       async (event, payload) => {
         if (event === 'drag-over') {
-          setIsDragging(true);
+          if (payload.paths && payload.paths.length > 0) {
+            setIsDragging(true);
+          }
         } else if (event === 'leave') {
           setIsDragging(false);
-        } else if (
-          event === 'drop' &&
-          payload.paths &&
-          payload.paths.length > 0
-        ) {
+        } else if (event === 'drop') {
           setIsDragging(false);
-          const filePath = payload.paths[0];
-          const toastId = toast.loading(t('skills.importing'));
+          if (payload.paths && payload.paths.length > 0) {
+            const filePath = payload.paths[0];
+            const toastId = toast.loading(t('skills.importing'));
 
-          try {
-            await importAssistantSkills(draftId, filePath);
-            toast.success(t('skills.importSuccess'), { id: toastId });
-            fetchSkills();
-          } catch (error) {
-            logger.error('Failed to import skills:', error);
-            toast.error(`${t('skills.importFailed')}: ${error}`, {
-              id: toastId,
-            });
+            try {
+              await importAssistantSkills(draftId, filePath);
+              toast.success(t('skills.importSuccess'), { id: toastId });
+              fetchSkills();
+            } catch (error) {
+              logger.error('Failed to import skills:', error);
+              toast.error(`${t('skills.importFailed')}: ${error}`, {
+                id: toastId,
+              });
+            }
           }
         }
       },
