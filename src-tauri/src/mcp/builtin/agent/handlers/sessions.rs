@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use std::time::Duration;
 
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_agent_config_error, missing_agent_session_error, ErrorCategory,
@@ -8,10 +9,32 @@ use crate::mcp::builtin::session_api::utils::{
     build_agent_tool_data, check_session_next_actions, read_required_string,
 };
 use crate::mcp::types::MCPResult;
+use crate::repositories::SessionStatus;
 
 use super::super::AgentServer;
 use super::caller_session_not_found_result;
 use super::check_session::check_session;
+
+fn self_target_session_action_result(
+    tool_name: &str,
+    message: &str,
+    guidance: Vec<String>,
+) -> MCPResult {
+    guided_error(
+        ErrorCategory::InvalidState,
+        message.to_string(),
+        ToolGroup::Agent,
+    )
+    .with_guidance(
+        std::iter::once(format!(
+            "Use {} only for child or delegated sessions",
+            tool_name
+        ))
+        .chain(guidance)
+        .collect(),
+    )
+    .to_mcp_result()
+}
 
 async fn start_session_impl(
     server: &AgentServer,
@@ -255,17 +278,14 @@ pub async fn stop_session(
     let session_id = read_required_string(&args, "sessionId")?;
 
     if caller_session_id == session_id {
-        return Ok(guided_error(
-            ErrorCategory::InvalidState,
+        return Ok(self_target_session_action_result(
+            "stopSession",
             "Self-termination is not allowed via stopSession.",
-            ToolGroup::Agent,
-        )
-        .with_guidance(vec![
-            "Use stopSession only for child or delegated sessions".to_string(),
+            vec![
             "If the current workflow should stop, use the normal session cancellation controls instead"
                 .to_string(),
-        ])
-        .to_mcp_result());
+            ],
+        ));
     }
 
     if let Err(error) = manager.terminate_session(session_id.clone()).await {
@@ -298,4 +318,197 @@ pub async fn stop_session(
     );
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
+}
+
+pub async fn compact_session_context(
+    server: &AgentServer,
+    args: Value,
+    caller_session_id: &str,
+) -> Result<MCPResult, String> {
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
+    let session_id = read_required_string(&args, "sessionId")?;
+    let timeout_seconds = args
+        .get("timeout")
+        .and_then(|value| value.as_u64())
+        .map(|value| value.clamp(5, 300))
+        .unwrap_or(60);
+
+    if caller_session_id == session_id {
+        return Ok(self_target_session_action_result(
+            "compactSessionContext",
+            "Self-compaction is not allowed via compactSessionContext.",
+            vec![
+                "Current-session compaction remains backend-managed to avoid recursive compaction loops"
+                    .to_string(),
+                "Use this tool only when you want to refresh another active delegated session's compact summary"
+                    .to_string(),
+            ],
+        ));
+    }
+
+    let target_session = match manager.get_session(&session_id).await? {
+        Some(session) => session,
+        None => return Ok(missing_agent_session_error(&session_id)),
+    };
+
+    if target_session.status == SessionStatus::Busy {
+        return Ok(guided_error(
+            ErrorCategory::InvalidState,
+            format!(
+                "Session {} is busy. compactSessionContext only supports idle, paused, or error sessions.",
+                session_id
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            format!(
+                "Wait for session {} to stop running before compacting it manually",
+                session_id
+            ),
+            format!(
+                "Use checkSession(\"{}\", wait=true) if you need to block for the current run",
+                session_id
+            ),
+        ])
+        .to_mcp_result());
+    }
+
+    let previous_record = manager.get_compact_context(&session_id).await?;
+    let triggered = match manager.trigger_manual_preflight_compaction(&session_id).await {
+        Ok(triggered) => triggered,
+        Err(error) if error.contains("Session not found:") => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidState,
+                format!(
+                    "Session {} exists but is not active. compactSessionContext currently works only for active sessions.",
+                    session_id
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                format!(
+                    "Resume or reopen session {} so its in-memory state is available before compacting",
+                    session_id
+                ),
+                "Use this tool for live delegated sessions, not cold history-only records".to_string(),
+            ])
+            .to_mcp_result())
+        }
+        Err(error) => return Err(error),
+    };
+
+    if !triggered {
+        let message = if let Some(record) = previous_record {
+            format!(
+                "No new compaction was needed for session {}. Existing compact summary already covers {} -> {}.",
+                session_id, record.from_id, record.to_id
+            )
+        } else {
+            format!(
+                "No compaction was needed for session {}. There is not enough uncompacted history yet.",
+                session_id
+            )
+        };
+        let mut response_data = build_agent_tool_data(
+            "compactSessionContext",
+            "session",
+            Some(&session_id),
+            &message,
+            "noop",
+            check_session_next_actions(&session_id),
+        );
+        response_data.insert("sessionId".to_string(), Value::String(session_id));
+        response_data.insert("status".to_string(), Value::String("noop".to_string()));
+        response_data.insert("compacted".to_string(), Value::Bool(false));
+
+        return Ok(SuccessHint::new(message, vec![])
+            .to_mcp_result_with_data(Some(Value::Object(response_data))));
+    }
+
+    if let Err(error) = manager
+        .wait_for_compaction_to_settle(&session_id, Duration::from_secs(timeout_seconds))
+        .await
+    {
+        return Ok(guided_error(
+            ErrorCategory::Timeout,
+            format!(
+                "Compaction for session {} did not finish within {} seconds.",
+                session_id, timeout_seconds
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            format!(
+                "Retry compactSessionContext(sessionId=\"{}\") after the frontend finishes the compaction request",
+                session_id
+            ),
+            format!(
+                "Use checkSession(\"{}\", wait=false) to inspect whether the delegated session is still active",
+                session_id
+            ),
+            format!("Last wait error: {}", error),
+        ])
+        .to_mcp_result());
+    }
+
+    let compact_record = manager.get_compact_context(&session_id).await?;
+    let Some(compact_record) = compact_record else {
+        return Ok(guided_error(
+            ErrorCategory::InternalError,
+            format!(
+                "Compaction for session {} settled but no compact summary record was saved.",
+                session_id
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            "Retry compactSessionContext once more".to_string(),
+            "If the problem persists, inspect the target session logs for compact-request failures"
+                .to_string(),
+        ])
+        .to_mcp_result());
+    };
+
+    let unchanged = previous_record.as_ref().is_some_and(|previous| {
+        previous.from_id == compact_record.from_id
+            && previous.to_id == compact_record.to_id
+            && previous.summary == compact_record.summary
+    });
+    let status = if unchanged { "noop" } else { "success" };
+    let state_label = if unchanged {
+        "already current"
+    } else {
+        "compacted"
+    };
+    let message = format!(
+        "Session {} {}.\n\nCompaction boundary: {} -> {}\n\nCompact summary:\n{}",
+        session_id,
+        state_label,
+        compact_record.from_id,
+        compact_record.to_id,
+        compact_record.summary
+    );
+    let mut response_data = build_agent_tool_data(
+        "compactSessionContext",
+        "session",
+        Some(&session_id),
+        &message,
+        status,
+        check_session_next_actions(&session_id),
+    );
+    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("status".to_string(), Value::String(status.to_string()));
+    response_data.insert("compacted".to_string(), Value::Bool(!unchanged));
+    response_data.insert("fromId".to_string(), Value::String(compact_record.from_id));
+    response_data.insert("toId".to_string(), Value::String(compact_record.to_id));
+    response_data.insert("summary".to_string(), Value::String(compact_record.summary));
+    response_data.insert(
+        "timeoutSeconds".to_string(),
+        Value::Number(timeout_seconds.into()),
+    );
+
+    Ok(SuccessHint::new(message, vec![])
+        .to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

@@ -1,6 +1,5 @@
 use crate::agent::state::AgentSession;
 use crate::agent::state::DeferredWorkflowStep;
-use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
@@ -52,29 +51,11 @@ fn build_incremental_compact_summary_message(
     summary: &str,
     created_at: i64,
 ) -> Message {
-    Message {
-        id: format!("compact-summary-{}", session_id),
-        session_id: session_id.to_string(),
-        role: "user".to_string(),
-        content: vec![MCPContent::Text {
-            text: super::request::build_compact_summary_text(summary, &[]),
-            is_error: None,
-        }],
-        tool_calls: None,
-        tool_call_id: None,
-        is_streaming: None,
-        thinking: None,
-        thinking_signature: None,
-        assistant_id: None,
-        attachments: None,
-        tool_use: None,
-        usage: None,
+    super::request::build_compact_summary_message(
+        session_id,
+        super::request::build_compact_summary_text(summary, &[]),
         created_at,
-        updated_at: created_at,
-        source: Some("compact-summary".to_string()),
-        error: None,
-        metadata: None,
-    }
+    )
 }
 
 fn build_compaction_request_payload(
@@ -163,7 +144,7 @@ pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
 pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
     let has_compact_summary = messages
         .first()
-        .map(|message| message.id.starts_with("compact-summary-"))
+        .map(|message| message.is_compact_summary())
         .unwrap_or(false);
 
     if !has_compact_summary {

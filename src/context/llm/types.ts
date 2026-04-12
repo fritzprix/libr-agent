@@ -61,6 +61,12 @@ export interface CompactRequest {
   resumeCompletionAfterCompact: boolean;
 }
 
+export interface CompactedRange {
+  fromId: string;
+  toId: string;
+  summary?: string;
+}
+
 /**
  * Status of LLM execution for a specific session
  */
@@ -130,8 +136,6 @@ export interface LLMServiceContextValue {
   /** Last post-response compaction pressure emitted by Rust for this session. */
   getCompactionPressure: (sessionId: string) => CompactionPressure | undefined;
 
-  /** Compacted message range for the session, used to render a chat divider */
-  getCompactedRange: (
-    sessionId: string,
-  ) => { fromId: string; toId: string } | undefined;
+  /** Compacted message range for the session, used to render a compaction event card */
+  getCompactedRange: (sessionId: string) => CompactedRange | undefined;
 }

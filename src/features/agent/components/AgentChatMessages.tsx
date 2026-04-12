@@ -5,7 +5,10 @@ import { useLLMService } from '@/context/LLMServiceContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useChatScroll } from '@/features/agent/hooks/useChatScroll';
 import { useFileRefetcher } from '@/features/agent/hooks/useFileRefetcher';
-import { useMessageGrouping } from '@/hooks/useMessageGrouping';
+import {
+  useMessageGrouping,
+  type GroupedMessage,
+} from '@/hooks/useMessageGrouping';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
@@ -14,8 +17,78 @@ import { Bot } from 'lucide-react';
 import { PendingApprovalWidget } from './PendingApprovalWidget';
 import { ScrollArea } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
+import type { Message } from '@/models/chat';
 
 const logger = getLogger('AgentChatMessages');
+
+function truncatePreview(value: string, maxLength = 96): string {
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function extractMessagePreview(
+  message: Message | undefined,
+): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  for (const item of message.content) {
+    if (item.type === 'text') {
+      const preview = truncatePreview(item.text);
+      if (preview) {
+        return preview;
+      }
+    }
+
+    if (item.type === 'thinking') {
+      const preview = truncatePreview(item.thinking);
+      if (preview) {
+        return preview;
+      }
+    }
+
+    if (item.type === 'tool_call') {
+      return truncatePreview(`Tool call: ${item.name}`);
+    }
+  }
+
+  if (message.tool_calls?.length) {
+    return truncatePreview(
+      `Tool call: ${message.tool_calls[0]?.function.name}`,
+    );
+  }
+
+  if (message.role === 'tool') {
+    return 'Tool result';
+  }
+
+  return undefined;
+}
+
+function groupedMessageContainsBoundary(
+  groupedMessage: GroupedMessage,
+  boundaryId: string | undefined,
+): boolean {
+  if (!boundaryId) {
+    return false;
+  }
+
+  if (groupedMessage.type === 'single') {
+    return groupedMessage.message.id === boundaryId;
+  }
+
+  return groupedMessage.messages.some((message) => message.id === boundaryId);
+}
 
 export function AgentChatMessages() {
   const {
@@ -56,6 +129,30 @@ export function AgentChatMessages() {
 
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
   const assistantName = session?.assistant?.name || 'Agent';
+
+  const compactedEvent = useMemo(() => {
+    if (!compactedRange) {
+      return undefined;
+    }
+
+    const fromIndex = messages.findIndex(
+      (message) => message.id === compactedRange.fromId,
+    );
+    const toIndex = messages.findIndex(
+      (message) => message.id === compactedRange.toId,
+    );
+
+    if (fromIndex === -1 || toIndex === -1 || fromIndex > toIndex) {
+      return undefined;
+    }
+
+    return {
+      earlierPreview: extractMessagePreview(messages[fromIndex]),
+      latestIncludedPreview: extractMessagePreview(messages[toIndex]),
+      condensedCount: toIndex - fromIndex + 1,
+      summary: compactedRange.summary,
+    };
+  }, [compactedRange, messages]);
 
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
@@ -101,45 +198,84 @@ export function AgentChatMessages() {
           className="p-4 pb-32 flex flex-col gap-6 min-h-full"
         >
           {groupedMessages.map((groupedMessage) => {
+            const isCompactBoundary = groupedMessageContainsBoundary(
+              groupedMessage,
+              compactedRange?.toId,
+            );
+
             if (groupedMessage.type === 'tool_group') {
               return (
-                <AgentMessageBubble
-                  key={groupedMessage.message.id}
-                  message={groupedMessage.message}
-                  assistantName={assistantName}
-                  toolResultsMap={toolResultsMap}
-                  groupedToolCalls={groupedMessage.toolGroup.calls}
-                  groupedMessages={groupedMessage.messages}
-                  isPending={pendingMessageIds.has(groupedMessage.message.id)}
-                />
+                <React.Fragment key={groupedMessage.message.id}>
+                  <AgentMessageBubble
+                    message={groupedMessage.message}
+                    assistantName={assistantName}
+                    toolResultsMap={toolResultsMap}
+                    groupedToolCalls={groupedMessage.toolGroup.calls}
+                    groupedMessages={groupedMessage.messages}
+                    isPending={pendingMessageIds.has(groupedMessage.message.id)}
+                  />
+                  {isCompactBoundary && (
+                    <CompactEventDivider
+                      key={`compact-divider-${groupedMessage.message.id}`}
+                      earlierPreview={compactedEvent?.earlierPreview}
+                      latestIncludedPreview={
+                        compactedEvent?.latestIncludedPreview
+                      }
+                      condensedCount={compactedEvent?.condensedCount}
+                      summary={compactedEvent?.summary}
+                    />
+                  )}
+                </React.Fragment>
               );
             }
 
             if (groupedMessage.type === 'tool_error_group') {
               return (
-                <AgentMessageBubble
-                  key={groupedMessage.message.id}
-                  message={groupedMessage.message}
-                  assistantName={assistantName}
-                  groupedMessages={groupedMessage.messages}
-                  isPending={pendingMessageIds.has(groupedMessage.message.id)}
-                  toolErrorGroup={true}
-                />
+                <React.Fragment key={groupedMessage.message.id}>
+                  <AgentMessageBubble
+                    message={groupedMessage.message}
+                    assistantName={assistantName}
+                    groupedMessages={groupedMessage.messages}
+                    isPending={pendingMessageIds.has(groupedMessage.message.id)}
+                    toolErrorGroup={true}
+                  />
+                  {isCompactBoundary && (
+                    <CompactEventDivider
+                      key={`compact-divider-${groupedMessage.message.id}`}
+                      earlierPreview={compactedEvent?.earlierPreview}
+                      latestIncludedPreview={
+                        compactedEvent?.latestIncludedPreview
+                      }
+                      condensedCount={compactedEvent?.condensedCount}
+                      summary={compactedEvent?.summary}
+                    />
+                  )}
+                </React.Fragment>
               );
             }
 
             // Handle message-level errors
             if (groupedMessage.message.error) {
               return (
-                <div
-                  className="self-start my-2"
-                  key={groupedMessage.message.id}
-                >
-                  <ErrorBubble
-                    error={groupedMessage.message.error}
-                    onRetry={retryMessage}
-                  />
-                </div>
+                <React.Fragment key={groupedMessage.message.id}>
+                  <div className="self-start my-2">
+                    <ErrorBubble
+                      error={groupedMessage.message.error}
+                      onRetry={retryMessage}
+                    />
+                  </div>
+                  {isCompactBoundary && (
+                    <CompactEventDivider
+                      key={`compact-divider-${groupedMessage.message.id}`}
+                      earlierPreview={compactedEvent?.earlierPreview}
+                      latestIncludedPreview={
+                        compactedEvent?.latestIncludedPreview
+                      }
+                      condensedCount={compactedEvent?.condensedCount}
+                      summary={compactedEvent?.summary}
+                    />
+                  )}
+                </React.Fragment>
               );
             }
 
@@ -161,8 +297,6 @@ export function AgentChatMessages() {
               return null;
             }
 
-            const isCompactBoundary = compactedRange?.toId === msg.id;
-
             return (
               <React.Fragment key={msg.id}>
                 <AgentMessageBubble
@@ -171,7 +305,15 @@ export function AgentChatMessages() {
                   isPending={pendingMessageIds.has(msg.id)}
                 />
                 {isCompactBoundary && (
-                  <CompactEventDivider key={`compact-divider-${msg.id}`} />
+                  <CompactEventDivider
+                    key={`compact-divider-${msg.id}`}
+                    earlierPreview={compactedEvent?.earlierPreview}
+                    latestIncludedPreview={
+                      compactedEvent?.latestIncludedPreview
+                    }
+                    condensedCount={compactedEvent?.condensedCount}
+                    summary={compactedEvent?.summary}
+                  />
                 )}
               </React.Fragment>
             );

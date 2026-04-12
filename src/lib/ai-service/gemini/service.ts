@@ -31,6 +31,7 @@ import { processGeminiStream } from './stream';
 import {
   createEphemeralSessionContextInjection,
   formatSessionContextAsBackgroundReference,
+  isCompactSummaryMessage,
 } from '../base-service-context';
 import type { MCPContent } from '@/lib/mcp';
 
@@ -52,7 +53,7 @@ function summarizeLibrAgentMessages(messages: Message[]): {
 
   for (const message of messages) {
     roleCounts[message.role] = (roleCounts[message.role] ?? 0) + 1;
-    if (message.id.startsWith('compact-summary-')) {
+    if (isCompactSummaryMessage(message)) {
       compactSummaryCount += 1;
     }
     if (message.id.startsWith('gemini-session-context-')) {

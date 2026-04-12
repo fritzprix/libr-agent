@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import { BaseAIService, stableStringify } from '../base-service';
+import { buildCompactionInstruction } from '../base-service-context';
 import { AIServiceError, AIServiceProvider } from '../types';
 
 class TestBaseAIService extends BaseAIService<string, string> {
@@ -219,5 +220,25 @@ describe('BaseAIService.compact', () => {
     await expect(service.compact(createMessages())).rejects.toBeInstanceOf(
       AIServiceError,
     );
+  });
+});
+
+describe('buildCompactionInstruction', () => {
+  it('treats source-marked compact summaries as residual anchors', () => {
+    const instruction = buildCompactionInstruction([
+      {
+        id: 'summary-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'assistant',
+        source: 'compact-summary',
+        content: [{ type: 'text', text: 'Previous compact summary' }],
+      },
+    ]);
+
+    expect(instruction).toContain(
+      'The first message is a previously accumulated compact summary',
+    );
+    expect(instruction).toContain('CRITICAL RESIDUAL RULE');
   });
 });

@@ -103,6 +103,9 @@ impl BuiltinMCPServer for AgentServer {
             "spawnOrgAgent" => handlers::spawn_org_agent(self, args, &session_id).await,
             "messageToSession" => handlers::message_to_session(self, args, &session_id).await,
             "checkSession" => handlers::check_session(self, args, &session_id).await,
+            "compactSessionContext" => {
+                handlers::compact_session_context(self, args, &session_id).await
+            }
             "stopSession" => handlers::stop_session(self, args, &session_id).await,
             "createAssistant" => {
                 let assistant_server = self.legacy_assistant_server().await?;
@@ -176,6 +179,7 @@ impl BuiltinMCPServer for AgentServer {
             "- Use `agent__startSession(agentId=\"ID\", task=\"...\")` for normal delegation.\n",
             "- Use `agent__startSession(..., includeCurrentOrg=true)` when the child should inherit the current explicit org, appear in Org view, and share the org root workspace by default.\n",
             "- `agent__spawnOrgAgent(...)` remains available as a compatibility alias for `startSession(..., includeCurrentOrg=true)`.\n",
+            "- Use `agent__compactSessionContext(sessionId=\"...\")` to refresh the stored compact summary for another active delegated session before sending more work.\n",
             "- If an agent is paused or errors, use `agent__messageToSession` to resume/retry it.\n",
         )
         .to_string();

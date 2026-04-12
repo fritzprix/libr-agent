@@ -45,3 +45,9 @@ pub struct Message {
     /// Optional metadata for tool execution tracking (mirrors frontend Message.metadata)
     pub metadata: Option<serde_json::Value>,
 }
+
+impl Message {
+    pub fn is_compact_summary(&self) -> bool {
+        self.source.as_deref() == Some("compact-summary") || self.id.starts_with("compact-summary-")
+    }
+}

@@ -7,6 +7,19 @@ const SESSION_CONTEXT_BACKGROUND_HEADER =
 
 const SESSION_CONTEXT_BACKGROUND_FOOTER = '[End of session context]';
 
+export function isCompactSummaryMessage(
+  message: Pick<Message, 'id' | 'source'> | undefined,
+): boolean {
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.source === 'compact-summary' ||
+    message.id.startsWith('compact-summary-')
+  );
+}
+
 export function buildCompactionInstruction(messages: Message[]): string {
   let instruction =
     'Summarise the previous conversation history concisely using structured Markdown.\n\n' +
@@ -15,7 +28,7 @@ export function buildCompactionInstruction(messages: Message[]): string {
     'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
 
   const firstMsg = messages[0];
-  if (firstMsg?.id.startsWith('compact-summary-')) {
+  if (isCompactSummaryMessage(firstMsg)) {
     instruction =
       'The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n' +
       'CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary ' +
