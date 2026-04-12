@@ -146,6 +146,8 @@ function AIModelsTabComponent({
           <AgentModelPicker
             currentModel={localPreferredModel.model}
             currentProvider={localPreferredModel.provider}
+            // Keep the picker aligned with unsaved provider edits on this page.
+            serviceConfigsOverride={serviceConfigs}
             onConfigUpdate={onPreferredModelChange}
             className="w-full max-w-sm"
           />
@@ -161,6 +163,8 @@ function AIModelsTabComponent({
             currentProvider={
               localFallbackModel?.provider ?? localPreferredModel.provider
             }
+            // Same override for fallback picker; it shares the same provider config form.
+            serviceConfigsOverride={serviceConfigs}
             onConfigUpdate={onFallbackModelChange}
             className="w-full max-w-sm"
           />

@@ -8,22 +8,40 @@ import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
+import type { ServiceConfig } from '@/lib/services/settings-service';
 
 const logger = getLogger('useAgentModels');
 
-export const useAgentModels = (provider?: string) => {
+export const useAgentModels = (
+  provider?: string,
+  serviceConfigsOverride?: Partial<Record<AIServiceProvider, ServiceConfig>>,
+) => {
   const {
     value: { serviceConfigs },
   } = useSettings();
 
+  const providerConfig = useMemo(() => {
+    if (!provider) {
+      return {};
+    }
+
+    return {
+      ...(serviceConfigs[provider as AIServiceProvider] || {}),
+      ...(serviceConfigsOverride?.[provider as AIServiceProvider] || {}),
+    };
+  }, [provider, serviceConfigs, serviceConfigsOverride]);
+  // Settings-page pickers must resolve models from the in-flight form values,
+  // not just the last persisted settings. Otherwise changing Ollama/OpenAI URLs
+  // can leave refresh/select flows stuck on stale endpoints until a full reload.
+
   // Get API key and baseUrl for the selected provider
   const apiKey = useMemo(() => {
-    return serviceConfigs[provider as AIServiceProvider]?.apiKey || '';
-  }, [serviceConfigs, provider]);
+    return providerConfig.apiKey || '';
+  }, [providerConfig]);
 
   const baseUrl = useMemo(() => {
-    return serviceConfigs[provider as AIServiceProvider]?.baseUrl || '';
-  }, [serviceConfigs, provider]);
+    return providerConfig.baseUrl || '';
+  }, [providerConfig]);
 
   // Fetcher for models — delegates entirely to service.listModels().
   // Each provider's implementation decides static vs dynamic;
@@ -36,7 +54,6 @@ export const useAgentModels = (provider?: string) => {
       const effectiveApiKey = key || 'no-api-key';
 
       try {
-        const providerConfig = serviceConfigs[p as AIServiceProvider] || {};
         const service: AIModelLookupService = AIServiceFactory.getService(
           p as AIServiceProvider,
           effectiveApiKey,
@@ -58,7 +75,7 @@ export const useAgentModels = (provider?: string) => {
         return {};
       }
     },
-    [serviceConfigs],
+    [providerConfig],
   );
 
   const {
@@ -77,8 +94,6 @@ export const useAgentModels = (provider?: string) => {
   // Combine static and dynamic models
   const availableModels = useMemo(() => {
     if (!provider) return {};
-
-    const providerConfig = serviceConfigs[provider as AIServiceProvider] || {};
 
     // If 3rd party is enabled for OpenAI, show only custom model ID
     if (
@@ -111,7 +126,7 @@ export const useAgentModels = (provider?: string) => {
       {};
 
     return Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
-  }, [provider, dynamicModels, serviceConfigs]);
+  }, [provider, dynamicModels, providerConfig]);
 
   return {
     availableModels,
