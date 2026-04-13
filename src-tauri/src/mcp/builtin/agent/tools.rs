@@ -152,7 +152,7 @@ fn create_org_tool() -> MCPTool {
     MCPTool {
         name: "createOrg".to_string(),
         title: Some("Create Explicit Org".to_string()),
-        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session, not from arbitrary child sessions.".to_string(),
+        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session, not from arbitrary child sessions. If the teamwork scaffold is missing or inconsistent, the result will tell you to use teamwork next.".to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),

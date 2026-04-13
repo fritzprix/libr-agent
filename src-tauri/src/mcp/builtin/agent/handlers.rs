@@ -330,5 +330,7 @@ mod sessions;
 
 pub use check_session::check_session;
 pub use configs::{create_agent, list_agents_or_sessions, update_agent};
-pub use orgs::{create_org, get_org};
-pub use sessions::{compact_session_context, message_to_session, start_session, stop_session};
+pub use orgs::{create_org, get_org, inspect_teamwork_scaffold, TeamworkScaffoldStatus};
+pub use sessions::{
+    compact_session_context, message_to_session, start_session, stop_session,
+};

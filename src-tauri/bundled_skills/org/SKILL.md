@@ -1,19 +1,19 @@
 ---
-name: team-org
+name: org
 description: Run explicit org-based teamwork in LibrAgent. Use when collaboration needs durable org identity, org-visible child sessions, org-root resume behavior, or clear parent/sibling org context under one coordinator workspace.
 ---
 
-# Team Org
+# Org
 
 Org is explicit lineage teamwork. It is not generic delegation and it is not scheduled automation.
 
-Use `task-force-builder` first when the workspace constitution is not ready.
+Use `teamwork` first when the workspace constitution is not ready.
 
 ## Workflow
 
 1. Confirm org is the right substrate.
    - Use org when the user wants org visibility, durable org identity, coordinator/specialist lineage, or root-session resume behavior.
-   - If the real need is recurring or cron-like automation, stop and use `team-sprint`.
+   - If the real need is recurring or cron-like automation, stop and use `schedule`.
 2. Read `.libragent/teamwork.json` before acting.
    - Confirm `executionSubstrate.mode` is `"org"` and `orgLineage.intended` is `true`.
    - If the manifest says a different substrate, reconcile before proceeding.

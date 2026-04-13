@@ -1,4 +1,6 @@
+use serde::Serialize;
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::utils::{build_agent_tool_data, read_required_string};
@@ -10,6 +12,184 @@ use super::{
     caller_session_not_found_result, invalid_explicit_org_result, missing_explicit_org_result,
     read_optional_string,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TeamworkScaffoldStatus {
+    pub workspace_path: String,
+    pub missing_files: Vec<String>,
+    pub manifest_present: bool,
+    pub manifest_parse_error: Option<String>,
+    pub execution_substrate_mode: Option<String>,
+    pub org_lineage_intended: Option<bool>,
+    pub recommended_skill: Option<String>,
+}
+
+impl TeamworkScaffoldStatus {
+    pub fn is_ready_for_explicit_org(&self) -> bool {
+        self.missing_files.is_empty()
+            && self.manifest_parse_error.is_none()
+            && self.execution_substrate_mode.as_deref() == Some("org")
+            && self.org_lineage_intended == Some(true)
+    }
+
+    fn guidance_lines(&self) -> Vec<String> {
+        let mut guidance = Vec::new();
+
+        if !self.missing_files.is_empty() {
+            guidance.push(format!(
+                "Missing teamwork scaffold files: {}.",
+                self.missing_files.join(", ")
+            ));
+        }
+
+        if let Some(error) = self.manifest_parse_error.as_deref() {
+            guidance.push(format!(
+                ".libragent/teamwork.json exists but could not be parsed: {}.",
+                error
+            ));
+        } else if !self.manifest_present {
+            guidance.push(
+                ".libragent/teamwork.json is missing, so this org has no machine-readable teamwork manifest yet."
+                    .to_string(),
+            );
+        } else {
+            if self.execution_substrate_mode.as_deref() != Some("org") {
+                let mode = self
+                    .execution_substrate_mode
+                    .as_deref()
+                    .unwrap_or("missing");
+                guidance.push(format!(
+                    ".libragent/teamwork.json should declare executionSubstrate.mode=\"org\" (current: {}).",
+                    mode
+                ));
+            }
+
+            if self.org_lineage_intended != Some(true) {
+                let intended = self
+                    .org_lineage_intended
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "missing".to_string());
+                guidance.push(format!(
+                    ".libragent/teamwork.json should declare executionSubstrate.orgLineage.intended=true (current: {}).",
+                    intended
+                ));
+            }
+        }
+
+        guidance
+    }
+}
+
+pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatus {
+    const REQUIRED_FILES: &[&str] = &[
+        "agents.md",
+        "MISSION.md",
+        "ROLES.md",
+        "coordination/KANBAN.md",
+        "coordination/HANDOFF.md",
+    ];
+
+    let missing_files = REQUIRED_FILES
+        .iter()
+        .filter_map(|relative| {
+            let candidate = workspace_path.join(relative);
+            if candidate.exists() {
+                None
+            } else {
+                Some((*relative).to_string())
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let manifest_path = workspace_path.join(".libragent").join("teamwork.json");
+    let manifest_present = manifest_path.exists();
+    let mut manifest_parse_error = None;
+    let mut execution_substrate_mode = None;
+    let mut org_lineage_intended = None;
+
+    if manifest_present {
+        match std::fs::read_to_string(&manifest_path) {
+            Ok(raw) => match serde_json::from_str::<Value>(&raw) {
+                Ok(manifest) => {
+                    execution_substrate_mode = manifest
+                        .get("executionSubstrate")
+                        .and_then(|value| value.get("mode"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    org_lineage_intended = manifest
+                        .get("executionSubstrate")
+                        .and_then(|value| value.get("orgLineage"))
+                        .and_then(|value| value.get("intended"))
+                        .and_then(Value::as_bool);
+                }
+                Err(error) => manifest_parse_error = Some(error.to_string()),
+            },
+            Err(error) => manifest_parse_error = Some(error.to_string()),
+        }
+    }
+
+    let mut status = TeamworkScaffoldStatus {
+        workspace_path: workspace_path.display().to_string(),
+        missing_files,
+        manifest_present,
+        manifest_parse_error,
+        execution_substrate_mode,
+        org_lineage_intended,
+        recommended_skill: None,
+    };
+
+    if !status.is_ready_for_explicit_org() {
+        status.recommended_skill = Some("teamwork".to_string());
+    }
+
+    status
+}
+
+fn teamwork_scaffold_status_for_session(
+    session_id: &str,
+) -> Result<TeamworkScaffoldStatus, String> {
+    let workspace_path: PathBuf =
+        crate::session::get_session_manager()?.get_session_workspace_dir_by_id(session_id);
+    Ok(inspect_teamwork_scaffold(&workspace_path))
+}
+
+fn create_org_next_actions(org_id: &str, include_builder_guidance: bool) -> Vec<Value> {
+    let mut next_actions = vec![
+        json!({
+            "toolName": "startSession",
+            "reason": "Create or add an explicit org member session. Org inheritance is automatic here.",
+        }),
+        json!({
+            "toolName": "getOrg",
+            "reason": "Inspect the explicit org summary.",
+            "args": { "orgId": org_id }
+        }),
+    ];
+
+    if include_builder_guidance {
+        next_actions.push(json!({
+            "actionType": "skill",
+            "toolName": "teamwork",
+            "reason": "Scaffold or repair the teamwork workspace constitution for this org."
+        }));
+    }
+
+    next_actions
+}
+
+fn create_org_hint_lines(scaffold: &TeamworkScaffoldStatus) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    if !scaffold.is_ready_for_explicit_org() {
+        lines.extend(scaffold.guidance_lines());
+        lines.push(
+            "Use the teamwork skill next to scaffold or repair the teamwork workspace constitution in this workspace."
+                .to_string(),
+        );
+    }
+
+    lines
+}
 
 pub async fn create_org(
     server: &AgentServer,
@@ -44,6 +224,7 @@ pub async fn create_org(
         session.org_name.clone(),
         session.org_root_session_id.clone(),
     ) {
+        let scaffold = teamwork_scaffold_status_for_session(caller_session_id)?;
         let message = format!(
             "Current session already owns explicit org '{}' (ID: {}, root session: {}).",
             existing_org_name, existing_org_id, existing_root_id
@@ -54,17 +235,7 @@ pub async fn create_org(
             Some(&existing_org_id),
             &message,
             "success",
-            vec![
-                json!({
-                    "toolName": "startSession",
-                    "reason": "Start another session under this org. Org inheritance is automatic here.",
-                }),
-                json!({
-                    "toolName": "getOrg",
-                    "reason": "Inspect the existing org summary.",
-                    "args": { "orgId": existing_org_id.clone() }
-                }),
-            ],
+            create_org_next_actions(&existing_org_id, !scaffold.is_ready_for_explicit_org()),
         );
         response_data.insert("orgId".to_string(), Value::String(existing_org_id));
         response_data.insert("orgName".to_string(), Value::String(existing_org_name));
@@ -72,7 +243,11 @@ pub async fn create_org(
             "orgRootSessionId".to_string(),
             Value::String(existing_root_id),
         );
-        return Ok(SuccessHint::new(message, vec![])
+        response_data.insert(
+            "teamworkScaffold".to_string(),
+            serde_json::to_value(&scaffold).unwrap_or(Value::Null),
+        );
+        return Ok(SuccessHint::new(message, create_org_hint_lines(&scaffold))
             .to_mcp_result_with_data(Some(Value::Object(response_data))));
     }
 
@@ -89,6 +264,8 @@ pub async fn create_org(
         .await
         .map_err(|error| format!("Failed to persist org identity: {}", error))?;
 
+    let scaffold = teamwork_scaffold_status_for_session(caller_session_id)?;
+
     let message = format!(
         "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nChild sessions started from this org root now join Org view automatically. Use includeCurrentOrg=false only when you intentionally want a one-off child to stay out of Org view.",
         org_name, org_id, org_root_session_id
@@ -99,17 +276,7 @@ pub async fn create_org(
         Some(&org_id),
         &message,
         "success",
-        vec![
-            json!({
-                "toolName": "startSession",
-                "reason": "Create the first explicit org member session.",
-            }),
-            json!({
-                "toolName": "getOrg",
-                "reason": "Inspect the newly created org summary.",
-                "args": { "orgId": org_id.clone() }
-            }),
-        ],
+        create_org_next_actions(&org_id, !scaffold.is_ready_for_explicit_org()),
     );
     response_data.insert("orgId".to_string(), Value::String(org_id));
     response_data.insert("orgName".to_string(), Value::String(org_name));
@@ -117,8 +284,12 @@ pub async fn create_org(
         "orgRootSessionId".to_string(),
         Value::String(org_root_session_id),
     );
+    response_data.insert(
+        "teamworkScaffold".to_string(),
+        serde_json::to_value(&scaffold).unwrap_or(Value::Null),
+    );
 
-    Ok(SuccessHint::new(message, vec![])
+    Ok(SuccessHint::new(message, create_org_hint_lines(&scaffold))
         .to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
