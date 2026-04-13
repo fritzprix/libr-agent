@@ -24,6 +24,11 @@ import { PlaybookGroup } from './PlaybookGroup';
 import { SortControls } from './SortControls';
 import { toast } from 'sonner';
 import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { usePlaybooks } from './usePlaybooks';
 import type { PlaybookSortState, PlaybookWithMeta } from './types';
 
@@ -118,18 +123,28 @@ export default function PlaybookList() {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={onFetchDataWrapper}
-              disabled={loading}
-              className="h-9 w-9"
-              aria-label={t('playbook.list.refreshAria', 'Refresh playbooks')}
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
-              />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={loading ? 0 : undefined}
+                  className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={onFetchDataWrapper}
+                    disabled={loading}
+                    className="h-9 w-9"
+                    aria-label={t('playbook.list.refreshAria', 'Refresh playbooks')}
+                  >
+                    <RefreshCw
+                      className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+                    />
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t('playbook.list.refreshAria', 'Refresh playbooks')}</TooltipContent>
+            </Tooltip>
             <div className="relative flex-1 sm:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
