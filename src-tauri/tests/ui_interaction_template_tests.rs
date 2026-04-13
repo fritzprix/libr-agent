@@ -218,3 +218,41 @@ async fn present_interactive_rejects_non_string_options() {
     assert_eq!(result.is_error, Some(true));
     assert!(extract_text(&result).contains("must contain only strings"));
 }
+
+#[tokio::test]
+async fn present_interactive_html_mode_sanitizes_unsafe_markup() {
+    let server = UiServer::new();
+
+    let result = server
+        .call_tool(
+            "presentInteractive",
+            json!({
+                "content": r#"<div onclick="evil()">safe</div><script>alert('xss')</script><iframe src="https://example.com"></iframe><a href="javascript:evil()">link</a>"#,
+                "format": "html"
+            }),
+            None,
+        )
+        .await
+        .expect("presentInteractive html mode should render");
+
+    let content = result
+        .content
+        .expect("presentInteractive should return content");
+    let resource = content
+        .iter()
+        .find_map(|item| match item {
+            MCPContent::Resource { resource, .. } => Some(resource),
+            _ => None,
+        })
+        .expect("presentInteractive should return HTML resource");
+
+    let html = resource["text"]
+        .as_str()
+        .expect("HTML resource should include inline text");
+
+    assert!(html.contains("<div>safe</div>"));
+    assert!(!html.contains("alert('xss')"));
+    assert!(!html.contains("<iframe src=\"https://example.com\""));
+    assert!(!html.contains("onclick="));
+    assert!(!html.contains("href=\"javascript:evil()\""));
+}

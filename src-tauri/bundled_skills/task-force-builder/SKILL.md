@@ -56,7 +56,7 @@ Coordination model and execution substrate are not the same thing.
 Pick the execution substrate that matches the job:
 
 - **Plain child sessions** - use `startSession(...)` for one-off delegation that does not need org visibility.
-- **Explicit org lineage** - use `createOrg(...)` once from the root session, then use `startSession(..., includeCurrentOrg=true)` when the child should appear in Org view. Org-visible children should normally share the coordinator's workspace.
+- **Explicit org lineage** - use `createOrg(...)` once from the root session, then use `startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic unless you set `includeCurrentOrg=false`. Org-visible children should normally share the coordinator's workspace.
 - **Scheduled task groups** - use `createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 
 Keep these separate:

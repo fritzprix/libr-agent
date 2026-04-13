@@ -25,7 +25,7 @@ If this file is missing or vague, the team will improvise. Improvised teamwork i
 For execution substrate, make the contract explicit:
 
 - plain child sessions via `startSession(...)`, with `subagent-session-delegation` for delegation mechanics when needed
-- explicit org lineage via `createOrg(...)` + `startSession(..., includeCurrentOrg=true)`, then `team-org` for org-specific operating rules
+- explicit org lineage via `createOrg(...)` + `startSession(...)`, then `team-org` for org-specific operating rules
 - scheduled task groups for recurring automation via `createScheduledTask(...)` and related `scheduled_task` tools, then `team-sprint` for scheduled-group operating rules
 
 Make that choice explicit.

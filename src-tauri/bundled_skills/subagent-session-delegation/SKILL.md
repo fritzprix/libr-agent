@@ -53,7 +53,7 @@ Assume these rules:
 
 If the parent is running inside a task-force workspace, check `.libragent/teamwork.json` before delegating:
 
-- If `executionSubstrate.mode` is `"org"`, prefer `startSession(..., includeCurrentOrg=true)` and `workspaceOverride` so the child joins the org and shares the workspace. Switch to `team-org` for org-specific operating rules.
+- If `executionSubstrate.mode` is `"org"`, prefer `startSession(...)` and `workspaceOverride` so the child joins the org and shares the workspace. Explicit org inheritance is automatic there unless `includeCurrentOrg=false`. Switch to `team-org` for org-specific operating rules.
 - If `executionSubstrate.mode` is `"scheduled"`, the delegation is likely a scheduled wake-up. Follow `team-sprint` for group management instead of ad-hoc delegation.
 
 Important limitations:

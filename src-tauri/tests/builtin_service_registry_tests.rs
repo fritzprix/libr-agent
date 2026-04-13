@@ -278,6 +278,23 @@ fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
 }
 
 #[test]
+fn agent_public_surface_uses_single_session_start_tool() {
+    let tool_names: Vec<String> = agent_tools::all_tools()
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect();
+
+    assert!(
+        tool_names.contains(&"startSession".to_string()),
+        "startSession must remain on the public agent surface"
+    );
+    assert!(
+        !tool_names.contains(&"spawnOrgAgent".to_string()),
+        "spawnOrgAgent should not remain on the public agent surface"
+    );
+}
+
+#[test]
 fn scheduled_task_service_is_registered_as_optional_builtin() {
     assert_eq!(
         BuiltinServiceId::from_alias("scheduled_task"),
