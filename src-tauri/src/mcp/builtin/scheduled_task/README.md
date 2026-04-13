@@ -156,7 +156,7 @@ This server is the missing backend primitive for Team Work, but the higher-level
 
 Still needed:
 
-- update `task-force-builder` guidance so it explicitly uses scheduled-task tools
+- update `teamwork` guidance so it explicitly uses scheduled-task tools
 - define safe recurring-team patterns
 - teach bundled teamwork skills when **not** to schedule loops
 - make the coordination contract and scheduler contract line up cleanly
@@ -211,7 +211,7 @@ The current implementation supports explicit `assistantId`, which is useful for 
 
 1. Add integration tests for actual scheduled task behavior.
 2. Add schedule safety policy at the MCP boundary.
-3. Wire `task-force-builder` to the new tools.
+3. Wire `teamwork` to the new tools.
 4. Add UI/observability for recurring teamwork.
 5. Revisit permission policy for cross-assistant scheduling.
 

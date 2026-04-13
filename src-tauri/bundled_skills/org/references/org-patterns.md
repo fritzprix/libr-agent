@@ -71,7 +71,7 @@ After calling `createOrg`, update `.libragent/teamwork.json`:
 {
   "executionSubstrate": {
     "mode": "org",
-    "specialistSkill": "team-org",
+    "specialistSkill": "org",
     "orgLineage": {
       "intended": true,
       "orgId": "<returned-org-id>",

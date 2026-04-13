@@ -16,25 +16,25 @@ SUBSTRATE_CHOICES = [SUBSTRATE_PLAIN, SUBSTRATE_ORG, SUBSTRATE_SCHEDULED]
 SUBSTRATE_DISPLAY = {
     SUBSTRATE_PLAIN: (
         "Plain child sessions via startSession(...). "
-        "Use subagent-session-delegation for delegation mechanics when needed."
+        "Use delegate for delegation mechanics when needed."
     ),
     SUBSTRATE_ORG: (
         "Explicit org lineage via createOrg(...) once from the root session, "
         "then startSession(...) for org-visible children. "
         "Org-visible children share the coordinator's workspace by default. "
-        "Follow team-org for org-specific operating rules."
+        "Follow org for org-specific operating rules."
     ),
     SUBSTRATE_SCHEDULED: (
         "Scheduled task groups via createScheduledTask(...) and related scheduled_task tools. "
         "Use a stable groupName for the first task and groupId for subsequent tasks in the same group. "
-        "Follow team-sprint for scheduled-group operating rules."
+        "Follow schedule for scheduled-group operating rules."
     ),
 }
 
 SUBSTRATE_SPECIALIST_SKILL = {
-    SUBSTRATE_PLAIN: "subagent-session-delegation",
-    SUBSTRATE_ORG: "team-org",
-    SUBSTRATE_SCHEDULED: "team-sprint",
+    SUBSTRATE_PLAIN: "delegate",
+    SUBSTRATE_ORG: "org",
+    SUBSTRATE_SCHEDULED: "schedule",
 }
 
 
@@ -119,8 +119,8 @@ Own this responsibility: {responsibility}
 - Do not silently change another role's main artifact.
 - If blocked, record the blocker instead of pretending progress happened.
 - Execution substrate for this task force: {execution_substrate}
-- If explicit org lineage is chosen later, follow `team-org`.
-- If scheduled task groups are chosen later, follow `team-sprint`.
+- If explicit org lineage is chosen later, follow `org`.
+- If scheduled task groups are chosen later, follow `schedule`.
 """
 
 
@@ -158,9 +158,9 @@ Active specialist skill: `{specialist_skill}`
 
 ## Execution Specialist Skills
 
-- Plain child sessions: use `subagent-session-delegation` when delegation mechanics matter.
-- Explicit org lineage: use `team-org`.
-- Scheduled task groups: use `team-sprint`.
+- Plain child sessions: use `delegate` when delegation mechanics matter.
+- Explicit org lineage: use `org`.
+- Scheduled task groups: use `schedule`.
 
 ## Active Roles
 
@@ -224,15 +224,16 @@ def build_teamwork_manifest(
                 "scheduledTaskGroups": "workspace-defined-per-group",
             },
             "specialistSkills": {
-                "plainChildSessions": "subagent-session-delegation",
-                "explicitOrgLineage": "team-org",
-                "scheduledTaskGroups": "team-sprint",
+                "plainChildSessions": "delegate",
+                "explicitOrgLineage": "org",
+                "scheduledTaskGroups": "schedule",
             },
             "orgLineage": {
                 "intended": is_org,
                 "rootAction": "createOrg",
                 "childAction": "startSession",
-                "childArgs": {},
+                "childArgs": {"includeCurrentOrg": True},
+                "compatibilityAlias": "spawnOrgAgent",
                 "workspaceSharing": "inherit-root-workspace-by-default",
             },
             "scheduledTaskGroups": {
@@ -288,8 +289,8 @@ def main() -> None:
             "Execution substrate for this task force. "
             f"Choices: {', '.join(SUBSTRATE_CHOICES)}. "
             "Defaults to plain-child-sessions. "
-            "Use 'org' for explicit org lineage (team-org). "
-            "Use 'scheduled' for recurring automation (team-sprint)."
+            "Use 'org' for explicit org lineage (org). "
+            "Use 'scheduled' for recurring automation (schedule)."
         ),
     )
     parser.add_argument(
@@ -333,9 +334,9 @@ def main() -> None:
 Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
 
 ## Execution Notes
-- Plain child sessions: `startSession(...)`, use `subagent-session-delegation` for delegation mechanics
-- Explicit org lineage: `createOrg(...)` once from root, then `startSession(...)`, follow `team-org`
-- Recurring automation: `createScheduledTask(...)` and related scheduled-task tools, follow `team-sprint`
+- Plain child sessions: `startSession(...)`, use `delegate` for delegation mechanics
+- Explicit org lineage: `createOrg(...)` once from root, then `startSession(..., includeCurrentOrg=true)`, follow `org`
+- Recurring automation: `createScheduledTask(...)` and related scheduled-task tools, follow `schedule`
 
 ## Definition of Done
 - Replace this list with concrete success criteria.

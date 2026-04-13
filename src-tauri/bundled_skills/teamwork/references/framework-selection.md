@@ -57,9 +57,9 @@ After choosing the coordination model, choose the execution substrate explicitly
 
 | Execution need | Use this substrate | Then follow | Why |
 | --- | --- | --- | --- |
-| One-off specialist delegation | `startSession(...)` | `subagent-session-delegation` | Lightweight child session without org coupling |
-| Org-visible lineage under a governing teamwork session | `createOrg(...)` once, then `startSession(...)` | `team-org` | Preserves explicit org membership, Org view semantics, and shared coordinator workspace defaults |
-| Recurring, cron, heartbeat, or resumable automation | Scheduled task groups via `createScheduledTask(...)` and related `scheduled_task` tools | `team-sprint` | Keeps recurring collaboration separate from org lineage and under policy control |
+| One-off specialist delegation | `startSession(...)` | `delegate` | Lightweight child session without org coupling |
+| Org-visible lineage under a governing teamwork session | `createOrg(...)` once, then `startSession(..., includeCurrentOrg=true)` | `org` | Preserves explicit org membership, Org view semantics, and shared coordinator workspace defaults |
+| Recurring, cron, heartbeat, or resumable automation | Scheduled task groups via `createScheduledTask(...)` and related `scheduled_task` tools | `schedule` | Keeps recurring collaboration separate from org lineage and under policy control |
 
 ## Hard separation rules
 
