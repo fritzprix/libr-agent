@@ -13,7 +13,7 @@ fn write_file(path: &std::path::Path, content: &str) {
 }
 
 #[test]
-fn inspect_teamwork_scaffold_reports_missing_constitution_and_recommends_builder() {
+fn inspect_teamwork_scaffold_reports_missing_constitution_and_recommends_teamwork() {
     common::register_sqlite_vec();
     let temp_dir = tempfile::tempdir().expect("temp dir should create");
 
@@ -57,8 +57,10 @@ fn inspect_teamwork_scaffold_accepts_complete_org_workspace() {
     write_file(
         &workspace.join(".libragent").join("teamwork.json"),
         &serde_json::to_string_pretty(&json!({
-            "executionSubstrate": { "mode": "org" },
-            "orgLineage": { "intended": true }
+            "executionSubstrate": {
+                "mode": "org",
+                "orgLineage": { "intended": true }
+            }
         }))
         .expect("manifest should serialize"),
     );
@@ -96,8 +98,10 @@ fn inspect_teamwork_scaffold_flags_manifest_substrate_mismatch() {
     write_file(
         &workspace.join(".libragent").join("teamwork.json"),
         &serde_json::to_string_pretty(&json!({
-            "executionSubstrate": { "mode": "plain" },
-            "orgLineage": { "intended": false }
+            "executionSubstrate": {
+                "mode": "plain-child-sessions",
+                "orgLineage": { "intended": false }
+            }
         }))
         .expect("manifest should serialize"),
     );
@@ -105,7 +109,10 @@ fn inspect_teamwork_scaffold_flags_manifest_substrate_mismatch() {
     let status = inspect_teamwork_scaffold(workspace);
 
     assert!(status.missing_files.is_empty());
-    assert_eq!(status.execution_substrate_mode.as_deref(), Some("plain"));
+    assert_eq!(
+        status.execution_substrate_mode.as_deref(),
+        Some("plain-child-sessions")
+    );
     assert_eq!(status.org_lineage_intended, Some(false));
     assert_eq!(status.recommended_skill.as_deref(), Some("teamwork"));
     assert!(
