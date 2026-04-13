@@ -244,7 +244,7 @@ pub async fn message_to_session(
     };
 
     let hint = SuccessHint::new(
-        format!("Message {} for session {}.", response.status, session_id),
+        format!("Message {} for session `{}`.", response.status, session_id),
         vec![format!(
             "Use checkSession(\"{}\", wait=true) to see the response.",
             session_id
@@ -300,7 +300,7 @@ pub async fn stop_session(
         .await
         .remove(&session_id);
 
-    let hint = SuccessHint::new(format!("Session {} stopped.", session_id), vec![]);
+    let hint = SuccessHint::new(format!("Session `{}` stopped.", session_id), vec![]);
     let message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
         "stopSession",
@@ -399,12 +399,12 @@ pub async fn compact_session_context(
     if !triggered {
         let message = if let Some(record) = previous_record {
             format!(
-                "No new compaction was needed for session {}. Existing compact summary already covers {} -> {}.",
+                "No new compaction was needed for session `{}`. Existing compact summary already covers `{}` -> `{}`.",
                 session_id, record.from_id, record.to_id
             )
         } else {
             format!(
-                "No compaction was needed for session {}. There is not enough uncompacted history yet.",
+                "No compaction was needed for session `{}`. There is not enough uncompacted history yet.",
                 session_id
             )
         };
@@ -480,7 +480,7 @@ pub async fn compact_session_context(
         "compacted"
     };
     let message = format!(
-        "Session {} {}.\n\nCompaction boundary: {} -> {}\n\nCompact summary:\n{}",
+        "Session `{}` {}.\n\nCompaction boundary: `{}` -> `{}`\n\nCompact summary:\n{}",
         session_id,
         state_label,
         compact_record.from_id,

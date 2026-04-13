@@ -137,15 +137,15 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
-    if !paged_agents.is_empty() {
-        text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
-        text_summary.push_str("|---|---|---|---|---|\n");
-    } else if total > 0 {
+    if total > 0 && paged_agents.is_empty() {
         text_summary.push_str(&format!(
             "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
             offset, limit
         ));
     }
+
+    text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
+    text_summary.push_str("|---|---|---|---|---|\n");
 
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
@@ -242,30 +242,28 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
     }
 
     let mut message = format!("Found {} sub-agent sessions.\n\n", results.len());
-    if !results.is_empty() {
-        message.push_str("| Name | Session ID | Status |\n");
-        message.push_str("|---|---|---|\n");
-        for result in &results {
-            let name_clean = result["name"]
-                .as_str()
-                .unwrap_or("")
-                .replace('|', "\\|")
-                .replace('\n', " ");
-            let id_clean = result["id"]
-                .as_str()
-                .unwrap_or("")
-                .replace('|', "\\|")
-                .replace('\n', " ");
-            let status_clean = result["status"]
-                .as_str()
-                .unwrap_or("")
-                .replace('|', "\\|")
-                .replace('\n', " ");
-            message.push_str(&format!(
-                "| {} | `{}` | {} |\n",
-                name_clean, id_clean, status_clean
-            ));
-        }
+    message.push_str("| Name | Session ID | Status |\n");
+    message.push_str("|---|---|---|\n");
+    for result in &results {
+        let name_clean = result["name"]
+            .as_str()
+            .unwrap_or("")
+            .replace('|', "\\|")
+            .replace('\n', " ");
+        let id_clean = result["id"]
+            .as_str()
+            .unwrap_or("")
+            .replace('|', "\\|")
+            .replace('\n', " ");
+        let status_clean = result["status"]
+            .as_str()
+            .unwrap_or("")
+            .replace('|', "\\|")
+            .replace('\n', " ");
+        message.push_str(&format!(
+            "| {} | `{}` | {} |\n",
+            name_clean, id_clean, status_clean
+        ));
     }
 
     let hint = SuccessHint::new(

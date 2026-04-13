@@ -45,7 +45,7 @@ pub async fn create_org(
         session.org_root_session_id.clone(),
     ) {
         let message = format!(
-            "Current session already owns explicit org '{}' (ID: {}, root session: {}).",
+            "Current session already owns explicit org '{}' (ID: `{}`, root session: `{}`).",
             existing_org_name, existing_org_id, existing_root_id
         );
         let mut response_data = build_agent_tool_data(
@@ -90,7 +90,7 @@ pub async fn create_org(
         .map_err(|error| format!("Failed to persist org identity: {}", error))?;
 
     let message = format!(
-        "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nOnly sessions created through spawnOrgAgent under this org will appear in Org view.",
+        "Explicit org created.\n\nOrg: {} (ID: `{}`)\nRoot session: `{}`\n\nOnly sessions created through spawnOrgAgent under this org will appear in Org view.",
         org_name, org_id, org_root_session_id
     );
     let mut response_data = build_agent_tool_data(
@@ -177,25 +177,37 @@ pub async fn get_org(
         .org_name
         .clone()
         .unwrap_or_else(|| target_org_id.clone());
-    let member_lines = members
-        .iter()
-        .map(|session| {
-            format!(
-                "- {} [{}] depth={} session={}",
-                session.name.clone().unwrap_or_else(|| session.id.clone()),
-                session.status.as_str(),
-                session.depth.unwrap_or(0),
-                session.id
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+
+    let mut member_lines =
+        String::from("| Name | Status | Depth | Session ID |\n|---|---|---|---|\n");
+    member_lines.push_str(
+        &members
+            .iter()
+            .map(|session| {
+                let name_clean = session
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| session.id.clone())
+                    .replace('|', "\\|")
+                    .replace('\n', " ");
+                format!(
+                    "| {} | {} | {} | `{}` |",
+                    name_clean,
+                    session.status.as_str(),
+                    session.depth.unwrap_or(0),
+                    session.id
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+
     let busy_count = members
         .iter()
         .filter(|session| session.status == crate::repositories::SessionStatus::Busy)
         .count();
     let message = format!(
-        "Explicit org summary\n\nOrg: {} (ID: {})\nRoot session: {}\nMembers: {} (busy: {})\n\n{}",
+        "Explicit org summary\n\nOrg: {} (ID: `{}`)\nRoot session: `{}`\nMembers: {} (busy: {})\n\n{}",
         org_name,
         target_org_id,
         root_session.id,
