@@ -3669,7 +3669,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libragent"
-version = "0.7.4"
+version = "0.7.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8097,9 +8097,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-mcp-bridge"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b11990bf5e3b26b253e1213f2df2db85d06f32623abd755d3fe1ca942965b0d2"
+checksum = "ed15377e82bc41205563fd0a7bb9059dd6145c6ffafedbd38ad9956da68f3ff1"
 dependencies = [
  "base64 0.22.1",
  "block2 0.5.1",
