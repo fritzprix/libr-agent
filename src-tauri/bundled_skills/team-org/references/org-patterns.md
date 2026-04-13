@@ -7,9 +7,8 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 | Need | Tool / action |
 | --- | --- |
 | Create the org (once, from root session) | `createOrg(orgName, description)` |
-| Spawn an org-visible child session | `startSession(agentId, task, includeCurrentOrg=true, workspaceOverride=<path>)` |
-| Spawn a one-off child that stays out of Org view | `startSession(agentId, task)` — no `includeCurrentOrg` |
-| Compatibility alias for org-visible spawn | `spawnOrgAgent(agentId, task, workspaceOverride=<path>)` |
+| Spawn an org-visible child session | `startSession(agentId, task, workspaceOverride=<path>)` |
+| Spawn a one-off child that stays out of Org view | `startSession(agentId, task, includeCurrentOrg=false)` |
 | Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
 | Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
 | Inspect org membership | `getOrg(orgId)` if available |
@@ -32,7 +31,6 @@ createOrg(
 startSession(
   agentId: "<researcher-assistant-id>",
   task: "...",
-  includeCurrentOrg: true,
   workspaceOverride: "<coordinator-workspace-path>"
 )
 ```
@@ -59,7 +57,6 @@ Org-visible children should work in the coordinator's workspace unless there is 
 startSession(
   agentId: "...",
   task: "...",
-  includeCurrentOrg: true,
   workspaceOverride: "/absolute/path/to/coordinator/workspace"
 )
 ```
@@ -82,8 +79,7 @@ After calling `createOrg`, update `.libragent/teamwork.json`:
       "rootSessionId": "<current-session-id>",
       "rootAction": "createOrg",
       "childAction": "startSession",
-      "childArgs": { "includeCurrentOrg": true },
-      "compatibilityAlias": "spawnOrgAgent",
+      "childArgs": {},
       "workspaceSharing": "inherit-root-workspace-by-default"
     }
   }
@@ -110,9 +106,9 @@ Fix: restart child with `workspaceOverride` pointing to the coordinator workspac
 
 ### Org view shows unexpected sessions
 
-Likely cause: sessions were created with `includeCurrentOrg=true` unintentionally, or lineage-only sessions are being surfaced incorrectly.
+Likely cause: sessions inherited explicit org membership unintentionally, or lineage-only sessions are being surfaced incorrectly.
 
-Fix: confirm that sessions not intended for Org view were started without `includeCurrentOrg`. Org membership requires explicit opt-in, not just having a `parentSessionId`.
+Fix: confirm that sessions not intended for Org view were started with `includeCurrentOrg=false`. Org membership still requires explicit org inheritance, not just having a `parentSessionId`.
 
 ### Cannot identify org root
 

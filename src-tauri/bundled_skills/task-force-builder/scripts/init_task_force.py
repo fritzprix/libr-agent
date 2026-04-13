@@ -20,7 +20,7 @@ SUBSTRATE_DISPLAY = {
     ),
     SUBSTRATE_ORG: (
         "Explicit org lineage via createOrg(...) once from the root session, "
-        "then startSession(..., includeCurrentOrg=true) for org-visible children. "
+        "then startSession(...) for org-visible children. "
         "Org-visible children share the coordinator's workspace by default. "
         "Follow team-org for org-specific operating rules."
     ),
@@ -232,8 +232,7 @@ def build_teamwork_manifest(
                 "intended": is_org,
                 "rootAction": "createOrg",
                 "childAction": "startSession",
-                "childArgs": {"includeCurrentOrg": True},
-                "compatibilityAlias": "spawnOrgAgent",
+                "childArgs": {},
                 "workspaceSharing": "inherit-root-workspace-by-default",
             },
             "scheduledTaskGroups": {
@@ -335,7 +334,7 @@ Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
 
 ## Execution Notes
 - Plain child sessions: `startSession(...)`, use `subagent-session-delegation` for delegation mechanics
-- Explicit org lineage: `createOrg(...)` once from root, then `startSession(..., includeCurrentOrg=true)`, follow `team-org`
+- Explicit org lineage: `createOrg(...)` once from root, then `startSession(...)`, follow `team-org`
 - Recurring automation: `createScheduledTask(...)` and related scheduled-task tools, follow `team-sprint`
 
 ## Definition of Done

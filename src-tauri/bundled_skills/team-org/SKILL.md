@@ -25,9 +25,8 @@ Use `task-force-builder` first when the workspace constitution is not ready.
    - Record the returned `orgId` and `orgName` in `.libragent/teamwork.json` and `coordination/DECISIONS.md`.
    - The session that calls `createOrg` becomes the org root. Do not call `createOrg` again.
 5. Spawn org-visible members explicitly.
-   - Use `startSession(agentId, task, includeCurrentOrg=true, workspaceOverride=<coordinator-workspace>)` for org-visible children.
-   - Treat `spawnOrgAgent(...)` as a compatibility alias, not the primary path.
-   - One-off delegated children that should stay out of Org view are plain child sessions — omit `includeCurrentOrg`.
+   - Use `startSession(agentId, task, workspaceOverride=<coordinator-workspace>)` for org-visible children. If the current session already belongs to the org, inheritance is automatic.
+   - One-off delegated children that should stay out of Org view must set `includeCurrentOrg=false`.
 6. Resume through the org root.
    - The org root session is the canonical entry point. Org view should resume the root, not whichever child was last active.
    - If you need to identify the root, read `orgLineage.rootSessionId` from `.libragent/teamwork.json`.
@@ -40,7 +39,7 @@ Use `task-force-builder` first when the workspace constitution is not ready.
 - Do not split org members into separate workspaces unless the task truly needs it.
 - Do not use org identity for scheduled task groups or recurring automation.
 - Do not treat arbitrary child-session resume as org resume. The org root is the entry point.
-- Do not infer org membership from parent/child lineage alone — membership requires `includeCurrentOrg=true` at session creation.
+- Do not infer org membership from parent/child lineage alone — membership requires explicit org inheritance at session creation. Under an explicit org root that inheritance is automatic unless `includeCurrentOrg=false`.
 - After `createOrg`, update `.libragent/teamwork.json` with the actual `orgId` and `rootSessionId`.
 
 ## References

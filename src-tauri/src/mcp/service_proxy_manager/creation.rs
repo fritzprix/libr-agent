@@ -125,36 +125,10 @@ impl MCPServiceProxyManager {
         };
         let _session_lock = session_guard.lock().await;
 
-        // Re-check after acquiring the per-session lock: a concurrent caller may have
-        // already created the proxy while we were waiting.
-        {
-            let proxies = self.proxies.read().await;
-            if let Some(existing) = proxies.get(&session_id) {
-                log::debug!("Proxy already exists for session: {}", session_id);
-                emit_status("Session services ready", InitializationStatus::Complete);
-                return Ok(existing.clone());
-            }
-        }
-
         emit_status(
             "Initializing session environment",
             InitializationStatus::Running,
         );
-
-        // Clean up any stale stdio manager (rapid create/destroy cycles)
-        {
-            let mut stdio_managers = self.session_stdio_managers.write().await;
-            if let Some(old_mgr) = stdio_managers.remove(&session_id) {
-                log::debug!(
-                    "Cleaning up stale stdio manager for session: {}",
-                    session_id
-                );
-                // Emit cleanup status if needed, but it might be too fast
-                tokio::spawn(async move {
-                    old_mgr.shutdown_all().await;
-                });
-            }
-        }
 
         // Fetch configs directly from DB to support Session Isolation (independent of global connections)
         use crate::repositories::mcp_server_repository::MCPServerRepository;
@@ -254,6 +228,72 @@ impl MCPServiceProxyManager {
                 );
             }
         }
+
+        let mut requested_builtin_ids = tool_ids.clone();
+        requested_builtin_ids.sort();
+        requested_builtin_ids.dedup();
+
+        let mut requested_external_server_names = stdio_configs.keys().cloned().collect::<Vec<_>>();
+        requested_external_server_names.extend(http_configs.keys().cloned());
+        requested_external_server_names.sort();
+        requested_external_server_names.dedup();
+
+        if let Some(existing) = self.get_proxy(&session_id).await {
+            let mut existing_builtin_ids = existing.builtin_tool_ids();
+            existing_builtin_ids.sort();
+            existing_builtin_ids.dedup();
+
+            let existing_external_server_names = existing.configured_external_server_names().await;
+
+            if existing_builtin_ids == requested_builtin_ids
+                && existing_external_server_names == requested_external_server_names
+            {
+                log::debug!("Proxy already exists for session: {}", session_id);
+                emit_status("Session services ready", InitializationStatus::Complete);
+                return Ok(existing);
+            }
+
+            log::warn!(
+                "Recreating proxy for session {} due to config mismatch (builtin: {:?} -> {:?}, external: {:?} -> {:?})",
+                session_id,
+                existing_builtin_ids,
+                requested_builtin_ids,
+                existing_external_server_names,
+                requested_external_server_names
+            );
+
+            self.proxies.write().await.remove(&session_id);
+            self.proxy_readiness.write().await.remove(&session_id);
+
+            if let Some(old_mgr) = self
+                .session_stdio_managers
+                .write()
+                .await
+                .remove(&session_id)
+            {
+                tokio::spawn(async move {
+                    old_mgr.shutdown_all().await;
+                });
+            }
+
+            self.session_http_managers.write().await.remove(&session_id);
+        }
+
+        // Clean up any leftover per-session managers/readiness state before rebuilding.
+        // This preserves the old "stale manager" cleanup behavior for sessions that
+        // somehow lost their proxy entry but still have session-scoped manager state.
+        self.proxy_readiness.write().await.remove(&session_id);
+        if let Some(old_mgr) = self
+            .session_stdio_managers
+            .write()
+            .await
+            .remove(&session_id)
+        {
+            tokio::spawn(async move {
+                old_mgr.shutdown_all().await;
+            });
+        }
+        self.session_http_managers.write().await.remove(&session_id);
 
         // Apply user settings to config (especially startup timeout)
         let mut config = self.config.clone();

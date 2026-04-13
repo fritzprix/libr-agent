@@ -173,7 +173,12 @@ impl UiServer {
         let interaction = args.get("interaction");
 
         let is_markdown = !matches!(format, "html");
-        let content_json = serde_json::to_string(content)
+        let render_content = if is_markdown {
+            content.to_string()
+        } else {
+            ammonia::Builder::default().clean(content).to_string()
+        };
+        let content_json = serde_json::to_string(&render_content)
             .unwrap_or_else(|_| "\"\"".to_string())
             .replace("</", "<\\/");
 
@@ -188,7 +193,7 @@ impl UiServer {
         if !is_markdown {
             data.as_object_mut()
                 .unwrap()
-                .insert("content".to_string(), json!(content));
+                .insert("content".to_string(), json!(render_content));
         }
 
         if let Some(t) = title {

@@ -41,37 +41,39 @@ async fn start_session_impl(
     args: Value,
     caller_session_id: &str,
     tool_name: &str,
-    force_include_current_org: bool,
 ) -> Result<MCPResult, String> {
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
 
-    let include_current_org = force_include_current_org
-        || args
-            .get("includeCurrentOrg")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+    let caller_session = match manager.get_session(caller_session_id).await? {
+        Some(session) => session,
+        None => return Ok(caller_session_not_found_result(caller_session_id)),
+    };
+    let caller_explicit_org = match (
+        caller_session.org_id.clone(),
+        caller_session.org_name.clone(),
+        caller_session.org_root_session_id.clone(),
+    ) {
+        (Some(org_id), Some(org_name), Some(org_root_session_id)) => {
+            Some((org_id, org_name, org_root_session_id))
+        }
+        _ => None,
+    };
+
+    let include_current_org = args
+        .get("includeCurrentOrg")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(caller_explicit_org.is_some());
     let requested_workspace_override = args
         .get("workspaceOverride")
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
     let explicit_org = if include_current_org {
-        let caller_session = match manager.get_session(caller_session_id).await? {
-            Some(session) => session,
-            None => return Ok(caller_session_not_found_result(caller_session_id)),
-        };
-
-        match (
-            caller_session.org_id.clone(),
-            caller_session.org_name.clone(),
-            caller_session.org_root_session_id.clone(),
-        ) {
-            (Some(org_id), Some(org_name), Some(org_root_session_id)) => {
-                Some((org_id, org_name, org_root_session_id))
-            }
-            _ => {
+        match caller_explicit_org {
+            Some(org) => Some(org),
+            None => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Current session does not belong to an explicit org. Call createOrg first."
@@ -80,7 +82,7 @@ async fn start_session_impl(
                 )
                 .with_guidance(vec![
                     "Use createOrg(name=\"...\") from the root session first.".to_string(),
-                    "Then call startSession(..., includeCurrentOrg=true) for org-visible member sessions."
+                    "Then call startSession(...) to create org-visible member sessions."
                         .to_string(),
                 ])
                 .to_mcp_result())
@@ -201,15 +203,7 @@ pub async fn start_session(
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
-    start_session_impl(server, args, caller_session_id, "startSession", false).await
-}
-
-pub async fn spawn_org_agent(
-    server: &AgentServer,
-    args: Value,
-    caller_session_id: &str,
-) -> Result<MCPResult, String> {
-    start_session_impl(server, args, caller_session_id, "spawnOrgAgent", true).await
+    start_session_impl(server, args, caller_session_id, "startSession").await
 }
 
 /// messageToSession handler (from messageAgent)

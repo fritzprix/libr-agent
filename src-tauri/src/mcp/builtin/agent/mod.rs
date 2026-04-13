@@ -100,7 +100,6 @@ impl BuiltinMCPServer for AgentServer {
             "createOrg" => handlers::create_org(self, args, &session_id).await,
             "getOrg" => handlers::get_org(self, args, &session_id).await,
             "startSession" => handlers::start_session(self, args, &session_id).await,
-            "spawnOrgAgent" => handlers::spawn_org_agent(self, args, &session_id).await,
             "messageToSession" => handlers::message_to_session(self, args, &session_id).await,
             "checkSession" => handlers::check_session(self, args, &session_id).await,
             "compactSessionContext" => {

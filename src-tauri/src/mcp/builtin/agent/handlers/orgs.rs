@@ -56,8 +56,8 @@ pub async fn create_org(
             "success",
             vec![
                 json!({
-                    "toolName": "spawnOrgAgent",
-                    "reason": "Spawn an explicit org member under this org.",
+                    "toolName": "startSession",
+                    "reason": "Start another session under this org. Org inheritance is automatic here.",
                 }),
                 json!({
                     "toolName": "getOrg",
@@ -90,7 +90,7 @@ pub async fn create_org(
         .map_err(|error| format!("Failed to persist org identity: {}", error))?;
 
     let message = format!(
-        "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nOnly sessions created through spawnOrgAgent under this org will appear in Org view.",
+        "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nChild sessions started from this org root now join Org view automatically. Use includeCurrentOrg=false only when you intentionally want a one-off child to stay out of Org view.",
         org_name, org_id, org_root_session_id
     );
     let mut response_data = build_agent_tool_data(
@@ -101,7 +101,7 @@ pub async fn create_org(
         "success",
         vec![
             json!({
-                "toolName": "spawnOrgAgent",
+                "toolName": "startSession",
                 "reason": "Create the first explicit org member session.",
             }),
             json!({
@@ -210,7 +210,7 @@ pub async fn get_org(
         &message,
         "success",
         vec![json!({
-            "toolName": "spawnOrgAgent",
+            "toolName": "startSession",
             "reason": "Add another explicit org member under this org.",
         })],
     );
