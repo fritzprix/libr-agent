@@ -6,7 +6,9 @@ use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
 use handlebars::Handlebars;
+use regex::Regex;
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
 pub mod tools;
@@ -176,7 +178,7 @@ impl UiServer {
         let render_content = if is_markdown {
             content.to_string()
         } else {
-            ammonia::Builder::default().clean(content).to_string()
+            sanitize_html_fragment(content)
         };
         let content_json = serde_json::to_string(&render_content)
             .unwrap_or_else(|_| "\"\"".to_string())
@@ -373,6 +375,50 @@ impl UiServer {
             Some(summary.as_str()),
         ))
     }
+}
+
+fn sanitize_html_fragment(content: &str) -> String {
+    static SCRIPT_RE: OnceLock<Regex> = OnceLock::new();
+    static IFRAME_RE: OnceLock<Regex> = OnceLock::new();
+    static OBJECT_RE: OnceLock<Regex> = OnceLock::new();
+    static EMBED_RE: OnceLock<Regex> = OnceLock::new();
+    static EVENT_HANDLER_RE: OnceLock<Regex> = OnceLock::new();
+    static DANGEROUS_URL_RE: OnceLock<Regex> = OnceLock::new();
+
+    let mut sanitized = content.to_string();
+
+    for pattern in [
+        SCRIPT_RE.get_or_init(|| {
+            Regex::new(r"(?is)<script\b[^>]*>.*?</script\s*>").expect("script regex")
+        }),
+        IFRAME_RE.get_or_init(|| {
+            Regex::new(r"(?is)<iframe\b[^>]*(?:/>|>.*?</iframe\s*>)").expect("iframe regex")
+        }),
+        OBJECT_RE.get_or_init(|| {
+            Regex::new(r"(?is)<object\b[^>]*(?:/>|>.*?</object\s*>)").expect("object regex")
+        }),
+        EMBED_RE.get_or_init(|| Regex::new(r"(?is)<embed\b[^>]*>").expect("embed regex")),
+    ] {
+        sanitized = pattern.replace_all(&sanitized, "").into_owned();
+    }
+
+    sanitized = EVENT_HANDLER_RE
+        .get_or_init(|| {
+            Regex::new(r#"(?is)\s+on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#)
+                .expect("event handler regex")
+        })
+        .replace_all(&sanitized, "")
+        .into_owned();
+
+    DANGEROUS_URL_RE
+        .get_or_init(|| {
+            Regex::new(
+                r#"(?is)\s+(href|src)\s*=\s*(?:"\s*(?:javascript:|data:text/html)[^"]*"|'\s*(?:javascript:|data:text/html)[^']*'|(?:javascript:|data:text/html)[^\s>]+)"#,
+            )
+            .expect("dangerous url regex")
+        })
+        .replace_all(&sanitized, "")
+        .into_owned()
 }
 
 pub const NAME: &str = "ui";

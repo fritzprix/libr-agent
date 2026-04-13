@@ -227,7 +227,7 @@ async fn present_interactive_html_mode_sanitizes_unsafe_markup() {
         .call_tool(
             "presentInteractive",
             json!({
-                "content": r#"<div>safe</div><script>alert('xss')</script><iframe src="https://example.com"></iframe>"#,
+                "content": r#"<div onclick="evil()">safe</div><script>alert('xss')</script><iframe src="https://example.com"></iframe><a href="javascript:evil()">link</a>"#,
                 "format": "html"
             }),
             None,
@@ -253,4 +253,6 @@ async fn present_interactive_html_mode_sanitizes_unsafe_markup() {
     assert!(html.contains("<div>safe</div>"));
     assert!(!html.contains("alert('xss')"));
     assert!(!html.contains("<iframe src=\"https://example.com\""));
+    assert!(!html.contains("onclick="));
+    assert!(!html.contains("href=\"javascript:evil()\""));
 }
