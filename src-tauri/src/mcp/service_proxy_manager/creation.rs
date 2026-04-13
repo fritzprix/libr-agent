@@ -15,6 +15,47 @@ use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinSet;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExistingProxyDisposition {
+    Reuse,
+    Recreate,
+    Fail,
+}
+
+pub fn decide_existing_proxy_disposition(
+    existing_builtin_ids: &[String],
+    existing_external_server_names: &[String],
+    requested_builtin_ids: &[String],
+    requested_external_server_names: &[String],
+    config_load_failed: bool,
+) -> ExistingProxyDisposition {
+    let normalize = |values: &[String]| {
+        let mut normalized = values.to_vec();
+        normalized.sort();
+        normalized.dedup();
+        normalized
+    };
+
+    let existing_builtin_ids = normalize(existing_builtin_ids);
+    let existing_external_server_names = normalize(existing_external_server_names);
+    let requested_builtin_ids = normalize(requested_builtin_ids);
+    let requested_external_server_names = normalize(requested_external_server_names);
+
+    if config_load_failed {
+        if existing_builtin_ids == requested_builtin_ids {
+            ExistingProxyDisposition::Reuse
+        } else {
+            ExistingProxyDisposition::Fail
+        }
+    } else if existing_builtin_ids == requested_builtin_ids
+        && existing_external_server_names == requested_external_server_names
+    {
+        ExistingProxyDisposition::Reuse
+    } else {
+        ExistingProxyDisposition::Recreate
+    }
+}
+
 impl MCPServiceProxyManager {
     /// Create a new proxy manager
     ///
@@ -139,6 +180,7 @@ impl MCPServiceProxyManager {
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
         let mut server_name_to_id = HashMap::new(); // Map server names to IDs for tool count updates
+        let mut config_load_error: Option<String> = None;
         let repo = get_mcp_server_repository();
 
         // Filter servers based on mcp_server_ids:
@@ -221,6 +263,7 @@ impl MCPServiceProxyManager {
                 );
             }
             Err(e) => {
+                config_load_error = Some(e.to_string());
                 log::error!(
                     "Failed to fetch MCP server configs from DB for session {}: {}",
                     session_id,
@@ -244,13 +287,34 @@ impl MCPServiceProxyManager {
             existing_builtin_ids.dedup();
 
             let existing_external_server_names = existing.configured_external_server_names().await;
-
-            if existing_builtin_ids == requested_builtin_ids
-                && existing_external_server_names == requested_external_server_names
-            {
-                log::debug!("Proxy already exists for session: {}", session_id);
-                emit_status("Session services ready", InitializationStatus::Complete);
-                return Ok(existing);
+            match decide_existing_proxy_disposition(
+                &existing_builtin_ids,
+                &existing_external_server_names,
+                &requested_builtin_ids,
+                &requested_external_server_names,
+                config_load_error.is_some(),
+            ) {
+                ExistingProxyDisposition::Reuse => {
+                    if let Some(load_error) = config_load_error.as_ref() {
+                        log::warn!(
+                            "Reusing existing proxy for session {} because MCP server configs could not be loaded: {}",
+                            session_id,
+                            load_error
+                        );
+                    } else {
+                        log::debug!("Proxy already exists for session: {}", session_id);
+                    }
+                    emit_status("Session services ready", InitializationStatus::Complete);
+                    return Ok(existing);
+                }
+                ExistingProxyDisposition::Fail => {
+                    let load_error = config_load_error.as_deref().unwrap_or("unknown error");
+                    return Err(format!(
+                        "Failed to load MCP server configs for session {} while updating builtin tools: {}",
+                        session_id, load_error
+                    ));
+                }
+                ExistingProxyDisposition::Recreate => {}
             }
 
             log::warn!(
@@ -277,6 +341,13 @@ impl MCPServiceProxyManager {
             }
 
             self.session_http_managers.write().await.remove(&session_id);
+        }
+
+        if let Some(load_error) = config_load_error {
+            return Err(format!(
+                "Failed to load MCP server configs for session {}: {}",
+                session_id, load_error
+            ));
         }
 
         // Clean up any leftover per-session managers/readiness state before rebuilding.
