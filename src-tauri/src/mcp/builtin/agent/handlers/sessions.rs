@@ -149,11 +149,6 @@ async fn start_session_impl(
         .await;
     }
 
-    let alias_note = if tool_name == "spawnOrgAgent" {
-        " spawnOrgAgent is a compatibility alias for startSession(includeCurrentOrg=true)."
-    } else {
-        ""
-    };
     let workspace_note = if let Some(workspace_path) = effective_workspace_path.as_deref() {
         format!(" Shared workspace: {}.", workspace_path)
     } else {
@@ -162,8 +157,8 @@ async fn start_session_impl(
     let hint = if let Some(org_name) = response.org_name.clone() {
         SuccessHint::new(
             format!(
-                "Session started successfully (ID: {}, org: {}).{}{}",
-                session_id, org_name, alias_note, workspace_note
+                "Session started successfully (ID: {}, org: {}).{}",
+                session_id, org_name, workspace_note
             ),
             vec![format!(
                 "Use checkSession(\"{}\", wait=true) to wait for the answer.",
@@ -173,8 +168,8 @@ async fn start_session_impl(
     } else {
         SuccessHint::new(
             format!(
-                "Session started successfully (ID: {}).{}{}",
-                session_id, alias_note, workspace_note
+                "Session started successfully (ID: {}).{}",
+                session_id, workspace_note
             ),
             vec![format!(
                 "Use checkSession(\"{}\", wait=true) to wait for the answer.",

@@ -80,27 +80,22 @@ pub async fn get_service_context(
             checked_todos.len()
         ));
 
-        // Unchecked Todos
         if !unchecked_todos.is_empty() {
             parts.push(String::new());
             parts.push("**Pending Tasks:**".to_string());
-            parts.push("| Todo ID | Prio | Task | Info |".to_string());
-            parts.push("| :--- | :--- | :--- | :--- |".to_string());
 
             for (_, t) in unchecked_todos.iter().take(10) {
-                let priority_emoji = if t.priority == "high" {
-                    "🔴"
-                } else if t.priority == "low" {
-                    "🟢"
-                } else {
-                    "🟡"
+                let priority = match t.priority.as_str() {
+                    "high" => "high",
+                    "low" => "low",
+                    _ => "medium",
                 };
 
-                let safe_content = t.content.replace(['\n', '\r'], " ").replace('|', r"\|");
+                let safe_content = t.content.replace(['\n', '\r'], " ");
                 let info = t
                     .description
                     .as_deref()
-                    .unwrap_or("-")
+                    .unwrap_or("")
                     .replace(['\n', '\r'], " ");
                 let truncated_info = if info.chars().count() > 40 {
                     let s: String = info.chars().take(37).collect();
@@ -109,15 +104,21 @@ pub async fn get_service_context(
                     info
                 };
 
+                let info_suffix = if truncated_info.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", truncated_info)
+                };
+
                 parts.push(format!(
-                    "| {} | {} | {} | {} |",
-                    t.id, priority_emoji, safe_content, truncated_info
+                    "- #{} [{}] {}{}",
+                    t.id, priority, safe_content, info_suffix
                 ));
             }
 
             if unchecked_todos.len() > 10 {
                 parts.push(format!(
-                    "*...and {} more pending tasks*",
+                    "- ...and {} more pending tasks",
                     unchecked_todos.len() - 10
                 ));
             }
@@ -146,12 +147,8 @@ pub async fn get_service_context(
                 parts.push(format!("- [✓] (Todo ID {}) {}{}", t.id, t.content, summary));
             }
         }
-
-        parts.push(String::new());
-        parts.push("*Use 'todoId' when calling updateTodo.*".to_string());
     } else {
         parts.push("- Tasks: None".to_string());
-        parts.push("*Use 'addTodo' to create your first task.*".to_string());
     }
 
     let structured_state = json!({
