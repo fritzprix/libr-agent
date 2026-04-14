@@ -21,6 +21,7 @@ mod tests;
 
 pub use caching::{persist_tool_cache_for_server, spawn_tool_cache_update};
 pub use creation::{decide_existing_proxy_disposition, ExistingProxyDisposition};
+pub use management::{decide_proxy_readiness_state, ProxyReadinessState};
 
 /// Manages per-session MCP service proxies for isolated tool execution
 ///

@@ -409,18 +409,13 @@ impl AgentSessionManager {
                 );
             }
 
-            // Wait for proxy to be ready before invoking LLM
-            if let Err(e) = self
-                .proxy_manager
-                .wait_until_proxy_ready(&session_id, 60)
-                .await
-            {
-                log::warn!(
-                    "Proxy readiness wait failed for session '{}': {}. Proceeding anyway.",
-                    session_id,
-                    e
-                );
-            }
+            crate::agent::workflow::start::ensure_proxy_ready(
+                &self.proxy_manager,
+                &self.app_handle,
+                &session_id,
+                60,
+            )
+            .await?;
 
             crate::agent::llm::request_llm_completion(
                 &self.session_repo,
