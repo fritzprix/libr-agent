@@ -1,4 +1,4 @@
-use crate::services::skill_service::{self, SkillMetadata};
+use crate::services::skill_service::{self, ManagedSkillsOverview, SkillMetadata};
 use std::path::{Path, PathBuf};
 
 #[tauri::command]
@@ -22,24 +22,26 @@ pub async fn open_skills_directory_in_explorer(directory: Option<String>) -> Res
     crate::utils::fs::open_in_file_manager(&skills_dir)
 }
 
-pub async fn get_configured_skills_directory() -> Result<String, String> {
-    skill_service::get_configured_skills_directory().await
-}
-
 #[tauri::command]
 pub async fn get_aggregated_skills(
     assistant_id: Option<String>,
     session_id: Option<String>,
     workspace_path: Option<String>,
 ) -> Result<Vec<SkillMetadata>, String> {
-    let (global_dir, assistant_dir, workspace_dir) = skill_service::resolve_skill_directories(
-        assistant_id.as_deref(),
-        session_id.as_deref(),
-        workspace_path.as_deref().map(Path::new),
-    )
-    .await?;
+    let (system_dir, user_dir, assistant_dir, workspace_dir) =
+        skill_service::resolve_skill_directories(
+            assistant_id.as_deref(),
+            session_id.as_deref(),
+            workspace_path.as_deref().map(Path::new),
+        )
+        .await?;
 
-    skill_service::resolve_skills(global_dir, assistant_dir, workspace_dir).await
+    skill_service::resolve_skills(system_dir, user_dir, assistant_dir, workspace_dir).await
+}
+
+#[tauri::command]
+pub async fn get_managed_skills_overview() -> Result<ManagedSkillsOverview, String> {
+    skill_service::get_managed_skills_overview().await
 }
 
 #[tauri::command]

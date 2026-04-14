@@ -17,79 +17,62 @@ use tauri::{App, Emitter, Listener, Manager};
 /// removed from the bundle can be cleaned up automatically on the next launch.
 const BUNDLED_SKILL_MARKER: &str = ".bundled_skill";
 
-/// Copy bundled skills from app resources to AppData/skills directory.
-///
-/// Rules:
-/// - `.force_update` present  → always overwrite existing skill
-/// - `.force_update` absent   → copy only if destination doesn't exist (preserves user edits)
-/// - Skill has `.bundled_skill` marker but is no longer in bundle → remove (cleanup stale skills)
-async fn copy_bundled_skills_to_app_data(app: &App) -> Result<(), Box<dyn std::error::Error>> {
+/// Move legacy user-managed skills from AppData/skills into AppData/user_skills.
+/// Old bundled copies are identified by `.bundled_skill` and discarded.
+async fn migrate_legacy_skills_to_managed_storage(
+    app: &App,
+) -> Result<(), Box<dyn std::error::Error>> {
     use std::fs;
 
-    let resource_dir = app.path().resource_dir()?;
-    let bundled_skills_dir = resource_dir.join("bundled_skills");
-
     let app_data_dir = app.path().app_data_dir()?;
-    let target_skills_dir = app_data_dir.join("skills");
+    let legacy_skills_dir = app_data_dir.join("skills");
+    let user_skills_dir = app_data_dir.join("user_skills");
 
-    if !bundled_skills_dir.exists() {
-        log::debug!("No bundled_skills directory found in resources");
+    if !legacy_skills_dir.exists() {
         return Ok(());
     }
 
-    fs::create_dir_all(&target_skills_dir)?;
+    fs::create_dir_all(&user_skills_dir)?;
 
-    // Build set of current bundled skill names
-    let bundled_names: std::collections::HashSet<std::ffi::OsString> =
-        fs::read_dir(&bundled_skills_dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name())
-            .collect();
-
-    // Remove stale bundled skills: present in AppData but no longer in bundle
-    for entry in fs::read_dir(&target_skills_dir)? {
+    for entry in fs::read_dir(&legacy_skills_dir)? {
         let entry = entry?;
         let skill_name = entry.file_name();
-        let target_skill_dir = entry.path();
-
-        if target_skill_dir.is_dir()
-            && !bundled_names.contains(&skill_name)
-            && target_skill_dir.join(BUNDLED_SKILL_MARKER).exists()
-        {
-            log::info!("🗑️  Removing stale bundled skill: {:?}", skill_name);
-            fs::remove_dir_all(&target_skill_dir)?;
+        let legacy_skill_dir = entry.path();
+        if !legacy_skill_dir.is_dir() {
+            continue;
         }
-    }
 
-    // Copy / update each bundled skill
-    for entry in fs::read_dir(&bundled_skills_dir)? {
-        let entry = entry?;
-        let skill_name = entry.file_name();
-        let source_skill_dir = entry.path();
-        let target_skill_dir = target_skills_dir.join(&skill_name);
+        if legacy_skill_dir.join(BUNDLED_SKILL_MARKER).exists() {
+            log::info!("🧹 Removing legacy bundled skill copy: {:?}", skill_name);
+            fs::remove_dir_all(&legacy_skill_dir)?;
+            continue;
+        }
 
-        let force_update_marker = source_skill_dir.join(".force_update");
-        let should_force_update = force_update_marker.exists();
+        let target_skill_dir = user_skills_dir.join(&skill_name);
+        if target_skill_dir.exists() {
+            log::info!(
+                "⏭️  Managed user skill already exists, leaving legacy copy untouched: {:?}",
+                skill_name
+            );
+            continue;
+        }
 
-        if should_force_update {
-            if target_skill_dir.exists() {
-                log::info!("🔄 Force updating skill: {:?}", skill_name);
-                fs::remove_dir_all(&target_skill_dir)?;
-            } else {
-                log::info!("📦 Installing new skill: {:?}", skill_name);
+        match fs::rename(&legacy_skill_dir, &target_skill_dir) {
+            Ok(_) => {
+                log::info!(
+                    "📦 Migrated legacy skill into managed storage: {:?}",
+                    skill_name
+                );
             }
-            copy_dir_recursive(&source_skill_dir, &target_skill_dir)?;
-        } else if !target_skill_dir.exists() {
-            log::info!("📦 Copying bundled skill: {:?}", skill_name);
-            copy_dir_recursive(&source_skill_dir, &target_skill_dir)?;
-        } else {
-            log::debug!("⏭️  Skill already exists, skipping: {:?}", skill_name);
-        }
-
-        // Write bundled marker so future runs can identify this as a bundled skill
-        let marker_path = target_skill_dir.join(BUNDLED_SKILL_MARKER);
-        if !marker_path.exists() {
-            fs::write(&marker_path, "")?;
+            Err(error) => {
+                log::warn!(
+                    "Failed to move legacy skill {:?} directly ({}), copying instead",
+                    skill_name,
+                    error
+                );
+                copy_dir_recursive(&legacy_skill_dir, &target_skill_dir)?;
+                fs::remove_dir_all(&legacy_skill_dir)?;
+            }
         }
     }
 
@@ -138,12 +121,12 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(dropped_file_service);
     info!("✅ DroppedFileService initialized");
 
-    // Copy bundled skills to AppData/skills if not already present
+    // Migrate legacy AppData/skills user content into the managed user_skills directory.
     tauri::async_runtime::block_on(async {
-        if let Err(e) = copy_bundled_skills_to_app_data(app).await {
-            log::warn!("⚠️  Failed to copy bundled skills: {}", e);
+        if let Err(e) = migrate_legacy_skills_to_managed_storage(app).await {
+            log::warn!("⚠️  Failed to migrate legacy skills: {}", e);
         } else {
-            info!("✅ Bundled skills initialized");
+            info!("✅ Legacy skills migration completed");
         }
     });
 

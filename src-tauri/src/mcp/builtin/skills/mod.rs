@@ -43,18 +43,29 @@ impl BuiltinMCPServer for SkillsServer {
     }
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
-        let global_skills_dir =
-            match crate::services::skill_service::get_configured_skills_directory().await {
-                Ok(dir) => std::path::PathBuf::from(dir),
-                Err(e) => {
-                    warn!("Failed to get skills directory: {}", e);
-                    return ServiceContext::new(format!(
-                        "## Skills\n\n⚠️ Failed to load skills: {}",
-                        e
-                    ))
-                    .with_volatility(ContextVolatility::Stable);
-                }
-            };
+        let system_skills_dir = match crate::services::skill_service::get_system_skills_directory()
+        {
+            Ok(dir) => dir,
+            Err(e) => {
+                warn!("Failed to get system skills directory: {}", e);
+                return ServiceContext::new(format!(
+                    "## Skills\n\n⚠️ Failed to load skills: {}",
+                    e
+                ))
+                .with_volatility(ContextVolatility::Stable);
+            }
+        };
+        let user_skills_dir = match crate::services::skill_service::get_user_skills_directory() {
+            Ok(dir) => dir,
+            Err(e) => {
+                warn!("Failed to get user skills directory: {}", e);
+                return ServiceContext::new(format!(
+                    "## Skills\n\n⚠️ Failed to load skills: {}",
+                    e
+                ))
+                .with_volatility(ContextVolatility::Stable);
+            }
+        };
 
         // Parse options once — used for both scope resolution and disabledSkills filtering.
         let parsed_opts: Option<crate::mcp::types::ServiceContextOptions> =
@@ -84,7 +95,8 @@ impl BuiltinMCPServer for SkillsServer {
         };
 
         let mut skills = match crate::services::skill_service::resolve_skills(
-            global_skills_dir,
+            system_skills_dir,
+            user_skills_dir,
             assistant_skills_dir,
             workspace_skills_dir,
         )

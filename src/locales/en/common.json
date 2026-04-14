@@ -450,7 +450,7 @@
       "error": "Failed to clear sessions."
     },
     "skills": {
-      "modalTitle": "Available Skills ({{count}})",
+      "modalTitle": "Installed Skills ({{count}})",
       "noSkills": "No skills found.",
       "title": "Skills Management",
       "saveFirst": "Please save the assistant to manage skills.",
@@ -464,7 +464,7 @@
       "revertFailed": "Failed to revert skill",
       "resetSuccess": "Assistant skills reset successfully",
       "resetFailed": "Failed to reset skills",
-      "dragDropDesc": "Drag and drop a zip file or folder to override skills.",
+      "dragDropDesc": "Drag and drop a .skill, .zip, or skill folder to override skills.",
       "resetTooltip": "Remove all assistant-specific skills",
       "reset": "Reset Override",
       "dropHere": "Drop to import skills",

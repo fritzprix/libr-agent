@@ -1,5 +1,10 @@
 import { safeInvoke } from './core';
-import type { SkillMetadata } from '@/types/skills';
+import type {
+  ManagedSkillsOverview,
+  SkillImportPreview,
+  SkillImportResult,
+  SkillMetadata,
+} from '@/types/skills';
 
 interface SkillScopeOptions {
   sessionId?: string;
@@ -33,6 +38,10 @@ export async function getAggregatedSkills(
   return safeInvoke<SkillMetadata[]>('get_aggregated_skills', args);
 }
 
+export async function getManagedSkillsOverview(): Promise<ManagedSkillsOverview> {
+  return safeInvoke<ManagedSkillsOverview>('get_managed_skills_overview');
+}
+
 /**
  * Imports skills from a skill package file into an assistant's skill set.
  */
@@ -43,6 +52,42 @@ export async function importAssistantSkills(
   return safeInvoke<string>('import_assistant_skills', {
     assistantId,
     filePath,
+  });
+}
+
+export async function previewUserSkillImport(
+  filePath: string,
+): Promise<SkillImportPreview> {
+  return safeInvoke<SkillImportPreview>('preview_user_skill_import', {
+    filePath,
+  });
+}
+
+export async function importUserSkills(
+  filePath: string,
+  overwriteExisting: boolean,
+): Promise<SkillImportResult> {
+  return safeInvoke<SkillImportResult>('import_user_skills', {
+    filePath,
+    overwriteExisting,
+  });
+}
+
+export async function previewGitHubSkillInstall(
+  repoUrl: string,
+): Promise<SkillImportPreview> {
+  return safeInvoke<SkillImportPreview>('preview_github_skill_install', {
+    repoUrl,
+  });
+}
+
+export async function installGitHubSkills(
+  repoUrl: string,
+  overwriteExisting: boolean,
+): Promise<SkillImportResult> {
+  return safeInvoke<SkillImportResult>('install_github_skills', {
+    repoUrl,
+    overwriteExisting,
   });
 }
 
@@ -72,6 +117,12 @@ export async function deleteAssistantSkill(
   });
 }
 
+export async function deleteUserSkill(skillName: string): Promise<string> {
+  return safeInvoke<string>('delete_user_skill', {
+    skillName,
+  });
+}
+
 /**
  * Resets all assistant-specific skills, removing all overrides.
  */
@@ -79,6 +130,10 @@ export async function resetAssistantSkills(
   assistantId: string,
 ): Promise<string> {
   return safeInvoke<string>('reset_assistant_skills', { assistantId });
+}
+
+export async function resetUserSkills(): Promise<string> {
+  return safeInvoke<string>('reset_user_skills');
 }
 
 /**

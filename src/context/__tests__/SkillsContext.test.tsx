@@ -46,8 +46,10 @@ describe('SkillsContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockImplementation((cmd: unknown) => {
-      if (cmd === 'get_default_skills_directory') {
-        return Promise.resolve('/home/user/.local/share/libr-agent/skills');
+      if (cmd === 'get_managed_skills_overview') {
+        return Promise.resolve({
+          effectiveSkills: MOCK_SKILLS,
+        });
       }
       return Promise.resolve([]);
     });
@@ -63,7 +65,7 @@ describe('SkillsContext', () => {
       renderHook(() => useSkills(), { wrapper });
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('scan_skills_directory', expect.any(Object));
+        expect(mockInvoke).toHaveBeenCalledWith('get_managed_skills_overview');
       });
     });
 
@@ -81,7 +83,7 @@ describe('SkillsContext', () => {
       expect(mockInvoke).not.toHaveBeenCalled();
     });
 
-    it('uses AppData fallback path when skillsDirectory is not configured', async () => {
+    it('uses managed skills overview regardless of skillsDirectory setting', async () => {
       mockUseSettings.mockReturnValue({
         value: { system: { skillsDirectory: '' } },
         isLoading: false,
@@ -90,13 +92,11 @@ describe('SkillsContext', () => {
       renderHook(() => useSkills(), { wrapper });
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('scan_skills_directory', {
-          directory: '/home/user/.local/share/libr-agent/skills',
-        });
+        expect(mockInvoke).toHaveBeenCalledWith('get_managed_skills_overview');
       });
     });
 
-    it('uses configured skillsDirectory when set in settings', async () => {
+    it('ignores configured skillsDirectory values and stays managed', async () => {
       mockUseSettings.mockReturnValue({
         value: { system: { skillsDirectory: '/custom/skills/path' } },
         isLoading: false,
@@ -105,9 +105,7 @@ describe('SkillsContext', () => {
       renderHook(() => useSkills(), { wrapper });
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('scan_skills_directory', {
-          directory: '/custom/skills/path',
-        });
+        expect(mockInvoke).toHaveBeenCalledWith('get_managed_skills_overview');
       });
     });
   });
@@ -118,7 +116,7 @@ describe('SkillsContext', () => {
         value: { system: { skillsDirectory: '/some/path' } },
         isLoading: false,
       } as ReturnType<typeof useSettings>);
-      mockInvoke.mockResolvedValue(MOCK_SKILLS);
+      mockInvoke.mockResolvedValue({ effectiveSkills: MOCK_SKILLS });
 
       const { result } = renderHook(() => useSkills(), { wrapper });
 
@@ -147,7 +145,7 @@ describe('SkillsContext', () => {
         value: { system: {} },
         isLoading: false,
       } as ReturnType<typeof useSettings>);
-      mockInvoke.mockResolvedValue([]);
+      mockInvoke.mockResolvedValue({ effectiveSkills: [] });
 
       const { result } = renderHook(() => useSkills(), { wrapper });
 
@@ -177,4 +175,3 @@ describe('SkillsContext', () => {
   });
 
 });
-
