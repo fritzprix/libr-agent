@@ -140,13 +140,13 @@
 - Added strict filtering via `messageFilter` to trigger context updates only for successful tool-result messages by checking `message.role === 'tool'`, `message.tool_call_id`, `!message.error`, and `message.metadata?.toolError !== true`.
 - **Benefits:** Decoupled event subscription from component rendering logic, standardized event handling across the chat interface, and avoided refreshes from failed tool executions.
 
-## 2026-04-10 - [SessionHistoryPanel] **Eradicated:** [Effect State Sync] **Woven:** [Adjusting State During Render]
+## 2026-04-10 - [SessionHistoryPanel] **Eradicated:** [Effect State Sync] **Woven:** [useLayoutEffect for prop-driven expansion sync]
 
 - **SessionHistoryPanel:** Eradicated the anti-pattern where two `useEffect` hooks monitored state (`sessions` and `autoExpandedAncestorIds`) and then imperatively triggered state updates to reset `selectedLineageId` and update `expandedSessionIds`.
-- **Woven:** Implemented direct render-phase state adjustment. Replaced the `selectedLineageId` check with an inline `if` statement. Tracked `prevAutoExpandedAncestorIds` via `useState` and compared it against `autoExpandedAncestorIds` during render to safely update the expanded sessions set without relying on effects.
-- **Benefits:** Prevents double-renders caused by cascading effect updates, aligns with React's pure render logic, and guarantees state atomicity within a single pass.
+- **Woven:** Replaced `selectedLineageId` reset with pure derived state (`useMemo`) based on `selectedLineageIdState` and `sessions`. Replaced render-phase `setState` for `autoExpandedAncestorIds` with `useLayoutEffect` to merge new ancestor IDs into `expandedSessionIds` synchronously before paint, avoiding concurrent-mode warnings.
+- **Action:** Whenever state strictly depends on props or other render inputs, prefer pure derived computation (`useMemo`) over mutating state during render. Render-phase state updates are an advanced escape hatch for narrowly scoped synchronization problems, not a pure render pattern, so use them only when derived state or event/effect-driven updates cannot express the behavior cleanly.
 
-## 2026-04-10 - [SessionHistoryPanel Follow-up] **Eradicated:** [Adjusting State During Render] **Woven:** [Derived State]
+## 2026-04-10 - [SkillsEditor]
 
-- **SessionHistoryPanel:** Replaced the "Adjusting State During Render" pattern for `selectedLineageId` with pure derived state. Instead of tracking previous sessions and modifying state during the render cycle, the effective `selectedLineageId` is now computed via `useMemo` strictly based on `selectedLineageIdState` and `sessions`.
-- **Action:** Whenever state strictly depends on a prop, favor pure derived computation (`useMemo`) over state mutation (even render-phase mutation) to preserve complete functional purity.
+**Learning:** Extracting complex Drag-and-Drop subscription logic out of a monolithic component into a dedicated custom hook (`useSkillsDnD`) strictly separates presentation from side-effects, significantly improving component readability and reusability.
+**Action:** Continually hunt for "God useEffect" blocks handling disparate UI concerns (like file drop events) and encapsulate them inside specialized hooks.

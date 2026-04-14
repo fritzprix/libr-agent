@@ -25,7 +25,7 @@ pub async fn execute_tool_calls(
             session_id: session_id.clone(),
             tool_name: tool_name.clone(),
         };
-        if let Err(e) = crate::agent::events::emit_agent_event(&app_handle, event) {
+        if let Err(e) = crate::agent::tauri_events::emit_agent_event(&app_handle, event) {
             log::error!("Failed to emit tool execution started event: {}", e);
         }
 
@@ -130,7 +130,7 @@ pub async fn execute_tool_calls(
                 tool_name: tool_name.clone(),
                 arguments: args_str.clone(),
             };
-            if let Err(e) = crate::agent::events::emit_agent_event(&app_handle, event) {
+            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&app_handle, event) {
                 log::error!("Failed to emit ToolExecutionRequiresApproval event: {}", e);
             }
 
@@ -145,7 +145,9 @@ pub async fn execute_tool_calls(
                     description,
                     input_preview,
                 };
-                if let Err(e) = crate::agent::events::emit_agent_event(&app_handle, channel_event) {
+                if let Err(e) =
+                    crate::agent::tauri_events::emit_agent_event(&app_handle, channel_event)
+                {
                     log::error!("Failed to emit ChannelPermissionRequest event: {}", e);
                 }
             }

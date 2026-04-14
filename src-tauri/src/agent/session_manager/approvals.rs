@@ -16,7 +16,9 @@ pub async fn respond_tool_approval(
                 tool_call_id: tool_call_id.to_string(),
                 approved,
             };
-            if let Err(error) = crate::agent::events::emit_agent_event(&manager.app_handle, event) {
+            if let Err(error) =
+                crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event)
+            {
                 log::error!(
                     "Failed to emit ToolExecutionApprovalResolved event: {}",
                     error

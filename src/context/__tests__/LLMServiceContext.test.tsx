@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
+import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
 import { SettingsProvider } from '../SettingsContext';
 import type { ReactNode } from 'react';
@@ -20,6 +21,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@/lib/backend/agent-commands', () => ({
   handleLLMError: vi.fn(),
   handleLLMResponse: vi.fn(),
+  getAgentCompactContext: vi.fn(),
 }));
 
 // Mock AIServiceFactory
@@ -107,6 +109,31 @@ describe('LLMServiceContext – Core', () => {
       expect(result.current.streamingMessages).toBeInstanceOf(Map);
       expect(typeof result.current.getSessionStatus).toBe('function');
       expect(typeof result.current.executeCompletionRequest).toBe('function');
+    });
+
+    it('hydrates persisted compacted range into frontend state', async () => {
+      (agentCommands.getAgentCompactContext as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'compact-1',
+        sessionId: 'session-1',
+        fromId: 'msg-1',
+        toId: 'msg-9',
+        summary: 'Persisted summary',
+        createdAt: Date.now(),
+      });
+
+      const { result } = renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      await act(async () => {
+        await result.current.refreshCompactedRange('session-1');
+      });
+
+      expect(result.current.getCompactedRange('session-1')).toEqual({
+        fromId: 'msg-1',
+        toId: 'msg-9',
+        summary: 'Persisted summary',
+      });
     });
 
     it('should throw error when used outside provider', () => {

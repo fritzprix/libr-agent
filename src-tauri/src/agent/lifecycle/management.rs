@@ -1,7 +1,8 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
-use crate::agent::events::{AgentEvent, AgentEventDispatcher, TauriEventDispatcher};
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::state::{AgentSession, SessionStatusTransition};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};
@@ -149,6 +150,8 @@ pub async fn resume_session(
                 compact_in_flight: Arc::new(AtomicBool::new(false)),
                 last_compacted_tail_id: Arc::new(RwLock::new(None)),
                 awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
+                finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
+                deferred_workflow_step: Arc::new(RwLock::new(None)),
                 compact_started_at_ms: Arc::new(RwLock::new(None)),
                 expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),

@@ -2,8 +2,8 @@ use crate::agent::channel_routing::ChannelRouteCandidate;
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::time_location::TimeLocationContextProvider;
-use crate::agent::events::TauriEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -13,6 +13,7 @@ use crate::repositories::{
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
@@ -241,7 +242,7 @@ impl AgentSessionManager {
 
         // Emit the existing pending approvals
         for event in pending_events {
-            if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&self.app_handle, event) {
                 log::error!("Failed to re-emit pending approval event on resume: {}", e);
             }
         }
@@ -271,7 +272,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         assistant_message: Message,
-    ) -> Result<(), String> {
+    ) -> Result<Option<crate::agent::llm::types::PostResponseCompactionPressure>, String> {
         crate::agent::llm::handle_llm_response(
             &self.session_repo,
             &self.active_sessions,
@@ -401,25 +402,20 @@ impl AgentSessionManager {
             let event = crate::agent::events::AgentEvent::WorkflowStarted {
                 session_id: session_id.clone(),
             };
-            if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&self.app_handle, event) {
                 log::error!(
                     "Failed to emit WorkflowStarted event during injection: {}",
                     e
                 );
             }
 
-            // Wait for proxy to be ready before invoking LLM
-            if let Err(e) = self
-                .proxy_manager
-                .wait_until_proxy_ready(&session_id, 60)
-                .await
-            {
-                log::warn!(
-                    "Proxy readiness wait failed for session '{}': {}. Proceeding anyway.",
-                    session_id,
-                    e
-                );
-            }
+            crate::agent::workflow::start::ensure_proxy_ready(
+                &self.proxy_manager,
+                &self.app_handle,
+                &session_id,
+                60,
+            )
+            .await?;
 
             crate::agent::llm::request_llm_completion(
                 &self.session_repo,
@@ -769,6 +765,55 @@ impl AgentSessionManager {
 
     /// Clear the compact in-flight flag for a session (called on success or error).
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
-        compact::clear_compact_in_flight(&self.active_sessions, session_id).await;
+        crate::agent::compact_recovery::clear_compact_in_flight(&self.active_sessions, session_id)
+            .await;
+    }
+
+    /// Trigger a non-resuming manual compaction pass for an already-active session.
+    pub async fn trigger_manual_compaction(&self, session_id: &str) -> Result<bool, String> {
+        crate::agent::llm::trigger_manual_compaction_for_session(
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+        )
+        .await
+    }
+
+    /// Wait until a session is no longer compacting.
+    pub async fn wait_for_compaction_to_settle(
+        &self,
+        session_id: &str,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        let started_at = Instant::now();
+
+        loop {
+            let (compact_in_flight, awaiting_compact_completion) = {
+                let active = self.active_sessions.read().await;
+                let session = active
+                    .get(session_id)
+                    .ok_or_else(|| format!("Session not found: {}", session_id))?;
+                (
+                    session.compact_in_flight.clone(),
+                    session.awaiting_compact_completion.clone(),
+                )
+            };
+
+            if !compact_in_flight.load(Ordering::SeqCst)
+                && !awaiting_compact_completion.load(Ordering::SeqCst)
+            {
+                return Ok(());
+            }
+
+            if started_at.elapsed() >= timeout {
+                return Err(format!(
+                    "Timed out waiting for compaction to settle for session {} after {} seconds",
+                    session_id,
+                    timeout.as_secs()
+                ));
+            }
+
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
     }
 }

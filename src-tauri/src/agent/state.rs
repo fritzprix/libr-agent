@@ -1,6 +1,7 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::llm::types::CompactionParentRequest;
+use crate::agent::types::ToolCall;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
@@ -92,6 +93,18 @@ pub enum SessionStatusTransition {
     ToStatus(crate::repositories::SessionStatus),
 }
 
+#[derive(Debug, Clone)]
+pub enum DeferredWorkflowStep {
+    RequestCompletion,
+    ExecuteToolCalls {
+        assistant_message_id: String,
+        tool_calls: Vec<ToolCall>,
+    },
+    FinalizeWorkflow {
+        reason: crate::agent::events::WorkflowCompletionReason,
+    },
+}
+
 /// Represents an active agent session with its runtime state
 #[derive(Debug)]
 pub struct AgentSession {
@@ -153,6 +166,14 @@ pub struct AgentSession {
     /// True when the current turn is blocked waiting for compaction to finish
     /// before Rust should retry the LLM request.
     pub awaiting_compact_completion: Arc<AtomicBool>,
+
+    /// True when the current workflow has already produced its assistant response
+    /// and must not be marked complete until the triggered compaction finishes.
+    pub finalize_workflow_after_compact: Arc<AtomicBool>,
+
+    /// Workflow continuation deferred until the current compaction finishes.
+    /// This lets Rust block the next workflow step on a completed assistant response.
+    pub deferred_workflow_step: Arc<RwLock<Option<DeferredWorkflowStep>>>,
 
     /// Timestamp (Unix ms) when the current in-flight compaction was started.
     /// Used only for observability so logs can report end-to-end compaction duration.

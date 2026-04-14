@@ -1,9 +1,7 @@
 use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent};
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
-use log::info;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
 
 /// Initialization step status
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -128,12 +126,7 @@ pub trait AgentEventDispatcher: Send + Sync {
     fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String>;
 }
 
-#[derive(Clone)]
-pub struct TauriEventDispatcher {
-    app_handle: AppHandle,
-}
-
-fn summarize_agent_event(event: &AgentEvent) -> String {
+pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
     match event {
         AgentEvent::WorkflowStarted { session_id } => {
             format!("WorkflowStarted(session={session_id})")
@@ -210,61 +203,5 @@ fn summarize_agent_event(event: &AgentEvent) -> String {
             "ResourceUpdated(type={resource_type}, action={action}, resource_id={})",
             resource_id.as_deref().unwrap_or("-")
         ),
-    }
-}
-
-impl TauriEventDispatcher {
-    pub fn new(app_handle: AppHandle) -> Self {
-        Self { app_handle }
-    }
-}
-
-impl AgentEventDispatcher for TauriEventDispatcher {
-    fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String> {
-        emit_agent_event(&self.app_handle, event)
-    }
-
-    fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String> {
-        emit_compact_state(&self.app_handle, event)
-    }
-}
-
-/// Emit an agent event to the frontend
-pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(), String> {
-    // Use emit_to() to broadcast to all windows (Tauri 2.x requirement)
-    // EventTarget::app() sends to all webviews
-    info!("Emitting agent event: {}", summarize_agent_event(&event));
-    app_handle
-        .emit_to(tauri::EventTarget::app(), "agent:event", event)
-        .map_err(|e| format!("Failed to emit agent event: {}", e))
-}
-
-pub fn emit_compact_state(app_handle: &AppHandle, event: CompactStateEvent) -> Result<(), String> {
-    app_handle
-        .emit("llm:compact-state", event)
-        .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))
-}
-
-/// Emit a resource update event (convenience wrapper)
-///
-/// This is a shorthand for emitting ResourceUpdated events from builtin tools.
-/// Falls back silently if AppHandle is not available (e.g., during tests).
-pub fn emit_resource_updated(resource_type: &str, action: &str, resource_id: Option<String>) {
-    if let Some(app_handle) = crate::state::get_app_handle() {
-        let event = AgentEvent::ResourceUpdated {
-            resource_type: resource_type.to_string(),
-            action: action.to_string(),
-            resource_id,
-        };
-
-        if let Err(e) = emit_agent_event(app_handle, event) {
-            log::warn!("Failed to emit resource update event: {}", e);
-        }
-    } else {
-        log::debug!(
-            "AppHandle not available, skipping resource update event (resource_type: {}, action: {})",
-            resource_type,
-            action
-        );
     }
 }

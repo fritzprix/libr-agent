@@ -233,7 +233,7 @@ impl WorkspaceService {
             .await?;
 
         Self::sync_active_session_workspace_override(session_id, Some(override_str)).await;
-        crate::agent::events::emit_resource_updated(
+        crate::agent::tauri_events::emit_resource_updated(
             "session",
             "update",
             Some(session_id.to_string()),
@@ -263,7 +263,7 @@ impl WorkspaceService {
             .await?;
 
         Self::sync_active_session_workspace_override(session_id, None).await;
-        crate::agent::events::emit_resource_updated(
+        crate::agent::tauri_events::emit_resource_updated(
             "session",
             "update",
             Some(session_id.to_string()),

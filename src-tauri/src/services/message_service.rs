@@ -229,7 +229,7 @@ impl MessageService {
             session_id: session_id.to_string(),
             message: Box::new(user_message.clone()),
         };
-        crate::agent::events::emit_agent_event(app_handle, message_added_event)
+        crate::agent::tauri_events::emit_agent_event(app_handle, message_added_event)
             .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
         // 3. Persist to DB synchronously to ensure data integrity
@@ -287,7 +287,7 @@ impl MessageService {
                     session_id: session_id.to_string(),
                     message: Box::new(msg.clone()),
                 };
-                crate::agent::events::emit_agent_event(app_handle, event)
+                crate::agent::tauri_events::emit_agent_event(app_handle, event)
                     .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
             }
         } else {

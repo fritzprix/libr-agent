@@ -30,6 +30,18 @@ interface CapabilityDelegate {
   estimateContextWindow(modelName: string): number;
 }
 
+function buildConfigCacheKey(config?: AIServiceConfig): string {
+  if (!config) {
+    return '';
+  }
+
+  // Only include constructor-time options that materially change which backend
+  // endpoint/client instance this service should talk to.
+  return JSON.stringify({
+    baseUrl: config.baseUrl ?? '',
+  });
+}
+
 /**
  * A factory class for creating and managing AI service instances.
  * It provides a centralized way to get service instances, caches them to avoid
@@ -119,7 +131,9 @@ export class AIServiceFactory {
         ? `${provider}-local`
         : apiKey;
 
-    const instanceKey = `${provider}:${effectiveApiKey}`;
+    const instanceKey = `${provider}:${effectiveApiKey}:${buildConfigCacheKey(
+      config,
+    )}`;
     const now = Date.now();
 
     // Clean up expired instances
@@ -132,7 +146,6 @@ export class AIServiceFactory {
 
     // Dispose of old instance if it exists
     if (existing) {
-      this.disposeProviderResources(existing.service, effectiveApiKey);
       existing.service.dispose();
       this.instances.delete(instanceKey);
     }
@@ -192,7 +205,6 @@ export class AIServiceFactory {
    */
   static disposeAll(): void {
     for (const instance of this.instances.values()) {
-      this.disposeProviderResources(instance.service, instance.apiKey);
       instance.service.dispose();
     }
     this.instances.clear();
@@ -207,19 +219,9 @@ export class AIServiceFactory {
     for (const instanceKey of this.instances.keys()) {
       const instance = this.instances.get(instanceKey);
       if (instance && now - instance.created >= this.INSTANCE_TTL) {
-        this.disposeProviderResources(instance.service, instance.apiKey);
         instance.service.dispose();
         this.instances.delete(instanceKey);
       }
-    }
-  }
-
-  private static disposeProviderResources(
-    service: IAIService,
-    apiKey: string,
-  ): void {
-    if (service instanceof GeminiService) {
-      GeminiService.purgeSharedContextCache(apiKey);
     }
   }
 }

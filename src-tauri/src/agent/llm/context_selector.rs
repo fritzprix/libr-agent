@@ -342,32 +342,16 @@ pub fn select_messages_within_context(
         }
     }
 
-    // --- Token Calibration Multiplier ---
-    let total_local_msg_tokens: usize = batched_messages
-        .iter()
-        .map(token_utils::estimate_tokens_bpe)
-        .sum();
-    let total_local_bpe = total_local_msg_tokens + non_message_reserved + pinned_message_tokens;
-
-    let api_grounded_tokens = token_utils::calculate_grounded_total_tokens(
+    let calibration_ratio = token_utils::derive_bpe_calibration_ratio(
         &batched_messages,
         system_prompt_tokens,
         tools_tokens,
     );
 
-    let calibration_ratio = if total_local_bpe > 0 {
-        api_grounded_tokens as f64 / total_local_bpe as f64
-    } else {
-        1.0
-    };
-
     log::debug!(
-        "Calibration ratio for context selection: {:.4} (Grounded API: {}, Local BPE: {})",
-        calibration_ratio,
-        api_grounded_tokens,
-        total_local_bpe
+        "Calibration ratio for context selection: {:.4} (promptTokens-anchored)",
+        calibration_ratio
     );
-    // ------------------------------------
 
     let reserved_tokens = non_message_reserved + pinned_message_tokens;
     let token_limit = std::cmp::max(1024, base_token_limit.saturating_sub(reserved_tokens));

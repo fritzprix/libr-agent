@@ -1,4 +1,3 @@
-use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -166,7 +165,7 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
     server.invalidate_cache().await;
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "create", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated("mcpServer", "create", Some(name.to_string()));
 
     let hint = SuccessHint::new(
         format!(
@@ -223,7 +222,7 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     server.invalidate_cache().await;
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "delete", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated("mcpServer", "delete", Some(name.to_string()));
 
     let hint = SuccessHint::new(
         format!("Excluded server '{}' from configuration", name),
@@ -323,7 +322,7 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     server.invalidate_cache().await;
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "update", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated("mcpServer", "update", Some(name.to_string()));
 
     let hint = SuccessHint::new(
         format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
@@ -372,7 +371,7 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     server.invalidate_cache().await;
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "verify", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated("mcpServer", "verify", Some(name.to_string()));
 
     match verification_result {
         Ok((tool_count, tools_json)) => {
@@ -503,26 +502,30 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     // --- Internal (builtin) tools ---
     if include_internal {
-        let all_tools = crate::mcp::server::tools::get_all_static_builtin_tools();
-        let matched: Vec<_> = all_tools
+        let matched: Vec<_> = crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY
             .iter()
-            .filter(|t| {
-                query.is_empty()
-                    || t.name.to_lowercase().contains(&query)
-                    || t.description.to_lowercase().contains(&query)
+            .flat_map(|entry| {
+                crate::mcp::server::tools::get_static_tools_for_server(entry.canonical)
+                    .into_iter()
+                    .filter(move |tool| {
+                        query.is_empty()
+                            || tool.name.to_lowercase().contains(&query)
+                            || tool.description.to_lowercase().contains(&query)
+                    })
+                    .map(move |tool| (entry.canonical, tool))
             })
             .collect();
 
         if !matched.is_empty() {
             let lines: Vec<String> = if query.is_empty() {
                 // Compact view when no query is specified
-                let names: Vec<String> = matched.iter().map(|t| t.name.clone()).collect();
+                let names: Vec<String> = matched.iter().map(|(_, t)| t.name.clone()).collect();
                 vec![format!("Tools: {}", names.join(", "))]
             } else {
                 // Detailed view
                 matched
                     .iter()
-                    .map(|t| {
+                    .map(|(service_alias, t)| {
                         // Truncate description to keep output compact
                         let desc = if t.description.len() > 80 {
                             let mut end = 77;
@@ -534,14 +537,8 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                             t.description.clone()
                         };
                         if session_view {
-                            let server_alias = t.name.split("__").next().unwrap_or(&t.name);
-                            let (status, guidance) = access.builtin_status(server_alias);
-                            match guidance {
-                                Some(guidance) => {
-                                    format!("• {} {} — {}\n  {}", t.name, status, desc, guidance)
-                                }
-                                None => format!("• {} {} — {}", t.name, status, desc),
-                            }
+                            let (status, _) = access.builtin_status(service_alias);
+                            format!("• {} {} — {}", t.name, status, desc)
                         } else {
                             format!("• {} — {}", t.name, desc)
                         }
@@ -667,14 +664,8 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                             let name = t["name"].as_str().unwrap_or("?");
                             let desc = t["description"].as_str().unwrap_or("");
                             if session_view {
-                                let (status, guidance) =
-                                    access.external_status(&model.id, &model.name);
-                                match guidance {
-                                    Some(guidance) => {
-                                        format!("• {} {} — {}\n  {}", name, status, desc, guidance)
-                                    }
-                                    None => format!("• {} {} — {}", name, status, desc),
-                                }
+                                let (status, _) = access.external_status(&model.id, &model.name);
+                                format!("• {} {} — {}", name, status, desc)
                             } else {
                                 format!("• {} — {}", name, desc)
                             }

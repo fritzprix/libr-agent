@@ -215,6 +215,11 @@ pub fn get_settings_repository() -> &'static SqliteSettingsRepository {
         .expect("Settings repository not initialized. Call set_settings_repository() first.")
 }
 
+/// Gets a reference to the global settings repository if it has been initialized.
+pub fn try_get_settings_repository() -> Option<&'static SqliteSettingsRepository> {
+    SETTINGS_REPOSITORY.get()
+}
+
 /// Sets the global MCP server repository instance.
 pub fn set_mcp_server_repository(repo: SqliteMCPServerRepository) {
     MCP_SERVER_REPOSITORY

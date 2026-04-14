@@ -41,14 +41,13 @@ export function AgentChatStatusBar() {
     useAgentSession();
   const { workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
-  const { isCompacting, isAwaitingCompact, getContextUsage } = useLLMService();
+  const { isCompacting, isAwaitingCompact, getCompactionPressure } =
+    useLLMService();
   const isCompactStrategy = settings.contextStrategy === 'compact';
-  // Rust is the source of truth for compact-strategy context occupancy.
-  // The badge shows provider-reported usage, which may exclude cached prefixes.
-  const usageInfo =
-    isCompactStrategy && session?.id ? getContextUsage(session.id) : undefined;
-  const contextWindow = usageInfo?.contextWindow;
-  const modelMaxContext = usageInfo?.modelMaxContext;
+  const compactionPressure =
+    isCompactStrategy && session?.id
+      ? getCompactionPressure(session.id)
+      : undefined;
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
@@ -135,16 +134,6 @@ export function AgentChatStatusBar() {
     [metrics, persistedMetrics, sessionId],
   );
 
-  // The context gauge intentionally uses Rust-estimated total context occupancy,
-  // not provider-reported promptTokens shown in the badge.
-  const contextUsage =
-    isCompactStrategy && usageInfo && contextWindow
-      ? {
-          totalTokens: usageInfo.totalTokens,
-          contextWindow,
-          modelMaxContext,
-        }
-      : undefined;
   // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
   const {
     availableTools,
@@ -457,7 +446,7 @@ export function AgentChatStatusBar() {
             <div className="hidden md:block">
               <TokenMetricsBadge
                 usage={displayMetrics}
-                contextUsage={contextUsage}
+                compactionPressure={compactionPressure}
               />
             </div>
           )}

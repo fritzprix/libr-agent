@@ -278,6 +278,23 @@ fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
 }
 
 #[test]
+fn agent_public_surface_uses_single_session_start_tool() {
+    let tool_names: Vec<String> = agent_tools::all_tools()
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect();
+
+    assert!(
+        tool_names.contains(&"startSession".to_string()),
+        "startSession must remain on the public agent surface"
+    );
+    assert!(
+        !tool_names.contains(&"spawnOrgAgent".to_string()),
+        "spawnOrgAgent should not remain on the public agent surface"
+    );
+}
+
+#[test]
 fn scheduled_task_service_is_registered_as_optional_builtin() {
     assert_eq!(
         BuiltinServiceId::from_alias("scheduled_task"),
@@ -556,6 +573,24 @@ fn agent_create_tool_name_is_unprefixed() {
     assert_eq!(
         create_tool.name, "create",
         "builtin agent tool names must remain unprefixed; the proxy adds 'agent__'"
+    );
+}
+
+#[test]
+fn compact_session_context_tool_schema_is_exposed() {
+    let compact_tool = agent_tools::all_tools()
+        .into_iter()
+        .find(|tool| tool.name == "compactSessionContext")
+        .expect("compactSessionContext tool must exist");
+    let props = extract_object_properties(&compact_tool.input_schema, "compactSessionContext");
+
+    assert!(
+        props.contains_key("sessionId"),
+        "compactSessionContext input_schema must include 'sessionId'"
+    );
+    assert!(
+        props.contains_key("timeout"),
+        "compactSessionContext input_schema must include 'timeout'"
     );
 }
 

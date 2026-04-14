@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,8 +71,7 @@ export function SessionHistoryPanel({
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [prevAutoExpandedAncestorIds, setPrevAutoExpandedAncestorIds] =
-    useState<Set<string>>(() => new Set());
+  const prevAutoExpandedAncestorIdsRef = useRef<Set<string>>(new Set());
 
   // Derive the effective selectedLineageId to ensure it still exists in the sessions
   // without needing an effect-based state synchronization loop.
@@ -184,8 +183,11 @@ export function SessionHistoryPanel({
     return expandedIds;
   }, [baseSessions, filtersActive, matchedSessions]);
 
-  if (autoExpandedAncestorIds !== prevAutoExpandedAncestorIds) {
-    setPrevAutoExpandedAncestorIds(autoExpandedAncestorIds);
+  useLayoutEffect(() => {
+    if (autoExpandedAncestorIds === prevAutoExpandedAncestorIdsRef.current) {
+      return;
+    }
+    prevAutoExpandedAncestorIdsRef.current = autoExpandedAncestorIds;
     if (autoExpandedAncestorIds.size > 0) {
       setExpandedSessionIds((prev) => {
         const next = new Set(prev);
@@ -193,7 +195,7 @@ export function SessionHistoryPanel({
         return next;
       });
     }
-  }
+  }, [autoExpandedAncestorIds]);
 
   const displayRows = useMemo(() => {
     type SessionRow = {

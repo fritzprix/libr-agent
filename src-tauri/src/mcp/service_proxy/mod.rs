@@ -399,6 +399,16 @@ impl MCPServiceProxy {
         self.builtin_servers.keys().cloned().collect()
     }
 
+    /// Returns the configured external server names for this proxy, regardless of
+    /// whether those servers have already finished connecting or spawning.
+    pub async fn configured_external_server_names(&self) -> Vec<String> {
+        let mut names = self.session_managers.stdio.list_servers();
+        names.extend(self.session_managers.http.list_servers().await);
+        names.sort();
+        names.dedup();
+        names
+    }
+
     /// Get the number of builtin servers
     pub fn builtin_server_count(&self) -> usize {
         self.builtin_servers.len()

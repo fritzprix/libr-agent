@@ -94,14 +94,12 @@ impl BuiltinMCPServer for PlaybookServer {
 
         // If no playbooks, return minimal context
         if total_count == 0 {
-            return crate::mcp::types::ServiceContext::new(
-                "## Playbooks\n\nNo playbooks yet".to_string(),
-            )
-            .with_structured_state(serde_json::json!({
-                "total_count": 0,
-                "recent_playbooks": []
-            }))
-            .with_volatility(ContextVolatility::Medium);
+            return crate::mcp::types::ServiceContext::new("## Playbooks\n\nPlaybooks: None")
+                .with_structured_state(serde_json::json!({
+                    "total_count": 0,
+                    "recent_playbooks": []
+                }))
+                .with_volatility(ContextVolatility::Medium);
         }
 
         // Fetch recent 3 playbooks (Planning-style detail)

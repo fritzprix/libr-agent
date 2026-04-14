@@ -17,17 +17,6 @@ pub async fn start_workflow(
     session_id: String,
     user_message: Message,
 ) -> Result<(), String> {
-    // Wait for background tool loading to complete before starting the LLM workflow.
-    // Prevents the agent from starting with an empty tool list when external MCP servers
-    // are still being discovered (spawned asynchronously inside create_proxy).
-    if let Err(e) = proxy_manager.wait_until_proxy_ready(&session_id, 60).await {
-        log::warn!(
-            "Tool readiness wait failed for session {}: {}. Proceeding anyway.",
-            session_id,
-            e
-        );
-    }
-
     // Ensure the message cache is populated from DB before the dedup check.
     // Without this, an uninitialized (empty) cache would silently pass the duplicate
     // check, and the session would get stuck in Busy state when the second dedup
@@ -108,6 +97,10 @@ pub async fn start_workflow(
             session
                 .awaiting_compact_completion
                 .store(false, Ordering::SeqCst);
+            session
+                .finalize_workflow_after_compact
+                .store(false, Ordering::SeqCst);
+            *session.deferred_workflow_step.write().await = None;
         }
     }
 
@@ -128,7 +121,7 @@ pub async fn start_workflow(
         session_id: session_id.clone(),
     };
     log::info!("Emitting WorkflowStarted event for session: {}", session_id);
-    match crate::agent::events::emit_agent_event(app_handle, event) {
+    match crate::agent::tauri_events::emit_agent_event(app_handle, event) {
         Ok(()) => log::info!("✅ WorkflowStarted event emitted successfully"),
         Err(e) => {
             log::error!("❌ Failed to emit WorkflowStarted event: {}", e);
@@ -152,9 +145,7 @@ pub async fn start_workflow(
         user_message.id
     );
 
-    // Ensure Proxy Exists (Critical for System Prompt)
-    crate::agent::workflow::start::ensure_proxy_exists(proxy_manager, app_handle, &session_id)
-        .await?;
+    ensure_proxy_ready(proxy_manager, app_handle, &session_id, 60).await?;
 
     // Request LLM completion with cached messages (no DB query)
     crate::agent::llm::request_llm_completion(
@@ -224,4 +215,17 @@ pub(crate) async fn ensure_proxy_exists(
     }
 
     Ok(())
+}
+
+/// Ensure workflow execution never mistakes "missing proxy" for "ready proxy".
+pub(crate) async fn ensure_proxy_ready(
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    ensure_proxy_exists(proxy_manager, app_handle, session_id).await?;
+    proxy_manager
+        .wait_until_proxy_ready(session_id, timeout_secs)
+        .await
 }

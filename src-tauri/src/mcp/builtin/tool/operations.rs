@@ -1,4 +1,3 @@
-use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -165,7 +164,11 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
     // External servers are now created per-session through MCPServiceProxyManager
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "create", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "create",
+        Some(name.to_string()),
+    );
 
     let hint = SuccessHint::new(
         format!(
@@ -219,7 +222,11 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     }
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "delete", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "delete",
+        Some(name.to_string()),
+    );
 
     let hint = SuccessHint::new(
         format!("Excluded server '{}' from configuration", name),
@@ -317,7 +324,11 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     // Configuration updates take effect when servers are next started in a session
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "update", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "update",
+        Some(name.to_string()),
+    );
 
     let hint = SuccessHint::new(
         format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
@@ -364,7 +375,11 @@ pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     let latency_ms = start_time.elapsed().as_millis();
 
     // Emit resource updated event for frontend cache revalidation
-    events::emit_resource_updated("mcpServer", "verify", Some(name.to_string()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "mcpServer",
+        "verify",
+        Some(name.to_string()),
+    );
 
     match verification_result {
         Ok((tool_count, tools_json)) => {
@@ -503,7 +518,6 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         name: String,
         description: String,
         status: String,
-        guidance: Option<String>,
     }
 
     let mut all_matched_tools: Vec<MatchedTool> = Vec::new();
@@ -511,27 +525,27 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     // --- Internal (builtin) tools ---
     if include_internal {
-        let all_tools = crate::mcp::server::tools::get_all_static_builtin_tools();
-        for t in all_tools {
-            if query.is_empty()
-                || t.name.to_lowercase().contains(&query)
-                || t.description.to_lowercase().contains(&query)
-            {
-                let server_alias = t.name.split("__").next().unwrap_or(&t.name);
-                let (status, guidance) = if session_view {
-                    let (s, g) = access.builtin_status(server_alias);
-                    (s.to_string(), g.map(|g| g.to_string()))
-                } else {
-                    ("".to_string(), None)
-                };
+        for entry in crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY {
+            let all_tools = crate::mcp::server::tools::get_static_tools_for_server(entry.canonical);
+            for t in all_tools {
+                if query.is_empty()
+                    || t.name.to_lowercase().contains(&query)
+                    || t.description.to_lowercase().contains(&query)
+                {
+                    let status = if session_view {
+                        let (s, _) = access.builtin_status(entry.canonical);
+                        s.to_string()
+                    } else {
+                        "".to_string()
+                    };
 
-                all_matched_tools.push(MatchedTool {
-                    source: "Builtin".to_string(),
-                    name: t.name.clone(),
-                    description: t.description.clone(),
-                    status,
-                    guidance,
-                });
+                    all_matched_tools.push(MatchedTool {
+                        source: "Builtin".to_string(),
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        status,
+                    });
+                }
             }
         }
     }
@@ -589,11 +603,11 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 let desc_match = desc.to_lowercase().contains(&query);
 
                 if query.is_empty() || name_match || desc_match || server_matches_query {
-                    let (status, guidance) = if session_view {
-                        let (s, g) = access.external_status(&model.id, &model.name);
-                        (s.to_string(), g.map(|g| g.to_string()))
+                    let status = if session_view {
+                        let (s, _) = access.external_status(&model.id, &model.name);
+                        s.to_string()
                     } else {
-                        ("".to_string(), None)
+                        "".to_string()
                     };
 
                     all_matched_tools.push(MatchedTool {
@@ -601,7 +615,6 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                         name: name.to_string(),
                         description: desc.to_string(),
                         status,
-                        guidance,
                     });
                     matched_in_server = true;
                 }
@@ -626,7 +639,6 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                     name: "-".to_string(),
                     description: desc.to_string(),
                     status,
-                    guidance: None,
                 });
             }
 
@@ -720,11 +732,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         let status_str = if t.status.is_empty() {
             "-".to_string()
         } else {
-            let mut s = t.status.clone();
-            if let Some(ref g) = t.guidance {
-                s.push_str(&format!(" — _{}_", g));
-            }
-            s.replace("|", "\\|").replace('\n', " ")
+            t.status.replace("|", "\\|").replace('\n', " ")
         };
 
         body.push_str(&format!(
@@ -743,7 +751,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         ));
     }
 
-    let external_action = if !found_external_ids.is_empty() {
+    let external_action = if !session_view && !found_external_ids.is_empty() {
         // De-duplicate external ids just in case.
         let mut unique_ids = found_external_ids.clone();
         unique_ids.sort();

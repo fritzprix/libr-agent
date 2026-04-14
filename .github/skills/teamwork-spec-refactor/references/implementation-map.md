@@ -4,9 +4,9 @@ Use this map to find the main code surfaces for the teamwork refactor.
 
 ## Workspace constitution and scaffold
 
-- `src-tauri/bundled_skills/task-force-builder/SKILL.md`
-- `src-tauri/bundled_skills/task-force-builder/scripts/init_task_force.py`
-- `src-tauri/bundled_skills/task-force-builder/references/coordination-contract.md`
+- `src-tauri/bundled_skills/teamwork/SKILL.md`
+- `src-tauri/bundled_skills/teamwork/scripts/init_task_force.py`
+- `src-tauri/bundled_skills/teamwork/references/coordination-contract.md`
 - `src-tauri/src/agent/llm/prompt.rs`
 
 What is missing:

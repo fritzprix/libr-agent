@@ -3,7 +3,8 @@ use std::fs;
 mod common;
 
 use tauri_mcp_agent_lib::agent::tools::{
-    spill_oversized_tool_result_messages, TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+    spill_oversized_tool_result_messages, tool_result_preview_content_limit_bytes,
+    TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
 };
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, ServiceInfo};
 use tauri_mcp_agent_lib::models::chat::Message;
@@ -95,6 +96,15 @@ fn make_tool_message(session_id: &str, tool_call_id: &str, text: &str) -> Messag
     }
 }
 
+#[test]
+fn tool_result_spillover_defaults_to_16kb_and_keeps_preview_headroom() {
+    assert_eq!(TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES, 16 * 1024);
+    assert_eq!(
+        tool_result_preview_content_limit_bytes(TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES),
+        14 * 1024
+    );
+}
+
 #[tokio::test]
 async fn spillover_pointer_is_what_gets_persisted_to_repository() {
     let db = test_db().await;
@@ -157,16 +167,28 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
         panic!("first tool content should be pointer text");
     };
     assert!(
-        text.contains("Tool output was too large to inline"),
-        "rewritten message should contain a pointer notice, not raw tool output"
+        text.contains("output truncated"),
+        "rewritten message should contain a truncation notice"
     );
     assert!(
-        text.contains("readFile(\""),
-        "pointer notice should tell the agent how to inspect the spillover file"
+        text.contains("readFile({\"path\":"),
+        "spillover notice should tell the agent how to inspect the spillover file"
     );
     assert!(
-        !text.contains(&original_text[..128]),
-        "rewritten pointer text must not inline the oversized payload"
+        text.contains("Do not call `readFile({\"path\":"),
+        "spillover notice should warn against rereading the saved file without a line range"
+    );
+    assert!(
+        text.contains("To continue after the inline preview"),
+        "spillover notice should give an explicit follow-up command after the preview"
+    );
+    assert!(
+        text.contains(&original_text[..128]),
+        "rewritten message should keep a preview of the original tool output"
+    );
+    assert!(
+        text.len() < TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        "rewritten spillover preview should stay below the spillover threshold"
     );
     assert!(
         matches!(rewritten_message.content[1], MCPContent::Resource { .. }),
@@ -232,9 +254,17 @@ async fn tool_result_spillover_writes_large_tool_output_to_workspace_file() {
         panic!("expected text content");
     };
 
-    assert!(text.contains("Tool output was too large to inline"));
+    assert!(text.contains("output truncated"));
     assert!(text.contains(".libragent/tool-results/"));
-    assert!(text.contains("readFile(\""));
+    assert!(text.contains("readFile({\"path\":"));
+    assert!(
+        text.contains(&original_text[..128]),
+        "spillover output should preserve a visible preview"
+    );
+    assert!(
+        text.len() < TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+        "spillover preview should stay below the inline threshold"
+    );
 
     let start = text.find('`').expect("path opening backtick") + 1;
     let end = text[start..]

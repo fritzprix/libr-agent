@@ -11,6 +11,22 @@ use serde_json::{json, Value};
 use tokio::fs;
 use tracing::{error, info};
 
+const READ_FILE_BASE_HEADROOM_BYTES: usize = 1024;
+const READ_FILE_ANCHOR_HEADROOM_BYTES: usize = 2 * 1024;
+const READ_FILE_MIN_VISIBLE_CONTENT_BYTES: usize = 1024;
+
+#[derive(Debug)]
+struct ReadFileChunk {
+    content: String,
+    displayed_start_line: usize,
+    displayed_end_line: usize,
+    displayed_line_count: usize,
+    truncated: bool,
+    next_start_line: Option<usize>,
+    suggested_end_line: Option<usize>,
+    next_line_too_large: bool,
+}
+
 impl WorkspaceServer {
     pub async fn handle_read_file(
         &self,
@@ -166,32 +182,90 @@ impl WorkspaceServer {
 
         // Use read_file_lines_range for all file reading to ensure consistent
         // handling of large files (spawn_blocking) and formatting.
-        let content =
-            read_file_lines_range(&safe_path, start_line, end_line, show_line_anchors).await;
+        let inline_limit_bytes = crate::agent::tools::tool_result_inline_limit_bytes().await;
+        let visible_content_limit_bytes =
+            read_file_visible_content_limit_bytes(inline_limit_bytes, show_line_anchors);
+        let chunk = read_file_lines_range(
+            &safe_path,
+            start_line,
+            end_line,
+            show_line_anchors,
+            visible_content_limit_bytes,
+        )
+        .await;
 
-        match content {
-            Ok(content) => {
+        match chunk {
+            Ok(chunk) => {
                 info!("Successfully read file: {}", path_str);
 
                 // Get file metadata for stats
                 let total_size = fs::metadata(&safe_path)
                     .await
                     .map(|m| m.len())
-                    .unwrap_or(content.len() as u64);
+                    .unwrap_or(chunk.content.len() as u64);
                 let size_str = format_file_size(total_size);
-                let line_count = content.lines().count();
+                let line_label = if chunk.displayed_line_count == 0 {
+                    "no lines".to_string()
+                } else if chunk.displayed_start_line == chunk.displayed_end_line {
+                    format!("line {}", chunk.displayed_start_line)
+                } else {
+                    format!(
+                        "lines {}-{}",
+                        chunk.displayed_start_line, chunk.displayed_end_line
+                    )
+                };
+                let chunk_summary = if chunk.truncated {
+                    format!(
+                        "{} shown (truncated to stay under the inline limit)",
+                        line_label
+                    )
+                } else {
+                    format!("{} shown", line_label)
+                };
+                let mut summary_notes = Vec::new();
+                if chunk.truncated {
+                    if let (Some(next_start_line), Some(suggested_end_line)) =
+                        (chunk.next_start_line, chunk.suggested_end_line)
+                    {
+                        summary_notes.push(format!(
+                            "Next chunk: readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}})",
+                            path_str, next_start_line, suggested_end_line
+                        ));
+                    }
+                }
+                if chunk.next_line_too_large {
+                    let target_line = chunk.next_start_line.unwrap_or(chunk.displayed_start_line);
+                    let mut message = format!(
+                        "The next unread line is too large to show safely as a complete line. Inspect that line directly with readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}}).",
+                        path_str, target_line, target_line
+                    );
+                    if show_line_anchors {
+                        message.push_str(
+                            " If that still truncates, rerun the same 1-line range without showLineAnchors.",
+                        );
+                    }
+                    message.push_str(
+                        " Do not rerun readFile on a broader range until you have narrowed the line range.",
+                    );
+                    summary_notes.push(message);
+                }
+                let summary_suffix = if summary_notes.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n\n{}", summary_notes.join("\n"))
+                };
 
                 // Format response for clean markdown rendering
                 let text_message = if show_line_anchors {
                     format!(
-                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — for edit tools, pass only `{{anchor}}` (the 6 hex characters between `:` and `|`), not `{{N}}:` or `|{{content}}`",
-                        path_str, size_str, line_count, content
+                        "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — for edit tools, pass only `{{anchor}}` (the 6 hex characters between `:` and `|`), not `{{N}}:` or `|{{content}}`",
+                        path_str, size_str, chunk_summary, summary_suffix, chunk.content
                     )
                 } else {
                     let language = detect_language(&safe_path);
                     format!(
-                        "📄 **`{}`** — {} / {} lines\n\n```{}\n{}\n```",
-                        path_str, size_str, line_count, language, content
+                        "📄 **`{}`** — {} — {}{}\n\n```{}\n{}\n```",
+                        path_str, size_str, chunk_summary, summary_suffix, language, chunk.content
                     )
                 };
 
@@ -200,20 +274,35 @@ impl WorkspaceServer {
                 } else {
                     "Rerun with showLineAnchors=true to get anchors for precise line editing (replaceLines, deleteLines, insertAfterLine)".to_string()
                 };
-                let hint = SuccessHint::new(
-                    text_message,
-                    vec![
-                        first_hint,
-                        "Use insertAfterLine with afterLine and the anchor from the line after which content should be inserted".to_string(),
-                        "writeFile for full file replacement".to_string(),
-                    ],
-                );
+                let mut next_actions = vec![
+                    first_hint,
+                    "Use insertAfterLine with afterLine and the anchor from the line after which content should be inserted".to_string(),
+                    "writeFile for full file replacement".to_string(),
+                ];
+                if let (Some(next_start_line), Some(suggested_end_line)) =
+                    (chunk.next_start_line, chunk.suggested_end_line)
+                {
+                    next_actions.insert(
+                        0,
+                        format!(
+                            "Read the next chunk with readFile({{\"path\": \"{}\", \"startLine\": {}, \"endLine\": {}}})",
+                            path_str, next_start_line, suggested_end_line
+                        ),
+                    );
+                }
+                let hint = SuccessHint::new(text_message, next_actions);
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "content": content,
+                    "content": chunk.content,
                     "path": path_str,
                     "size": total_size,
-                    "lines": line_count
+                    "lines": chunk.displayed_line_count,
+                    "startLine": chunk.displayed_start_line,
+                    "endLine": chunk.displayed_end_line,
+                    "truncated": chunk.truncated,
+                    "nextStartLine": chunk.next_start_line,
+                    "suggestedEndLine": chunk.suggested_end_line,
+                    "nextLineTooLarge": chunk.next_line_too_large
                 }))))
             }
             Err(e) => {
@@ -244,7 +333,8 @@ async fn read_file_lines_range(
     start_line: Option<usize>,
     end_line: Option<usize>,
     show_line_anchors: bool,
-) -> Result<String, String> {
+    visible_content_limit_bytes: usize,
+) -> Result<ReadFileChunk, String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     // ✅ ENHANCED: Use spawn_blocking for large files to prevent async runtime blocking
@@ -258,57 +348,17 @@ async fn read_file_lines_range(
 
         let result = tokio::task::spawn_blocking(move || {
             // Blocking file I/O for CPU-intensive line enumeration
+            use std::io::BufRead;
             let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
             let reader = std::io::BufReader::new(file);
-            let mut result_lines = Vec::new();
-            let mut current_line = 1;
-            let mut total_lines = 0;
-            let mut prefix_state = initial_prefix_hash_state();
-
-            use std::io::BufRead;
-            for line_result in reader.lines() {
-                let line = line_result.map_err(|e| {
-                    if e.kind() == std::io::ErrorKind::InvalidData {
-                        "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
-                    } else {
-                        format!("Failed to read file: {}", e)
-                    }
-                })?;
-                total_lines += 1;
-
-                if current_line >= start && current_line <= end {
-                    if show_line_anchors {
-                        result_lines.push(format_hashline(current_line, &line, &mut prefix_state));
-                    } else {
-                        result_lines.push(line);
-                    }
-                } else if show_line_anchors {
-                    prefix_state = update_prefix_hash_state(prefix_state, &line);
-                }
-
-                if current_line > end {
-                    // Continue counting total lines if checking bounds is critical,
-                    // but for performance we might stop if we have what we need.
-                    // However, to strictly validate start > total, we need to know total
-                    // OR we know if we never reached start.
-                    if result_lines.is_empty() {
-                        // We haven't found any lines yet, so we must continue
-                    } else {
-                        break;
-                    }
-                }
-
-                current_line += 1;
-            }
-
-            if result_lines.is_empty() && start > total_lines && total_lines > 0 {
-                return Err(format!(
-                    "Requested start line {} exceeds file length of {} lines",
-                    start, total_lines
-                ));
-            }
-
-            Ok::<_, String>(result_lines.join("\n"))
+            let chunk = read_chunk_from_lines(
+                reader.lines(),
+                start,
+                end,
+                show_line_anchors,
+                visible_content_limit_bytes,
+            )?;
+            Ok::<_, String>(chunk)
         })
         .await
         .map_err(|e| format!("Task join error: {}", e))??;
@@ -322,31 +372,11 @@ async fn read_file_lines_range(
         .map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
-    let mut result_lines = Vec::new();
-    let mut current_line = 1;
-    let mut total_lines = 0;
-    let mut prefix_state = initial_prefix_hash_state();
+    let mut collected_lines = Vec::new();
 
     loop {
         match lines.next_line().await {
-            Ok(Some(line)) => {
-                total_lines += 1;
-                if current_line >= start && current_line <= end {
-                    if show_line_anchors {
-                        result_lines.push(format_hashline(current_line, &line, &mut prefix_state));
-                    } else {
-                        result_lines.push(line);
-                    }
-                } else if show_line_anchors {
-                    prefix_state = update_prefix_hash_state(prefix_state, &line);
-                }
-
-                if current_line > end {
-                    break;
-                }
-
-                current_line += 1;
-            }
+            Ok(Some(line)) => collected_lines.push(line),
             Ok(None) => break,
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::InvalidData {
@@ -357,7 +387,80 @@ async fn read_file_lines_range(
         }
     }
 
-    // Check if start line was out of bounds
+    read_chunk_from_lines(
+        collected_lines
+            .into_iter()
+            .map(Ok::<String, std::io::Error>),
+        start,
+        end,
+        show_line_anchors,
+        visible_content_limit_bytes,
+    )
+}
+
+fn read_chunk_from_lines<I>(
+    lines: I,
+    start: usize,
+    end: usize,
+    show_line_anchors: bool,
+    visible_content_limit_bytes: usize,
+) -> Result<ReadFileChunk, String>
+where
+    I: IntoIterator<Item = Result<String, std::io::Error>>,
+{
+    let mut result_lines = Vec::new();
+    let mut current_line = 1usize;
+    let mut total_lines = 0usize;
+    let mut prefix_state = initial_prefix_hash_state();
+    let mut content_bytes = 0usize;
+    let mut truncated = false;
+    let mut next_start_line = None;
+    let mut next_line_too_large = false;
+
+    for line_result in lines {
+        let line = line_result.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
+            } else {
+                format!("Failed to read file: {}", e)
+            }
+        })?;
+        total_lines += 1;
+
+        if current_line >= start && current_line <= end {
+            let rendered_line = if show_line_anchors {
+                format_hashline(current_line, &line, &mut prefix_state)
+            } else {
+                line.clone()
+            };
+
+            let separator_len = usize::from(!result_lines.is_empty());
+            let candidate_len = content_bytes + separator_len + rendered_line.len();
+
+            if candidate_len <= visible_content_limit_bytes {
+                content_bytes = candidate_len;
+                result_lines.push(rendered_line);
+            } else if result_lines.is_empty() {
+                truncated = true;
+                next_line_too_large = true;
+                next_start_line = Some(current_line);
+                break;
+            } else {
+                truncated = true;
+                next_start_line = Some(current_line);
+                break;
+            }
+        } else if show_line_anchors {
+            prefix_state = update_prefix_hash_state(prefix_state, &line);
+        }
+
+        if current_line >= end {
+            break;
+        }
+
+        current_line += 1;
+    }
+
     if result_lines.is_empty() && start > total_lines {
         return Err(format!(
             "Requested start line {} exceeds file length of {} lines",
@@ -365,7 +468,46 @@ async fn read_file_lines_range(
         ));
     }
 
-    Ok(result_lines.join("\n"))
+    let displayed_line_count = result_lines.len();
+    let displayed_start_line = start;
+    let displayed_end_line = if displayed_line_count == 0 {
+        start
+    } else {
+        start + displayed_line_count - 1
+    };
+    let suggested_end_line = if displayed_line_count == 0 {
+        next_start_line
+    } else {
+        next_start_line.map(|next_start| next_start + displayed_line_count.saturating_sub(1))
+    };
+
+    Ok(ReadFileChunk {
+        content: result_lines.join("\n"),
+        displayed_start_line,
+        displayed_end_line,
+        displayed_line_count,
+        truncated,
+        next_start_line,
+        suggested_end_line,
+        next_line_too_large,
+    })
+}
+
+fn read_file_visible_content_limit_bytes(
+    inline_limit_bytes: usize,
+    show_line_anchors: bool,
+) -> usize {
+    let preview_limit =
+        crate::agent::tools::tool_result_preview_content_limit_bytes(inline_limit_bytes);
+    let extra_headroom = if show_line_anchors {
+        READ_FILE_BASE_HEADROOM_BYTES + READ_FILE_ANCHOR_HEADROOM_BYTES
+    } else {
+        READ_FILE_BASE_HEADROOM_BYTES
+    };
+
+    preview_limit
+        .saturating_sub(extra_headroom)
+        .max(READ_FILE_MIN_VISIBLE_CONTENT_BYTES)
 }
 
 /// Format test lines as either anchor lines or raw file content.

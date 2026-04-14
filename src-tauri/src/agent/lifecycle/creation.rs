@@ -238,6 +238,8 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 compact_in_flight: Arc::new(AtomicBool::new(false)),
                 last_compacted_tail_id: Arc::new(RwLock::new(None)),
                 awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
+                finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
+                deferred_workflow_step: Arc::new(RwLock::new(None)),
                 compact_started_at_ms: Arc::new(RwLock::new(None)),
                 expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
@@ -249,7 +251,11 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     log::info!("Created agent session: {}", session_id);
 
     // Emit resource updated event for frontend cache revalidation
-    crate::agent::events::emit_resource_updated("session", "create", Some(session_id.clone()));
+    crate::agent::tauri_events::emit_resource_updated(
+        "session",
+        "create",
+        Some(session_id.clone()),
+    );
 
     Ok(session)
 }

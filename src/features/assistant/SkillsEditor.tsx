@@ -1,8 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getLogger } from '@/lib/logger';
-import { useDnDContext } from '@/context/DnDContext';
-import { importAssistantSkills } from '@/lib/backend/skills';
 import {
   Button,
   Card,
@@ -23,20 +20,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { RefreshCw, Copy, Trash2, Upload } from 'lucide-react';
-import { toast } from 'sonner';
 import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
 import { useAssistantSkills } from './hooks/useAssistantSkills';
-
-const logger = getLogger('SkillsEditor');
+import { useSkillsDnD } from './hooks/useSkillsDnD';
 
 export default function SkillsEditor() {
   const { t } = useTranslation('common');
   const { draft } = useEditor<Assistant>();
-  const { subscribe } = useDnDContext();
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const [isDragging, setIsDragging] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   const {
@@ -51,45 +44,7 @@ export default function SkillsEditor() {
     confirmReset,
   } = useAssistantSkills();
 
-  // Subscribe to DnD events using the centralized context
-  useEffect(() => {
-    if (!draft?.id || !cardRef.current) return;
-
-    const unlisten = subscribe(
-      cardRef,
-      async (event, payload) => {
-        if (event === 'drag-over') {
-          setIsDragging(true);
-        } else if (event === 'leave') {
-          setIsDragging(false);
-        } else if (
-          event === 'drop' &&
-          payload.paths &&
-          payload.paths.length > 0
-        ) {
-          setIsDragging(false);
-          const filePath = payload.paths[0];
-          const toastId = toast.loading(t('skills.importing'));
-
-          try {
-            await importAssistantSkills(draft.id, filePath);
-            toast.success(t('skills.importSuccess'), { id: toastId });
-            fetchSkills();
-          } catch (error) {
-            logger.error('Failed to import skills:', error);
-            toast.error(`${t('skills.importFailed')}: ${error}`, {
-              id: toastId,
-            });
-          }
-        }
-      },
-      { priority: 1 }, // Higher priority to capture events
-    );
-
-    return () => {
-      unlisten();
-    };
-  }, [draft?.id, fetchSkills, subscribe, t]);
+  const { isDragging } = useSkillsDnD(draft?.id, cardRef, fetchSkills);
 
   const handleReset = () => {
     setShowResetDialog(true);

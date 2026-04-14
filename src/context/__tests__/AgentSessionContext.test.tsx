@@ -12,6 +12,7 @@ import type { Message } from '@/models/chat';
 
 const mockMarkSessionViewed = vi.fn();
 const mockClearPendingApproval = vi.fn();
+const mockRefreshCompactedRange = vi.fn();
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -44,6 +45,12 @@ vi.mock('../AgentSessionListContext', () => ({
     }),
 }));
 
+vi.mock('../LLMServiceContext', () => ({
+    useLLMService: () => ({
+        refreshCompactedRange: mockRefreshCompactedRange,
+    }),
+}));
+
 // Mock ModelProvider
 vi.mock('../ModelProvider', () => ({
     useModelOptions: () => ({
@@ -65,6 +72,7 @@ describe('AgentSessionContext (Local)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockMarkSessionViewed.mockResolvedValue(undefined);
+        mockRefreshCompactedRange.mockResolvedValue(undefined);
         (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
         // Mock getMessagesPageForSession to return empty list by default
         (messagesBackend.getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -104,6 +112,7 @@ describe('AgentSessionContext (Local)', () => {
         expect(result.current.messages).toEqual([]);
 
         expect(safeInvoke).toHaveBeenCalledWith('agent_get_session', { sessionId: TEST_SESSION_ID });
+        expect(mockRefreshCompactedRange).toHaveBeenCalledWith(TEST_SESSION_ID);
     });
 
     it('should register event listener for the session', async () => {
