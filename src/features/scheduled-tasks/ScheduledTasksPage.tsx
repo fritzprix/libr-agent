@@ -158,7 +158,7 @@ export function ScheduledTasksPage() {
     [tasks],
   );
 
-  const enabledTaskCount = tasks.filter((task) => task.enabled).length;
+  const enabledTaskCount = tasks.reduce((acc, task) => (task.enabled ? acc + 1 : acc), 0);
 
   if (loading) {
     return (

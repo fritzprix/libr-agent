@@ -69,7 +69,7 @@ export function useAgentTools(sessionId: string | undefined) {
         logger.info('Loaded agent tools', {
           sessionId: key[1],
           toolCount: tools.length,
-          builtinCount: tools.filter((t) => isBuiltinTool(t.name)).length,
+          builtinCount: tools.length - externalTools.length,
           externalCount: externalTools.length,
           externalNamesSample: summarizeToolNames(externalTools),
         });
