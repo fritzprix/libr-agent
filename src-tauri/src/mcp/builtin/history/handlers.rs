@@ -654,11 +654,13 @@ async fn resolve_allowed_session_ids(
 }
 
 /// Sanitizes a string for safe use as a plain-text Markdown table cell.
-/// Replaces `|` with the HTML entity `&#124;` so it can't break the table
-/// structure, and collapses newlines into spaces.
+/// Collapses all line-ending variants (`\r\n`, `\n`, `\r`) into spaces and
+/// replaces `|` with the HTML entity `&#124;` so it can't break the table
+/// structure.
 fn sanitize_cell(s: &str) -> String {
-    s.replace('\n', " ")
-        .replace('\r', "")
+    s.replace("\r\n", " ")
+        .replace('\n', " ")
+        .replace('\r', " ")
         .replace('|', "&#124;")
 }
 
