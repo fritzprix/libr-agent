@@ -227,7 +227,7 @@ async fn present_interactive_html_mode_sanitizes_unsafe_markup() {
         .call_tool(
             "presentInteractive",
             json!({
-                "content": r#"<div onclick="evil()">safe</div><script>alert('xss')</script><iframe src="https://example.com"></iframe><a href="javascript:evil()">link</a>"#,
+                "content": r##"<div onclick="evil()">safe</div><script>alert('xss')</script><iframe src="https://example.com"></iframe><a href="javascript:evil()">link</a><img src="data:image/png;base64,QUJDRA==" alt="inline" width="320" height="160"><img src="https://example.com/chart.png" alt="remote"><table border="1" cellpadding="6" cellspacing="0"><tr bgcolor="#eeeeee"><td colspan="2" align="center">metric</td></tr></table>"##,
                 "format": "html"
             }),
             None,
@@ -255,4 +255,13 @@ async fn present_interactive_html_mode_sanitizes_unsafe_markup() {
     assert!(!html.contains("<iframe src=\"https://example.com\""));
     assert!(!html.contains("onclick="));
     assert!(!html.contains("href=\"javascript:evil()\""));
+    assert!(!html.contains("data:image/png;base64,QUJDRA=="));
+    assert!(!html.contains("https://example.com/chart.png"));
+    assert!(!html.contains("<img"));
+    assert!(html.contains("<table"));
+    assert!(html.contains("border=\"1\""));
+    assert!(html.contains("cellpadding=\"6\""));
+    assert!(html.contains("cellspacing=\"0\""));
+    assert!(html.contains("<tr bgcolor=\"#eeeeee\">"));
+    assert!(html.contains("<td colspan=\"2\" align=\"center\">metric</td>"));
 }

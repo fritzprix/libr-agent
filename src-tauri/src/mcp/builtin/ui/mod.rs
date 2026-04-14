@@ -4,11 +4,11 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
+use ammonia::Builder;
 use async_trait::async_trait;
 use handlebars::Handlebars;
-use regex::Regex;
 use serde_json::{json, Value};
-use std::sync::OnceLock;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub mod tools;
@@ -378,47 +378,88 @@ impl UiServer {
 }
 
 fn sanitize_html_fragment(content: &str) -> String {
-    static SCRIPT_RE: OnceLock<Regex> = OnceLock::new();
-    static IFRAME_RE: OnceLock<Regex> = OnceLock::new();
-    static OBJECT_RE: OnceLock<Regex> = OnceLock::new();
-    static EMBED_RE: OnceLock<Regex> = OnceLock::new();
-    static EVENT_HANDLER_RE: OnceLock<Regex> = OnceLock::new();
-    static DANGEROUS_URL_RE: OnceLock<Regex> = OnceLock::new();
+    let allowed_tags = [
+        "a",
+        "b",
+        "blockquote",
+        "br",
+        "code",
+        "div",
+        "em",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "i",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "span",
+        "strong",
+        "table",
+        "tbody",
+        "td",
+        "th",
+        "thead",
+        "tr",
+        "ul",
+    ]
+    .into_iter()
+    .collect();
+    let allowed_attributes = HashMap::from([
+        ("a", ["href", "target", "title"].into_iter().collect()),
+        (
+            "table",
+            [
+                "align",
+                "bgcolor",
+                "border",
+                "cellpadding",
+                "cellspacing",
+                "width",
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        (
+            "tbody",
+            ["align", "bgcolor", "valign"].into_iter().collect(),
+        ),
+        (
+            "td",
+            [
+                "align", "bgcolor", "colspan", "height", "rowspan", "valign", "width",
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        (
+            "th",
+            [
+                "align", "bgcolor", "colspan", "height", "rowspan", "valign", "width",
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        (
+            "thead",
+            ["align", "bgcolor", "valign"].into_iter().collect(),
+        ),
+        ("tr", ["align", "bgcolor", "valign"].into_iter().collect()),
+    ]);
+    let allowed_url_schemes = ["http", "https", "mailto"].into_iter().collect();
 
-    let mut sanitized = content.to_string();
-
-    for pattern in [
-        SCRIPT_RE.get_or_init(|| {
-            Regex::new(r"(?is)<script\b[^>]*>.*?</script\s*>").expect("script regex")
-        }),
-        IFRAME_RE.get_or_init(|| {
-            Regex::new(r"(?is)<iframe\b[^>]*(?:/>|>.*?</iframe\s*>)").expect("iframe regex")
-        }),
-        OBJECT_RE.get_or_init(|| {
-            Regex::new(r"(?is)<object\b[^>]*(?:/>|>.*?</object\s*>)").expect("object regex")
-        }),
-        EMBED_RE.get_or_init(|| Regex::new(r"(?is)<embed\b[^>]*>").expect("embed regex")),
-    ] {
-        sanitized = pattern.replace_all(&sanitized, "").into_owned();
-    }
-
-    sanitized = EVENT_HANDLER_RE
-        .get_or_init(|| {
-            Regex::new(r#"(?is)\s+on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#)
-                .expect("event handler regex")
-        })
-        .replace_all(&sanitized, "")
-        .into_owned();
-
-    DANGEROUS_URL_RE
-        .get_or_init(|| {
-            Regex::new(
-                r#"(?is)\s+(href|src)\s*=\s*(?:"\s*(?:javascript:|data:text/html)[^"]*"|'\s*(?:javascript:|data:text/html)[^']*'|(?:javascript:|data:text/html)[^\s>]+)"#,
-            )
-            .expect("dangerous url regex")
-        })
-        .replace_all(&sanitized, "")
-        .into_owned()
+    Builder::default()
+        .tags(allowed_tags)
+        .tag_attributes(allowed_attributes)
+        .url_schemes(allowed_url_schemes)
+        .link_rel(Some("noopener noreferrer"))
+        .clean(content)
+        .to_string()
 }
 
 pub const NAME: &str = "ui";
