@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.6] - 2026-04-14
+
+### 🐛 Fixes
+
+- **Recovered Sessions and Scheduled Tasks Are Steadier**: Fixed proxy rehydration/readiness races and config fallback issues so resumed sessions and scheduled tasks no longer trip over missing external MCP managers on their first tool call.
+- **Knowledge Search Handles Punctuation Again**: Sanitized Knowledge v2 full-text queries so searches containing ampersands, parentheses, and other special characters stop breaking SQLite keyword matching.
+- **Safer Interactive HTML Rendering**: Hardened `presentInteractive` HTML sanitization with a strict allowlist while preserving basic tables and links, reducing unsafe markup exposure without turning simple reports into garbage.
+- **Cleaner Agent and Assistant Flows**: Tightened agent list pagination, trimmed noisy tool/service context output, and refined assistant validation so browsing and configuring agents feels more reliable.
+
+### 🔧 Internal
+
+- **Native Teamwork Skill Cleanup**: Renamed bundled native teamwork skills to shorter names (`teamwork`, `org`, `schedule`, `delegate`) and aligned the related scaffolding and regression coverage.
+- **Editor and Scheduling Maintenance**: Refactored `SkillsEditor` drag-and-drop internals and simplified scheduled-task next-run calculation logic to reduce UI maintenance overhead.
+
+## [0.7.5] - 2026-04-12
+
+### 🚀 Features
+
+- **Reorganized Settings Layout**: Moved UI visuals (Font, Metrics, Tool Details) to the General tab and File/Workspace settings to the System tab for a more intuitive configuration experience.
+- **AI & Models UX Polish**: Reordered the AI & Models tab to prioritize model selection at the top, allowing faster primary and fallback LLM adjustments.
+
+### 🐛 Fixes
+
+- **Provider Config and Model Picker Sync**: Fixed an issue where model pickers would fail to refresh immediately after saving new provider API keys or base URLs.
+- **Ollama and Attachments Reliability**: Improved Ollama model listing stability and session-attachment handling for smoother local model workflows.
+- **Compaction Flow Hardening**: Strengthened session compaction logic and UI boundary detection to prevent display drifts and inconsistent states during long conversations.
+
+### 🔧 Internal
+
+- **Implicit Gemini Caching**: Switched the Gemini service to use implicit model caching, streamlining request assembly and improving cache hit reliability.
+- **Session Compaction Tooling**: Introduced new internal tools and anchors for manual session compaction to support advanced context management.
+- **Code Quality and Cleanup**: Standardized Rust compaction file formatting and removed redundant handlers and props from the Settings feature to improve maintainability.
+
 ## [0.7.4] - 2026-04-10
 
 ### 🐛 Fixes

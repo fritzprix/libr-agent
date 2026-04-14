@@ -10,7 +10,6 @@ import {
   Checkbox,
   Button,
 } from '@/components/ui';
-import { useDebounce } from '@/hooks/useDebounce';
 import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -39,24 +38,8 @@ function ProviderCardBase({
   customModelId,
   onPendingChange,
 }: ProviderCardProps) {
-  const [localApiKey, setLocalApiKey] = useState(apiKey || '');
-  const [localBaseUrl, setLocalBaseUrl] = useState(baseUrl || '');
-  const [localUse3rdParty, setLocalUse3rdParty] = useState(
-    use3rdParty || false,
-  );
-  const [localCustomModelId, setLocalCustomModelId] = useState(
-    customModelId || '',
-  );
   const [showApiKey, setShowApiKey] = useState(false);
   const { t } = useTranslation('common');
-
-  // Use debounce hook for pending changes
-  const { debounced: schedulePending } = useDebounce(
-    (patch: Partial<ServiceConfig>) => {
-      onPendingChange(provider, patch);
-    },
-    350,
-  );
 
   return (
     <Card className="bg-background border shadow-sm min-w-0 w-full">
@@ -80,13 +63,13 @@ function ProviderCardBase({
                 name: providerName,
                 defaultValue: 'Enter your {{name}} API key',
               })}
-              value={localApiKey}
+              value={apiKey}
+              // Keep provider settings controlled by the form state.
+              // A debounced/local mirror caused saves and downstream model refreshes
+              // to read stale URLs/keys before the latest keystroke reached the form.
               onChange={(e) => {
-                const v = e.target.value;
-                setLocalApiKey(v);
-                schedulePending({ apiKey: v });
+                onPendingChange(provider, { apiKey: e.target.value });
               }}
-              onBlur={() => onPendingChange(provider, { apiKey: localApiKey })}
               className="bg-background border text-foreground w-full pr-10"
             />
             <Button
@@ -123,15 +106,13 @@ function ProviderCardBase({
                 'settings.provider.baseUrlPlaceholder',
                 'http://localhost:11434',
               )}
-              value={localBaseUrl}
+              value={baseUrl || ''}
+              // Regression note: model pickers depend on the same pending form state.
+              // Do not reintroduce debounced/local buffering here unless save/refresh
+              // paths are explicitly flushed first.
               onChange={(e) => {
-                const v = e.target.value;
-                setLocalBaseUrl(v);
-                schedulePending({ baseUrl: v });
+                onPendingChange(provider, { baseUrl: e.target.value });
               }}
-              onBlur={() =>
-                onPendingChange(provider, { baseUrl: localBaseUrl })
-              }
               className="bg-background border text-foreground w-full"
             />
           </div>
@@ -142,10 +123,9 @@ function ProviderCardBase({
             <div className="flex items-center space-x-2 min-w-0">
               <Checkbox
                 id={`use3rdParty-${provider}`}
-                checked={localUse3rdParty}
+                checked={use3rdParty || false}
                 onCheckedChange={(checked) => {
                   const value = checked === true;
-                  setLocalUse3rdParty(value);
                   onPendingChange(provider, { use3rdParty: value });
                 }}
               />
@@ -160,7 +140,7 @@ function ProviderCardBase({
               </label>
             </div>
 
-            {localUse3rdParty && (
+            {use3rdParty && (
               <div className="min-w-0">
                 <label className="block text-muted-foreground mb-2 text-sm font-medium">
                   {t('settings.provider.customModelId', 'Custom Model ID')}
@@ -171,17 +151,12 @@ function ProviderCardBase({
                     'settings.provider.customModelIdPlaceholder',
                     'e.g., llama-3.1-70b, mistral-large',
                   )}
-                  value={localCustomModelId}
+                  value={customModelId || ''}
                   onChange={(e) => {
-                    const v = e.target.value;
-                    setLocalCustomModelId(v);
-                    schedulePending({ customModelId: v });
-                  }}
-                  onBlur={() =>
                     onPendingChange(provider, {
-                      customModelId: localCustomModelId,
-                    })
-                  }
+                      customModelId: e.target.value,
+                    });
+                  }}
                   className="bg-background border text-foreground w-full"
                 />
                 <p className="text-xs text-muted-foreground mt-1">

@@ -1,9 +1,9 @@
 ---
-name: subagent-session-delegation
+name: delegate
 description: Delegate work between LibrAgent AI agent sessions using sub-agent sessions. Use when an agent needs to spawn, brief, monitor, or troubleshoot a child session with `startSession`, `checkSession`, or `messageToSession`, especially when deciding whether the child really needs parent workspace state, workspace instructions, or workspace-scoped skills.
 ---
 
-# Subagent Session Delegation
+# Delegate
 
 Treat sub-agent delegation as session orchestration, not magic inheritance.
 
@@ -53,8 +53,8 @@ Assume these rules:
 
 If the parent is running inside a task-force workspace, check `.libragent/teamwork.json` before delegating:
 
-- If `executionSubstrate.mode` is `"org"`, prefer `startSession(..., includeCurrentOrg=true)` and `workspaceOverride` so the child joins the org and shares the workspace. Switch to `team-org` for org-specific operating rules.
-- If `executionSubstrate.mode` is `"scheduled"`, the delegation is likely a scheduled wake-up. Follow `team-sprint` for group management instead of ad-hoc delegation.
+- If `executionSubstrate.mode` is `"org"`, prefer `startSession(..., includeCurrentOrg=true)` and `workspaceOverride` so the child joins the org and shares the workspace. Switch to `org` for org-specific operating rules.
+- If `executionSubstrate.mode` is `"scheduled"`, the delegation is likely a scheduled wake-up. Follow `schedule` for group management instead of ad-hoc delegation.
 
 Important limitations:
 

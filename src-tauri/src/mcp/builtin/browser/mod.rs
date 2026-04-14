@@ -164,7 +164,7 @@ impl BuiltinMCPServer for BrowserServer {
                 if elapsed.as_secs() < CACHE_TTL_SECS {
                     // Use cached data with full session_id
                     let context_prompt = format!(
-                        "## Browser\n\n### Live State\n- Session: {}\n- URL: {}\n- Title: {}\n- Source: cached snapshot",
+                        "## Browser\n\n### Live State\n- Session: {}\n- URL: {}\n- Title: {}",
                         session_id, cached_url, cached_title
                     );
 
@@ -218,7 +218,7 @@ impl BuiltinMCPServer for BrowserServer {
 
         // Use full session_id so AI can call browser tools with correct ID
         let context_prompt = format!(
-            "## Browser\n\n### Live State\n- Session: {}\n- URL: {}\n- Title: {}\n- Source: fresh snapshot",
+            "## Browser\n\n### Live State\n- Session: {}\n- URL: {}\n- Title: {}",
             session_id, url, title
         );
 

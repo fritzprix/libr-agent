@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { ServiceConfig } from '@/context/SettingsContext';
-import { Button, Input, Slider } from '@/components/ui';
+import { Button, Slider } from '@/components/ui';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { ProviderCard } from '../components/ProviderCard';
 
@@ -28,7 +28,6 @@ interface AIModelsTabProps {
   providerEntries: AIServiceProvider[];
   localPreferredModel: { provider: AIServiceProvider; model: string };
   localFallbackModel?: { provider: AIServiceProvider; model: string } | null;
-  localAgentHubUrl: string;
   localMaxRetries: number;
   localRetryDelay: number;
   localDefaultMaxOutputTokens: number;
@@ -38,7 +37,6 @@ interface AIModelsTabProps {
   ) => void;
   onPreferredModelChange: (model: string, provider: string) => void;
   onFallbackModelChange: (model: string, provider: string) => void;
-  onAgentHubUrlChange: (url: string) => void;
   onMaxRetriesChange: (value: number) => void;
   onRetryDelayChange: (value: number) => void;
   onDefaultMaxOutputTokensChange: (value: number) => void;
@@ -49,14 +47,12 @@ function AIModelsTabComponent({
   providerEntries,
   localPreferredModel,
   localFallbackModel,
-  localAgentHubUrl,
   localMaxRetries,
   localRetryDelay,
   localDefaultMaxOutputTokens,
   onPendingChange,
   onPreferredModelChange,
   onFallbackModelChange,
-  onAgentHubUrlChange,
   onMaxRetriesChange,
   onRetryDelayChange,
   onDefaultMaxOutputTokensChange,
@@ -108,32 +104,6 @@ function AIModelsTabComponent({
 
   return (
     <div className="space-y-8">
-      {/* API Keys Section */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium text-foreground">
-          {t('settings.aiModels.apiKeys', 'Provider API Keys')}
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {providerEntries.map((provider) => {
-            const cfg = serviceConfigs[provider] || {};
-            const meta = PROVIDER_META[provider];
-            return (
-              <ProviderCard
-                key={provider}
-                provider={provider}
-                providerName={meta?.name ?? provider}
-                description={meta?.description}
-                apiKey={cfg.apiKey || ''}
-                baseUrl={cfg.baseUrl}
-                use3rdParty={cfg.use3rdParty}
-                customModelId={cfg.customModelId}
-                onPendingChange={onPendingChange}
-              />
-            );
-          })}
-        </div>
-      </div>
-
       {/* Model Preference Section */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-foreground">
@@ -170,6 +140,32 @@ function AIModelsTabComponent({
               'Used as a last resort when the primary model returns malformed or empty responses after all retries.',
             )}
           </p>
+        </div>
+      </div>
+
+      {/* API Keys Section */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium text-foreground">
+          {t('settings.aiModels.apiKeys', 'Provider API Keys')}
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {providerEntries.map((provider) => {
+            const cfg = serviceConfigs[provider] || {};
+            const meta = PROVIDER_META[provider];
+            return (
+              <ProviderCard
+                key={provider}
+                provider={provider}
+                providerName={meta?.name ?? provider}
+                description={meta?.description}
+                apiKey={cfg.apiKey || ''}
+                baseUrl={cfg.baseUrl}
+                use3rdParty={cfg.use3rdParty}
+                customModelId={cfg.customModelId}
+                onPendingChange={onPendingChange}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -300,7 +296,8 @@ function AIModelsTabComponent({
         </div>
       </div>
 
-      {/* Agent Hub Section */}
+      {/* Agent Hub Section (Currently Not Supported) */}
+      {/* 
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-foreground">
           {t('settings.aiModels.agentHub', 'Agent Hub')}
@@ -324,24 +321,29 @@ function AIModelsTabComponent({
           </p>
         </div>
       </div>
+      */}
     </div>
   );
 }
 
 export default React.memo(AIModelsTabComponent, (prev, next) => {
+  // Regression guard:
+  // Provider cards are controlled by serviceConfigs. If this comparator skips
+  // serviceConfigs changes, provider URL/key inputs become effectively read-only
+  // because the child cards never receive the updated value prop.
   return (
+    prev.serviceConfigs === next.serviceConfigs &&
+    prev.providerEntries === next.providerEntries &&
     prev.localPreferredModel.provider === next.localPreferredModel.provider &&
     prev.localPreferredModel.model === next.localPreferredModel.model &&
     prev.localFallbackModel?.provider === next.localFallbackModel?.provider &&
     prev.localFallbackModel?.model === next.localFallbackModel?.model &&
-    prev.localAgentHubUrl === next.localAgentHubUrl &&
     prev.localMaxRetries === next.localMaxRetries &&
     prev.localRetryDelay === next.localRetryDelay &&
     prev.localDefaultMaxOutputTokens === next.localDefaultMaxOutputTokens &&
     prev.onPendingChange === next.onPendingChange &&
     prev.onPreferredModelChange === next.onPreferredModelChange &&
     prev.onFallbackModelChange === next.onFallbackModelChange &&
-    prev.onAgentHubUrlChange === next.onAgentHubUrlChange &&
     prev.onMaxRetriesChange === next.onMaxRetriesChange &&
     prev.onRetryDelayChange === next.onRetryDelayChange &&
     prev.onDefaultMaxOutputTokensChange === next.onDefaultMaxOutputTokensChange

@@ -1,29 +1,112 @@
-import { DatabaseZap } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, DatabaseZap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /**
- * Visual divider rendered between the last compacted message and the first
- * remaining message. Communicates to the user that older context was summarized.
+ * Compact event card rendered after the last compacted message. Communicates
+ * what slice was summarized without exposing internal IDs.
  */
-export function CompactEventDivider() {
+interface CompactEventDividerProps {
+  earlierPreview?: string;
+  latestIncludedPreview?: string;
+  condensedCount?: number;
+  summary?: string;
+}
+
+function previewLabel(preview: string | undefined, fallback: string): string {
+  if (!preview) {
+    return fallback;
+  }
+
+  return preview;
+}
+
+export function CompactEventDivider({
+  earlierPreview,
+  latestIncludedPreview,
+  condensedCount,
+  summary,
+}: CompactEventDividerProps) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const countLabel = useMemo(() => {
+    if (!condensedCount || condensedCount < 2) {
+      return null;
+    }
+
+    return t('agent.compactDivider.count', {
+      count: condensedCount,
+      defaultValue: `${condensedCount} messages condensed`,
+    });
+  }, [condensedCount, t]);
 
   return (
     <div
-      className="flex items-center gap-3 my-2 px-2"
+      className="my-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
       aria-label={t(
         'agent.compactDivider.ariaLabel',
-        'Context compressed at this point',
+        'Conversation context compacted at this point',
       )}
     >
-      <div className="flex-1 h-px bg-border" />
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 border border-border rounded-full px-3 py-1 select-none whitespace-nowrap">
-        <DatabaseZap size={11} className="shrink-0" />
-        <span>
-          {t('agent.compactDivider.label', 'Context compressed above')}
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="flex w-full items-start justify-between gap-3 text-left"
+        aria-expanded={expanded}
+      >
+        <div className="flex min-w-0 items-start gap-2">
+          <DatabaseZap
+            size={14}
+            className="mt-0.5 shrink-0 text-muted-foreground"
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">
+              {t('agent.compactDivider.label', 'Context compacted')}
+            </div>
+            <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+              <div>
+                <span className="font-medium">
+                  {t('agent.compactDivider.earlier', 'Earlier')}:
+                </span>{' '}
+                {previewLabel(
+                  earlierPreview,
+                  t(
+                    'agent.compactDivider.earlierFallback',
+                    'Earlier conversation context',
+                  ),
+                )}
+              </div>
+              <div>
+                <span className="font-medium">
+                  {t('agent.compactDivider.latestIncluded', 'Latest included')}:
+                </span>{' '}
+                {previewLabel(
+                  latestIncludedPreview,
+                  t(
+                    'agent.compactDivider.latestFallback',
+                    'Newest message folded into the summary',
+                  ),
+                )}
+              </div>
+              {countLabel ? <div>{countLabel}</div> : null}
+            </div>
+          </div>
+        </div>
+        <span className="shrink-0 pt-0.5 text-muted-foreground">
+          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </span>
-      </div>
-      <div className="flex-1 h-px bg-border" />
+      </button>
+
+      {expanded && summary ? (
+        <div className="mt-3 rounded-md border border-border bg-background/70 px-3 py-2">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {t('agent.compactDivider.summary', 'Summary')}
+          </div>
+          <div className="whitespace-pre-wrap text-sm text-foreground">
+            {summary}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

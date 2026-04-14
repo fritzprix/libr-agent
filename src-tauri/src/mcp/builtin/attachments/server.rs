@@ -264,10 +264,8 @@ impl AttachmentsServer {
                     Self::format_mime_type(&file.mime_type)
                 ));
             }
-
-            prompt_parts.push("\n*Use `read(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access attachments.*\n".to_string());
         } else if total_count == 0 {
-            prompt_parts.push("*No attachments available yet.*\n".to_string());
+            prompt_parts.push("Attachments: None\n".to_string());
         }
 
         let context_prompt = prompt_parts.join("");

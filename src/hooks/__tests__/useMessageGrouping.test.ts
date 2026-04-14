@@ -29,6 +29,7 @@ describe('useMessageGrouping', () => {
     if (group.type === 'tool_group') {
       expect(group.toolGroup.calls).toHaveLength(1);
       expect(group.toolGroup.calls[0].id).toBe('call_1');
+      expect(group.coveredMessageIds).toEqual(['2', '3']);
       // Verify pre-calculated results
       expect(group.toolGroup.results).toHaveLength(1);
       expect(group.toolGroup.results[0]).toBeDefined();
@@ -65,6 +66,29 @@ describe('useMessageGrouping', () => {
     expect(result.current.toolResultsMap.size).toBe(2);
     expect(result.current.toolResultsMap.get('call_1')).toBeDefined();
     expect(result.current.toolResultsMap.get('call_orphan')).toBeDefined();
+  });
+
+  it('tracks grouped tool result ids in coveredMessageIds', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tool'),
+      createMessage('2', 'assistant', '', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'tool1', arguments: '{}' },
+        },
+      ]),
+      createMessage('3', 'tool', 'Result 1', undefined, 'call_1'),
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+    const group = result.current.groupedMessages[1];
+
+    expect(group.type).toBe('tool_group');
+    if (group.type === 'tool_group') {
+      expect(group.messages.map((message) => message.id)).toEqual(['2']);
+      expect(group.coveredMessageIds).toEqual(['2', '3']);
+    }
   });
 
   it('groups multiple tool calls from consecutive assistant messages and captures all results', () => {

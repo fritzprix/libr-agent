@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use std::time::Duration;
 
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_agent_config_error, missing_agent_session_error, ErrorCategory,
@@ -8,47 +9,71 @@ use crate::mcp::builtin::session_api::utils::{
     build_agent_tool_data, check_session_next_actions, read_required_string,
 };
 use crate::mcp::types::MCPResult;
+use crate::repositories::SessionStatus;
 
 use super::super::AgentServer;
 use super::caller_session_not_found_result;
 use super::check_session::check_session;
+
+fn self_target_session_action_result(
+    tool_name: &str,
+    message: &str,
+    guidance: Vec<String>,
+) -> MCPResult {
+    guided_error(
+        ErrorCategory::InvalidState,
+        message.to_string(),
+        ToolGroup::Agent,
+    )
+    .with_guidance(
+        std::iter::once(format!(
+            "Use {} only for child or delegated sessions",
+            tool_name
+        ))
+        .chain(guidance)
+        .collect(),
+    )
+    .to_mcp_result()
+}
 
 async fn start_session_impl(
     server: &AgentServer,
     args: Value,
     caller_session_id: &str,
     tool_name: &str,
-    force_include_current_org: bool,
 ) -> Result<MCPResult, String> {
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
 
-    let include_current_org = force_include_current_org
-        || args
-            .get("includeCurrentOrg")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+    let caller_session = match manager.get_session(caller_session_id).await? {
+        Some(session) => session,
+        None => return Ok(caller_session_not_found_result(caller_session_id)),
+    };
+    let caller_explicit_org = match (
+        caller_session.org_id.clone(),
+        caller_session.org_name.clone(),
+        caller_session.org_root_session_id.clone(),
+    ) {
+        (Some(org_id), Some(org_name), Some(org_root_session_id)) => {
+            Some((org_id, org_name, org_root_session_id))
+        }
+        _ => None,
+    };
+
+    let include_current_org = args
+        .get("includeCurrentOrg")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(caller_explicit_org.is_some());
     let requested_workspace_override = args
         .get("workspaceOverride")
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
     let explicit_org = if include_current_org {
-        let caller_session = match manager.get_session(caller_session_id).await? {
-            Some(session) => session,
-            None => return Ok(caller_session_not_found_result(caller_session_id)),
-        };
-
-        match (
-            caller_session.org_id.clone(),
-            caller_session.org_name.clone(),
-            caller_session.org_root_session_id.clone(),
-        ) {
-            (Some(org_id), Some(org_name), Some(org_root_session_id)) => {
-                Some((org_id, org_name, org_root_session_id))
-            }
-            _ => {
+        match caller_explicit_org {
+            Some(org) => Some(org),
+            None => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Current session does not belong to an explicit org. Call createOrg first."
@@ -57,7 +82,7 @@ async fn start_session_impl(
                 )
                 .with_guidance(vec![
                     "Use createOrg(name=\"...\") from the root session first.".to_string(),
-                    "Then call startSession(..., includeCurrentOrg=true) for org-visible member sessions."
+                    "Then call startSession(...) to create org-visible member sessions."
                         .to_string(),
                 ])
                 .to_mcp_result())
@@ -126,11 +151,6 @@ async fn start_session_impl(
         .await;
     }
 
-    let alias_note = if tool_name == "spawnOrgAgent" {
-        " spawnOrgAgent is a compatibility alias for startSession(includeCurrentOrg=true)."
-    } else {
-        ""
-    };
     let workspace_note = if let Some(workspace_path) = effective_workspace_path.as_deref() {
         format!(" Shared workspace: {}.", workspace_path)
     } else {
@@ -139,8 +159,8 @@ async fn start_session_impl(
     let hint = if let Some(org_name) = response.org_name.clone() {
         SuccessHint::new(
             format!(
-                "Session started successfully (ID: {}, org: {}).{}{}",
-                session_id, org_name, alias_note, workspace_note
+                "Session started successfully (ID: {}, org: {}).{}",
+                session_id, org_name, workspace_note
             ),
             vec![format!(
                 "Use checkSession(\"{}\", wait=true) to wait for the answer.",
@@ -150,8 +170,8 @@ async fn start_session_impl(
     } else {
         SuccessHint::new(
             format!(
-                "Session started successfully (ID: {}).{}{}",
-                session_id, alias_note, workspace_note
+                "Session started successfully (ID: {}).{}",
+                session_id, workspace_note
             ),
             vec![format!(
                 "Use checkSession(\"{}\", wait=true) to wait for the answer.",
@@ -183,15 +203,7 @@ pub async fn start_session(
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
-    start_session_impl(server, args, caller_session_id, "startSession", false).await
-}
-
-pub async fn spawn_org_agent(
-    server: &AgentServer,
-    args: Value,
-    caller_session_id: &str,
-) -> Result<MCPResult, String> {
-    start_session_impl(server, args, caller_session_id, "spawnOrgAgent", true).await
+    start_session_impl(server, args, caller_session_id, "startSession").await
 }
 
 /// messageToSession handler (from messageAgent)
@@ -255,17 +267,14 @@ pub async fn stop_session(
     let session_id = read_required_string(&args, "sessionId")?;
 
     if caller_session_id == session_id {
-        return Ok(guided_error(
-            ErrorCategory::InvalidState,
+        return Ok(self_target_session_action_result(
+            "stopSession",
             "Self-termination is not allowed via stopSession.",
-            ToolGroup::Agent,
-        )
-        .with_guidance(vec![
-            "Use stopSession only for child or delegated sessions".to_string(),
+            vec![
             "If the current workflow should stop, use the normal session cancellation controls instead"
                 .to_string(),
-        ])
-        .to_mcp_result());
+            ],
+        ));
     }
 
     if let Err(error) = manager.terminate_session(session_id.clone()).await {
@@ -298,4 +307,194 @@ pub async fn stop_session(
     );
 
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
+}
+
+pub async fn compact_session_context(
+    server: &AgentServer,
+    args: Value,
+    caller_session_id: &str,
+) -> Result<MCPResult, String> {
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
+    let session_id = read_required_string(&args, "sessionId")?;
+    let timeout_seconds = args
+        .get("timeout")
+        .and_then(|value| value.as_u64())
+        .map(|value| value.clamp(5, 300))
+        .unwrap_or(60);
+
+    if caller_session_id == session_id {
+        return Ok(self_target_session_action_result(
+            "compactSessionContext",
+                "Self-compaction is not allowed via compactSessionContext.",
+                vec![
+                    "Current-session compaction remains backend-managed to avoid recursive compaction loops"
+                        .to_string(),
+                "Use this tool only when you want to refresh another delegated session's compact summary"
+                    .to_string(),
+                ],
+            ));
+    }
+
+    let target_session = match manager.get_session(&session_id).await? {
+        Some(session) => session,
+        None => return Ok(missing_agent_session_error(&session_id)),
+    };
+
+    if target_session.status == SessionStatus::Busy {
+        return Ok(guided_error(
+            ErrorCategory::InvalidState,
+            format!(
+                "Session {} is busy. compactSessionContext only supports idle, paused, or error sessions.",
+                session_id
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            format!(
+                "Wait for session {} to stop running before compacting it manually",
+                session_id
+            ),
+            format!(
+                "Use checkSession(\"{}\", wait=true) if you need to block for the current run",
+                session_id
+            ),
+        ])
+        .to_mcp_result());
+    }
+
+    let previous_record = manager.get_compact_context(&session_id).await?;
+    let is_active = {
+        let active_sessions = manager.active_sessions_arc();
+        let active = active_sessions.read().await;
+        active.contains_key(&session_id)
+    };
+
+    if !is_active {
+        log::info!(
+            "Auto-resuming inactive session before compactSessionContext: {}",
+            session_id
+        );
+        manager.resume_session(&session_id).await?;
+        manager.init_session_with_messages(&session_id).await?;
+    }
+
+    let triggered = match manager.trigger_manual_compaction(&session_id).await {
+        Ok(triggered) => triggered,
+        Err(error) => return Err(error),
+    };
+
+    if !triggered {
+        let message = if let Some(record) = previous_record {
+            format!(
+                "No new compaction was needed for session {}. Existing compact summary already covers {} -> {}.",
+                session_id, record.from_id, record.to_id
+            )
+        } else {
+            format!(
+                "No compaction was needed for session {}. There is not enough uncompacted history yet.",
+                session_id
+            )
+        };
+        let mut response_data = build_agent_tool_data(
+            "compactSessionContext",
+            "session",
+            Some(&session_id),
+            &message,
+            "noop",
+            check_session_next_actions(&session_id),
+        );
+        response_data.insert("sessionId".to_string(), Value::String(session_id));
+        response_data.insert("status".to_string(), Value::String("noop".to_string()));
+        response_data.insert("compacted".to_string(), Value::Bool(false));
+
+        return Ok(SuccessHint::new(message, vec![])
+            .to_mcp_result_with_data(Some(Value::Object(response_data))));
+    }
+
+    if let Err(error) = manager
+        .wait_for_compaction_to_settle(&session_id, Duration::from_secs(timeout_seconds))
+        .await
+    {
+        return Ok(guided_error(
+            ErrorCategory::Timeout,
+            format!(
+                "Compaction for session {} did not finish within {} seconds.",
+                session_id, timeout_seconds
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            format!(
+                "Retry compactSessionContext(sessionId=\"{}\") after the frontend finishes the compaction request",
+                session_id
+            ),
+            format!(
+                "Use checkSession(\"{}\", wait=false) to inspect whether the delegated session is still active",
+                session_id
+            ),
+            format!("Last wait error: {}", error),
+        ])
+        .to_mcp_result());
+    }
+
+    let compact_record = manager.get_compact_context(&session_id).await?;
+    let Some(compact_record) = compact_record else {
+        return Ok(guided_error(
+            ErrorCategory::InternalError,
+            format!(
+                "Compaction for session {} settled but no compact summary record was saved.",
+                session_id
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            "Retry compactSessionContext once more".to_string(),
+            "If the problem persists, inspect the target session logs for compact-request failures"
+                .to_string(),
+        ])
+        .to_mcp_result());
+    };
+
+    let unchanged = previous_record.as_ref().is_some_and(|previous| {
+        previous.from_id == compact_record.from_id
+            && previous.to_id == compact_record.to_id
+            && previous.summary == compact_record.summary
+    });
+    let status = if unchanged { "noop" } else { "success" };
+    let state_label = if unchanged {
+        "already current"
+    } else {
+        "compacted"
+    };
+    let message = format!(
+        "Session {} {}.\n\nCompaction boundary: {} -> {}\n\nCompact summary:\n{}",
+        session_id,
+        state_label,
+        compact_record.from_id,
+        compact_record.to_id,
+        compact_record.summary
+    );
+    let mut response_data = build_agent_tool_data(
+        "compactSessionContext",
+        "session",
+        Some(&session_id),
+        &message,
+        status,
+        check_session_next_actions(&session_id),
+    );
+    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("status".to_string(), Value::String(status.to_string()));
+    response_data.insert("compacted".to_string(), Value::Bool(!unchanged));
+    response_data.insert("fromId".to_string(), Value::String(compact_record.from_id));
+    response_data.insert("toId".to_string(), Value::String(compact_record.to_id));
+    response_data.insert("summary".to_string(), Value::String(compact_record.summary));
+    response_data.insert(
+        "timeoutSeconds".to_string(),
+        Value::Number(timeout_seconds.into()),
+    );
+
+    Ok(SuccessHint::new(message, vec![])
+        .to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

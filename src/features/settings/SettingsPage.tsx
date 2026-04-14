@@ -2,6 +2,7 @@ import equal from 'fast-deep-equal';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BrainCircuit, Loader2 } from 'lucide-react';
+import { mutate } from 'swr';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +39,13 @@ import AdvancedTab from './tabs/AdvancedTab';
 import DevTab from './tabs/DevTab';
 
 const logger = getLogger('SettingsPage');
+
+const invalidateModelCaches = async () => {
+  await Promise.all([
+    mutate((key) => Array.isArray(key) && key[0] === 'local-models'),
+    mutate((key) => Array.isArray(key) && key[0] === 'models'),
+  ]);
+};
 
 type SettingsTabValue =
   | 'general'
@@ -123,10 +131,7 @@ export default function SettingsPage() {
     return {
       general:
         formState.uiLanguage !== globalSettings.uiLanguage ||
-        formState.system.skillsDirectory !==
-          globalSettings.system.skillsDirectory ||
-        formState.system.maxFileUploadSizeMB !==
-          globalSettings.system.maxFileUploadSizeMB,
+        !equal(formState.display, globalSettings.display),
       'ai-models': !equal(
         {
           serviceConfigs: formState.serviceConfigs,
@@ -154,7 +159,6 @@ export default function SettingsPage() {
           windowSize: formState.windowSize,
           maxInputContext: formState.maxInputContext,
           toolCallGroupVisibleCount: formState.toolCallGroupVisibleCount,
-          display: formState.display,
           diffContextLines: formDiffContextLines,
         },
         {
@@ -162,12 +166,13 @@ export default function SettingsPage() {
           windowSize: globalSettings.windowSize,
           maxInputContext: globalSettings.maxInputContext,
           toolCallGroupVisibleCount: globalSettings.toolCallGroupVisibleCount,
-          display: globalSettings.display,
           diffContextLines: globalDiffContextLines,
         },
       ),
       system: !equal(
         {
+          skillsDirectory: formState.system.skillsDirectory,
+          maxFileUploadSizeMB: formState.system.maxFileUploadSizeMB,
           searchIndexFrequencyMinutes:
             formState.system.searchIndexFrequencyMinutes,
           webActionTimeoutSeconds: formState.system.webActionTimeoutSeconds,
@@ -181,6 +186,8 @@ export default function SettingsPage() {
           httpServerExpose: formState.system.httpServerExpose,
         },
         {
+          skillsDirectory: globalSettings.system.skillsDirectory,
+          maxFileUploadSizeMB: globalSettings.system.maxFileUploadSizeMB,
           searchIndexFrequencyMinutes:
             globalSettings.system.searchIndexFrequencyMinutes,
           webActionTimeoutSeconds:
@@ -335,6 +342,10 @@ export default function SettingsPage() {
       }
 
       await save();
+      // Provider model lists depend on saved base URL / API key settings.
+      // Revalidate those caches after save so pickers switch to the new endpoint
+      // instead of waiting for a later manual refresh or SWR dedupe expiry.
+      await invalidateModelCaches();
 
       if (networkSettingsChanged) {
         toast.info(
@@ -465,21 +476,9 @@ export default function SettingsPage() {
     (count: number) => update('toolCallGroupVisibleCount', count),
     [update],
   );
-  const handleAgentHubUrlChange = useCallback(
-    (url: string) => update('agentHubUrl', url),
-    [update],
-  );
   const handleLanguageChange = useCallback(
     (lang: string) => update('uiLanguage', lang),
     [update],
-  );
-  const handleSkillsDirectoryChange = useCallback(
-    (path: string) => updateSystem('skillsDirectory', path),
-    [updateSystem],
-  );
-  const handleMaxFileUploadSizeChange = useCallback(
-    (value: number) => updateSystem('maxFileUploadSizeMB', value),
-    [updateSystem],
   );
   const handleMaxRetriesChange = useCallback(
     (value: number) => updateAdvanced('maxRetries', value),
@@ -639,10 +638,8 @@ export default function SettingsPage() {
               <GeneralTab
                 localLanguage={formState.uiLanguage}
                 onChange={handleLanguageChange}
-                skillsDirectory={formState.system.skillsDirectory}
-                onSkillsDirectoryChange={handleSkillsDirectoryChange}
-                localMaxFileUploadSizeMB={formState.system.maxFileUploadSizeMB}
-                onMaxFileUploadSizeChange={handleMaxFileUploadSizeChange}
+                localDisplay={formState.display}
+                onDisplaySettingsChange={updateDisplay}
               />
             </TabsContent>
 
@@ -652,7 +649,6 @@ export default function SettingsPage() {
                 providerEntries={providerEntries}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
-                localAgentHubUrl={formState.agentHubUrl || ''}
                 localMaxRetries={formState.advanced.maxRetries}
                 localRetryDelay={formState.advanced.retryDelay}
                 localDefaultMaxOutputTokens={
@@ -661,7 +657,6 @@ export default function SettingsPage() {
                 onPendingChange={handlePendingChange}
                 onPreferredModelChange={handlePreferredModelChange}
                 onFallbackModelChange={handleFallbackModelChange}
-                onAgentHubUrlChange={handleAgentHubUrlChange}
                 onMaxRetriesChange={handleMaxRetriesChange}
                 onRetryDelayChange={handleRetryDelayChange}
                 onDefaultMaxOutputTokensChange={
@@ -679,7 +674,6 @@ export default function SettingsPage() {
                   formState.toolCallGroupVisibleCount
                 }
                 localAdvancedSettings={formState.advanced}
-                localDisplay={formState.display}
                 onContextStrategyChange={handleContextStrategyChange}
                 onWindowSizeChange={handleWindowSizeChange}
                 onMaxInputContextChange={handleMaxInputContextChange}
@@ -687,7 +681,6 @@ export default function SettingsPage() {
                   handleToolCallGroupVisibleCountChange
                 }
                 onAdvancedSettingsChange={updateAdvanced}
-                onDisplaySettingsChange={updateDisplay}
               />
             </TabsContent>
 

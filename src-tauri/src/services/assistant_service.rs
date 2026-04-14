@@ -10,6 +10,19 @@ pub struct AssistantUpsertPayload {
 
 pub struct AssistantService;
 
+pub fn normalize_assistant_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Assistant name cannot be blank".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+pub fn normalize_optional_assistant_name(name: Option<String>) -> Result<Option<String>, String> {
+    name.map(|value| normalize_assistant_name(&value))
+        .transpose()
+}
+
 impl AssistantService {
     pub async fn create_assistant(
         repo: &dyn AssistantRepository,
@@ -17,6 +30,7 @@ impl AssistantService {
         name: String,
         config: Value,
     ) -> Result<AssistantModel, String> {
+        let name = normalize_assistant_name(&name)?;
         let config_str = config.to_string();
 
         repo.create_assistant(id, name, config_str)
@@ -30,6 +44,7 @@ impl AssistantService {
         name: Option<String>,
         config: Option<Value>,
     ) -> Result<AssistantModel, String> {
+        let name = normalize_optional_assistant_name(name)?;
         let config_str = config.map(|c| c.to_string());
 
         repo.update_assistant(id, name, config_str)
@@ -110,12 +125,13 @@ impl AssistantService {
         let mut results = Vec::new();
 
         for payload in assistants {
+            let normalized_name = normalize_assistant_name(&payload.name)?;
             let config_str = payload.config.to_string();
 
             let update_result = repo
                 .update_assistant(
                     &payload.id,
-                    Some(payload.name.clone()),
+                    Some(normalized_name.clone()),
                     Some(config_str.clone()),
                 )
                 .await;
@@ -123,7 +139,7 @@ impl AssistantService {
             let result = match update_result {
                 Ok(model) => model,
                 Err(crate::repositories::DbError::NotFound(_)) => repo
-                    .create_assistant(payload.id.clone(), payload.name, config_str)
+                    .create_assistant(payload.id.clone(), normalized_name, config_str)
                     .await
                     .map_err(|e| format!("Failed to create assistant {}: {}", payload.id, e))?,
                 Err(e) => {

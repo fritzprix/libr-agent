@@ -35,7 +35,9 @@ pub fn present_interactive_tool() -> MCPTool {
 
 Use this as the default UI presentation tool.
 - For display-only content, omit `interaction`
-- For user response after content display, include `interaction`"
+- For user response after content display, include `interaction`
+        - HTML mode supports a safe subset only: basic text, tables, and links
+        - JavaScript, CSS, event handlers, images, and arbitrary embeds are stripped"
             .to_string(),
         input_schema: object_prop(
             vec![

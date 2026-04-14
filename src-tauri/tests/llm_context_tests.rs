@@ -42,6 +42,12 @@ fn make_message_simple(role: &str, text: &str) -> Message {
     make_message(&format!("msg-{}", text.len()), role, text)
 }
 
+fn make_compact_summary_message(id: &str, role: &str, text: &str) -> Message {
+    let mut message = make_message(id, role, text);
+    message.source = Some("compact-summary".to_string());
+    message
+}
+
 #[test]
 fn test_find_compaction_split_index() {
     let mut msgs = vec![];
@@ -219,8 +225,8 @@ fn test_same_tail_compaction_allows_retry_when_no_compact_summary_exists() {
 
 #[test]
 fn test_same_tail_compaction_allows_follow_up_compaction_after_summary_injection() {
-    let mut summary = make_message("m0", "user", "Compacted summary");
-    summary.id = "compact-summary-test".to_string();
+    let summary =
+        make_compact_summary_message("compact-summary-test", "assistant", "Compacted summary");
 
     let messages = vec![
         summary,
@@ -233,8 +239,8 @@ fn test_same_tail_compaction_allows_follow_up_compaction_after_summary_injection
 
 #[test]
 fn test_same_tail_compaction_stops_when_only_existing_summary_is_left_to_compact() {
-    let mut summary = make_message("m0", "user", "Compacted summary");
-    summary.id = "compact-summary-test".to_string();
+    let summary =
+        make_compact_summary_message("compact-summary-test", "assistant", "Compacted summary");
 
     let messages = vec![summary, make_message("m1", "user", "Latest request")];
 
@@ -418,7 +424,7 @@ fn test_select_messages_regression_large_message() {
 
 #[test]
 fn test_select_messages_removes_orphaned_tool_tail_without_truncation() {
-    let summary = make_message("compact-summary-1", "user", "Summary");
+    let summary = make_compact_summary_message("compact-summary-1", "assistant", "Summary");
 
     let mut orphan_tool = make_message("tool-1", "tool", "orphan result");
     orphan_tool.tool_call_id = Some("missing_call".to_string());
@@ -687,8 +693,7 @@ fn test_grounded_total_tokens_with_grounding() {
 
 #[test]
 fn test_grounded_total_tokens_keeps_summary_aware_anchor_after_compaction() {
-    let mut summary = make_message_simple("system", "Summary...");
-    summary.id = "compact-summary-123".to_string();
+    let summary = make_compact_summary_message("compact-summary-123", "assistant", "Summary...");
 
     let mut grounded = make_message_simple("assistant", "Hi there");
     grounded.usage = Some(json!({ "totalTokens": 100 }));
@@ -705,8 +710,8 @@ fn test_grounded_total_tokens_keeps_summary_aware_anchor_after_compaction() {
 
 #[test]
 fn test_prompt_anchor_calibration_keeps_summary_aware_anchor_after_compaction() {
-    let mut summary = make_message_simple("user", "Compacted summary");
-    summary.id = "compact-summary-123".to_string();
+    let summary =
+        make_compact_summary_message("compact-summary-123", "assistant", "Compacted summary");
 
     let intro = make_message_simple("user", "Existing tail before grounded response");
     let mut grounded = make_message_simple("assistant", "Grounded assistant output");
@@ -723,8 +728,8 @@ fn test_prompt_anchor_calibration_keeps_summary_aware_anchor_after_compaction() 
 
 #[test]
 fn test_prompt_anchored_total_tokens_keeps_summary_aware_anchor_after_compaction() {
-    let mut summary = make_message_simple("user", "Compacted summary");
-    summary.id = "compact-summary-123".to_string();
+    let summary =
+        make_compact_summary_message("compact-summary-123", "assistant", "Compacted summary");
 
     let intro = make_message_simple("user", "Existing tail before grounded response");
     let mut grounded = make_message_simple("assistant", "Grounded assistant output");
@@ -749,7 +754,8 @@ fn test_prompt_anchored_total_tokens_keeps_summary_aware_anchor_after_compaction
 
 #[test]
 fn test_conservative_preflight_prompt_tokens_biases_anchor_delta_upward() {
-    let summary = make_message("compact-summary-1", "user", "Compacted summary");
+    let summary =
+        make_compact_summary_message("compact-summary-1", "assistant", "Compacted summary");
     let intro = make_message("intro", "user", "Stable tail before anchor");
     let mut grounded = make_message("assistant-anchor", "assistant", "Grounded output");
     grounded.usage = Some(json!({ "promptTokens": 240 }));
