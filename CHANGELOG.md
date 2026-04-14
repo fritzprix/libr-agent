@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.6] - 2026-04-14
+
+### 🐛 Fixes
+
+- **Recovered Sessions and Scheduled Tasks Are Steadier**: Fixed proxy rehydration/readiness races and config fallback issues so resumed sessions and scheduled tasks no longer trip over missing external MCP managers on their first tool call.
+- **Knowledge Search Handles Punctuation Again**: Sanitized Knowledge v2 full-text queries so searches containing ampersands, parentheses, and other special characters stop breaking SQLite keyword matching.
+- **Safer Interactive HTML Rendering**: Hardened `presentInteractive` HTML sanitization with a strict allowlist while preserving basic tables and links, reducing unsafe markup exposure without turning simple reports into garbage.
+- **Cleaner Agent and Assistant Flows**: Tightened agent list pagination, trimmed noisy tool/service context output, and refined assistant validation so browsing and configuring agents feels more reliable.
+
+### 🔧 Internal
+
+- **Native Teamwork Skill Cleanup**: Renamed bundled native teamwork skills to shorter names (`teamwork`, `org`, `schedule`, `delegate`) and aligned the related scaffolding and regression coverage.
+- **Editor and Scheduling Maintenance**: Refactored `SkillsEditor` drag-and-drop internals and simplified scheduled-task next-run calculation logic to reduce UI maintenance overhead.
+
 ## [0.7.5] - 2026-04-12
 
 ### 🚀 Features

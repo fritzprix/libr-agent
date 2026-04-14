@@ -42,6 +42,43 @@ async fn knowledge_v2_repository_supports_keyword_and_semantic_search() {
 }
 
 #[tokio::test]
+async fn knowledge_v2_repository_sanitizes_special_character_queries() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteKnowledgeV2Repository::new(db);
+
+    let chunk_id = repo
+        .record_chunk(
+            "assistant-special".to_string(),
+            "R&D (alpha) uses foo & bar with sqlite-vec.".to_string(),
+            Some(r#"["r&d","alpha","sqlite-vec"]"#.to_string()),
+            Some("unit-test".to_string()),
+            vec![0.4; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+
+    let keyword_results = repo
+        .search_hybrid("assistant-special", Some("R&D (alpha)"), None, 5)
+        .await
+        .expect("special-character keyword search should succeed");
+    assert_eq!(keyword_results.len(), 1);
+    assert_eq!(keyword_results[0].0.id, chunk_id);
+
+    let ampersand_results = repo
+        .search_hybrid("assistant-special", Some("foo & bar"), None, 5)
+        .await
+        .expect("ampersand keyword search should succeed");
+    assert_eq!(ampersand_results.len(), 1);
+    assert_eq!(ampersand_results[0].0.id, chunk_id);
+
+    let punctuation_only_results = repo
+        .search_hybrid("assistant-special", Some("("), None, 5)
+        .await
+        .expect("punctuation-only query should not fail");
+    assert!(punctuation_only_results.is_empty());
+}
+
+#[tokio::test]
 async fn knowledge_v2_graph_context_stays_scoped_to_assistant() {
     let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteKnowledgeV2Repository::new(db.clone());

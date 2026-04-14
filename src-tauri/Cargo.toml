@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.7.5"
+version = "0.7.6"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -66,6 +66,7 @@ cuid2 = "0.1.4"
 dirs = "5.0"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
+ammonia = "4.0"
 
 # Windows-only: decode process output captured from stdio pipes using the system ANSI code page
 windows-sys = { version = "0.59", features = ["Win32_Globalization"] }

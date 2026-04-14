@@ -5,7 +5,7 @@ description: >
   scheduled task group refactoring in LibrAgent. Use when continuing,
   implementing, or reviewing this teamwork architecture so changes stay
   aligned with the agreed contract: workspace-scaffolded SSOT,
-  task-force-builder as a meta-meta-skill, org as explicit
+  teamwork as a meta-meta-skill, org as explicit
   org-created lineage teamwork, scheduled collaboration as separate
   task groups, and Settings-backed backend-enforced governance.
 ---
@@ -31,7 +31,7 @@ If a proposed change conflicts with the contract, follow the contract instead of
 1. **Team Workspace is the durable collaboration substrate**
    - teamwork base information, including the original user request, belongs in workspace scaffolding
    - SSOT, progress, and handoff memory live in scaffolded files and workspace instructions
-2. **`task-force-builder` is a meta-meta-skill**
+2. **`teamwork` is a meta-meta-skill**
    - decide whether a team is needed
    - choose the execution pattern
    - scaffold the workspace
@@ -67,7 +67,7 @@ Choose the workstream that matches the requested change.
 
 Use when changing:
 
-- `task-force-builder`
+- `teamwork`
 - scaffold generation
 - `agents.md`
 - teamwork base information
@@ -125,7 +125,7 @@ When uncertain, apply these rules in order:
 
 ## Current Likely Next Changes
 
-1. Upgrade `task-force-builder` and its scaffold script to generate:
+1. Upgrade `teamwork` and its scaffold script to generate:
    - `agents.md`
    - teamwork base information including the original user request
    - coordination scaffold

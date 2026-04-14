@@ -4,6 +4,26 @@ use super::MCPServiceProxyManager;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyReadinessState {
+    MissingProxy,
+    Ready,
+    AwaitSignal,
+}
+
+pub fn decide_proxy_readiness_state(
+    proxy_exists: bool,
+    has_readiness_signal: bool,
+) -> ProxyReadinessState {
+    if !proxy_exists {
+        ProxyReadinessState::MissingProxy
+    } else if has_readiness_signal {
+        ProxyReadinessState::AwaitSignal
+    } else {
+        ProxyReadinessState::Ready
+    }
+}
+
 impl MCPServiceProxyManager {
     /// Get an existing proxy for a session
     ///
@@ -56,8 +76,9 @@ impl MCPServiceProxyManager {
 
     /// Wait for background tool loading to complete for a session.
     ///
-    /// Sessions backed only by builtin tools are immediately ready (no entry in the map).
-    /// Sessions with external stdio/HTTP servers signal readiness via a `watch::channel`.
+    /// Sessions backed only by builtin tools are immediately ready once the proxy exists
+    /// (no entry in the map). Sessions with external stdio/HTTP servers signal readiness
+    /// via a `watch::channel`.
     ///
     /// # Arguments
     /// * `session_id` - The session to wait for
@@ -71,15 +92,27 @@ impl MCPServiceProxyManager {
         session_id: &str,
         timeout_secs: u64,
     ) -> Result<(), String> {
-        let rx = {
+        let readiness_signal = {
             let map = self.proxy_readiness.read().await;
-            map.get(session_id).map(|tx| tx.subscribe())
+            map.get(session_id).cloned()
         };
 
-        let Some(mut rx) = rx else {
-            // No entry = no external servers = already ready
-            return Ok(());
-        };
+        match decide_proxy_readiness_state(
+            self.get_proxy(session_id).await.is_some(),
+            readiness_signal.is_some(),
+        ) {
+            ProxyReadinessState::MissingProxy => {
+                return Err(format!("No MCP proxy exists for session: {}", session_id));
+            }
+            ProxyReadinessState::Ready => {
+                return Ok(());
+            }
+            ProxyReadinessState::AwaitSignal => {}
+        }
+
+        let mut rx = readiness_signal
+            .expect("readiness signal must exist when state requires waiting")
+            .subscribe();
 
         if *rx.borrow() {
             return Ok(()); // Already signaled true

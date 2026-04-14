@@ -75,7 +75,7 @@ export function selectOrgSummaries(sessions: AgentSession[]): OrgSummary[] {
         return left.createdAt.getTime() - right.createdAt.getTime();
       }),
       memberCount: members.length,
-      busyCount: members.filter((session) => session.status === 'busy').length,
+      busyCount: members.reduce((acc, session) => (session.status === 'busy' ? acc + 1 : acc), 0),
       updatedAt,
     });
   }

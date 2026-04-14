@@ -662,61 +662,32 @@ async fn test_proxy_ready_immediately_for_builtin_only_sessions() {
     manager.destroy_proxy(session_id).await;
 }
 
-/// Regression: proxy_readiness entry must be removed in destroy_proxy.
+/// Regression: wait_until_proxy_ready must reject missing proxies.
 ///
-/// Before the readiness cleanup was added, destroying a session left a stale
-/// Sender in the map. After fix, wait_until_proxy_ready on a destroyed session
-/// must return immediately (no entry = ready).
+/// A missing readiness entry only means "builtin-only and already ready" when a
+/// proxy actually exists. Destroyed or never-created sessions must not be treated
+/// as ready, or workflow code will race into LLM/tool execution without external
+/// MCP managers.
 #[tokio::test]
-async fn test_proxy_readiness_entry_removed_after_destroy() {
+async fn test_wait_fails_when_proxy_does_not_exist() {
     let manager = create_test_manager().await;
-    let session_id = "readiness-destroy-cleanup";
+    let session_id = "readiness-missing-proxy";
 
-    let new_session = session::ActiveModel {
-        id: Set(session_id.to_string()),
-        created_at: Set(chrono::Utc::now().timestamp()),
-        updated_at: Set(0),
-        status: Set("idle".to_string()),
-        ..Default::default()
-    };
-    session::Entity::insert(new_session)
-        .exec(&*manager.db)
-        .await
-        .unwrap();
-
-    manager
-        .create_proxy(
-            session_id.to_string(),
-            vec!["bootstrap".to_string()],
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
-
-    manager.destroy_proxy(session_id).await;
-
-    // After destroy the entry must be gone.
-    assert_eq!(
-        manager.readiness_entry_count().await,
-        0,
-        "proxy_readiness must be empty after destroy_proxy"
-    );
-
-    // Calling wait_until_proxy_ready on a destroyed session must not block.
     let result = tokio::time::timeout(
         std::time::Duration::from_millis(100),
-        manager.wait_until_proxy_ready(session_id, 10),
+        manager.wait_until_proxy_ready(session_id, 1),
     )
     .await;
 
     assert!(
         result.is_ok(),
-        "wait_until_proxy_ready must not block after destroy"
+        "wait_until_proxy_ready must fail fast when no proxy exists"
     );
     assert!(
-        result.unwrap().is_ok(),
-        "wait_until_proxy_ready must succeed after destroy"
+        result
+            .unwrap()
+            .is_err_and(|error| error.contains("No MCP proxy exists")),
+        "wait_until_proxy_ready must report the missing proxy instead of pretending the session is ready"
     );
 }
 

@@ -154,6 +154,17 @@ async fn validate_mcp_server_ids(
     Ok(())
 }
 
+fn trim_optional_text(value: Option<&str>) -> Option<String> {
+    value.and_then(|text| {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
 /// Create a new assistant
 pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
     // Parse request with type safety
@@ -161,6 +172,11 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         log::error!("Failed to parse CreateAssistantRequest: {}", e);
         format!("Invalid request format: {}", e)
     })?;
+    let normalized_name =
+        match crate::services::assistant_service::normalize_assistant_name(&request.name) {
+            Ok(name) => name,
+            Err(err) => return Ok(invalid_input_error(&err, ToolGroup::Agent)),
+        };
 
     // Always auto-generate ID
     let id = cuid2::create_id();
@@ -170,14 +186,14 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
 
     // Check for duplicate name BEFORE attempting insert
     let exists = repo
-        .check_assistant_exists(&request.name)
+        .check_assistant_exists(&normalized_name)
         .await
         .map_err(|e| format!("Failed to check for duplicate name: {}", e))?;
 
     if exists {
         return Ok(duplicate_error(
             "Assistant",
-            &request.name,
+            &normalized_name,
             ToolGroup::Agent,
         ));
     }
@@ -185,8 +201,8 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
     // Merge config from all possible sources using helper function
     let config = merge_config_from_request(ConfigMergeParams {
         base_config: request.config,
-        system_prompt: request.system_prompt.as_deref(),
-        description: request.description.as_deref(),
+        system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
+        description: trim_optional_text(request.description.as_deref()).as_deref(),
         temperature: request.temperature,
         allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
         mcp_server_ids: request.mcp_server_ids.as_ref(),
@@ -224,14 +240,14 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
 
     // Use common logic for creation (using repo)
     match repo
-        .create_assistant(id.clone(), request.name.clone(), config_str)
+        .create_assistant(id.clone(), normalized_name.clone(), config_str)
         .await
     {
         Ok(_) => {
             let hint = SuccessHint::new(
                 format!(
                     "Agent configuration '{}' created successfully (ID: {})",
-                    request.name, id
+                    normalized_name, id
                 ),
                 vec![
                     "List agent configurations to review the new configuration".to_string(),
@@ -252,7 +268,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
                 "id": id,
-                "name": &request.name
+                "name": normalized_name
             }))))
         }
         Err(e) => Ok(guided_error(
@@ -276,6 +292,12 @@ pub async fn update_assistant(
         log::error!("Failed to parse UpdateAssistantRequest: {}", e);
         format!("Invalid request format: {}", e)
     })?;
+    let requested_name = match crate::services::assistant_service::normalize_optional_assistant_name(
+        request.name.clone(),
+    ) {
+        Ok(name) => name,
+        Err(err) => return Ok(invalid_input_error(&err, ToolGroup::Agent)),
+    };
 
     // Use repository from server's db connection
     let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
@@ -324,15 +346,15 @@ pub async fn update_assistant(
     }
 
     // Update name if provided
-    if let Some(ref n) = request.name {
+    if let Some(ref n) = requested_name {
         name = n.clone();
     }
 
     // Merge config from all sources, starting with base config
     let mut config = merge_config_from_request(ConfigMergeParams {
         base_config: Some(base_config),
-        system_prompt: request.system_prompt.as_deref(),
-        description: request.description.as_deref(),
+        system_prompt: trim_optional_text(request.system_prompt.as_deref()).as_deref(),
+        description: trim_optional_text(request.description.as_deref()).as_deref(),
         temperature: request.temperature,
         allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
         mcp_server_ids: request.mcp_server_ids.as_ref(),

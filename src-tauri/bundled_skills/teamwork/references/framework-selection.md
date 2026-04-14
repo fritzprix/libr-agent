@@ -57,15 +57,15 @@ After choosing the coordination model, choose the execution substrate explicitly
 
 | Execution need | Use this substrate | Then follow | Why |
 | --- | --- | --- | --- |
-| One-off specialist delegation | `startSession(...)` | `subagent-session-delegation` | Lightweight child session without org coupling |
-| Org-visible lineage under a governing teamwork session | `createOrg(...)` once, then `startSession(..., includeCurrentOrg=true)` | `team-org` | Preserves explicit org membership, Org view semantics, and shared coordinator workspace defaults |
-| Recurring, cron, heartbeat, or resumable automation | Scheduled task groups via `createScheduledTask(...)` and related `scheduled_task` tools | `team-sprint` | Keeps recurring collaboration separate from org lineage and under policy control |
+| One-off specialist delegation | `startSession(...)` | `delegate` | Lightweight child session without org coupling |
+| Org-visible lineage under a governing teamwork session | `createOrg(...)` once, then `startSession(..., includeCurrentOrg=true)` | `org` | Preserves explicit org membership, Org view semantics, and shared coordinator workspace defaults |
+| Recurring, cron, heartbeat, or resumable automation | Scheduled task groups via `createScheduledTask(...)` and related `scheduled_task` tools | `schedule` | Keeps recurring collaboration separate from org lineage and under policy control |
 
 ## Hard separation rules
 
 - Do not use explicit org lineage just because work is recurring.
 - Do not use scheduled task groups just because there are multiple roles.
-- Do not present `spawnOrgAgent(...)` as the primary primitive. Treat it as a compatibility alias for `startSession(..., includeCurrentOrg=true)`.
+- Do not add redundant org-specific spawn wrappers. `startSession(...)` is the primitive; explicit org inheritance is automatic under an org root unless `includeCurrentOrg=false`.
 - Do not split org members into separate workspaces unless the task has a concrete reason to break the shared SSOT.
 - Do not keep execution-specific org and scheduled-task operating rules mixed together once the substrate is chosen. Route to the specialist skill.
 - If the user wants an org chart, root-session resume, or explicit lineage visibility, choose explicit org lineage.
