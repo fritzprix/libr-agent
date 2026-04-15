@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use tracing::error;
 
 // ✅ ENHANCED: Threshold for using spawn_blocking for CPU-intensive line enumeration
@@ -99,6 +100,30 @@ pub fn format_file_size(bytes: u64) -> String {
     } else {
         format!("{:.2} {}", size, UNITS[unit_idx])
     }
+}
+
+/// Normalize a workspace path argument from tool input.
+///
+/// Returns the provided default when the argument is omitted, trims surrounding
+/// whitespace, and rejects blank strings so handlers can return a clear
+/// InvalidInput error instead of passing empty paths into filesystem APIs.
+pub fn normalize_workspace_path_input(
+    path: Option<&str>,
+    default_path: &str,
+) -> Result<String, String> {
+    let normalized = path.unwrap_or(default_path).trim();
+    if normalized.is_empty() {
+        return Err("Path parameter cannot be empty".to_string());
+    }
+
+    Ok(normalized.to_string())
+}
+
+/// Detect "not found" errors without depending on localized OS error strings.
+pub fn is_not_found_io_error(error: &std::io::Error) -> bool {
+    error.kind() == ErrorKind::NotFound
+        || error.to_string().contains("No such file")
+        || error.to_string().contains("not found")
 }
 
 /// Detect language/syntax highlighting identifier from file extension
