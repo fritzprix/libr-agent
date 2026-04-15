@@ -684,7 +684,13 @@ fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
     let mut lines = vec![
         format!(
             "Session {} (`{}`) has {} message(s). Showing page {} of {}.",
-            sanitize_markdown_table_cell(response.session.name.as_deref().unwrap_or("Unnamed session")),
+            sanitize_markdown_table_cell(
+                response
+                    .session
+                    .name
+                    .as_deref()
+                    .unwrap_or("Unnamed session")
+            ),
             response.session.session_id,
             response.messages.total_items,
             response.messages.page,
@@ -759,7 +765,9 @@ fn render_search_text(page: &Page<HistorySearchMatch>, caller_session_id: &str) 
         lines.push("No matches found for the requested filters.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("| Session ID | Locality | Message ID | Role | Score | Length | Snippet |".to_string());
+        lines.push(
+            "| Session ID | Locality | Message ID | Role | Score | Length | Snippet |".to_string(),
+        );
         lines.push("|---|---|---|---|---|---|---|".to_string());
         for item in &page.items {
             let locality = if item.session_id == caller_session_id {
