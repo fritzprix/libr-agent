@@ -32,20 +32,6 @@ impl WorkspaceServer {
                 }
             };
 
-        if path_str.contains("..") {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                "Path traversal patterns (..) are not allowed",
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Use relative paths from workspace root".to_string(),
-                "Example: 'src/components' instead of '../src/components'".to_string(),
-                "Use listDirectory('.') to explore available paths".to_string(),
-            ])
-            .to_mcp_result());
-        }
-
         let requested_limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100);
         let requested_offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
         let limit = usize::try_from(requested_limit)

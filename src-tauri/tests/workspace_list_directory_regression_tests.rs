@@ -118,3 +118,41 @@ async fn list_directory_accepts_plain_and_dot_prefixed_relative_paths_on_windows
         "dot-prefixed relative path should list the expected file: {dot_prefixed_text}"
     );
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn list_directory_allows_double_dots_inside_path_components_on_windows() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "list-dir-double-dot-component-windows";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let assets_dir = workspace_dir.join("logs..old/assets");
+
+    std::fs::create_dir_all(&assets_dir).expect("assets dir");
+    std::fs::write(assets_dir.join("brief.txt"), "hello").expect("asset file");
+
+    let result = server
+        .handle_list_directory(
+            json!({
+                "path": "logs..old/assets"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("listDirectory should allow legitimate path components containing double dots");
+
+    assert_eq!(result.is_error, Some(false));
+    assert_eq!(
+        result
+            .structured_content
+            .as_ref()
+            .expect("structured content expected")["count"],
+        json!(1)
+    );
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("brief.txt"),
+        "directory names containing '..' should still list their contents: {text}"
+    );
+}
