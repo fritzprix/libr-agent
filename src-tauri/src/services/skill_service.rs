@@ -264,6 +264,7 @@ pub fn parse_skill_metadata(path: &Path) -> Result<SkillMetadata, String> {
             e.to_string()
         }
     })?;
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
 
     // Simple frontmatter parsing
     if let Some(stripped) = content.strip_prefix("---") {
