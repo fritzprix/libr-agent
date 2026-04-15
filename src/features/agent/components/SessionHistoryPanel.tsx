@@ -401,7 +401,11 @@ export function SessionHistoryPanel({
             <TabsTrigger value="bookmarked" className="flex-1">
               <Bookmark className="mr-1.5 h-3.5 w-3.5" />
               {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} (
-              {baseSessions.reduce((acc, session) => (session.isBookmarked ? acc + 1 : acc), 0)})
+              {baseSessions.reduce(
+                (acc, session) => (session.isBookmarked ? acc + 1 : acc),
+                0,
+              )}
+              )
             </TabsTrigger>
           </TabsList>
         </Tabs>

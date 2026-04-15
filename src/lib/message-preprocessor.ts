@@ -523,7 +523,10 @@ export async function prepareMessagesForLLM(
     0,
   );
 
-  const errorMessageCount = messages.reduce((acc, msg) => (msg.error ? acc + 1 : acc), 0);
+  const errorMessageCount = messages.reduce(
+    (acc, msg) => (msg.error ? acc + 1 : acc),
+    0,
+  );
 
   if (attachmentCount > 0 || errorMessageCount > 0) {
     logger.info('Processed messages for LLM', {
