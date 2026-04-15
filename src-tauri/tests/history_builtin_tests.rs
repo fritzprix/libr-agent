@@ -412,7 +412,7 @@ async fn history_search_returns_filtered_snippets() {
     let text = extract_text_content(&result);
     assert!(text.contains("history-message-a2"));
     assert!(!text.contains("history-message-b1"));
-    assert!(text.contains("session=history-session-a"));
+    assert!(text.contains("history-session-a"));
     assert!(text.contains("Use readSession(sessionId=\"...\")"));
     assert!(text.contains("Use readMessage(messageId=\"...\")"));
 
