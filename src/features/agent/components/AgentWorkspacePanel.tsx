@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Folder,
   RefreshCw,
@@ -261,48 +262,76 @@ export function AgentWorkspacePanel() {
                 <span>{t('agent.workspace.title')}</span>
               </div>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleOpenInExplorer}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                  title={t('agent.workspace.openInExplorer')}
-                  aria-label={t('agent.workspace.openInExplorerAria')}
-                  disabled={isOpeningNative}
-                >
-                  {isOpeningNative ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Folder className="w-3.5 h-3.5" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleOpenInTerminal}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                  title={t('agent.workspace.openInTerminal')}
-                  aria-label={t('agent.workspace.openInTerminalAria')}
-                  disabled={isOpeningNative}
-                >
-                  {isOpeningNative ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Terminal className="w-3.5 h-3.5" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => loadDirectory(rootPath)}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                  title={t('agent.workspace.refresh')}
-                  aria-label={t('agent.workspace.refreshAria')}
-                >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}
-                  />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={isOpeningNative ? 0 : undefined}
+                      className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleOpenInExplorer}
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                        aria-label={t('agent.workspace.openInExplorerAria')}
+                        disabled={isOpeningNative}
+                      >
+                        {isOpeningNative ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Folder className="w-3.5 h-3.5" />
+                        )}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t('agent.workspace.openInExplorer')}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={isOpeningNative ? 0 : undefined}
+                      className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleOpenInTerminal}
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                        aria-label={t('agent.workspace.openInTerminalAria')}
+                        disabled={isOpeningNative}
+                      >
+                        {isOpeningNative ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Terminal className="w-3.5 h-3.5" />
+                        )}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t('agent.workspace.openInTerminal')}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => loadDirectory(rootPath)}
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                      aria-label={t('agent.workspace.refreshAria')}
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}
+                      />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t('agent.workspace.refresh')}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </div>
 
