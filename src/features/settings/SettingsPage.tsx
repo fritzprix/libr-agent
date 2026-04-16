@@ -47,23 +47,23 @@ const invalidateModelCaches = async () => {
   ]);
 };
 
-type SettingsTabValue =
-  | 'general'
-  | 'ai-models'
-  | 'chat-interface'
-  | 'system'
-  | 'advanced'
-  | 'dev';
+const SETTINGS_TAB_VALUES = [
+  'general',
+  'ai-models',
+  'chat-interface',
+  'system',
+  'advanced',
+  'dev',
+] as const;
+
+const PROVIDER_ENTRIES = Object.values(AIServiceProvider).filter(
+  (provider) => provider !== AIServiceProvider.Empty,
+) as AIServiceProvider[];
+
+type SettingsTabValue = (typeof SETTINGS_TAB_VALUES)[number];
 
 function isSettingsTabValue(value: string): value is SettingsTabValue {
-  return [
-    'general',
-    'ai-models',
-    'chat-interface',
-    'system',
-    'advanced',
-    'dev',
-  ].includes(value);
+  return SETTINGS_TAB_VALUES.includes(value as SettingsTabValue);
 }
 
 export default function SettingsPage() {
@@ -261,7 +261,7 @@ export default function SettingsPage() {
     };
   }, [isDirty]);
 
-  const handleFactoryReset = async () => {
+  const handleFactoryReset = useCallback(async () => {
     setIsResetting(true);
     try {
       // 1. Clear ALL frontend data
@@ -302,9 +302,9 @@ export default function SettingsPage() {
     } finally {
       setIsResetting(false);
     }
-  };
+  }, [t, triggerAppRestart]);
 
-  const handleClearAllSessions = async () => {
+  const handleClearAllSessions = useCallback(async () => {
     setIsDeleting(true);
     try {
       await dbUtils.clearAllSessions();
@@ -327,7 +327,7 @@ export default function SettingsPage() {
     } finally {
       setIsDeleting(false);
     }
-  };
+  }, [t, triggerAppRestart]);
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     if (!isDirty) {
@@ -510,14 +510,54 @@ export default function SettingsPage() {
       onDelete: handleClearAllSessions,
       onReset: handleFactoryReset,
     }),
-    [isDeleting, isResetting],
+    [handleClearAllSessions, handleFactoryReset, isDeleting, isResetting],
   );
 
-  const providerEntries = useMemo(() => {
-    return Object.values(AIServiceProvider).filter(
-      (p) => p !== AIServiceProvider.Empty,
-    ) as AIServiceProvider[];
-  }, []);
+  const tabNavigationItems = useMemo(() => {
+    const items: Array<{
+      value: SettingsTabValue;
+      label: string;
+      isDirty: boolean;
+      className?: string;
+    }> = [
+      {
+        value: 'general',
+        label: t('settings.tabs.general', 'General'),
+        isDirty: tabDirtyState.general,
+      },
+      {
+        value: 'ai-models',
+        label: t('settings.tabs.aiModels', 'AI & Models'),
+        isDirty: tabDirtyState['ai-models'],
+      },
+      {
+        value: 'chat-interface',
+        label: t('settings.tabs.chatInterface', 'Chat Interface'),
+        isDirty: tabDirtyState['chat-interface'],
+      },
+      {
+        value: 'system',
+        label: t('settings.tabs.system', 'System'),
+        isDirty: tabDirtyState.system,
+      },
+      {
+        value: 'advanced',
+        label: t('settings.tabs.advanced', 'Advanced'),
+        isDirty: tabDirtyState.advanced,
+      },
+    ];
+
+    if (import.meta.env.DEV) {
+      items.push({
+        value: 'dev',
+        label: t('settings.tabs.dev', 'Dev'),
+        isDirty: false,
+        className: 'text-yellow-500',
+      });
+    }
+
+    return items;
+  }, [t, tabDirtyState]);
 
   return (
     <div className="p-6 h-full flex flex-col bg-background">
@@ -597,41 +637,18 @@ export default function SettingsPage() {
             className="flex flex-col min-h-full"
           >
             <TabsList className="sticky top-0 z-10 mb-4 flex gap-2 overflow-x-auto border border-border/60 bg-background/95 p-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-              <TabsTrigger value="general" className="gap-2">
-                {t('settings.tabs.general', 'General')}
-                {tabDirtyState.general && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="ai-models" className="gap-2">
-                {t('settings.tabs.aiModels', 'AI & Models')}
-                {tabDirtyState['ai-models'] && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="chat-interface" className="gap-2">
-                {t('settings.tabs.chatInterface', 'Chat Interface')}
-                {tabDirtyState['chat-interface'] && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="system" className="gap-2">
-                {t('settings.tabs.system', 'System')}
-                {tabDirtyState.system && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="advanced" className="gap-2">
-                {t('settings.tabs.advanced', 'Advanced')}
-                {tabDirtyState.advanced && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                )}
-              </TabsTrigger>
-              {import.meta.env.DEV && (
-                <TabsTrigger value="dev" className="gap-2 text-yellow-500">
-                  {t('settings.tabs.dev', 'Dev')}
+              {tabNavigationItems.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className={`gap-2 ${tab.className ?? ''}`.trim()}
+                >
+                  {tab.label}
+                  {tab.isDirty && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                  )}
                 </TabsTrigger>
-              )}
+              ))}
             </TabsList>
 
             <TabsContent value="general">
@@ -646,7 +663,7 @@ export default function SettingsPage() {
             <TabsContent value="ai-models">
               <AIModelsTab
                 serviceConfigs={formState.serviceConfigs}
-                providerEntries={providerEntries}
+                providerEntries={PROVIDER_ENTRIES}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
                 localMaxRetries={formState.advanced.maxRetries}
