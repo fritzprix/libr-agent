@@ -137,16 +137,17 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
-    if !paged_agents.is_empty() {
-        text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
-        text_summary.push_str("|---|---|---|---|---|\n");
-    } else if total > 0 {
+    text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
+    text_summary.push_str("|---|---|---|---|---|\n");
+
+    if paged_agents.is_empty() && total > 0 {
         text_summary.push_str(&format!(
-            "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+            "| No results | for this page | (offset {}, | limit {}) | Try a smaller offset |\n",
             offset, limit
         ));
     }
 
+    let paged_len = paged_agents.len();
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
         let desc = config
@@ -184,6 +185,16 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             "externalMcpServers": external_ids,
             "externalMcpServerLabels": external_labels
         }));
+    }
+
+    if offset.saturating_add(limit) < total {
+        text_summary.push_str(&format!(
+            "\n*(Showing {} to {} of {} results. Call this tool again with offset: {} to see more)*",
+            offset + 1,
+            offset + paged_len,
+            total,
+            offset.saturating_add(limit)
+        ));
     }
 
     let hint = SuccessHint::new(
@@ -242,9 +253,11 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
     }
 
     let mut message = format!("Found {} sub-agent sessions.\n\n", results.len());
-    if !results.is_empty() {
-        message.push_str("| Name | Session ID | Status |\n");
-        message.push_str("|---|---|---|\n");
+    message.push_str("| Name | Session ID | Status |\n");
+    message.push_str("|---|---|---|\n");
+    if results.is_empty() {
+        message.push_str("| No delegated sessions | found | |\n");
+    } else {
         for result in &results {
             let name_clean = result["name"]
                 .as_str()
