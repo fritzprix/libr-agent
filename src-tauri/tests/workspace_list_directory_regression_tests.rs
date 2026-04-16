@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
@@ -26,7 +28,6 @@ fn extract_text_content(result: &MCPResult) -> String {
         .join("\n")
 }
 
-#[cfg(windows)]
 #[tokio::test]
 async fn list_directory_returns_not_found_contract_for_missing_workspace_subdirectory_on_windows() {
     let temp_dir = tempdir().expect("temp dir");
@@ -59,7 +60,6 @@ async fn list_directory_returns_not_found_contract_for_missing_workspace_subdire
     );
 }
 
-#[cfg(windows)]
 #[tokio::test]
 async fn list_directory_accepts_plain_and_dot_prefixed_relative_paths_on_windows() {
     let temp_dir = tempdir().expect("temp dir");
@@ -119,7 +119,6 @@ async fn list_directory_accepts_plain_and_dot_prefixed_relative_paths_on_windows
     );
 }
 
-#[cfg(windows)]
 #[tokio::test]
 async fn list_directory_allows_double_dots_inside_path_components_on_windows() {
     let temp_dir = tempdir().expect("temp dir");
