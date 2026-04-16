@@ -30,27 +30,21 @@ fn profile_output_dir(out_dir: &Path, profile: &str) -> Option<PathBuf> {
 
 fn sync_bundled_skills_into_profile_output() -> io::Result<()> {
     let manifest_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR")
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?,
+        env::var("CARGO_MANIFEST_DIR").map_err(|error| io::Error::other(error.to_string()))?,
     );
     let source_dir = manifest_dir.join("bundled_skills");
     if !source_dir.exists() {
         return Ok(());
     }
 
-    let out_dir = PathBuf::from(
-        env::var("OUT_DIR").map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?,
-    );
-    let profile =
-        env::var("PROFILE").map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?;
+    let out_dir =
+        PathBuf::from(env::var("OUT_DIR").map_err(|error| io::Error::other(error.to_string()))?);
+    let profile = env::var("PROFILE").map_err(|error| io::Error::other(error.to_string()))?;
     let Some(profile_dir) = profile_output_dir(&out_dir, &profile) else {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!(
-                "Failed to resolve target profile directory from OUT_DIR={}",
-                out_dir.display()
-            ),
-        ));
+        return Err(io::Error::other(format!(
+            "Failed to resolve target profile directory from OUT_DIR={}",
+            out_dir.display()
+        )));
     };
 
     let deployed_dir = profile_dir.join("bundled_skills");
