@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.7] - 2026-04-16
+
+### 🚀 Features
+
+- **Overhauled Skills Management**: Significantly improved skill management, including hardening of managed skill installations and better synchronization of legacy global skills with bundled snapshots.
+- **Enhanced Workspace UI**: Added informative tooltips to workspace panel actions and improved accessibility/labeling for a more intuitive navigation experience.
+
+### 🐛 Fixes
+
+- **Robust Skill Parsing and Syncing**: Fixed skill frontmatter BOM parsing issues and ensured skills resource synchronization remains reliable across managed and bundled skills.
+- **Improved Workspace Reliability**: Resolved directory listing path handling on Windows and allowed '..' in directory names for more flexible file system navigation.
+- **Agent and Tool Stability**: Corrected external tool counting and resolved build script IO errors to ensure smoother agent and tool operations.
+
+### 🔧 Internal
+
+- **Performance Optimization**: Refined Bolt's internal logic by replacing `.filter().length` with `.reduce()` for better efficiency in data processing.
+- **Code Maintenance**: Cleaned up session imports in `AgentChatContext` and refined build script error handling.
+
 ## [0.7.6] - 2026-04-14
 
 ### 🐛 Fixes
