@@ -121,19 +121,15 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                   </code>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
+                      <div
                         className={cn(
                           buttonVariants({ variant: 'ghost', size: 'icon' }),
-                          'h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary',
+                          'h-6 w-6 rounded-full group-hover:bg-primary/10 group-hover:text-primary transition-colors',
                         )}
-                        aria-label={t('mcpServer.installExtension', {
-                          name: preset.name,
-                          defaultValue: 'Install {{name}} extension',
-                        })}
+                        aria-hidden="true"
                       >
                         <Download className="w-3.5 h-3.5" />
-                      </button>
+                      </div>
                     </TooltipTrigger>
                     <TooltipContent>
                       {t('mcpServer.installExtension', {
