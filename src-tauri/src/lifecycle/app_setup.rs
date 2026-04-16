@@ -85,7 +85,7 @@ fn collect_skill_directory_entries(
             .map_err(|e| e.to_string())?
             .to_path_buf();
 
-        if relative_path == PathBuf::from(BUNDLED_SKILL_MARKER) {
+        if relative_path == std::path::Path::new(BUNDLED_SKILL_MARKER) {
             continue;
         }
 

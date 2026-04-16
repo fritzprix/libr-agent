@@ -77,16 +77,30 @@ function findNearestStorageIndex(value: number): number {
   }, 0);
 }
 
-function formatImportSuccess(importedCount: number, overwrittenCount: number) {
-  if (overwrittenCount > 0) {
-    return `Imported ${importedCount} skill${importedCount === 1 ? '' : 's'} (${overwrittenCount} overwritten)`;
-  }
-  return `Imported ${importedCount} skill${importedCount === 1 ? '' : 's'}`;
-}
-
 function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
   const { t } = useTranslation('common');
   const { localSystemSettings, onChange } = systemSettingsProps;
+  const formatImportSuccess = (
+    importedCount: number,
+    overwrittenCount: number,
+  ) => {
+    if (overwrittenCount > 0) {
+      return t('settings.skills.importSuccessWithOverwrite', {
+        count: importedCount,
+        overwrittenCount,
+        defaultValue_one:
+          'Imported {{count}} skill ({{overwrittenCount}} overwritten)',
+        defaultValue_other:
+          'Imported {{count}} skills ({{overwrittenCount}} overwritten)',
+      });
+    }
+
+    return t('settings.skills.importSuccess', {
+      count: importedCount,
+      defaultValue_one: 'Imported {{count}} skill',
+      defaultValue_other: 'Imported {{count}} skills',
+    });
+  };
   const {
     verificationStatus,
     skills,

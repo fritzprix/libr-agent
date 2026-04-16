@@ -3,17 +3,23 @@ use crate::state::get_app_handle;
 use log::{info, warn};
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 use tauri::Manager;
 use tempfile::TempDir;
+use tokio::io::AsyncWriteExt;
 use url::Url;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
 pub const SKILL_FILE_NAME: &str = "SKILL.md";
 const USER_SKILLS_DIR_NAME: &str = "user_skills";
+const GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS: u64 = 10;
+const GITHUB_DOWNLOAD_TIMEOUT_SECS: u64 = 30;
+const MAX_GITHUB_ARCHIVE_BYTES: u64 = 100 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SkillMetadata {
@@ -83,12 +89,12 @@ struct PreparedSkillImport {
     discovered_skills: Vec<DiscoveredSkillRoot>,
 }
 
-#[derive(Debug)]
-struct GitHubRepoSpec {
-    owner: String,
-    repo: String,
-    branch: Option<String>,
-    subpath: Option<PathBuf>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitHubRepoSpec {
+    pub owner: String,
+    pub repo: String,
+    pub branch: Option<String>,
+    pub subpath: Option<PathBuf>,
 }
 
 pub async fn get_default_skills_directory() -> Result<String, String> {
@@ -122,6 +128,23 @@ pub fn get_legacy_global_skills_directory() -> Result<PathBuf, String> {
     Ok(session_manager.get_base_data_dir().join("skills"))
 }
 
+fn merge_skill_layers(skill_layers: Vec<Vec<SkillMetadata>>) -> Vec<SkillMetadata> {
+    let mut merged_skills = Vec::new();
+    let mut seen_names = HashSet::new();
+
+    for skill_layer in skill_layers {
+        for skill in skill_layer {
+            let normalized = skill.name.to_lowercase();
+            if seen_names.insert(normalized) {
+                merged_skills.push(skill);
+            }
+        }
+    }
+
+    merged_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
+    merged_skills
+}
+
 pub async fn get_managed_skills_overview() -> Result<ManagedSkillsOverview, String> {
     let system_dir = get_system_skills_directory()?;
     let user_dir = get_user_skills_directory()?;
@@ -138,7 +161,7 @@ pub async fn get_managed_skills_overview() -> Result<ManagedSkillsOverview, Stri
         Some("user".to_string()),
     )
     .await?;
-    let effective_skills = resolve_skills(system_dir.clone(), user_dir.clone(), None, None).await?;
+    let effective_skills = merge_skill_layers(vec![user_skills.clone(), system_skills.clone()]);
 
     system_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
     user_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
@@ -158,8 +181,7 @@ pub async fn resolve_skills(
     assistant_dir: Option<PathBuf>,
     workspace_dir: Option<PathBuf>,
 ) -> Result<Vec<SkillMetadata>, String> {
-    let mut merged_skills = Vec::new();
-    let mut seen_names = HashSet::new();
+    let mut skill_layers = Vec::new();
 
     let sources: Vec<(Option<PathBuf>, &str, &str)> = vec![
         (workspace_dir, "workspace", "workspace"),
@@ -176,17 +198,10 @@ pub async fn resolve_skills(
         let mut scanned =
             scan_skills_internal(&dir, Some(source.to_string()), Some(origin.to_string())).await?;
         scanned.sort_by_cached_key(|skill| skill.name.to_lowercase());
-
-        for skill in scanned {
-            let normalized = skill.name.to_lowercase();
-            if seen_names.insert(normalized) {
-                merged_skills.push(skill);
-            }
-        }
+        skill_layers.push(scanned);
     }
 
-    merged_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
-    Ok(merged_skills)
+    Ok(merge_skill_layers(skill_layers))
 }
 
 /// Public entry point for scanning a directory without any source metadata.
@@ -613,8 +628,12 @@ async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillIm
         )
     };
 
-    let client = reqwest::Client::new();
-    let response = client
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(GITHUB_DOWNLOAD_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build GitHub download client: {}", e))?;
+    let mut response = client
         .get(archive_url)
         .header(USER_AGENT, "LibrAgent Skills Installer")
         .send()
@@ -623,13 +642,43 @@ async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillIm
         .error_for_status()
         .map_err(|e| format!("GitHub repository download failed: {}", e))?;
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read GitHub archive: {}", e))?;
-    tokio::fs::write(&archive_path, &bytes)
+    if let Some(content_length) = response.content_length() {
+        if content_length > MAX_GITHUB_ARCHIVE_BYTES {
+            return Err(format!(
+                "GitHub repository archive is too large ({} bytes). Maximum allowed size is {} MB.",
+                content_length,
+                MAX_GITHUB_ARCHIVE_BYTES / 1024 / 1024
+            ));
+        }
+    }
+
+    let mut archive_file = tokio::fs::File::create(&archive_path)
         .await
         .map_err(|e| e.to_string())?;
+    let mut downloaded_bytes = 0_u64;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Failed to read GitHub archive: {}", e))?
+    {
+        downloaded_bytes = downloaded_bytes
+            .checked_add(chunk.len() as u64)
+            .ok_or_else(|| "GitHub archive size overflowed the download counter".to_string())?;
+        if downloaded_bytes > MAX_GITHUB_ARCHIVE_BYTES {
+            return Err(format!(
+                "GitHub repository archive exceeded the {} MB download limit.",
+                MAX_GITHUB_ARCHIVE_BYTES / 1024 / 1024
+            ));
+        }
+        archive_file
+            .write_all(&chunk)
+            .await
+            .map_err(|e| format!("Failed to write GitHub archive to disk: {}", e))?;
+    }
+    archive_file
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to finalize GitHub archive on disk: {}", e))?;
 
     tokio::task::spawn_blocking(move || {
         let file = fs::File::open(&archive_path).map_err(|e| e.to_string())?;
@@ -874,21 +923,68 @@ fn discover_skill_roots(root_path: &Path) -> Result<Vec<DiscoveredSkillRoot>, St
     Ok(discovered)
 }
 
-fn skill_storage_directory_name(skill_name: &str) -> Result<String, String> {
+/// Builds a deterministic, platform-safe directory name for storing a skill.
+pub fn skill_storage_directory_name(skill_name: &str) -> Result<String, String> {
     let trimmed = skill_name.trim();
     if trimmed.is_empty() {
         return Err("Skill name cannot be empty".to_string());
     }
-    if trimmed == "." || trimmed == ".." || trimmed.contains('/') || trimmed.contains('\\') {
+    if trimmed == "." || trimmed == ".." {
         return Err(format!(
             "Skill name '{}' cannot be used as a storage directory",
             skill_name
         ));
     }
-    Ok(trimmed.to_string())
+
+    let mut slug = String::new();
+    let mut previous_was_separator = false;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            previous_was_separator = false;
+            continue;
+        }
+
+        if !previous_was_separator && !slug.is_empty() {
+            slug.push('-');
+            previous_was_separator = true;
+        }
+    }
+
+    let slug = slug.trim_matches('-').to_string();
+    let stem = if slug.is_empty() {
+        "skill"
+    } else {
+        slug.as_str()
+    };
+    let digest = Sha256::digest(trimmed.as_bytes());
+    let digest_hex = format!("{:x}", digest);
+    Ok(format!("{}-{}", stem, &digest_hex[..12]))
 }
 
-fn parse_github_repo_url(repo_url: &str) -> Result<GitHubRepoSpec, String> {
+fn parse_github_query_subpath(raw_subpath: &str) -> Result<Option<PathBuf>, String> {
+    if raw_subpath.is_empty() {
+        return Ok(None);
+    }
+
+    let subpath = PathBuf::from(raw_subpath);
+    if subpath.is_absolute() {
+        return Err("GitHub path query must be a relative subdirectory".to_string());
+    }
+    if subpath.components().any(|component| {
+        matches!(
+            component,
+            Component::Prefix(_) | Component::RootDir | Component::ParentDir
+        )
+    }) {
+        return Err("GitHub path query cannot escape the downloaded repository".to_string());
+    }
+
+    Ok(Some(subpath))
+}
+
+/// Parses a supported GitHub repository URL for managed skill installation.
+pub fn parse_github_repo_url(repo_url: &str) -> Result<GitHubRepoSpec, String> {
     let parsed = Url::parse(repo_url).map_err(|e| format!("Invalid GitHub URL: {}", e))?;
     let host = parsed
         .host_str()
@@ -913,17 +1009,28 @@ fn parse_github_repo_url(repo_url: &str) -> Result<GitHubRepoSpec, String> {
         return Err("GitHub repository URL is incomplete".to_string());
     }
 
-    let (branch, subpath) = if segments.len() > 2 && segments[2] == "tree" {
+    let mut branch_query = None;
+    let mut path_query = None;
+    for (key, value) in parsed.query_pairs() {
+        if key == "ref" && !value.is_empty() {
+            branch_query = Some(value.into_owned());
+        } else if key == "path" && !value.is_empty() {
+            path_query = parse_github_query_subpath(value.as_ref())?;
+        }
+    }
+
+    let (branch, subpath) = if branch_query.is_some() || path_query.is_some() {
+        (branch_query, path_query)
+    } else if segments.len() > 2 && segments[2] == "tree" {
         if segments.len() < 4 {
             return Err("GitHub tree URL must include a branch name".to_string());
         }
-        let branch = Some(segments[3].to_string());
-        let subpath = if segments.len() > 4 {
-            Some(PathBuf::from(segments[4..].join("/")))
-        } else {
-            None
-        };
-        (branch, subpath)
+        if segments.len() > 4 {
+            return Err(
+                "Ambiguous GitHub tree URL. Use ?ref=<branch> and optional ?path=<subdirectory> for branches containing '/' or subdirectory installs.".to_string(),
+            );
+        }
+        (Some(segments[3].to_string()), None)
     } else {
         (None, None)
     };
