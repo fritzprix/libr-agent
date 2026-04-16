@@ -29,11 +29,8 @@ impl ReferenceResolver for SkillReferenceResolver {
 
     /// Looks up the skill named `arg` in the configured skills directory and returns its content.
     async fn resolve(&self, arg: &str) -> Option<String> {
-        let global_dir = PathBuf::from(
-            skill_service::get_configured_skills_directory()
-                .await
-                .ok()?,
-        );
+        let system_dir = skill_service::get_system_skills_directory().ok()?;
+        let user_dir = skill_service::get_user_skills_directory().ok()?;
         let assistant_dir = self.assistant_id.as_deref().and_then(|assistant_id| {
             skill_service::get_assistant_skills_directory(assistant_id).ok()
         });
@@ -41,7 +38,8 @@ impl ReferenceResolver for SkillReferenceResolver {
             skill_service::get_workspace_skills_directory_for_session(&self.session_id).ok();
 
         let skills = skill_service::resolve_skills(
-            global_dir.clone(),
+            system_dir.clone(),
+            user_dir.clone(),
             assistant_dir.clone(),
             workspace_dir.clone(),
         )
@@ -65,8 +63,12 @@ impl ReferenceResolver for SkillReferenceResolver {
             ));
         }
 
-        let allowed_roots =
-            skill_service::collect_allowed_skill_roots(global_dir, assistant_dir, workspace_dir);
+        let allowed_roots = skill_service::collect_allowed_skill_roots(
+            system_dir,
+            user_dir,
+            assistant_dir,
+            workspace_dir,
+        );
         let content =
             skill_service::get_skill_content_from_roots(skill.path.clone(), &allowed_roots)
                 .await

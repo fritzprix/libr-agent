@@ -85,13 +85,14 @@ use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };
 use commands::skill_commands::{
-    get_aggregated_skills, get_default_skills_directory, get_skill_content,
-    list_workspace_file_paths, list_workspace_file_paths_for_path,
+    get_aggregated_skills, get_default_skills_directory, get_managed_skills_overview,
+    get_skill_content, list_workspace_file_paths, list_workspace_file_paths_for_path,
     open_skills_directory_in_explorer, scan_skills_directory,
 };
 use commands::skill_management::{
-    copy_global_to_assistant, delete_assistant_skill, import_assistant_skills,
-    reset_assistant_skills,
+    copy_global_to_assistant, delete_assistant_skill, delete_user_skill, import_assistant_skills,
+    import_user_skills, install_github_skills, preview_github_skill_install,
+    preview_user_skill_import, reset_assistant_skills, reset_user_skills,
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
@@ -297,12 +298,19 @@ pub fn run() {
                 get_default_skills_directory,
                 open_skills_directory_in_explorer,
                 get_aggregated_skills,
+                get_managed_skills_overview,
                 get_skill_content,
                 list_workspace_file_paths,
                 list_workspace_file_paths_for_path,
                 copy_global_to_assistant,
                 delete_assistant_skill,
                 import_assistant_skills,
+                preview_user_skill_import,
+                import_user_skills,
+                preview_github_skill_install,
+                install_github_skills,
+                delete_user_skill,
+                reset_user_skills,
                 reset_assistant_skills,
             ])
             .setup(|app| lifecycle::app_setup::setup_app(app))

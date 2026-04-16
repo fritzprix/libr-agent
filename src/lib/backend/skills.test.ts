@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  deleteUserSkill,
   getAggregatedSkills,
+  getManagedSkillsOverview,
   importAssistantSkills,
+  importUserSkills,
+  installGitHubSkills,
   copyGlobalToAssistant,
   deleteAssistantSkill,
+  previewGitHubSkillInstall,
+  previewUserSkillImport,
   resetAssistantSkills,
+  resetUserSkills,
   getSkillContent,
 } from './skills';
 import { safeInvoke } from './core';
@@ -42,6 +49,77 @@ describe('skills backend wrapper', () => {
     expect(result).toBe('success');
   });
 
+  it('getManagedSkillsOverview calls safeInvoke without arguments', async () => {
+    const mockResponse = {
+      systemDirectory: '/system',
+      userDirectory: '/user',
+      systemSkills: [],
+      userSkills: [],
+      effectiveSkills: [],
+    };
+    vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
+
+    const result = await getManagedSkillsOverview();
+
+    expect(safeInvoke).toHaveBeenCalledWith('get_managed_skills_overview');
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('previewUserSkillImport calls safeInvoke with correct arguments', async () => {
+    const mockResponse = { discoveredSkills: [], conflicts: [] };
+    vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
+
+    const result = await previewUserSkillImport('/path/to/skill.skill');
+
+    expect(safeInvoke).toHaveBeenCalledWith('preview_user_skill_import', {
+      filePath: '/path/to/skill.skill',
+    });
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('importUserSkills calls safeInvoke with overwrite flag', async () => {
+    const mockResponse = { importedNames: ['test-skill'], overwrittenNames: [] };
+    vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
+
+    const result = await importUserSkills('/path/to/skill.skill', true);
+
+    expect(safeInvoke).toHaveBeenCalledWith('import_user_skills', {
+      filePath: '/path/to/skill.skill',
+      overwriteExisting: true,
+    });
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('previewGitHubSkillInstall calls safeInvoke with correct arguments', async () => {
+    const mockResponse = { discoveredSkills: [], conflicts: [] };
+    vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
+
+    const result = await previewGitHubSkillInstall(
+      'https://github.com/example/skills',
+    );
+
+    expect(safeInvoke).toHaveBeenCalledWith('preview_github_skill_install', {
+      repoUrl: 'https://github.com/example/skills',
+    });
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('installGitHubSkills calls safeInvoke with overwrite flag', async () => {
+    const mockResponse = { importedNames: ['skill-a'], overwrittenNames: ['skill-b'] };
+    vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
+
+    const result = await installGitHubSkills(
+      'https://github.com/example/skills',
+      false,
+    );
+
+    expect(safeInvoke).toHaveBeenCalledWith('install_github_skills', {
+      repoUrl: 'https://github.com/example/skills',
+      overwriteExisting: false,
+    });
+    expect(result).toEqual(mockResponse);
+  });
+
   it('copyGlobalToAssistant calls safeInvoke with correct arguments', async () => {
     vi.mocked(safeInvoke).mockResolvedValueOnce('success');
 
@@ -74,6 +152,26 @@ describe('skills backend wrapper', () => {
     expect(safeInvoke).toHaveBeenCalledWith('reset_assistant_skills', {
       assistantId: 'assistant-1',
     });
+    expect(result).toBe('success');
+  });
+
+  it('deleteUserSkill calls safeInvoke with correct arguments', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce('success');
+
+    const result = await deleteUserSkill('test-skill');
+
+    expect(safeInvoke).toHaveBeenCalledWith('delete_user_skill', {
+      skillName: 'test-skill',
+    });
+    expect(result).toBe('success');
+  });
+
+  it('resetUserSkills calls safeInvoke without arguments', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce('success');
+
+    const result = await resetUserSkills();
+
+    expect(safeInvoke).toHaveBeenCalledWith('reset_user_skills');
     expect(result).toBe('success');
   });
 

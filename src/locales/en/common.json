@@ -450,13 +450,16 @@
       "error": "Failed to clear sessions."
     },
     "skills": {
-      "modalTitle": "Available Skills ({{count}})",
+      "modalTitle": "Installed Skills ({{count}})",
       "noSkills": "No skills found.",
       "title": "Skills Management",
       "saveFirst": "Please save the assistant to manage skills.",
       "fetchFailed": "Failed to fetch skills",
       "importing": "Importing skills...",
-      "importSuccess": "Skills imported successfully",
+      "importSuccess_one": "Imported {{count}} skill",
+      "importSuccess_other": "Imported {{count}} skills",
+      "importSuccessWithOverwrite_one": "Imported {{count}} skill ({{overwrittenCount}} overwritten)",
+      "importSuccessWithOverwrite_other": "Imported {{count}} skills ({{overwrittenCount}} overwritten)",
       "importFailed": "Failed to import skills",
       "overrideSuccess": "Skill overridden successfully",
       "overrideFailed": "Failed to override skill",
@@ -464,7 +467,9 @@
       "revertFailed": "Failed to revert skill",
       "resetSuccess": "Assistant skills reset successfully",
       "resetFailed": "Failed to reset skills",
-      "dragDropDesc": "Drag and drop a zip file or folder to override skills.",
+      "userSkillDeleted": "User skill deleted.",
+      "userSkillsReset": "User skills reset.",
+      "dragDropDesc": "Drag and drop a .skill, .zip, or skill folder to override skills.",
       "resetTooltip": "Remove all assistant-specific skills",
       "reset": "Reset Override",
       "dropHere": "Drop to import skills",
@@ -889,9 +894,11 @@
     }
   },
   "mentions": {
-    "skillSourceWorkspace": "workspace",
-    "skillSourceAssistant": "assistant",
-    "skillSourceGlobal": "global"
+    "skillSourceWorkspace": "Workspace",
+    "skillSourceAssistant": "Assistant",
+    "skillSourceUser": "User",
+    "skillSourceSystem": "System",
+    "skillSourceGlobal": "Global"
   },
   "errorBubble": {
     "title": "Error",

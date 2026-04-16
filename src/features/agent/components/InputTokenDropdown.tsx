@@ -35,16 +35,27 @@ export function InputTokenDropdown({
   const [prevMode, setPrevMode] = useState(mode);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const getSkillSourceLabel = (source?: SkillMetadata['source']) => {
-    switch (source) {
+  const getSkillSourceLabel = (skill: SkillMetadata) => {
+    switch (skill.origin) {
       case 'workspace':
-        return t('mentions.skillSourceWorkspace', 'workspace');
+        return t('mentions.skillSourceWorkspace', 'Workspace');
       case 'assistant':
-        return t('mentions.skillSourceAssistant', 'assistant');
-      case 'global':
-        return t('mentions.skillSourceGlobal', 'global');
+        return t('mentions.skillSourceAssistant', 'Assistant');
+      case 'user':
+        return t('mentions.skillSourceUser', 'User');
+      case 'system':
+        return t('mentions.skillSourceSystem', 'System');
       default:
-        return null;
+        switch (skill.source) {
+          case 'workspace':
+            return t('mentions.skillSourceWorkspace', 'Workspace');
+          case 'assistant':
+            return t('mentions.skillSourceAssistant', 'Assistant');
+          case 'global':
+            return t('mentions.skillSourceGlobal', 'Global');
+          default:
+            return null;
+        }
     }
   };
 
@@ -202,7 +213,7 @@ export function InputTokenDropdown({
                   </li>
                 ))
               : mode.items.map((skill, i) => {
-                  const sourceLabel = getSkillSourceLabel(skill.source);
+                  const sourceLabel = getSkillSourceLabel(skill);
 
                   return (
                     <li
