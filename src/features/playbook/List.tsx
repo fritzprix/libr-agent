@@ -135,7 +135,10 @@ export default function PlaybookList() {
                     onClick={onFetchDataWrapper}
                     disabled={loading}
                     className="h-9 w-9"
-                    aria-label={t('playbook.list.refreshAria', 'Refresh playbooks')}
+                    aria-label={t(
+                      'playbook.list.refreshAria',
+                      'Refresh playbooks',
+                    )}
                   >
                     <RefreshCw
                       className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
@@ -143,7 +146,9 @@ export default function PlaybookList() {
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>{t('playbook.list.refreshAria', 'Refresh playbooks')}</TooltipContent>
+              <TooltipContent>
+                {t('playbook.list.refreshAria', 'Refresh playbooks')}
+              </TooltipContent>
             </Tooltip>
             <div className="relative flex-1 sm:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

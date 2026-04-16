@@ -141,5 +141,6 @@
 - **Benefits:** Decoupled event subscription from component rendering logic, standardized event handling across the chat interface, and avoided refreshes from failed tool executions.
 
 ## 2026-04-10 - [SkillsEditor]
+
 **Learning:** Extracting complex Drag-and-Drop subscription logic out of a monolithic component into a dedicated custom hook (`useSkillsDnD`) strictly separates presentation from side-effects, significantly improving component readability and reusability.
 **Action:** Continually hunt for "God useEffect" blocks handling disparate UI concerns (like file drop events) and encapsulate them inside specialized hooks.
