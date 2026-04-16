@@ -21,10 +21,8 @@ fn write_skill(dir: &Path, name: &str, description: &str, body: &str) {
 #[test]
 fn legacy_skill_matching_current_bundle_is_deleted() {
     let legacy_root = TempDir::new().unwrap();
-    let bundled_root = TempDir::new().unwrap();
 
     let legacy_skill_dir = legacy_root.path().join("teamwork");
-    let bundled_skill_dir = bundled_root.path().join("teamwork");
 
     write_skill(
         &legacy_skill_dir,
@@ -32,61 +30,60 @@ fn legacy_skill_matching_current_bundle_is_deleted() {
         "Shared description",
         "same body",
     );
-    write_skill(
-        &bundled_skill_dir,
-        "teamwork",
-        "Shared description",
-        "same body",
-    );
     fs::write(legacy_skill_dir.join(".bundled_skill"), "").unwrap();
 
-    let action =
-        classify_legacy_skill_for_managed_storage(&legacy_skill_dir, bundled_root.path()).unwrap();
+    let action = classify_legacy_skill_for_managed_storage(&legacy_skill_dir).unwrap();
 
     assert_eq!(action, LegacySkillMigrationAction::DeleteLegacyCopy);
 }
 
 #[test]
-fn legacy_skill_not_in_current_bundle_is_migrated_to_user() {
+fn unmarked_legacy_skill_is_migrated_to_user() {
     let legacy_root = TempDir::new().unwrap();
-    let bundled_root = TempDir::new().unwrap();
 
     let legacy_skill_dir = legacy_root.path().join("custom-skill");
     write_skill(&legacy_skill_dir, "custom-skill", "Custom", "user content");
-    fs::write(legacy_skill_dir.join(".bundled_skill"), "").unwrap();
 
-    let action =
-        classify_legacy_skill_for_managed_storage(&legacy_skill_dir, bundled_root.path()).unwrap();
+    let action = classify_legacy_skill_for_managed_storage(&legacy_skill_dir).unwrap();
 
     assert_eq!(action, LegacySkillMigrationAction::MigrateToUser);
 }
 
 #[test]
-fn modified_legacy_bundled_skill_is_preserved_as_user() {
+fn legacy_bundled_skill_not_in_current_bundle_is_deleted() {
     let legacy_root = TempDir::new().unwrap();
-    let bundled_root = TempDir::new().unwrap();
+
+    let legacy_skill_dir = legacy_root.path().join("custom-skill");
+
+    write_skill(
+        &legacy_skill_dir,
+        "custom-skill",
+        "Legacy bundled description",
+        "legacy bundled content",
+    );
+    fs::write(legacy_skill_dir.join(".bundled_skill"), "").unwrap();
+
+    let action = classify_legacy_skill_for_managed_storage(&legacy_skill_dir).unwrap();
+
+    assert_eq!(action, LegacySkillMigrationAction::DeleteLegacyCopy);
+}
+
+#[test]
+fn modified_legacy_bundled_skill_is_deleted_instead_of_migrated() {
+    let legacy_root = TempDir::new().unwrap();
 
     let legacy_skill_dir = legacy_root.path().join("delegate");
-    let bundled_skill_dir = bundled_root.path().join("delegate");
-
     write_skill(
         &legacy_skill_dir,
         "delegate",
         "Modified description",
         "legacy user override",
     );
-    write_skill(
-        &bundled_skill_dir,
-        "delegate",
-        "Original description",
-        "bundled content",
-    );
     fs::write(legacy_skill_dir.join(".bundled_skill"), "").unwrap();
 
-    let action =
-        classify_legacy_skill_for_managed_storage(&legacy_skill_dir, bundled_root.path()).unwrap();
+    let action = classify_legacy_skill_for_managed_storage(&legacy_skill_dir).unwrap();
 
-    assert_eq!(action, LegacySkillMigrationAction::MigrateToUser);
+    assert_eq!(action, LegacySkillMigrationAction::DeleteLegacyCopy);
 }
 
 #[test]

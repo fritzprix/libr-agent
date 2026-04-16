@@ -19,18 +19,28 @@ describe('InputTokenDropdown', () => {
         description: 'Workspace scoped skill',
         path: '/tmp/workspace/skills/workspace-skill.md',
         source: 'workspace',
+        origin: 'workspace',
       },
       {
         name: 'assistant-skill',
         description: 'Assistant scoped skill',
         path: '/tmp/assistant/skills/assistant-skill.md',
         source: 'assistant',
+        origin: 'assistant',
       },
       {
-        name: 'global-skill',
-        description: 'Global scoped skill',
-        path: '/tmp/global/skills/global-skill.md',
+        name: 'user-skill',
+        description: 'User scoped skill',
+        path: '/tmp/user/skills/user-skill.md',
         source: 'global',
+        origin: 'user',
+      },
+      {
+        name: 'system-skill',
+        description: 'System scoped skill',
+        path: '/tmp/system/skills/system-skill.md',
+        source: 'global',
+        origin: 'system',
       },
     ];
 
@@ -44,9 +54,10 @@ describe('InputTokenDropdown', () => {
     );
 
     expect(screen.getByText('@skill:workspace-skill')).toBeInTheDocument();
-    expect(screen.getByText('workspace')).toBeInTheDocument();
-    expect(screen.getByText('assistant')).toBeInTheDocument();
-    expect(screen.getByText('global')).toBeInTheDocument();
+    expect(screen.getByText('Workspace')).toBeInTheDocument();
+    expect(screen.getByText('Assistant')).toBeInTheDocument();
+    expect(screen.getByText('User')).toBeInTheDocument();
+    expect(screen.getByText('System')).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByText('@skill:workspace-skill'));
 

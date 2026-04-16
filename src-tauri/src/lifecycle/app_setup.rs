@@ -8,8 +8,6 @@ use crate::state;
 use log::info;
 #[cfg(target_os = "linux")]
 use log::warn;
-use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
 
@@ -25,86 +23,23 @@ pub enum LegacySkillMigrationAction {
     MigrateToUser,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum SkillDirectoryEntry {
-    Directory,
-    File(Vec<u8>),
-}
-
-/// Classifies a legacy skill directory using the current bundled skill set.
+/// Classifies a legacy AppData/skills entry for managed storage migration.
 ///
-/// If the same skill name exists in the current bundle and the on-disk contents
-/// match exactly (ignoring the legacy `.bundled_skill` marker), the old AppData
-/// copy can be deleted safely. Everything else is preserved as a user-managed skill.
+/// Any directory marked with `.bundled_skill` is treated as disposable snapshot
+/// data from the old global bundled mirror and is never migrated into
+/// `user_skills`. Only unmarked directories are considered user-managed content.
 pub fn classify_legacy_skill_for_managed_storage(
     legacy_skill_dir: &std::path::Path,
-    bundled_skills_dir: &std::path::Path,
 ) -> Result<LegacySkillMigrationAction, String> {
-    let Some(skill_name) = legacy_skill_dir.file_name() else {
-        return Ok(LegacySkillMigrationAction::MigrateToUser);
-    };
-
-    let bundled_skill_dir = bundled_skills_dir.join(skill_name);
-    if !bundled_skill_dir.is_dir() {
+    if !legacy_skill_dir.is_dir() {
         return Ok(LegacySkillMigrationAction::MigrateToUser);
     }
 
-    if skill_directories_match(legacy_skill_dir, &bundled_skill_dir)? {
+    if legacy_skill_dir.join(BUNDLED_SKILL_MARKER).exists() {
         Ok(LegacySkillMigrationAction::DeleteLegacyCopy)
     } else {
         Ok(LegacySkillMigrationAction::MigrateToUser)
     }
-}
-
-fn skill_directories_match(
-    legacy_skill_dir: &std::path::Path,
-    bundled_skill_dir: &std::path::Path,
-) -> Result<bool, String> {
-    let legacy_entries = collect_skill_directory_entries(legacy_skill_dir)?;
-    let bundled_entries = collect_skill_directory_entries(bundled_skill_dir)?;
-    Ok(legacy_entries == bundled_entries)
-}
-
-fn collect_skill_directory_entries(
-    root: &std::path::Path,
-) -> Result<BTreeMap<PathBuf, SkillDirectoryEntry>, String> {
-    let mut entries = BTreeMap::new();
-
-    for entry in walkdir::WalkDir::new(root)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-    {
-        let path = entry.path();
-        if path == root {
-            continue;
-        }
-
-        let relative_path = path
-            .strip_prefix(root)
-            .map_err(|e| e.to_string())?
-            .to_path_buf();
-
-        if relative_path == std::path::Path::new(BUNDLED_SKILL_MARKER) {
-            continue;
-        }
-
-        let file_type = entry.file_type();
-        let snapshot = if file_type.is_dir() {
-            SkillDirectoryEntry::Directory
-        } else if file_type.is_file() {
-            SkillDirectoryEntry::File(std::fs::read(path).map_err(|e| e.to_string())?)
-        } else {
-            return Err(format!(
-                "Unsupported filesystem entry while comparing skill directories: {}",
-                path.display()
-            ));
-        };
-
-        entries.insert(relative_path, snapshot);
-    }
-
-    Ok(entries)
 }
 
 /// Replaces the legacy AppData/skills directory with an exact mirror of the
@@ -138,14 +73,13 @@ pub fn sync_legacy_global_skills_to_bundled_snapshot(
 }
 
 /// Move legacy user-managed skills from AppData/skills into AppData/user_skills.
-/// Legacy copies are deleted only when they exactly match a currently bundled skill.
+/// Old `.bundled_skill` snapshot entries are always discarded so the legacy
+/// global mirror can be rebuilt as an exact copy of the current bundle.
 async fn migrate_legacy_skills_to_managed_storage(
-    app: &App,
+    _app: &App,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::fs;
 
-    let resource_dir = app.path().resource_dir()?;
-    let bundled_skills_dir = resource_dir.join("bundled_skills");
     let base_data_dir = crate::session::get_session_manager()
         .map_err(std::io::Error::other)?
         .get_base_data_dir()
@@ -167,13 +101,12 @@ async fn migrate_legacy_skills_to_managed_storage(
             continue;
         }
 
-        let migration_action =
-            classify_legacy_skill_for_managed_storage(&legacy_skill_dir, &bundled_skills_dir)?;
+        let migration_action = classify_legacy_skill_for_managed_storage(&legacy_skill_dir)?;
 
         let target_skill_dir = user_skills_dir.join(&skill_name);
         if migration_action == LegacySkillMigrationAction::DeleteLegacyCopy {
             log::info!(
-                "🧹 Removing legacy bundled skill copy already provided by current bundle: {:?}",
+                "🧹 Removing legacy bundled skill snapshot entry: {:?}",
                 skill_name
             );
             fs::remove_dir_all(&legacy_skill_dir)?;

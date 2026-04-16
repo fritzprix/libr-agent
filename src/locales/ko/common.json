@@ -864,9 +864,11 @@
     }
   },
   "mentions": {
-    "skillSourceWorkspace": "workspace",
-    "skillSourceAssistant": "assistant",
-    "skillSourceGlobal": "global"
+    "skillSourceWorkspace": "Workspace",
+    "skillSourceAssistant": "Assistant",
+    "skillSourceUser": "User",
+    "skillSourceSystem": "System",
+    "skillSourceGlobal": "Global"
   },
   "errorBubble": {
     "title": "오류",
