@@ -1,7 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Folder,
   RefreshCw,
@@ -265,6 +269,13 @@ export function AgentWorkspacePanel() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
+                      role={isOpeningNative ? 'button' : undefined}
+                      aria-label={
+                        isOpeningNative
+                          ? t('agent.workspace.openInExplorerAria')
+                          : undefined
+                      }
+                      aria-disabled={isOpeningNative ? 'true' : undefined}
                       tabIndex={isOpeningNative ? 0 : undefined}
                       className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
                     >
@@ -285,12 +296,21 @@ export function AgentWorkspacePanel() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {t('agent.workspace.openInExplorer')}
+                    {isOpeningNative
+                      ? t('agent.workspace.openingNative', 'Opening...')
+                      : t('agent.workspace.openInExplorer')}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
+                      role={isOpeningNative ? 'button' : undefined}
+                      aria-label={
+                        isOpeningNative
+                          ? t('agent.workspace.openInTerminalAria')
+                          : undefined
+                      }
+                      aria-disabled={isOpeningNative ? 'true' : undefined}
                       tabIndex={isOpeningNative ? 0 : undefined}
                       className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
                     >
@@ -311,7 +331,9 @@ export function AgentWorkspacePanel() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {t('agent.workspace.openInTerminal')}
+                    {isOpeningNative
+                      ? t('agent.workspace.openingNative', 'Opening...')
+                      : t('agent.workspace.openInTerminal')}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>

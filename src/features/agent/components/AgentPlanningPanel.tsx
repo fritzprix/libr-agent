@@ -35,7 +35,10 @@ export function AgentPlanningPanel() {
     [serviceContexts.scratchpad?.structuredState],
   );
   const completedTodos =
-    planningState?.todos.reduce((acc, todo) => (todo.checked ? acc + 1 : acc), 0) ?? 0;
+    planningState?.todos.reduce(
+      (acc, todo) => (todo.checked ? acc + 1 : acc),
+      0,
+    ) ?? 0;
   const totalTodos = planningState?.todos.length ?? 0;
   const scratchpadCount = scratchpadState?.items.length ?? 0;
   const progressPercent =

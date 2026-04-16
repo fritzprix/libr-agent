@@ -70,7 +70,10 @@ export function calculatePlanningMetadata(
   }
 
   const totalTodos = state.todos.length;
-  const completedTodos = state.todos.reduce((acc, t) => (t.checked ? acc + 1 : acc), 0);
+  const completedTodos = state.todos.reduce(
+    (acc, t) => (t.checked ? acc + 1 : acc),
+    0,
+  );
   const activeTodos = totalTodos - completedTodos;
 
   return {
