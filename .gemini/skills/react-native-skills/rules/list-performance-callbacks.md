@@ -2,7 +2,7 @@
 title: Hoist callbacks to the root of lists
 impact: MEDIUM
 impactDescription: Fewer re-renders and faster lists
-tags: tag1, tag2
+tags: list-performance, callbacks, memoization, legendlist
 ---
 
 ## List performance callbacks
@@ -27,18 +27,18 @@ return (
 )
 ```
 
-**Correct (a single function instance passed to each item):**
+**Correct (a single function instance shared by all items):**
 
 ```typescript
-const onPress = useCallback(() => handlePress(item.id), [handlePress, item.id])
+const onPress = useCallback((id: string) => handlePress(id), [handlePress])
 
 return (
   <LegendList
     renderItem={({ item }) => (
-      <Item key={item.id} item={item} onPress={onPress} />
+      <Item key={item.id} item={item} onPress={() => onPress(item.id)} />
     )}
   />
 )
 ```
 
-Reference: [Link to documentation or resource](https://example.com)
+Reference: [Legend List](https://legendapp.com/open-source/legend-list)

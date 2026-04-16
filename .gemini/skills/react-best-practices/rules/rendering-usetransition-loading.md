@@ -7,7 +7,7 @@ tags: rendering, transitions, useTransition, loading, state
 
 ## Use useTransition Over Manual Loading States
 
-Use `useTransition` instead of manual `useState` for loading states. This provides built-in `isPending` state and automatically manages transitions.
+Use `useTransition` to mark non-urgent UI updates and show pending state without wiring a separate loading flag. It helps keep urgent interactions responsive, but it does **not** cancel in-flight async work for you.
 
 **Incorrect (manual loading state):**
 
@@ -35,23 +35,31 @@ function SearchResults() {
 }
 ```
 
-**Correct (useTransition with built-in pending state):**
+**Correct (useTransition for non-urgent async result updates):**
 
 ```tsx
-import { useTransition, useState } from 'react';
+import { useRef, useState, useTransition } from 'react';
 
 function SearchResults() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isPending, startTransition] = useTransition();
+  const latestRequestId = useRef(0);
 
   const handleSearch = (value: string) => {
     setQuery(value); // Update input immediately
+    const requestId = ++latestRequestId.current;
 
     startTransition(async () => {
-      // Fetch and update results
       const data = await fetchResults(value);
-      setResults(data);
+
+      if (requestId !== latestRequestId.current) {
+        return; // Ignore stale responses
+      }
+
+      startTransition(() => {
+        setResults(data);
+      });
     });
   };
 
@@ -67,9 +75,9 @@ function SearchResults() {
 
 **Benefits:**
 
-- **Automatic pending state**: No need to manually manage `setIsLoading(true/false)`
-- **Error resilience**: Pending state correctly resets even if the transition throws
-- **Better responsiveness**: Keeps the UI responsive during updates
-- **Interrupt handling**: New transitions automatically cancel pending ones
+- **Built-in pending state**: No need to manually toggle `setIsLoading(true/false)`
+- **Better responsiveness**: Keeps urgent updates like typing responsive
+- **Lower-priority result rendering**: Marks the results update as non-urgent work
+- **Async safety still matters**: Add ordering or cancellation logic for requests because transitions do not cancel network work for you
 
 Reference: [useTransition](https://react.dev/reference/react/useTransition)

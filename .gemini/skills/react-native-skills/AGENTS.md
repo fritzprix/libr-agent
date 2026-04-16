@@ -327,21 +327,21 @@ return (
 )
 ```
 
-**Correct: a single function instance passed to each item**
+**Correct: a single function instance shared by all items**
 
 ```typescript
-const onPress = useCallback(() => handlePress(item.id), [handlePress, item.id])
+const onPress = useCallback((id: string) => handlePress(id), [handlePress])
 
 return (
   <LegendList
     renderItem={({ item }) => (
-      <Item key={item.id} item={item} onPress={onPress} />
+      <Item key={item.id} item={item} onPress={() => onPress(item.id)} />
     )}
   />
 )
 ```
 
-Reference: [https://example.com](https://example.com)
+Reference: [https://legendapp.com/open-source/legend-list](https://legendapp.com/open-source/legend-list)
 
 ### 2.3 Keep List Items Lightweight
 
@@ -889,7 +889,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-function CollapsiblePanel({ expanded }: { expanded: boolean }) {
+function CollapsiblePanel({
+  expanded,
+  children,
+}: React.PropsWithChildren<{ expanded: boolean }>) {
   const animatedStyle = useAnimatedStyle(() => ({
     height: withTiming(expanded ? 200 : 0), // triggers layout on every frame
     overflow: 'hidden',
@@ -907,7 +910,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-function CollapsiblePanel({ expanded }: { expanded: boolean }) {
+function CollapsiblePanel({
+  expanded,
+  children,
+}: React.PropsWithChildren<{ expanded: boolean }>) {
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scaleY: withTiming(expanded ? 1 : 0) }],
     opacity: withTiming(expanded ? 1 : 0),
@@ -931,7 +937,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-function SlideIn({ visible }: { visible: boolean }) {
+function SlideIn({
+  visible,
+  children,
+}: React.PropsWithChildren<{ visible: boolean }>) {
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: withTiming(visible ? 0 : 100) }],
     opacity: withTiming(visible ? 1 : 0),
@@ -1464,7 +1473,7 @@ source changes, not just on initial render.
 type Props = { fallbackEnabled: boolean };
 
 function Toggle({ fallbackEnabled }: Props) {
-  const [enabled, setEnabled] = useState(defaultEnabled);
+  const [enabled, setEnabled] = useState(fallbackEnabled);
   // If fallbackEnabled changes, state is stale
   // State mixes user intent with default value
 
@@ -1479,9 +1488,9 @@ type Props = { fallbackEnabled: boolean };
 
 function Toggle({ fallbackEnabled }: Props) {
   const [_enabled, setEnabled] = useState<boolean | undefined>(undefined);
-  const enabled = _enabled ?? defaultEnabled;
+  const enabled = _enabled ?? fallbackEnabled;
   // undefined = user hasn't touched it, falls back to prop
-  // If defaultEnabled changes, component reflects it
+  // If fallbackEnabled changes, component reflects it
   // Once user interacts, their choice persists
 
   return <Switch value={enabled} onValueChange={setEnabled} />;

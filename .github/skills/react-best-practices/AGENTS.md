@@ -685,7 +685,9 @@ function FlagsProvider({ children, flags }: Props) {
 }
 ```
 
-The `typeof window !== 'undefined'` check prevents bundling preloaded modules for SSR, optimizing server bundle size and build speed.
+The `typeof window !== 'undefined'` check prevents client-only preload code from running during SSR, but it does **not** by itself keep a statically analyzable import out of the server build graph.
+
+If your goal is to keep a heavy dependency out of the server bundle, use a client-only module boundary or a framework-specific code-splitting mechanism such as `next/dynamic({ ssr: false })` in Next.js.
 
 ---
 
@@ -805,7 +807,7 @@ RSC→client serialization deduplicates by object reference, not value. Same ref
 <ClientList usernames={usernames} />;
 
 // Client: transform there
-('use client');
+'use client';
 const sorted = useMemo(() => [...usernames].sort(), [usernames]);
 ```
 
@@ -1081,7 +1083,7 @@ In traditional serverless, each cold start re-executes module-level code, but su
 
 **Impact: HIGH (reduces data transfer size)**
 
-The React Server/Client boundary serializes all object properties into strings and embeds them in the HTML response and subsequent RSC requests. This serialized data directly impacts page weight and load time, so **size matters a lot**. Only pass fields that the client actually uses.
+The React Server/Client boundary serializes props into the RSC payload and embedded inline flight data sent with the response and subsequent RSC requests. This serialized data directly impacts page weight and load time, so **size matters a lot**. Only pass fields that the client actually uses.
 
 **Incorrect: serializes all 50 fields**
 
@@ -1091,7 +1093,7 @@ async function Page() {
   return <Profile user={user} />;
 }
 
-('use client');
+'use client';
 function Profile({ user }: { user: User }) {
   return <div>{user.name}</div>; // uses 1 field
 }
@@ -1105,7 +1107,7 @@ async function Page() {
   return <Profile name={user.name} />;
 }
 
-('use client');
+'use client';
 function Profile({ name }: { name: string }) {
   return <div>{name}</div>;
 }
@@ -2786,23 +2788,31 @@ function SearchResults() {
 }
 ```
 
-**Correct: useTransition with built-in pending state**
+**Correct: useTransition for non-urgent async result updates**
 
 ```tsx
-import { useTransition, useState } from 'react';
+import { useRef, useState, useTransition } from 'react';
 
 function SearchResults() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isPending, startTransition] = useTransition();
+  const latestRequestId = useRef(0);
 
   const handleSearch = (value: string) => {
     setQuery(value); // Update input immediately
+    const requestId = ++latestRequestId.current;
 
     startTransition(async () => {
-      // Fetch and update results
       const data = await fetchResults(value);
-      setResults(data);
+
+      if (requestId !== latestRequestId.current) {
+        return; // Ignore stale responses
+      }
+
+      startTransition(() => {
+        setResults(data);
+      });
     });
   };
 
@@ -2818,13 +2828,13 @@ function SearchResults() {
 
 **Benefits:**
 
-- **Automatic pending state**: No need to manually manage `setIsLoading(true/false)`
+- **Built-in pending state**: No need to manually toggle `setIsLoading(true/false)`
 
-- **Error resilience**: Pending state correctly resets even if the transition throws
+- **Better responsiveness**: Keeps urgent updates like typing responsive
 
-- **Better responsiveness**: Keeps the UI responsive during updates
+- **Lower-priority result rendering**: Marks the results update as non-urgent work
 
-- **Interrupt handling**: New transitions automatically cancel pending ones
+- **Async safety still matters**: Add ordering or cancellation logic for requests because transitions do not cancel network work for you
 
 Reference: [https://react.dev/reference/react/useTransition](https://react.dev/reference/react/useTransition)
 
