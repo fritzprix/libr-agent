@@ -33,7 +33,7 @@ export function AssistantSelectionCard({
       )}
     >
       {/* Subtle hover background effect */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" />
 
       {/* Icon + Name Row */}
       <div className="flex items-center gap-4 relative z-10">

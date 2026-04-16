@@ -57,3 +57,8 @@
 
 **Learning:** For Radix UI tooltips wrapping a trigger with `asChild`, ensuring `asChild` propagates the event up the DOM needs proper usage of Radix primitive, particularly combining `DropdownMenuTrigger` with `TooltipTrigger` on `Button`. Also `forwardRef` warnings show up if the inner button is not using forwardRef correctly, but in `SessionNotificationsBell` combining them with `asChild` creates refs warning if not nested correctly. `TooltipTrigger asChild` around `DropdownMenuTrigger asChild` is needed.
 **Action:** When nesting Tooltips around Radix `DropdownMenuTrigger`, ensure both have `asChild` property so the original `<Button>` element receives both tooltip and dropdown aria/ref properties.
+
+## 2026-04-11 - Group Focus for Hidden Controls
+
+**Learning:** When using `opacity-X group-hover:opacity-100` to show controls inside a container on mouse hover, the controls remain invisible to keyboard users when the parent container receives focus, unless explicitly handled.
+**Action:** Always pair `group-hover:opacity-100` with `group-focus-visible:opacity-100` (or `group-focus-within:opacity-100` if the interactive element is inside the group) to ensure the UI elements become visible when accessed via keyboard navigation.
