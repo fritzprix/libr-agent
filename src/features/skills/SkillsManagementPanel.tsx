@@ -18,8 +18,10 @@ import {
   Upload,
 } from 'lucide-react';
 import {
+  Checkbox,
   Button,
   Input,
+  ScrollArea,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -60,6 +62,7 @@ interface PendingInstall {
   kind: 'local' | 'github';
   sourceValue: string;
   preview: SkillImportPreview;
+  selectedOverwriteNames: string[];
 }
 
 interface SkillsManagementPanelProps {
@@ -99,7 +102,27 @@ function SkillsManagementPanelComponent({
   const [repoUrl, setRepoUrl] = useState('');
 
   const formatImportSuccess = useCallback(
-    (importedCount: number, overwrittenCount: number) => {
+    (importedCount: number, overwrittenCount: number, skippedCount: number) => {
+      if (importedCount === 0 && skippedCount > 0) {
+        return t('settings.skills.importSkippedOnly', {
+          count: skippedCount,
+          defaultValue_one: 'Skipped {{count}} conflicting skill',
+          defaultValue_other: 'Skipped {{count}} conflicting skills',
+        });
+      }
+
+      if (overwrittenCount > 0 && skippedCount > 0) {
+        return t('settings.skills.importSuccessWithOverwriteAndSkipped', {
+          count: importedCount,
+          overwrittenCount,
+          skippedCount,
+          defaultValue_one:
+            'Imported {{count}} skill ({{overwrittenCount}} overwritten, {{skippedCount}} skipped)',
+          defaultValue_other:
+            'Imported {{count}} skills ({{overwrittenCount}} overwritten, {{skippedCount}} skipped)',
+        });
+      }
+
       if (overwrittenCount > 0) {
         return t('settings.skills.importSuccessWithOverwrite', {
           count: importedCount,
@@ -111,6 +134,17 @@ function SkillsManagementPanelComponent({
         });
       }
 
+      if (skippedCount > 0) {
+        return t('settings.skills.importSuccessWithSkipped', {
+          count: importedCount,
+          skippedCount,
+          defaultValue_one:
+            'Imported {{count}} skill ({{skippedCount}} skipped)',
+          defaultValue_other:
+            'Imported {{count}} skills ({{skippedCount}} skipped)',
+        });
+      }
+
       return t('settings.skills.importSuccess', {
         count: importedCount,
         defaultValue_one: 'Imported {{count}} skill',
@@ -118,6 +152,49 @@ function SkillsManagementPanelComponent({
       });
     },
     [t],
+  );
+
+  const pendingInstallSystemConflicts = useMemo(
+    () =>
+      pendingInstall?.preview.conflicts.filter(
+        (conflict) => conflict.existingOrigin === 'system',
+      ) ?? [],
+    [pendingInstall],
+  );
+  const pendingInstallUserConflicts = useMemo(
+    () =>
+      pendingInstall?.preview.conflicts.filter(
+        (conflict) => conflict.existingOrigin === 'user',
+      ) ?? [],
+    [pendingInstall],
+  );
+
+  const performInstall = useCallback(
+    async (
+      kind: PendingInstall['kind'],
+      sourceValue: string,
+      overwriteNames: string[],
+      extraExcludedNames: string[] = [],
+    ) => {
+      const userConflictNames = new Set(
+        pendingInstallUserConflicts.map((conflict) => conflict.name),
+      );
+      const excludedNames = [
+        ...pendingInstallSystemConflicts.map((conflict) => conflict.name),
+        ...pendingInstallUserConflicts
+          .map((conflict) => conflict.name)
+          .filter((name) => !overwriteNames.includes(name)),
+        ...extraExcludedNames,
+      ].filter((name, index, names) => names.indexOf(name) === index);
+      const shouldOverwrite = overwriteNames.some((name) =>
+        userConflictNames.has(name),
+      );
+
+      return kind === 'local'
+        ? importUserSkills(sourceValue, shouldOverwrite, excludedNames)
+        : installGitHubSkills(sourceValue, shouldOverwrite, excludedNames);
+    },
+    [pendingInstallSystemConflicts, pendingInstallUserConflicts],
   );
 
   useEffect(() => {
@@ -156,21 +233,34 @@ function SkillsManagementPanelComponent({
         try {
           const preview = await previewUserSkillImport(filePath);
           toast.dismiss(toastId);
-          if (preview.conflicts.length > 0) {
+          const userConflicts = preview.conflicts.filter(
+            (conflict) => conflict.existingOrigin === 'user',
+          );
+          if (userConflicts.length > 0) {
             setPendingInstall({
               kind: 'local',
               sourceValue: filePath,
               preview,
+              selectedOverwriteNames: userConflicts.map(
+                (conflict) => conflict.name,
+              ),
             });
             return;
           }
 
           setIsInstallingLocal(true);
-          const result = await importUserSkills(filePath, false);
+          const result = await importUserSkills(
+            filePath,
+            false,
+            preview.conflicts
+              .filter((conflict) => conflict.existingOrigin === 'system')
+              .map((conflict) => conflict.name),
+          );
           toast.success(
             formatImportSuccess(
               result.importedNames.length,
               result.overwrittenNames.length,
+              result.skippedNames.length,
             ),
           );
           await refresh();
@@ -229,20 +319,33 @@ function SkillsManagementPanelComponent({
     try {
       const preview = await previewGitHubSkillInstall(trimmedRepoUrl);
       toast.dismiss(toastId);
-      if (preview.conflicts.length > 0) {
+      const userConflicts = preview.conflicts.filter(
+        (conflict) => conflict.existingOrigin === 'user',
+      );
+      if (userConflicts.length > 0) {
         setPendingInstall({
           kind: 'github',
           sourceValue: trimmedRepoUrl,
           preview,
+          selectedOverwriteNames: userConflicts.map(
+            (conflict) => conflict.name,
+          ),
         });
         return;
       }
 
-      const result = await installGitHubSkills(trimmedRepoUrl, false);
+      const result = await installGitHubSkills(
+        trimmedRepoUrl,
+        false,
+        preview.conflicts
+          .filter((conflict) => conflict.existingOrigin === 'system')
+          .map((conflict) => conflict.name),
+      );
       toast.success(
         formatImportSuccess(
           result.importedNames.length,
           result.overwrittenNames.length,
+          result.skippedNames.length,
         ),
       );
       setRepoUrl('');
@@ -267,14 +370,16 @@ function SkillsManagementPanelComponent({
     setIsInstallingGithub(kind === 'github');
 
     try {
-      const result =
-        kind === 'local'
-          ? await importUserSkills(sourceValue, true)
-          : await installGitHubSkills(sourceValue, true);
+      const result = await performInstall(
+        kind,
+        sourceValue,
+        pendingInstall.selectedOverwriteNames,
+      );
       toast.success(
         formatImportSuccess(
           result.importedNames.length,
           result.overwrittenNames.length,
+          result.skippedNames.length,
         ),
       );
       if (kind === 'github') {
@@ -290,6 +395,23 @@ function SkillsManagementPanelComponent({
       setIsInstallingGithub(false);
     }
   };
+
+  const togglePendingOverwrite = useCallback((skillName: string) => {
+    setPendingInstall((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        selectedOverwriteNames: current.selectedOverwriteNames.includes(
+          skillName,
+        )
+          ? current.selectedOverwriteNames.filter((name) => name !== skillName)
+          : [...current.selectedOverwriteNames, skillName],
+      };
+    });
+  }, []);
 
   const handleDeleteUserSkill = async (skillName: string) => {
     if (isDeletingSkill) {
@@ -609,40 +731,101 @@ function SkillsManagementPanelComponent({
           }
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
+        <AlertDialogContent className="grid max-h-[85vh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
+          <AlertDialogHeader className="px-6 pt-6 pb-4">
             <AlertDialogTitle>
-              {t(
-                'settings.skills.conflictTitle',
-                'Replace conflicting skills?',
-              )}
+              {pendingInstallUserConflicts.length > 0
+                ? t(
+                    'settings.skills.conflictTitle',
+                    'Replace conflicting skills?',
+                  )
+                : t(
+                    'settings.skills.systemConflictTitle',
+                    'Bundled skills are protected',
+                  )}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t(
-                'settings.skills.conflictDescription',
-                'The following skill names already exist. Replacing them will update the managed user copy or shadow the bundled system skill.',
-              )}
+              {pendingInstallUserConflicts.length > 0
+                ? t(
+                    'settings.skills.conflictDescription',
+                    'Choose which existing user skills should be overwritten. Bundled system skill collisions will be skipped automatically.',
+                  )
+                : t(
+                    'settings.skills.systemConflictDescription',
+                    'Incoming skills that collide with bundled system skills will be skipped automatically.',
+                  )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
-            {pendingInstall?.preview.conflicts.map((conflict) => (
-              <div
-                key={`${conflict.name}-${conflict.existingPath}`}
-                className="flex items-start justify-between gap-3"
-              >
-                <div>
-                  <p className="font-medium">{conflict.name}</p>
-                  <p className="text-xs text-muted-foreground break-all">
-                    {conflict.existingPath}
-                  </p>
-                </div>
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {conflict.existingOrigin}
-                </span>
+          <div className="min-h-0 overflow-hidden px-6">
+            <ScrollArea className="h-full pr-4">
+              <div className="space-y-3 pb-1">
+                {pendingInstallUserConflicts.length > 0 && (
+                  <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-3">
+                    {pendingInstallUserConflicts.map((conflict) => {
+                      const checked =
+                        pendingInstall?.selectedOverwriteNames.includes(
+                          conflict.name,
+                        ) ?? false;
+
+                      return (
+                        <label
+                          key={`${conflict.name}-${conflict.existingPath}`}
+                          className="flex items-start gap-3 cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() =>
+                              togglePendingOverwrite(conflict.name)
+                            }
+                            className="mt-0.5"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-medium">{conflict.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {t(
+                                'settings.skills.userConflictWillOverwrite',
+                                'Checked items will overwrite the existing user skill.',
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground break-all">
+                              {conflict.existingPath}
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {pendingInstallSystemConflicts.length > 0 && (
+                  <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
+                    <p className="font-medium">
+                      {t(
+                        'settings.skills.systemConflictsSkippedTitle',
+                        'Bundled skills that will be skipped',
+                      )}
+                    </p>
+                    {pendingInstallSystemConflicts.map((conflict) => (
+                      <div
+                        key={`${conflict.name}-${conflict.existingPath}`}
+                        className="flex items-start justify-between gap-3"
+                      >
+                        <div>
+                          <p className="font-medium">{conflict.name}</p>
+                          <p className="text-xs text-muted-foreground break-all">
+                            {conflict.existingPath}
+                          </p>
+                        </div>
+                        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {t('settings.skills.skipped', 'Skipped')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
+            </ScrollArea>
           </div>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="px-6 pt-4 pb-6">
             <AlertDialogCancel
               disabled={isInstallingLocal || isInstallingGithub}
             >
@@ -658,7 +841,13 @@ function SkillsManagementPanelComponent({
               {(isInstallingLocal || isInstallingGithub) && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               )}
-              {t('settings.skills.replaceConflicts', 'Replace and install')}
+              {pendingInstallUserConflicts.length > 0 &&
+              (pendingInstall?.selectedOverwriteNames.length ?? 0) > 0
+                ? t('settings.skills.replaceConflicts', 'Replace and install')
+                : t(
+                    'settings.skills.installNonConflicting',
+                    'Install remaining skills',
+                  )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

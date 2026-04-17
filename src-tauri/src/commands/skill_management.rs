@@ -38,8 +38,9 @@ pub async fn preview_user_skill_import(file_path: String) -> Result<SkillImportP
 pub async fn import_user_skills(
     file_path: String,
     overwrite_existing: bool,
+    excluded_skill_names: Option<Vec<String>>,
 ) -> Result<SkillImportResult, String> {
-    skill_service::import_user_skills(file_path, overwrite_existing).await
+    skill_service::import_user_skills(file_path, overwrite_existing, excluded_skill_names).await
 }
 
 #[tauri::command]
@@ -51,8 +52,9 @@ pub async fn preview_github_skill_install(repo_url: String) -> Result<SkillImpor
 pub async fn install_github_skills(
     repo_url: String,
     overwrite_existing: bool,
+    excluded_skill_names: Option<Vec<String>>,
 ) -> Result<SkillImportResult, String> {
-    skill_service::install_github_skills(repo_url, overwrite_existing).await
+    skill_service::install_github_skills(repo_url, overwrite_existing, excluded_skill_names).await
 }
 
 #[tauri::command]

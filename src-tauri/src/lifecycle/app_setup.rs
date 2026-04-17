@@ -42,7 +42,7 @@ pub fn classify_legacy_skill_for_managed_storage(
     }
 }
 
-/// Replaces the legacy AppData/skills directory with an exact mirror of the
+/// Replaces the AppData/skills bundled snapshot with an exact mirror of the
 /// currently bundled skills shipped in application resources.
 pub fn sync_legacy_global_skills_to_bundled_snapshot(
     bundled_skills_dir: &std::path::Path,
@@ -73,8 +73,8 @@ pub fn sync_legacy_global_skills_to_bundled_snapshot(
 }
 
 /// Move legacy user-managed skills from AppData/skills into AppData/user_skills.
-/// Old `.bundled_skill` snapshot entries are always discarded so the legacy
-/// global mirror can be rebuilt as an exact copy of the current bundle.
+/// Old `.bundled_skill` snapshot entries are always discarded so the bundled
+/// system snapshot can be rebuilt as an exact copy of the current bundle.
 async fn migrate_legacy_skills_to_managed_storage(
     _app: &App,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -199,8 +199,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Keep the legacy AppData/skills snapshot aligned with bundled_skills so the
-    // app's global skill directory never drifts and missing bundled skills recover automatically.
+    // Keep the AppData/skills bundled snapshot aligned with bundled_skills so the
+    // runtime system skills directory never depends on the packaged install path.
     if let Err(e) = {
         let resource_dir = app.path().resource_dir()?;
         let bundled_skills_dir = resource_dir.join("bundled_skills");

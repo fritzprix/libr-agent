@@ -78,14 +78,19 @@ describe('skills backend wrapper', () => {
   });
 
   it('importUserSkills calls safeInvoke with overwrite flag', async () => {
-    const mockResponse = { importedNames: ['test-skill'], overwrittenNames: [] };
+    const mockResponse = {
+      importedNames: ['test-skill'],
+      overwrittenNames: [],
+      skippedNames: [],
+    };
     vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
 
-    const result = await importUserSkills('/path/to/skill.skill', true);
+    const result = await importUserSkills('/path/to/skill.skill', true, ['skip-me']);
 
     expect(safeInvoke).toHaveBeenCalledWith('import_user_skills', {
       filePath: '/path/to/skill.skill',
       overwriteExisting: true,
+      excludedSkillNames: ['skip-me'],
     });
     expect(result).toEqual(mockResponse);
   });
@@ -105,17 +110,23 @@ describe('skills backend wrapper', () => {
   });
 
   it('installGitHubSkills calls safeInvoke with overwrite flag', async () => {
-    const mockResponse = { importedNames: ['skill-a'], overwrittenNames: ['skill-b'] };
+    const mockResponse = {
+      importedNames: ['skill-a'],
+      overwrittenNames: ['skill-b'],
+      skippedNames: ['skill-c'],
+    };
     vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
 
     const result = await installGitHubSkills(
       'https://github.com/example/skills',
       false,
+      ['skip-me'],
     );
 
     expect(safeInvoke).toHaveBeenCalledWith('install_github_skills', {
       repoUrl: 'https://github.com/example/skills',
       overwriteExisting: false,
+      excludedSkillNames: ['skip-me'],
     });
     expect(result).toEqual(mockResponse);
   });
