@@ -96,12 +96,18 @@ impl BuiltinMCPServer for KnowledgeServer {
             .ok();
 
         ServiceContext::new(format!(
-            "# Knowledge Base\n\nAssistant ID: {}\nStored Chunks: {}",
-            assistant_id,
-            chunk_count
-                .map(|count| count.to_string())
-                .unwrap_or_else(|| "unknown".to_string()),
-        ))
-        .with_volatility(ContextVolatility::Medium)
+                "# Knowledge Base Context (Service: knowledge)\n\
+                - **Status**: Active. Ready for Hybrid Search (FTS5 + Vector).\n\
+                - **Assistant ID**: {}\n\
+                - **Stored Chunks**: {}\n\
+                - **Embedding Runtime**: {}\n\
+                Use `search_knowledge` to retrieve specific information, `record_knowledge` to save new insights, and `explore_context` to inspect extracted relationships.",
+                assistant_id,
+                chunk_count
+                    .map(|count| count.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                embed::runtime_summary()
+            ))
+            .with_volatility(ContextVolatility::Medium)
     }
 }

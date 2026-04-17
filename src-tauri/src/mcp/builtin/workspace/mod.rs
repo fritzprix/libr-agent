@@ -563,12 +563,17 @@ impl BuiltinMCPServer for WorkspaceServer {
         let context_prompt = format!(
             "## Workspace
 
-### Live State
+### Stable Context
 - Workspace Root: {}
+- Platform: {} / {} using {}
+
+### Live State
 - Persistent Shell CWD: {}
 - Running Processes: {}{}
-- Total Processes: {}",
-            workspace_dir, shell_cwd, running_count, running_processes_text, total_count
+- Total Processes: {}
+
+💡 Use waitForProcess(processId, 0) to check status or listProcesses() to see all (including full commands).",
+            workspace_dir, os, arch, shell, shell_cwd, running_count, running_processes_text, total_count
         );
 
         // Update cache

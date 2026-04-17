@@ -16,24 +16,14 @@ export const useAgentModels = (provider?: string) => {
     value: { serviceConfigs },
   } = useSettings();
 
-  const providerConfig = useMemo(() => {
-    if (!provider) {
-      return {};
-    }
-
-    return {
-      ...(serviceConfigs[provider as AIServiceProvider] || {}),
-    };
-  }, [provider, serviceConfigs]);
-
   // Get API key and baseUrl for the selected provider
   const apiKey = useMemo(() => {
-    return providerConfig.apiKey || '';
-  }, [providerConfig]);
+    return serviceConfigs[provider as AIServiceProvider]?.apiKey || '';
+  }, [serviceConfigs, provider]);
 
   const baseUrl = useMemo(() => {
-    return providerConfig.baseUrl || '';
-  }, [providerConfig]);
+    return serviceConfigs[provider as AIServiceProvider]?.baseUrl || '';
+  }, [serviceConfigs, provider]);
 
   // Fetcher for models — delegates entirely to service.listModels().
   // Each provider's implementation decides static vs dynamic;
@@ -46,6 +36,7 @@ export const useAgentModels = (provider?: string) => {
       const effectiveApiKey = key || 'no-api-key';
 
       try {
+        const providerConfig = serviceConfigs[p as AIServiceProvider] || {};
         const service: AIModelLookupService = AIServiceFactory.getService(
           p as AIServiceProvider,
           effectiveApiKey,
@@ -67,7 +58,7 @@ export const useAgentModels = (provider?: string) => {
         return {};
       }
     },
-    [providerConfig],
+    [serviceConfigs],
   );
 
   const {
@@ -86,6 +77,8 @@ export const useAgentModels = (provider?: string) => {
   // Combine static and dynamic models
   const availableModels = useMemo(() => {
     if (!provider) return {};
+
+    const providerConfig = serviceConfigs[provider as AIServiceProvider] || {};
 
     // If 3rd party is enabled for OpenAI, show only custom model ID
     if (
@@ -118,7 +111,7 @@ export const useAgentModels = (provider?: string) => {
       {};
 
     return Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
-  }, [provider, dynamicModels, providerConfig]);
+  }, [provider, dynamicModels, serviceConfigs]);
 
   return {
     availableModels,

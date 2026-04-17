@@ -58,9 +58,6 @@ pub async fn resume_workflow(
 
     log::info!("Resumed workflow status for session: {}", session_id);
 
-    crate::agent::workflow::start::ensure_proxy_ready(proxy_manager, app_handle, &session_id, 60)
-        .await?;
-
     // Trigger LLM to pick up where it left off
     crate::agent::llm::request_llm_completion(
         session_repo,

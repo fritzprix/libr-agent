@@ -502,30 +502,26 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     // --- Internal (builtin) tools ---
     if include_internal {
-        let matched: Vec<_> = crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY
+        let all_tools = crate::mcp::server::tools::get_all_static_builtin_tools();
+        let matched: Vec<_> = all_tools
             .iter()
-            .flat_map(|entry| {
-                crate::mcp::server::tools::get_static_tools_for_server(entry.canonical)
-                    .into_iter()
-                    .filter(move |tool| {
-                        query.is_empty()
-                            || tool.name.to_lowercase().contains(&query)
-                            || tool.description.to_lowercase().contains(&query)
-                    })
-                    .map(move |tool| (entry.canonical, tool))
+            .filter(|t| {
+                query.is_empty()
+                    || t.name.to_lowercase().contains(&query)
+                    || t.description.to_lowercase().contains(&query)
             })
             .collect();
 
         if !matched.is_empty() {
             let lines: Vec<String> = if query.is_empty() {
                 // Compact view when no query is specified
-                let names: Vec<String> = matched.iter().map(|(_, t)| t.name.clone()).collect();
+                let names: Vec<String> = matched.iter().map(|t| t.name.clone()).collect();
                 vec![format!("Tools: {}", names.join(", "))]
             } else {
                 // Detailed view
                 matched
                     .iter()
-                    .map(|(service_alias, t)| {
+                    .map(|t| {
                         // Truncate description to keep output compact
                         let desc = if t.description.len() > 80 {
                             let mut end = 77;
@@ -537,8 +533,14 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                             t.description.clone()
                         };
                         if session_view {
-                            let (status, _) = access.builtin_status(service_alias);
-                            format!("• {} {} — {}", t.name, status, desc)
+                            let server_alias = t.name.split("__").next().unwrap_or(&t.name);
+                            let (status, guidance) = access.builtin_status(server_alias);
+                            match guidance {
+                                Some(guidance) => {
+                                    format!("• {} {} — {}\n  {}", t.name, status, desc, guidance)
+                                }
+                                None => format!("• {} {} — {}", t.name, status, desc),
+                            }
                         } else {
                             format!("• {} — {}", t.name, desc)
                         }
@@ -664,8 +666,14 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                             let name = t["name"].as_str().unwrap_or("?");
                             let desc = t["description"].as_str().unwrap_or("");
                             if session_view {
-                                let (status, _) = access.external_status(&model.id, &model.name);
-                                format!("• {} {} — {}", name, status, desc)
+                                let (status, guidance) =
+                                    access.external_status(&model.id, &model.name);
+                                match guidance {
+                                    Some(guidance) => {
+                                        format!("• {} {} — {}\n  {}", name, status, desc, guidance)
+                                    }
+                                    None => format!("• {} {} — {}", name, status, desc),
+                                }
                             } else {
                                 format!("• {} — {}", name, desc)
                             }

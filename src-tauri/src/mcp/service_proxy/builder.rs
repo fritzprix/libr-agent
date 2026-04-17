@@ -53,16 +53,13 @@ impl MCPServiceProxyBuilder {
     pub async fn build(self) -> Result<MCPServiceProxy, String> {
         // Fetch system settings to get timeout configuration
         let timeout = Self::fetch_tool_timeout().await;
-        let app_handle = self
-            .app_handle
-            .or_else(|| crate::state::get_app_handle().cloned());
 
         MCPServiceProxy::create(
             self.session_id,
             self.tool_ids,
             self.db,
             self.session_manager,
-            app_handle,
+            self.app_handle,
             self.http_manager,
             self.stdio_manager,
             timeout,
@@ -73,9 +70,13 @@ impl MCPServiceProxyBuilder {
     /// Helper to fetch tool timeout from system settings in DB
     async fn fetch_tool_timeout() -> u64 {
         use crate::repositories::settings_repository::SettingsRepository;
-        let Some(repo) = crate::state::try_get_settings_repository() else {
-            return crate::config::mcp_tool_call_timeout_seconds();
-        };
+        use crate::state::get_settings_repository;
+
+        // Use the repository via dependency injection if possible, or global state as fallback
+        // Since we have db connection, we could query directly, but using repo is cleaner.
+        // However, repo requires global state access or instantiation.
+        // Let's use the global repo getter since it's available in this context usually.
+        let repo = get_settings_repository();
 
         match repo.get("systemSettings").await {
             Ok(Some(model)) => match serde_json::from_str::<serde_json::Value>(&model.value) {

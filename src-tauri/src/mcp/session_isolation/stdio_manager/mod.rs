@@ -55,11 +55,6 @@ impl SessionMCPManager {
         self.server_configs.contains_key(server_name)
     }
 
-    /// Returns the configured stdio server names for this session manager.
-    pub fn list_servers(&self) -> Vec<String> {
-        self.server_configs.keys().cloned().collect()
-    }
-
     pub async fn list_channel_metadata(&self) -> Vec<ChannelServerMetadata> {
         self.channel_metadata
             .read()

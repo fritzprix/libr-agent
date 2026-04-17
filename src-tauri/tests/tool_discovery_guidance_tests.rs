@@ -144,10 +144,6 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
 
     let text = extract_text(&result);
     assert!(
-        text.contains("Server IDs found:"),
-        "inventory mode should still summarize discovered external server ids: {text}"
-    );
-    assert!(
         text.contains("agent__update"),
         "tool discovery guidance should point to canonical agent__update: {text}"
     );
@@ -166,7 +162,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
 }
 
 #[tokio::test]
-async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_session() {
+async fn tool_list_marks_unavailable_external_servers_as_requires_agent_update() {
     let db = test_db().await;
 
     let server_repo = SqliteMCPServerRepository::new(db.clone());
@@ -243,82 +239,11 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
 
     let text = extract_text(&result);
     assert!(
-        text.contains("[Unsupported in current session]"),
+        text.contains("[Requires agent__update]"),
         "session mode should show external availability status: {text}"
-    );
-    assert!(
-        !text.contains("agent__update"),
-        "session mode should not suggest self-update or follow-up update actions: {text}"
     );
     assert!(
         text.contains("availability: session"),
         "session mode header should be explicit: {text}"
-    );
-}
-
-#[tokio::test]
-async fn tool_list_uses_builtin_service_alias_for_session_status() {
-    let db = test_db().await;
-
-    let session_repo = SqliteSessionRepository::new(db.clone());
-    session_repo
-        .upsert_session(&SessionMetadata {
-            id: "session-builtin-status".to_string(),
-            name: Some("Builtin Status Session".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4.1".to_string(),
-            provider: "openai".to_string(),
-            agent_config: Some(
-                json!({
-                    "assistantId": "agent-gamma",
-                    "name": "Agent Gamma",
-                    "systemPrompt": "You are helpful",
-                    "allowedBuiltInServiceAliases": ["planning", "workspace", "agent", "tool", "attachments", "ui", "skills", "playbook", "scratchpad"],
-                    "mcpServerIds": []
-                })
-                .to_string(),
-            ),
-            parent_session_id: None,
-            lineage_id: None,
-            depth: Some(0),
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: 1,
-            updated_at: 1,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            workspace_override: None,
-        })
-        .await
-        .expect("session should insert");
-
-    let result = ToolServer::new()
-        .call_tool(
-            "list",
-            json!({
-                "scope": "internal",
-                "query": "createGoal",
-                "availability": "session"
-            }),
-            Some("session-builtin-status".to_string()),
-        )
-        .await
-        .expect("list_tools should succeed");
-
-    let text = extract_text(&result);
-    assert!(
-        text.contains("| Builtin | createGoal | [Ready] |"),
-        "planning tool should inherit planning service readiness instead of using tool name as alias: {text}"
-    );
-    assert!(
-        !text.contains("This session cannot call 'createGoal' tools right now"),
-        "builtin status should not be derived from the bare tool name: {text}"
     );
 }

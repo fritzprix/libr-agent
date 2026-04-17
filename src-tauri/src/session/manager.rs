@@ -153,7 +153,7 @@ impl SessionManager {
             .map_err(|e| format!("Failed to read workspace pool: {e}"))?;
 
         let mut sessions: Vec<SessionWorkspaceInfo> = pool.values().cloned().collect();
-        sessions.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+        sessions.sort_by_key(|b| std::cmp::Reverse(b.last_accessed));
         Ok(sessions)
     }
 
@@ -365,7 +365,7 @@ impl SessionManager {
                 .map_err(|e| format!("Failed to read workspace pool: {e}"))?;
 
             let mut sorted_sessions: Vec<_> = pool.values().collect();
-            sorted_sessions.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+            sorted_sessions.sort_by_key(|b| std::cmp::Reverse(b.last_accessed));
 
             // Keep the most recent sessions, remove older ones
             for (index, session_info) in sorted_sessions.iter().enumerate() {

@@ -57,32 +57,6 @@ pub fn build_compact_context_selection_options(
     }
 }
 
-pub fn build_compact_summary_message(session_id: &str, text: String, created_at: i64) -> Message {
-    Message {
-        id: format!("compact-summary-{}", session_id),
-        session_id: session_id.to_string(),
-        role: "assistant".to_string(),
-        content: vec![MCPContent::Text {
-            text,
-            is_error: None,
-        }],
-        source: Some("compact-summary".to_string()),
-        created_at,
-        updated_at: created_at,
-        tool_calls: None,
-        tool_call_id: None,
-        is_streaming: None,
-        thinking: None,
-        thinking_signature: None,
-        assistant_id: None,
-        attachments: None,
-        tool_use: None,
-        usage: None,
-        error: None,
-        metadata: None,
-    }
-}
-
 const COMPACT_TOOL_SNAPSHOT_LIMIT: usize = 5;
 const COMPACT_ARGUMENT_PREVIEW_LIMIT: usize = 96;
 const COMPACT_RESULT_PREVIEW_LIMIT: usize = 140;
@@ -170,7 +144,7 @@ fn build_tool_argument_preview(arguments: &str) -> String {
     if let Some(serde_json::Value::Object(object)) = parsed {
         let mut preview_parts = Vec::new();
         let mut entries = object.iter().collect::<Vec<_>>();
-        entries.sort_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
+        entries.sort_by_key(|(left_key, _)| *left_key);
 
         for (index, (key, value)) in entries.into_iter().enumerate() {
             if index >= 3 {
@@ -516,11 +490,29 @@ pub async fn request_llm_completion(
                 (messages, false)
             } else if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
                 let now_ms = chrono::Utc::now().timestamp_millis();
-                let summary_msg = build_compact_summary_message(
-                    &session_id,
-                    build_compact_summary_text(&record.summary, &messages[..=to_idx]),
-                    now_ms,
-                );
+                let summary_msg = Message {
+                    id: format!("compact-summary-{}", session_id),
+                    session_id: session_id.clone(),
+                    role: "user".to_string(),
+                    content: vec![MCPContent::Text {
+                        text: build_compact_summary_text(&record.summary, &messages[..=to_idx]),
+                        is_error: None,
+                    }],
+                    source: Some("compact-summary".to_string()),
+                    created_at: now_ms,
+                    updated_at: now_ms,
+                    tool_calls: None,
+                    tool_call_id: None,
+                    is_streaming: None,
+                    thinking: None,
+                    thinking_signature: None,
+                    assistant_id: None,
+                    attachments: None,
+                    tool_use: None,
+                    usage: None,
+                    error: None,
+                    metadata: None,
+                };
                 let summary_tokens =
                     crate::agent::llm::token_utils::estimate_tokens_bpe(&summary_msg);
                 let tail = messages[(to_idx + 1)..].to_vec();

@@ -1,4 +1,3 @@
-import type { CompactedRange } from './types';
 import type { CompactionPressure } from '@/models/agent-ipc';
 import { useCallback, useState } from 'react';
 
@@ -13,7 +12,7 @@ export function useLLMExecutionState() {
     ReadonlyMap<string, boolean>
   >(new Map());
   const [compactedRangeMap, setCompactedRangeMap] = useState<
-    ReadonlyMap<string, CompactedRange>
+    ReadonlyMap<string, { fromId: string; toId: string }>
   >(new Map());
   const [awaitingCompactMap, setAwaitingCompactMap] = useState<
     ReadonlyMap<string, boolean>
@@ -32,7 +31,10 @@ export function useLLMExecutionState() {
   }, []);
 
   const setCompactedRange = useCallback(
-    (sessionId: string, range: CompactedRange | undefined) => {
+    (
+      sessionId: string,
+      range: { fromId: string; toId: string } | undefined,
+    ) => {
       setCompactedRangeMap((prev) => {
         const next = new Map(prev);
         if (range) {

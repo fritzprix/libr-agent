@@ -309,7 +309,14 @@ impl SessionToolAccess {
     pub fn builtin_status(&self, alias: &str) -> (&'static str, Option<String>) {
         match &self.allowed_builtin_aliases {
             Some(allowed) if allowed.contains(alias) => ("[Ready]", None),
-            Some(_) => ("[Unsupported in current session]", None),
+            Some(_) => (
+                "[Requires agent__update]",
+                Some(format!(
+                    "This session cannot call '{}' tools right now. Update the current agent config with agent__update(id=\"{}\", builtinCapabilities:[...]) or delegate to another agent.",
+                    alias,
+                    self.agent_id.as_deref().unwrap_or("<agentId>")
+                )),
+            ),
             None => ("[Ready]", None),
         }
     }
@@ -321,11 +328,23 @@ impl SessionToolAccess {
     ) -> (&'static str, Option<String>) {
         match &self.allowed_external_server_ids {
             Some(allowed) if allowed.contains(server_id) => ("[Ready]", None),
-            Some(_) => ("[Unsupported in current session]", None),
-            None => {
-                let _ = (server_name, server_id);
-                ("[Unsupported in current session]", None)
-            }
+            Some(_) => (
+                "[Requires agent__update]",
+                Some(format!(
+                    "This session does not currently include external server '{}' (ID: {}). Use agent__update(id=\"{}\", externalMcpServers:[\"{}\"]) to enable it, or delegate to another agent.",
+                    server_name,
+                    server_id,
+                    self.agent_id.as_deref().unwrap_or("<agentId>"),
+                    server_id
+                )),
+            ),
+            None => (
+                "[Requires agent__update]",
+                Some(format!(
+                    "No session agent configuration was found. If you need '{}' (ID: {}), update the responsible agent with agent__update(..., externalMcpServers:[\"{}\"]).",
+                    server_name, server_id, server_id
+                )),
+            ),
         }
     }
 }

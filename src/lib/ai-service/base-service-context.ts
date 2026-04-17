@@ -7,54 +7,21 @@ const SESSION_CONTEXT_BACKGROUND_HEADER =
 
 const SESSION_CONTEXT_BACKGROUND_FOOTER = '[End of session context]';
 
-export function isCompactSummaryMessage(
-  message: Pick<Message, 'id' | 'source'> | undefined,
-): boolean {
-  if (!message) {
-    return false;
-  }
-
-  return (
-    message.source === 'compact-summary' ||
-    message.id.startsWith('compact-summary-')
-  );
-}
-
 export function buildCompactionInstruction(messages: Message[]): string {
   let instruction =
-    'Summarise the previous conversation history using strict compact Markdown.\n\n' +
-    'Use EXACTLY these sections in this order:\n' +
-    '1. Stable Context\n' +
-    '2. Key Decisions & Constraints\n' +
-    '3. Current State\n' +
-    '4. Recent Tool Results\n' +
-    '5. Next Actions\n\n' +
-    'Compression rules:\n' +
-    '- Use terse bullet points, not prose paragraphs.\n' +
-    '- Prefer noun phrases and short action statements.\n' +
-    '- Minimize adjectives, adverbs, filler, and repetition.\n' +
-    '- Do not restate obvious chronology or narration.\n' +
-    '- Preserve durable facts, decisions, constraints, user preferences, and unresolved work.\n' +
-    '- Keep volatile/recent details in Current State, Recent Tool Results, or Next Actions.\n' +
-    '- If a detail is recoverable from recent tool results, do not duplicate it in stable sections.\n\n' +
-    'Section limits:\n' +
-    '- Stable Context: at most 6 bullets\n' +
-    '- Key Decisions & Constraints: at most 6 bullets\n' +
-    '- Current State: at most 6 bullets\n' +
-    '- Recent Tool Results: at most 5 bullets\n' +
-    '- Next Actions: at most 5 bullets\n' +
-    '- Each bullet should be one short sentence or fragment.\n\n' +
+    'Summarise the previous conversation history concisely using structured Markdown.\n\n' +
+    'Organize the summary into clear sections (e.g., "Key Decisions", "Context", "Tool Results", "Pending Actions") ' +
+    'to preserve all information needed to continue the conversation effectively.\n\n' +
     'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
 
   const firstMsg = messages[0];
-  if (isCompactSummaryMessage(firstMsg)) {
+  if (firstMsg?.id.startsWith('compact-summary-')) {
     instruction =
       'The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n' +
       'CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary ' +
       'MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. ' +
-      'Do NOT drop durable information from the prior summary. ' +
-      'You may tighten wording, remove duplication, and relocate items into the required sections, but you must preserve the same meaning and operational usefulness. ' +
-      'Your new summary = (prior summary, preserved faithfully and reorganized if needed) + (new messages, summarised under the same schema).\n\n' +
+      'Do NOT compress, omit, or paraphrase the prior summary — treat it as an immutable residual that carries forward in full. ' +
+      'Your new summary = (prior summary, preserved completely) + (new messages, summarised).\n\n' +
       instruction;
   }
 

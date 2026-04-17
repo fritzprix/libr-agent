@@ -4,11 +4,9 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
-use ammonia::Builder;
 use async_trait::async_trait;
 use handlebars::Handlebars;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub mod tools;
@@ -175,12 +173,7 @@ impl UiServer {
         let interaction = args.get("interaction");
 
         let is_markdown = !matches!(format, "html");
-        let render_content = if is_markdown {
-            content.to_string()
-        } else {
-            sanitize_html_fragment(content)
-        };
-        let content_json = serde_json::to_string(&render_content)
+        let content_json = serde_json::to_string(content)
             .unwrap_or_else(|_| "\"\"".to_string())
             .replace("</", "<\\/");
 
@@ -195,7 +188,7 @@ impl UiServer {
         if !is_markdown {
             data.as_object_mut()
                 .unwrap()
-                .insert("content".to_string(), json!(render_content));
+                .insert("content".to_string(), json!(content));
         }
 
         if let Some(t) = title {
@@ -375,91 +368,6 @@ impl UiServer {
             Some(summary.as_str()),
         ))
     }
-}
-
-fn sanitize_html_fragment(content: &str) -> String {
-    let allowed_tags = [
-        "a",
-        "b",
-        "blockquote",
-        "br",
-        "code",
-        "div",
-        "em",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "hr",
-        "i",
-        "li",
-        "ol",
-        "p",
-        "pre",
-        "span",
-        "strong",
-        "table",
-        "tbody",
-        "td",
-        "th",
-        "thead",
-        "tr",
-        "ul",
-    ]
-    .into_iter()
-    .collect();
-    let allowed_attributes = HashMap::from([
-        ("a", ["href", "target", "title"].into_iter().collect()),
-        (
-            "table",
-            [
-                "align",
-                "bgcolor",
-                "border",
-                "cellpadding",
-                "cellspacing",
-                "width",
-            ]
-            .into_iter()
-            .collect(),
-        ),
-        (
-            "tbody",
-            ["align", "bgcolor", "valign"].into_iter().collect(),
-        ),
-        (
-            "td",
-            [
-                "align", "bgcolor", "colspan", "height", "rowspan", "valign", "width",
-            ]
-            .into_iter()
-            .collect(),
-        ),
-        (
-            "th",
-            [
-                "align", "bgcolor", "colspan", "height", "rowspan", "valign", "width",
-            ]
-            .into_iter()
-            .collect(),
-        ),
-        (
-            "thead",
-            ["align", "bgcolor", "valign"].into_iter().collect(),
-        ),
-        ("tr", ["align", "bgcolor", "valign"].into_iter().collect()),
-    ]);
-    let allowed_url_schemes = ["http", "https", "mailto"].into_iter().collect();
-
-    Builder::default()
-        .tags(allowed_tags)
-        .tag_attributes(allowed_attributes)
-        .url_schemes(allowed_url_schemes)
-        .link_rel(Some("noopener noreferrer"))
-        .clean(content)
-        .to_string()
 }
 
 pub const NAME: &str = "ui";

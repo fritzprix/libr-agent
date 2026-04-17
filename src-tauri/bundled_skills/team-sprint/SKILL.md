@@ -1,22 +1,22 @@
 ---
-name: schedule
+name: team-sprint
 description: Run scheduled-task-group teamwork in LibrAgent. Use when collaboration needs recurring, cron-like, heartbeat, or resumable background automation across a shared workspace using grouped scheduled tasks under backend-governed policy.
 ---
 
-# Schedule
+# Team Sprint
 
 Scheduled collaboration is grouped automation. It is not org identity.
 
-Use `teamwork` first when the workspace constitution is not ready.
+Use `task-force-builder` first when the workspace constitution is not ready.
 
 ## Workflow
 
 1. Confirm scheduled collaboration is the right substrate.
    - Use it for periodic wake-ups, background recurrence, heartbeat loops, or resumable async automation.
-   - If the user wants org-visible lineage or org-root resume behavior, stop and use `org`.
+   - If the user wants org-visible lineage or org-root resume behavior, stop and use `team-org`.
 2. Read `.libragent/teamwork.json` before acting.
    - Confirm `executionSubstrate.mode` is `"scheduled"` and `scheduledTaskGroups.intended` is `true`.
-   - If no manifest exists yet, run `teamwork` first to scaffold the workspace constitution.
+   - If no manifest exists yet, run `task-force-builder` first to scaffold the workspace constitution.
 3. Check whether the workspace scaffold exists.
    - If `agents.md`, `MISSION.md`, or `coordination/KANBAN.md` are missing, repair the scaffold before creating scheduled tasks.
    - A master agent woken by a scheduled task must verify the scaffold is present and current before issuing directives.

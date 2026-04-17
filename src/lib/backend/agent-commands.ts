@@ -10,15 +10,6 @@ import type { MCPResult } from '../mcp/protocol/response';
 import type { MCPTool } from '@/lib/mcp';
 import { createId } from '@paralleldrive/cuid2';
 
-export interface CompactContextRecord {
-  id: string;
-  sessionId: string;
-  fromId: string;
-  toId: string;
-  summary: string;
-  createdAt: number;
-}
-
 /**
  * Handle LLM response from frontend by sending it to Rust backend
  * This is the primary way to sync frontend-generated messages (like UI tool calls) with the Rust backend.
@@ -145,14 +136,6 @@ export async function handleCompactError(
   await safeInvoke<AgentResponse>('agent_handle_compact_error', {
     sessionId,
     error,
-  });
-}
-
-export async function getAgentCompactContext(
-  sessionId: string,
-): Promise<CompactContextRecord | null> {
-  return safeInvoke<CompactContextRecord | null>('agent_get_compact_context', {
-    sessionId,
   });
 }
 

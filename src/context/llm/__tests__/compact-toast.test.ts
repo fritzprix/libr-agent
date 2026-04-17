@@ -42,12 +42,6 @@ interface CompactPayload {
   };
 }
 
-interface CompactedRange {
-  fromId: string;
-  toId: string;
-  summary?: string;
-}
-
 interface Settings {
   preferredModel: { provider: string; model: string };
   serviceConfigs?: Record<string, { apiKey?: string; baseUrl?: string }>;
@@ -88,7 +82,7 @@ async function handleCompactEvent(
   clearCompactionPressureForSession: (sessionId: string) => void,
   setCompactedRangeForSession: (
     sessionId: string,
-    range: CompactedRange,
+    range: { fromId: string; toId: string },
   ) => void,
 ): Promise<void> {
   const { sessionId, messages, fromId, toId } = payload;
@@ -115,7 +109,7 @@ async function handleCompactEvent(
       availableTools: payload.parentRequest?.availableTools,
     });
     await handleCompactResponse(sessionId, fromId, toId, summary);
-    setCompactedRangeForSession(sessionId, { fromId, toId, summary });
+    setCompactedRangeForSession(sessionId, { fromId, toId });
     clearCompactionPressureForSession(sessionId);
   } catch {
     await handleCompactError(sessionId, {} as unknown);
@@ -445,7 +439,6 @@ describe('compact request handler', () => {
     const compactService = vi.fn().mockResolvedValue('A concise summary.');
     const getService = vi.fn().mockReturnValue({ compact: compactService });
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
-    const setCompactedRangeForSession = vi.fn();
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
@@ -454,7 +447,7 @@ describe('compact request handler', () => {
       handleCompactResponse,
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
-      setCompactedRangeForSession,
+      vi.fn(),
     );
 
     expect(handleCompactResponse).toHaveBeenCalledWith(
@@ -463,11 +456,6 @@ describe('compact request handler', () => {
       TO_ID,
       'A concise summary.',
     );
-    expect(setCompactedRangeForSession).toHaveBeenCalledWith(SESSION_ID, {
-      fromId: FROM_ID,
-      toId: TO_ID,
-      summary: 'A concise summary.',
-    });
   });
 
   it('clears in-flight state via handleCompactError on failure', async () => {

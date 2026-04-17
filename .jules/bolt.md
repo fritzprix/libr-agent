@@ -87,8 +87,3 @@
 
 **Learning:** Reusable formatter caches are often re-implemented in multiple component files instead of a centralized utility file, fragmenting the cache and increasing overall memory footprint.
 **Action:** When centralizing `Intl` formats in a `utils` file, ensure you support `locale` variations by storing instances in a `Map` within the central utility function, so that various localized formats can be safely cached and reused without recreating localized formatters locally in components.
-
-## 2026-10-26 - Redundant O(N log N) Sorting on Derived Arrays in Render Loop
-
-**Learning:** `ScheduledTasksPage` was creating intermediate arrays using `.filter(...)` and then sorting them using `.sort(...)` repeatedly in the render loop just to calculate `nextGroupRun` (the earliest next run time among enabled tasks). Since the source array `group.tasks` was already correctly sorted upstream (enabled first, then by `nextRunAt`), this eager downstream sorting was entirely redundant and caused unnecessary array allocations and O(N log N) computation per group render.
-**Action:** When extracting a single item (like a min/max or "next" item) from an already-sorted array, do not re-sort. Use an O(1) traversal like `.find(...)` to locate the first item matching your criteria. Similarly, avoid intermediate arrays from `.filter().length` and prefer `.reduce()` when just counting specific items in a hot path.

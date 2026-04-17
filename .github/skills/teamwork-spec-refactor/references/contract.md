@@ -27,7 +27,7 @@ The backend may validate, index, and surface this state, but it should not repla
 
 ## 2. Meta-meta-skill contract
 
-`teamwork` is not just a folder generator.
+`task-force-builder` is not just a folder generator.
 
 It must:
 

@@ -64,20 +64,6 @@ impl SqliteKnowledgeV2Repository {
         Self { db }
     }
 
-    fn build_literal_fts_query(query: &str) -> Option<String> {
-        let terms = query
-            .split_whitespace()
-            .filter(|term| !term.is_empty())
-            .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
-            .collect::<Vec<_>>();
-
-        if terms.is_empty() {
-            None
-        } else {
-            Some(terms.join(" "))
-        }
-    }
-
     fn embedding_bytes(embedding: &[f32]) -> Vec<u8> {
         // sqlite-vec expects little-endian f32 bytes in a BLOB.
         let mut bytes = Vec::with_capacity(std::mem::size_of_val(embedding));
@@ -171,10 +157,7 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
         let mut chunk_models = HashMap::<i32, knowledge_chunk_v2::Model>::new();
         const RRF_K: f32 = 60.0;
 
-        if let Some(query) = text_query
-            .map(str::trim)
-            .and_then(Self::build_literal_fts_query)
-        {
+        if let Some(query) = text_query.map(str::trim).filter(|query| !query.is_empty()) {
             let keyword_sql = r#"
                 SELECT
                     c.id, c.assistant_id, c.content, c.tags, c.source, c.created_at,

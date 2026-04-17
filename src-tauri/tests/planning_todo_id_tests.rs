@@ -85,11 +85,13 @@ async fn planning_context_and_update_todo_use_todo_ids() {
         .expect("todoId should be present");
 
     let service_context = server.get_service_context(None).await;
+    assert!(service_context.context_prompt.contains("| Todo ID |"));
     assert!(service_context
         .context_prompt
-        .contains(&format!("- #{} [high] Write the regression test", todo_id)));
-    assert!(!service_context.context_prompt.contains("| Todo ID |"));
-    assert!(!service_context.context_prompt.contains("Use 'todoId'"));
+        .contains(&format!("| {} |", todo_id)));
+    assert!(service_context
+        .context_prompt
+        .contains("*Use 'todoId' when calling updateTodo.*"));
 
     let update_result = server
         .call_tool(

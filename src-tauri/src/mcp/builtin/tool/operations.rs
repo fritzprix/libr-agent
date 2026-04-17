@@ -518,6 +518,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         name: String,
         description: String,
         status: String,
+        guidance: Option<String>,
     }
 
     let mut all_matched_tools: Vec<MatchedTool> = Vec::new();
@@ -525,27 +526,27 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     // --- Internal (builtin) tools ---
     if include_internal {
-        for entry in crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY {
-            let all_tools = crate::mcp::server::tools::get_static_tools_for_server(entry.canonical);
-            for t in all_tools {
-                if query.is_empty()
-                    || t.name.to_lowercase().contains(&query)
-                    || t.description.to_lowercase().contains(&query)
-                {
-                    let status = if session_view {
-                        let (s, _) = access.builtin_status(entry.canonical);
-                        s.to_string()
-                    } else {
-                        "".to_string()
-                    };
+        let all_tools = crate::mcp::server::tools::get_all_static_builtin_tools();
+        for t in all_tools {
+            if query.is_empty()
+                || t.name.to_lowercase().contains(&query)
+                || t.description.to_lowercase().contains(&query)
+            {
+                let server_alias = t.name.split("__").next().unwrap_or(&t.name);
+                let (status, guidance) = if session_view {
+                    let (s, g) = access.builtin_status(server_alias);
+                    (s.to_string(), g.map(|g| g.to_string()))
+                } else {
+                    ("".to_string(), None)
+                };
 
-                    all_matched_tools.push(MatchedTool {
-                        source: "Builtin".to_string(),
-                        name: t.name.clone(),
-                        description: t.description.clone(),
-                        status,
-                    });
-                }
+                all_matched_tools.push(MatchedTool {
+                    source: "Builtin".to_string(),
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    status,
+                    guidance,
+                });
             }
         }
     }
@@ -603,11 +604,11 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 let desc_match = desc.to_lowercase().contains(&query);
 
                 if query.is_empty() || name_match || desc_match || server_matches_query {
-                    let status = if session_view {
-                        let (s, _) = access.external_status(&model.id, &model.name);
-                        s.to_string()
+                    let (status, guidance) = if session_view {
+                        let (s, g) = access.external_status(&model.id, &model.name);
+                        (s.to_string(), g.map(|g| g.to_string()))
                     } else {
-                        "".to_string()
+                        ("".to_string(), None)
                     };
 
                     all_matched_tools.push(MatchedTool {
@@ -615,6 +616,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                         name: name.to_string(),
                         description: desc.to_string(),
                         status,
+                        guidance,
                     });
                     matched_in_server = true;
                 }
@@ -639,6 +641,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                     name: "-".to_string(),
                     description: desc.to_string(),
                     status,
+                    guidance: None,
                 });
             }
 
@@ -732,7 +735,11 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         let status_str = if t.status.is_empty() {
             "-".to_string()
         } else {
-            t.status.replace("|", "\\|").replace('\n', " ")
+            let mut s = t.status.clone();
+            if let Some(ref g) = t.guidance {
+                s.push_str(&format!(" — _{}_", g));
+            }
+            s.replace("|", "\\|").replace('\n', " ")
         };
 
         body.push_str(&format!(
@@ -751,7 +758,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         ));
     }
 
-    let external_action = if !session_view && !found_external_ids.is_empty() {
+    let external_action = if !found_external_ids.is_empty() {
         // De-duplicate external ids just in case.
         let mut unique_ids = found_external_ids.clone();
         unique_ids.sort();

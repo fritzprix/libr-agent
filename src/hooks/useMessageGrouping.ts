@@ -11,8 +11,6 @@ export type GroupedMessage =
       type: 'tool_group';
       message: Message;
       messages: Message[]; // All messages in this group
-      /** Message ids consumed by this group, including skipped tool result messages. */
-      coveredMessageIds: string[];
       toolGroup: {
         calls: ToolCall[];
         results: (Message | undefined)[];
@@ -255,7 +253,6 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         const allToolCalls: ToolCall[] = [];
         const groupToolCallIds = new Set<string>();
         const groupMessages: Message[] = []; // Collect all messages in the group
-        const coveredMessageIds: string[] = [];
         let j = i;
 
         // Collect consecutive assistant messages with tool calls
@@ -277,7 +274,6 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           }
 
           groupMessages.push(currentMsg);
-          coveredMessageIds.push(currentMsg.id);
           allToolCalls.push(...currentMsg.tool_calls);
           currentMsg.tool_calls.forEach((tc) => groupToolCallIds.add(tc.id));
 
@@ -291,7 +287,6 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           ) {
             // Capture skipped tool result in map.
             captureToolResult(messages[j], j);
-            coveredMessageIds.push(messages[j].id);
             j++;
           }
         }
@@ -314,7 +309,6 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             type: 'tool_group',
             message: msg,
             messages: groupMessages,
-            coveredMessageIds,
             toolGroup: { calls: allToolCalls, results },
           });
           groupEndIndices.push(j);

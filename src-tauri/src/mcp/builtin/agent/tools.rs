@@ -11,9 +11,9 @@ pub fn all_tools() -> Vec<MCPTool> {
         create_org_tool(),
         get_org_tool(),
         start_session_tool(),
+        spawn_org_session_tool(),
         message_to_session_tool(),
         check_session_tool(),
-        compact_session_context_tool(),
         stop_session_tool(),
     ]
 }
@@ -125,15 +125,19 @@ fn start_session_tool() -> MCPTool {
     MCPTool {
         name: "startSession".to_string(),
         title: Some("Start Agent Session".to_string()),
-        description: "Spawn a new child agent session to delegate a specific task. When the current session already belongs to an explicit org, the child joins that org automatically and, unless workspaceOverride is provided, shares the org root workspace by default. Set includeCurrentOrg=false to opt out. Returns immediately with session info unless waitForResult=true.".to_string(),
+        description: "Spawn a new child agent session to delegate a specific task. By default this is a normal delegation. Set includeCurrentOrg=true when the current session already belongs to an explicit org and you want the child to appear in Org view; when you do that and omit workspaceOverride, the child shares the explicit org root workspace by default. Returns immediately with session info unless waitForResult=true.".to_string(),
         input_schema: object_prop(
             vec![
                 ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then copy the returned ID. Do not put the agent name here.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
-                ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
+                ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a normal child uses its default isolated workspace; an org-visible child (`includeCurrentOrg=true`) inherits the explicit org root workspace by default."))),
                 ("maxDepth".to_string(), integer_prop(Some(0), None, Some("Override the delegation depth limit for this child session. If omitted, inherit the caller's maxDepth when present; otherwise leave the depth limit unset."))),
                 ("maxFanout".to_string(), integer_prop(Some(0), None, Some("Override the delegation fanout limit for this child session. If omitted, inherit the caller's maxFanout when present; otherwise leave the fanout limit unset."))),
-                ("includeCurrentOrg".to_string(), boolean_prop(Some("Optional explicit override for org inheritance. When omitted, children automatically inherit the caller's explicit org membership; set false to keep a delegated child out of Org view."))),
+                ("includeCurrentOrg".to_string(), {
+                    let mut schema = boolean_prop(Some("If true, the child inherits the caller's explicit org identity and will appear in Org view. This only works when the current session already belongs to an explicit org."));
+                    schema.default = Some(json!(false));
+                    schema
+                }),
                 ("waitForResult".to_string(), {
                     let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer."));
                     schema.default = Some(json!(false));
@@ -152,7 +156,7 @@ fn create_org_tool() -> MCPTool {
     MCPTool {
         name: "createOrg".to_string(),
         title: Some("Create Explicit Org".to_string()),
-        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session, not from arbitrary child sessions. If the teamwork scaffold is missing or inconsistent, the result will tell you to use teamwork next.".to_string(),
+        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session, not from arbitrary child sessions.".to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
@@ -177,6 +181,32 @@ fn get_org_tool() -> MCPTool {
                 string_prop(None, None, Some("Optional explicit org ID. If omitted, uses the caller session's org.")),
             )],
             vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn spawn_org_session_tool() -> MCPTool {
+    MCPTool {
+        name: "spawnOrgAgent".to_string(),
+        title: Some("Spawn Org Agent (Alias)".to_string()),
+        description: "Compatibility alias for startSession(includeCurrentOrg=true). Spawns a child session that explicitly belongs to the caller's org so it appears in Org view and, unless workspaceOverride is provided, shares the explicit org root workspace by default.".to_string(),
+        input_schema: object_prop(
+            vec![
+                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then copy the returned ID.")),
+                ("task".to_string(), string_prop_required("The specific task description for the org member session.")),
+                ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, the child inherits the explicit org root workspace by default."))),
+                ("maxDepth".to_string(), integer_prop(Some(0), None, Some("Override the delegation depth limit for this child session. If omitted, inherit the caller's maxDepth when present; otherwise leave the depth limit unset."))),
+                ("maxFanout".to_string(), integer_prop(Some(0), None, Some("Override the delegation fanout limit for this child session. If omitted, inherit the caller's maxFanout when present; otherwise leave the fanout limit unset."))),
+                ("waitForResult".to_string(), {
+                    let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer."));
+                    schema.default = Some(json!(false));
+                    schema
+                }),
+            ],
+            vec!["agentId".to_string(), "task".to_string()],
             None,
         ),
         output_schema: None,
@@ -249,35 +279,6 @@ fn stop_session_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to stop.")),
-            ],
-            vec!["sessionId".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-fn compact_session_context_tool() -> MCPTool {
-    MCPTool {
-        name: "compactSessionContext".to_string(),
-        title: Some("Compact Another Session Context".to_string()),
-        description: "Force a compaction pass for another active delegated session and wait for the compact summary result. Cross-session only: you cannot compact the current session with this tool. Use it when a child session has accumulated too much history and you want to refresh its stored compact summary before sending more work.".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "sessionId".to_string(),
-                    string_prop_required("ID of the target delegated session to compact. Must not be the current session."),
-                ),
-                (
-                    "timeout".to_string(),
-                    integer_prop_with_default(
-                        Some(5),
-                        Some(300),
-                        60,
-                        Some("Maximum seconds to wait for the compaction to finish and return the new compact summary."),
-                    ),
-                ),
             ],
             vec!["sessionId".to_string()],
             None,

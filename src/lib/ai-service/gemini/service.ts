@@ -14,7 +14,7 @@ import {
   AIServiceConfig,
   type ContextInjectionResult,
 } from '../types';
-import { BaseAIService } from '../base-service';
+import { BaseAIService, stableStringify } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
 import {
@@ -31,8 +31,8 @@ import { processGeminiStream } from './stream';
 import {
   createEphemeralSessionContextInjection,
   formatSessionContextAsBackgroundReference,
-  isCompactSummaryMessage,
 } from '../base-service-context';
+import { GeminiContextCacheManager } from './cache-manager';
 import type { MCPContent } from '@/lib/mcp';
 
 function summarizeLibrAgentMessages(messages: Message[]): {
@@ -53,7 +53,7 @@ function summarizeLibrAgentMessages(messages: Message[]): {
 
   for (const message of messages) {
     roleCounts[message.role] = (roleCounts[message.role] ?? 0) + 1;
-    if (isCompactSummaryMessage(message)) {
+    if (message.id.startsWith('compact-summary-')) {
       compactSummaryCount += 1;
     }
     if (message.id.startsWith('gemini-session-context-')) {
@@ -136,8 +136,33 @@ function summarizeGeminiContents(contents: Content[]): {
   };
 }
 
-function supportsGeminiToolsForModel(modelName: string): boolean {
-  return /gemini-(1\.[5-9]|[2-9])/.test(modelName.toLowerCase());
+function splitGeminiCachedPrefix(messages: Message[]): {
+  cacheableMessages: Message[];
+  liveMessages: Message[];
+} {
+  const lastNonSyntheticUserIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(
+      ({ message }) =>
+        message.role === 'user' &&
+        !message.id.startsWith('gemini-session-context-'),
+    )?.index;
+
+  if (
+    lastNonSyntheticUserIndex === undefined ||
+    lastNonSyntheticUserIndex <= 0
+  ) {
+    return {
+      cacheableMessages: [],
+      liveMessages: messages,
+    };
+  }
+
+  return {
+    cacheableMessages: messages.slice(0, lastNonSyntheticUserIndex),
+    liveMessages: messages.slice(lastNonSyntheticUserIndex),
+  };
 }
 
 /**
@@ -145,6 +170,7 @@ function supportsGeminiToolsForModel(modelName: string): boolean {
  */
 export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private genAI: GoogleGenAI;
+  private cacheManager: GeminiContextCacheManager;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
   private readonly CACHE_TTL = 3600000;
@@ -159,6 +185,19 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     this.genAI = new GoogleGenAI({
       apiKey: this.apiKey,
     });
+    this.cacheManager = new GeminiContextCacheManager(
+      this.genAI,
+      this.apiKey,
+      this.withRetry.bind(this),
+    );
+  }
+
+  static purgeSharedContextCache(apiKey: string): void {
+    GeminiContextCacheManager.purgeSharedContextCache(apiKey);
+  }
+
+  static resetSharedContextCacheForTests(): void {
+    GeminiContextCacheManager.resetSharedContextCacheForTests();
   }
 
   /**
@@ -255,13 +294,27 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       options,
     );
     try {
-      const normalizedContextInjection = this.prepareContextInjection(
+      const normalizedContextInjection = createEphemeralSessionContextInjection(
         options.systemPrompt,
         options.sessionContext,
         sanitizedMessages,
+        {
+          idPrefix: 'gemini-session-context',
+          contentText: options.sessionContext
+            ? formatSessionContextAsBackgroundReference(options.sessionContext)
+            : undefined,
+        },
+      );
+
+      const { cacheableMessages, liveMessages } = splitGeminiCachedPrefix(
+        normalizedContextInjection.messages,
+      );
+      const cacheableGeminiContents = this.convertMessages(
+        cacheableMessages,
+        normalizedContextInjection.systemPrompt,
       );
       const geminiMessages = this.convertMessages(
-        normalizedContextInjection.messages,
+        liveMessages,
         normalizedContextInjection.systemPrompt,
       );
       if (geminiMessages.length === 0) {
@@ -279,25 +332,83 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       const model =
         options.modelName || config.defaultModel || getDefaultModel();
+
+      // --- CONTEXT CACHING ABSTRACTION BEGIN ---
       const stablePrefix = normalizedContextInjection.systemPrompt ?? '';
-      const encoder = new TextEncoder();
+      const toolsPayload = geminiTools ? stableStringify(geminiTools) : '';
+      const cachedContentsPayload = stableStringify(cacheableGeminiContents);
       const toolDeclarationCount =
         geminiTools?.[0]?.functionDeclarations.length ?? 0;
+      const shouldUseCache = this.cacheManager.shouldAttemptContextCache(
+        model,
+        stablePrefix,
+        toolsPayload,
+        cachedContentsPayload,
+        toolDeclarationCount,
+      );
+      let cachedContentName: string | undefined;
+      let cacheKey: string | undefined;
+
+      if (shouldUseCache) {
+        cacheKey = this.cacheManager.createContextCacheKey(
+          model,
+          stablePrefix,
+          toolsPayload,
+          cachedContentsPayload,
+        );
+        const existingEntry =
+          await this.cacheManager.getUsableContextCacheEntry(
+            cacheKey,
+            'preflight validation',
+          );
+
+        if (existingEntry) {
+          cachedContentName = existingEntry.name;
+        } else {
+          cachedContentName = await this.cacheManager.createContextCacheEntry(
+            cacheKey,
+            model,
+            stablePrefix,
+            cacheableGeminiContents,
+            geminiTools,
+          );
+        }
+      }
+      // --- CONTEXT CACHING ABSTRACTION END ---
+
+      this.cacheManager.logPromptCacheMetadata({
+        model,
+        stablePrefix,
+        toolsPayload,
+        cachedContentsPayload,
+        cachedContentCount: cacheableGeminiContents.length,
+        toolDeclarationCount,
+        cacheKey,
+        shouldUseCache,
+        cachedContentName,
+      });
 
       const requestMessageSummary = summarizeLibrAgentMessages(
         normalizedContextInjection.messages,
       );
       const geminiContentSummary = summarizeGeminiContents(geminiMessages);
+      const encoder = new TextEncoder();
 
       this.logger.info('Gemini request assembly breakdown', {
         model,
-        implicitCachingEligible: model.startsWith('gemini-2.5-'),
+        usesCachedContent: Boolean(cachedContentName),
+        cachedContentName,
+        shouldUseCache,
         disableToolUse: options.disableToolUse ?? false,
         forceToolUse: options.forceToolUse ?? false,
         librAgentMessages: requestMessageSummary,
         geminiContents: geminiContentSummary,
         stablePrefixLength: stablePrefix.length,
         stablePrefixBytes: encoder.encode(stablePrefix).length,
+        toolsPayloadLength: toolsPayload.length,
+        toolsPayloadBytes: encoder.encode(toolsPayload).length,
+        cachedPrefixContents: summarizeGeminiContents(cacheableGeminiContents),
+        liveTailContents: geminiContentSummary,
         toolDeclarationCount,
       });
 
@@ -320,16 +431,22 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
       const safetySettings = prepareSafetySettings(config);
 
-      const createGeminiConfig = (): GeminiServiceConfig => {
+      const createGeminiConfig = (
+        cachedContentOverride?: string,
+      ): GeminiServiceConfig => {
         const geminiConfig: GeminiServiceConfig = {
           responseMimeType: 'text/plain',
         };
 
-        if (geminiTools) {
-          geminiConfig.tools = geminiTools;
-        }
-        if (stablePrefix) {
-          geminiConfig.systemInstruction = [{ text: stablePrefix }];
+        if (cachedContentOverride) {
+          geminiConfig.cachedContent = cachedContentOverride;
+        } else {
+          if (geminiTools) {
+            geminiConfig.tools = geminiTools;
+          }
+          if (stablePrefix) {
+            geminiConfig.systemInstruction = [{ text: stablePrefix }];
+          }
         }
 
         if (geminiTools) {
@@ -365,7 +482,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         return geminiConfig;
       };
 
-      const geminiConfig = createGeminiConfig();
+      const geminiConfig = createGeminiConfig(cachedContentName);
 
       // 🔍 Detailed Logging before API Call
       const sysPromptText = geminiConfig.systemInstruction?.[0]?.text || '';
@@ -385,9 +502,33 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         });
       };
 
-      const result = await this.withRetry(async () => {
-        return createStream(geminiConfig);
-      });
+      let result: Awaited<ReturnType<typeof createStream>>;
+      try {
+        result = await this.withRetry(async () => {
+          return createStream(geminiConfig);
+        });
+      } catch (error) {
+        if (
+          cachedContentName &&
+          cacheKey &&
+          this.shouldRetryWithoutCachedContent(error)
+        ) {
+          this.logger.warn(
+            'Gemini rejected cached-content request; retrying once without cachedContent.',
+            {
+              model,
+              cachedContentName,
+              error,
+            },
+          );
+          await this.cacheManager.invalidateEntry(cacheKey, 'api-rejection');
+          result = await this.withRetry(async () => {
+            return createStream(createGeminiConfig(undefined));
+          });
+        } else {
+          throw error;
+        }
+      }
 
       if (this.getAbortSignal().aborted) {
         this.logger.debug('Stream aborted before iteration');
@@ -419,6 +560,19 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         config,
       });
     }
+  }
+
+  private shouldRetryWithoutCachedContent(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+      message.includes('cachedcontent') ||
+      message.includes('cached content') ||
+      message.includes('cached_content')
+    );
   }
 
   override prepareContextInjection(
@@ -477,7 +631,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    return supportsGeminiToolsForModel(modelName);
+    return GeminiContextCacheManager.supportsToolsForModel(modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
@@ -588,8 +742,10 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
   /**
    * @inheritdoc
+   * @description Gemini explicit caches are provider-level assets and must
+   * outlive routine request cleanup to preserve cross-turn cache reuse.
    */
   dispose(): void {
-    this.logger.debug('Gemini service disposed');
+    this.logger.debug('Retaining Gemini context caches across service dispose');
   }
 }

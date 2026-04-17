@@ -653,16 +653,6 @@ async fn resolve_allowed_session_ids(
         .collect())
 }
 
-/// Sanitizes a string for safe use as a plain-text Markdown table cell.
-/// Collapses all line-ending variants (`\r\n`, `\n`, `\r`) into spaces and
-/// replaces `|` with the HTML entity `&#124;` so it can't break the table
-/// structure.
-fn sanitize_cell(s: &str) -> String {
-    s.replace("\r\n", " ")
-        .replace(['\n', '\r'], " ")
-        .replace('|', "&#124;")
-}
-
 fn render_list_text(page: &Page<HistorySessionItem>) -> String {
     let mut lines = vec![format!(
         "Found {} session(s) on page {} of {}.",
@@ -676,12 +666,17 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
         lines.push("| Name | ID | Status | Messages | Updated At |".to_string());
         lines.push("|---|---|---|---|---|".to_string());
         for session in &page.items {
-            let name = sanitize_cell(session.name.as_deref().unwrap_or("Unnamed session"));
-            let id = session.session_id.as_str();
-            let status = sanitize_cell(&session.status);
+            let name = session
+                .name
+                .as_deref()
+                .unwrap_or("Unnamed session")
+                .replace('|', "\\|")
+                .replace('\n', " ");
+            let id = session.session_id.replace('|', "\\|");
+            let status = session.status.replace('|', "\\|");
 
             lines.push(format!(
-                "| {} | `{}` | {} | {} | {} |",
+                "| `{}` | `{}` | {} | {} | {} |",
                 name, id, status, session.message_count, session.updated_at
             ));
         }
@@ -739,9 +734,12 @@ fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
         lines.push("| Message ID | Role | Created At | Chars | Preview |".to_string());
         lines.push("|---|---|---|---|---|".to_string());
         for message in &response.messages.items {
-            let msg_id = message.message_id.as_str();
-            let role = sanitize_cell(&message.role);
-            let preview = sanitize_cell(&message.content_preview);
+            let msg_id = message.message_id.replace('|', "\\|");
+            let role = message.role.replace('|', "\\|");
+            let preview = message
+                .content_preview
+                .replace('\n', " ")
+                .replace('|', "\\|");
 
             lines.push(format!(
                 "| `{}` | {} | {} | {} | {} |",
@@ -813,10 +811,10 @@ fn render_search_text(page: &Page<HistorySearchMatch>, caller_session_id: &str) 
             } else {
                 "other-session"
             };
-            let session_id = item.session_id.as_str();
-            let message_id = item.message_id.as_str();
-            let role = sanitize_cell(&item.role);
-            let snippet = sanitize_cell(&item.snippet);
+            let session_id = item.session_id.replace('|', "\\|");
+            let message_id = item.message_id.replace('|', "\\|");
+            let role = item.role.replace('|', "\\|");
+            let snippet = item.snippet.replace('\n', " ").replace('|', "\\|");
 
             lines.push(format!(
                 "| `{}` | {} | `{}` | {} | {:.3} | {} | {} |",

@@ -27,11 +27,7 @@ import {
 } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
-import type {
-  CompactRequest,
-  CompactedRange,
-  CompletionRequest,
-} from './types';
+import type { CompactRequest, CompletionRequest } from './types';
 import { isAbortError } from './types';
 import {
   applyServiceRuntimeConfig,
@@ -141,7 +137,7 @@ interface UseLLMListenerProps {
   setCompactingFromEvent: (sessionId: string, value: boolean) => void;
   setCompactedRangeForSession: (
     sessionId: string,
-    range: CompactedRange | undefined,
+    range: { fromId: string; toId: string } | undefined,
   ) => void;
   setAwaitingCompactForSession: (sessionId: string, value: boolean) => void;
 }
@@ -505,11 +501,7 @@ export function useLLMListener({
               config: runtimeConfig,
             });
             await handleCompactResponse(sessionId, fromId, toId, summary);
-            setCompactedRangeForSession(sessionId, {
-              fromId,
-              toId,
-              summary,
-            });
+            setCompactedRangeForSession(sessionId, { fromId, toId });
             clearCompactionPressureForSession(sessionId);
             logger.info(`✅ Compact summary stored: session=${sessionId}`);
           } catch (error) {

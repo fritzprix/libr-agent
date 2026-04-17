@@ -15,47 +15,6 @@ use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinSet;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExistingProxyDisposition {
-    Reuse,
-    Recreate,
-    Fail,
-}
-
-pub fn decide_existing_proxy_disposition(
-    existing_builtin_ids: &[String],
-    existing_external_server_names: &[String],
-    requested_builtin_ids: &[String],
-    requested_external_server_names: &[String],
-    config_load_failed: bool,
-) -> ExistingProxyDisposition {
-    let normalize = |values: &[String]| {
-        let mut normalized = values.to_vec();
-        normalized.sort();
-        normalized.dedup();
-        normalized
-    };
-
-    let existing_builtin_ids = normalize(existing_builtin_ids);
-    let existing_external_server_names = normalize(existing_external_server_names);
-    let requested_builtin_ids = normalize(requested_builtin_ids);
-    let requested_external_server_names = normalize(requested_external_server_names);
-
-    if config_load_failed {
-        if existing_builtin_ids == requested_builtin_ids {
-            ExistingProxyDisposition::Reuse
-        } else {
-            ExistingProxyDisposition::Fail
-        }
-    } else if existing_builtin_ids == requested_builtin_ids
-        && existing_external_server_names == requested_external_server_names
-    {
-        ExistingProxyDisposition::Reuse
-    } else {
-        ExistingProxyDisposition::Recreate
-    }
-}
-
 impl MCPServiceProxyManager {
     /// Create a new proxy manager
     ///
@@ -166,10 +125,36 @@ impl MCPServiceProxyManager {
         };
         let _session_lock = session_guard.lock().await;
 
+        // Re-check after acquiring the per-session lock: a concurrent caller may have
+        // already created the proxy while we were waiting.
+        {
+            let proxies = self.proxies.read().await;
+            if let Some(existing) = proxies.get(&session_id) {
+                log::debug!("Proxy already exists for session: {}", session_id);
+                emit_status("Session services ready", InitializationStatus::Complete);
+                return Ok(existing.clone());
+            }
+        }
+
         emit_status(
             "Initializing session environment",
             InitializationStatus::Running,
         );
+
+        // Clean up any stale stdio manager (rapid create/destroy cycles)
+        {
+            let mut stdio_managers = self.session_stdio_managers.write().await;
+            if let Some(old_mgr) = stdio_managers.remove(&session_id) {
+                log::debug!(
+                    "Cleaning up stale stdio manager for session: {}",
+                    session_id
+                );
+                // Emit cleanup status if needed, but it might be too fast
+                tokio::spawn(async move {
+                    old_mgr.shutdown_all().await;
+                });
+            }
+        }
 
         // Fetch configs directly from DB to support Session Isolation (independent of global connections)
         use crate::repositories::mcp_server_repository::MCPServerRepository;
@@ -180,7 +165,6 @@ impl MCPServiceProxyManager {
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
         let mut server_name_to_id = HashMap::new(); // Map server names to IDs for tool count updates
-        let mut config_load_error: Option<String> = None;
         let repo = get_mcp_server_repository();
 
         // Filter servers based on mcp_server_ids:
@@ -263,7 +247,6 @@ impl MCPServiceProxyManager {
                 );
             }
             Err(e) => {
-                config_load_error = Some(e.to_string());
                 log::error!(
                     "Failed to fetch MCP server configs from DB for session {}: {}",
                     session_id,
@@ -271,100 +254,6 @@ impl MCPServiceProxyManager {
                 );
             }
         }
-
-        let mut requested_builtin_ids = tool_ids.clone();
-        requested_builtin_ids.sort();
-        requested_builtin_ids.dedup();
-
-        let mut requested_external_server_names = stdio_configs.keys().cloned().collect::<Vec<_>>();
-        requested_external_server_names.extend(http_configs.keys().cloned());
-        requested_external_server_names.sort();
-        requested_external_server_names.dedup();
-
-        if let Some(existing) = self.get_proxy(&session_id).await {
-            let mut existing_builtin_ids = existing.builtin_tool_ids();
-            existing_builtin_ids.sort();
-            existing_builtin_ids.dedup();
-
-            let existing_external_server_names = existing.configured_external_server_names().await;
-            match decide_existing_proxy_disposition(
-                &existing_builtin_ids,
-                &existing_external_server_names,
-                &requested_builtin_ids,
-                &requested_external_server_names,
-                config_load_error.is_some(),
-            ) {
-                ExistingProxyDisposition::Reuse => {
-                    if let Some(load_error) = config_load_error.as_ref() {
-                        log::warn!(
-                            "Reusing existing proxy for session {} because MCP server configs could not be loaded: {}",
-                            session_id,
-                            load_error
-                        );
-                    } else {
-                        log::debug!("Proxy already exists for session: {}", session_id);
-                    }
-                    emit_status("Session services ready", InitializationStatus::Complete);
-                    return Ok(existing);
-                }
-                ExistingProxyDisposition::Fail => {
-                    let load_error = config_load_error.as_deref().unwrap_or("unknown error");
-                    return Err(format!(
-                        "Failed to load MCP server configs for session {} while updating builtin tools: {}",
-                        session_id, load_error
-                    ));
-                }
-                ExistingProxyDisposition::Recreate => {}
-            }
-
-            log::warn!(
-                "Recreating proxy for session {} due to config mismatch (builtin: {:?} -> {:?}, external: {:?} -> {:?})",
-                session_id,
-                existing_builtin_ids,
-                requested_builtin_ids,
-                existing_external_server_names,
-                requested_external_server_names
-            );
-
-            self.proxies.write().await.remove(&session_id);
-            self.proxy_readiness.write().await.remove(&session_id);
-
-            if let Some(old_mgr) = self
-                .session_stdio_managers
-                .write()
-                .await
-                .remove(&session_id)
-            {
-                tokio::spawn(async move {
-                    old_mgr.shutdown_all().await;
-                });
-            }
-
-            self.session_http_managers.write().await.remove(&session_id);
-        }
-
-        if let Some(load_error) = config_load_error {
-            return Err(format!(
-                "Failed to load MCP server configs for session {}: {}",
-                session_id, load_error
-            ));
-        }
-
-        // Clean up any leftover per-session managers/readiness state before rebuilding.
-        // This preserves the old "stale manager" cleanup behavior for sessions that
-        // somehow lost their proxy entry but still have session-scoped manager state.
-        self.proxy_readiness.write().await.remove(&session_id);
-        if let Some(old_mgr) = self
-            .session_stdio_managers
-            .write()
-            .await
-            .remove(&session_id)
-        {
-            tokio::spawn(async move {
-                old_mgr.shutdown_all().await;
-            });
-        }
-        self.session_http_managers.write().await.remove(&session_id);
 
         // Apply user settings to config (especially startup timeout)
         let mut config = self.config.clone();

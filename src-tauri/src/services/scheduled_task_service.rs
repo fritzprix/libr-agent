@@ -387,7 +387,7 @@ fn normalize_group_fields(
 }
 
 /// Async variant of normalize_group_fields that resolves groupName from the
-/// repository when only groupId is provided, matching the schedule contract:
+/// repository when only groupId is provided, matching the team-sprint contract:
 /// "first task supplies groupName to create; subsequent tasks join with groupId only."
 async fn normalize_group_fields_with_repo(
     repo: &dyn ScheduledTaskRepository,

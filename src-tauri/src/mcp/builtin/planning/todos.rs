@@ -46,13 +46,6 @@ pub async fn add_todo(
         Some(d) => d,
         None => return Ok(missing_param_error("description", ToolGroup::Planning)),
     };
-    let description = description.trim();
-    if description.is_empty() {
-        return Ok(invalid_input_error(
-            "Todo description cannot be blank",
-            ToolGroup::Planning,
-        ));
-    }
 
     let priority = args
         .get("priority")

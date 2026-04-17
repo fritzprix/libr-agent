@@ -1,9 +1,9 @@
 ---
-name: teamwork
+name: task-force-builder
 description: Build and scaffold a multi-agent collaboration workspace with the right coordination model, shared operating files, and role-specific skills. Use when a user wants to create a team, crew, task force, asynchronous collaboration loop, specialist handoff workflow, or reusable shared workspace for multiple agents, then route execution to the right teamwork skill.
 ---
 
-# Teamwork
+# Task Force Builder
 
 Build a task force only when the work is genuinely multi-track. If one capable agent can finish the job cleanly, use one agent.
 
@@ -56,7 +56,7 @@ Coordination model and execution substrate are not the same thing.
 Pick the execution substrate that matches the job:
 
 - **Plain child sessions** - use `startSession(...)` for one-off delegation that does not need org visibility.
-- **Explicit org lineage** - use `createOrg(...)` once from the root session, then use `startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic unless you set `includeCurrentOrg=false`. Org-visible children should normally share the coordinator's workspace.
+- **Explicit org lineage** - use `createOrg(...)` once from the root session, then use `startSession(..., includeCurrentOrg=true)` when the child should appear in Org view. Org-visible children should normally share the coordinator's workspace.
 - **Scheduled task groups** - use `createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 
 Keep these separate:
@@ -70,11 +70,11 @@ Keep these separate:
 
 After choosing the execution substrate, route to the matching specialist skill:
 
-- **Plain child sessions** - stay here and use `delegate` when child-session mechanics matter.
-- **Explicit org lineage** - switch to `org`.
-- **Scheduled task groups** - switch to `schedule`.
+- **Plain child sessions** - stay here and use `subagent-session-delegation` when child-session mechanics matter.
+- **Explicit org lineage** - switch to `team-org`.
+- **Scheduled task groups** - switch to `team-sprint`.
 
-`teamwork` decides and scaffolds. The specialist skill handles the execution-specific operating rules.
+`task-force-builder` decides and scaffolds. The specialist skill handles the execution-specific operating rules.
 
 ### 3. Create the workspace contract
 
@@ -136,7 +136,7 @@ Shared files are the coordination contract. Keep the loop explicit.
 
 ### 6. Handle persistence honestly
 
-If recurring execution is needed, switch to `schedule` and define the loops explicitly with the `scheduled_task` builtin tools. Use `createScheduledTask(...)` to create the first grouped loop with a clear `groupName`, then use `groupId` plus the other scheduled-task tools to extend, inspect, pause, or retune the group.
+If recurring execution is needed, switch to `team-sprint` and define the loops explicitly with the `scheduled_task` builtin tools. Use `createScheduledTask(...)` to create the first grouped loop with a clear `groupName`, then use `groupId` plus the other scheduled-task tools to extend, inspect, pause, or retune the group.
 
 Refresh behavior:
 
@@ -220,7 +220,7 @@ Before announcing success, verify:
 4. `agents.md` tells agents exactly where to read and write
 5. every important artifact has an owner
 6. the handoff path between roles is obvious
-7. the execution substrate and follow-up specialist skill are explicit: plain child sessions, `org`, or `schedule`
+7. the execution substrate and follow-up specialist skill are explicit: plain child sessions, `team-org`, or `team-sprint`
 8. refresh semantics are written down so agents know that updated rules apply only in a later execution step
 9. the governing session is still working in the workspace where it created the constitution
 
