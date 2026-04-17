@@ -433,7 +433,7 @@ async fn install_user_prepared_skills(
             .collect::<Vec<_>>()
             .join(", ");
         return Err(format!(
-            "Skill name conflicts found. Re-run with overwrite to continue: {}",
+            "Skill name conflicts found. Re-run with overwrite to continue, or provide excluded_skill_names to skip specific conflicting skills: {}",
             names
         ));
     }

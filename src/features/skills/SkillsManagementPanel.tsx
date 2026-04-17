@@ -734,26 +734,16 @@ function SkillsManagementPanelComponent({
         <AlertDialogContent className="grid max-h-[85vh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
           <AlertDialogHeader className="px-6 pt-6 pb-4">
             <AlertDialogTitle>
-              {pendingInstallUserConflicts.length > 0
-                ? t(
-                    'settings.skills.conflictTitle',
-                    'Replace conflicting skills?',
-                  )
-                : t(
-                    'settings.skills.systemConflictTitle',
-                    'Bundled skills are protected',
-                  )}
+              {t(
+                'settings.skills.conflictTitle',
+                'Replace conflicting skills?',
+              )}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingInstallUserConflicts.length > 0
-                ? t(
-                    'settings.skills.conflictDescription',
-                    'Choose which existing user skills should be overwritten. Bundled system skill collisions will be skipped automatically.',
-                  )
-                : t(
-                    'settings.skills.systemConflictDescription',
-                    'Incoming skills that collide with bundled system skills will be skipped automatically.',
-                  )}
+              {t(
+                'settings.skills.conflictDescription',
+                'Choose which existing user skills should be overwritten. Bundled system skill collisions will be skipped automatically.',
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="min-h-0 overflow-hidden px-6">
