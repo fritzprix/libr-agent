@@ -12,6 +12,12 @@ vi.mock('react-i18next', () => ({
 
 describe('InputTokenDropdown', () => {
   it('renders skill source badges and inserts the selected skill', () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      value: vi.fn(),
+      configurable: true,
+      writable: true,
+    });
+
     const onSelectArg = vi.fn();
     const skills: SkillMetadata[] = [
       {
@@ -62,5 +68,42 @@ describe('InputTokenDropdown', () => {
     fireEvent.mouseDown(screen.getByText('@skill:workspace-skill'));
 
     expect(onSelectArg).toHaveBeenCalledWith('workspace-skill');
+  });
+
+  it('scrolls the active option into view during keyboard navigation', () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      value: vi.fn(),
+      configurable: true,
+      writable: true,
+    });
+
+    const options = Array.from({ length: 4 }, (_, index) => ({
+      name: `type-${index}`,
+      label: `@type-${index}`,
+      description: `Option ${index}`,
+    }));
+
+    render(
+      <InputTokenDropdown
+        mode={{ kind: 'types', items: options }}
+        onSelectType={vi.fn()}
+        onSelectArg={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const renderedOptions = screen.getAllByRole('option');
+    const targetOption = renderedOptions[2];
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(targetOption, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+    });
+
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+
+    expect(targetOption).toHaveAttribute('aria-selected', 'true');
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
   });
 });

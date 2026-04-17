@@ -32,8 +32,7 @@ export function InputTokenDropdown({
   const { t } = useTranslation();
   const count = mode.items.length;
   const [activeIndex, setActiveIndex] = useState(0);
-  const [prevMode, setPrevMode] = useState(mode);
-  const listRef = useRef<HTMLUListElement>(null);
+  const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
 
   const getSkillSourceLabel = (skill: SkillMetadata) => {
     switch (skill.origin) {
@@ -59,10 +58,24 @@ export function InputTokenDropdown({
     }
   };
 
-  if (mode !== prevMode) {
-    setPrevMode(mode);
+  useEffect(() => {
     setActiveIndex(0);
-  }
+  }, [mode.kind, mode.items]);
+
+  useEffect(() => {
+    if (!count) {
+      return;
+    }
+
+    setActiveIndex((currentIndex) => Math.min(currentIndex, count - 1));
+  }, [count]);
+
+  useEffect(() => {
+    const activeItem = itemRefs.current[activeIndex];
+    if (typeof activeItem?.scrollIntoView === 'function') {
+      activeItem.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex]);
 
   useEffect(() => {
     if (!count) return;
@@ -105,7 +118,6 @@ export function InputTokenDropdown({
 
   return (
     <ul
-      ref={listRef}
       role="listbox"
       aria-label="Input token suggestions"
       className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-60 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md text-sm"
@@ -114,6 +126,9 @@ export function InputTokenDropdown({
         ? mode.items.map((type, i) => (
             <li
               key={type.name}
+              ref={(element) => {
+                itemRefs.current[i] = element;
+              }}
               role="option"
               aria-selected={i === activeIndex}
               className={cn(
@@ -138,6 +153,9 @@ export function InputTokenDropdown({
           ? mode.items.map((tool, i) => (
               <li
                 key={tool.name}
+                ref={(element) => {
+                  itemRefs.current[i] = element;
+                }}
                 role="option"
                 aria-selected={i === activeIndex}
                 className={cn(
@@ -164,6 +182,9 @@ export function InputTokenDropdown({
             ? mode.items.map((filePath, i) => (
                 <li
                   key={filePath}
+                  ref={(element) => {
+                    itemRefs.current[i] = element;
+                  }}
                   role="option"
                   aria-selected={i === activeIndex}
                   className={cn(
@@ -187,6 +208,9 @@ export function InputTokenDropdown({
               ? mode.items.map((playbook, i) => (
                   <li
                     key={playbook.id}
+                    ref={(element) => {
+                      itemRefs.current[i] = element;
+                    }}
                     role="option"
                     aria-selected={i === activeIndex}
                     className={cn(
@@ -218,6 +242,9 @@ export function InputTokenDropdown({
                   return (
                     <li
                       key={skill.name}
+                      ref={(element) => {
+                        itemRefs.current[i] = element;
+                      }}
                       role="option"
                       aria-selected={i === activeIndex}
                       className={cn(
