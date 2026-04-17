@@ -416,7 +416,7 @@ where
     let mut next_start_line = None;
     let mut next_line_too_large = false;
 
-    for (current_line, line_result) in (1usize..).zip(lines.into_iter()) {
+    for (current_line, line_result) in (1usize..).zip(lines) {
         let line = line_result.map_err(|e| {
             if e.kind() == std::io::ErrorKind::InvalidData {
                 "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
