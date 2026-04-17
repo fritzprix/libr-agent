@@ -659,8 +659,7 @@ async fn resolve_allowed_session_ids(
 /// structure.
 fn sanitize_cell(s: &str) -> String {
     s.replace("\r\n", " ")
-        .replace('\n', " ")
-        .replace('\r', " ")
+        .replace(['\n', '\r'], " ")
         .replace('|', "&#124;")
 }
 
