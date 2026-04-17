@@ -4,15 +4,13 @@ import type {
   MCPThinkingContent,
 } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
+import type { RenderItem } from '../types';
 
 export function groupContent(
   finalContent: MCPContent[],
   message?: Message,
-): (MCPContent | { type: 'tool_group_block'; items: MCPToolCallContent[] })[] {
-  const items: (
-    | MCPContent
-    | { type: 'tool_group_block'; items: MCPToolCallContent[] }
-  )[] = [];
+): RenderItem[] {
+  const items: RenderItem[] = [];
   let currentToolGroup: MCPToolCallContent[] = [];
 
   finalContent.forEach((item) => {
