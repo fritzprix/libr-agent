@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
@@ -62,6 +63,7 @@ const InitializationStatusDisplay = () => {
  */
 
 function AgentChatInner() {
+  const { t } = useTranslation();
   const { showWorkspacePanel } = useAgentWorkspace();
   const { showPlanningPanel } = useAgentPlanning();
 
@@ -118,10 +120,10 @@ function AgentChatInner() {
       );
 
       await injectMessages([toolCallMsg, toolResultMsg], true);
-      toast.success('Playbook started automatically');
+      toast.success(t('agent.chat.playbookStarted', 'Playbook started automatically'));
     } catch (error) {
       logger.error('Failed to auto-select playbook', error);
-      toast.error('Failed to start playbook workflow');
+      toast.error(t('agent.chat.startPlaybookFailed', 'Failed to start playbook workflow'));
     } finally {
       // No-op
     }
@@ -160,6 +162,7 @@ function AgentChatInner() {
 }
 
 export default function AgentChatView() {
+  const { t } = useTranslation();
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const { session, isSessionLoading } = useAgentSessionState();
   const attachmentSessionId = session?.id ?? routeSessionId ?? '';
@@ -174,8 +177,8 @@ export default function AgentChatView() {
               className="border-4"
               label={
                 session?.status === 'idle'
-                  ? 'Starting session...'
-                  : 'Loading session...'
+                  ? t('agent.chat.startingSession', 'Starting session...')
+                  : t('agent.chat.loadingSession', 'Loading session...')
               }
             />
 
@@ -185,8 +188,8 @@ export default function AgentChatView() {
                 aria-hidden="true"
               >
                 {session?.status === 'idle'
-                  ? 'Starting session...'
-                  : 'Loading session...'}
+                  ? t('agent.chat.startingSession', 'Starting session...')
+                  : t('agent.chat.loadingSession', 'Loading session...')}
               </div>
 
               <div className="text-xs text-muted-foreground/70 h-4">
@@ -198,7 +201,7 @@ export default function AgentChatView() {
       ) : !session ? (
         <div className="flex h-full items-center justify-center p-4">
           <div className="text-destructive">
-            Session not found or failed to load.
+            {t('agent.chat.sessionNotFound', 'Session not found or failed to load.')}
           </div>
         </div>
       ) : (

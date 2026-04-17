@@ -810,6 +810,26 @@
       "untitledNote": "Untitled note",
       "moreTasks": "more tasks",
       "updated": "updated"
+    },
+    "chat": {
+      "playbookStarted": "Playbook started automatically",
+      "startPlaybookFailed": "Failed to start playbook workflow",
+      "startingSession": "Starting session...",
+      "loadingSession": "Loading session...",
+      "sessionNotFound": "Session not found or failed to load."
+    },
+    "start": {
+      "heroTitle": "What would you like to do today?",
+      "heroSubtitle": "Select an assistant to begin a new autonomous session.",
+      "builtinAssistants": "Built-in Assistants",
+      "myAssistants": "My Assistants",
+      "noAssistants": "No assistants available yet.",
+      "createAssistant": "Create Assistant",
+      "manageAssistants": "+ Manage Assistants",
+      "startingPlaybook": "Starting playbook...",
+      "playbookNotFound": "Playbook not found",
+      "startingPlaybookNamed": "Starting playbook: {{name}}",
+      "startPlaybookFailed": "Failed to start playbook session"
     }
   },
   "scheduledTasks": {

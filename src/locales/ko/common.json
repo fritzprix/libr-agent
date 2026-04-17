@@ -780,6 +780,26 @@
       "untitledNote": "제목 없는 메모",
       "moreTasks": "개 작업 더 있음",
       "updated": "업데이트됨"
+    },
+    "start": {
+      "heroTitle": "오늘은 어떤 작업을 하시겠습니까?",
+      "heroSubtitle": "새 자율 세션을 시작할 어시스턴트를 선택하세요.",
+      "builtinAssistants": "내장 어시스턴트",
+      "myAssistants": "내 어시스턴트",
+      "noAssistants": "사용 가능한 어시스턴트가 아직 없습니다.",
+      "createAssistant": "어시스턴트 만들기",
+      "manageAssistants": "+ 어시스턴트 관리",
+      "startingPlaybook": "플레이북 시작 중...",
+      "playbookNotFound": "플레이북을 찾을 수 없습니다",
+      "startingPlaybookNamed": "플레이북 시작 중: {{name}}",
+      "startPlaybookFailed": "플레이북 세션 시작에 실패했습니다"
+    },
+    "chat": {
+      "playbookStarted": "플레이북이 자동으로 시작되었습니다",
+      "startPlaybookFailed": "플레이북 워크플로 시작에 실패했습니다",
+      "startingSession": "세션 시작 중...",
+      "loadingSession": "세션 로드 중...",
+      "sessionNotFound": "세션을 찾을 수 없거나 로드에 실패했습니다."
     }
   },
   "scheduledTasks": {

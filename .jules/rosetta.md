@@ -1,5 +1,11 @@
 # ROSETTA'S JOURNAL - LOCALIZATION LOG
 
+## 2026-03-21 - [AgentChatView & AgentChatStartView]
+
+**Extracted:** 12
+**Languages updated:** [EN, KO]
+**Notes:** Localized AgentChatView (loading/status strings, playbook toasts) and AgentChatStartView (empty states, action buttons, dynamic playbook loading toasts). Created `agent.chat` and `agent.start` namespaces in EN and KO `common.json`.
+
 ## 2026-03-20 - [AgentPlanningPanel]
 
 **Extracted:** 8
