@@ -409,7 +409,6 @@ where
     I: IntoIterator<Item = Result<String, std::io::Error>>,
 {
     let mut result_lines = Vec::new();
-    let mut current_line = 1usize;
     let mut total_lines = 0usize;
     let mut prefix_state = initial_prefix_hash_state();
     let mut content_bytes = 0usize;
@@ -417,7 +416,7 @@ where
     let mut next_start_line = None;
     let mut next_line_too_large = false;
 
-    for line_result in lines {
+    for (current_line, line_result) in (1usize..).zip(lines.into_iter()) {
         let line = line_result.map_err(|e| {
             if e.kind() == std::io::ErrorKind::InvalidData {
                 "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
@@ -457,8 +456,6 @@ where
         if current_line >= end {
             break;
         }
-
-        current_line += 1;
     }
 
     if result_lines.is_empty() && start > total_lines {

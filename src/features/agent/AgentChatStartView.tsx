@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,30 @@ import type { Assistant } from '@/models/chat';
 import { getPlaybook } from '@/lib/backend/playbooks';
 
 const logger = getLogger('AgentChatStartView');
+
+type PlaybookMatch = {
+  assistant: Assistant;
+  playbook: NonNullable<Awaited<ReturnType<typeof getPlaybook>>>;
+};
+
+async function findPlaybookMatch(
+  playbookId: string,
+  assistants: Assistant[],
+): Promise<PlaybookMatch | null> {
+  const playbookChecks = assistants.map(async (assistant) => {
+    try {
+      const playbook = await getPlaybook(playbookId, assistant.id);
+      return playbook ? { assistant, playbook } : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const matches = await Promise.all(playbookChecks);
+  return (
+    matches.find((match): match is PlaybookMatch => match !== null) ?? null
+  );
+}
 
 /**
  * Agent Chat Start View – Hub Layout
@@ -33,68 +57,62 @@ export default function AgentChatStartView() {
   );
   const [searchParams] = useSearchParams();
   const processingPlaybookRef = useRef(false);
+  const playbookId = searchParams.get('playbookId');
 
   // Handle Playbook Auto-Start
   useEffect(() => {
-    const playbookId = searchParams.get('playbookId');
-    if (playbookId && !processingPlaybookRef.current && assistants.length > 0) {
-      let toastId: string | number | undefined;
-
-      const initPlaybookSession = async () => {
-        try {
-          processingPlaybookRef.current = true;
-          setIsCreating(true);
-          logger.info('Auto-starting playbook session', { playbookId });
-
-          if (!toastId) toastId = toast.loading('Starting playbook...');
-
-          const allAssistants = assistants;
-          let playbook = null;
-          let targetAssistant = null;
-
-          for (const assistant of allAssistants) {
-            try {
-              playbook = await getPlaybook(playbookId, assistant.id);
-              if (playbook) {
-                targetAssistant = assistant;
-                break;
-              }
-            } catch {
-              continue;
-            }
-          }
-
-          if (!playbook || !targetAssistant) {
-            if (toastId) toast.dismiss(toastId);
-            toast.error('Playbook not found');
-            return;
-          }
-
-          if (toastId)
-            toast.loading(`Starting playbook: ${playbook.goal}`, {
-              id: toastId,
-            });
-
-          const session = await createSession({
-            assistant: targetAssistant,
-            name: playbook.goal,
-          });
-          if (toastId) toast.dismiss(toastId);
-
-          navigate(`/agent/${session.id}?playbookId=${playbookId}`);
-        } catch (error) {
-          if (toastId) toast.dismiss(toastId);
-          logger.error('Failed to start playbook session', error);
-          toast.error('Failed to start playbook session');
-        } finally {
-          processingPlaybookRef.current = false;
-          setIsCreating(false);
-        }
-      };
-
-      initPlaybookSession();
+    if (
+      !playbookId ||
+      processingPlaybookRef.current ||
+      assistants.length === 0
+    ) {
+      return;
     }
-  }, [searchParams, assistants, createSession, navigate]);
+
+    let toastId: string | number | undefined;
+
+    const initPlaybookSession = async () => {
+      try {
+        processingPlaybookRef.current = true;
+        setIsCreating(true);
+        logger.info('Auto-starting playbook session', { playbookId });
+
+        if (!toastId) toastId = toast.loading('Starting playbook...');
+
+        const match = await findPlaybookMatch(playbookId, assistants);
+
+        if (!match) {
+          if (toastId) toast.dismiss(toastId);
+          toast.error('Playbook not found');
+          return;
+        }
+
+        const { assistant: targetAssistant, playbook } = match;
+
+        if (toastId)
+          toast.loading(`Starting playbook: ${playbook.goal}`, {
+            id: toastId,
+          });
+
+        const session = await createSession({
+          assistant: targetAssistant,
+          name: playbook.goal,
+        });
+        if (toastId) toast.dismiss(toastId);
+
+        navigate(`/agent/${session.id}?playbookId=${playbookId}`);
+      } catch (error) {
+        if (toastId) toast.dismiss(toastId);
+        logger.error('Failed to start playbook session', error);
+        toast.error('Failed to start playbook session');
+      } finally {
+        processingPlaybookRef.current = false;
+        setIsCreating(false);
+      }
+    };
+
+    void initPlaybookSession();
+  }, [assistants, createSession, navigate, playbookId]);
 
   const handleAssistantSelect = useCallback(
     (assistant: Assistant) => {
@@ -104,9 +122,31 @@ export default function AgentChatStartView() {
     [navigate],
   );
 
-  // Split assistants into built-in vs user-created
-  const builtinAssistants = assistants.filter((a) => a.deletionProtected);
-  const customAssistants = assistants.filter((a) => !a.deletionProtected);
+  const handleStartSelection = useCallback(
+    (assistant: Assistant) => {
+      setIsCreating(true);
+      handleAssistantSelect(assistant);
+    },
+    [handleAssistantSelect],
+  );
+
+  const { builtinAssistants, customAssistants } = useMemo(() => {
+    const builtin: Assistant[] = [];
+    const custom: Assistant[] = [];
+
+    for (const assistant of assistants) {
+      if (assistant.deletionProtected) {
+        builtin.push(assistant);
+      } else {
+        custom.push(assistant);
+      }
+    }
+
+    return {
+      builtinAssistants: builtin,
+      customAssistants: custom,
+    };
+  }, [assistants]);
 
   const renderGrid = (list: Assistant[]) => (
     <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 list-none">
@@ -118,10 +158,7 @@ export default function AgentChatStartView() {
               assistant={assistant}
               isStarting={isThisStarting}
               disabled={isCreating}
-              onSelect={(a) => {
-                setIsCreating(true);
-                handleAssistantSelect(a);
-              }}
+              onSelect={handleStartSelection}
             />
           </li>
         );

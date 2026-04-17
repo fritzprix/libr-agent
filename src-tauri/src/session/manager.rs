@@ -1,4 +1,5 @@
 use log::info;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -153,7 +154,7 @@ impl SessionManager {
             .map_err(|e| format!("Failed to read workspace pool: {e}"))?;
 
         let mut sessions: Vec<SessionWorkspaceInfo> = pool.values().cloned().collect();
-        sessions.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+        sessions.sort_by_key(|session| Reverse(session.last_accessed));
         Ok(sessions)
     }
 
@@ -365,7 +366,7 @@ impl SessionManager {
                 .map_err(|e| format!("Failed to read workspace pool: {e}"))?;
 
             let mut sorted_sessions: Vec<_> = pool.values().collect();
-            sorted_sessions.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+            sorted_sessions.sort_by_key(|session| Reverse(session.last_accessed));
 
             // Keep the most recent sessions, remove older ones
             for (index, session_info) in sorted_sessions.iter().enumerate() {
