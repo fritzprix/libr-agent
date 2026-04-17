@@ -66,10 +66,12 @@ export async function previewUserSkillImport(
 export async function importUserSkills(
   filePath: string,
   overwriteExisting: boolean,
+  excludedSkillNames?: string[],
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('import_user_skills', {
     filePath,
     overwriteExisting,
+    excludedSkillNames,
   });
 }
 
@@ -84,10 +86,12 @@ export async function previewGitHubSkillInstall(
 export async function installGitHubSkills(
   repoUrl: string,
   overwriteExisting: boolean,
+  excludedSkillNames?: string[],
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('install_github_skills', {
     repoUrl,
     overwriteExisting,
+    excludedSkillNames,
   });
 }
 

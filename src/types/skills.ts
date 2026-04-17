@@ -51,4 +51,5 @@ export interface SkillImportPreview {
 export interface SkillImportResult {
   importedNames: string[];
   overwrittenNames: string[];
+  skippedNames: string[];
 }
