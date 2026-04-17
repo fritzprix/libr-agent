@@ -2,6 +2,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { AIServiceProvider, TokenUsage } from '../types';
 import {
   type Message,
+  type MessageError,
   type RustMessage,
   rustMessageToMessage,
 } from '@/models/chat';
@@ -105,4 +106,141 @@ export function isSpendingCapError(error: unknown): boolean {
     message.includes('spending cap') ||
     (message.includes('RESOURCE_EXHAUSTED') && message.includes('spending'))
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumber(
+  record: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function tryParseJsonObject(
+  input: string,
+): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(input);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseProviderErrorPayload(input: string): {
+  message?: string;
+  code?: number;
+  status?: string;
+} | null {
+  const trimmed = input.trim();
+  const jsonStart = trimmed.indexOf('{');
+  const candidates =
+    jsonStart >= 0 ? [trimmed, trimmed.slice(jsonStart)] : [trimmed];
+
+  for (const candidate of candidates) {
+    const parsed = tryParseJsonObject(candidate);
+    if (!parsed) continue;
+
+    const errorRecord = isRecord(parsed.error) ? parsed.error : parsed;
+    const code = getNumber(errorRecord, 'code');
+    const status = getString(errorRecord, 'status');
+    const message = getString(errorRecord, 'message');
+
+    if (message) {
+      const nested = parseProviderErrorPayload(message);
+      return {
+        code: nested?.code ?? code,
+        status: nested?.status ?? status,
+        message: nested?.message ?? message,
+      };
+    }
+
+    if (code !== undefined || status !== undefined) {
+      return { code, status };
+    }
+  }
+
+  return null;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (isRecord(error)) {
+    const message = getString(error, 'message');
+    if (message) {
+      return message;
+    }
+  }
+
+  return String(error);
+}
+
+function extractFirstUrl(input: string): string | undefined {
+  const match = input.match(/https?:\/\/[^\s)"]+/i);
+  return match?.[0];
+}
+
+export function normalizeAIServiceError(error: unknown): {
+  type: MessageError['type'];
+  displayMessage: string;
+  recoverable: boolean;
+  errorCode?: string;
+} | null {
+  const rawMessage = getErrorMessage(error);
+  const parsedPayload = parseProviderErrorPayload(rawMessage);
+  const providerMessage = parsedPayload?.message?.trim();
+  const normalizedProviderMessage =
+    providerMessage && !providerMessage.startsWith('{')
+      ? providerMessage.replace(/\s+/g, ' ').trim()
+      : undefined;
+  const billingUrl = extractFirstUrl(normalizedProviderMessage ?? rawMessage);
+  const status = parsedPayload?.status;
+  const code = parsedPayload?.code;
+  const lowerRawMessage = rawMessage.toLowerCase();
+  const isRateLimit =
+    code === 429 ||
+    status === 'RESOURCE_EXHAUSTED' ||
+    lowerRawMessage.includes('rate limit') ||
+    lowerRawMessage.includes('too many requests');
+
+  if (isSpendingCapError(error)) {
+    const billingMessage = billingUrl
+      ? `Billing limit reached for this AI provider. Update your billing or quota settings and try again: ${billingUrl}`
+      : 'Billing limit reached for this AI provider. Update your billing or quota settings and try again.';
+
+    return {
+      type: 'RATE_LIMIT_ERROR',
+      displayMessage: billingMessage,
+      recoverable: false,
+      errorCode: 'SPENDING_CAP_EXCEEDED',
+    };
+  }
+
+  if (isRateLimit) {
+    return {
+      type: 'RATE_LIMIT_ERROR',
+      displayMessage:
+        normalizedProviderMessage ??
+        'Rate limit exceeded. Please wait a moment and try again.',
+      recoverable: true,
+      errorCode: 'RATE_LIMIT_EXCEEDED',
+    };
+  }
+
+  return null;
 }

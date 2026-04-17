@@ -4,6 +4,7 @@ import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
+import { AIServiceError, AIServiceProvider } from '@/lib/ai-service/types';
 import type { Message } from '@/models/chat';
 import { SettingsProvider } from '../SettingsContext';
 import type { ReactNode } from 'react';
@@ -263,5 +264,62 @@ describe('LLMServiceContext – Event Handling', () => {
     expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
     expect(AIServiceFactory.getService).toHaveBeenCalledTimes(1);
     expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes Gemini spending-cap 429 errors into a user-friendly workflow error', async () => {
+    let eventHandler: ((event: unknown) => void) | undefined;
+
+    (listen as ReturnType<typeof vi.fn>).mockImplementation(
+      async (eventName, handler) => {
+        if (eventName === 'llm:completion-request') {
+          eventHandler = handler as (event: unknown) => void;
+        }
+        return mockUnlisten;
+      },
+    );
+
+    mockStreamChat.mockImplementation(async function* () {
+      yield;
+      throw new AIServiceError(
+        'gemini streaming failed: {"error":{"message":"{\\n  \\"error\\": {\\n    \\"code\\": 429,\\n    \\"message\\": \\"Your project has exceeded its monthly spending cap. Please go to AI Studio at https://ai.studio/spend to manage your project spend cap.\\",\\n    \\"status\\": \\"RESOURCE_EXHAUSTED\\"\\n  }\\n}\\n","code":429,"status":"Unknown Error"}}',
+        AIServiceProvider.Gemini,
+        429,
+      );
+    });
+
+    renderHook(() => useLLMService(), {
+      wrapper: TestWrapper,
+    });
+
+    await waitFor(() => {
+      expect(eventHandler).toBeDefined();
+    });
+
+    await act(async () => {
+      await eventHandler?.({
+        payload: {
+          sessionId: 'test-session',
+          messages: [],
+          model: 'gemini-flash-latest',
+          provider: 'gemini',
+          apiKey: 'test-key',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
+        'test-session',
+        expect.objectContaining({
+          type: 'RATE_LIMIT_ERROR',
+          displayMessage:
+            'Billing limit reached for this AI provider. Update your billing or quota settings and try again: https://ai.studio/spend',
+          recoverable: false,
+          details: expect.objectContaining({
+            errorCode: 'SPENDING_CAP_EXCEEDED',
+          }),
+        }),
+      );
+    });
   });
 });

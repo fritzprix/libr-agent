@@ -4,6 +4,7 @@ export {
   formatUsageMetrics,
   generateToolCallId,
   isAIServiceProvider,
+  normalizeAIServiceError,
   isSpendingCapError,
   normalizeRustMessage,
   safeJsonStringify,
