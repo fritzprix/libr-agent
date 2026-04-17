@@ -54,6 +54,7 @@ interface ScheduledTaskGroupSection {
   groupId: string | null;
   groupName: string;
   tasks: ScheduledTask[];
+  enabledCount: number;
 }
 
 export function ScheduledTasksPage() {
@@ -134,6 +135,9 @@ export function ScheduledTasksPage() {
       const existing = groups.get(key);
       if (existing) {
         existing.tasks.push(task);
+        // ⚡ Bolt: Calculate derived counts while building the adjacency map
+        // instead of doing inline group.tasks.reduce() in the render loop.
+        if (task.enabled) existing.enabledCount++;
         continue;
       }
 
@@ -142,6 +146,7 @@ export function ScheduledTasksPage() {
         groupId: task.groupId,
         groupName: task.groupName,
         tasks: [task],
+        enabledCount: task.enabled ? 1 : 0,
       });
     }
 
@@ -158,10 +163,14 @@ export function ScheduledTasksPage() {
     [tasks],
   );
 
-  const enabledTaskCount = tasks.reduce(
-    (acc, task) => (task.enabled ? acc + 1 : acc),
-    0,
-  );
+  // ⚡ Bolt: Memoize the count to prevent O(N) array reduction on every React render
+  const enabledTaskCount = useMemo(() => {
+    let count = 0;
+    for (const task of tasks) {
+      if (task.enabled) count++;
+    }
+    return count;
+  }, [tasks]);
 
   if (loading) {
     return (
@@ -250,10 +259,6 @@ export function ScheduledTasksPage() {
                 </h2>
               </div>
               {groupedSections.map((group) => {
-                const groupEnabledCount = group.tasks.reduce(
-                  (count, task) => (task.enabled ? count + 1 : count),
-                  0,
-                );
                 // group.tasks is already sorted via compareScheduledTasks.
                 // This lookup relies on that ordering, so the first enabled task
                 // with a non-null nextRunAt is the group's earliest upcoming run.
@@ -275,7 +280,7 @@ export function ScheduledTasksPage() {
                         </Badge>
                         <Badge variant="outline" className="text-xs">
                           {t('scheduledTasks.groupEnabledCount', {
-                            count: groupEnabledCount,
+                            count: group.enabledCount,
                             defaultValue: '{{count}} enabled',
                           })}
                         </Badge>

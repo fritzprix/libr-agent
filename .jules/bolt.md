@@ -92,3 +92,8 @@
 
 **Learning:** `ScheduledTasksPage` was creating intermediate arrays using `.filter(...)` and then sorting them using `.sort(...)` repeatedly in the render loop just to calculate `nextGroupRun` (the earliest next run time among enabled tasks). Since the source array `group.tasks` was already correctly sorted upstream (enabled first, then by `nextRunAt`), this eager downstream sorting was entirely redundant and caused unnecessary array allocations and O(N log N) computation per group render.
 **Action:** When extracting a single item (like a min/max or "next" item) from an already-sorted array, do not re-sort. Use an O(1) traversal like `.find(...)` to locate the first item matching your criteria. Similarly, avoid intermediate arrays from `.filter().length` and prefer `.reduce()` when just counting specific items in a hot path.
+
+## 2026-10-27 - Inline Array Reductions in Render Loops
+
+**Learning:** `SessionHistoryPanel` and `ScheduledTasksPage` were executing array `.reduce()` loops inline within the component body or JSX mapping blocks to calculate derived properties (like active task counts or bookmarked sessions). Since these components frequently re-render on user input (e.g., typing in a search box), the O(N) recalculations severely degraded UI responsiveness.
+**Action:** When computing derived counts or metrics from large arrays in React components, never use inline `.reduce()` calls directly within the render loop or JSX body. Instead, wrap the calculation in `useMemo`, or integrate the counting logic into an existing O(N) traversal (like building an adjacency map or pre-existing `useMemo` block) to eliminate redundant passes entirely.

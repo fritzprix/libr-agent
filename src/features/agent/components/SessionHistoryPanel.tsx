@@ -343,7 +343,16 @@ export function SessionHistoryPanel({
       idle: 0,
       paused: 0,
       error: 0,
+      bookmarked: 0,
     };
+
+    // ⚡ Bolt: Calculate bookmarked count within this existing O(N) traversal
+    // instead of doing an inline .reduce() during every React render pass.
+    baseSessions.forEach((session) => {
+      if (session.isBookmarked) {
+        counts.bookmarked++;
+      }
+    });
 
     segmentedSessions.forEach((session) => {
       if (Object.prototype.hasOwnProperty.call(counts, session.status)) {
@@ -352,7 +361,7 @@ export function SessionHistoryPanel({
     });
 
     return counts;
-  }, [segmentedSessions]);
+  }, [baseSessions, segmentedSessions]);
 
   return (
     <div className="p-6 h-full flex flex-col bg-background">
@@ -400,12 +409,7 @@ export function SessionHistoryPanel({
             </TabsTrigger>
             <TabsTrigger value="bookmarked" className="flex-1">
               <Bookmark className="mr-1.5 h-3.5 w-3.5" />
-              {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} (
-              {baseSessions.reduce(
-                (acc, session) => (session.isBookmarked ? acc + 1 : acc),
-                0,
-              )}
-              )
+              {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} ({statusCounts.bookmarked})
             </TabsTrigger>
           </TabsList>
         </Tabs>
