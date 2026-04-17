@@ -224,7 +224,7 @@
                   .replace(/\*([^*]+)\*/g, '<em>$1</em>')
                   .replace(/_([^_]+)_/g, '<em>$1</em>')
                   .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
-                    var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url : '#';
+                    var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url.trim().replace(/"/g, '&quot;') : '#';
                     return '<a href="' + safe + '" target="_blank" rel="noopener">' + text + '</a>';
                   });
               }

@@ -63,3 +63,7 @@
 **Vulnerability:** SQL injection vulnerability in `database_backup.rs` where the backup file path was directly interpolated into a `VACUUM INTO '{path}'` SQL string without escaping single quotes.
 **Learning:** `VACUUM INTO` requires a string literal and cannot be parameterized with standard placeholder bindings (like `?`). Standard interpolation (`format!`) without sanitization allows breaking out of the string literal if the path contains single quotes, leading to syntax errors or potentially arbitrary SQL execution on SQLite databases.
 **Prevention:** Always manually escape single quotes by replacing them with two single quotes (`''`) when dynamically constructing paths for statements like `VACUUM INTO` that cannot use standard query parameters.
+## 2025-02-27 - Cross-Site Scripting (XSS) in UI Interactions
+**Vulnerability:** XSS via unescaped URL parameter in the `present_interactive` MCP tool's markdown parser.
+**Learning:** Checking for safe URL schemes (like `https:` or `mailto:`) is not enough to prevent XSS if the URL itself is not properly escaped before being embedded into an HTML attribute. An attacker can break out of the `href` attribute by providing double quotes and injecting event handlers (e.g., `onmouseover`).
+**Prevention:** Always ensure that dynamically generated URLs are properly escaped, especially double quotes (`"`), before inserting them into HTML attributes, even after verifying their schemes.
