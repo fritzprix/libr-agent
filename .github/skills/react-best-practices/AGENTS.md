@@ -807,7 +807,7 @@ RSC→client serialization deduplicates by object reference, not value. Same ref
 <ClientList usernames={usernames} />;
 
 // Client: transform there
-'use client';
+('use client');
 const sorted = useMemo(() => [...usernames].sort(), [usernames]);
 ```
 
@@ -1093,7 +1093,7 @@ async function Page() {
   return <Profile user={user} />;
 }
 
-'use client';
+('use client');
 function Profile({ user }: { user: User }) {
   return <div>{user.name}</div>; // uses 1 field
 }
@@ -1107,7 +1107,7 @@ async function Page() {
   return <Profile name={user.name} />;
 }
 
-'use client';
+('use client');
 function Profile({ name }: { name: string }) {
   return <div>{name}</div>;
 }
