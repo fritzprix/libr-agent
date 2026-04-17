@@ -20,6 +20,18 @@ interface SkillsListModalProps {
   onDeleteUserSkill: (skillName: string) => void;
 }
 
+export function formatSkillDisplayPath(path: string): string {
+  if (path.startsWith('\\\\?\\UNC\\')) {
+    return `\\\\${path.slice('\\\\?\\UNC\\'.length)}`;
+  }
+
+  if (path.startsWith('\\\\?\\')) {
+    return path.slice('\\\\?\\'.length);
+  }
+
+  return path;
+}
+
 function SkillRow({
   skill,
   action,
@@ -50,7 +62,7 @@ function SkillRow({
 
       <div className="flex items-center gap-2 mt-2 ml-6 text-xs text-muted-foreground bg-muted/50 p-2 rounded">
         <FileText className="w-3 h-3 shrink-0" />
-        <code className="break-all">{skill.path}</code>
+        <code className="break-all">{formatSkillDisplayPath(skill.path)}</code>
       </div>
     </div>
   );
