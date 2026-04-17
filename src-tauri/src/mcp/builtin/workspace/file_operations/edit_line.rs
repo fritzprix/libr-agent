@@ -41,7 +41,7 @@ fn apply_edits(orig_lines: &[&str], edits: &[LineEdit]) -> Vec<String> {
     let mut modified: Vec<String> = orig_lines.iter().map(|&s| s.to_string()).collect();
     let mut sorted = edits.to_vec();
     // Sort high -> low. For InsertAfter at line 0, it stays at the bottom of the sort (lowest index).
-    sorted.sort_by(|a, b| b.start_line.cmp(&a.start_line));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.start_line));
 
     for edit in &sorted {
         let replacement: Vec<String> = if edit.new_value.is_empty() {
