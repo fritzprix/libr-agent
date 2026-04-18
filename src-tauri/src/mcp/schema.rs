@@ -8,10 +8,18 @@ pub enum JSONSchemaType {
     #[serde(rename = "string")]
     String {
         /// The minimum length of the string.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "minLength",
+            alias = "min_length",
+            skip_serializing_if = "Option::is_none"
+        )]
         min_length: Option<u32>,
         /// The maximum length of the string.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "maxLength",
+            alias = "max_length",
+            skip_serializing_if = "Option::is_none"
+        )]
         max_length: Option<u32>,
         /// A regular expression pattern for the string to match.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,13 +38,25 @@ pub enum JSONSchemaType {
         #[serde(skip_serializing_if = "Option::is_none")]
         maximum: Option<f64>,
         /// The exclusive minimum value.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "exclusiveMinimum",
+            alias = "exclusive_minimum",
+            skip_serializing_if = "Option::is_none"
+        )]
         exclusive_minimum: Option<f64>,
         /// The exclusive maximum value.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "exclusiveMaximum",
+            alias = "exclusive_maximum",
+            skip_serializing_if = "Option::is_none"
+        )]
         exclusive_maximum: Option<f64>,
         /// Specifies that the value must be a multiple of this number.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "multipleOf",
+            alias = "multiple_of",
+            skip_serializing_if = "Option::is_none"
+        )]
         multiple_of: Option<f64>,
     },
     /// An integer type, with optional range and multiple-of constraints.
@@ -49,13 +69,25 @@ pub enum JSONSchemaType {
         #[serde(skip_serializing_if = "Option::is_none")]
         maximum: Option<i64>,
         /// The exclusive minimum value.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "exclusiveMinimum",
+            alias = "exclusive_minimum",
+            skip_serializing_if = "Option::is_none"
+        )]
         exclusive_minimum: Option<i64>,
         /// The exclusive maximum value.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "exclusiveMaximum",
+            alias = "exclusive_maximum",
+            skip_serializing_if = "Option::is_none"
+        )]
         exclusive_maximum: Option<i64>,
         /// Specifies that the value must be a multiple of this number.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "multipleOf",
+            alias = "multiple_of",
+            skip_serializing_if = "Option::is_none"
+        )]
         multiple_of: Option<i64>,
     },
     /// A boolean type.
@@ -68,13 +100,25 @@ pub enum JSONSchemaType {
         #[serde(skip_serializing_if = "Option::is_none")]
         items: Option<Box<JSONSchema>>,
         /// The minimum number of items in the array.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "minItems",
+            alias = "min_items",
+            skip_serializing_if = "Option::is_none"
+        )]
         min_items: Option<u32>,
         /// The maximum number of items in the array.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "maxItems",
+            alias = "max_items",
+            skip_serializing_if = "Option::is_none"
+        )]
         max_items: Option<u32>,
         /// If true, all items in the array must be unique.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "uniqueItems",
+            alias = "unique_items",
+            skip_serializing_if = "Option::is_none"
+        )]
         unique_items: Option<bool>,
     },
     /// An object type, with optional constraints on its properties.
@@ -87,13 +131,25 @@ pub enum JSONSchemaType {
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<Vec<String>>,
         /// If false, no additional properties are allowed.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "additionalProperties",
+            alias = "additional_properties",
+            skip_serializing_if = "Option::is_none"
+        )]
         additional_properties: Option<bool>,
         /// The minimum number of properties.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "minProperties",
+            alias = "min_properties",
+            skip_serializing_if = "Option::is_none"
+        )]
         min_properties: Option<u32>,
         /// The maximum number of properties.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "maxProperties",
+            alias = "max_properties",
+            skip_serializing_if = "Option::is_none"
+        )]
         max_properties: Option<u32>,
     },
     /// A null type.
@@ -125,6 +181,13 @@ pub struct JSONSchema {
     /// A constant value that the schema must match.
     #[serde(rename = "const", skip_serializing_if = "Option::is_none")]
     pub const_value: Option<serde_json::Value>,
+    /// A set of alternative schemas where exactly one must validate.
+    #[serde(
+        rename = "oneOf",
+        alias = "one_of",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub one_of: Option<Vec<JSONSchema>>,
 }
 
 impl JSONSchema {
@@ -138,6 +201,7 @@ impl JSONSchema {
             examples: None,
             enum_values: None,
             const_value: None,
+            one_of: None,
         }
     }
 }
@@ -163,6 +227,7 @@ impl Default for MCPToolInputSchema {
             examples: None,
             enum_values: None,
             const_value: None,
+            one_of: None,
         }
     }
 }

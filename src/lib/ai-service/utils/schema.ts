@@ -1,11 +1,11 @@
 export function ensureSchemaTypeField(
-  schema: Record<string, unknown>,
+  schema: object | Record<string, unknown>,
 ): Record<string, unknown> {
   if (!schema || typeof schema !== 'object') {
     return { type: 'object', properties: {} };
   }
 
-  const result = { ...schema };
+  const result = { ...(schema as Record<string, unknown>) };
 
   if (!result.type) {
     if (result.properties && typeof result.properties === 'object') {
@@ -48,6 +48,17 @@ export function ensureSchemaTypeField(
     } else if (typeof result.items === 'object' && result.items !== null) {
       result.items = ensureSchemaTypeField(
         result.items as Record<string, unknown>,
+      );
+    }
+  }
+
+  for (const key of ['oneOf', 'anyOf', 'allOf'] as const) {
+    const value = result[key];
+    if (Array.isArray(value)) {
+      result[key] = value.map((item) =>
+        typeof item === 'object' && item !== null
+          ? ensureSchemaTypeField(item as Record<string, unknown>)
+          : item,
       );
     }
   }

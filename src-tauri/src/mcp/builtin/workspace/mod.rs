@@ -614,10 +614,8 @@ impl BuiltinMCPServer for WorkspaceServer {
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "importFiles" => self.handle_import_files(args, session_id).await,
             "search" => self.handle_search(args, session_id).await,
-            // Compatibility dispatch only: editFile stays callable for older clients and
-            // internal batching paths, but it is intentionally hidden from normal tool
-            // discovery because its action-based union contract is broader than the explicit
-            // replaceLines / insertAfterLine / deleteLines tools.
+            // editFile is the model-facing mutation tool. The legacy per-operation aliases remain
+            // dispatchable for backward compatibility and internally normalize into editFile.
             "editFile" => self.handle_edit_file(args, session_id).await,
             "replaceLines" => self.handle_replace_lines(args, session_id).await,
             "insertAfterLine" => self.handle_insert_after_line(args, session_id).await,

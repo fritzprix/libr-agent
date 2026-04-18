@@ -68,5 +68,5 @@ Atomic file creation and overwriting with strict safety controls.
 
 ## Legacy/Related Tools
 
-- `editFile`: Use for targeted replacements (safer than overwriting).
+- `editFile`: Use for targeted replacements, insertions, and deletions. The `edits[]` item contract is op-specific and schema-defined.
 - `deleteFile`: Destructive removal.

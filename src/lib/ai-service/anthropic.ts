@@ -39,6 +39,7 @@ import {
   createSerializableToolCallArgumentDelta,
   serializeToolCallArgumentDeltas,
 } from './stream-events';
+import { ensureSchemaTypeField } from './utils';
 
 const logger = getLogger('AnthropicService');
 
@@ -91,15 +92,9 @@ export class AnthropicService extends BaseAIService<
    */
   convertTools(mcpTools: MCPTool[]): AnthropicTool[] {
     const tools = mcpTools.map((mcpTool) => {
-      const properties = mcpTool.inputSchema.properties || {};
-      const required = mcpTool.inputSchema.required || [];
-
-      // Anthropic requires 'type' in schema
-      const input_schema = {
-        type: 'object' as const,
-        properties: properties,
-        required: required,
-      };
+      const input_schema = ensureSchemaTypeField(
+        mcpTool.inputSchema,
+      );
 
       return {
         name: mcpTool.name,

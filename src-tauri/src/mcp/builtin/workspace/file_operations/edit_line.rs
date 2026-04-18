@@ -1,3 +1,4 @@
+use super::super::tools::file_tools::create_edit_file_input_schema;
 use super::super::WorkspaceServer;
 use super::utils::{
     compute_line_hash, format_hashline, format_prefix_hash, initial_prefix_hash_state,
@@ -7,7 +8,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 /// A single edit operation.
 #[derive(Debug, Clone)]
@@ -34,6 +35,149 @@ fn requires_existing_line_anchor(edit: &LineEdit) -> bool {
 fn requires_end_hash(edit: &LineEdit) -> bool {
     matches!(edit.action, EditAction::Replace | EditAction::Delete)
         && edit.end_line > edit.start_line
+}
+
+fn normalize_edit_op_value(value: &str) -> String {
+    match value {
+        "replace" | "REPLACE" => "replace".to_string(),
+        "insert_after" | "INSERT_AFTER" => "insert_after".to_string(),
+        "delete" | "DELETE" => "delete".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn infer_legacy_edit_op(edit_obj: &Map<String, Value>) -> Option<&'static str> {
+    if edit_obj
+        .get("insertAfter")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        Some("insert_after")
+    } else if let Some(v) = edit_obj.get("new_value") {
+        if v.as_str() == Some("") {
+            Some("delete")
+        } else {
+            Some("replace")
+        }
+    } else {
+        None
+    }
+}
+
+fn canonicalize_edit_object(edit: &Value) -> Value {
+    let Some(edit_obj) = edit.as_object() else {
+        return edit.clone();
+    };
+
+    let mut canonical = Map::new();
+
+    for (key, value) in edit_obj {
+        match key.as_str() {
+            "op" => {
+                if value.is_null() {
+                    continue;
+                }
+                if let Some(op) = value.as_str() {
+                    canonical.insert("op".to_string(), Value::String(normalize_edit_op_value(op)));
+                } else {
+                    canonical.insert("op".to_string(), value.clone());
+                }
+            }
+            "action" => {
+                if value.is_null() {
+                    continue;
+                }
+                if !canonical.contains_key("op") {
+                    if let Some(op) = value.as_str() {
+                        canonical
+                            .insert("op".to_string(), Value::String(normalize_edit_op_value(op)));
+                    } else {
+                        canonical.insert("op".to_string(), value.clone());
+                    }
+                }
+            }
+            "line" | "startLine" | "afterLine" => {
+                if !value.is_null() {
+                    canonical.insert("startLine".to_string(), value.clone());
+                }
+            }
+            "endLine" => {
+                if !value.is_null() {
+                    canonical.insert("endLine".to_string(), value.clone());
+                }
+            }
+            "anchor" | "startAnchor" => {
+                if !value.is_null() {
+                    canonical.insert("startAnchor".to_string(), value.clone());
+                }
+            }
+            "endAnchor" => {
+                if !value.is_null() {
+                    canonical.insert("endAnchor".to_string(), value.clone());
+                }
+            }
+            "new_value" | "content" => {
+                if !value.is_null() {
+                    canonical.insert("content".to_string(), value.clone());
+                }
+            }
+            _ => {
+                canonical.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    if !canonical.contains_key("op") {
+        if let Some(inferred_op) = infer_legacy_edit_op(edit_obj) {
+            canonical.insert("op".to_string(), Value::String(inferred_op.to_string()));
+        }
+    }
+
+    Value::Object(canonical)
+}
+
+fn canonicalize_edit_file_args(args: &Value) -> Value {
+    let Some(args_obj) = args.as_object() else {
+        return args.clone();
+    };
+
+    let mut canonical = Map::new();
+
+    for (key, value) in args_obj {
+        if key == "edits" {
+            if let Some(edits) = value.as_array() {
+                canonical.insert(
+                    "edits".to_string(),
+                    Value::Array(edits.iter().map(canonicalize_edit_object).collect()),
+                );
+            } else {
+                canonical.insert("edits".to_string(), value.clone());
+            }
+        } else {
+            canonical.insert(key.clone(), value.clone());
+        }
+    }
+
+    Value::Object(canonical)
+}
+
+fn validate_edit_file_arguments(args: &Value) -> Result<(), String> {
+    let schema_json = serde_json::to_value(create_edit_file_input_schema())
+        .map_err(|error| format!("Failed to serialize editFile schema: {error}"))?;
+    let validator = jsonschema::validator_for(&schema_json)
+        .map_err(|error| format!("Failed to build editFile validator: {error}"))?;
+
+    let errors = validator
+        .iter_errors(args)
+        .take(3)
+        .map(|error| error.to_string())
+        .collect::<Vec<_>>();
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 /// Pure apply function — applies sorted edits (high → low) to a slice of lines.
@@ -193,13 +337,32 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        let canonical_args = canonicalize_edit_file_args(&args);
+
+        if let Err(validation_error) = validate_edit_file_arguments(&canonical_args) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "editFile arguments do not match the declared schema: {validation_error}"
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Replace: [{\"op\": \"replace\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
+                "Insert top: [{\"op\": \"insert_after\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
+                "Delete range: [{\"op\": \"delete\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                "Use readFile(showLineAnchors=true) first to get anchor values".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         // --- Parameter extraction ---
-        let path_str = match args.get("path").and_then(|v| v.as_str()) {
+        let path_str = match canonical_args.get("path").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return Ok(missing_param_error("path", ToolGroup::Workspace)),
         };
 
-        let edits_array = match args.get("edits").and_then(|v| v.as_array()) {
+        let edits_array = match canonical_args.get("edits").and_then(|v| v.as_array()) {
             Some(arr) => arr,
             None => {
                 return Ok(guided_error(
@@ -208,9 +371,9 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Replace:      [{\"line\": 10, \"action\": \"REPLACE\", \"new_value\": \"text\"}]".to_string(),
-                    "Insert-top:   [{\"line\": 0, \"action\": \"INSERT_AFTER\", \"new_value\": \"header\"}]".to_string(),
-                    "Delete range: [{\"line\": 10, \"endLine\": 15, \"action\": \"DELETE\", \"anchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                    "Replace:      [{\"op\": \"replace\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
+                    "Insert-top:   [{\"op\": \"insert_after\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
+                    "Delete range: [{\"op\": \"delete\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
                     "Use readFile(showLineAnchors=true) to get anchor values first".to_string(),
                 ])
                 .to_mcp_result());
@@ -240,66 +403,49 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Single-line: {\"line\": 10, \"new_value\": \"text\"}".to_string(),
-                        "Range:       {\"line\": 10, \"endLine\": 15, \"new_value\": \"...\"}"
+                        "Single-line: {\"op\": \"replace\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
+                        "Range:       {\"op\": \"replace\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}"
                             .to_string(),
                     ])
                     .to_mcp_result());
                 }
             };
 
-            // `action` — REPLACE, INSERT_AFTER, DELETE
-            let action_str = edit_obj.get("action").and_then(|v| v.as_str());
-            let action = match action_str {
-                Some("REPLACE") => EditAction::Replace,
-                Some("INSERT_AFTER") => EditAction::InsertAfter,
-                Some("DELETE") => EditAction::Delete,
+            let op_str = edit_obj.get("op").and_then(|v| v.as_str());
+            let action = match op_str {
+                Some("replace") => EditAction::Replace,
+                Some("insert_after") => EditAction::InsertAfter,
+                Some("delete") => EditAction::Delete,
                 Some(other) => {
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
-                        format!("Edit at index {}: invalid action '{}'", idx, other),
+                        format!("Edit at index {}: invalid op '{}'", idx, other),
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Supported actions: REPLACE, INSERT_AFTER, DELETE".to_string()
+                        "Supported ops: replace, insert_after, delete".to_string()
                     ])
                     .to_mcp_result());
                 }
                 None => {
-                    // Legacy/Implicit detection
-                    if edit_obj
-                        .get("insertAfter")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-                    {
-                        EditAction::InsertAfter
-                    } else if let Some(v) = edit_obj.get("new_value") {
-                        if v.as_str() == Some("") {
-                            EditAction::Delete
-                        } else {
-                            EditAction::Replace
-                        }
-                    } else {
-                        EditAction::Replace // Default
-                    }
+                    return Ok(missing_param_error("op", ToolGroup::Workspace));
                 }
             };
 
-            // `line` — start line (1-based, except line: 0 for INSERT_AFTER)
-            let start_line = match edit_obj.get("line").and_then(|v| v.as_u64()) {
+            let start_line = match edit_obj.get("startLine").and_then(|v| v.as_u64()) {
                 Some(n) => n as usize,
                 _ => {
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!(
-                            "Edit at index {}: 'line' field is required and must be an integer",
+                            "Edit at index {}: 'startLine' field is required and must be an integer",
                             idx
                         ),
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Provide line number as integer (e.g., \"line\": 10)".to_string(),
-                        "Use line: 0 ONLY with action='INSERT_AFTER' to insert at top".to_string(),
+                        "Provide startLine as an integer (e.g., \"startLine\": 10)".to_string(),
+                        "Use startLine: 0 ONLY with op='insert_after' to insert at top".to_string(),
                     ])
                     .to_mcp_result());
                 }
@@ -309,13 +455,13 @@ impl WorkspaceServer {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
-                        "Edit at index {}: line 0 is only valid for action 'INSERT_AFTER'",
+                        "Edit at index {}: startLine 0 is only valid for op 'insert_after'",
                         idx
                     ),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "To insert at the beginning, use line: 0 and action: 'INSERT_AFTER'"
+                    "To insert at the beginning, use startLine: 0 and op: 'insert_after'"
                         .to_string(),
                 ])
                 .to_mcp_result());
@@ -334,7 +480,7 @@ impl WorkspaceServer {
                         ),
                         ToolGroup::Workspace,
                     )
-                    .guidance(vec!["endLine must be ≥ line".to_string()])
+                    .guidance(vec!["endLine must be ≥ startLine".to_string()])
                     .to_mcp_result());
                 }
                 None => {
@@ -351,19 +497,19 @@ impl WorkspaceServer {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
-                        "Edit at index {}: 'endLine' cannot be used with action 'INSERT_AFTER'",
+                        "Edit at index {}: 'endLine' cannot be used with op 'insert_after'",
                         idx
                     ),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "INSERT_AFTER only targets one line (or line 0). Remove 'endLine'.".to_string(),
+                    "insert_after only targets one line (or startLine 0). Remove 'endLine'."
+                        .to_string(),
                 ])
                 .to_mcp_result());
             }
 
-            // `new_value` extraction
-            let new_value = match edit_obj.get("new_value").and_then(|v| v.as_str()) {
+            let new_value = match edit_obj.get("content").and_then(|v| v.as_str()) {
                 Some(s) => s.to_string(),
                 None => {
                     if action == EditAction::Delete {
@@ -371,19 +517,20 @@ impl WorkspaceServer {
                     } else {
                         return Ok(guided_error(
                             ErrorCategory::InvalidInput,
-                            format!("Edit at index {}: 'new_value' is required for REPLACE and INSERT_AFTER", idx),
+                            format!(
+                                "Edit at index {}: 'content' is required for replace and insert_after",
+                                idx
+                            ),
                             ToolGroup::Workspace,
                         )
-                        .guidance(vec![
-                            "Provide replacement/insertion content as a string".to_string()
-                        ])
+                        .guidance(vec!["Provide replacement/insertion content as a string".to_string()])
                         .to_mcp_result());
                     }
                 }
             };
 
             let start_anchor = edit_obj
-                .get("anchor")
+                .get("startAnchor")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
@@ -395,12 +542,12 @@ impl WorkspaceServer {
             let requires_anchor = !(action == EditAction::InsertAfter && start_line == 0);
             if requires_anchor && start_anchor.is_none() {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    format!(
-                        "Edit at index {} targets existing content and requires 'anchor'",
-                        idx
-                    ),
-                    ToolGroup::Workspace,
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Edit at index {} targets existing content and requires 'startAnchor'",
+                            idx
+                        ),
+                        ToolGroup::Workspace,
                 )
                 .guidance(vec![
                     "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) first"
@@ -408,7 +555,7 @@ impl WorkspaceServer {
                     "Copy only the 6-character start-line anchor from the form N:anchor|content (the part between ':' and '|')".to_string(),
                     "If the edit also uses endLine for a range, copy only the 6-character endAnchor from the exact final line"
                         .to_string(),
-                    "Only INSERT_AFTER with line: 0 may omit anchors".to_string(),
+                    "Only insert_after with startLine: 0 may omit anchors".to_string(),
                 ])
                 .to_mcp_result());
             }
