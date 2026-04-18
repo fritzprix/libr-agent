@@ -104,9 +104,7 @@ export class OpenAIService extends BaseAIService<
    */
   convertTools(mcpTools: MCPTool[]): OpenAIChatCompletionTool[] {
     return mcpTools.map((mcpTool) => {
-      const parameters = ensureSchemaTypeField(
-        mcpTool.inputSchema,
-      );
+      const parameters = ensureSchemaTypeField(mcpTool.inputSchema);
 
       return {
         type: 'function',

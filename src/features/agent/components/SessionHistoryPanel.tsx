@@ -408,8 +408,7 @@ export function SessionHistoryPanel({
             <TabsTrigger value="bookmarked" className="flex-1">
               <Bookmark className="mr-1.5 h-3.5 w-3.5" />
               {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} (
-              {bookmarkedCount}
-              )
+              {bookmarkedCount})
             </TabsTrigger>
           </TabsList>
         </Tabs>

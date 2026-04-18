@@ -92,9 +92,7 @@ export class AnthropicService extends BaseAIService<
    */
   convertTools(mcpTools: MCPTool[]): AnthropicTool[] {
     const tools = mcpTools.map((mcpTool) => {
-      const input_schema = ensureSchemaTypeField(
-        mcpTool.inputSchema,
-      );
+      const input_schema = ensureSchemaTypeField(mcpTool.inputSchema);
 
       return {
         name: mcpTool.name,
