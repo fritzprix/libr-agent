@@ -170,7 +170,7 @@ fn build_tool_argument_preview(arguments: &str) -> String {
     if let Some(serde_json::Value::Object(object)) = parsed {
         let mut preview_parts = Vec::new();
         let mut entries = object.iter().collect::<Vec<_>>();
-        entries.sort_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
+        entries.sort_by_key(|(key, _)| *key);
 
         for (index, (key, value)) in entries.into_iter().enumerate() {
             if index >= 3 {

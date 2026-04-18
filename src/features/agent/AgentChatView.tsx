@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
@@ -70,62 +70,75 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
+  const playbookId = searchParams.get('playbookId');
+  const sessionId = session?.id;
+  const assistantId = session?.assistant?.id;
+
+  const executePlaybookSelection = useCallback(
+    async (selectedPlaybookId: string) => {
+      if (!sessionId) return;
+      logger.info('Auto-executing playbook', {
+        playbookId: selectedPlaybookId,
+      });
+
+      try {
+        const result = await agentCallBuiltinTool<{ content: MCPContent[] }>(
+          sessionId,
+          'playbook__selectPlaybook',
+          { id: selectedPlaybookId },
+        );
+
+        const toolCallId = createId();
+        const [toolCallMsg, toolResultMsg] = createToolMessagePair(
+          'playbook__selectPlaybook',
+          { id: selectedPlaybookId },
+          result.content ?? [],
+          toolCallId,
+          sessionId,
+          undefined,
+          assistantId,
+          'ui',
+        );
+
+        await injectMessages([toolCallMsg, toolResultMsg], true);
+        toast.success('Playbook started automatically');
+      } catch (error) {
+        logger.error('Failed to auto-select playbook', error);
+        toast.error('Failed to start playbook workflow');
+      }
+    },
+    [assistantId, injectMessages, sessionId],
+  );
 
   useEffect(() => {
-    const playbookId = searchParams.get('playbookId');
     if (
-      playbookId &&
-      session &&
-      workflowStatus === 'idle' &&
-      !hasExecutedPlaybookRef.current
+      !playbookId ||
+      !sessionId ||
+      workflowStatus !== 'idle' ||
+      hasExecutedPlaybookRef.current
     ) {
-      hasExecutedPlaybookRef.current = true;
-      executePlaybookSelection(playbookId);
-      // Remove query param to prevent re-execution on refresh or render
-      setSearchParams(
-        (prev) => {
-          const newParams = new URLSearchParams(prev);
-          newParams.delete('playbookId');
-          return newParams;
-        },
-        { replace: true },
-      );
+      return;
     }
-  }, [session, workflowStatus, searchParams]);
 
-  const executePlaybookSelection = async (playbookId: string) => {
-    if (!session?.id) return;
-    if (!session?.id) return;
-    logger.info('Auto-executing playbook', { playbookId });
+    hasExecutedPlaybookRef.current = true;
+    void executePlaybookSelection(playbookId);
 
-    try {
-      const result = await agentCallBuiltinTool<{ content: MCPContent[] }>(
-        session.id,
-        'playbook__selectPlaybook',
-        { id: playbookId },
-      );
-
-      const toolCallId = createId();
-      const [toolCallMsg, toolResultMsg] = createToolMessagePair(
-        'playbook__selectPlaybook',
-        { id: playbookId },
-        result.content ?? [],
-        toolCallId,
-        session.id,
-        undefined,
-        session.assistant?.id,
-        'ui',
-      );
-
-      await injectMessages([toolCallMsg, toolResultMsg], true);
-      toast.success('Playbook started automatically');
-    } catch (error) {
-      logger.error('Failed to auto-select playbook', error);
-      toast.error('Failed to start playbook workflow');
-    } finally {
-      // No-op
-    }
-  };
+    // Remove query param to prevent re-execution on refresh or render.
+    setSearchParams(
+      (prev) => {
+        const nextParams = new URLSearchParams(prev);
+        nextParams.delete('playbookId');
+        return nextParams;
+      },
+      { replace: true },
+    );
+  }, [
+    executePlaybookSelection,
+    playbookId,
+    sessionId,
+    setSearchParams,
+    workflowStatus,
+  ]);
 
   return (
     <>

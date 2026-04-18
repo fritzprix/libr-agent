@@ -66,6 +66,10 @@ jobs:
       - name: 🔍 Check TypeScript
         run: pnpm tsc --noEmit
 
+      - name: 📊 Check bundle budget (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm build && pnpm perf:bundle
+
       - name: 🦀 Check Rust
         run: cd src-tauri && cargo check
 

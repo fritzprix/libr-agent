@@ -18,6 +18,7 @@ async fn get_or_create_test_db() -> Arc<DatabaseConnection> {
             let mut opt =
                 ConnectOptions::new("sqlite::file:playbook_tests?mode=memory&cache=shared");
             opt.min_connections(1);
+            opt.max_connections(1);
             let db = Database::connect(opt)
                 .await
                 .expect("Failed to connect to in-memory database");

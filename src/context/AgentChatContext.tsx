@@ -13,7 +13,7 @@ import { useDebounce } from 'react-use';
 import {
   useAgentSessionState,
   useAgentSessionActions,
-} from './AgentSessionContext';
+} from '@/context/AgentSessionContext';
 import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
 import { isValidMessage } from '@/models/validation';

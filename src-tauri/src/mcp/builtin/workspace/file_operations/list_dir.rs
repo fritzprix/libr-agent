@@ -1,4 +1,5 @@
 use super::super::WorkspaceServer;
+use super::utils::{is_not_found_io_error, normalize_workspace_path_input};
 use crate::mcp::builtin::error_guidance::{
     guided_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -13,7 +14,24 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let path_str =
+            match normalize_workspace_path_input(args.get("path").and_then(|v| v.as_str()), ".") {
+                Ok(path) => path,
+                Err(message) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        message,
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Provide a directory path relative to workspace root".to_string(),
+                        "Example: {\"path\": \"src\"}".to_string(),
+                        "Use listDirectory('.') to inspect the workspace root".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            };
+
         let requested_limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100);
         let requested_offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
         let limit = usize::try_from(requested_limit)
@@ -26,7 +44,7 @@ impl WorkspaceServer {
         let file_manager = self.get_file_manager(session_id.clone());
         let safe_path = match file_manager
             .get_security_validator()
-            .validate_path_for_read(path_str)
+            .validate_path_for_read(&path_str)
         {
             Ok(path) => path,
             Err(e) => {
@@ -216,10 +234,12 @@ impl WorkspaceServer {
             }
             Err(e) => {
                 error!("Failed to list directory {:?}: {}", safe_path, e);
-                let is_not_found =
-                    e.to_string().contains("No such file") || e.to_string().contains("not found");
-                if is_not_found {
-                    Ok(not_found_error("Directory", path_str, ToolGroup::Workspace))
+                if is_not_found_io_error(&e) {
+                    Ok(not_found_error(
+                        "Directory",
+                        &path_str,
+                        ToolGroup::Workspace,
+                    ))
                 } else {
                     Ok(guided_error(
                         ErrorCategory::OperationFailed,

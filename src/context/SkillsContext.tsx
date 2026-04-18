@@ -27,34 +27,17 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
   // Start as true so toast never fires before the first fetch completes
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { value: settings, isLoading: settingsLoading } = useSettings();
+  const { isLoading: settingsLoading } = useSettings();
 
   const fetchSkills = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    let path = settings.system?.skillsDirectory;
-
-    // If no path is configured, use the default [AppData]/skills via Tauri command
-    if (!path) {
-      try {
-        path = await safeInvoke<string>('get_default_skills_directory');
-      } catch (e) {
-        const errMsg = e instanceof Error ? e.message : String(e);
-        logger.error('Failed to get default skills directory', e);
-        setError(`Failed to determine skills directory: ${errMsg}`);
-        setIsLoading(false);
-        return;
-      }
-    }
 
     try {
-      logger.info('Scanning skills directory:', path);
-      const result = await safeInvoke<SkillMetadata[]>(
-        'scan_skills_directory',
-        {
-          directory: path,
-        },
+      const overview = await safeInvoke<{ effectiveSkills: SkillMetadata[] }>(
+        'get_managed_skills_overview',
       );
+      const result = overview.effectiveSkills ?? [];
       logger.info('Discovered skills:', {
         count: result.length,
         skills: result,
@@ -68,10 +51,9 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [settings.system?.skillsDirectory]);
+  }, []);
 
   // Initial fetch - wait for settings to load, then scan.
-  // fetchSkills() already falls back to [AppData]/skills when skillsDirectory is not configured.
   useEffect(() => {
     if (!settingsLoading) {
       fetchSkills();

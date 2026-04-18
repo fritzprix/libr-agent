@@ -32,26 +32,50 @@ export function InputTokenDropdown({
   const { t } = useTranslation();
   const count = mode.items.length;
   const [activeIndex, setActiveIndex] = useState(0);
-  const [prevMode, setPrevMode] = useState(mode);
-  const listRef = useRef<HTMLUListElement>(null);
+  const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
 
-  const getSkillSourceLabel = (source?: SkillMetadata['source']) => {
-    switch (source) {
+  const getSkillSourceLabel = (skill: SkillMetadata) => {
+    switch (skill.origin) {
       case 'workspace':
-        return t('mentions.skillSourceWorkspace', 'workspace');
+        return t('mentions.skillSourceWorkspace', 'Workspace');
       case 'assistant':
-        return t('mentions.skillSourceAssistant', 'assistant');
-      case 'global':
-        return t('mentions.skillSourceGlobal', 'global');
+        return t('mentions.skillSourceAssistant', 'Assistant');
+      case 'user':
+        return t('mentions.skillSourceUser', 'User');
+      case 'system':
+        return t('mentions.skillSourceSystem', 'System');
       default:
-        return null;
+        switch (skill.source) {
+          case 'workspace':
+            return t('mentions.skillSourceWorkspace', 'Workspace');
+          case 'assistant':
+            return t('mentions.skillSourceAssistant', 'Assistant');
+          case 'global':
+            return t('mentions.skillSourceGlobal', 'Global');
+          default:
+            return null;
+        }
     }
   };
 
-  if (mode !== prevMode) {
-    setPrevMode(mode);
+  useEffect(() => {
     setActiveIndex(0);
-  }
+  }, [mode.kind, mode.items]);
+
+  useEffect(() => {
+    if (!count) {
+      return;
+    }
+
+    setActiveIndex((currentIndex) => Math.min(currentIndex, count - 1));
+  }, [count]);
+
+  useEffect(() => {
+    const activeItem = itemRefs.current[activeIndex];
+    if (typeof activeItem?.scrollIntoView === 'function') {
+      activeItem.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex]);
 
   useEffect(() => {
     if (!count) return;
@@ -94,7 +118,6 @@ export function InputTokenDropdown({
 
   return (
     <ul
-      ref={listRef}
       role="listbox"
       aria-label="Input token suggestions"
       className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-60 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md text-sm"
@@ -103,6 +126,9 @@ export function InputTokenDropdown({
         ? mode.items.map((type, i) => (
             <li
               key={type.name}
+              ref={(element) => {
+                itemRefs.current[i] = element;
+              }}
               role="option"
               aria-selected={i === activeIndex}
               className={cn(
@@ -127,6 +153,9 @@ export function InputTokenDropdown({
           ? mode.items.map((tool, i) => (
               <li
                 key={tool.name}
+                ref={(element) => {
+                  itemRefs.current[i] = element;
+                }}
                 role="option"
                 aria-selected={i === activeIndex}
                 className={cn(
@@ -153,6 +182,9 @@ export function InputTokenDropdown({
             ? mode.items.map((filePath, i) => (
                 <li
                   key={filePath}
+                  ref={(element) => {
+                    itemRefs.current[i] = element;
+                  }}
                   role="option"
                   aria-selected={i === activeIndex}
                   className={cn(
@@ -176,6 +208,9 @@ export function InputTokenDropdown({
               ? mode.items.map((playbook, i) => (
                   <li
                     key={playbook.id}
+                    ref={(element) => {
+                      itemRefs.current[i] = element;
+                    }}
                     role="option"
                     aria-selected={i === activeIndex}
                     className={cn(
@@ -202,11 +237,14 @@ export function InputTokenDropdown({
                   </li>
                 ))
               : mode.items.map((skill, i) => {
-                  const sourceLabel = getSkillSourceLabel(skill.source);
+                  const sourceLabel = getSkillSourceLabel(skill);
 
                   return (
                     <li
                       key={skill.name}
+                      ref={(element) => {
+                        itemRefs.current[i] = element;
+                      }}
                       role="option"
                       aria-selected={i === activeIndex}
                       className={cn(

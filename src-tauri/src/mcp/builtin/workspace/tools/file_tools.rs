@@ -1,4 +1,4 @@
-use crate::mcp::{utils::schema_builder::*, MCPTool};
+use crate::mcp::{schema::JSONSchema, utils::schema_builder::*, MCPTool};
 
 use std::collections::HashMap;
 
@@ -41,7 +41,7 @@ pub fn create_read_file_tool() -> MCPTool {
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true before calling edit tools (replaceLines, insertAfterLine, deleteLines, editFile) to obtain anchor values."
+        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true before calling editFiles to obtain anchor values."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -222,7 +222,7 @@ pub fn create_search_tool() -> MCPTool {
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Include edit anchors in results for use with replaceLines, insertAfterLine, or deleteLines (default: false). For edit tools, copy only the 6-character anchor between ':' and '|'.",
+            "Include edit anchors in results for use with editFiles (default: false). For edit tools, copy only the 6-character anchor between ':' and '|'.",
         )),
     );
 
@@ -546,68 +546,308 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
     }
 }
 
-pub fn create_edit_file_tool() -> MCPTool {
-    // Compatibility-only batch delegator:
-    // editFile remains implemented because older callers and internal batching still route
-    // through it, but we intentionally prefer the three dedicated mutation tools for normal
-    // model-facing discovery. The reason is contract clarity: action=REPLACE / INSERT_AFTER /
-    // DELETE each require different fields and invariants, so splitting them into separate
-    // tools keeps each exposed schema narrow and predictable for planning.
-    // Build the schema for a single edit item inside the `edits` array.
-    let mut edit_item_props = HashMap::new();
-    edit_item_props.insert(
-        "action".to_string(),
-        enum_prop_required(
-            vec!["REPLACE", "INSERT_AFTER", "DELETE"],
-            "Edit action. REPLACE: swap lines with new_value. INSERT_AFTER: insert below the anchor line. DELETE: remove lines.",
+fn build_edit_variant_schema(
+    properties: HashMap<String, JSONSchema>,
+    required: Vec<String>,
+    description: &str,
+) -> JSONSchema {
+    let mut schema = object_schema(properties, required);
+    schema.description = Some(description.to_string());
+    schema
+}
+
+fn create_edit_item_schema(path_required: bool) -> JSONSchema {
+    let path_desc = "Relative path to the file to edit (from workspace root).";
+    let start_line_desc =
+        "Target start line number (1-based). Use 0 only with op='insert_after' to prepend at the file top.";
+    let end_line_desc =
+        "Inclusive end line for a multi-line replace/delete range. Omit for a single-line edit.";
+    let start_anchor_desc =
+        "6-character opaque anchor for the start line from readFile(showLineAnchors=true). Do not include the line number or '|content'.";
+    let end_anchor_desc =
+        "6-character opaque anchor for the end line. Required when endLine is set for a multi-line replace/delete range.";
+    let content_desc = "Replacement or inserted content. May include \\n to span multiple lines.";
+
+    let mut replace_single_props = HashMap::new();
+    if path_required {
+        replace_single_props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some(path_desc)),
+        );
+    }
+    replace_single_props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "replace",
+            Some("Replace one line or a contiguous line range with content."),
         ),
     );
-    edit_item_props.insert(
-        "line".to_string(),
-        integer_prop(
-            Some(0),
-            None,
-            Some("Target line number (1-based). Use 0 only with INSERT_AFTER to prepend at file top."),
+    replace_single_props.insert(
+        "startLine".to_string(),
+        integer_prop(Some(1), None, Some(start_line_desc)),
+    );
+    replace_single_props.insert(
+        "startAnchor".to_string(),
+        string_prop(None, None, Some(start_anchor_desc)),
+    );
+    replace_single_props.insert(
+        "content".to_string(),
+        string_prop(None, None, Some(content_desc)),
+    );
+    let replace_single_schema = build_edit_variant_schema(
+        replace_single_props,
+        {
+            let mut required = vec![
+                "op".to_string(),
+                "startLine".to_string(),
+                "startAnchor".to_string(),
+                "content".to_string(),
+            ];
+            if path_required {
+                required.insert(0, "path".to_string());
+            }
+            required
+        },
+        "Single-line replace variant: requires startLine, startAnchor, and content.",
+    );
+
+    let mut replace_range_props = HashMap::new();
+    if path_required {
+        replace_range_props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some(path_desc)),
+        );
+    }
+    replace_range_props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "replace",
+            Some("Replace one line or a contiguous line range with content."),
         ),
     );
-    edit_item_props.insert(
+    replace_range_props.insert(
+        "startLine".to_string(),
+        integer_prop(Some(1), None, Some(start_line_desc)),
+    );
+    replace_range_props.insert(
         "endLine".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Inclusive end line for a multi-line REPLACE or DELETE range. Omit for single-line operations. Cannot be used with INSERT_AFTER."),
-        ),
+        integer_prop(Some(1), None, Some(end_line_desc)),
     );
-    edit_item_props.insert(
-        "new_value".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Replacement or insertion content. Required for REPLACE and INSERT_AFTER. Omit for DELETE. May contain \\n to span multiple lines."),
-        ),
+    replace_range_props.insert(
+        "startAnchor".to_string(),
+        string_prop(None, None, Some(start_anchor_desc)),
     );
-    edit_item_props.insert(
-        "anchor".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("6-character opaque anchor for the start line from readFile(showLineAnchors=true). Required for all operations except INSERT_AFTER with line=0. Do not include the line number or '|content'."),
-        ),
-    );
-    edit_item_props.insert(
+    replace_range_props.insert(
         "endAnchor".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("6-character opaque anchor for the end line. Required when endLine is set for a multi-line REPLACE or DELETE. Do not include the line number or '|content'."),
+        string_prop(None, None, Some(end_anchor_desc)),
+    );
+    replace_range_props.insert(
+        "content".to_string(),
+        string_prop(None, None, Some(content_desc)),
+    );
+    let replace_range_schema = build_edit_variant_schema(
+        replace_range_props,
+        {
+            let mut required = vec![
+                "op".to_string(),
+                "startLine".to_string(),
+                "endLine".to_string(),
+                "startAnchor".to_string(),
+                "endAnchor".to_string(),
+                "content".to_string(),
+            ];
+            if path_required {
+                required.insert(0, "path".to_string());
+            }
+            required
+        },
+        "Multi-line replace variant: requires startLine, endLine, startAnchor, endAnchor, and content.",
+    );
+
+    let mut insert_existing_props = HashMap::new();
+    if path_required {
+        insert_existing_props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some(path_desc)),
+        );
+    }
+    insert_existing_props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "insert_after",
+            Some("Insert content after an existing line."),
         ),
     );
-
-    let edit_item_schema = object_schema(
-        edit_item_props,
-        vec!["action".to_string(), "line".to_string()],
+    insert_existing_props.insert(
+        "startLine".to_string(),
+        integer_prop(Some(1), None, Some(start_line_desc)),
+    );
+    insert_existing_props.insert(
+        "startAnchor".to_string(),
+        string_prop(None, None, Some(start_anchor_desc)),
+    );
+    insert_existing_props.insert(
+        "content".to_string(),
+        string_prop(None, None, Some(content_desc)),
+    );
+    let insert_existing_schema = build_edit_variant_schema(
+        insert_existing_props,
+        {
+            let mut required = vec![
+                "op".to_string(),
+                "startLine".to_string(),
+                "startAnchor".to_string(),
+                "content".to_string(),
+            ];
+            if path_required {
+                required.insert(0, "path".to_string());
+            }
+            required
+        },
+        "Insert-after variant for an existing line: requires startLine, startAnchor, and content.",
     );
 
+    let mut insert_top_props = HashMap::new();
+    if path_required {
+        insert_top_props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some(path_desc)),
+        );
+    }
+    insert_top_props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "insert_after",
+            Some("Insert content at the very beginning of the file."),
+        ),
+    );
+    insert_top_props.insert(
+        "startLine".to_string(),
+        integer_const_prop(
+            0,
+            Some("Use startLine=0 with op='insert_after' to prepend at the file top."),
+        ),
+    );
+    insert_top_props.insert(
+        "content".to_string(),
+        string_prop(None, None, Some(content_desc)),
+    );
+    let insert_top_schema = build_edit_variant_schema(
+        insert_top_props,
+        {
+            let mut required = vec![
+                "op".to_string(),
+                "startLine".to_string(),
+                "content".to_string(),
+            ];
+            if path_required {
+                required.insert(0, "path".to_string());
+            }
+            required
+        },
+        "Top-prepend variant: startLine must be 0 and no anchor is required.",
+    );
+
+    let mut delete_single_props = HashMap::new();
+    if path_required {
+        delete_single_props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some(path_desc)),
+        );
+    }
+    delete_single_props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "delete",
+            Some("Delete one line or a contiguous line range."),
+        ),
+    );
+    delete_single_props.insert(
+        "startLine".to_string(),
+        integer_prop(Some(1), None, Some(start_line_desc)),
+    );
+    delete_single_props.insert(
+        "startAnchor".to_string(),
+        string_prop(None, None, Some(start_anchor_desc)),
+    );
+    let delete_single_schema = build_edit_variant_schema(
+        delete_single_props,
+        {
+            let mut required = vec![
+                "op".to_string(),
+                "startLine".to_string(),
+                "startAnchor".to_string(),
+            ];
+            if path_required {
+                required.insert(0, "path".to_string());
+            }
+            required
+        },
+        "Single-line delete variant: requires startLine and startAnchor.",
+    );
+
+    let mut delete_range_props = HashMap::new();
+    if path_required {
+        delete_range_props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some(path_desc)),
+        );
+    }
+    delete_range_props.insert(
+        "op".to_string(),
+        string_const_prop(
+            "delete",
+            Some("Delete one line or a contiguous line range."),
+        ),
+    );
+    delete_range_props.insert(
+        "startLine".to_string(),
+        integer_prop(Some(1), None, Some(start_line_desc)),
+    );
+    delete_range_props.insert(
+        "endLine".to_string(),
+        integer_prop(Some(1), None, Some(end_line_desc)),
+    );
+    delete_range_props.insert(
+        "startAnchor".to_string(),
+        string_prop(None, None, Some(start_anchor_desc)),
+    );
+    delete_range_props.insert(
+        "endAnchor".to_string(),
+        string_prop(None, None, Some(end_anchor_desc)),
+    );
+    let delete_range_schema = build_edit_variant_schema(
+        delete_range_props,
+        {
+            let mut required = vec![
+                "op".to_string(),
+                "startLine".to_string(),
+                "endLine".to_string(),
+                "startAnchor".to_string(),
+                "endAnchor".to_string(),
+            ];
+            if path_required {
+                required.insert(0, "path".to_string());
+            }
+            required
+        },
+        "Multi-line delete variant: requires startLine, endLine, startAnchor, and endAnchor.",
+    );
+
+    one_of_object_schema(
+        vec![
+            replace_single_schema,
+            replace_range_schema,
+            insert_existing_schema,
+            insert_top_schema,
+            delete_single_schema,
+            delete_range_schema,
+        ],
+        Some("A single edit operation. The required fields depend on op."),
+    )
+}
+
+pub fn create_edit_file_input_schema() -> JSONSchema {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -620,26 +860,48 @@ pub fn create_edit_file_tool() -> MCPTool {
     props.insert(
         "edits".to_string(),
         array_schema(
-            edit_item_schema,
-            Some("Ordered list of edit operations to apply atomically. All anchors are validated against the original file before any change is written. Edits must not overlap."),
+            create_edit_item_schema(false),
+            Some("Ordered list of edit operations to apply atomically to one file. All edits are schema-validated and anchor-validated before any write. Edits must not overlap."),
         ),
     );
 
+    object_schema(props, vec!["path".to_string(), "edits".to_string()])
+}
+
+pub fn create_edit_files_input_schema() -> JSONSchema {
+    let edit_item_schema = create_edit_item_schema(true);
+
+    let mut props = HashMap::new();
+    props.insert(
+        "edits".to_string(),
+        array_schema(
+            edit_item_schema,
+            Some("Ordered list of edit operations to apply atomically across one or more files. Every item includes its own path. All edits are schema-validated and anchor-validated before any write. Edits must not overlap within the same file."),
+        ),
+    );
+
+    object_schema(props, vec!["edits".to_string()])
+}
+
+pub fn create_edit_files_tool() -> MCPTool {
     MCPTool {
-        name: "editFile".to_string(),
-        title: Some("Edit File (Batch)".to_string()),
-        description: "Apply multiple line edits to a file atomically in a single operation.
+        name: "editFiles".to_string(),
+        title: Some("Edit Files (Batch)".to_string()),
+        description: "Apply multiple line edits across one or more files atomically in a single operation.
 
 PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values. For anchors, pass only the 6 hex characters between ':' and '|'.
 
-Edits are applied bottom-to-top so line numbers stay stable within the batch.
+Each edit item carries its own path and uses op-specific schema validation:
+- replace single line: path + startLine + startAnchor + content
+- replace range: path + startLine + startAnchor + endLine + endAnchor + content
+- insert_after existing line: path + startLine + startAnchor + content
+- insert_after file top: path + startLine=0 + content
+- delete single line: path + startLine + startAnchor
+- delete range: path + startLine + startAnchor + endLine + endAnchor
 
-Use editFile when making multiple edits to the same file. Use replaceLines / insertAfterLine / deleteLines for a single targeted edit."
+Edits are grouped by file and applied bottom-to-top so line numbers stay stable within each file. All files are validated before any write begins. Legacy editFile / replaceLines / insertAfterLine / deleteLines still route here for backward compatibility."
             .to_string(),
-        input_schema: object_schema(
-            props,
-            vec!["path".to_string(), "edits".to_string()],
-        ),
+        input_schema: create_edit_files_input_schema(),
         output_schema: None,
         annotations: None,
     }

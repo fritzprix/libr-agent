@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.8] - 2026-04-18
+
+### 🚀 Features
+
+- **Intelligent Loop Prevention**: Implemented a sophisticated loop prevention system with configurable thresholds and natural recovery mechanisms to improve agent stability.
+- **Unified Workspace File Operations**: Promoted and unified the `editFiles` contract, enabling robust multi-file operations and improved backward compatibility.
+- **Enhanced Dropdown Navigation**: Added automatic scroll-into-view for active items in token dropdowns, improving the keyboard navigation experience.
+
+### 🐛 Fixes
+
+- **Robust macOS Releases**: Upgraded CI release pipeline with hardened macOS signing and notarization validation to ensure reliable distribution.
+- **Refined Skill Management**: Overhauled skill installation flows and updated documentation examples for better clarity and reliability.
+- **Improved Error Handling**: Normalized LLM billing limit errors and corrected agent playbook execution flows.
+- **UI Stability**: Resolved memoization issues in settings and fixed various typing and rendering inconsistencies across the interface.
+
+### 🔧 Internal
+
+- **Performance Optimizations**: Optimized internal metric calculations and reduced database connection overhead in the test suite.
+- **Architecture Refactoring**: Modularized the agent message renderer and skill management logic for better maintainability.
+- **Best Practices Update**: Updated documentation and rules for React best practices to align with latest performance patterns.
+
+## [0.7.7] - 2026-04-16
+
+### 🚀 Features
+
+- **Overhauled Skills Management**: Significantly improved skill management, including hardening of managed skill installations and better synchronization of legacy global skills with bundled snapshots.
+- **Enhanced Workspace UI**: Added informative tooltips to workspace panel actions and improved accessibility/labeling for a more intuitive navigation experience.
+
+### 🐛 Fixes
+
+- **Robust Skill Parsing and Syncing**: Fixed skill frontmatter BOM parsing issues and ensured skills resource synchronization remains reliable across managed and bundled skills.
+- **Improved Workspace Reliability**: Resolved directory listing path handling on Windows and allowed '..' in directory names for more flexible file system navigation.
+- **Agent and Tool Stability**: Corrected external tool counting and resolved build script IO errors to ensure smoother agent and tool operations.
+
+### 🔧 Internal
+
+- **Performance Optimization**: Refined Bolt's internal logic by replacing `.filter().length` with `.reduce()` for better efficiency in data processing.
+- **Code Maintenance**: Cleaned up session imports in `AgentChatContext` and refined build script error handling.
+
 ## [0.7.6] - 2026-04-14
 
 ### 🐛 Fixes

@@ -21,6 +21,7 @@ pub fn string_prop(
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -44,6 +45,7 @@ pub fn integer_prop(
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -67,6 +69,7 @@ pub fn number_prop(
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -91,6 +94,7 @@ pub fn integer_prop_with_default(
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -104,6 +108,7 @@ pub fn boolean_prop(description: Option<&str>) -> JSONSchema {
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -130,6 +135,7 @@ pub fn object_schema(properties: HashMap<String, JSONSchema>, required: Vec<Stri
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -148,6 +154,7 @@ pub fn array_schema(items: JSONSchema, description: Option<&str>) -> JSONSchema 
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -171,6 +178,7 @@ pub fn string_prop_with_examples(
         examples: Some(examples),
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -199,6 +207,7 @@ pub fn enum_prop(values: Vec<&str>, default: &str, description: Option<&str>) ->
         examples: None,
         enum_values: Some(enum_values),
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -222,6 +231,7 @@ pub fn enum_prop_optional(values: Vec<&str>, description: Option<&str>) -> JSONS
         examples: None,
         enum_values: Some(enum_values),
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -245,6 +255,7 @@ pub fn enum_prop_required(values: Vec<&str>, description: &str) -> JSONSchema {
         examples: None,
         enum_values: Some(enum_values),
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -270,6 +281,7 @@ pub fn object_prop(
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
     }
 }
 
@@ -289,5 +301,65 @@ pub fn object_map_prop(description: Option<&str>) -> JSONSchema {
         examples: None,
         enum_values: None,
         const_value: None,
+        one_of: None,
+    }
+}
+
+/// Creates a string property constrained to a single constant value.
+pub fn string_const_prop(value: &str, description: Option<&str>) -> JSONSchema {
+    JSONSchema {
+        schema_type: JSONSchemaType::String {
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            format: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: None,
+        const_value: Some(Value::String(value.to_string())),
+        one_of: None,
+    }
+}
+
+/// Creates an integer property constrained to a single constant value.
+pub fn integer_const_prop(value: i64, description: Option<&str>) -> JSONSchema {
+    JSONSchema {
+        schema_type: JSONSchemaType::Integer {
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            multiple_of: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: None,
+        const_value: Some(Value::Number(serde_json::Number::from(value))),
+        one_of: None,
+    }
+}
+
+/// Creates an object schema that validates exactly one of the provided variants.
+pub fn one_of_object_schema(variants: Vec<JSONSchema>, description: Option<&str>) -> JSONSchema {
+    JSONSchema {
+        schema_type: JSONSchemaType::Object {
+            properties: None,
+            required: None,
+            additional_properties: None,
+            min_properties: None,
+            max_properties: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: None,
+        const_value: None,
+        one_of: Some(variants),
     }
 }

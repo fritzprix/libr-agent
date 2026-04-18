@@ -784,7 +784,7 @@ mod tests {
     use crate::mcp::types::MCPContent;
 
     /// Regression: builtin tools that return is_error=true WITH mcp_content
-    /// (e.g. guided_error from editFile) must surface that content to the
+    /// (e.g. guided_error from editFiles) must surface that content to the
     /// agent — NOT collapse it to the bare "Unknown error" fallback.
     ///
     /// Root cause was that handle_tool_result only checked `result.is_error` and

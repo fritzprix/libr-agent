@@ -270,13 +270,13 @@ impl WorkspaceServer {
                 };
 
                 let first_hint = if show_line_anchors {
-                    "Use replaceLines or deleteLines with only the 6-character start-line anchor; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
+                    "Use editFiles with path plus only the 6-character startAnchor; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
                 } else {
-                    "Rerun with showLineAnchors=true to get anchors for precise line editing (replaceLines, deleteLines, insertAfterLine)".to_string()
+                    "Rerun with showLineAnchors=true to get anchors for precise line editing with editFiles".to_string()
                 };
                 let mut next_actions = vec![
                     first_hint,
-                    "Use insertAfterLine with afterLine and the anchor from the line after which content should be inserted".to_string(),
+                    "Use editFiles with path, op='insert_after', startLine, and startAnchor to insert below an existing line".to_string(),
                     "writeFile for full file replacement".to_string(),
                 ];
                 if let (Some(next_start_line), Some(suggested_end_line)) =
@@ -409,7 +409,6 @@ where
     I: IntoIterator<Item = Result<String, std::io::Error>>,
 {
     let mut result_lines = Vec::new();
-    let mut current_line = 1usize;
     let mut total_lines = 0usize;
     let mut prefix_state = initial_prefix_hash_state();
     let mut content_bytes = 0usize;
@@ -417,7 +416,7 @@ where
     let mut next_start_line = None;
     let mut next_line_too_large = false;
 
-    for line_result in lines {
+    for (current_line, line_result) in (1usize..).zip(lines) {
         let line = line_result.map_err(|e| {
             if e.kind() == std::io::ErrorKind::InvalidData {
                 "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
@@ -457,8 +456,6 @@ where
         if current_line >= end {
             break;
         }
-
-        current_line += 1;
     }
 
     if result_lines.is_empty() && start > total_lines {

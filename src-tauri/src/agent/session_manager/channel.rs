@@ -114,7 +114,7 @@ fn format_channel_payload(
     let mut attributes = vec![format!(r#"source="{}""#, escape_xml_attr(server_name))];
     let mut sorted_meta: Vec<_> = meta.iter().collect();
     let mut invalid_meta = Vec::new();
-    sorted_meta.sort_by(|(left, _), (right, _)| left.cmp(right));
+    sorted_meta.sort_by_key(|(key, _)| *key);
 
     for (key, value) in sorted_meta {
         if is_safe_channel_attribute_name(key) {

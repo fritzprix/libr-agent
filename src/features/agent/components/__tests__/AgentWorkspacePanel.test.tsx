@@ -349,4 +349,52 @@ describe('AgentWorkspacePanel', () => {
 
     expect(backend.setWorkspaceOverride).not.toHaveBeenCalled();
   });
+
+  it('provides accessible focus targets for disabled action buttons during native opening', async () => {
+    // Keep the native opening pending
+    let resolveOpening: () => void;
+    const openingPromise = new Promise<void>((resolve) => {
+      resolveOpening = resolve;
+    });
+    vi.mocked(backend.openWorkspaceInExplorer).mockReturnValue(openingPromise);
+
+    render(<AgentWorkspacePanel />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    const explorerButton = screen.getByLabelText(
+      'agent.workspace.openInExplorerAria',
+    );
+
+    // Trigger the opening
+    await act(async () => {
+      fireEvent.click(explorerButton);
+    });
+
+    // Button should be disabled
+    expect(explorerButton).toBeDisabled();
+
+    // The wrapper span should now be focusable and have accessibility labels
+    // We look for role="button" and the specific aria-label on the span
+    const wrappers = screen.getAllByRole('button', {
+      name: 'agent.workspace.openInExplorerAria',
+    });
+    // One is the disabled button, the other is the focusable span wrapper
+    const focusableWrapper = wrappers.find(
+      (el) => el.tagName.toLowerCase() === 'span',
+    );
+
+    expect(focusableWrapper).toBeInTheDocument();
+    expect(focusableWrapper).toHaveAttribute('tabIndex', '0');
+    expect(focusableWrapper).toHaveAttribute('aria-disabled', 'true');
+
+    // Clean up
+    await act(async () => {
+      resolveOpening!();
+    });
+  });
 });

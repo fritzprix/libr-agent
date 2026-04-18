@@ -21,10 +21,13 @@ pub fn register_sqlite_vec() {
 }
 
 /// Setup an in-memory SQLite database for testing
-#[allow(dead_code)]
 pub async fn setup_test_db() -> DatabaseConnection {
     register_sqlite_vec();
-    Database::connect("sqlite::memory:")
+    let mut opt = sea_orm::ConnectOptions::new("sqlite::memory:");
+    opt.max_connections(1)
+        .min_connections(1)
+        .sqlx_logging(false);
+    Database::connect(opt)
         .await
         .expect("Failed to create in-memory database")
 }

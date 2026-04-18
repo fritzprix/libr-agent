@@ -23,6 +23,7 @@ import type {
 } from '@/lib/ai-service/types';
 import {
   isSpendingCapError,
+  normalizeAIServiceError,
   normalizeRustMessage,
 } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
@@ -56,6 +57,20 @@ function isMessageError(error: unknown): error is MessageError {
 function toAgentRuntimeError(error: unknown): AgentRuntimeError {
   if (isMessageError(error)) {
     return error;
+  }
+
+  const normalizedAiError = normalizeAIServiceError(error);
+  if (normalizedAiError) {
+    return {
+      type: normalizedAiError.type,
+      displayMessage: normalizedAiError.displayMessage,
+      recoverable: normalizedAiError.recoverable,
+      details: {
+        originalError: error instanceof Error ? error.message : error,
+        errorCode: normalizedAiError.errorCode,
+        timestamp: new Date().toISOString(),
+      },
+    };
   }
 
   const displayMessage =

@@ -54,6 +54,7 @@ interface ScheduledTaskGroupSection {
   groupId: string | null;
   groupName: string;
   tasks: ScheduledTask[];
+  enabledCount: number;
 }
 
 export function ScheduledTasksPage() {
@@ -142,14 +143,22 @@ export function ScheduledTasksPage() {
         groupId: task.groupId,
         groupName: task.groupName,
         tasks: [task],
+        enabledCount: 0, // correctly assigned below
       });
     }
 
     return Array.from(groups.values())
-      .map((group) => ({
-        ...group,
-        tasks: [...group.tasks].sort(compareScheduledTasks),
-      }))
+      .map((group) => {
+        const sortedTasks = [...group.tasks].sort(compareScheduledTasks);
+        return {
+          ...group,
+          tasks: sortedTasks,
+          enabledCount: sortedTasks.reduce(
+            (count, task) => (task.enabled ? count + 1 : count),
+            0,
+          ),
+        };
+      })
       .sort((left, right) => left.groupName.localeCompare(right.groupName));
   }, [tasks]);
 
@@ -158,7 +167,10 @@ export function ScheduledTasksPage() {
     [tasks],
   );
 
-  const enabledTaskCount = tasks.reduce((acc, task) => (task.enabled ? acc + 1 : acc), 0);
+  const enabledTaskCount = useMemo(
+    () => tasks.reduce((acc, task) => (task.enabled ? acc + 1 : acc), 0),
+    [tasks],
+  );
 
   if (loading) {
     return (
@@ -247,10 +259,6 @@ export function ScheduledTasksPage() {
                 </h2>
               </div>
               {groupedSections.map((group) => {
-                const groupEnabledCount = group.tasks.reduce(
-                  (count, task) => (task.enabled ? count + 1 : count),
-                  0,
-                );
                 // group.tasks is already sorted via compareScheduledTasks.
                 // This lookup relies on that ordering, so the first enabled task
                 // with a non-null nextRunAt is the group's earliest upcoming run.
@@ -272,7 +280,7 @@ export function ScheduledTasksPage() {
                         </Badge>
                         <Badge variant="outline" className="text-xs">
                           {t('scheduledTasks.groupEnabledCount', {
-                            count: groupEnabledCount,
+                            count: group.enabledCount,
                             defaultValue: '{{count}} enabled',
                           })}
                         </Badge>

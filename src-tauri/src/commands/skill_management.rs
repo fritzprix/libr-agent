@@ -1,4 +1,4 @@
-use crate::services::skill_service;
+use crate::services::skill_service::{self, SkillImportPreview, SkillImportResult};
 
 #[tauri::command]
 pub async fn copy_global_to_assistant(
@@ -27,4 +27,42 @@ pub async fn import_assistant_skills(
     file_path: String,
 ) -> Result<String, String> {
     skill_service::import_assistant_skills(assistant_id, file_path).await
+}
+
+#[tauri::command]
+pub async fn preview_user_skill_import(file_path: String) -> Result<SkillImportPreview, String> {
+    skill_service::preview_user_skill_import(file_path).await
+}
+
+#[tauri::command]
+pub async fn import_user_skills(
+    file_path: String,
+    overwrite_existing: bool,
+    excluded_skill_names: Option<Vec<String>>,
+) -> Result<SkillImportResult, String> {
+    skill_service::import_user_skills(file_path, overwrite_existing, excluded_skill_names).await
+}
+
+#[tauri::command]
+pub async fn preview_github_skill_install(repo_url: String) -> Result<SkillImportPreview, String> {
+    skill_service::preview_github_skill_install(repo_url).await
+}
+
+#[tauri::command]
+pub async fn install_github_skills(
+    repo_url: String,
+    overwrite_existing: bool,
+    excluded_skill_names: Option<Vec<String>>,
+) -> Result<SkillImportResult, String> {
+    skill_service::install_github_skills(repo_url, overwrite_existing, excluded_skill_names).await
+}
+
+#[tauri::command]
+pub async fn delete_user_skill(skill_name: String) -> Result<String, String> {
+    skill_service::delete_user_skill(skill_name).await
+}
+
+#[tauri::command]
+pub async fn reset_user_skills() -> Result<String, String> {
+    skill_service::reset_user_skills().await
 }

@@ -34,6 +34,12 @@ export interface JSONSchemaBase {
   enum?: unknown[];
   /** A constant value that the schema must have. */
   const?: unknown;
+  /** Exactly one of these schemas must validate. */
+  oneOf?: JSONSchema[];
+  /** Any of these schemas may validate. */
+  anyOf?: JSONSchema[];
+  /** All of these schemas must validate. */
+  allOf?: JSONSchema[];
 }
 
 /**
