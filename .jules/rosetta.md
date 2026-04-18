@@ -102,7 +102,7 @@
 **Languages updated:** [EN, KO]
 **Notes:** Localized `ErrorBubble` and `LoadingSpinner` components and added new `errorBubble` namespace to EN/KO.
 
-## 2024-05-28 - [Agent Draft Chat View Updates]
+## 2026-04-18 - [Agent Draft Chat View Updates]
 
 **Extracted:** 0
 **Languages updated:** [EN]
