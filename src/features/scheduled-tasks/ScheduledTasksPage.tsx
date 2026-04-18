@@ -54,6 +54,7 @@ interface ScheduledTaskGroupSection {
   groupId: string | null;
   groupName: string;
   tasks: ScheduledTask[];
+  enabledCount: number;
 }
 
 export function ScheduledTasksPage() {
@@ -142,6 +143,7 @@ export function ScheduledTasksPage() {
         groupId: task.groupId,
         groupName: task.groupName,
         tasks: [task],
+        enabledCount: 0, // correctly assigned below
       });
     }
 
