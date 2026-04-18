@@ -48,7 +48,6 @@ function AdvancedTabComponent({
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-
         <div className="min-w-0 rounded-xl border border-border/70 p-4">
           <label className="block text-muted-foreground mb-2 font-medium">
             {t(
@@ -65,7 +64,9 @@ function AdvancedTabComponent({
             value={localAdvancedSettings.loopPreventionThreshold ?? 3}
             onChange={(e) => {
               const parsed = parseInt(e.target.value, 10);
-              const value = isNaN(parsed) ? 3 : Math.min(20, Math.max(2, parsed));
+              const value = isNaN(parsed)
+                ? 3
+                : Math.min(20, Math.max(2, parsed));
               onChange('loopPreventionThreshold', value);
             }}
             className="bg-background border text-foreground w-full max-w-xs"

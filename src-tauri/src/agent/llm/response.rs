@@ -210,7 +210,11 @@ pub async fn handle_llm_response(
         if let Some(idx) = break_index {
             if let Some(action) = break_action {
                 match action {
-                    circuit_breaker::CircuitBreakerAction::HardBreak { count, tool_name, args } => {
+                    circuit_breaker::CircuitBreakerAction::HardBreak {
+                        count,
+                        tool_name,
+                        args,
+                    } => {
                         log::warn!(
                             "Circuit breaker triggered for session {} tool {} (count {})",
                             session_id,
@@ -252,7 +256,11 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
                             });
                         }
                     }
-                    circuit_breaker::CircuitBreakerAction::NaturalRecoveryError { count, tool_name, .. } => {
+                    circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
+                        count,
+                        tool_name,
+                        ..
+                    } => {
                         log::warn!(
                             "Natural recovery (Error track) triggered for session {} tool {} (count {})",
                             session_id, tool_name, count
@@ -277,7 +285,11 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
                         ];
 
                         let template = error_templates[nanos % error_templates.len()];
-                        let recovery_thought = format!("{} [Entropy ID: {}]", template.replace("{TOOL_NAME}", &tool_name), entropy);
+                        let recovery_thought = format!(
+                            "{} [Entropy ID: {}]",
+                            template.replace("{TOOL_NAME}", &tool_name),
+                            entropy
+                        );
 
                         let think_call = ToolCall {
                             id: uuid::Uuid::new_v4().to_string(),
@@ -285,14 +297,19 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
                                 name: "scratchpad__think".to_string(),
                                 arguments: serde_json::json!({
                                     "thought": recovery_thought
-                                }).to_string(),
+                                })
+                                .to_string(),
                             },
                             r#type: "function".to_string(),
                         };
                         tool_calls[idx] = think_call;
                         tool_calls.truncate(idx + 1);
                     }
-                    circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess { count, tool_name, .. } => {
+                    circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
+                        count,
+                        tool_name,
+                        ..
+                    } => {
                         log::warn!(
                             "Natural recovery (Success track) triggered for session {} tool {} (count {})",
                             session_id, tool_name, count
@@ -317,7 +334,11 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
                         ];
 
                         let template = success_templates[nanos % success_templates.len()];
-                        let recovery_thought = format!("{} [Entropy ID: {}]", template.replace("{TOOL_NAME}", &tool_name), entropy);
+                        let recovery_thought = format!(
+                            "{} [Entropy ID: {}]",
+                            template.replace("{TOOL_NAME}", &tool_name),
+                            entropy
+                        );
 
                         let think_call = ToolCall {
                             id: uuid::Uuid::new_v4().to_string(),
@@ -325,7 +346,8 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
                                 name: "scratchpad__think".to_string(),
                                 arguments: serde_json::json!({
                                     "thought": recovery_thought
-                                }).to_string(),
+                                })
+                                .to_string(),
                             },
                             r#type: "function".to_string(),
                         };
