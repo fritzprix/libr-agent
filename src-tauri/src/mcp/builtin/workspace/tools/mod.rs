@@ -13,10 +13,10 @@ pub fn file_tools() -> Vec<MCPTool> {
         file_tools::create_list_directory_tool(),
         file_tools::create_import_files_tool(),
         file_tools::create_search_tool(),
-        // editFile is now the single model-facing mutation tool.
-        // Legacy per-operation tools remain dispatchable for older clients, but are hidden from
-        // discovery so the agent only plans against one contract.
-        file_tools::create_edit_file_tool(),
+        // editFiles is the single model-facing mutation tool.
+        // Legacy editFile and per-operation tools remain dispatchable for older clients, but are
+        // hidden from discovery so the agent only plans against one contract.
+        file_tools::create_edit_files_tool(),
     ]
 }
 

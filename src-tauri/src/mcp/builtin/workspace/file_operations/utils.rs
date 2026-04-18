@@ -15,7 +15,7 @@ const ANCHOR_LEN: usize = LINE_HASH_LEN + PREFIX_HASH_LEN;
 ///
 /// Uses FNV-1a 32-bit with output folding to produce a stable 2-char identifier
 /// per line. This hash is embedded into opaque line anchors when `showLineAnchors`
-/// is enabled, and validated by `editFile` after parsing the agent-facing anchor.
+/// is enabled, and validated by `editFiles` after parsing the agent-facing anchor.
 /// detect file staleness before applying edits.
 pub fn compute_line_hash(content: &str) -> String {
     let mut hash = FNV_OFFSET;

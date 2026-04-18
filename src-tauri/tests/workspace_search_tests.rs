@@ -342,7 +342,7 @@ async fn write_file_duplicate_resource_guidance_keeps_numbered_steps_clean() {
         "read guidance should be a clean numbered step: {text}"
     );
     assert!(
-        text.contains("4. Use editFile for targeted edits to \"art.html\" instead of rewriting the whole file."),
+        text.contains("4. Use editFiles for targeted edits to \"art.html\" instead of rewriting the whole file."),
         "edit guidance should be a clean numbered step: {text}"
     );
     assert!(

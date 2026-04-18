@@ -30,7 +30,7 @@ Use these patterns to design robust, reusable workflows.
 1. **Implementation**: `workspace__writeFile` to create code. (output: `feature_code`)
 2. **Testing**: `workspace__runPowerShell` to execute tests. (output: `test_output`)
 3. **Analysis**: Use `test_output` to identify failures.
-4. **Fix**: `workspace__editFile` to correct errors based on analysis.
+4. **Fix**: `workspace__editFiles` to correct errors based on analysis.
 5. **Verification**: `workspace__runPowerShell` to re-run tests.
 
 ---
@@ -55,4 +55,4 @@ Use these patterns to design robust, reusable workflows.
 1. **Granularity**: Break steps into atomic actions. Don't "Read, Analyze, and Write" in one step.
 2. **Robustness**: Use `requiredData` to ensure steps only run when previous dependencies are met.
 3. **Traceability**: Give `outputVariable` names that clearly describe the data they hold (e.g., `config_json`, `search_results`).
-4. **Tool Appropriateness**: Use the right tool for the job. Use `runPowerShell` for complex shell logic and `editFile` for precise code modifications.
+4. **Tool Appropriateness**: Use the right tool for the job. Use `runPowerShell` for complex shell logic and `editFiles` for precise code modifications.
