@@ -264,3 +264,73 @@ async fn legacy_replace_lines_alias_still_routes_through_edit_file() {
     let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
     assert_eq!(updated, "ALPHA\nbeta\n");
 }
+
+#[tokio::test]
+async fn legacy_edit_file_insert_after_flag_still_works() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "legacy-edit-file-insert-after-flag";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+
+    let result = server
+        .handle_edit_file(
+            json!({
+                "path": "sample.txt",
+                "edits": [
+                    {
+                        "line": 0,
+                        "insertAfter": true,
+                        "new_value": "header"
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("legacy insertAfter edit should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "header\nalpha\nbeta\n");
+}
+
+#[tokio::test]
+async fn legacy_edit_file_empty_new_value_still_deletes() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "legacy-edit-file-empty-new-value-delete";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+
+    let anchors = format_as_hashlines("alpha\nbeta\n");
+    let start_anchor = anchors
+        .lines()
+        .next()
+        .and_then(|line| line.split('|').next())
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("start anchor");
+
+    let result = server
+        .handle_edit_file(
+            json!({
+                "path": "sample.txt",
+                "edits": [
+                    {
+                        "line": 1,
+                        "anchor": start_anchor,
+                        "new_value": ""
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("legacy empty new_value delete should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "beta\n");
+}

@@ -8,6 +8,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use once_cell::sync::Lazy;
 use serde_json::{json, Map, Value};
 
 /// A single edit operation.
@@ -64,12 +65,26 @@ fn infer_legacy_edit_op(edit_obj: &Map<String, Value>) -> Option<&'static str> {
     }
 }
 
+static EDIT_FILE_SCHEMA_JSON: Lazy<Result<Value, String>> = Lazy::new(|| {
+    serde_json::to_value(create_edit_file_input_schema())
+        .map_err(|error| format!("Failed to serialize editFile schema: {error}"))
+});
+
+static EDIT_FILE_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = Lazy::new(|| {
+    let schema_json = EDIT_FILE_SCHEMA_JSON
+        .as_ref()
+        .map_err(|error| error.clone())?;
+    jsonschema::validator_for(schema_json)
+        .map_err(|error| format!("Failed to build editFile validator: {error}"))
+});
+
 fn canonicalize_edit_object(edit: &Value) -> Value {
     let Some(edit_obj) = edit.as_object() else {
         return edit.clone();
     };
 
     let mut canonical = Map::new();
+    let inferred_legacy_op = infer_legacy_edit_op(edit_obj);
 
     for (key, value) in edit_obj {
         match key.as_str() {
@@ -118,9 +133,13 @@ fn canonicalize_edit_object(edit: &Value) -> Value {
             }
             "new_value" | "content" => {
                 if !value.is_null() {
+                    if key == "new_value" && inferred_legacy_op == Some("delete") {
+                        continue;
+                    }
                     canonical.insert("content".to_string(), value.clone());
                 }
             }
+            "insertAfter" => {}
             _ => {
                 canonical.insert(key.clone(), value.clone());
             }
@@ -128,7 +147,7 @@ fn canonicalize_edit_object(edit: &Value) -> Value {
     }
 
     if !canonical.contains_key("op") {
-        if let Some(inferred_op) = infer_legacy_edit_op(edit_obj) {
+        if let Some(inferred_op) = inferred_legacy_op {
             canonical.insert("op".to_string(), Value::String(inferred_op.to_string()));
         }
     }
@@ -162,10 +181,9 @@ fn canonicalize_edit_file_args(args: &Value) -> Value {
 }
 
 fn validate_edit_file_arguments(args: &Value) -> Result<(), String> {
-    let schema_json = serde_json::to_value(create_edit_file_input_schema())
-        .map_err(|error| format!("Failed to serialize editFile schema: {error}"))?;
-    let validator = jsonschema::validator_for(&schema_json)
-        .map_err(|error| format!("Failed to build editFile validator: {error}"))?;
+    let validator = EDIT_FILE_VALIDATOR
+        .as_ref()
+        .map_err(|error| error.clone())?;
 
     let errors = validator
         .iter_errors(args)
@@ -475,7 +493,7 @@ impl WorkspaceServer {
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!(
-                            "Edit at index {}: 'endLine' ({}) must be ≥ 'line' ({})",
+                            "Edit at index {}: 'endLine' ({}) must be ≥ 'startLine' ({})",
                             idx, n, start_line
                         ),
                         ToolGroup::Workspace,

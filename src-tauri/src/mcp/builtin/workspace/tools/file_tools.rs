@@ -802,10 +802,12 @@ pub fn create_edit_file_tool() -> MCPTool {
 PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values. For anchors, pass only the 6 hex characters between ':' and '|'.
 
 Each edit uses op-specific schema validation:
-- replace: startLine + startAnchor + content
+- replace single line: startLine + startAnchor + content
+- replace range: startLine + startAnchor + endLine + endAnchor + content
 - insert_after existing line: startLine + startAnchor + content
 - insert_after file top: startLine=0 + content
-- delete: startLine + startAnchor
+- delete single line: startLine + startAnchor
+- delete range: startLine + startAnchor + endLine + endAnchor
 
 Edits are applied bottom-to-top so line numbers stay stable within the batch. Legacy replaceLines / insertAfterLine / deleteLines still route here for backward compatibility."
             .to_string(),
