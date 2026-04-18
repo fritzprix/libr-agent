@@ -32,6 +32,7 @@ export interface AdvancedSettings {
   maxSuspendedSessions: number; // default 8 — sessions blocked on awaitAgent
   maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
   maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
+  loopPreventionThreshold: number; // default 3 - number of identical tool calls to trigger natural recovery
 }
 
 export interface DisplaySettings {
@@ -114,6 +115,7 @@ export const DEFAULT_SETTING: Settings = {
     maxSuspendedSessions: 8,
     maxConcurrentActiveProcesses: 10,
     maxSuspendedProcesses: 20,
+    loopPreventionThreshold: 3,
   },
   display: {
     metricDisplayMode: 'inline',
