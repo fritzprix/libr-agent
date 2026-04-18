@@ -126,7 +126,7 @@ pub(crate) async fn load_loop_prevention_threshold() -> usize {
         return default_threshold;
     };
 
-    match settings_repo.get("advancedSettings").await {
+    let val = match settings_repo.get("advancedSettings").await {
         Ok(Some(model)) => match serde_json::from_str::<serde_json::Value>(&model.value) {
             Ok(json) => json
                 .get("loopPreventionThreshold")
@@ -136,7 +136,8 @@ pub(crate) async fn load_loop_prevention_threshold() -> usize {
             Err(_) => default_threshold,
         },
         _ => default_threshold,
-    }
+    };
+    val.clamp(2, 20)
 }
 
 fn count_consecutive_identical_calls<F>(messages: &[Message], matcher: F) -> (usize, bool)
@@ -248,8 +249,9 @@ mod tests {
         tool_call: &ToolCall,
         call_name_by_id: &HashMap<String, String>,
         call_signature_by_id: &HashMap<String, String>,
+        threshold: usize,
     ) -> Option<CircuitBreakerAction> {
-        evaluate_circuit_breaker_action(messages, tool_call, call_name_by_id, call_signature_by_id, 2)
+        evaluate_circuit_breaker_action(messages, tool_call, call_name_by_id, call_signature_by_id, threshold)
     }
 
     fn test_message(
@@ -415,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn circuit_breaker_does_not_trigger_on_successful_signature_repetition() {
+    fn circuit_breaker_triggers_natural_recovery_on_successful_signature_repetition_at_threshold() {
         let repeated_args = r#"{"index":3}"#;
         let messages = vec![
             test_message(
@@ -456,14 +458,14 @@ mod tests {
             &current_batch[0],
             &call_name_by_id,
             &call_signature_by_id,
-            2, // threshold
+            3, // threshold
         );
 
-        assert_eq!(trigger_count, None);
+        assert_eq!(trigger_count, Some(CircuitBreakerAction::NaturalRecoverySuccess { count: 3, tool_name: "planning__updateTodo".to_string(), args: repeated_args.to_string() }));
     }
 
     #[test]
-    fn circuit_breaker_does_not_trigger_after_five_successful_updatetodo_calls() {
+    fn circuit_breaker_triggers_hard_break_after_exceeding_threshold() {
         let repeated_args = r#"{"index":3}"#;
         let messages = vec![
             test_message(
@@ -540,10 +542,10 @@ mod tests {
             &current_batch[0],
             &call_name_by_id,
             &call_signature_by_id,
-            2, // threshold
+            5, // threshold
         );
 
-        assert_eq!(trigger_count, None);
+        assert_eq!(trigger_count, Some(CircuitBreakerAction::HardBreak { count: 6, tool_name: "planning__updateTodo".to_string(), args: repeated_args.to_string() }));
     }
 
     /// Regression test mirroring a real trace:

@@ -63,12 +63,11 @@ function AdvancedTabComponent({
             max={20}
             step={1}
             value={localAdvancedSettings.loopPreventionThreshold ?? 3}
-            onChange={(e) =>
-              onChange(
-                'loopPreventionThreshold',
-                parseInt(e.target.value, 10) || 3,
-              )
-            }
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              const value = isNaN(parsed) ? 3 : Math.min(20, Math.max(2, parsed));
+              onChange('loopPreventionThreshold', value);
+            }}
             className="bg-background border text-foreground w-full max-w-xs"
           />
           <p className="text-xs text-muted-foreground mt-1">
