@@ -243,7 +243,7 @@ function DraftChatInner() {
                       className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium font-sans bg-muted/40 hover:bg-muted transition-colors border border-transparent hover:border-border/50"
                     >
                       <Square size={12} className="text-primary/70" />
-                      {t('agent.draft.basicTools', 'Core Abilities')}
+                      {t('agent.draft.basicTools', 'Basic Tools')}
                     </Badge>
                   </div>
                 </TooltipTrigger>
@@ -251,7 +251,7 @@ function DraftChatInner() {
                   <p className="text-xs">
                     {t(
                       'agent.draft.basicToolsDescription',
-                      'Standard capabilities available to all agents.',
+                      'Includes core capabilities like reading files, managing tasks, and executing code. Always available to help you!',
                     )}
                   </p>
                 </TooltipContent>
@@ -306,14 +306,14 @@ function DraftChatInner() {
                       variant="outline"
                       className="text-[11px] text-muted-foreground/60 border-dashed font-sans font-normal cursor-pointer hover:opacity-100 hover:bg-muted hover:text-foreground transition-all px-3 py-1.5"
                     >
-                      {t('agent.draft.addTools', 'Customize Abilities')}
+                      {t('agent.draft.addTools', '+ Add tools')}
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-xl">
                     <p className="text-xs">
                       {t(
                         'agent.draft.addMoreCapabilities',
-                        'Manage tools and MCP servers for this agent.',
+                        'Add more capabilities in the settings',
                       )}
                     </p>
                   </TooltipContent>
@@ -341,7 +341,7 @@ function DraftChatInner() {
               <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/30 font-bold font-sans">
                 <div className="h-px w-6 bg-border/40" />
                 <Bot size={14} className="opacity-50" />
-                {t('agent.draft.localContext', 'Local Context Ready')}
+                {t('agent.draft.localContext', 'Local Context')}
                 <div className="h-px w-6 bg-border/40" />
               </div>
             </div>

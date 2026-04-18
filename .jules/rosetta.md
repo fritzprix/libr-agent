@@ -101,3 +101,9 @@
 **Extracted:** 5
 **Languages updated:** [EN, KO]
 **Notes:** Localized `ErrorBubble` and `LoadingSpinner` components and added new `errorBubble` namespace to EN/KO.
+
+## 2026-04-18 - [Agent Draft Chat View Updates]
+
+**Extracted:** 0
+**Languages updated:** [EN]
+**Notes:** Updated default English fallback strings in `AgentDraftChatView.tsx` to exactly match their actual values in `en.json` to fix broken inline copy.
