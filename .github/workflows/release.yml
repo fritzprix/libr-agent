@@ -85,6 +85,11 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             echo "❌ TAURI_SIGNING_PRIVATE_KEY secret is not set."
@@ -101,10 +106,24 @@ jobs:
             echo "The matching public key must also be set in src-tauri/tauri.conf.json → plugins.updater.pubkey"
             exit 1
           fi
-          echo "✅ Signing key is configured."
+          echo "✅ Updater signing key is configured."
+
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+              echo "❌ macOS: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, or APPLE_SIGNING_IDENTITY is not set."
+              echo "These are required for code signing on macOS."
+              exit 1
+            fi
+            if [ -z "$APPLE_ID" ] || [ -z "$APPLE_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
+              echo "⚠️ macOS: APPLE_ID, APPLE_PASSWORD, or APPLE_TEAM_ID is not set."
+              echo "Notarization will be skipped, and the app will show a security warning to users."
+            else
+              echo "✅ macOS: Signing and notarization credentials are configured."
+            fi
+          fi
 
       - name: Build the app
-        uses: tauri-apps/tauri-action@v0.6.2
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # OTA signing keys — generate once with: pnpm tauri signer generate -w ~/.tauri/libragent.key
