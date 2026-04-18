@@ -51,6 +51,37 @@ function AdvancedTabComponent({
         <div className="min-w-0 rounded-xl border border-border/70 p-4">
           <label className="block text-muted-foreground mb-2 font-medium">
             {t(
+              'settings.advanced.loopPreventionThreshold',
+              'Loop Prevention Threshold',
+            )}
+          </label>
+          <Input
+            type="number"
+            placeholder="e.g., 3"
+            min={2}
+            max={20}
+            step={1}
+            value={localAdvancedSettings.loopPreventionThreshold ?? 3}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              const value = isNaN(parsed)
+                ? 3
+                : Math.min(20, Math.max(2, parsed));
+              onChange('loopPreventionThreshold', value);
+            }}
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.advanced.loopPreventionThresholdDescription',
+              'Number of identically repeated tool calls before the agent attempts natural recovery or triggers a hard stop.',
+            )}
+          </p>
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-border/70 p-4">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
               'settings.advanced.defaultSessionMaxDepth',
               'Session Branching Limit (Advanced)',
             )}
@@ -331,6 +362,8 @@ function AdvancedTabComponent({
 
 export default React.memo(AdvancedTabComponent, (prev, next) => {
   return (
+    prev.localAdvancedSettings.loopPreventionThreshold ===
+      next.localAdvancedSettings.loopPreventionThreshold &&
     prev.localAdvancedSettings.defaultSessionMaxDepth ===
       next.localAdvancedSettings.defaultSessionMaxDepth &&
     prev.localAdvancedSettings.defaultSessionMaxFanout ===
