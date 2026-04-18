@@ -10,13 +10,17 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+function mockScrollIntoView() {
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    value: vi.fn(),
+    configurable: true,
+    writable: true,
+  });
+}
+
 describe('InputTokenDropdown', () => {
   it('renders skill source badges and inserts the selected skill', () => {
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      value: vi.fn(),
-      configurable: true,
-      writable: true,
-    });
+    mockScrollIntoView();
 
     const onSelectArg = vi.fn();
     const skills: SkillMetadata[] = [
@@ -71,11 +75,7 @@ describe('InputTokenDropdown', () => {
   });
 
   it('scrolls the active option into view during keyboard navigation', () => {
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      value: vi.fn(),
-      configurable: true,
-      writable: true,
-    });
+    mockScrollIntoView();
 
     const options = Array.from({ length: 4 }, (_, index) => ({
       name: `type-${index}`,
@@ -105,5 +105,45 @@ describe('InputTokenDropdown', () => {
 
     expect(targetOption).toHaveAttribute('aria-selected', 'true');
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+  });
+
+  it('avoids redundant scroll work when keyboard navigation hits list boundaries', () => {
+    mockScrollIntoView();
+
+    const options = [
+      { name: 'type-a', label: '@type-a', description: 'Option A' },
+      { name: 'type-b', label: '@type-b', description: 'Option B' },
+    ];
+
+    render(
+      <InputTokenDropdown
+        mode={{ kind: 'types', items: options }}
+        onSelectType={vi.fn()}
+        onSelectArg={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const renderedOptions = screen.getAllByRole('option');
+    const topOptionScroll = vi.fn();
+    const bottomOptionScroll = vi.fn();
+    Object.defineProperty(renderedOptions[0], 'scrollIntoView', {
+      value: topOptionScroll,
+      configurable: true,
+    });
+    Object.defineProperty(renderedOptions[1], 'scrollIntoView', {
+      value: bottomOptionScroll,
+      configurable: true,
+    });
+
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    expect(topOptionScroll).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(bottomOptionScroll).toHaveBeenCalledTimes(1);
+    bottomOptionScroll.mockClear();
+
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(bottomOptionScroll).not.toHaveBeenCalled();
   });
 });

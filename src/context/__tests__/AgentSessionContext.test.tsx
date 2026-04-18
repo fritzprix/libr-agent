@@ -66,6 +66,16 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
     return <AgentSessionProvider sessionId={TEST_SESSION_ID}>{children}</AgentSessionProvider>;
 }
 
+function DynamicSessionWrapper({
+    children,
+    sessionId,
+}: {
+    children: React.ReactNode;
+    sessionId: string;
+}) {
+    return <AgentSessionProvider sessionId={sessionId}>{children}</AgentSessionProvider>;
+}
+
 describe('AgentSessionContext (Local)', () => {
     const mockUnlisten = vi.fn();
 
@@ -123,6 +133,157 @@ describe('AgentSessionContext (Local)', () => {
         await waitFor(() => {
             expect(listen).toHaveBeenCalledWith('agent:event', expect.any(Function));
         });
+    });
+
+    it('does not reinitialize the session when rerendered with the same sessionId', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((command, args) => {
+            if (command === 'agent_get_session') {
+                return Promise.resolve({
+                    id: args.sessionId,
+                    name: `Session ${args.sessionId}`,
+                    status: 'idle',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    yoloMode: false,
+                });
+            }
+
+            if (command === 'messages_get_page') {
+                return Promise.resolve({
+                    items: [],
+                    total: 0,
+                    page: 1,
+                    pageSize: 1000,
+                    totalPages: 0,
+                });
+            }
+
+            if (
+                command === 'agent_resume_session' ||
+                command === 'agent_init_session_with_messages'
+            ) {
+                return Promise.resolve({});
+            }
+
+            return Promise.resolve(undefined);
+        });
+
+        const { result, rerender } = renderHook(() => useAgentSessionState(), {
+            wrapper: ({ children }) => (
+                <DynamicSessionWrapper sessionId="session-1">
+                    {children}
+                </DynamicSessionWrapper>
+            ),
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+            expect(result.current.session?.id).toBe('session-1');
+        });
+
+        expect(mockRefreshCompactedRange).toHaveBeenCalledTimes(1);
+        expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
+
+        const initialGetSessionCalls = (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+            ([command]) => command === 'agent_get_session'
+        ).length;
+        const initialMessagePageCalls = (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+            ([command]) => command === 'messages_get_page'
+        ).length;
+
+        rerender();
+
+        expect(
+            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                ([command]) => command === 'agent_get_session'
+            )
+        ).toHaveLength(initialGetSessionCalls);
+        expect(
+            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                ([command]) => command === 'messages_get_page'
+            )
+        ).toHaveLength(initialMessagePageCalls);
+        expect(mockRefreshCompactedRange).toHaveBeenCalledTimes(1);
+        expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
+    });
+
+    it('reinitializes exactly once when the active sessionId changes', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((command, args) => {
+            if (command === 'agent_get_session') {
+                return Promise.resolve({
+                    id: args.sessionId,
+                    name: `Session ${args.sessionId}`,
+                    status: 'idle',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    yoloMode: false,
+                });
+            }
+
+            if (command === 'messages_get_page') {
+                return Promise.resolve({
+                    items: [],
+                    total: 0,
+                    page: 1,
+                    pageSize: 1000,
+                    totalPages: 0,
+                });
+            }
+
+            if (
+                command === 'agent_resume_session' ||
+                command === 'agent_init_session_with_messages'
+            ) {
+                return Promise.resolve({});
+            }
+
+            return Promise.resolve(undefined);
+        });
+
+        let activeSessionId = 'session-1';
+        const Wrapper = ({ children }: { children: React.ReactNode }) => (
+            <DynamicSessionWrapper sessionId={activeSessionId}>
+                {children}
+            </DynamicSessionWrapper>
+        );
+
+        const { result, rerender } = renderHook(() => useAgentSessionState(), {
+            wrapper: Wrapper,
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+            expect(result.current.session?.id).toBe('session-1');
+        });
+
+        activeSessionId = 'session-2';
+        rerender();
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+            expect(result.current.session?.id).toBe('session-2');
+        });
+
+        expect(mockRefreshCompactedRange).toHaveBeenNthCalledWith(1, 'session-1');
+        expect(mockRefreshCompactedRange).toHaveBeenNthCalledWith(2, 'session-2');
+
+        expect(
+            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                ([command, args]) =>
+                    command === 'agent_get_session' && args.sessionId === 'session-2'
+            )
+        ).toHaveLength(1);
+        expect(
+            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                ([command, args]) =>
+                    command === 'messages_get_page' && args.sessionId === 'session-2'
+            )
+        ).toHaveLength(1);
+        expect(mockMarkSessionViewed).toHaveBeenNthCalledWith(
+            2,
+            'session-2',
+            expect.any(Date)
+        );
     });
 
     describe('Event Handling', () => {
