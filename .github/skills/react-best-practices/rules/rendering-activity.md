@@ -7,6 +7,9 @@ tags: rendering, activity, visibility, state-preservation
 
 ## Use Activity Component for Show/Hide
 
+> [!WARNING]
+> `<Activity>` is an experimental feature in React and not yet available in stable releases. Only use this if you are on experimental channels.
+
 Use React's `<Activity>` to preserve state/DOM for expensive components that frequently toggle visibility.
 
 **Usage:**

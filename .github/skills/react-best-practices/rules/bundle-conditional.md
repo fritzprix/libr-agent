@@ -34,4 +34,4 @@ function AnimationPlayer({
 }
 ```
 
-The `typeof window !== 'undefined'` check prevents bundling this module for SSR, optimizing server bundle size and build speed.
+The `typeof window !== 'undefined'` check prevents this module from running during SSR, but bundlers may still include it in the server build graph. To reliably keep it out of the server bundle, use a framework mechanism like `next/dynamic({ ssr: false })` or a client-only module boundary.

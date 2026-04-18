@@ -35,7 +35,7 @@ const onPress = useCallback((id: string) => handlePress(id), [handlePress])
 return (
   <LegendList
     renderItem={({ item }) => (
-      <Item key={item.id} item={item} onPress={() => onPress(item.id)} />
+      <Item key={item.id} item={item} id={item.id} onPress={onPress} />
     )}
   />
 )

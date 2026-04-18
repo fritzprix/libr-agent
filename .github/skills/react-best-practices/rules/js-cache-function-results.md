@@ -30,12 +30,15 @@ function ProjectList({ projects }: { projects: Project[] }) {
 
 ```typescript
 // Module-level cache
+// WARNING: Unbounded caches in long-lived server processes (like RSC) can cause memory leaks.
+// Use an LRU cache with max size/TTL for production server-side apps.
 const slugifyCache = new Map<string, string>()
 
 function cachedSlugify(text: string): string {
   if (slugifyCache.has(text)) {
     return slugifyCache.get(text)!
   }
+  if (slugifyCache.size > 1000) slugifyCache.clear() // naive eviction
   const result = slugify(text)
   slugifyCache.set(text, result)
   return result
