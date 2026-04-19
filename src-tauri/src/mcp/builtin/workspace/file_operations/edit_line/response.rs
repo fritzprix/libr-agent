@@ -31,8 +31,8 @@ pub(super) fn build_edit_files_success(prepared_batches: &[PreparedFileEdit]) ->
             .join("\n");
         let diff_summary = format!(
             "{} lines in, {} lines out",
-            batch.new_content.lines().count(),
-            batch.original_line_count
+            batch.original_line_count,
+            batch.new_content.lines().count()
         );
         let anchors = if batch.new_hash_sections.is_empty() {
             "(No new lines were created by these edits)".to_string()

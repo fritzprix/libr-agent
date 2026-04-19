@@ -24,13 +24,8 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 fn profile_output_dir(out_dir: &Path) -> Option<PathBuf> {
     out_dir
         .ancestors()
-        .find(|ancestor| {
-            ancestor
-                .parent()
-                .and_then(|parent| parent.file_name())
-                .and_then(|name| name.to_str())
-                == Some("target")
-        })
+        .find(|ancestor| ancestor.file_name().and_then(|name| name.to_str()) == Some("build"))
+        .and_then(Path::parent)
         .map(Path::to_path_buf)
 }
 
