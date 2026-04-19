@@ -186,6 +186,80 @@
       "logo": "https://jupyter.org/favicon.ico",
       "command": "npx",
       "args": ["-y", "@fre4x/jupyter"]
+    },
+    "fre4x-inspector-bridge": {
+      "description": "Bridge for MCP Inspector to debug and test MCP servers locally.",
+      "command": "npx",
+      "args": ["-y", "--package", "@fre4x/inspector-bridge", "fre4x-inspector-bridge"]
+    },
+    "comfyui": {
+      "description": "Interact with ComfyUI to generate and manage AI images.",
+      "command": "npx",
+      "args": ["-y", "@fre4x/comfyui"],
+      "env": {
+        "COMFYUI_SERVER_URL": "http://localhost:8188"
+      },
+      "variableDefinitions": {
+        "COMFYUI_SERVER_URL": {
+          "required": true,
+          "label": "ComfyUI Server URL",
+          "description": "Default: http://localhost:8188",
+          "type": "text"
+        }
+      }
+    },
+    "openai": {
+      "description": "OpenAI MCP server for text generation and analysis.",
+      "command": "npx",
+      "args": ["-y", "@fre4x/openai"],
+      "env": {
+        "OPENAI_API_KEY": ""
+      },
+      "variableDefinitions": {
+        "OPENAI_API_KEY": {
+          "required": true,
+          "label": "OpenAI API Key",
+          "description": "Get your API key from https://platform.openai.com",
+          "type": "password"
+        }
+      }
+    },
+    "huggingface": {
+      "description": "Interact with Hugging Face models and datasets.",
+      "command": "npx",
+      "args": ["-y", "@fre4x/huggingface"],
+      "env": {
+        "HF_TOKEN": "",
+        "HF_MODEL_CACHE_DIR": "",
+        "HF_LOCAL_MODEL_PATH": "",
+        "HF_ALLOW_REMOTE_MODELS": "true"
+      },
+      "variableDefinitions": {
+        "HF_TOKEN": {
+          "required": true,
+          "label": "Hugging Face Token",
+          "description": "Get your token from https://huggingface.co/settings/tokens",
+          "type": "password"
+        },
+        "HF_MODEL_CACHE_DIR": {
+          "required": false,
+          "label": "Model Cache Directory",
+          "description": "Absolute path to Hugging Face cache",
+          "type": "text"
+        },
+        "HF_LOCAL_MODEL_PATH": {
+          "required": false,
+          "label": "Local Model Path",
+          "description": "Absolute path to local models",
+          "type": "text"
+        },
+        "HF_ALLOW_REMOTE_MODELS": {
+          "required": false,
+          "label": "Allow Remote Models",
+          "description": "Set to 'true' to allow downloading remote models",
+          "type": "text"
+        }
+      }
     }
   }
 }
