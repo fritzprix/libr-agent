@@ -4,7 +4,6 @@ export interface KnowledgeChunkListItem {
   id: number;
   assistantId: string;
   preview: string;
-  content: string;
   tags: string[];
   source?: string | null;
   createdAt: number;

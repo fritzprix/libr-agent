@@ -461,18 +461,29 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
             .await
             .map_err(DbError::SeaOrmQueryFailed)?;
 
-        let mut orphan_entity_ids = Vec::new();
-        for entity_id in affected_entity_ids {
-            let remaining_links = knowledge_chunk_entity::Entity::find()
-                .filter(knowledge_chunk_entity::Column::EntityId.eq(entity_id))
-                .count(&txn)
+        let orphan_entity_ids = if affected_entity_ids.is_empty() {
+            Vec::new()
+        } else {
+            let affected_entity_id_list = affected_entity_ids.iter().copied().collect::<Vec<_>>();
+            let remaining_entity_ids = knowledge_chunk_entity::Entity::find()
+                .select_only()
+                .column(knowledge_chunk_entity::Column::EntityId)
+                .filter(
+                    knowledge_chunk_entity::Column::EntityId.is_in(affected_entity_id_list.clone()),
+                )
+                .group_by(knowledge_chunk_entity::Column::EntityId)
+                .into_tuple::<i32>()
+                .all(&txn)
                 .await
-                .map_err(DbError::SeaOrmQueryFailed)?;
+                .map_err(DbError::SeaOrmQueryFailed)?
+                .into_iter()
+                .collect::<HashSet<_>>();
 
-            if remaining_links == 0 {
-                orphan_entity_ids.push(entity_id);
-            }
-        }
+            affected_entity_id_list
+                .into_iter()
+                .filter(|entity_id| !remaining_entity_ids.contains(entity_id))
+                .collect::<Vec<_>>()
+        };
 
         let orphan_entity_count = orphan_entity_ids.len() as u64;
         let orphan_relationship_count = if orphan_entity_ids.is_empty() {
@@ -789,12 +800,13 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
             .await
             .map_err(DbError::SeaOrmQueryFailed)?;
 
-        let primary_entity_ids = chunk_links
+        let mut primary_entity_ids = chunk_links
             .iter()
             .map(|link| link.entity_id)
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+        primary_entity_ids.sort_unstable();
 
         if primary_entity_ids.is_empty() {
             return Ok(KnowledgeChunkDetail {

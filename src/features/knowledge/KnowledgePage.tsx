@@ -42,6 +42,16 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getLogger } from '@/lib/logger';
@@ -308,7 +318,7 @@ interface KnowledgeDetailDialogProps {
   isDeleting: boolean;
   isDetailLoading: boolean;
   onClose: () => void;
-  onDelete: () => void;
+  onRequestDelete: () => void;
   selectedItem: KnowledgeChunkListItem | null;
 }
 
@@ -319,7 +329,7 @@ const KnowledgeDetailDialog = memo(function KnowledgeDetailDialog({
   isDeleting,
   isDetailLoading,
   onClose,
-  onDelete,
+  onRequestDelete,
   selectedItem,
 }: KnowledgeDetailDialogProps) {
   const { t } = useTranslation('common');
@@ -355,7 +365,7 @@ const KnowledgeDetailDialog = memo(function KnowledgeDetailDialog({
               <Button
                 type="button"
                 variant="destructive"
-                onClick={onDelete}
+                onClick={onRequestDelete}
                 disabled={!selectedItem || isDeleting}
                 className="gap-2"
               >
@@ -577,6 +587,7 @@ export default function KnowledgePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [listRefreshToken, setListRefreshToken] = useState(0);
   const [nextCursor, setNextCursor] = useState<KnowledgeListCursor | null>(
     null,
@@ -698,6 +709,7 @@ export default function KnowledgePage() {
   }, []);
 
   const handleCloseDetail = useCallback(() => {
+    setIsDeleteDialogOpen(false);
     setSelectedId(null);
   }, []);
 
@@ -746,18 +758,15 @@ export default function KnowledgePage() {
     t,
   ]);
 
-  const handleDelete = useCallback(async () => {
+  const handleRequestDelete = useCallback(() => {
     if (!selectedItem || isDeleting) {
       return;
     }
+    setIsDeleteDialogOpen(true);
+  }, [isDeleting, selectedItem]);
 
-    const confirmed = window.confirm(
-      t(
-        'knowledge.confirmDelete',
-        'Delete this knowledge entry and clean up orphaned graph data?',
-      ),
-    );
-    if (!confirmed) {
+  const handleDelete = useCallback(async () => {
+    if (!selectedItem || isDeleting) {
       return;
     }
 
@@ -776,6 +785,7 @@ export default function KnowledgePage() {
       });
       setDetail(null);
       setSelectedId(null);
+      setIsDeleteDialogOpen(false);
       setListRefreshToken((current) => current + 1);
     } catch (error) {
       logger.error('Failed to delete knowledge entry', {
@@ -944,9 +954,43 @@ export default function KnowledgePage() {
         isDeleting={isDeleting}
         isDetailLoading={isDetailLoading}
         onClose={handleCloseDetail}
-        onDelete={handleDelete}
+        onRequestDelete={handleRequestDelete}
         selectedItem={selectedItem}
       />
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => !isDeleting && setIsDeleteDialogOpen(open)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('knowledge.confirmDeleteTitle', 'Delete knowledge entry')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'knowledge.confirmDelete',
+                'Delete this knowledge entry and clean up orphaned graph data?',
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>
+              {t('knowledge.cancel', 'Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDelete();
+              }}
+              disabled={isDeleting}
+              className="gap-2"
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {t('knowledge.delete', 'Delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

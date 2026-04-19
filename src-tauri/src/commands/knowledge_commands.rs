@@ -33,7 +33,6 @@ pub struct KnowledgeChunkListItemDto {
     pub id: i32,
     pub assistant_id: String,
     pub preview: String,
-    pub content: String,
     pub tags: Vec<String>,
     pub source: Option<String>,
     pub created_at: i64,
@@ -92,12 +91,37 @@ pub struct DeleteGlobalKnowledgeResponse {
 }
 
 fn build_preview(content: &str) -> String {
-    let normalized = content.split_whitespace().collect::<Vec<_>>().join(" ");
-    if normalized.chars().count() <= PREVIEW_LENGTH {
-        return normalized;
+    let mut preview = String::new();
+    let mut used_chars = 0;
+    let mut tokens = content.split_whitespace().peekable();
+
+    while let Some(token) = tokens.next() {
+        if !preview.is_empty() {
+            if used_chars >= PREVIEW_LENGTH {
+                preview.push_str("...");
+                return preview;
+            }
+            preview.push(' ');
+            used_chars += 1;
+        }
+
+        for ch in token.chars() {
+            if used_chars >= PREVIEW_LENGTH {
+                preview.push_str("...");
+                return preview;
+            }
+
+            preview.push(ch);
+            used_chars += 1;
+        }
+
+        if tokens.peek().is_some() && used_chars >= PREVIEW_LENGTH {
+            preview.push_str("...");
+            return preview;
+        }
     }
 
-    normalized.chars().take(PREVIEW_LENGTH).collect::<String>() + "..."
+    preview
 }
 
 impl From<KnowledgeGraphEntity> for KnowledgeGraphEntityDto {
@@ -191,7 +215,6 @@ pub async fn list_global_knowledge(
             id: chunk.id,
             assistant_id: chunk.assistant_id,
             preview: build_preview(&chunk.content),
-            content: chunk.content,
             tags: parse_db_tags(chunk.tags.as_ref()),
             source: chunk.source,
             created_at: chunk.created_at,
