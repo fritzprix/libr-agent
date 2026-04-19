@@ -62,7 +62,7 @@ fn is_tool_error_message(message: &Message) -> bool {
 }
 
 /// Build (name_by_id, signature_by_id) lookup maps from message history in a single pass.
-pub(crate) fn build_tool_call_indices(
+pub fn build_tool_call_indices(
     messages: &[Message],
 ) -> (HashMap<String, String>, HashMap<String, String>) {
     let mut call_name_by_id = HashMap::new();
@@ -86,51 +86,6 @@ pub(crate) fn build_tool_call_indices(
     (call_name_by_id, call_signature_by_id)
 }
 
-/// Count consecutive failed tool calls matching a given predicate.
-///
-/// Iterates backwards through messages counting consecutive tool error responses
-/// that match the given predicate. Stops at the first successful response or
-/// non-matching error.
-fn count_consecutive_failed_calls<F>(messages: &[Message], matcher: F) -> usize
-where
-    F: Fn(&str) -> bool,
-{
-    let mut consecutive_failures = 0;
-    let mut saw_tool_result = false;
-
-    for message in messages.iter().rev() {
-        match message.role.as_str() {
-            "tool" => {
-                saw_tool_result = true;
-
-                if !is_tool_error_message(message) {
-                    break;
-                }
-
-                let Some(tool_call_id) = message.tool_call_id.as_deref() else {
-                    break;
-                };
-
-                if matcher(tool_call_id) {
-                    consecutive_failures += 1;
-                } else {
-                    break;
-                }
-            }
-            "assistant" => {
-                // Assistant messages often sit between tool results; skip them.
-            }
-            _ => {
-                if saw_tool_result {
-                    break;
-                }
-            }
-        }
-    }
-
-    consecutive_failures
-}
-
 pub(crate) async fn load_loop_prevention_threshold() -> usize {
     let default_threshold = 3;
     let Some(settings_repo) = crate::state::try_get_settings_repository() else {
@@ -151,13 +106,55 @@ pub(crate) async fn load_loop_prevention_threshold() -> usize {
     val.clamp(2, 20)
 }
 
-fn count_consecutive_identical_calls<F>(messages: &[Message], matcher: F) -> (usize, bool)
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RepeatedOutcome {
+    Success,
+    Error { signature: String },
+}
+
+fn normalize_text_signature(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn build_tool_result_signature(message: &Message) -> String {
+    let text_signature = message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            crate::mcp::types::MCPContent::Text { text, .. } => {
+                let normalized = normalize_text_signature(text);
+                if normalized.is_empty() {
+                    None
+                } else {
+                    Some(normalized)
+                }
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if text_signature.is_empty() {
+        if is_tool_error_message(message) {
+            "__tool_error__".to_string()
+        } else {
+            "__tool_success__".to_string()
+        }
+    } else {
+        text_signature
+    }
+}
+
+fn count_consecutive_identical_call_outcomes<F>(
+    messages: &[Message],
+    matcher: F,
+) -> Option<(usize, RepeatedOutcome)>
 where
     F: Fn(&str) -> bool,
 {
     let mut consecutive_matches = 0;
-    let mut error_seen = false;
     let mut saw_tool_result = false;
+    let mut repeated_outcome: Option<RepeatedOutcome> = None;
 
     for message in messages.iter().rev() {
         match message.role.as_str() {
@@ -168,10 +165,23 @@ where
                 };
 
                 if matcher(tool_call_id) {
-                    consecutive_matches += 1;
-                    if is_tool_error_message(message) {
-                        error_seen = true;
+                    let current_outcome = if is_tool_error_message(message) {
+                        RepeatedOutcome::Error {
+                            signature: build_tool_result_signature(message),
+                        }
+                    } else {
+                        RepeatedOutcome::Success
+                    };
+
+                    if let Some(expected_outcome) = &repeated_outcome {
+                        if expected_outcome != &current_outcome {
+                            break;
+                        }
+                    } else {
+                        repeated_outcome = Some(current_outcome);
                     }
+
+                    consecutive_matches += 1;
                 } else {
                     break;
                 }
@@ -185,13 +195,13 @@ where
         }
     }
 
-    (consecutive_matches, error_seen)
+    repeated_outcome.map(|outcome| (consecutive_matches, outcome))
 }
 
-pub(crate) fn evaluate_circuit_breaker_action(
+pub fn evaluate_circuit_breaker_action(
     messages: &[Message],
     tool_call: &ToolCall,
-    call_name_by_id: &HashMap<String, String>,
+    _call_name_by_id: &HashMap<String, String>,
     call_signature_by_id: &HashMap<String, String>,
     threshold: usize,
 ) -> Option<CircuitBreakerAction> {
@@ -206,47 +216,33 @@ pub(crate) fn evaluate_circuit_breaker_action(
     }
 
     let current_signature = format!("{}:{}", tool_name, args);
-    let (consecutive_identical_signature, error_seen) =
-        count_consecutive_identical_calls(messages, |tool_call_id| {
+    if let Some((consecutive_identical_signature, outcome)) =
+        count_consecutive_identical_call_outcomes(messages, |tool_call_id| {
             call_signature_by_id.get(tool_call_id) == Some(&current_signature)
-        });
+        })
+    {
+        let total_count = consecutive_identical_signature + 1;
 
-    let total_count = consecutive_identical_signature + 1;
-
-    if total_count > threshold {
-        return Some(CircuitBreakerAction::HardBreak {
-            count: total_count,
-            tool_name: tool_name.clone(),
-            args: args.clone(),
-        });
-    } else if total_count == threshold {
-        if error_seen {
-            return Some(CircuitBreakerAction::NaturalRecoveryError {
+        if total_count > threshold {
+            return Some(CircuitBreakerAction::HardBreak {
                 count: total_count,
                 tool_name: tool_name.clone(),
                 args: args.clone(),
             });
-        } else {
-            return Some(CircuitBreakerAction::NaturalRecoverySuccess {
-                count: total_count,
-                tool_name: tool_name.clone(),
-                args: args.clone(),
+        } else if total_count == threshold {
+            return Some(match outcome {
+                RepeatedOutcome::Error { .. } => CircuitBreakerAction::NaturalRecoveryError {
+                    count: total_count,
+                    tool_name: tool_name.clone(),
+                    args: args.clone(),
+                },
+                RepeatedOutcome::Success => CircuitBreakerAction::NaturalRecoverySuccess {
+                    count: total_count,
+                    tool_name: tool_name.clone(),
+                    args: args.clone(),
+                },
             });
         }
-    }
-
-    // Check for consecutive failures of the same tool name (even with different args)
-    let consecutive_failed_same_tool = count_consecutive_failed_calls(messages, |tool_call_id| {
-        call_name_by_id.get(tool_call_id) == Some(tool_name)
-    });
-
-    // Existing logic triggered at 2 failures, meaning on 3rd attempt we trigger Break
-    if consecutive_failed_same_tool >= 2 {
-        return Some(CircuitBreakerAction::HardBreak {
-            count: consecutive_failed_same_tool + 1,
-            tool_name: tool_name.clone(),
-            args: args.clone(),
-        });
     }
 
     None
@@ -318,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn circuit_breaker_triggers_on_consecutive_failed_same_tool_with_different_args() {
+    fn circuit_breaker_does_not_hard_break_on_same_tool_failures_with_different_args() {
         let messages = vec![
             test_message(
                 "assistant-1",
@@ -370,17 +366,10 @@ mod tests {
             &current_batch[0],
             &call_name_by_id,
             &call_signature_by_id,
-            2, // threshold
+            3, // threshold
         );
 
-        assert_eq!(
-            trigger_count,
-            Some(CircuitBreakerAction::HardBreak {
-                count: 3,
-                tool_name: current_batch[0].function.name.clone(),
-                args: current_batch[0].function.arguments.clone()
-            })
-        );
+        assert_eq!(trigger_count, None);
     }
 
     #[test]

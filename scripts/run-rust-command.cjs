@@ -32,6 +32,15 @@ function getRecommendedBuildJobs() {
   return Math.min(cpuLimitedJobs, memoryLimitedJobs);
 }
 
+function getRecommendedTestBuildJobs() {
+  const cpuCount = Math.max(1, getCpuCount());
+  const totalMemGiB = os.totalmem() / 1024 ** 3;
+  const cpuLimitedJobs = clamp(Math.floor(cpuCount / 4), 1, 2);
+  const memoryLimitedJobs = clamp(Math.floor(totalMemGiB / 8), 1, 2);
+
+  return Math.min(cpuLimitedJobs, memoryLimitedJobs);
+}
+
 function getRecommendedTestThreads() {
   const cpuCount = Math.max(1, getCpuCount());
   const totalMemGiB = os.totalmem() / 1024 ** 3;
@@ -55,12 +64,14 @@ function hasFlag(args, flagNames) {
 }
 
 const env = { ...process.env };
+const isCargoTest = cargoArgs[0] === 'test';
 
 if (!env.CARGO_BUILD_JOBS && !hasFlag(cargoArgs, ['-j', '--jobs'])) {
-  env.CARGO_BUILD_JOBS = String(getRecommendedBuildJobs());
+  env.CARGO_BUILD_JOBS = String(
+    isCargoTest ? getRecommendedTestBuildJobs() : getRecommendedBuildJobs(),
+  );
 }
 
-const isCargoTest = cargoArgs[0] === 'test';
 if (
   isCargoTest &&
   !env.RUST_TEST_THREADS &&
@@ -74,6 +85,12 @@ if (
   } else {
     cargoArgs.splice(separatorIndex + 1, 0, `--test-threads=${testThreads}`);
   }
+}
+
+if (isCargoTest && !env.CARGO_INCREMENTAL) {
+  // Integration tests compile many near-duplicate binaries; disabling incremental
+  // avoids massive dep-graph churn and keeps disk usage from exploding.
+  env.CARGO_INCREMENTAL = '0';
 }
 
 const result = spawnSync('cargo', cargoArgs, {

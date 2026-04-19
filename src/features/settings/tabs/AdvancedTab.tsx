@@ -74,7 +74,7 @@ function AdvancedTabComponent({
           <p className="text-xs text-muted-foreground mt-1">
             {t(
               'settings.advanced.loopPreventionThresholdDescription',
-              'Number of identically repeated tool calls before the agent attempts natural recovery or triggers a hard stop.',
+              'Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop.',
             )}
           </p>
         </div>

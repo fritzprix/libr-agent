@@ -32,7 +32,7 @@ export interface AdvancedSettings {
   maxSuspendedSessions: number; // default 8 — sessions blocked on awaitAgent
   maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
   maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
-  loopPreventionThreshold: number; // default 3 - number of identical tool calls to trigger natural recovery
+  loopPreventionThreshold: number; // default 3 - number of repeated identical tool outcomes to trigger natural recovery
 }
 
 export interface DisplaySettings {
