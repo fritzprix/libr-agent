@@ -26,7 +26,9 @@ fn build_single_file_delegated_args(args: &Value, edits: Vec<Value>) -> Value {
 
 fn tag_edit_action(edit: &Value, action: &str) -> Value {
     let mut item = edit.clone();
-    item["action"] = json!(action);
+    if let Some(obj) = item.as_object_mut() {
+        obj.insert("action".to_string(), json!(action));
+    }
     item
 }
 

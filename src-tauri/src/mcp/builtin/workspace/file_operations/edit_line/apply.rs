@@ -16,8 +16,23 @@ fn validate_edits_do_not_overlap(edits: &[LineEdit]) -> Result<(), MCPResult> {
     sorted_ranges.sort_by_key(|&(start, _, _)| start);
 
     for window in sorted_ranges.windows(2) {
-        let (_start_a, end_a, idx_a) = window[0];
+        let (start_a, end_a, idx_a) = window[0];
         let (start_b, _, idx_b) = window[1];
+
+        if start_a == 0 && start_b == 0 {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Conflicting edits: edit #{} and edit #{} both insert at the beginning of the file",
+                    idx_a, idx_b
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Only one insert_after edit with startLine 0 is allowed per file".to_string()
+            ])
+            .to_mcp_result());
+        }
 
         if start_b <= end_a && start_b > 0 {
             return Err(guided_error(
