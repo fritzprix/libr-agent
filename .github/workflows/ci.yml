@@ -74,7 +74,7 @@ jobs:
         run: cd src-tauri && cargo check
 
       - name: 🧪 Run Rust integration tests
-        run: cd src-tauri && cargo test --tests -- --test-threads=1
+        run: pnpm rust:test
 
       # Code Quality Checks (PR only)
       - name: 🦀 Install Clippy

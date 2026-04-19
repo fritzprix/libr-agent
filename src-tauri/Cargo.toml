@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.7.8"
+version = "0.7.9"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -97,6 +97,11 @@ fastembed = "5.13.0"
 [dev-dependencies]
 # test-util enables tokio::time::pause() / advance() for time-controlled async tests.
 tokio = { version = "1.51", features = ["test-util"] }
+
+[profile.ci-test]
+inherits = "test"
+debug = 0
+incremental = false
 
 [workspace]
 members = ["migration"]

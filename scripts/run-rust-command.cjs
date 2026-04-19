@@ -32,13 +32,26 @@ function getRecommendedBuildJobs() {
   return Math.min(cpuLimitedJobs, memoryLimitedJobs);
 }
 
-function getRecommendedTestThreads() {
+function getRecommendedTestBuildJobs() {
   const cpuCount = Math.max(1, getCpuCount());
   const totalMemGiB = os.totalmem() / 1024 ** 3;
-  const cpuLimitedThreads = clamp(Math.floor(cpuCount / 2), 1, 4);
-  const memoryLimitedThreads = clamp(Math.floor(totalMemGiB / 4), 1, 4);
+  const cpuLimitedJobs = clamp(Math.floor(cpuCount / 4), 1, 2);
+  const memoryLimitedJobs = clamp(Math.floor(totalMemGiB / 8), 1, 2);
 
-  return Math.min(cpuLimitedThreads, memoryLimitedThreads);
+  return Math.min(cpuLimitedJobs, memoryLimitedJobs);
+}
+
+function getDefaultBuildJobs(args) {
+  const recommendedJobs =
+    args[0] === 'test'
+      ? getRecommendedTestBuildJobs()
+      : getRecommendedBuildJobs();
+
+  return recommendedJobs;
+}
+
+function getDefaultTestThreads() {
+  return 1;
 }
 
 function hasFlag(args, flagNames) {
@@ -55,18 +68,18 @@ function hasFlag(args, flagNames) {
 }
 
 const env = { ...process.env };
+const isCargoTest = cargoArgs[0] === 'test';
 
 if (!env.CARGO_BUILD_JOBS && !hasFlag(cargoArgs, ['-j', '--jobs'])) {
-  env.CARGO_BUILD_JOBS = String(getRecommendedBuildJobs());
+  env.CARGO_BUILD_JOBS = String(getDefaultBuildJobs(cargoArgs));
 }
 
-const isCargoTest = cargoArgs[0] === 'test';
 if (
   isCargoTest &&
   !env.RUST_TEST_THREADS &&
   !hasFlag(cargoArgs, ['--test-threads'])
 ) {
-  const testThreads = String(getRecommendedTestThreads());
+  const testThreads = String(getDefaultTestThreads());
   const separatorIndex = cargoArgs.indexOf('--');
 
   if (separatorIndex === -1) {
@@ -74,6 +87,12 @@ if (
   } else {
     cargoArgs.splice(separatorIndex + 1, 0, `--test-threads=${testThreads}`);
   }
+}
+
+if (isCargoTest && !env.CARGO_INCREMENTAL) {
+  // Integration tests compile many near-duplicate binaries; disabling incremental
+  // avoids massive dep-graph churn and keeps disk usage from exploding.
+  env.CARGO_INCREMENTAL = '0';
 }
 
 const result = spawnSync('cargo', cargoArgs, {

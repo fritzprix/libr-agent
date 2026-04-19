@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.9] - 2026-04-19
+
+### 🚀 Features
+
+- **Global Knowledge Manager UI**: Introduced a new dedicated page for managing global knowledge, including improved repository handlers and unified backend commands for a more streamlined information management experience.
+- **Refactored Skills Management**: Overhauled the skills management panel with enhanced conflict resolution, reset dialogs, and a custom hook-based architecture, significantly improving the reliability of skill lifecycle operations.
+
+### 🐛 Fixes
+
+- **Robust Workspace Edits**: Prevented duplicate start-of-file edits and hardened the robustness of edit action tagging in workspace tools to ensure precise and reliable file modifications.
+- **Sub-session LLM Inheritance**: Fixed an issue where sub-sessions would occasionally fail to inherit the correct LLM configuration from their parent session.
+- **Circuit Breaker Recovery**: Refined circuit breaker recovery handling to ensure smoother and more predictable transitions back to healthy states after transient service failures.
+
+### 🔧 Internal
+
+- **Workspace Edit Line Refactor**: Reorganized the workspace `edit_line` module into a cleaner, modular structure for better maintainability and extensibility.
+- **Tool Description Cleanup**: Refined tool descriptions by removing redundant default values and internal implementation details, reducing prompt bloat and improving agent comprehension.
+- **Large File Finder Improvements**: Updated the `find_large_files.sh` script for better performance and accuracy when identifying oversized assets.
+
 ## [0.7.8] - 2026-04-18
 
 ### 🚀 Features

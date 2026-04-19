@@ -32,7 +32,7 @@ find ./src ./src-tauri/src ./docs -type f \
   ! -path "*/.nuxt/*" \
   ! -path "*/coverage/*" \
   -exec wc -l {} + 2>/dev/null | \
-  awk '$1 > 500 && $2 != "total" { printf "%6d lines: %s\n", $1, $2 }' | \
+  awk '$1 > 500 && $2 ~ /^\.\// { printf "%6d lines: %s\n", $1, $2 }' | \
   sort -nr | \
   while read -r line; do
     lines=$(echo "$line" | awk '{print $1}')
@@ -62,7 +62,7 @@ TOTAL_LINES=$(find ./src ./src-tauri/src ./docs -type f \
   ! -path "*/.nuxt/*" \
   ! -path "*/coverage/*" \
   -exec wc -l {} + 2>/dev/null | \
-  awk '{sum += $1} END {print sum}')
+  awk '$2 ~ /^\.\// {sum += $1} END {print sum}')
 
 echo ""
 echo -e "${BLUE}📊 📈 TOTAL LINES IN CODEBASE: ${TOTAL_LINES}${NC}"
@@ -78,7 +78,7 @@ TOTAL_COUNT=$(find ./src ./src-tauri/src ./docs -type f \
   ! -path "*/.nuxt/*" \
   ! -path "*/coverage/*" \
   -exec wc -l {} + 2>/dev/null | \
-  awk '$1 > 500 && $2 != "total"' | wc -l)
+  awk '$1 > 500 && $2 ~ /^\.\// {count += 1} END {print count + 0}')
 
 echo "📊 Total files with >500 lines: $TOTAL_COUNT"
 

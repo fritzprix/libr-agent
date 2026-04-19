@@ -1,4 +1,4 @@
-pub(crate) mod circuit_breaker;
+pub mod circuit_breaker;
 pub mod completion;
 pub mod context_selector;
 pub mod prompt;

@@ -18,6 +18,8 @@ pub struct ToolCallFunction {
 pub struct CreateSessionRequest {
     pub name: Option<String>,
     pub assistant_id: String, // Replaces agent_config
+    pub model: Option<String>,
+    pub provider: Option<String>,
     pub workspace_path: Option<String>,
     pub request: String,
     pub parent_session_id: Option<String>,

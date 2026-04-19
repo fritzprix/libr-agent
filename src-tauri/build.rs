@@ -21,10 +21,11 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn profile_output_dir(out_dir: &Path, profile: &str) -> Option<PathBuf> {
+fn profile_output_dir(out_dir: &Path) -> Option<PathBuf> {
     out_dir
         .ancestors()
-        .find(|ancestor| ancestor.file_name().and_then(|name| name.to_str()) == Some(profile))
+        .find(|ancestor| ancestor.file_name().and_then(|name| name.to_str()) == Some("build"))
+        .and_then(Path::parent)
         .map(Path::to_path_buf)
 }
 
@@ -39,8 +40,7 @@ fn sync_bundled_skills_into_profile_output() -> io::Result<()> {
 
     let out_dir =
         PathBuf::from(env::var("OUT_DIR").map_err(|error| io::Error::other(error.to_string()))?);
-    let profile = env::var("PROFILE").map_err(|error| io::Error::other(error.to_string()))?;
-    let Some(profile_dir) = profile_output_dir(&out_dir, &profile) else {
+    let Some(profile_dir) = profile_output_dir(&out_dir) else {
         return Err(io::Error::other(format!(
             "Failed to resolve target profile directory from OUT_DIR={}",
             out_dir.display()

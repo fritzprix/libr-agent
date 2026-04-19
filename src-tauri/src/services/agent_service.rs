@@ -2,6 +2,7 @@ use crate::agent::types::{CreateSessionRequest, CreateSessionResponse, SessionLi
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
+use crate::repositories::SessionMetadata;
 use crate::session::get_session_manager;
 use std::collections::HashMap;
 use std::fs;
@@ -145,6 +146,27 @@ pub fn normalize_explicit_org(
     }
 }
 
+pub fn resolve_child_session_model_provider(
+    requested_model: Option<String>,
+    requested_provider: Option<String>,
+    parent_session: Option<&SessionMetadata>,
+) -> Result<(Option<String>, Option<String>), String> {
+    let inherited_model = parent_session.map(|session| session.model.clone());
+    let inherited_provider = parent_session.map(|session| session.provider.clone());
+
+    if parent_session.is_none() && (requested_model.is_some() != requested_provider.is_some()) {
+        return Err(
+            "Child session model/provider override must include both model and provider when no parent session is available for inheritance"
+                .to_string(),
+        );
+    }
+
+    Ok((
+        requested_model.or(inherited_model),
+        requested_provider.or(inherited_provider),
+    ))
+}
+
 #[derive(Debug, Clone)]
 pub struct SendSessionMessageResponse {
     pub message_id: String,
@@ -188,11 +210,13 @@ impl AgentService {
 
         // 3. Resolve lineage metadata
         let parent_session_id = body.parent_session_id.clone();
+        let mut parent_session = None;
         let requested_max_depth = body.max_depth;
         let requested_max_fanout = body.max_fanout;
 
         if let Some(ref parent_id) = parent_session_id {
-            if manager.get_session(parent_id).await?.is_none() {
+            parent_session = manager.get_session(parent_id).await?;
+            if parent_session.is_none() {
                 return Err(format!("Parent session not found: {}", parent_id));
             }
         }
@@ -213,6 +237,12 @@ impl AgentService {
             body.org_id.clone(),
             body.org_name.clone(),
             body.org_root_session_id.clone(),
+        )?;
+
+        let (resolved_model, resolved_provider) = resolve_child_session_model_provider(
+            body.model.clone(),
+            body.provider.clone(),
+            parent_session.as_ref(),
         )?;
 
         let lineage_meta = if let Some(parent_id) = parent_session_id.clone() {
@@ -348,7 +378,13 @@ impl AgentService {
         }
 
         let session = manager
-            .create_session(session_id.clone(), session_name, None, None, agent_config)
+            .create_session(
+                session_id.clone(),
+                session_name,
+                resolved_model,
+                resolved_provider,
+                agent_config,
+            )
             .await?;
 
         lineage_store()
