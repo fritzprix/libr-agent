@@ -55,6 +55,9 @@ use commands::file_commands::{
     check_dropped_path_type, read_dropped_file, register_dropped_files, workspace_write_file,
     write_file,
 };
+use commands::knowledge_commands::{
+    delete_global_knowledge, get_global_knowledge_detail, list_global_knowledge,
+};
 use commands::log_commands::{
     backup_current_log, clear_current_log, get_launch_log_level, list_log_files, log_batch,
     log_debug, log_error_from_frontend, log_info, log_trace, log_warn,
@@ -195,6 +198,9 @@ pub fn run() {
                 read_dropped_file,
                 write_file,
                 workspace_write_file,
+                list_global_knowledge,
+                get_global_knowledge_detail,
+                delete_global_knowledge,
                 open_external_url,
                 open_workspace_file_with_default_app,
                 open_workspace_in_explorer,
@@ -351,7 +357,7 @@ pub fn run() {
             warn!("💡 Troubleshooting suggestions:");
             warn!("   1. Check WebKit/GTK installation: sudo apt install libwebkit2gtk-4.1-dev");
             warn!("   2. Update graphics drivers");
-            warn!("   3. Set WEBKIT_DISABLE_COMPOSITING_MODE=1");
+            warn!("   3. Retry with LIBRAGENT_LINUX_COMPATIBILITY_MODE=1");
             warn!("   4. Run in a desktop environment with proper display");
 
             std::process::exit(1);

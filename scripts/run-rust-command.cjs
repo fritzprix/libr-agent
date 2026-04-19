@@ -32,13 +32,18 @@ function getRecommendedBuildJobs() {
   return Math.min(cpuLimitedJobs, memoryLimitedJobs);
 }
 
-function getRecommendedTestThreads() {
-  const cpuCount = Math.max(1, getCpuCount());
-  const totalMemGiB = os.totalmem() / 1024 ** 3;
-  const cpuLimitedThreads = clamp(Math.floor(cpuCount / 2), 1, 4);
-  const memoryLimitedThreads = clamp(Math.floor(totalMemGiB / 4), 1, 4);
+function getDefaultBuildJobs(args) {
+  const recommendedJobs = getRecommendedBuildJobs();
 
-  return Math.min(cpuLimitedThreads, memoryLimitedThreads);
+  if (args[0] === 'test') {
+    return Math.min(recommendedJobs, 2);
+  }
+
+  return recommendedJobs;
+}
+
+function getDefaultTestThreads() {
+  return 1;
 }
 
 function hasFlag(args, flagNames) {
@@ -57,7 +62,7 @@ function hasFlag(args, flagNames) {
 const env = { ...process.env };
 
 if (!env.CARGO_BUILD_JOBS && !hasFlag(cargoArgs, ['-j', '--jobs'])) {
-  env.CARGO_BUILD_JOBS = String(getRecommendedBuildJobs());
+  env.CARGO_BUILD_JOBS = String(getDefaultBuildJobs(cargoArgs));
 }
 
 const isCargoTest = cargoArgs[0] === 'test';
@@ -66,7 +71,7 @@ if (
   !env.RUST_TEST_THREADS &&
   !hasFlag(cargoArgs, ['--test-threads'])
 ) {
-  const testThreads = String(getRecommendedTestThreads());
+  const testThreads = String(getDefaultTestThreads());
   const separatorIndex = cargoArgs.indexOf('--');
 
   if (separatorIndex === -1) {

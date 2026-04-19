@@ -90,6 +90,13 @@ export {
 // Session management
 export { removeSession, deleteAttachments } from './sessions';
 
+// Knowledge management
+export {
+  listGlobalKnowledge,
+  getGlobalKnowledgeDetail,
+  deleteGlobalKnowledge,
+} from './knowledge';
+
 // Utilities
 export {
   getAppLogsDir,

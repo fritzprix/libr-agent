@@ -4,6 +4,7 @@ pub mod attachments_commands;
 pub mod browser_commands;
 pub mod download_commands;
 pub mod file_commands;
+pub mod knowledge_commands;
 pub mod log_commands;
 pub mod mcp_commands;
 pub mod mcp_server_config_commands;
