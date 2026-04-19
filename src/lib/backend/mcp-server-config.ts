@@ -121,7 +121,11 @@ export async function upsertMCPServer(
   const exists = all.find((s) => s.name === server.name);
 
   if (exists) {
-    return updateMCPServer(server);
+    return updateMCPServer({
+      ...server,
+      id: exists.id,
+      createdAt: exists.createdAt,
+    });
   } else {
     // createMCPServer returns the DB-assigned ID — must propagate it back
     return createMCPServer(server);
