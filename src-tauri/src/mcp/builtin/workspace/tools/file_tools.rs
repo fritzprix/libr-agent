@@ -72,7 +72,7 @@ pub fn create_write_file_tool() -> MCPTool {
         enum_prop(
             vec!["create", "overwrite", "append"],
             "create",
-            Some("Write mode. If omitted, defaults to 'create'. 'create' fails if the file already exists, 'overwrite' replaces the entire file, and 'append' adds content to the end."),
+            Some("Write mode. 'create' fails if the file already exists, 'overwrite' replaces the entire file, and 'append' adds content to the end."),
         ),
     );
 
@@ -899,7 +899,7 @@ Each edit item carries its own path and uses op-specific schema validation:
 - delete single line: path + startLine + startAnchor
 - delete range: path + startLine + startAnchor + endLine + endAnchor
 
-Edits are grouped by file and applied bottom-to-top so line numbers stay stable within each file. All files are validated before any write begins. Legacy editFile / replaceLines / insertAfterLine / deleteLines still route here for backward compatibility."
+All files are validated before any write begins."
             .to_string(),
         input_schema: create_edit_files_input_schema(),
         output_schema: None,

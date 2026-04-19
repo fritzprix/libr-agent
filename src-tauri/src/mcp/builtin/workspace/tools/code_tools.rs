@@ -25,7 +25,7 @@ pub fn create_run_shell_tool() -> MCPTool {
             Some(1),
             Some(crate::config::max_execution_timeout() as i64),
             crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
+            Some("Timeout in seconds"),
         ),
     );
 
@@ -65,7 +65,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some(1),
             Some(crate::config::max_execution_timeout() as i64),
             crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
+            Some("Timeout in seconds"),
         ),
     );
     props.insert(
@@ -169,7 +169,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
             Some(1),
             Some(crate::config::max_execution_timeout() as i64),
             crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
+            Some("Timeout in seconds"),
         ),
     );
 
@@ -212,7 +212,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some(1),
             Some(crate::config::max_execution_timeout() as i64),
             crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
+            Some("Timeout in seconds"),
         ),
     );
     props.insert("requireUserInput".to_string(), {
@@ -239,7 +239,6 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "runInPersistentPowerShell".to_string(),
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
         description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
-                      - Replaces legacy CMD persistent sessions.\n\
                       - Use ';' to chain commands.\n\
                       - For simple stateless commands: runPowerShell."
             .to_string(),
@@ -321,7 +320,7 @@ define_mcp_tool! {
     const EXECUTE_PENDING_SHELL = "executePendingShell";
     fn create_execute_pending_shell_tool();
     title: "Execute Pending Shell Command";
-    description: "[Internal callback] Continue a pending interactive shell execution with executionId and userInput. This tool is reserved for UI callback flows and is not part of normal agent planning.";
+    description: "[Internal callback] Continue a pending interactive shell execution with executionId and userInput.";
     inputs: props => {
         props.insert(
             "executionId".to_string(),
@@ -348,7 +347,7 @@ define_mcp_tool! {
     const CANCEL_PENDING_EXECUTION = "cancelPendingExecution";
     fn create_cancel_pending_execution_tool();
     title: "Cancel Pending Execution";
-    description: "[Internal callback] Cancel a pending interactive shell execution by executionId. This tool is reserved for UI callback flows and is not part of normal agent planning.";
+    description: "[Internal callback] Cancel a pending interactive shell execution by executionId.";
     inputs: props => {
         props.insert(
             "executionId".to_string(),

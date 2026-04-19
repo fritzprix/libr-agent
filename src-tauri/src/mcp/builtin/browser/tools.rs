@@ -24,7 +24,7 @@ Returns a success message confirming the active session is ready."
                 string_prop(
                     None,
                     None,
-                    Some("Initial URL to open in the new active session (default: https://www.google.com)"),
+                    Some("Initial URL to open in the new active session."),
                 ),
             )],
             vec![],
@@ -131,11 +131,11 @@ Do not scroll just to read the next cached page.".to_string(),
             vec![
                 (
                     "autoMerge".to_string(),
-                    boolean_prop(Some("Whether to attempt merging all pages into one response (default: true).")),
+                    boolean_prop(Some("Whether to attempt merging all pages into one response.")),
                 ),
                 (
                     "saveRawHtml".to_string(),
-                    boolean_prop(Some("Whether to save raw HTML to a file for debugging (default: false)")),
+                    boolean_prop(Some("Whether to save raw HTML to a file for debugging.")),
                 ),
             ],
             vec![],
@@ -246,7 +246,7 @@ pub fn list_interactable_tool() -> MCPTool {
                     enum_prop(
                         vec!["viewport", "all"],
                         "viewport",
-                        Some("Scope of listing (default: viewport)"),
+                        Some("Scope of listing."),
                     ),
                 ),
             ],
@@ -297,13 +297,11 @@ pub fn content_tool() -> MCPTool {
             ),
             (
                 "autoMerge".to_string(),
-                boolean_prop(Some(
-                    "Whether to attempt merging all pages (default: true).",
-                )),
+                boolean_prop(Some("Whether to attempt merging all pages.")),
             ),
             (
                 "saveRawHtml".to_string(),
-                boolean_prop(Some("Whether to save raw HTML to a file (default: false)")),
+                boolean_prop(Some("Whether to save raw HTML to a file.")),
             ),
         ],
         vec![],
