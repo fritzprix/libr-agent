@@ -169,6 +169,21 @@ export default function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
+                  isActive={location.pathname.startsWith('/history')}
+                  tooltip={t('sidebar.history')}
+                >
+                  <Link
+                    to="/history"
+                    className="flex w-full items-center gap-2"
+                  >
+                    <History className="shrink-0" />
+                    <span>{t('sidebar.history')}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
                   isActive={location.pathname.startsWith('/agent')}
                   tooltip={t('sidebar.chat')}
                 >
@@ -246,21 +261,6 @@ export default function AppSidebar() {
                   >
                     <Blocks className="shrink-0" />
                     <span>{t('sidebar.extensions')}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location.pathname.startsWith('/history')}
-                  tooltip={t('sidebar.history')}
-                >
-                  <Link
-                    to="/history"
-                    className="flex w-full items-center gap-2"
-                  >
-                    <History className="shrink-0" />
-                    <span>{t('sidebar.history')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

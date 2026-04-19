@@ -98,5 +98,10 @@ fastembed = "5.13.0"
 # test-util enables tokio::time::pause() / advance() for time-controlled async tests.
 tokio = { version = "1.50", features = ["test-util"] }
 
+[profile.ci-test]
+inherits = "test"
+debug = 0
+incremental = false
+
 [workspace]
 members = ["migration"]
