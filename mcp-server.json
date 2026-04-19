@@ -221,6 +221,7 @@
     },
     "huggingface": {
       "description": "Interact with Hugging Face models and datasets.",
+      "logo": "https://huggingface.co/front/assets/huggingface_logo-noborder.svg",
       "command": "npx",
       "args": ["-y", "@fre4x/huggingface"],
       "env": {
