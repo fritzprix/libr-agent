@@ -527,7 +527,9 @@ fn format_interactive_elements(
             String::new()
         };
 
-        let element_str = format!("<{}{}>", el.tag, attr_str).replace('|', "\\|").replace('\n', " ");
+        let element_str = format!("<{}{}>", el.tag, attr_str)
+            .replace('|', "\\|")
+            .replace('\n', " ");
         let text_str = el.text.replace('|', "\\|").replace('\n', " ");
 
         output.push_str(&format!(
