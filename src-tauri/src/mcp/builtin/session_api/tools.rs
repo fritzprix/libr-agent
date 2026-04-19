@@ -59,6 +59,22 @@ pub fn create_child_session_tool() -> MCPTool {
                     ),
                 ),
                 (
+                    "model".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional model override for the child session. If omitted, the child inherits the parent session model."),
+                    ),
+                ),
+                (
+                    "provider".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional provider override for the child session. If omitted, the child inherits the parent session provider."),
+                    ),
+                ),
+                (
                     "awaitCompletion".to_string(),
                     boolean_prop(Some("If true (default), block until the child finishes and return its final result. Set false to spawn and return immediately — then use awaitAgent(sessionId) to collect results.")),
                 ),

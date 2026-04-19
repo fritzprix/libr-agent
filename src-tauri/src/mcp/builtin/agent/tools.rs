@@ -131,6 +131,8 @@ fn start_session_tool() -> MCPTool {
                 ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then copy the returned ID. Do not put the agent name here.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
+                ("model".to_string(), string_prop(None, None, Some("Optional model override for the child session. If omitted, the child inherits the caller session model."))),
+                ("provider".to_string(), string_prop(None, None, Some("Optional provider override for the child session. If omitted, the child inherits the caller session provider."))),
                 ("maxDepth".to_string(), integer_prop(Some(0), None, Some("Override the delegation depth limit for this child session. If omitted, inherit the caller's maxDepth when present; otherwise leave the depth limit unset."))),
                 ("maxFanout".to_string(), integer_prop(Some(0), None, Some("Override the delegation fanout limit for this child session. If omitted, inherit the caller's maxFanout when present; otherwise leave the fanout limit unset."))),
                 ("includeCurrentOrg".to_string(), boolean_prop(Some("Optional explicit override for org inheritance. When omitted, children automatically inherit the caller's explicit org membership; set false to keep a delegated child out of Org view."))),
