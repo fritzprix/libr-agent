@@ -190,7 +190,12 @@
     "fre4x-inspector-bridge": {
       "description": "Bridge for MCP Inspector to debug and test MCP servers locally.",
       "command": "npx",
-      "args": ["-y", "--package", "@fre4x/inspector-bridge", "fre4x-inspector-bridge"]
+      "args": [
+        "-y",
+        "--package",
+        "@fre4x/inspector-bridge",
+        "fre4x-inspector-bridge"
+      ]
     },
     "comfyui": {
       "description": "Interact with ComfyUI to generate and manage AI images.",
