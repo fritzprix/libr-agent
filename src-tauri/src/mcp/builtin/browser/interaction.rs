@@ -501,6 +501,9 @@ fn format_interactive_elements(
         scope_label
     );
 
+    output.push_str("| Index | Element | Text | Selector |\n");
+    output.push_str("|---|---|---|---|\n");
+
     // Format each element
     for el in &elements {
         // Format attributes
@@ -524,19 +527,16 @@ fn format_interactive_elements(
             String::new()
         };
 
-        let text_str = if !el.text.is_empty() {
-            format!(" \"{}\"", el.text)
-        } else {
-            String::new()
-        };
+        let element_str = format!("<{}{}>", el.tag, attr_str).replace('|', "\\|").replace('\n', " ");
+        let text_str = el.text.replace('|', "\\|").replace('\n', " ");
 
         output.push_str(&format!(
-            "[{}] <{}{}>{}\n",
-            el.index, el.tag, attr_str, text_str
+            "| `{}` | {} | {} | `{}` |\n",
+            el.index, element_str, text_str, el.selector
         ));
-        output.push_str(&format!("    Selector: {}\n\n", el.selector));
     }
 
+    output.push('\n');
     // Footer with usage hint
     output.push_str("💡 Use the selector or index to interact with these elements.");
 
