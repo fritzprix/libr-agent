@@ -35,7 +35,8 @@ fn build_parent_session(model: &str, provider: &str) -> SessionMetadata {
 fn child_sessions_inherit_parent_model_and_provider_by_default() {
     let parent = build_parent_session("gpt-5.4", "openai");
 
-    let (model, provider) = resolve_child_session_model_provider(None, None, Some(&parent));
+    let (model, provider) =
+        resolve_child_session_model_provider(None, None, Some(&parent)).unwrap();
 
     assert_eq!(model.as_deref(), Some("gpt-5.4"));
     assert_eq!(provider.as_deref(), Some("openai"));
@@ -49,7 +50,8 @@ fn child_sessions_allow_explicit_override_without_losing_unspecified_parent_fiel
         Some("claude-sonnet-4.5".to_string()),
         None,
         Some(&parent),
-    );
+    )
+    .unwrap();
 
     assert_eq!(model.as_deref(), Some("claude-sonnet-4.5"));
     assert_eq!(provider.as_deref(), Some("openai"));

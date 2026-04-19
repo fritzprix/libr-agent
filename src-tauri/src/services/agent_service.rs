@@ -150,14 +150,21 @@ pub fn resolve_child_session_model_provider(
     requested_model: Option<String>,
     requested_provider: Option<String>,
     parent_session: Option<&SessionMetadata>,
-) -> (Option<String>, Option<String>) {
+) -> Result<(Option<String>, Option<String>), String> {
     let inherited_model = parent_session.map(|session| session.model.clone());
     let inherited_provider = parent_session.map(|session| session.provider.clone());
 
-    (
+    if parent_session.is_none() && (requested_model.is_some() != requested_provider.is_some()) {
+        return Err(
+            "Child session model/provider override must include both model and provider when no parent session is available for inheritance"
+                .to_string(),
+        );
+    }
+
+    Ok((
         requested_model.or(inherited_model),
         requested_provider.or(inherited_provider),
-    )
+    ))
 }
 
 #[derive(Debug, Clone)]
@@ -236,7 +243,7 @@ impl AgentService {
             body.model.clone(),
             body.provider.clone(),
             parent_session.as_ref(),
-        );
+        )?;
 
         let lineage_meta = if let Some(parent_id) = parent_session_id.clone() {
             let store = lineage_store().read().await;
