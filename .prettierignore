@@ -10,6 +10,11 @@ src/**/*.test.tsx
 src-tauri/
 public/
 .venv/
+.gemini/
+.cargo/
+.agent/
+.editorconfig
+.gitattributes
 
 # Handlebars templates (preserve formatting and doctype)
 *.hbs

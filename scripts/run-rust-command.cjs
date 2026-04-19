@@ -43,7 +43,9 @@ function getRecommendedTestBuildJobs() {
 
 function getDefaultBuildJobs(args) {
   const recommendedJobs =
-    args[0] === 'test' ? getRecommendedTestBuildJobs() : getRecommendedBuildJobs();
+    args[0] === 'test'
+      ? getRecommendedTestBuildJobs()
+      : getRecommendedBuildJobs();
 
   return recommendedJobs;
 }
