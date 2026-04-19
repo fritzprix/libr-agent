@@ -146,6 +146,58 @@ async fn edit_file_allows_hashless_insert_at_top() {
 }
 
 #[tokio::test]
+async fn edit_files_preserve_replace_and_insert_order_with_single_file_batch() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-replace-insert-order";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "a\nb\nc\n").expect("write sample file");
+
+    let anchors = format_as_hashlines("a\nb\nc\n");
+    let anchor_lines: Vec<&str> = anchors.lines().collect();
+    let first_anchor = anchor_lines[0]
+        .split('|')
+        .next()
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("first anchor");
+    let second_anchor = anchor_lines[1]
+        .split('|')
+        .next()
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("second anchor");
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "replace",
+                        "startLine": 1,
+                        "startAnchor": first_anchor,
+                        "content": "A"
+                    },
+                    {
+                        "path": "sample.txt",
+                        "op": "insert_after",
+                        "startLine": 2,
+                        "startAnchor": second_anchor,
+                        "content": "B+"
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit batch should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "A\nb\nB+\nc\n");
+}
+
+#[tokio::test]
 async fn edit_file_rejects_multiline_replace_without_end_hash() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-multiline-needs-end-hash";
