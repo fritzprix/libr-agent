@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::circuit_breaker::{
     build_tool_call_indices, evaluate_circuit_breaker_action, CircuitBreakerAction,
 };
@@ -56,17 +55,8 @@ fn evaluate(
     tool_call: &ToolCall,
     threshold: usize,
 ) -> Option<CircuitBreakerAction> {
-    let (call_name_by_id, call_signature_by_id): (
-        HashMap<String, String>,
-        HashMap<String, String>,
-    ) = build_tool_call_indices(messages);
-    evaluate_circuit_breaker_action(
-        messages,
-        tool_call,
-        &call_name_by_id,
-        &call_signature_by_id,
-        threshold,
-    )
+    let call_signature_by_id = build_tool_call_indices(messages);
+    evaluate_circuit_breaker_action(messages, tool_call, &call_signature_by_id, threshold)
 }
 
 #[test]
@@ -262,6 +252,122 @@ fn different_args_failures_do_not_skip_straight_to_hard_break() {
             Some(serde_json::json!({ "toolError": true })),
             "Error: todo 192 missing",
             Some(true),
+        ),
+    ];
+
+    assert_eq!(evaluate(&messages, &current_call, 3), None);
+}
+
+#[test]
+fn natural_recovery_prefers_repeated_identical_success_before_hard_break() {
+    let repeated_args = r#"{"path":"src/main.ts"}"#;
+    let repeated_success = "src/main.ts contents";
+    let current_call = test_tool_call("tc-3", "workspace__readFile", repeated_args);
+    let messages = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-1",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1",
+            "tool",
+            None,
+            Some("tc-1"),
+            None,
+            repeated_success,
+            Some(false),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-2",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2",
+            "tool",
+            None,
+            Some("tc-2"),
+            None,
+            repeated_success,
+            Some(false),
+        ),
+    ];
+
+    assert_eq!(
+        evaluate(&messages, &current_call, 3),
+        Some(CircuitBreakerAction::NaturalRecoverySuccess {
+            count: 3,
+            tool_name: "workspace__readFile".to_string(),
+            args: repeated_args.to_string(),
+        })
+    );
+}
+
+#[test]
+fn different_success_results_do_not_trigger_natural_recovery() {
+    let repeated_args = r#"{"path":"src/main.ts"}"#;
+    let current_call = test_tool_call("tc-3", "workspace__readFile", repeated_args);
+    let messages = vec![
+        test_message(
+            "assistant-1",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-1",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-1",
+            "tool",
+            None,
+            Some("tc-1"),
+            None,
+            "src/main.ts contents v1",
+            Some(false),
+        ),
+        test_message(
+            "assistant-2",
+            "assistant",
+            Some(vec![test_tool_call(
+                "tc-2",
+                "workspace__readFile",
+                repeated_args,
+            )]),
+            None,
+            None,
+            "",
+            None,
+        ),
+        test_message(
+            "tool-2",
+            "tool",
+            None,
+            Some("tc-2"),
+            None,
+            "src/main.ts contents v2",
+            Some(false),
         ),
     ];
 

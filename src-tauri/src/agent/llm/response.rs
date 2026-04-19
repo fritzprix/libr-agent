@@ -188,14 +188,12 @@ pub async fn handle_llm_response(
                     "ui",
                 );
                 let messages = session.messages.read().await;
-                let (call_name_by_id, call_signature_by_id) =
-                    circuit_breaker::build_tool_call_indices(&messages);
+                let call_signature_by_id = circuit_breaker::build_tool_call_indices(&messages);
 
                 for (i, tool_call) in tool_calls.iter().enumerate() {
                     if let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
                         &messages,
                         tool_call,
-                        &call_name_by_id,
                         &call_signature_by_id,
                         loop_threshold,
                     ) {

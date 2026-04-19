@@ -393,7 +393,20 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Linux-specific checks
     #[cfg(target_os = "linux")]
     {
-        info!("🐧 Linux detected - WebKit compatibility flags already set in main.rs");
+        let compatibility_mode_enabled = matches!(
+            std::env::var("LIBRAGENT_LINUX_COMPATIBILITY_MODE"),
+            Ok(value)
+                if matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+        );
+
+        if compatibility_mode_enabled {
+            info!("🐧 Linux compatibility mode is active (software rendering + X11 fallback)");
+        } else {
+            info!("🐧 Linux detected - running with default WebKit rendering path");
+        }
         if std::env::var("container").is_ok() || std::env::var("DISPLAY").is_err() {
             warn!("⚠️  Warning: Running in limited graphics environment");
         }

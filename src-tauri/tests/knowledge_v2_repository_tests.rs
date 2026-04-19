@@ -1,7 +1,10 @@
 mod common;
 
-use sea_orm::EntityTrait;
+use sea_orm::{ConnectionTrait, EntityTrait, Statement};
 use tauri_mcp_agent_lib::entity::knowledge_chunk_entity;
+use tauri_mcp_agent_lib::entity::knowledge_chunk_v2;
+use tauri_mcp_agent_lib::entity::knowledge_entity;
+use tauri_mcp_agent_lib::entity::knowledge_relationship;
 use tauri_mcp_agent_lib::repositories::{KnowledgeV2Repository, SqliteKnowledgeV2Repository};
 
 #[tokio::test]
@@ -147,4 +150,183 @@ async fn knowledge_v2_graph_context_stays_scoped_to_assistant() {
         .await
         .expect("scoped lookup should succeed");
     assert_eq!(missing["error"], "Entity not found");
+}
+
+#[tokio::test]
+async fn delete_chunk_global_prunes_orphan_graph_state() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteKnowledgeV2Repository::new(db.clone());
+
+    let chunk_one_id = repo
+        .record_chunk(
+            "assistant-global".to_string(),
+            "Chunk one".to_string(),
+            Some(r#"["shared","orphan"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.3; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+    let chunk_two_id = repo
+        .record_chunk(
+            "assistant-global".to_string(),
+            "Chunk two".to_string(),
+            Some(r#"["shared"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.31; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+
+    let shared_entity_id = repo
+        .upsert_entity(
+            "assistant-global".to_string(),
+            "Shared".to_string(),
+            Some("Concept".to_string()),
+            None,
+        )
+        .await
+        .expect("upsert_entity should succeed");
+    let orphan_entity_id = repo
+        .upsert_entity(
+            "assistant-global".to_string(),
+            "Orphan".to_string(),
+            Some("Concept".to_string()),
+            None,
+        )
+        .await
+        .expect("upsert_entity should succeed");
+
+    repo.link_chunk_to_entity(chunk_one_id, shared_entity_id)
+        .await
+        .expect("link_chunk_to_entity should succeed");
+    repo.link_chunk_to_entity(chunk_one_id, orphan_entity_id)
+        .await
+        .expect("link_chunk_to_entity should succeed");
+    repo.link_chunk_to_entity(chunk_two_id, shared_entity_id)
+        .await
+        .expect("link_chunk_to_entity should succeed");
+    repo.create_relationship(
+        "assistant-global".to_string(),
+        shared_entity_id,
+        orphan_entity_id,
+        "RELATES_TO".to_string(),
+    )
+    .await
+    .expect("create_relationship should succeed");
+
+    let summary = repo
+        .delete_chunk_global(chunk_one_id)
+        .await
+        .expect("delete_chunk_global should succeed");
+
+    assert_eq!(summary.orphan_entity_count, 1);
+    assert_eq!(summary.orphan_relationship_count, 1);
+
+    let remaining_chunks = knowledge_chunk_v2::Entity::find().all(&db).await.unwrap();
+    assert_eq!(remaining_chunks.len(), 1);
+    assert_eq!(remaining_chunks[0].id, chunk_two_id);
+
+    let remaining_entities = knowledge_entity::Entity::find().all(&db).await.unwrap();
+    assert_eq!(remaining_entities.len(), 1);
+    assert_eq!(remaining_entities[0].id, shared_entity_id);
+
+    let remaining_relationships = knowledge_relationship::Entity::find()
+        .all(&db)
+        .await
+        .unwrap();
+    assert!(remaining_relationships.is_empty());
+
+    let remaining_links = knowledge_chunk_entity::Entity::find()
+        .all(&db)
+        .await
+        .unwrap();
+    assert_eq!(remaining_links.len(), 1);
+    assert_eq!(remaining_links[0].chunk_id, chunk_two_id);
+    assert_eq!(remaining_links[0].entity_id, shared_entity_id);
+}
+
+#[tokio::test]
+async fn knowledge_v2_repository_lists_chunks_with_cursor_pagination() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteKnowledgeV2Repository::new(db.clone());
+
+    let first_id = repo
+        .record_chunk(
+            "assistant-page".to_string(),
+            "First chunk".to_string(),
+            Some(r#"["page"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.2; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+    let second_id = repo
+        .record_chunk(
+            "assistant-page".to_string(),
+            "Second chunk".to_string(),
+            Some(r#"["page"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.21; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+    let third_id = repo
+        .record_chunk(
+            "assistant-page".to_string(),
+            "Third chunk".to_string(),
+            Some(r#"["page"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.22; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+
+    let backend = db.get_database_backend();
+    db.execute(Statement::from_sql_and_values(
+        backend,
+        "UPDATE knowledge_chunks_v2 SET created_at = ? WHERE id = ?",
+        [1003_i64.into(), first_id.into()],
+    ))
+    .await
+    .unwrap();
+    db.execute(Statement::from_sql_and_values(
+        backend,
+        "UPDATE knowledge_chunks_v2 SET created_at = ? WHERE id = ?",
+        [1002_i64.into(), second_id.into()],
+    ))
+    .await
+    .unwrap();
+    db.execute(Statement::from_sql_and_values(
+        backend,
+        "UPDATE knowledge_chunks_v2 SET created_at = ? WHERE id = ?",
+        [1001_i64.into(), third_id.into()],
+    ))
+    .await
+    .unwrap();
+
+    let first_page = repo
+        .list_chunks(Some("assistant-page"), None, None, 2)
+        .await
+        .expect("first page should load");
+    assert_eq!(first_page.items.len(), 2);
+    assert_eq!(
+        first_page
+            .items
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        vec![first_id, second_id]
+    );
+    let next_cursor = first_page.next_cursor.expect("should include next cursor");
+    assert_eq!(next_cursor.id, second_id);
+    assert_eq!(next_cursor.created_at, 1002);
+
+    let second_page = repo
+        .list_chunks(Some("assistant-page"), None, Some(next_cursor), 2)
+        .await
+        .expect("second page should load");
+    assert_eq!(second_page.items.len(), 1);
+    assert_eq!(second_page.items[0].id, third_id);
+    assert!(second_page.next_cursor.is_none());
 }

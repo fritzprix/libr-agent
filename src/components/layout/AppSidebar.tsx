@@ -11,6 +11,7 @@ import {
   Blocks,
   Circle,
   Clock,
+  Database,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
@@ -203,6 +204,21 @@ export default function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname.startsWith('/knowledge')}
+                  tooltip={t('sidebar.knowledge', 'Knowledge')}
+                >
+                  <Link
+                    to="/knowledge"
+                    className="flex w-full items-center gap-2"
+                  >
+                    <Database className="shrink-0" />
+                    <span>{t('sidebar.knowledge', 'Knowledge')}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild

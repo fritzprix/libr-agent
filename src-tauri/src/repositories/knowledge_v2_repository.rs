@@ -7,6 +7,52 @@ use sea_orm::*;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug, Clone)]
+pub struct KnowledgeGraphEntity {
+    pub id: i32,
+    pub assistant_id: String,
+    pub name: String,
+    pub entity_type: Option<String>,
+    pub description: Option<String>,
+    pub is_primary: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct KnowledgeGraphRelationship {
+    pub id: i32,
+    pub assistant_id: String,
+    pub source_entity_id: i32,
+    pub target_entity_id: i32,
+    pub relation_type: String,
+    pub weight: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct KnowledgeChunkDetail {
+    pub chunk: knowledge_chunk_v2::Model,
+    pub primary_entity_ids: Vec<i32>,
+    pub entities: Vec<KnowledgeGraphEntity>,
+    pub relationships: Vec<KnowledgeGraphRelationship>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KnowledgeDeleteSummary {
+    pub orphan_entity_count: u64,
+    pub orphan_relationship_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KnowledgeListCursor {
+    pub created_at: i64,
+    pub id: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct KnowledgeChunkPage {
+    pub items: Vec<knowledge_chunk_v2::Model>,
+    pub next_cursor: Option<KnowledgeListCursor>,
+}
+
 #[async_trait]
 pub trait KnowledgeV2Repository: Send + Sync {
     async fn record_chunk(
@@ -27,6 +73,18 @@ pub trait KnowledgeV2Repository: Send + Sync {
     ) -> Result<Vec<(knowledge_chunk_v2::Model, f32)>, DbError>;
 
     async fn delete_chunk(&self, id: i32, assistant_id: &str) -> Result<(), DbError>;
+
+    async fn delete_chunk_global(&self, id: i32) -> Result<KnowledgeDeleteSummary, DbError>;
+
+    async fn list_chunks(
+        &self,
+        assistant_id: Option<&str>,
+        query: Option<&str>,
+        cursor: Option<KnowledgeListCursor>,
+        limit: u64,
+    ) -> Result<KnowledgeChunkPage, DbError>;
+
+    async fn list_assistant_ids(&self) -> Result<Vec<String>, DbError>;
 
     async fn upsert_entity(
         &self,
@@ -52,6 +110,8 @@ pub trait KnowledgeV2Repository: Send + Sync {
         entity_name: &str,
         depth: u32,
     ) -> Result<serde_json::Value, DbError>;
+
+    async fn get_chunk_detail(&self, id: i32) -> Result<KnowledgeChunkDetail, DbError>;
 }
 
 #[derive(Debug)]
@@ -252,6 +312,76 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
         Ok(out)
     }
 
+    async fn list_chunks(
+        &self,
+        assistant_id: Option<&str>,
+        query: Option<&str>,
+        cursor: Option<KnowledgeListCursor>,
+        limit: u64,
+    ) -> Result<KnowledgeChunkPage, DbError> {
+        let normalized_limit = limit.clamp(1, 500);
+        let mut condition = Condition::all();
+
+        if let Some(assistant_id) = assistant_id.filter(|value| !value.is_empty()) {
+            condition = condition.add(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id));
+        }
+
+        if let Some(query) = query.map(str::trim).filter(|value| !value.is_empty()) {
+            let like_query = format!("%{}%", query);
+            condition = condition.add(
+                Condition::any()
+                    .add(knowledge_chunk_v2::Column::Content.like(like_query.clone()))
+                    .add(knowledge_chunk_v2::Column::Tags.like(like_query.clone()))
+                    .add(knowledge_chunk_v2::Column::Source.like(like_query)),
+            );
+        }
+
+        if let Some(cursor) = cursor {
+            condition = condition.add(
+                Condition::any()
+                    .add(knowledge_chunk_v2::Column::CreatedAt.lt(cursor.created_at))
+                    .add(
+                        Condition::all()
+                            .add(knowledge_chunk_v2::Column::CreatedAt.eq(cursor.created_at))
+                            .add(knowledge_chunk_v2::Column::Id.lt(cursor.id)),
+                    ),
+            );
+        }
+
+        let mut items = knowledge_chunk_v2::Entity::find()
+            .filter(condition)
+            .order_by_desc(knowledge_chunk_v2::Column::CreatedAt)
+            .order_by_desc(knowledge_chunk_v2::Column::Id)
+            .limit(normalized_limit + 1)
+            .all(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        let next_cursor = if items.len() > normalized_limit as usize {
+            items.truncate(normalized_limit as usize);
+            items.last().map(|item| KnowledgeListCursor {
+                created_at: item.created_at,
+                id: item.id,
+            })
+        } else {
+            None
+        };
+
+        Ok(KnowledgeChunkPage { items, next_cursor })
+    }
+
+    async fn list_assistant_ids(&self) -> Result<Vec<String>, DbError> {
+        knowledge_chunk_v2::Entity::find()
+            .select_only()
+            .column(knowledge_chunk_v2::Column::AssistantId)
+            .distinct()
+            .order_by_asc(knowledge_chunk_v2::Column::AssistantId)
+            .into_tuple::<String>()
+            .all(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)
+    }
+
     async fn delete_chunk(&self, id: i32, assistant_id: &str) -> Result<(), DbError> {
         let txn = self.db.begin().await.map_err(DbError::SeaOrmQueryFailed)?;
 
@@ -285,6 +415,112 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
 
         txn.commit().await.map_err(DbError::SeaOrmQueryFailed)?;
         Ok(())
+    }
+
+    async fn delete_chunk_global(&self, id: i32) -> Result<KnowledgeDeleteSummary, DbError> {
+        let txn = self.db.begin().await.map_err(DbError::SeaOrmQueryFailed)?;
+
+        let chunk = knowledge_chunk_v2::Entity::find_by_id(id)
+            .one(&txn)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?
+            .ok_or_else(|| DbError::NotFound(format!("Chunk {} not found", id)))?;
+
+        let chunk_links = knowledge_chunk_entity::Entity::find()
+            .filter(knowledge_chunk_entity::Column::ChunkId.eq(id))
+            .all(&txn)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        let affected_entity_ids = chunk_links
+            .iter()
+            .map(|link| link.entity_id)
+            .collect::<HashSet<_>>();
+
+        let res = knowledge_chunk_v2::Entity::delete_many()
+            .filter(knowledge_chunk_v2::Column::Id.eq(id))
+            .exec(&txn)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        if res.rows_affected == 0 {
+            return Err(DbError::NotFound(format!("Chunk {} not found", id)));
+        }
+
+        txn.execute(Statement::from_sql_and_values(
+            self.db.get_database_backend(),
+            "DELETE FROM knowledge_vectors WHERE rowid = ?",
+            [id.into()],
+        ))
+        .await
+        .map_err(DbError::SeaOrmQueryFailed)?;
+
+        knowledge_chunk_entity::Entity::delete_many()
+            .filter(knowledge_chunk_entity::Column::ChunkId.eq(id))
+            .exec(&txn)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        let orphan_entity_ids = if affected_entity_ids.is_empty() {
+            Vec::new()
+        } else {
+            let affected_entity_id_list = affected_entity_ids.iter().copied().collect::<Vec<_>>();
+            let remaining_entity_ids = knowledge_chunk_entity::Entity::find()
+                .select_only()
+                .column(knowledge_chunk_entity::Column::EntityId)
+                .filter(
+                    knowledge_chunk_entity::Column::EntityId.is_in(affected_entity_id_list.clone()),
+                )
+                .group_by(knowledge_chunk_entity::Column::EntityId)
+                .into_tuple::<i32>()
+                .all(&txn)
+                .await
+                .map_err(DbError::SeaOrmQueryFailed)?
+                .into_iter()
+                .collect::<HashSet<_>>();
+
+            affected_entity_id_list
+                .into_iter()
+                .filter(|entity_id| !remaining_entity_ids.contains(entity_id))
+                .collect::<Vec<_>>()
+        };
+
+        let orphan_entity_count = orphan_entity_ids.len() as u64;
+        let orphan_relationship_count = if orphan_entity_ids.is_empty() {
+            0
+        } else {
+            let deleted_relationships = knowledge_relationship::Entity::delete_many()
+                .filter(knowledge_relationship::Column::AssistantId.eq(chunk.assistant_id))
+                .filter(
+                    Condition::any()
+                        .add(
+                            knowledge_relationship::Column::SourceEntityId
+                                .is_in(orphan_entity_ids.clone()),
+                        )
+                        .add(
+                            knowledge_relationship::Column::TargetEntityId
+                                .is_in(orphan_entity_ids.clone()),
+                        ),
+                )
+                .exec(&txn)
+                .await
+                .map_err(DbError::SeaOrmQueryFailed)?;
+
+            knowledge_entity::Entity::delete_many()
+                .filter(knowledge_entity::Column::Id.is_in(orphan_entity_ids))
+                .exec(&txn)
+                .await
+                .map_err(DbError::SeaOrmQueryFailed)?;
+
+            deleted_relationships.rows_affected
+        };
+
+        txn.commit().await.map_err(DbError::SeaOrmQueryFailed)?;
+
+        Ok(KnowledgeDeleteSummary {
+            orphan_entity_count,
+            orphan_relationship_count,
+        })
     }
 
     async fn upsert_entity(
@@ -549,5 +785,112 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
             "edges": relationships,
             "linked_chunks": linked_chunk_json
         }))
+    }
+
+    async fn get_chunk_detail(&self, id: i32) -> Result<KnowledgeChunkDetail, DbError> {
+        let chunk = knowledge_chunk_v2::Entity::find_by_id(id)
+            .one(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?
+            .ok_or_else(|| DbError::NotFound(format!("Chunk {} not found", id)))?;
+
+        let chunk_links = knowledge_chunk_entity::Entity::find()
+            .filter(knowledge_chunk_entity::Column::ChunkId.eq(id))
+            .all(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        let mut primary_entity_ids = chunk_links
+            .iter()
+            .map(|link| link.entity_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        primary_entity_ids.sort_unstable();
+
+        if primary_entity_ids.is_empty() {
+            return Ok(KnowledgeChunkDetail {
+                chunk,
+                primary_entity_ids: Vec::new(),
+                entities: Vec::new(),
+                relationships: Vec::new(),
+            });
+        }
+
+        let relationship_rows = knowledge_relationship::Entity::find()
+            .filter(knowledge_relationship::Column::AssistantId.eq(&chunk.assistant_id))
+            .filter(
+                Condition::any()
+                    .add(
+                        knowledge_relationship::Column::SourceEntityId
+                            .is_in(primary_entity_ids.clone()),
+                    )
+                    .add(
+                        knowledge_relationship::Column::TargetEntityId
+                            .is_in(primary_entity_ids.clone()),
+                    ),
+            )
+            .all(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        let mut all_entity_ids = primary_entity_ids.iter().copied().collect::<HashSet<_>>();
+        for relationship in &relationship_rows {
+            all_entity_ids.insert(relationship.source_entity_id);
+            all_entity_ids.insert(relationship.target_entity_id);
+        }
+
+        let entity_rows = knowledge_entity::Entity::find()
+            .filter(
+                knowledge_entity::Column::Id.is_in(all_entity_ids.into_iter().collect::<Vec<_>>()),
+            )
+            .all(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        let primary_entity_set = primary_entity_ids.iter().copied().collect::<HashSet<_>>();
+        let mut entities = entity_rows
+            .into_iter()
+            .map(|entity| KnowledgeGraphEntity {
+                id: entity.id,
+                assistant_id: entity.assistant_id,
+                name: entity.name,
+                entity_type: entity.entity_type,
+                description: entity.description,
+                is_primary: primary_entity_set.contains(&entity.id),
+            })
+            .collect::<Vec<_>>();
+        entities.sort_by(|left, right| {
+            right
+                .is_primary
+                .cmp(&left.is_primary)
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+
+        let mut relationships = relationship_rows
+            .into_iter()
+            .map(|relationship| KnowledgeGraphRelationship {
+                id: relationship.id,
+                assistant_id: relationship.assistant_id,
+                source_entity_id: relationship.source_entity_id,
+                target_entity_id: relationship.target_entity_id,
+                relation_type: relationship.relation_type,
+                weight: relationship.weight,
+            })
+            .collect::<Vec<_>>();
+        relationships.sort_by(|left, right| {
+            left.relation_type
+                .cmp(&right.relation_type)
+                .then_with(|| left.source_entity_id.cmp(&right.source_entity_id))
+                .then_with(|| left.target_entity_id.cmp(&right.target_entity_id))
+        });
+
+        Ok(KnowledgeChunkDetail {
+            chunk,
+            primary_entity_ids,
+            entities,
+            relationships,
+        })
     }
 }

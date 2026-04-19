@@ -24,7 +24,11 @@ pub use compact_context_repository::{
 pub use error::DbError;
 pub use in_memory_session_repository::InMemorySessionRepository;
 pub use knowledge_repository::{KnowledgeRepository, SqliteKnowledgeRepository};
-pub use knowledge_v2_repository::{KnowledgeV2Repository, SqliteKnowledgeV2Repository};
+pub use knowledge_v2_repository::{
+    KnowledgeChunkDetail, KnowledgeChunkPage, KnowledgeDeleteSummary, KnowledgeGraphEntity,
+    KnowledgeGraphRelationship, KnowledgeListCursor, KnowledgeV2Repository,
+    SqliteKnowledgeV2Repository,
+};
 pub use mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
 pub use message_repository::{MessageRepository, SqliteMessageRepository};
 pub use planning_repository::{PlanningRepository, SqlitePlanningRepository};
