@@ -82,6 +82,14 @@ pub async fn handle_tool_call(
                 body["workspacePath"] = Value::String(path.to_string());
             }
 
+            if let Some(model) = args.get("model").and_then(|v| v.as_str()) {
+                body["model"] = Value::String(model.to_string());
+            }
+
+            if let Some(provider) = args.get("provider").and_then(|v| v.as_str()) {
+                body["provider"] = Value::String(provider.to_string());
+            }
+
             let await_completion = args
                 .get("awaitCompletion")
                 .and_then(|v| v.as_bool())

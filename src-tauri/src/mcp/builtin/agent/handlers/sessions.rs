@@ -111,6 +111,8 @@ async fn start_session_impl(
     let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(json!({
         "parentSessionId": caller_session_id,
         "assistantId": read_required_string(&args, "agentId")?,
+        "model": args.get("model").and_then(|v| v.as_str()),
+        "provider": args.get("provider").and_then(|v| v.as_str()),
         "request": read_required_string(&args, "task")?,
         "workspacePath": effective_workspace_path.as_deref(),
         "maxDepth": args.get("maxDepth").and_then(|v| v.as_u64()),
