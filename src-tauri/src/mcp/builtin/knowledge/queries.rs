@@ -27,6 +27,13 @@ pub async fn search_knowledge(
         .and_then(|v| v.as_u64())
         .unwrap_or(DEFAULT_LIMIT)
         .clamp(1, MAX_LIMIT);
+
+    let offset = args
+        .get("offset")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .min(10_000);
+
     let mode = match args
         .get("mode")
         .and_then(|v| v.as_str())
@@ -71,40 +78,68 @@ pub async fn search_knowledge(
     };
 
     match repo
-        .search_hybrid(assistant_id, text_query, query_embedding, limit)
+        .search_hybrid(assistant_id, text_query, query_embedding, limit.saturating_add(offset).saturating_add(1))
         .await
     {
-        Ok(results) => {
+        Ok(all_results) => {
+            if offset as usize >= all_results.len() && offset > 0 {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Offset {} exceeds total results ({}).", offset, all_results.len()),
+                    ToolGroup::Knowledge,
+                )
+                .with_guidance(vec!["Try calling again with offset: 0".to_string()])
+                .to_mcp_result());
+            }
+
+            let has_more = all_results.len() as u64 > offset.saturating_add(limit);
+            let paginated_results: Vec<_> = all_results.into_iter().skip(offset as usize).take(limit as usize).collect();
+
             let mut output_text = format!(
-                "Found {} relevant knowledge entries (mode: {}):\n\n",
-                results.len(),
+                "Found {} relevant knowledge entries (mode: {}):\n\n| ID | Score | Source | Tags | Content |\n|---|---|---|---|---|\n",
+                paginated_results.len(),
                 mode
             );
-            for (model, score) in &results {
+
+            for (model, score) in &paginated_results {
                 let tags = parse_db_tags(model.tags.as_ref());
                 let source = model.source.as_deref().unwrap_or("unknown");
+                let tags_str = if tags.is_empty() {
+                    "none".to_string()
+                } else {
+                    tags.join(", ")
+                };
+
+                let safe_source = source.replace("|", "\\|").replace("\n", " ");
+                let safe_tags = tags_str.replace("|", "\\|").replace("\n", " ");
+                let safe_content = model.content.replace("|", "\\|").replace("\n", " ");
+
                 output_text.push_str(&format!(
-                    "### Chunk ID: {} (Score: {:.4})\nSource: {}\nTags: {}\n{}\n\n",
+                    "| `{}` | {:.4} | {} | {} | {} |\n",
                     model.id,
                     score,
-                    source,
-                    if tags.is_empty() {
-                        "none".to_string()
-                    } else {
-                        tags.join(", ")
-                    },
-                    model.content
+                    safe_source,
+                    safe_tags,
+                    safe_content
                 ));
             }
 
-            if results.is_empty() {
+            if paginated_results.is_empty() {
                 output_text = "No relevant knowledge found for your query.".to_string();
+            } else if has_more {
+                output_text.push_str(&format!(
+                    "\n*(Showing {} to {} results. Call this tool again with offset: {} to see more)*",
+                    offset + 1,
+                    offset + paginated_results.len() as u64,
+                    offset + limit
+                ));
             }
 
             Ok(
                 SuccessHint::new(output_text, vec![]).to_mcp_result_with_data(Some(json!({
                     "mode": mode,
-                    "results": results.iter().map(|(m, d)| json!({
+                    "offset": offset,
+                    "results": paginated_results.iter().map(|(m, d)| json!({
                         "id": m.id,
                         "content": m.content,
                         "score": d
@@ -117,6 +152,7 @@ pub async fn search_knowledge(
             format!("Failed to search knowledge: {}", e),
             ToolGroup::Knowledge,
         )
+        .with_guidance(vec!["Try using simpler search queries or exploring context around known entities.".to_string()])
         .to_mcp_result()),
     }
 }

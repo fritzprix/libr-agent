@@ -126,6 +126,15 @@ pub fn search_knowledge_tool() -> MCPTool {
                     ),
                 ),
                 (
+                    "offset".to_string(),
+                    integer_prop_with_default(
+                        Some(0),
+                        None,
+                        0,
+                        Some("Pagination offset (0-based)."),
+                    ),
+                ),
+                (
                     "mode".to_string(),
                     enum_prop(
                         vec!["keyword", "semantic", "hybrid"],
