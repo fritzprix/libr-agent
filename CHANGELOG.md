@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.10] - 2026-04-21
+
+### 🚀 Features
+
+- **Expanded Localization**: Enhanced Korean translation coverage for the Settings page and unified translation patterns across the Rosetta system.
+
+### 🐛 Fixes
+
+- **MCP State Preservation**: Fixed an issue where unique IDs and creation dates were lost during MCP server updates, ensuring data continuity and reliable state management.
+- **Preset Restoration**: Restored missing HTTP presets for GitHub and Exa, and fixed a broken logo reference in the HuggingFace MCP preset.
+
+### 🔧 Internal
+
+- **Workflow Cleanup**: Removed the obsolete `fre4x-inspector-bridge` and updated the refactor validation workflow to improve development efficiency.
+- **Data Integrity**: Added unit tests for MCP server update logic to prevent regressions in data preservation.
+
 ## [0.7.9] - 2026-04-19
 
 ### 🚀 Features
