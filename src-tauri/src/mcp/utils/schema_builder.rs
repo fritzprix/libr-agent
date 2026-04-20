@@ -1,4 +1,4 @@
-use crate::mcp::schema::{JSONSchema, JSONSchemaType};
+use crate::mcp::schema::{JSONSchema, JSONSchemaAdditionalProperties, JSONSchemaType};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -125,7 +125,8 @@ pub fn object_schema(properties: HashMap<String, JSONSchema>, required: Vec<Stri
             } else {
                 Some(required)
             },
-            additional_properties: Some(false),
+            additional_properties: Some(JSONSchemaAdditionalProperties::Boolean(false)),
+            property_names: None,
             min_properties: None,
             max_properties: None,
         },
@@ -271,7 +272,8 @@ pub fn object_prop(
         schema_type: JSONSchemaType::Object {
             properties: Some(props),
             required: Some(required),
-            additional_properties: Some(false),
+            additional_properties: Some(JSONSchemaAdditionalProperties::Boolean(false)),
+            property_names: None,
             min_properties: None,
             max_properties: None,
         },
@@ -291,7 +293,8 @@ pub fn object_map_prop(description: Option<&str>) -> JSONSchema {
         schema_type: JSONSchemaType::Object {
             properties: Some(HashMap::new()),
             required: None,
-            additional_properties: Some(true),
+            additional_properties: Some(JSONSchemaAdditionalProperties::Boolean(true)),
+            property_names: None,
             min_properties: None,
             max_properties: None,
         },
@@ -351,6 +354,7 @@ pub fn one_of_object_schema(variants: Vec<JSONSchema>, description: Option<&str>
             properties: None,
             required: None,
             additional_properties: None,
+            property_names: None,
             min_properties: None,
             max_properties: None,
         },

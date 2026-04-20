@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+/// Represents the value allowed for `additionalProperties` in an object schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum JSONSchemaAdditionalProperties {
+    /// Boolean form (`true` or `false`).
+    Boolean(bool),
+    /// Schema form (for example `{}` or `{ "type": "string" }`).
+    Schema(serde_json::Value),
+}
+
 /// Represents the different types a JSON Schema can have, along with their specific constraints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -130,13 +140,20 @@ pub enum JSONSchemaType {
         /// A list of required property names.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<Vec<String>>,
-        /// If false, no additional properties are allowed.
+        /// Controls whether additional properties are allowed, or provides their schema.
         #[serde(
             rename = "additionalProperties",
             alias = "additional_properties",
             skip_serializing_if = "Option::is_none"
         )]
-        additional_properties: Option<bool>,
+        additional_properties: Option<JSONSchemaAdditionalProperties>,
+        /// Schema used to validate object property names.
+        #[serde(
+            rename = "propertyNames",
+            alias = "property_names",
+            skip_serializing_if = "Option::is_none"
+        )]
+        property_names: Option<serde_json::Value>,
         /// The minimum number of properties.
         #[serde(
             rename = "minProperties",
@@ -218,6 +235,7 @@ impl Default for MCPToolInputSchema {
                 properties: Some(std::collections::HashMap::new()),
                 required: None,
                 additional_properties: None,
+                property_names: None,
                 min_properties: None,
                 max_properties: None,
             },
