@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "어시스턴트 이름 *",
     "namePlaceholder": "어시스턴트 이름을 입력하세요...",
@@ -228,6 +229,7 @@
   },
   "settings": {
     "title": "설정",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "미저장",
     "saved": "설정이 저장되었습니다",
     "saving": "저장 중...",
@@ -343,6 +345,8 @@
       "maxConcurrentActiveProcessesDescription": "모든 에이전트 세션에서 동시에 실행되는 셸/코드 프로세스의 최대 수입니다.",
       "maxSuspendedProcesses": "최대 일시 중지된 셸 프로세스",
       "maxSuspendedProcessesDescription": "pollProcess 대기 중에 일시 중지될 수 있는 프로세스의 최대 수입니다. 활성 프로세스 수보다 크거나 같아야 합니다.",
+      "toolResultInlineLimit": "Tool Result Inline Limit (KB)",
+      "toolResultInlineLimitDescription": "Controls how much tool output stays inline before LibrAgent spills the full result to a workspace file. Lower values keep the agent context leaner.",
       "shellIsolation": "셸 격리 수준",
       "shellIsolationModes": {
         "basic": "기본 - 전체 PATH 접근 (보안 낮음)",

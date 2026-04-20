@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "Assistant Name *",
     "namePlaceholder": "Enter assistant name...",
@@ -249,6 +250,7 @@
   },
   "settings": {
     "title": "Settings",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "Unsaved",
     "saved": "Settings saved successfully",
     "saving": "Saving...",
@@ -364,6 +366,8 @@
       "maxConcurrentActiveProcessesDescription": "Maximum number of shell/code processes running simultaneously across all agent sessions.",
       "maxSuspendedProcesses": "Max Suspended Shell Processes",
       "maxSuspendedProcessesDescription": "Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.",
+      "toolResultInlineLimit": "Tool Result Inline Limit (KB)",
+      "toolResultInlineLimitDescription": "Controls how much tool output stays inline before LibrAgent spills the full result to a workspace file. Lower values keep the agent context leaner.",
       "shellIsolation": "Shell Isolation Level",
       "shellIsolationModes": {
         "basic": "Basic - Full PATH access (less secure)",
