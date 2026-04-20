@@ -78,14 +78,23 @@ pub async fn search_knowledge(
     };
 
     match repo
-        .search_hybrid(assistant_id, text_query, query_embedding, limit.saturating_add(offset).saturating_add(1))
+        .search_hybrid(
+            assistant_id,
+            text_query,
+            query_embedding,
+            limit.saturating_add(offset).saturating_add(1),
+        )
         .await
     {
         Ok(all_results) => {
             if offset as usize >= all_results.len() && offset > 0 {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    format!("Offset {} exceeds total results ({}).", offset, all_results.len()),
+                    format!(
+                        "Offset {} exceeds total results ({}).",
+                        offset,
+                        all_results.len()
+                    ),
                     ToolGroup::Knowledge,
                 )
                 .with_guidance(vec!["Try calling again with offset: 0".to_string()])
@@ -93,7 +102,11 @@ pub async fn search_knowledge(
             }
 
             let has_more = all_results.len() as u64 > offset.saturating_add(limit);
-            let paginated_results: Vec<_> = all_results.into_iter().skip(offset as usize).take(limit as usize).collect();
+            let paginated_results: Vec<_> = all_results
+                .into_iter()
+                .skip(offset as usize)
+                .take(limit as usize)
+                .collect();
 
             let mut output_text = format!(
                 "Found {} relevant knowledge entries (mode: {}):\n\n| ID | Score | Source | Tags | Content |\n|---|---|---|---|---|\n",
@@ -116,11 +129,7 @@ pub async fn search_knowledge(
 
                 output_text.push_str(&format!(
                     "| `{}` | {:.4} | {} | {} | {} |\n",
-                    model.id,
-                    score,
-                    safe_source,
-                    safe_tags,
-                    safe_content
+                    model.id, score, safe_source, safe_tags, safe_content
                 ));
             }
 
@@ -152,7 +161,10 @@ pub async fn search_knowledge(
             format!("Failed to search knowledge: {}", e),
             ToolGroup::Knowledge,
         )
-        .with_guidance(vec!["Try using simpler search queries or exploring context around known entities.".to_string()])
+        .with_guidance(vec![
+            "Try using simpler search queries or exploring context around known entities."
+                .to_string(),
+        ])
         .to_mcp_result()),
     }
 }
