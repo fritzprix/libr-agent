@@ -57,13 +57,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getLogger } from '@/lib/logger';
 import {
   deleteGlobalKnowledge,
-  getGlobalKnowledgeDetail,
-  listGlobalKnowledge,
   type KnowledgeChunkDetail,
   type KnowledgeChunkListItem,
   type KnowledgeGraphEntity,
-  type KnowledgeListCursor,
 } from '@/lib/backend/knowledge';
+import { useKnowledgeList } from './hooks/useKnowledgeList';
+import { useKnowledgeDetail } from './hooks/useKnowledgeDetail';
 
 const logger = getLogger('KnowledgePage');
 const KNOWLEDGE_PAGE_SIZE = 60;
@@ -579,19 +578,9 @@ export default function KnowledgePage() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [assistantFilter, setAssistantFilter] = useState('all');
-  const [items, setItems] = useState<KnowledgeChunkListItem[]>([]);
-  const [assistants, setAssistants] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<KnowledgeChunkDetail | null>(null);
-  const [isListLoading, setIsListLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [listRefreshToken, setListRefreshToken] = useState(0);
-  const [nextCursor, setNextCursor] = useState<KnowledgeListCursor | null>(
-    null,
-  );
   const deferredQuery = useDeferredValue(query);
   const [, startSelectionTransition] = useTransition();
 
@@ -603,99 +592,34 @@ export default function KnowledgePage() {
     return () => window.clearTimeout(timeout);
   }, [deferredQuery]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const {
+    items,
+    assistants,
+    nextCursor,
+    isListLoading,
+    isLoadingMore,
+    loadMore: handleLoadMore,
+    mutateList,
+  } = useKnowledgeList(debouncedQuery, assistantFilter, KNOWLEDGE_PAGE_SIZE);
 
-    const load = async () => {
-      setIsListLoading(true);
-      try {
-        const response = await listGlobalKnowledge({
-          query: debouncedQuery || undefined,
-          assistantId: assistantFilter === 'all' ? undefined : assistantFilter,
-          limit: KNOWLEDGE_PAGE_SIZE,
-        });
-
-        if (cancelled) {
-          return;
-        }
-
-        setItems(response.items);
-        setAssistants(response.assistants);
-        setNextCursor(response.nextCursor ?? null);
-        setSelectedId((current) => {
-          if (current && response.items.some((item) => item.id === current)) {
-            return current;
-          }
-          return null;
-        });
-      } catch (error) {
-        logger.error('Failed to load global knowledge list', error);
-        if (!cancelled) {
-          toast.error(
-            t(
-              'knowledge.loadListFailed',
-              'Failed to load global knowledge entries.',
-            ),
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsListLoading(false);
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [assistantFilter, debouncedQuery, listRefreshToken, t]);
-
-  useEffect(() => {
-    if (selectedId === null) {
-      setDetail(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadDetail = async () => {
-      setIsDetailLoading(true);
-      try {
-        const response = await getGlobalKnowledgeDetail(selectedId);
-        if (!cancelled) {
-          setDetail(response);
-        }
-      } catch (error) {
-        logger.error('Failed to load knowledge detail', { selectedId, error });
-        if (!cancelled) {
-          toast.error(
-            t(
-              'knowledge.loadDetailFailed',
-              'Failed to load knowledge details.',
-            ),
-          );
-          setDetail(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsDetailLoading(false);
-        }
-      }
-    };
-
-    void loadDetail();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId, t]);
+  const { detail, isDetailLoading, mutateDetail } =
+    useKnowledgeDetail(selectedId);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,
     [items, selectedId],
   );
+
+  // Weaver Pattern: Adjusting State During Render
+  // Deselect if the item goes away from the list to prevent accessing a non-existent item detail.
+  // We check that isListLoading is false to avoid deselecting while the list is momentarily empty during the very first load or un-cached filter change.
+  if (
+    selectedId !== null &&
+    !isListLoading &&
+    !items.some((item) => item.id === selectedId)
+  ) {
+    setSelectedId(null);
+  }
   const isDetailOpen = selectedItem !== null;
   const hasMoreItems = nextCursor !== null;
   const entityNameById = useMemo(
@@ -705,8 +629,8 @@ export default function KnowledgePage() {
   );
 
   const handleRefresh = useCallback(() => {
-    setListRefreshToken((current) => current + 1);
-  }, []);
+    void mutateList();
+  }, [mutateList]);
 
   const handleCloseDetail = useCallback(() => {
     setIsDeleteDialogOpen(false);
@@ -718,45 +642,6 @@ export default function KnowledgePage() {
       setSelectedId(id);
     });
   }, []);
-
-  const handleLoadMore = useCallback(async () => {
-    if (isListLoading || isLoadingMore || nextCursor === null) {
-      return;
-    }
-
-    setIsLoadingMore(true);
-    try {
-      const response = await listGlobalKnowledge({
-        query: debouncedQuery || undefined,
-        assistantId: assistantFilter === 'all' ? undefined : assistantFilter,
-        cursor: nextCursor,
-        limit: KNOWLEDGE_PAGE_SIZE,
-      });
-
-      setItems((current) => {
-        const seenIds = new Set(current.map((item) => item.id));
-        const appendedItems = response.items.filter(
-          (item) => !seenIds.has(item.id),
-        );
-        return [...current, ...appendedItems];
-      });
-      setNextCursor(response.nextCursor ?? null);
-    } catch (error) {
-      logger.error('Failed to load more global knowledge entries', error);
-      toast.error(
-        t('knowledge.loadMoreFailed', 'Failed to load more knowledge entries.'),
-      );
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [
-    assistantFilter,
-    debouncedQuery,
-    isListLoading,
-    isLoadingMore,
-    nextCursor,
-    t,
-  ]);
 
   const handleRequestDelete = useCallback(() => {
     if (!selectedItem || isDeleting) {
@@ -783,10 +668,10 @@ export default function KnowledgePage() {
           },
         ),
       });
-      setDetail(null);
       setSelectedId(null);
       setIsDeleteDialogOpen(false);
-      setListRefreshToken((current) => current + 1);
+      void mutateList();
+      void mutateDetail();
     } catch (error) {
       logger.error('Failed to delete knowledge entry', {
         id: selectedItem.id,

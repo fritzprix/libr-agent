@@ -144,3 +144,9 @@
 
 **Learning:** Extracting complex Drag-and-Drop subscription logic out of a monolithic component into a dedicated custom hook (`useSkillsDnD`) strictly separates presentation from side-effects, significantly improving component readability and reusability.
 **Action:** Continually hunt for "God useEffect" blocks handling disparate UI concerns (like file drop events) and encapsulate them inside specialized hooks.
+
+## 2026-04-20 - [KnowledgePage / useKnowledgeList / useKnowledgeDetail] **Eradicated:** [Cascading State Effect & Derived State] **Woven:** [Declarative Data Fetching (useSWR / useSWRInfinite)]
+
+- **KnowledgePage:** Eradicated the anti-pattern where `useState` and `useEffect` were manually orchestrating pagination (`nextCursor`, `isLoadingMore`, `items`), detail fetching, and query debouncing via imperative blocks.
+- **Woven (useKnowledgeList / useKnowledgeDetail):** Encapsulated side-effects, cursor tracking, error handling, and derived loading states into dedicated SWR data fetching hooks.
+- **Benefits:** Decoupled data fetching from UI presentation, avoided the "State Duplicator" and "Action-Effect Chain", and greatly improved component readability by relying on SWR's cache (`mutateList`, `mutateDetail`) for post-mutation synchronization.
