@@ -345,8 +345,8 @@
       "maxConcurrentActiveProcessesDescription": "모든 에이전트 세션에서 동시에 실행되는 셸/코드 프로세스의 최대 수입니다.",
       "maxSuspendedProcesses": "최대 일시 중지된 셸 프로세스",
       "maxSuspendedProcessesDescription": "pollProcess 대기 중에 일시 중지될 수 있는 프로세스의 최대 수입니다. 활성 프로세스 수보다 크거나 같아야 합니다.",
-      "toolResultInlineLimit": "Tool Result Inline Limit (KB)",
-      "toolResultInlineLimitDescription": "Controls how much tool output stays inline before LibrAgent spills the full result to a workspace file. Lower values keep the agent context leaner.",
+      "toolResultInlineLimit": "도구 결과 인라인 제한 (KB)",
+      "toolResultInlineLimitDescription": "LibrAgent가 전체 결과를 워크스페이스 파일로 넘기기 전에 인라인으로 유지할 도구 출력의 양을 조절합니다. 낮은 값일수록 에이전트 컨텍스트를 가볍게 유지합니다.",
       "shellIsolation": "셸 격리 수준",
       "shellIsolationModes": {
         "basic": "기본 - 전체 PATH 접근 (보안 낮음)",
