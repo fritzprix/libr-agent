@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -85,43 +85,52 @@ export function ScheduledTasksPage() {
     await updateTask(editingTask.id, data);
   };
 
-  const handleToggle = async (task: ScheduledTask) => {
-    try {
-      await toggleTask(task);
-    } catch (error) {
-      logger.error('Failed to toggle scheduled task', error);
-      toast.error(
-        t('scheduledTasks.toggleFailed', 'Failed to update scheduled task'),
-      );
-    }
-  };
+  const handleToggle = useCallback(
+    async (task: ScheduledTask) => {
+      try {
+        await toggleTask(task);
+      } catch (error) {
+        logger.error('Failed to toggle scheduled task', error);
+        toast.error(
+          t('scheduledTasks.toggleFailed', 'Failed to update scheduled task'),
+        );
+      }
+    },
+    [toggleTask, t],
+  );
 
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteTask(id);
-    } catch (error) {
-      logger.error('Failed to delete scheduled task', error);
-      toast.error(
-        t('scheduledTasks.deleteFailed', 'Failed to delete scheduled task'),
-      );
-    }
-  };
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deleteTask(id);
+      } catch (error) {
+        logger.error('Failed to delete scheduled task', error);
+        toast.error(
+          t('scheduledTasks.deleteFailed', 'Failed to delete scheduled task'),
+        );
+      }
+    },
+    [deleteTask, t],
+  );
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditingTask(null);
     setModalOpen(true);
-  };
+  }, []);
 
-  const openEdit = (task: ScheduledTask) => {
+  const openEdit = useCallback((task: ScheduledTask) => {
     setEditingTask(task);
     setModalOpen(true);
-  };
+  }, []);
 
-  const formatNextRun = (ms: number | null): string => {
-    if (!ms) return t('scheduledTasks.nextRunNone');
-    const d = new Date(ms);
-    return getDateTimeFormatter().format(d);
-  };
+  const formatNextRun = useCallback(
+    (ms: number | null): string => {
+      if (!ms) return t('scheduledTasks.nextRunNone');
+      const d = new Date(ms);
+      return getDateTimeFormatter().format(d);
+    },
+    [t],
+  );
 
   const groupedSections = useMemo<ScheduledTaskGroupSection[]>(() => {
     const groups = new Map<string, ScheduledTaskGroupSection>();
@@ -302,8 +311,8 @@ export function ScheduledTasksPage() {
                             onEdit={openEdit}
                             onToggle={handleToggle}
                             onDelete={handleDelete}
-                            togglingIds={togglingIds}
-                            deletingIds={deletingIds}
+                            isToggling={togglingIds.has(task.id)}
+                            isDeleting={deletingIds.has(task.id)}
                           />
                         ))}
                       </ul>
@@ -328,8 +337,8 @@ export function ScheduledTasksPage() {
                     onEdit={openEdit}
                     onToggle={handleToggle}
                     onDelete={handleDelete}
-                    togglingIds={togglingIds}
-                    deletingIds={deletingIds}
+                    isToggling={togglingIds.has(task.id)}
+                    isDeleting={deletingIds.has(task.id)}
                   />
                 ))}
               </ul>
@@ -371,22 +380,25 @@ function SummaryCard({
   );
 }
 
-function ScheduledTaskRow({
+// Memoized to prevent all task rows from re-rendering when a single task is toggled or deleted.
+// Requires stable function references (useCallback) and primitive boolean props (isToggling/isDeleting)
+// instead of Sets to ensure shallow equality checks pass.
+const ScheduledTaskRow = React.memo(function ScheduledTaskRow({
   task,
   formatNextRun,
   onEdit,
   onToggle,
   onDelete,
-  togglingIds,
-  deletingIds,
+  isToggling,
+  isDeleting,
 }: {
   task: ScheduledTask;
   formatNextRun: (ms: number | null) => string;
   onEdit: (task: ScheduledTask) => void;
   onToggle: (task: ScheduledTask) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  togglingIds: Set<string>;
-  deletingIds: Set<string>;
+  isToggling: boolean;
+  isDeleting: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -396,7 +408,7 @@ function ScheduledTaskRow({
         checked={task.enabled}
         onCheckedChange={() => void onToggle(task)}
         className="mt-0.5 shrink-0"
-        disabled={togglingIds.has(task.id) || deletingIds.has(task.id)}
+        disabled={isToggling || isDeleting}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
@@ -483,9 +495,9 @@ function ScheduledTaskRow({
               aria-label={t('scheduledTasks.deleteTaskAria', {
                 name: task.name,
               })}
-              disabled={deletingIds.has(task.id) || togglingIds.has(task.id)}
+              disabled={isDeleting || isToggling}
             >
-              {deletingIds.has(task.id) ? (
+              {isDeleting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Trash2 className="w-4 h-4" />
@@ -497,7 +509,7 @@ function ScheduledTaskRow({
       </div>
     </li>
   );
-}
+});
 
 function compareScheduledTasks(left: ScheduledTask, right: ScheduledTask) {
   if (left.enabled !== right.enabled) {
