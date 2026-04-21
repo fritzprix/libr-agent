@@ -74,6 +74,8 @@ pub trait KnowledgeV2Repository: Send + Sync {
 
     async fn delete_chunk(&self, id: i32, assistant_id: &str) -> Result<(), DbError>;
 
+    async fn delete_chunks_atomic(&self, ids: &[i32], assistant_id: &str) -> Result<(), DbError>;
+
     async fn delete_chunk_global(&self, id: i32) -> Result<KnowledgeDeleteSummary, DbError>;
 
     async fn list_chunks(
@@ -110,6 +112,12 @@ pub trait KnowledgeV2Repository: Send + Sync {
         entity_name: &str,
         depth: u32,
     ) -> Result<serde_json::Value, DbError>;
+
+    async fn find_existing_chunk_ids(
+        &self,
+        assistant_id: &str,
+        ids: &[i32],
+    ) -> Result<Vec<i32>, DbError>;
 
     async fn get_chunk_detail(&self, id: i32) -> Result<KnowledgeChunkDetail, DbError>;
 }
@@ -409,6 +417,63 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
         // Also cleanup chunk-entity links
         knowledge_chunk_entity::Entity::delete_many()
             .filter(knowledge_chunk_entity::Column::ChunkId.eq(id))
+            .exec(&txn)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        txn.commit().await.map_err(DbError::SeaOrmQueryFailed)?;
+        Ok(())
+    }
+
+    async fn delete_chunks_atomic(&self, ids: &[i32], assistant_id: &str) -> Result<(), DbError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let txn = self.db.begin().await.map_err(DbError::SeaOrmQueryFailed)?;
+        let requested_ids = ids.to_vec();
+        let expected_count = requested_ids.len() as u64;
+
+        let existing_count = knowledge_chunk_v2::Entity::find()
+            .filter(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id))
+            .filter(knowledge_chunk_v2::Column::Id.is_in(requested_ids.clone()))
+            .count(&txn)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        if existing_count != expected_count {
+            return Err(DbError::NotFound(format!(
+                "One or more chunks are missing for assistant '{}'",
+                assistant_id
+            )));
+        }
+
+        let delete_result = knowledge_chunk_v2::Entity::delete_many()
+            .filter(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id))
+            .filter(knowledge_chunk_v2::Column::Id.is_in(requested_ids.clone()))
+            .exec(&txn)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        if delete_result.rows_affected != expected_count {
+            return Err(DbError::NotFound(format!(
+                "One or more chunks changed while deleting for assistant '{}'",
+                assistant_id
+            )));
+        }
+
+        for id in &requested_ids {
+            txn.execute(Statement::from_sql_and_values(
+                self.db.get_database_backend(),
+                "DELETE FROM knowledge_vectors WHERE rowid = ?",
+                [(*id).into()],
+            ))
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+        }
+
+        knowledge_chunk_entity::Entity::delete_many()
+            .filter(knowledge_chunk_entity::Column::ChunkId.is_in(requested_ids))
             .exec(&txn)
             .await
             .map_err(DbError::SeaOrmQueryFailed)?;
@@ -785,6 +850,28 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
             "edges": relationships,
             "linked_chunks": linked_chunk_json
         }))
+    }
+
+    async fn find_existing_chunk_ids(
+        &self,
+        assistant_id: &str,
+        ids: &[i32],
+    ) -> Result<Vec<i32>, DbError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut existing_ids = knowledge_chunk_v2::Entity::find()
+            .select_only()
+            .column(knowledge_chunk_v2::Column::Id)
+            .filter(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id))
+            .filter(knowledge_chunk_v2::Column::Id.is_in(ids.iter().copied()))
+            .into_tuple::<i32>()
+            .all(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+        existing_ids.sort_unstable();
+        Ok(existing_ids)
     }
 
     async fn get_chunk_detail(&self, id: i32) -> Result<KnowledgeChunkDetail, DbError> {

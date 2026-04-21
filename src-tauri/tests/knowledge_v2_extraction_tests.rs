@@ -211,7 +211,7 @@ fn record_knowledge_tool_schema_exposes_structured_graph_inputs() {
         .get("name")
         .and_then(|schema| schema.description.as_deref())
         .expect("entity name field should describe naming guidance");
-    assert!(entity_name_description.contains("up to 10 words recommended"));
+    assert!(entity_name_description.contains("10 words or fewer"));
 
     let relationships_schema = properties
         .get("relationships")
@@ -248,5 +248,5 @@ fn record_knowledge_tool_schema_exposes_structured_graph_inputs() {
         .get("source")
         .and_then(|schema| schema.description.as_deref())
         .expect("relationship source field should describe naming guidance");
-    assert!(relationship_source_description.contains("concise entity naming style"));
+    assert!(relationship_source_description.contains("Match entities[].name"));
 }
