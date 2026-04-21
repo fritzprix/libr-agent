@@ -1,7 +1,7 @@
 use crate::mcp::builtin::browser::content::BROWSER_CONTENT_STORE;
 use crate::mcp::builtin::browser::BrowserServer;
 use crate::mcp::builtin::error_guidance::{
-    operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
+    guided_error, operation_failed_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
@@ -47,18 +47,17 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
         );
         Ok(hint.to_mcp_result())
     } else {
-        let warning = ErrorGuidance::with_guidance(
+        Ok(guided_error(
             ErrorCategory::InvalidState,
             "No active browser session to close",
-            vec![
-                "The browser is already clean; no further close action is required".to_string(),
-                "Use createSession if you want to start a fresh browser session".to_string(),
-                "Use getCurrentUrl only after createSession has created an active session"
-                    .to_string(),
-            ],
             ToolGroup::Browser,
-        );
-        Ok(warning.to_mcp_result())
+        )
+        .with_guidance(vec![
+            "The browser is already clean; no further close action is required".to_string(),
+            "Use createSession if you want to start a fresh browser session".to_string(),
+            "Use getCurrentUrl only after createSession has created an active session".to_string(),
+        ])
+        .to_mcp_result())
     }
 }
 
