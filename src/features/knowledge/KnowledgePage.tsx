@@ -602,8 +602,7 @@ export default function KnowledgePage() {
     mutateList,
   } = useKnowledgeList(debouncedQuery, assistantFilter, KNOWLEDGE_PAGE_SIZE);
 
-  const { detail, isDetailLoading, mutateDetail } =
-    useKnowledgeDetail(selectedId);
+  const { detail, isDetailLoading } = useKnowledgeDetail(selectedId);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,
@@ -671,7 +670,6 @@ export default function KnowledgePage() {
       setSelectedId(null);
       setIsDeleteDialogOpen(false);
       void mutateList();
-      void mutateDetail();
     } catch (error) {
       logger.error('Failed to delete knowledge entry', {
         id: selectedItem.id,
@@ -683,7 +681,7 @@ export default function KnowledgePage() {
     } finally {
       setIsDeleting(false);
     }
-  }, [isDeleting, selectedItem, t]);
+  }, [isDeleting, mutateList, selectedItem, t]);
 
   return (
     <div className="h-full bg-background p-6">

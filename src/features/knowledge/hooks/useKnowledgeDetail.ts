@@ -6,23 +6,26 @@ import { getGlobalKnowledgeDetail } from '@/lib/backend/knowledge';
 
 const logger = getLogger('useKnowledgeDetail');
 
+type KnowledgeDetailKey = readonly ['knowledgeDetail', number];
+
 export function useKnowledgeDetail(selectedId: number | null) {
   const { t } = useTranslation('common');
 
   const { data, error, isLoading, mutate } = useSWR(
-    selectedId ? ['knowledgeDetail', selectedId] : null,
-    async ([, id]) => {
-      return getGlobalKnowledgeDetail(id as number);
+    selectedId ? (['knowledgeDetail', selectedId] as const) : null,
+    async ([, id]: KnowledgeDetailKey) => {
+      return getGlobalKnowledgeDetail(id);
     },
     {
       revalidateOnFocus: false,
+      shouldRetryOnError: false,
       onError: (err) => {
         logger.error('Failed to load knowledge detail', { selectedId, err });
         toast.error(
           t('knowledge.loadDetailFailed', 'Failed to load knowledge details.'),
         );
       },
-    }
+    },
   );
 
   return {

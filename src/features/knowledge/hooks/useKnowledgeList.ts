@@ -32,12 +32,12 @@ export function useKnowledgeList(
       pageIndex: number,
       previousPageData: GlobalKnowledgeListResponse | null,
     ): FetcherArgs | null => {
-      const keyBase: [string, string, string, number] = [
+      const keyBase = [
         'globalKnowledge',
         debouncedQuery,
         assistantFilter,
         limit,
-      ];
+      ] as const;
 
       if (pageIndex === 0) return [...keyBase, null];
 
@@ -72,13 +72,14 @@ export function useKnowledgeList(
     {
       revalidateOnFocus: false,
       revalidateFirstPage: false,
+      shouldRetryOnError: false,
       onError: (err) => {
         logger.error('Failed to load global knowledge list', err);
         toast.error(
           t('knowledge.loadListFailed', 'Failed to load global knowledge entries.'),
         );
       },
-    }
+    },
   );
 
   const items = useMemo(() => {
@@ -113,8 +114,8 @@ export function useKnowledgeList(
 
   const loadMore = useCallback(() => {
     if (isLoadingMore || !nextCursor || isListLoading) return;
-    setSize(size + 1);
-  }, [isLoadingMore, nextCursor, isListLoading, setSize, size]);
+    setSize((previousSize) => previousSize + 1);
+  }, [isLoadingMore, nextCursor, isListLoading, setSize]);
 
   return {
     items,
