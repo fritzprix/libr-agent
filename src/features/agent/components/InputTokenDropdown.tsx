@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { useListNavigation } from '@/hooks/use-list-navigation';
 import type { TokenType } from '../hooks/useInputToken';
 import type { SkillMetadata } from '@/types/skills';
 import type { MCPTool } from '@/lib/mcp';
@@ -31,8 +32,36 @@ export function InputTokenDropdown({
 }: InputTokenDropdownProps) {
   const { t } = useTranslation();
   const count = mode.items.length;
-  const [activeIndex, setActiveIndex] = useState(0);
   const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
+
+  const handleEnter = useCallback(
+    (index: number) => {
+      if (mode.kind === 'types') {
+        const item = mode.items[index];
+        if (item) onSelectType(item.name);
+      } else if (mode.kind === 'files') {
+        const item = mode.items[index];
+        if (item) onSelectArg(item);
+      } else if (mode.kind === 'tools') {
+        const item = mode.items[index];
+        if (item) onSelectArg(item.name);
+      } else if (mode.kind === 'playbooks') {
+        const item = mode.items[index];
+        if (item) onSelectArg(item.goal);
+      } else {
+        const item = mode.items[index];
+        if (item) onSelectArg(item.name);
+      }
+    },
+    [mode, onSelectType, onSelectArg],
+  );
+
+  const { activeIndex, setActiveIndex } = useListNavigation({
+    itemCount: count,
+    onEnter: handleEnter,
+    onEscape: onDismiss,
+    resetDependencies: [mode.kind, mode.items],
+  });
 
   const getSkillSourceLabel = (skill: SkillMetadata) => {
     switch (skill.origin) {
@@ -59,60 +88,11 @@ export function InputTokenDropdown({
   };
 
   useEffect(() => {
-    setActiveIndex(0);
-  }, [mode.kind, mode.items]);
-
-  useEffect(() => {
-    if (!count) {
-      return;
-    }
-
-    setActiveIndex((currentIndex) => Math.min(currentIndex, count - 1));
-  }, [count]);
-
-  useEffect(() => {
     const activeItem = itemRefs.current[activeIndex];
     if (typeof activeItem?.scrollIntoView === 'function') {
       activeItem.scrollIntoView({ block: 'nearest' });
     }
   }, [activeIndex]);
-
-  useEffect(() => {
-    if (!count) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setActiveIndex((i) => Math.min(i + 1, count - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setActiveIndex((i) => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        if (mode.kind === 'types') {
-          const item = mode.items[activeIndex];
-          if (item) onSelectType(item.name);
-        } else if (mode.kind === 'files') {
-          const item = mode.items[activeIndex];
-          if (item) onSelectArg(item);
-        } else if (mode.kind === 'tools') {
-          const item = mode.items[activeIndex];
-          if (item) onSelectArg(item.name);
-        } else if (mode.kind === 'playbooks') {
-          const item = mode.items[activeIndex];
-          if (item) onSelectArg(item.goal);
-        } else {
-          const item = mode.items[activeIndex];
-          if (item) onSelectArg(item.name);
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onDismiss();
-      }
-    };
-    window.addEventListener('keydown', handler, { capture: true });
-    return () =>
-      window.removeEventListener('keydown', handler, { capture: true });
-  }, [count, mode, activeIndex, onSelectType, onSelectArg, onDismiss]);
 
   if (!count) return null;
 
