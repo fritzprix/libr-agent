@@ -73,8 +73,8 @@ impl ErrorGuidance {
             // Browser tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Browser) => vec![
                 "Use createSession to start a new browser session".to_string(),
-                "Use listSessions to see available sessions (if available)".to_string(),
-                "Verify the session_id parameter is correct".to_string(),
+                "Use getPageContent({}) to extract fresh content from the current page".to_string(),
+                "Use listInteractable to inspect the current page before interacting".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Browser) => vec![
                 "Verify the URL format is valid (must include http:// or https://)".to_string(),
@@ -82,7 +82,7 @@ impl ErrorGuidance {
                 "Use listInteractable to see available elements first".to_string(),
             ],
             (ErrorCategory::OperationFailed, ToolGroup::Browser) => vec![
-                "Try extractWebContent to view page structure".to_string(),
+                "Try getPageContent to view page structure".to_string(),
                 "Use navigateToUrl to reload the page".to_string(),
                 "Verify the target element is visible and interactable".to_string(),
             ],
@@ -345,19 +345,19 @@ impl SuccessHint {
             // Browser tools
             ("createSession", ToolGroup::Browser) => vec![
                 "Use navigateToUrl to load a webpage".to_string(),
-                "Use extractWebContent to see the initial page".to_string(),
+                "Use getPageContent to see the initial page".to_string(),
             ],
             ("navigateToUrl", ToolGroup::Browser) => vec![
-                "Use extractWebContent to see page content".to_string(),
+                "Use getPageContent to see page content".to_string(),
                 "Use listInteractable to see clickable elements".to_string(),
             ],
-            ("extractWebContent", ToolGroup::Browser) => vec![
+            ("getPageContent", ToolGroup::Browser) => vec![
                 "Use listInteractable to see interactive elements".to_string(),
                 "Use clickElement to interact with the page".to_string(),
             ],
             ("listInteractable", ToolGroup::Browser) => vec![
-                "Use clickElement with the selector or index".to_string(),
-                "Use extractWebContent to see full page content".to_string(),
+                "Use clickElement with the selector".to_string(),
+                "Use getPageContent to see full page content".to_string(),
             ],
 
             // Planning tools

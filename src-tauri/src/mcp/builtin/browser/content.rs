@@ -86,7 +86,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
                 vec![
                     "Verify the browser session is active",
                     "Ensure the page has fully loaded before extracting",
-                    "If you need a fresh navigation in this same session, use `goto` with a URL",
+                    "If you need a fresh navigation in this same session, use `navigateToUrl` with a URL",
                     "Try waiting a moment before retrying",
                 ],
             ))
