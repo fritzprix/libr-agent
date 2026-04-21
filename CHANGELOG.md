@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.11] - 2026-04-22
+
+### 🚀 Features
+
+- **Unified Browser Content Reading**: Consolidated browser content retrieval around a clearer `getPageContent` flow, making it easier for agents to read current page state without juggling overlapping content tools.
+
+### 🐛 Fixes
+
+- **Safer Delegated Session Control**: Locked delegated agent controls (`checkSession`, `messageToSession`, `stopSession`, and manual compaction) to real descendant sessions only, preventing cross-lineage access and improving caller-session validation.
+- **Stronger MCP Server Registration Guards**: Fixed duplicate MCP server registration so lookup failures no longer fall through into accidental config mutation, and duplicate names are rejected more reliably.
+- **More Reliable Browser Cache Behavior**: Tightened browser session cache invalidation so content reads stay aligned with the active session state instead of serving stale page data.
+
+### 🔧 Internal
+
+- **Richer Tool Inventory Contracts**: Added structured payloads to tool-list responses and expanded regression coverage around delegated-session access, browser guidance contracts, and MCP server registration behavior.
+
 ## [0.7.10] - 2026-04-21
 
 ### 🚀 Features
