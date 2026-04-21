@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::formatting::{
@@ -8,7 +9,7 @@ use crate::mcp::builtin::session_api::utils::{
     build_agent_session_tool_data, build_agent_tool_data,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
-use crate::repositories::message_repository::MessageRepository;
+use crate::repositories::{message_repository::MessageRepository, SessionMetadata};
 
 fn read_optional_string(args: &Value, key: &str) -> Result<Option<String>, String> {
     match args.get(key) {
@@ -123,6 +124,98 @@ fn invalid_explicit_org_result(org_id: &str) -> MCPResult {
         "Use list(type=\"sessions\") to inspect the current delegated lineage".to_string(),
     ])
     .to_mcp_result()
+}
+
+pub fn is_delegated_descendant_session(
+    sessions: &HashMap<String, SessionMetadata>,
+    caller_session_id: &str,
+    target_session_id: &str,
+) -> bool {
+    if caller_session_id == target_session_id {
+        return false;
+    }
+
+    let mut next_parent = sessions
+        .get(target_session_id)
+        .and_then(|session| session.parent_session_id.clone());
+    let mut seen = HashSet::new();
+
+    while let Some(parent_id) = next_parent {
+        if !seen.insert(parent_id.clone()) {
+            return false;
+        }
+        if parent_id == caller_session_id {
+            return true;
+        }
+        next_parent = sessions
+            .get(&parent_id)
+            .and_then(|session| session.parent_session_id.clone());
+    }
+
+    false
+}
+
+pub async fn load_accessible_delegated_session(
+    manager: &crate::agent::AgentSessionManager,
+    caller_session_id: &str,
+    target_session_id: &str,
+    tool_name: &str,
+) -> Result<SessionMetadata, MCPResult> {
+    let sessions = match manager.get_all_sessions().await {
+        Ok(sessions) => sessions,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to load session metadata for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    };
+
+    let session_index = sessions
+        .into_iter()
+        .map(|session| (session.id.clone(), session))
+        .collect::<HashMap<_, _>>();
+
+    let Some(target_session) = session_index.get(target_session_id).cloned() else {
+        return Err(
+            crate::mcp::builtin::error_guidance::missing_agent_session_error(target_session_id),
+        );
+    };
+
+    if !is_delegated_descendant_session(&session_index, caller_session_id, target_session_id) {
+        return Err(
+            guided_error(
+                ErrorCategory::PermissionDenied,
+                format!(
+                    "Session '{}' is not a delegated descendant of the current session '{}'.",
+                    target_session_id, caller_session_id
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                format!(
+                    "Use {} only with delegated child/descendant sessions started from the current session",
+                    tool_name
+                ),
+                "Use list(type=\"sessions\") to inspect the delegated sessions you can control directly"
+                    .to_string(),
+                "Start a new delegated session with startSession(...) if you need fresh child work"
+                    .to_string(),
+            ])
+            .to_mcp_result(),
+        );
+    }
+
+    Ok(target_session)
 }
 
 fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> Value {

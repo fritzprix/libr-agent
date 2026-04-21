@@ -103,6 +103,26 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         .to_mcp_result());
     }
 
+    if let Ok(Some(_)) = get_server_config(&name).await {
+        return Ok(guided_error(
+            ErrorCategory::DuplicateResource,
+            format!("Server name '{}' already exists", name),
+            ToolGroup::Tool,
+        )
+        .with_guidance(vec![
+            format!(
+                "Use update(name=\"{}\", transport=...) to change the existing server configuration",
+                name
+            ),
+            format!(
+                "Use list(query=\"{}\") to inspect the existing server before modifying it",
+                name
+            ),
+            "Choose a different unique name if you want to register a separate server".to_string(),
+        ])
+        .to_mcp_result());
+    }
+
     let transport_val = match args.get("transport") {
         Some(t) => t,
         Option::None => return Ok(missing_param_error("transport", ToolGroup::Tool)),
@@ -788,5 +808,38 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         );
     }
 
-    Ok(SuccessHint::new(format!("{}{}{}", header, body, external_action), hints).to_mcp_result())
+    let structured_results = paginated_tools
+        .iter()
+        .map(|tool| {
+            json!({
+                "source": tool.source,
+                "name": tool.name,
+                "status": tool.status,
+                "description": tool.description,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut external_servers = found_external_ids
+        .iter()
+        .map(|(name, id)| json!({ "name": name, "id": id }))
+        .collect::<Vec<_>>();
+    external_servers.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    external_servers.dedup_by(|left, right| left["id"] == right["id"]);
+
+    Ok(
+        SuccessHint::new(format!("{}{}{}", header, body, external_action), hints)
+            .to_mcp_result_with_data(Some(json!({
+                "query": query,
+                "scope": scope,
+                "availability": availability,
+                "forceVerify": force_verify,
+                "offset": offset,
+                "limit": limit,
+                "totalResults": total_results,
+                "totalTools": total_tools,
+                "totalServerRows": total_server_rows,
+                "results": structured_results,
+                "externalServers": external_servers,
+            }))),
+    )
 }
