@@ -161,8 +161,31 @@ pub async fn load_accessible_delegated_session(
     target_session_id: &str,
     tool_name: &str,
 ) -> Result<SessionMetadata, MCPResult> {
-    let sessions = match manager.get_all_sessions().await {
-        Ok(sessions) => sessions,
+    let caller_exists = match manager.get_session(caller_session_id).await {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to load caller session metadata for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    };
+    if !caller_exists {
+        return Err(caller_session_not_found_result(caller_session_id));
+    }
+
+    let Some(target_session) = (match manager.get_session(target_session_id).await {
+        Ok(session) => session,
         Err(error) => {
             return Err(guided_error(
                 ErrorCategory::InternalError,
@@ -178,44 +201,61 @@ pub async fn load_accessible_delegated_session(
             ])
             .to_mcp_result())
         }
-    };
-
-    let session_index = sessions
-        .into_iter()
-        .map(|session| (session.id.clone(), session))
-        .collect::<HashMap<_, _>>();
-
-    let Some(target_session) = session_index.get(target_session_id).cloned() else {
+    }) else {
         return Err(
             crate::mcp::builtin::error_guidance::missing_agent_session_error(target_session_id),
         );
     };
 
-    if !is_delegated_descendant_session(&session_index, caller_session_id, target_session_id) {
-        return Err(
-            guided_error(
-                ErrorCategory::PermissionDenied,
-                format!(
-                    "Session '{}' is not a delegated descendant of the current session '{}'.",
-                    target_session_id, caller_session_id
-                ),
-                ToolGroup::Agent,
-            )
-            .with_guidance(vec![
-                format!(
-                    "Use {} only with delegated child/descendant sessions started from the current session",
-                    tool_name
-                ),
-                "Use list(type=\"sessions\") to inspect the delegated sessions you can control directly"
-                    .to_string(),
-                "Start a new delegated session with startSession(...) if you need fresh child work"
-                    .to_string(),
-            ])
-            .to_mcp_result(),
-        );
+    let mut next_parent = target_session.parent_session_id.clone();
+    let mut seen = HashSet::new();
+    while let Some(parent_id) = next_parent {
+        if !seen.insert(parent_id.clone()) {
+            break;
+        }
+        if parent_id == caller_session_id {
+            return Ok(target_session);
+        }
+        next_parent = match manager.get_session(&parent_id).await {
+            Ok(Some(session)) => session.parent_session_id,
+            Ok(None) => None,
+            Err(error) => {
+                return Err(guided_error(
+                    ErrorCategory::InternalError,
+                    format!(
+                        "Failed to load delegated session lineage for {}: {}",
+                        tool_name, error
+                    ),
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "Retry the operation once session metadata is available again".to_string(),
+                    "If the issue persists, inspect the session repository health".to_string(),
+                ])
+                .to_mcp_result())
+            }
+        };
     }
 
-    Ok(target_session)
+    Err(guided_error(
+        ErrorCategory::PermissionDenied,
+        format!(
+            "Session '{}' is not a delegated descendant of the current session '{}'.",
+            target_session_id, caller_session_id
+        ),
+        ToolGroup::Agent,
+    )
+    .with_guidance(vec![
+        format!(
+            "Use {} only with delegated child/descendant sessions started from the current session",
+            tool_name
+        ),
+        "Use list(type=\"sessions\") to inspect the delegated sessions you can control directly"
+            .to_string(),
+        "Start a new delegated session with startSession(...) if you need fresh child work"
+            .to_string(),
+    ])
+    .to_mcp_result())
 }
 
 fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> Value {

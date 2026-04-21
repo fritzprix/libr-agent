@@ -103,24 +103,43 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         .to_mcp_result());
     }
 
-    if let Ok(Some(_)) = get_server_config(&name).await {
-        return Ok(guided_error(
-            ErrorCategory::DuplicateResource,
-            format!("Server name '{}' already exists", name),
-            ToolGroup::Tool,
-        )
-        .with_guidance(vec![
-            format!(
-                "Use update(name=\"{}\", transport=...) to change the existing server configuration",
-                name
-            ),
-            format!(
-                "Use list(query=\"{}\") to inspect the existing server before modifying it",
-                name
-            ),
-            "Choose a different unique name if you want to register a separate server".to_string(),
-        ])
-        .to_mcp_result());
+    match get_server_config(&name).await {
+        Ok(Some(_)) => {
+            return Ok(guided_error(
+                ErrorCategory::DuplicateResource,
+                format!("Server name '{}' already exists", name),
+                ToolGroup::Tool,
+            )
+            .with_guidance(vec![
+                format!(
+                    "Use update(name=\"{}\", transport=...) to change the existing server configuration",
+                    name
+                ),
+                format!(
+                    "Use list(query=\"{}\") to inspect the existing server before modifying it",
+                    name
+                ),
+                "Choose a different unique name if you want to register a separate server"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+        Ok(None) => {}
+        Err(error) => {
+            return Ok(guided_error(
+                ErrorCategory::DatabaseError,
+                format!(
+                    "Failed to check whether server '{}' already exists: {}",
+                    name, error
+                ),
+                ToolGroup::Tool,
+            )
+            .with_guidance(vec![
+                "The server registry could not be queried, so registration was aborted to avoid mutating an existing server by mistake".to_string(),
+                "Retry the operation after the database/service issue is resolved".to_string(),
+            ])
+            .to_mcp_result());
+        }
     }
 
     let transport_val = match args.get("transport") {

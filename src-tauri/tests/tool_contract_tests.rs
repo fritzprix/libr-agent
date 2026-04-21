@@ -2,7 +2,9 @@ mod common;
 
 use migration::MigratorTrait;
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, SqlxSqliteConnector, Statement,
+};
 use serde_json::{json, Value};
 use std::str::FromStr;
 use tauri_mcp_agent_lib::mcp::builtin::tool::ToolServer;
@@ -17,7 +19,7 @@ use tokio::sync::OnceCell;
 
 struct TestContext {
     _temp_dir: TempDir,
-    _db: DatabaseConnection,
+    db: DatabaseConnection,
     repo: SqliteMCPServerRepository,
 }
 
@@ -46,12 +48,20 @@ async fn repo() -> SqliteMCPServerRepository {
             set_mcp_server_repository(repo.clone());
             TestContext {
                 _temp_dir: temp_dir,
-                _db: db,
+                db,
                 repo,
             }
         })
         .await
         .repo
+        .clone()
+}
+
+async fn db() -> DatabaseConnection {
+    TEST_CONTEXT
+        .get()
+        .expect("test context should be initialized")
+        .db
         .clone()
 }
 
@@ -120,6 +130,65 @@ async fn register_rejects_duplicate_server_names_without_mutating_existing_confi
         config["transport"]["url"].as_str(),
         Some("https://example.com/original")
     );
+}
+
+#[tokio::test]
+async fn register_aborts_when_existing_server_config_cannot_be_loaded() {
+    let repo = repo().await;
+    let db = db().await;
+    let server = ToolServer::new();
+
+    let existing = repo
+        .create(
+            "github-broken-config-check",
+            json!({
+                "name": "github-broken-config-check",
+                "transport": {
+                    "type": "http",
+                    "url": "https://example.com/original"
+                }
+            }),
+        )
+        .await
+        .expect("existing server should insert");
+
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "UPDATE mcp_servers SET config = ? WHERE id = ?",
+        ["{".into(), existing.id.clone().into()],
+    ))
+    .await
+    .expect("test setup should corrupt existing config");
+
+    let result = server
+        .call_tool(
+            "register",
+            json!({
+                "name": "github-broken-config-check",
+                "description": "Replacement config that should be rejected on lookup error",
+                "transport": {
+                    "type": "http",
+                    "url": "https://127.0.0.1:1/should-not-run"
+                }
+            }),
+            None,
+        )
+        .await
+        .expect("register should return an MCP result");
+
+    let text = extract_text(&result);
+    assert_eq!(result.is_error, Some(false));
+    assert!(
+        text.contains("Failed to check whether server 'github-broken-config-check' already exists")
+    );
+    assert!(text.contains("registration was aborted"));
+
+    let reloaded = repo
+        .get(&existing.id)
+        .await
+        .expect("existing server should reload")
+        .expect("existing server should still exist");
+    assert_eq!(reloaded.config, "{");
 }
 
 #[tokio::test]

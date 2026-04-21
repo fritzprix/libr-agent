@@ -212,7 +212,7 @@ pub async fn start_session(
 pub async fn message_to_session(
     server: &AgentServer,
     args: Value,
-    _caller_session_id: &str,
+    caller_session_id: &str,
 ) -> Result<MCPResult, String> {
     let manager = server
         .get_manager()
@@ -221,7 +221,7 @@ pub async fn message_to_session(
     let message_text = read_required_string(&args, "message")?;
     if let Err(result) = load_accessible_delegated_session(
         manager,
-        _caller_session_id,
+        caller_session_id,
         &session_id,
         "messageToSession",
     )
