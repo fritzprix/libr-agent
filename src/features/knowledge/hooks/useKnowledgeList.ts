@@ -76,7 +76,10 @@ export function useKnowledgeList(
       onError: (err) => {
         logger.error('Failed to load global knowledge list', err);
         toast.error(
-          t('knowledge.loadListFailed', 'Failed to load global knowledge entries.'),
+          t(
+            'knowledge.loadListFailed',
+            'Failed to load global knowledge entries.',
+          ),
         );
       },
     },
