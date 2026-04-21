@@ -47,9 +47,15 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
         );
         Ok(hint.to_mcp_result())
     } else {
-        let warning = ErrorGuidance::new(
+        let warning = ErrorGuidance::with_guidance(
             ErrorCategory::InvalidState,
             "No active browser session to close",
+            vec![
+                "The browser is already clean; no further close action is required".to_string(),
+                "Use createSession if you want to start a fresh browser session".to_string(),
+                "Use getCurrentUrl only after createSession has created an active session"
+                    .to_string(),
+            ],
             ToolGroup::Browser,
         );
         Ok(warning.to_mcp_result())
@@ -123,7 +129,8 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                 vec![
                     "Page load timed out, but the session is ready and page may be usable."
                         .to_string(),
-                    "Try `content` to see if content loaded despite the timeout.".to_string(),
+                    "Try `getPageContent({})` to see if content loaded despite the timeout."
+                        .to_string(),
                     "If the page is blank, navigate to a different URL.".to_string(),
                 ],
             )
@@ -188,7 +195,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                     url
                 ),
                 vec![
-                    "Use `content` to read the current page content".to_string(),
+                    "Use `getPageContent({})` to read the current page content".to_string(),
                     "Use listInteractable to see interactive elements".to_string(),
                 ],
             )
@@ -197,7 +204,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         (
             format!("Browser session created. {}", status_msg),
             vec![
-                "Use `goto` to navigate this active session to a webpage".to_string(),
+                "Use `navigateToUrl` to navigate this active session to a webpage".to_string(),
                 "Or call createSession with a `url` next time to open the first page immediately"
                     .to_string(),
             ],
