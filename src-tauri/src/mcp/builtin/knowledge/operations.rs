@@ -357,31 +357,34 @@ pub async fn prune_knowledge(
         Err(result) => return Ok(result),
     };
 
-    let repo = server.repository();
-
     match action {
         "delete" => {
-            let mut validated_ids = Vec::with_capacity(parsed_target_ids.len());
-            let mut missing_ids = Vec::new();
-
-            for id in &parsed_target_ids {
-                match repo.get_chunk_detail(*id).await {
-                    Ok(detail) if detail.chunk.assistant_id == assistant_id => {
-                        validated_ids.push(*id);
-                    }
-                    Ok(_) | Err(DbError::NotFound(_)) | Err(DbError::ResourceNotFound(_)) => {
-                        missing_ids.push(*id);
-                    }
-                    Err(error) => {
-                        return Ok(guided_error(
-                            ErrorCategory::DatabaseError,
-                            format!("Failed to validate knowledge chunk {}: {}", id, error),
-                            ToolGroup::Knowledge,
-                        )
-                        .to_mcp_result());
-                    }
+            let repo = server.repository();
+            let existing_ids = match repo
+                .find_existing_chunk_ids(assistant_id, &parsed_target_ids)
+                .await
+            {
+                Ok(ids) => ids,
+                Err(error) => {
+                    return Ok(guided_error(
+                        ErrorCategory::DatabaseError,
+                        format!("Failed to validate requested knowledge chunks: {}", error),
+                        ToolGroup::Knowledge,
+                    )
+                    .to_mcp_result());
                 }
-            }
+            };
+            let existing_id_set = existing_ids.iter().copied().collect::<HashSet<_>>();
+            let validated_ids = parsed_target_ids
+                .iter()
+                .copied()
+                .filter(|id| existing_id_set.contains(id))
+                .collect::<Vec<_>>();
+            let missing_ids = parsed_target_ids
+                .iter()
+                .copied()
+                .filter(|id| !existing_id_set.contains(id))
+                .collect::<Vec<_>>();
 
             if !missing_ids.is_empty() {
                 let mut result = guided_error(
@@ -401,38 +404,92 @@ pub async fn prune_knowledge(
                 .to_mcp_result();
                 result.structured_content = Some(json!({
                     "action": action,
-                    "requestedIds": parsed_target_ids,
+                    "requestedIds": target_ids,
+                    "normalizedIds": parsed_target_ids,
                     "validatedIds": validated_ids,
                     "missingIds": missing_ids,
                 }));
                 return Ok(result);
             }
 
-            let mut deleted_ids = Vec::with_capacity(validated_ids.len());
-            for id in &validated_ids {
-                match repo.delete_chunk(*id, assistant_id).await {
-                    Ok(()) => deleted_ids.push(*id),
-                    Err(error) => {
-                        return Ok(guided_error(
-                            ErrorCategory::DatabaseError,
-                            format!("Failed to delete knowledge chunk {}: {}", id, error),
-                            ToolGroup::Knowledge,
-                        )
-                        .to_mcp_result());
-                    }
+            match repo
+                .delete_chunks_atomic(&validated_ids, assistant_id)
+                .await
+            {
+                Ok(()) => {}
+                Err(DbError::NotFound(_) | DbError::ResourceNotFound(_)) => {
+                    let current_existing = match repo
+                        .find_existing_chunk_ids(assistant_id, &validated_ids)
+                        .await
+                    {
+                        Ok(ids) => ids,
+                        Err(error) => {
+                            return Ok(guided_error(
+                                ErrorCategory::DatabaseError,
+                                format!(
+                                    "Failed to re-check requested knowledge chunks after delete conflict: {}",
+                                    error
+                                ),
+                                ToolGroup::Knowledge,
+                            )
+                            .to_mcp_result());
+                        }
+                    };
+                    let current_existing_set =
+                        current_existing.iter().copied().collect::<HashSet<_>>();
+                    let current_missing = validated_ids
+                        .iter()
+                        .copied()
+                        .filter(|id| !current_existing_set.contains(id))
+                        .collect::<Vec<_>>();
+
+                    let mut result = guided_error(
+                        ErrorCategory::ResourceNotFound,
+                        format!(
+                            "Knowledge chunk IDs changed before deletion completed: {}. No chunks were deleted.",
+                            format_chunk_id_list(&current_missing)
+                        ),
+                        ToolGroup::Knowledge,
+                    )
+                    .with_guidance(vec![
+                        "Another request modified these chunks during pruning.".to_string(),
+                        "Use search_knowledge to refresh chunk IDs.".to_string(),
+                        "Retry prune_knowledge with IDs copied from fresh search_knowledge results."
+                            .to_string(),
+                    ])
+                    .to_mcp_result();
+                    result.structured_content = Some(json!({
+                        "action": action,
+                        "requestedIds": target_ids,
+                        "normalizedIds": parsed_target_ids,
+                        "validatedIds": validated_ids,
+                        "missingIds": current_missing,
+                        "deletedIds": Vec::<i32>::new(),
+                    }));
+                    return Ok(result);
+                }
+                Err(error) => {
+                    return Ok(guided_error(
+                        ErrorCategory::DatabaseError,
+                        format!("Failed to delete requested knowledge chunks: {}", error),
+                        ToolGroup::Knowledge,
+                    )
+                    .to_mcp_result());
                 }
             }
 
             Ok(SuccessHint::new(
                 format!(
                     "Deleted knowledge chunks: {}.",
-                    format_chunk_id_list(&deleted_ids)
+                    format_chunk_id_list(&validated_ids)
                 ),
                 vec!["Use search_knowledge to confirm the remaining entries.".to_string()],
             )
             .to_mcp_result_with_data(Some(json!({
                 "action": action,
-                "deletedIds": deleted_ids,
+                "requestedIds": target_ids,
+                "normalizedIds": parsed_target_ids,
+                "deletedIds": validated_ids,
                 "deletedCount": validated_ids.len(),
             }))))
         }

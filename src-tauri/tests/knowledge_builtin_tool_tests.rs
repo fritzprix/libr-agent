@@ -48,7 +48,7 @@ async fn knowledge_prune_blocks_partial_delete_when_any_id_is_missing() {
         .call_tool(
             "prune_knowledge",
             json!({
-                "target_ids": [existing_chunk_id, missing_chunk_id],
+                "target_ids": [existing_chunk_id, existing_chunk_id, missing_chunk_id],
                 "action": "delete"
             }),
             None,
@@ -66,6 +66,10 @@ async fn knowledge_prune_blocks_partial_delete_when_any_id_is_missing() {
         .expect("structured content expected on validation failure");
     assert_eq!(
         structured["requestedIds"],
+        json!([existing_chunk_id, existing_chunk_id, missing_chunk_id])
+    );
+    assert_eq!(
+        structured["normalizedIds"],
         json!([existing_chunk_id, missing_chunk_id])
     );
     assert_eq!(structured["validatedIds"], json!([existing_chunk_id]));
@@ -118,6 +122,8 @@ async fn knowledge_prune_success_reports_deleted_ids_in_text_and_json() {
     let structured = result
         .structured_content
         .expect("structured content expected on success");
+    assert_eq!(structured["requestedIds"], json!([chunk_id]));
+    assert_eq!(structured["normalizedIds"], json!([chunk_id]));
     assert_eq!(structured["deletedIds"], json!([chunk_id]));
     assert_eq!(structured["deletedCount"], 1);
 
@@ -141,4 +147,41 @@ fn knowledge_not_found_guidance_uses_real_tool_names() {
     assert!(text.contains("explore_context"));
     assert!(!text.contains("searchKnowledge"));
     assert!(!text.contains("listKnowledge"));
+}
+
+#[tokio::test]
+async fn knowledge_repository_atomic_delete_rejects_partial_deletes() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteKnowledgeV2Repository::new(db.clone());
+    let assistant_id = "assistant-prune-atomic";
+
+    let existing_chunk_id = repo
+        .record_chunk(
+            assistant_id.to_string(),
+            "Knowledge chunk that should survive repository-level atomic delete failure."
+                .to_string(),
+            None,
+            Some("test".to_string()),
+            vec![0.24; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+    let missing_chunk_id = existing_chunk_id + 50_000;
+
+    let error = repo
+        .delete_chunks_atomic(&[existing_chunk_id, missing_chunk_id], assistant_id)
+        .await
+        .expect_err("atomic delete should fail when any chunk is missing");
+
+    assert!(
+        matches!(
+            error,
+            tauri_mcp_agent_lib::repositories::DbError::NotFound(_)
+        ),
+        "expected NotFound error, got: {error:?}"
+    );
+    assert!(
+        repo.get_chunk_detail(existing_chunk_id).await.is_ok(),
+        "existing chunk should remain because delete_chunks_atomic must not partially delete"
+    );
 }

@@ -39,13 +39,14 @@ fn list_tool() -> MCPTool {
                 ),
                 (
                     "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number.")),
+                    integer_prop_with_default(Some(1), None, 1, Some("Page number.")),
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop(
+                    integer_prop_with_default(
                         Some(1),
                         Some(100),
+                        20,
                         Some("Items per page."),
                     ),
                 ),
@@ -72,13 +73,19 @@ fn read_session_tool() -> MCPTool {
                 ),
                 (
                     "page".to_string(),
-                    integer_prop(Some(1), None, Some("Message list page number.")),
+                    integer_prop_with_default(
+                        Some(1),
+                        None,
+                        1,
+                        Some("Message list page number."),
+                    ),
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop(
+                    integer_prop_with_default(
                         Some(1),
                         Some(100),
+                        50,
                         Some("Messages per page."),
                     ),
                 ),
@@ -113,9 +120,10 @@ fn read_message_tool() -> MCPTool {
                 ),
                 (
                     "maxChars".to_string(),
-                    integer_prop(
+                    integer_prop_with_default(
                         Some(1),
                         Some(3000),
+                        3000,
                         Some("Characters to return from the rendered message content."),
                     ),
                 ),
@@ -177,11 +185,11 @@ fn search_tool() -> MCPTool {
                 ),
                 (
                     "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number.")),
+                    integer_prop_with_default(Some(1), None, 1, Some("Page number.")),
                 ),
                 (
                     "pageSize".to_string(),
-                    integer_prop(Some(1), Some(100), Some("Items per page.")),
+                    integer_prop_with_default(Some(1), Some(100), 20, Some("Items per page.")),
                 ),
             ],
             vec!["query".to_string()],
