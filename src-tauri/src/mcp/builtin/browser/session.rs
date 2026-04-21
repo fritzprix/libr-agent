@@ -1,3 +1,4 @@
+use crate::mcp::builtin::browser::content::BROWSER_CONTENT_STORE;
 use crate::mcp::builtin::browser::BrowserServer;
 use crate::mcp::builtin::error_guidance::{
     operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
@@ -38,6 +39,7 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
                 .map_err(|e| e.to_string())?;
             *lock = None;
         }
+        BROWSER_CONTENT_STORE.clear_session(&id);
 
         let hint = SuccessHint::new(
             "Browser session closed",
@@ -80,6 +82,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                 .write()
                 .map_err(|e| e.to_string())?;
             *lock = None;
+            BROWSER_CONTENT_STORE.clear_session(&id);
         }
     }
 

@@ -137,6 +137,11 @@ impl BrowserContentStore {
         self.store.get(session_id).map(|s| s.pages.len())
     }
 
+    /// Clear cached content for a specific session (call after navigation to prevent stale reads)
+    pub fn clear_session(&self, session_id: &str) {
+        self.store.remove(session_id);
+    }
+
     /// Clean up old sessions (called periodically)
     pub fn cleanup_old_sessions(&self, max_age_secs: u64) {
         let now = SystemTime::now()

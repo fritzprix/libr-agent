@@ -14,7 +14,8 @@ use tauri::{AppHandle, Manager};
 use tokio::task;
 
 // Global content store for browser extracted content (module-scoped)
-static BROWSER_CONTENT_STORE: Lazy<BrowserContentStore> = Lazy::new(BrowserContentStore::new);
+pub(crate) static BROWSER_CONTENT_STORE: Lazy<BrowserContentStore> =
+    Lazy::new(BrowserContentStore::new);
 
 /// Smart routing: if `page` arg is provided, reads from cache; otherwise extracts fresh content.
 pub async fn smart_content(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
@@ -131,7 +132,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     let mut response_text = if is_unchanged {
         // Return minimal response for unchanged content
         format!(
-            "[Content Unchanged]\nPage Title: {}\nURL: {}\n\nThe content of this page has not changed since the last extraction.\nYou can read the previously extracted content using content({{ page: 1 }}).\n\nIf you need to interact with the page, use listInteractable.",
+            "[Content Unchanged]\nPage Title: {}\nURL: {}\n\nThe content of this page has not changed since the last extraction.\nYou can read the previously extracted content using getPageContent({{ \"page\": 1 }}).\n\nIf you need to interact with the page, use listInteractable.",
             if page_title.is_empty() {
                 "N/A"
             } else {
@@ -221,7 +222,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Add pagination footer
     if !auto_merged && total_pages > 1 {
         response_text.push_str(&format!(
-            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use content({{ page: N }}) to read pages 2-{}.",
+            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use getPageContent({{ \"page\": N }}) to read pages 2-{}.",
             total_pages,
             total_pages
         ));
@@ -252,7 +253,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
         response_text,
         vec![
             "Use listInteractable to see interactive elements".to_string(),
-            "Use `click` to interact with the page".to_string(),
+            "Use clickElement to interact with the page".to_string(),
         ],
     );
 
@@ -278,6 +279,18 @@ pub async fn read_web_content(server: &BrowserServer, args: Value) -> Result<MCP
         .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
 
     let page = match args.get("page").and_then(|v| v.as_u64()) {
+        Some(0) => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "page must be a positive integer (minimum 1)",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use page: 1 to read the first page".to_string(),
+                "page: 0 is not valid (schema minimum is 1)".to_string(),
+            ])
+            .to_mcp_result())
+        }
         Some(p) => p as usize,
         Option::None => return Ok(missing_param_error("page", ToolGroup::Browser)),
     };

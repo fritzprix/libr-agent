@@ -21,13 +21,13 @@ mod tools;
 ///
 /// ## Basic Navigation Flow
 /// 1. `createSession(url?)` → create or replace the active browser session for this agent
-/// 2. `goto(url)` → navigate the active session to a new page
-/// 3. `content` → extract or read content from the current page
+/// 2. `navigateToUrl(url)` → navigate the active session to a new page
+/// 3. `getPageContent` → extract or read content from the current page
 ///
 /// ## Interaction Flow
 /// 1. `listInteractable` → find elements
-/// 2. `click(selector)` → interact
-/// 3. `content` → verify changes
+/// 2. `clickElement(selector)` → interact
+/// 3. `getPageContent` → verify changes
 ///
 /// ## Error Recovery
 /// - **Session expired**: call `createSession` again
@@ -251,24 +251,12 @@ impl BuiltinMCPServer for BrowserServer {
             "navigateForward" => navigation::navigate_forward(self, args).await,
             "getCurrentUrl" => navigation::get_current_url(self, args).await,
             "getPageTitle" => navigation::get_page_title(self, args).await,
-            "extractWebContent" => content::extract_web_content(self, args).await,
-            "readWebContent" => content::read_web_content(self, args).await,
+            "getPageContent" => content::smart_content(self, args).await,
             "clickElement" => interaction::click_element(self, args).await,
             "inputText" => interaction::input_text(self, args).await,
             "scrollPage" => interaction::scroll_page(self, args).await,
             "listInteractable" => interaction::list_interactable(self, args).await,
-            // Aliases (Playwright & UX Friendly)
-            "goto" => navigation::navigate_to_url(self, args).await,
-            "click" => interaction::click_element(self, args).await,
-            "fill" => interaction::input_text(self, args).await,
-            "type" => interaction::input_text(self, args).await,
-            "content" => content::smart_content(self, args).await,
-            "readPage" => content::read_web_content(self, args).await,
             "fetch" => content::fetch_url(self, args, session_id).await,
-            "back" => navigation::navigate_back(self, args).await,
-            "forward" => navigation::navigate_forward(self, args).await,
-            "scroll" => interaction::scroll_page(self, args).await,
-
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
         .or_else(|e| {

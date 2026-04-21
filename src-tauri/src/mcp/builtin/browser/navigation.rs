@@ -1,3 +1,4 @@
+use crate::mcp::builtin::browser::content::BROWSER_CONTENT_STORE;
 use crate::mcp::builtin::browser::interaction::create_rich_response;
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
@@ -91,8 +92,9 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
         }
     };
 
-    // Invalidate cache after navigation
+    // Invalidate state cache and content store after navigation
     server.invalidate_cache();
+    BROWSER_CONTENT_STORE.clear_session(&browser_session_id);
 
     // Return HTTP-error-specific recovery guidance when navigation signals a problem.
     // Only fall through to rich-response (title+URL page state) on genuine success.
@@ -201,8 +203,9 @@ pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPRe
         }
     };
 
-    // Invalidate cache after navigation
+    // Invalidate state cache and content store after navigation
     server.invalidate_cache();
+    BROWSER_CONTENT_STORE.clear_session(&browser_session_id);
 
     create_rich_response(&service, &browser_session_id, &result).await
 }
@@ -249,8 +252,9 @@ pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MC
         }
     };
 
-    // Invalidate cache after navigation
+    // Invalidate state cache and content store after navigation
     server.invalidate_cache();
+    BROWSER_CONTENT_STORE.clear_session(&browser_session_id);
 
     create_rich_response(&service, &browser_session_id, &result).await
 }
@@ -304,8 +308,8 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
     let hint = SuccessHint::new(
         result,
         vec![
-            "Use `content` to inspect the current page.".to_string(),
-            "Use `goto` only if you need to replace the current page in this same active session."
+            "Use getPageContent to inspect the current page.".to_string(),
+            "Use navigateToUrl only if you need to replace the current page in this same active session."
                 .to_string(),
         ],
     );
@@ -347,7 +351,9 @@ pub async fn get_page_title(server: &BrowserServer, _args: Value) -> Result<MCPR
 
     let hint = SuccessHint::new(
         result,
-        vec!["Extract full page content with `content` to see what's on this page".to_string()],
+        vec![
+            "Extract full page content with getPageContent to see what's on this page".to_string(),
+        ],
     );
     Ok(hint.to_mcp_result())
 }
