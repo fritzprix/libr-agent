@@ -65,7 +65,18 @@ impl BuiltinMCPServer for HistoryServer {
             "readSession" => handlers::read_session(self, args).await,
             "readMessage" => handlers::read_message(self, args).await,
             "search" => handlers::search_history(self, args, &caller_session_id).await,
-            _ => Err(format!("Unknown tool: {}", tool_name)),
+            _ => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Unknown history tool '{}'.", tool_name),
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "Use one of the available history tools: list, readSession, readMessage, or search."
+                        .to_string(),
+                ])
+                .to_mcp_result());
+            }
         };
 
         result.or_else(|e| {

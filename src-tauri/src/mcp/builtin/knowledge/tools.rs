@@ -6,7 +6,7 @@ pub fn record_knowledge_tool() -> MCPTool {
     MCPTool {
         name: "record_knowledge".to_string(),
         title: Some("Record Knowledge".to_string()),
-        description: "Save a knowledge entry to the local knowledge base. Prefer caller-supplied entities and relationships; local heuristic extraction only fills gaps when structured graph data is missing. Use concise entity names (recommended: natural-language names under 10 words).".to_string(),
+        description: "Save a knowledge entry to the local knowledge base. Prefer caller-supplied entities and relationships; heuristic extraction only fills gaps when structured graph data is missing.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -27,7 +27,7 @@ pub fn record_knowledge_tool() -> MCPTool {
                             vec![
                                 (
                                     "name".to_string(),
-                                    string_prop_required("Entity name as understood by the calling agent. Use a concise natural-language name (up to 10 words recommended)."),
+                                    string_prop_required("Entity name as understood by the calling agent. Use a concise natural-language name with 10 words or fewer."),
                                 ),
                                 (
                                     "entity_type".to_string(),
@@ -59,11 +59,11 @@ pub fn record_knowledge_tool() -> MCPTool {
                             vec![
                                 (
                                     "source".to_string(),
-                                    string_prop_required("Source entity name. Use the same concise entity naming style as entities[].name."),
+                                    string_prop_required("Source entity name. Match entities[].name when the entity is supplied explicitly."),
                                 ),
                                 (
                                     "target".to_string(),
-                                    string_prop_required("Target entity name. Use the same concise entity naming style as entities[].name."),
+                                    string_prop_required("Target entity name. Match entities[].name when the entity is supplied explicitly."),
                                 ),
                                 (
                                     "relation_type".to_string(),
@@ -122,7 +122,7 @@ pub fn search_knowledge_tool() -> MCPTool {
                         Some(1),
                         Some(50),
                         5,
-                        Some("Maximum number of results to return (default: 5)."),
+                        Some("Maximum number of results to return."),
                     ),
                 ),
                 (
@@ -130,7 +130,7 @@ pub fn search_knowledge_tool() -> MCPTool {
                     enum_prop(
                         vec!["keyword", "semantic", "hybrid"],
                         "hybrid",
-                        Some("Search mode. Defaults to 'hybrid'."),
+                        Some("'keyword' uses FTS, 'semantic' uses embeddings, and 'hybrid' fuses both rankings."),
                     ),
                 ),
             ],
@@ -162,7 +162,7 @@ pub fn explore_context_tool() -> MCPTool {
                         Some(1),
                         Some(3),
                         1,
-                        Some("The depth of the graph traversal. Defaults to 1."),
+                        Some("Number of relationship hops to traverse from the root entity."),
                     ),
                 ),
             ],
@@ -186,14 +186,14 @@ pub fn prune_knowledge_tool() -> MCPTool {
                     "target_ids".to_string(),
                     array_schema(
                         integer_prop(None, None, None),
-                        Some("List of knowledge chunk IDs to target."),
+                        Some("Knowledge chunk IDs to delete. Copy these IDs from search_knowledge results."),
                     ),
                 ),
                 (
                     "action".to_string(),
                     enum_prop_required(
                         vec!["delete"],
-                        "The action to perform. Currently only 'delete' is supported.",
+                        "Delete the targeted knowledge chunks.",
                     ),
                 ),
             ],

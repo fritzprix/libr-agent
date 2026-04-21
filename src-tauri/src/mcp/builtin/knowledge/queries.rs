@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 /// Search knowledge using hybrid approach
 pub async fn search_knowledge(
-    _server: &KnowledgeServer,
+    server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -63,7 +63,7 @@ pub async fn search_knowledge(
         None
     };
 
-    let repo = crate::state::get_knowledge_v2_repository();
+    let repo = server.repository();
     let text_query = if matches!(mode, "keyword" | "hybrid") {
         Some(query)
     } else {
@@ -123,7 +123,7 @@ pub async fn search_knowledge(
 
 /// Explore graph context
 pub async fn explore_context(
-    _server: &KnowledgeServer,
+    server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -134,7 +134,7 @@ pub async fn explore_context(
 
     let depth = args.get("depth").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
 
-    let repo = crate::state::get_knowledge_v2_repository();
+    let repo = server.repository();
     match repo
         .get_graph_context(assistant_id, entity_name, depth)
         .await

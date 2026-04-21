@@ -7,13 +7,13 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::KnowledgeV2Repository;
+use crate::repositories::{DbError, KnowledgeV2Repository};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Record new knowledge into the local vector DB and graph.
 pub async fn record_knowledge(
-    _server: &KnowledgeServer,
+    server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -132,7 +132,7 @@ pub async fn record_knowledge(
     };
 
     // 2. Save to DB via Repository
-    let repo = crate::state::get_knowledge_v2_repository();
+    let repo = server.repository();
     let tags_json = tags.as_ref().map(serde_json::to_string).transpose();
     let tags_json = match tags_json {
         Ok(serialized_tags) => serialized_tags,
@@ -170,7 +170,7 @@ pub async fn record_knowledge(
                 || !extraction_plan.relationships.is_empty()
             {
                 match persist_extraction_plan(
-                    repo,
+                    &repo,
                     assistant_id,
                     chunk_id,
                     &extraction_plan,
@@ -338,7 +338,7 @@ async fn persist_extraction_plan(
 
 /// Prune or manage existing knowledge.
 pub async fn prune_knowledge(
-    _server: &KnowledgeServer,
+    server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -352,27 +352,89 @@ pub async fn prune_knowledge(
         None => return Ok(missing_param_error("target_ids", ToolGroup::Knowledge)),
     };
 
-    let repo = crate::state::get_knowledge_v2_repository();
-    let mut deleted_count = 0;
+    let parsed_target_ids = match parse_prune_target_ids(target_ids) {
+        Ok(ids) => ids,
+        Err(result) => return Ok(result),
+    };
+
+    let repo = server.repository();
 
     match action {
         "delete" => {
-            for id_val in target_ids {
-                if let Some(id) = id_val.as_i64() {
-                    if repo.delete_chunk(id as i32, assistant_id).await.is_ok() {
-                        deleted_count += 1;
+            let mut validated_ids = Vec::with_capacity(parsed_target_ids.len());
+            let mut missing_ids = Vec::new();
+
+            for id in &parsed_target_ids {
+                match repo.get_chunk_detail(*id).await {
+                    Ok(detail) if detail.chunk.assistant_id == assistant_id => {
+                        validated_ids.push(*id);
+                    }
+                    Ok(_) | Err(DbError::NotFound(_)) | Err(DbError::ResourceNotFound(_)) => {
+                        missing_ids.push(*id);
+                    }
+                    Err(error) => {
+                        return Ok(guided_error(
+                            ErrorCategory::DatabaseError,
+                            format!("Failed to validate knowledge chunk {}: {}", id, error),
+                            ToolGroup::Knowledge,
+                        )
+                        .to_mcp_result());
                     }
                 }
             }
+
+            if !missing_ids.is_empty() {
+                let mut result = guided_error(
+                    ErrorCategory::ResourceNotFound,
+                    format!(
+                        "Knowledge chunk IDs not found for this assistant: {}",
+                        format_chunk_id_list(&missing_ids)
+                    ),
+                    ToolGroup::Knowledge,
+                )
+                .with_guidance(vec![
+                    "Use search_knowledge to find valid chunk IDs.".to_string(),
+                    "Retry prune_knowledge with IDs copied from search_knowledge results."
+                        .to_string(),
+                    "Knowledge chunk IDs are assistant-scoped.".to_string(),
+                ])
+                .to_mcp_result();
+                result.structured_content = Some(json!({
+                    "action": action,
+                    "requestedIds": parsed_target_ids,
+                    "validatedIds": validated_ids,
+                    "missingIds": missing_ids,
+                }));
+                return Ok(result);
+            }
+
+            let mut deleted_ids = Vec::with_capacity(validated_ids.len());
+            for id in &validated_ids {
+                match repo.delete_chunk(*id, assistant_id).await {
+                    Ok(()) => deleted_ids.push(*id),
+                    Err(error) => {
+                        return Ok(guided_error(
+                            ErrorCategory::DatabaseError,
+                            format!("Failed to delete knowledge chunk {}: {}", id, error),
+                            ToolGroup::Knowledge,
+                        )
+                        .to_mcp_result());
+                    }
+                }
+            }
+
             Ok(SuccessHint::new(
                 format!(
-                    "Deleted {}/{} knowledge chunks.",
-                    deleted_count,
-                    target_ids.len()
+                    "Deleted knowledge chunks: {}.",
+                    format_chunk_id_list(&deleted_ids)
                 ),
-                vec![],
+                vec!["Use search_knowledge to confirm the remaining entries.".to_string()],
             )
-            .to_mcp_result_with_data(Some(json!({ "deleted": deleted_count }))))
+            .to_mcp_result_with_data(Some(json!({
+                "action": action,
+                "deletedIds": deleted_ids,
+                "deletedCount": validated_ids.len(),
+            }))))
         }
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
@@ -384,4 +446,66 @@ pub async fn prune_knowledge(
         ])
         .to_mcp_result()),
     }
+}
+
+fn parse_prune_target_ids(target_ids: &[Value]) -> Result<Vec<i32>, MCPResult> {
+    if target_ids.is_empty() {
+        return Err(guided_error(
+            ErrorCategory::InvalidInput,
+            "Parameter 'target_ids' must contain at least one knowledge chunk ID.".to_string(),
+            ToolGroup::Knowledge,
+        )
+        .with_guidance(vec![
+            "Use search_knowledge to find chunk IDs before pruning.".to_string(),
+            "Provide target_ids as an array of integers.".to_string(),
+        ])
+        .to_mcp_result());
+    }
+
+    let mut parsed_ids = Vec::with_capacity(target_ids.len());
+    let mut seen_ids = HashSet::new();
+
+    for value in target_ids {
+        let Some(raw_id) = value.as_i64() else {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                "Parameter 'target_ids' must contain only integer chunk IDs.".to_string(),
+                ToolGroup::Knowledge,
+            )
+            .with_guidance(vec![
+                "Use search_knowledge to copy valid chunk IDs.".to_string(),
+                "Remove non-integer values from target_ids and retry prune_knowledge.".to_string(),
+            ])
+            .to_mcp_result());
+        };
+
+        let Ok(chunk_id) = i32::try_from(raw_id) else {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Knowledge chunk ID '{}' is outside the supported integer range.",
+                    raw_id
+                ),
+                ToolGroup::Knowledge,
+            )
+            .with_guidance(vec![
+                "Copy chunk IDs directly from search_knowledge results.".to_string(),
+                "Retry prune_knowledge with valid integer IDs.".to_string(),
+            ])
+            .to_mcp_result());
+        };
+
+        if seen_ids.insert(chunk_id) {
+            parsed_ids.push(chunk_id);
+        }
+    }
+
+    Ok(parsed_ids)
+}
+
+fn format_chunk_id_list(ids: &[i32]) -> String {
+    ids.iter()
+        .map(i32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
