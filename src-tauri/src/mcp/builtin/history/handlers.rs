@@ -666,14 +666,15 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
         lines.push("| Name | Session ID | Status | Messages | Updated At |".to_string());
         lines.push("|---|---|---|---|---|".to_string());
         for session in &page.items {
-            let name = session.name.as_deref().unwrap_or("Unnamed session").replace('|', "\\|").replace('\n', " ");
+            let name = session
+                .name
+                .as_deref()
+                .unwrap_or("Unnamed session")
+                .replace('|', "\\|")
+                .replace('\n', " ");
             lines.push(format!(
                 "| {} | `{}` | {} | {} | {} |",
-                name,
-                session.session_id,
-                session.status,
-                session.message_count,
-                session.updated_at
+                name, session.session_id, session.status, session.message_count, session.updated_at
             ));
         }
     }
@@ -714,7 +715,10 @@ fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
         lines.push("| Message ID | Role | Created At | Chars | Preview |".to_string());
         lines.push("|---|---|---|---|---|".to_string());
         for message in &response.messages.items {
-            let preview = message.content_preview.replace('|', "\\|").replace('\n', " ");
+            let preview = message
+                .content_preview
+                .replace('|', "\\|")
+                .replace('\n', " ");
             lines.push(format!(
                 "| `{}` | {} | {} | {} | {} |",
                 message.message_id,
@@ -765,7 +769,9 @@ fn render_search_text(page: &Page<HistorySearchMatch>, caller_session_id: &str) 
         lines.push("No matches found for the requested filters.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("| Session ID | Locality | Message ID | Role | Score | Chars | Snippet |".to_string());
+        lines.push(
+            "| Session ID | Locality | Message ID | Role | Score | Chars | Snippet |".to_string(),
+        );
         lines.push("|---|---|---|---|---|---|---|".to_string());
         for item in &page.items {
             let locality = if item.session_id == caller_session_id {
