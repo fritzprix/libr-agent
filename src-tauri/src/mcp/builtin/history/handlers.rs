@@ -663,15 +663,18 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
         lines.push("No sessions matched the filters.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("Sessions:".to_string());
+        lines.push("| Name | Session ID | Status | Messages | Updated At |".to_string());
+        lines.push("|---|---|---|---|---|".to_string());
         for session in &page.items {
+            let name = session
+                .name
+                .as_deref()
+                .unwrap_or("Unnamed session")
+                .replace('|', "\\|")
+                .replace('\n', " ");
             lines.push(format!(
-                "- {} (ID: {}) status={} messages={} updatedAt={}",
-                session.name.as_deref().unwrap_or("Unnamed session"),
-                session.session_id,
-                session.status,
-                session.message_count,
-                session.updated_at
+                "| {} | `{}` | {} | {} | {} |",
+                name, session.session_id, session.status, session.message_count, session.updated_at
             ));
         }
     }
@@ -682,7 +685,7 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
 fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
     let mut lines = vec![
         format!(
-            "Session {} ({}) has {} message(s). Showing page {} of {}.",
+            "Session {} (`{}`) has {} message(s). Showing page {} of {}.",
             response
                 .session
                 .name
@@ -709,15 +712,20 @@ fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
         lines.push("This session has no messages on the requested page.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("Messages:".to_string());
+        lines.push("| Message ID | Role | Created At | Chars | Preview |".to_string());
+        lines.push("|---|---|---|---|---|".to_string());
         for message in &response.messages.items {
+            let preview = message
+                .content_preview
+                .replace('|', "\\|")
+                .replace('\n', " ");
             lines.push(format!(
-                "- {} [{}] createdAt={} chars={}\n  Preview: {}",
+                "| `{}` | {} | {} | {} | {} |",
                 message.message_id,
                 message.role,
                 message.created_at,
                 message.content_length,
-                message.content_preview.replace('\n', " ")
+                preview
             ));
         }
     }
@@ -761,22 +769,26 @@ fn render_search_text(page: &Page<HistorySearchMatch>, caller_session_id: &str) 
         lines.push("No matches found for the requested filters.".to_string());
     } else {
         lines.push(String::new());
-        lines.push("Matches:".to_string());
+        lines.push(
+            "| Session ID | Locality | Message ID | Role | Score | Chars | Snippet |".to_string(),
+        );
+        lines.push("|---|---|---|---|---|---|---|".to_string());
         for item in &page.items {
             let locality = if item.session_id == caller_session_id {
                 "current-session"
             } else {
                 "other-session"
             };
+            let snippet = item.snippet.replace('|', "\\|").replace('\n', " ");
             lines.push(format!(
-                "- session={} ({}) message={} [{}] score={:.3} chars={}\n  Snippet: {}",
+                "| `{}` | {} | `{}` | {} | {:.3} | {} | {} |",
                 item.session_id,
                 locality,
                 item.message_id,
                 item.role,
                 item.score,
                 item.content_length,
-                item.snippet.replace('\n', " ")
+                snippet
             ));
         }
     }
