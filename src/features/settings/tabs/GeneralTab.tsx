@@ -58,12 +58,18 @@ function GeneralTabComponent({
                 onDisplaySettingsChange('fontFamily', e.target.value)
               }
             >
-              <option value="Pretendard">Pretendard (Standard Sans)</option>
-              <option value="Inter">Inter (Clean UI Sans)</option>
-              <option value="NanumSquare Neo">
-                NanumSquare Neo (Modern Geometric)
+              <option value="Pretendard">
+                {t('settings.display.fontFamilyOptions.pretendard', 'Pretendard (Standard Sans)')}
               </option>
-              <option value="D2Coding">D2Coding (Developer Mono)</option>
+              <option value="Inter">
+                {t('settings.display.fontFamilyOptions.inter', 'Inter (Clean UI Sans)')}
+              </option>
+              <option value="NanumSquare Neo">
+                {t('settings.display.fontFamilyOptions.nanumSquareNeo', 'NanumSquare Neo (Modern Geometric)')}
+              </option>
+              <option value="D2Coding">
+                {t('settings.display.fontFamilyOptions.d2coding', 'D2Coding (Developer Mono)')}
+              </option>
             </select>
             <p className="text-xs text-muted-foreground mt-1">
               {t(
