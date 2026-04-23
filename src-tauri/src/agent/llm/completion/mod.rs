@@ -12,7 +12,7 @@ pub use context::{
 };
 pub use request::{
     build_compact_context_selection_options, build_compact_summary_text,
-    merge_consecutive_user_messages, request_llm_completion,
+    merge_consecutive_user_messages, request_llm_completion, resolve_preserved_calibration_ratio,
 };
 
 // Crate-internal re-exports for intra-module visibility

@@ -9,7 +9,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isAbortError } from '../types';
+import {
+  isAbortError,
+  isSupersededRequestError,
+  isWorkflowCancelledError,
+} from '../types';
 
 // ---------------------------------------------------------------------------
 // isAbortError utility
@@ -62,6 +66,31 @@ describe('isAbortError', () => {
 
   it('returns false for a non-null primitive (number)', () => {
     expect(isAbortError(42)).toBe(false);
+  });
+});
+
+describe('request lifecycle helper errors', () => {
+  it('returns true for Request superseded', () => {
+    expect(isSupersededRequestError(new Error('Request superseded'))).toBe(true);
+  });
+
+  it('returns false for non-superseded error', () => {
+    expect(isSupersededRequestError(new Error('Network error'))).toBe(false);
+  });
+
+  it('returns true for workflow cancelled shaped errors', () => {
+    expect(isWorkflowCancelledError(new Error('Workflow was cancelled'))).toBe(
+      true,
+    );
+    expect(
+      isWorkflowCancelledError({ displayMessage: 'LLM response superseded' }),
+    ).toBe(true);
+  });
+
+  it('returns false for unrelated workflow errors', () => {
+    expect(
+      isWorkflowCancelledError(new Error('Workflow failed unexpectedly')),
+    ).toBe(false);
   });
 });
 
@@ -145,7 +174,11 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
     error: unknown,
     sessionId: string,
   ) => {
-    if (isAbortError(error)) {
+    if (
+      isAbortError(error) ||
+      isSupersededRequestError(error) ||
+      isWorkflowCancelledError(error)
+    ) {
       return; // ← correct: do NOT call handleLLMError / report to Rust
     }
     await mockHandleLLMError(sessionId, String(error));
@@ -168,6 +201,18 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
     const err = new Error('API quota exceeded');
     await handleCatchInListener(err, 'session-1');
     expect(mockHandleLLMError).toHaveBeenCalledWith('session-1', 'Error: API quota exceeded');
+  });
+
+  it('does NOT call handleLLMError when request was superseded', async () => {
+    const err = new Error('Request superseded');
+    await handleCatchInListener(err, 'session-3');
+    expect(mockHandleLLMError).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call handleLLMError for workflow cancelled backend rejection', async () => {
+    const err = new Error('Workflow was cancelled');
+    await handleCatchInListener(err, 'session-4');
+    expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 });
 

@@ -36,6 +36,11 @@ describe('date-utils', () => {
       writable: true,
       configurable: true,
     });
+
+    // Warm ICU-backed formatter initialization once so the first assertion
+    // doesn't pay the full cold-start cost on slower Windows CI runners.
+    new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+    new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short' });
   });
 
   afterAll(() => {
@@ -52,21 +57,25 @@ describe('date-utils', () => {
   });
 
   describe('deterministic cache key (getDateFormatter)', () => {
-    it('returns the same formatter instance for options with different key insertion orders', () => {
-      const options1: Intl.DateTimeFormatOptions = {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      };
-      const options2: Intl.DateTimeFormatOptions = {
-        day: 'numeric',
-        year: 'numeric',
-        month: 'short',
-      };
-      const formatter1 = getDateFormatter('en', options1);
-      const formatter2 = getDateFormatter('en', options2);
-      expect(formatter1).toBe(formatter2);
-    });
+    it(
+      'returns the same formatter instance for options with different key insertion orders',
+      () => {
+        const options1: Intl.DateTimeFormatOptions = {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        };
+        const options2: Intl.DateTimeFormatOptions = {
+          day: 'numeric',
+          year: 'numeric',
+          month: 'short',
+        };
+        const formatter1 = getDateFormatter('en', options1);
+        const formatter2 = getDateFormatter('en', options2);
+        expect(formatter1).toBe(formatter2);
+      },
+      15000,
+    );
   });
 
   describe('formatRelativeTime', () => {

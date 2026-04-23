@@ -30,6 +30,7 @@ import {
   applyServiceRuntimeConfig,
   buildServiceRuntimeConfig,
 } from './service-runtime-config';
+import { isSupersededRequestError } from './types';
 
 const logger = getLogger('useExecuteCompletion');
 
@@ -53,7 +54,6 @@ function createExecutionError(
 
 interface UseExecuteCompletionProps {
   settingsRef: React.MutableRefObject<Settings>;
-  streamingMessages: Map<string, Partial<Message>>;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
@@ -62,7 +62,6 @@ interface UseExecuteCompletionProps {
 
 export function useExecuteCompletion({
   settingsRef,
-  streamingMessages,
   setStreamingMessages,
   updateSessionStatus,
 }: UseExecuteCompletionProps) {
@@ -76,6 +75,8 @@ export function useExecuteCompletion({
   const timeoutsRef = useRef<Map<string, number>>(new Map());
   // Track last streaming UI update time per session (throttle to ~20fps)
   const lastStreamingUpdateRef = useRef<Map<string, number>>(new Map());
+  // Track the latest request identity per session to suppress stale stream updates/results
+  const activeRequestIdsRef = useRef<Map<string, string>>(new Map());
 
   // Context window usage per session for gauge display
 
@@ -92,12 +93,20 @@ export function useExecuteCompletion({
 
       activeServicesRef.current.forEach((svc) => svc.dispose());
       activeServicesRef.current.clear();
+      activeRequestIdsRef.current.clear();
     };
   }, []);
+
+  const isCurrentRequest = useCallback(
+    (sessionId: string, responseMessageId: string) =>
+      activeRequestIdsRef.current.get(sessionId) === responseMessageId,
+    [],
+  );
 
   const executeCompletionRequest = useCallback(
     async (
       sessionId: string,
+      responseMessageId: string,
       messages: Message[],
       model: string,
       provider: string,
@@ -129,6 +138,12 @@ export function useExecuteCompletion({
       if (previousService) {
         previousService.dispose();
       }
+      const previousTimeoutId = timeoutsRef.current.get(sessionId);
+      if (previousTimeoutId) {
+        clearTimeout(previousTimeoutId);
+        timeoutsRef.current.delete(sessionId);
+      }
+      activeRequestIdsRef.current.set(sessionId, responseMessageId);
 
       // Create abort controller for this request
       const abortController = new AbortController();
@@ -151,9 +166,8 @@ export function useExecuteCompletion({
       activeServicesRef.current.set(sessionId, service);
 
       // Get existing streaming message (already set by event listener)
-      const existingStreamingMessage = streamingMessages.get(sessionId);
-      const streamingMessage: Partial<Message> = existingStreamingMessage || {
-        id: `msg_${Date.now()}`,
+      const streamingMessage: Partial<Message> = {
+        id: responseMessageId,
         sessionId,
         threadId: sessionId,
         role: 'assistant',
@@ -193,7 +207,7 @@ export function useExecuteCompletion({
         setStreamingMessages((prev) => {
           const next = new Map(prev);
           next.set(sessionId, {
-            id: `msg_${Date.now()}`,
+            id: responseMessageId,
             sessionId,
             threadId: sessionId,
             role: 'assistant',
@@ -237,6 +251,14 @@ export function useExecuteCompletion({
         });
 
         for await (const rawChunk of streamGenerator) {
+          if (!isCurrentRequest(sessionId, responseMessageId)) {
+            logger.info('Dropping stream for superseded request', {
+              sessionId,
+              responseMessageId,
+            });
+            throw new Error('Request superseded');
+          }
+
           if (firstChunkTime === undefined) {
             firstChunkTime = performance.now();
           }
@@ -388,6 +410,9 @@ export function useExecuteCompletion({
           if (hasToolCallUpdate || nowMs - lastUpdateMs >= 50) {
             lastStreamingUpdateRef.current.set(sessionId, nowMs);
             setStreamingMessages((prev) => {
+              if (!isCurrentRequest(sessionId, responseMessageId)) {
+                return prev;
+              }
               const next = new Map(prev);
               const toolCalls: ToolCall[] = content
                 .filter((c) => c.type === 'tool_call')
@@ -421,6 +446,9 @@ export function useExecuteCompletion({
         // Always flush final streaming state after loop ends
         lastStreamingUpdateRef.current.delete(sessionId);
         setStreamingMessages((prev) => {
+          if (!isCurrentRequest(sessionId, responseMessageId)) {
+            return prev;
+          }
           const next = new Map(prev);
           const toolCalls: ToolCall[] = content
             .filter((c) => c.type === 'tool_call')
@@ -487,7 +515,7 @@ export function useExecuteCompletion({
           .join('\n');
 
         const finalMessage: Message = {
-          id: streamingMessage.id ?? `msg_${Date.now()}`,
+          id: responseMessageId,
           sessionId,
           threadId: sessionId,
           role: 'assistant',
@@ -567,6 +595,9 @@ export function useExecuteCompletion({
 
         // 1. Update with isStreaming: false IMMEDIATELY
         setStreamingMessages((prev) => {
+          if (!isCurrentRequest(sessionId, responseMessageId)) {
+            return prev;
+          }
           const next = new Map(prev);
           next.set(sessionId, finalMessage);
           return next;
@@ -575,6 +606,9 @@ export function useExecuteCompletion({
         // 2. Schedule cleanup with 500ms delay to allow backend event to arrive
         const timeoutId = window.setTimeout(() => {
           setStreamingMessages((prev) => {
+            if (!isCurrentRequest(sessionId, responseMessageId)) {
+              return prev;
+            }
             const next = new Map(prev);
             // Only delete if it's still the same message (same ID)
             const current = next.get(sessionId);
@@ -589,6 +623,9 @@ export function useExecuteCompletion({
 
         updateSessionStatus(sessionId, 'idle');
 
+        if (activeRequestIdsRef.current.get(sessionId) === responseMessageId) {
+          activeRequestIdsRef.current.delete(sessionId);
+        }
         if (abortControllersRef.current.get(sessionId) === abortController) {
           abortControllersRef.current.delete(sessionId);
         }
@@ -599,17 +636,23 @@ export function useExecuteCompletion({
         return finalMessage;
       } catch (error) {
         const isAborted = isAbortError(error);
+        const isSuperseded = isSupersededRequestError(error);
 
-        if (isAborted) {
-          logger.info('Completion request was aborted by cancellation', {
+        if (isAborted || isSuperseded) {
+          logger.info('Completion request ended without surfacing an error', {
             sessionId,
+            responseMessageId,
+            reason: isSuperseded ? 'superseded' : 'aborted',
           });
         } else {
           logger.error('Completion request failed', error);
         }
 
-        if (abortControllersRef.current.get(sessionId) === abortController) {
-          updateSessionStatus(sessionId, isAborted ? 'idle' : 'error');
+        if (isCurrentRequest(sessionId, responseMessageId)) {
+          updateSessionStatus(
+            sessionId,
+            isAborted || isSuperseded ? 'idle' : 'error',
+          );
 
           setStreamingMessages((prev) => {
             const next = new Map(prev);
@@ -624,6 +667,7 @@ export function useExecuteCompletion({
           }
 
           abortControllersRef.current.delete(sessionId);
+          activeRequestIdsRef.current.delete(sessionId);
         }
         if (activeServicesRef.current.get(sessionId) === service) {
           activeServicesRef.current.delete(sessionId);
@@ -632,7 +676,7 @@ export function useExecuteCompletion({
         throw error;
       }
     },
-    [updateSessionStatus, settingsRef, streamingMessages, setStreamingMessages],
+    [isCurrentRequest, updateSessionStatus, settingsRef, setStreamingMessages],
   );
 
   const cancelCompletionRequest = useCallback((sessionId: string) => {
