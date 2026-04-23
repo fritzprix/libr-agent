@@ -14,6 +14,7 @@ pub struct SelectionOptions {
     pub max_messages: Option<usize>,
     pub max_tool_calls_per_message: Option<usize>,
     pub pin_first_user_message: bool,
+    pub fallback_calibration_ratio: Option<f64>,
 }
 
 impl Default for SelectionOptions {
@@ -24,6 +25,7 @@ impl Default for SelectionOptions {
             max_messages: None,
             max_tool_calls_per_message: None,
             pin_first_user_message: true,
+            fallback_calibration_ratio: None,
         }
     }
 }
@@ -32,6 +34,26 @@ impl Default for SelectionOptions {
 #[derive(Debug)]
 pub struct SelectedContext {
     pub messages: Vec<Message>,
+}
+
+const CONTEXT_FIT_TRUNCATION_NOTICE: &str = "\n\n...[truncated for context fit]...\n\n";
+const CONTEXT_FIT_TRUNCATION_SCALES: [f64; 6] = [0.5, 0.35, 0.25, 0.15, 0.1, 0.05];
+const MIN_CONTEXT_FIT_SIDE_CHARS: usize = 48;
+
+fn provider_requires_tool_chain_cleanup(provider_id: &str) -> bool {
+    ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+}
+
+fn resolve_calibration_ratio(
+    messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+    fallback_calibration_ratio: Option<f64>,
+) -> f64 {
+    token_utils::try_derive_bpe_calibration_ratio(messages, system_prompt_tokens, tools_tokens)
+        .or(fallback_calibration_ratio)
+        .filter(|ratio| ratio.is_finite() && *ratio > 0.0)
+        .unwrap_or(1.0)
 }
 
 /// Calculates the split index for compaction.
@@ -307,6 +329,7 @@ pub fn select_messages_within_context(
     let max_tool_calls = options
         .and_then(|o| o.max_tool_calls_per_message)
         .unwrap_or(4);
+    let fallback_calibration_ratio = options.and_then(|o| o.fallback_calibration_ratio);
     let batched_messages = batch_tool_calls_in_messages(messages, max_tool_calls);
 
     let context_window = model_info.map(|m| m.context_window).unwrap_or(128_000);
@@ -342,10 +365,11 @@ pub fn select_messages_within_context(
         }
     }
 
-    let calibration_ratio = token_utils::derive_bpe_calibration_ratio(
+    let calibration_ratio = resolve_calibration_ratio(
         &batched_messages,
         system_prompt_tokens,
         tools_tokens,
+        fallback_calibration_ratio,
     );
 
     log::debug!(
@@ -373,7 +397,7 @@ pub fn select_messages_within_context(
         let calibrated_tokens = (tokens as f64 * calibration_ratio).ceil() as usize;
 
         if total_tokens + calibrated_tokens > token_limit {
-            if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id) {
+            if provider_requires_tool_chain_cleanup(provider_id) {
                 let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
                 return build_selected_with_optional_pinned(
                     pinned_message.clone(),
@@ -396,7 +420,7 @@ pub fn select_messages_within_context(
                 if selected.is_empty() {
                     selected.push_front(msg.clone());
                 }
-                if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id) {
+                if provider_requires_tool_chain_cleanup(provider_id) {
                     let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
                     return build_selected_with_optional_pinned(
                         pinned_message.clone(),
@@ -414,8 +438,7 @@ pub fn select_messages_within_context(
     }
 
     let final_selected = Vec::from(selected);
-    let adjusted = if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
-    {
+    let adjusted = if provider_requires_tool_chain_cleanup(provider_id) {
         remove_incomplete_tool_chains(final_selected)
     } else {
         final_selected
@@ -427,6 +450,150 @@ pub fn select_messages_within_context(
         pinned_message_budget,
         adjusted,
     )
+}
+
+pub fn trim_messages_to_fit_conservative_limit(
+    messages: &[Message],
+    provider_id: &str,
+    safe_input_token_limit: usize,
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+    fallback_calibration_ratio: Option<f64>,
+) -> Vec<Message> {
+    let mut trimmed = messages.to_vec();
+
+    while !trimmed.is_empty() {
+        let conservative_total = token_utils::calculate_conservative_preflight_prompt_tokens(
+            &trimmed,
+            system_prompt_tokens,
+            tools_tokens,
+            fallback_calibration_ratio,
+        );
+
+        if conservative_total < safe_input_token_limit {
+            break;
+        }
+
+        if trimmed.len() == 1 {
+            break;
+        }
+
+        trimmed.remove(0);
+
+        if provider_requires_tool_chain_cleanup(provider_id) {
+            trimmed = remove_incomplete_tool_chains(trimmed);
+        }
+    }
+
+    trimmed
+}
+
+fn can_truncate_message_for_context_fit(message: &Message) -> bool {
+    matches!(message.role.as_str(), "user" | "tool")
+        && message.content.iter().any(|part| {
+            matches!(
+                part,
+                crate::mcp::types::MCPContent::Text { text, .. } if !text.trim().is_empty()
+            )
+        })
+}
+
+fn truncate_text_middle(text: &str, keep_ratio: f64) -> Option<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let total_chars = chars.len();
+    let notice_chars = CONTEXT_FIT_TRUNCATION_NOTICE.chars().count();
+    let requested_chars = ((total_chars as f64) * keep_ratio).floor() as usize;
+    let min_visible_chars = MIN_CONTEXT_FIT_SIDE_CHARS.saturating_mul(2);
+    let visible_chars = requested_chars.max(min_visible_chars).min(total_chars);
+
+    if total_chars <= visible_chars.saturating_add(notice_chars) {
+        return None;
+    }
+
+    let head_chars = visible_chars / 2;
+    let tail_chars = visible_chars.saturating_sub(head_chars);
+    let head: String = chars.iter().take(head_chars).collect();
+    let tail_start = total_chars.saturating_sub(tail_chars);
+    let tail: String = chars.iter().skip(tail_start).collect();
+
+    Some(format!("{}{}{}", head, CONTEXT_FIT_TRUNCATION_NOTICE, tail))
+}
+
+fn truncate_message_for_context_fit(message: &Message, keep_ratio: f64) -> Option<Message> {
+    if !can_truncate_message_for_context_fit(message) {
+        return None;
+    }
+
+    let mut truncated_message = message.clone();
+    let mut changed = false;
+
+    truncated_message.content = message
+        .content
+        .iter()
+        .map(|part| match part {
+            crate::mcp::types::MCPContent::Text { text, is_error } => {
+                if let Some(truncated_text) = truncate_text_middle(text, keep_ratio) {
+                    changed = true;
+                    crate::mcp::types::MCPContent::Text {
+                        text: truncated_text,
+                        is_error: *is_error,
+                    }
+                } else {
+                    part.clone()
+                }
+            }
+            _ => part.clone(),
+        })
+        .collect();
+
+    changed.then_some(truncated_message)
+}
+
+pub fn truncate_single_oversized_message_to_fit_conservative_limit(
+    messages: &[Message],
+    safe_input_token_limit: usize,
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+    fallback_calibration_ratio: Option<f64>,
+) -> Vec<Message> {
+    if messages.len() != 1 {
+        return messages.to_vec();
+    }
+
+    let original_message = &messages[0];
+    if !can_truncate_message_for_context_fit(original_message) {
+        return messages.to_vec();
+    }
+
+    let mut best_candidate = messages.to_vec();
+
+    for keep_ratio in CONTEXT_FIT_TRUNCATION_SCALES {
+        let Some(candidate) = truncate_message_for_context_fit(original_message, keep_ratio) else {
+            continue;
+        };
+        let candidate_messages = vec![candidate];
+        let conservative_total = token_utils::calculate_conservative_preflight_prompt_tokens(
+            &candidate_messages,
+            system_prompt_tokens,
+            tools_tokens,
+            fallback_calibration_ratio,
+        );
+
+        log::info!(
+            "✂️ Truncated oversized single message for context fit: role={}, keep_ratio={:.2}, conservative_total={}, limit={}",
+            original_message.role,
+            keep_ratio,
+            conservative_total,
+            safe_input_token_limit
+        );
+
+        best_candidate = candidate_messages;
+        if conservative_total < safe_input_token_limit {
+            break;
+        }
+    }
+
+    best_candidate
 }
 
 fn prepend_pinned_message(pinned_msg: Message, mut selected_msgs: Vec<Message>) -> Vec<Message> {

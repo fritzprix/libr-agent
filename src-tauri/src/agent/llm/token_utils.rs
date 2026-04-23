@@ -93,6 +93,14 @@ fn get_prompt_anchor_ratio(
     Some((anchor_index, prompt_tokens, ratio))
 }
 
+fn normalize_calibration_ratio(ratio: f64) -> Option<f64> {
+    if ratio.is_finite() && ratio > 0.0 {
+        Some(ratio)
+    } else {
+        None
+    }
+}
+
 /// Estimates the token count for a given message using BPE or character fallback.
 /// Translates `estimateTokensBPE` from TS.
 pub fn estimate_tokens_bpe(message: &Message) -> usize {
@@ -199,17 +207,25 @@ pub fn calculate_grounded_total_tokens(
 /// swings wildly per turn and would add noise to the ratio.
 ///
 /// Returns 1.0 when no valid anchor exists (no calibration possible on first turn).
+pub fn try_derive_bpe_calibration_ratio(
+    messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> Option<f64> {
+    if let Some((_anchor_index, _prompt_tokens, ratio)) =
+        get_prompt_anchor_ratio(messages, system_prompt_tokens, tools_tokens)
+    {
+        return normalize_calibration_ratio(ratio);
+    }
+    None
+}
+
 pub fn derive_bpe_calibration_ratio(
     messages: &[Message],
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> f64 {
-    if let Some((_anchor_index, _prompt_tokens, ratio)) =
-        get_prompt_anchor_ratio(messages, system_prompt_tokens, tools_tokens)
-    {
-        return ratio;
-    }
-    1.0
+    try_derive_bpe_calibration_ratio(messages, system_prompt_tokens, tools_tokens).unwrap_or(1.0)
 }
 
 /// Estimates the current context token count anchored on the API-reported
@@ -283,6 +299,7 @@ pub fn calculate_conservative_preflight_prompt_tokens(
     messages: &[Message],
     system_prompt_tokens: usize,
     tools_tokens: usize,
+    fallback_calibration_ratio: Option<f64>,
 ) -> usize {
     if let Some((anchor_index, prompt_tokens, ratio)) =
         get_prompt_anchor_ratio(messages, system_prompt_tokens, tools_tokens)
@@ -307,6 +324,20 @@ pub fn calculate_conservative_preflight_prompt_tokens(
     let full_estimate = messages.iter().map(estimate_tokens_bpe).sum::<usize>()
         + system_prompt_tokens
         + tools_tokens;
+    if let Some(ratio) = fallback_calibration_ratio.and_then(normalize_calibration_ratio) {
+        let calibrated_estimate = (full_estimate as f64 * ratio).ceil() as usize;
+        let conservative_total =
+            (calibrated_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
+        log::debug!(
+            "conservative preflight fallback (preserved calibration): base={}, ratio={:.4}, calibrated={}, total={}",
+            full_estimate,
+            ratio,
+            calibrated_estimate,
+            conservative_total
+        );
+        return conservative_total;
+    }
+
     let conservative_total =
         (full_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
     log::debug!(

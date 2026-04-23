@@ -43,6 +43,7 @@ pub fn build_compact_context_selection_options(
     tools_json: Option<String>,
     provider: &str,
     tool_call_group_visible_count: usize,
+    fallback_calibration_ratio: Option<f64>,
 ) -> crate::agent::llm::context_selector::SelectionOptions {
     crate::agent::llm::context_selector::SelectionOptions {
         system_prompt,
@@ -54,6 +55,7 @@ pub fn build_compact_context_selection_options(
             tool_call_group_visible_count
         }),
         pin_first_user_message: false,
+        fallback_calibration_ratio,
     }
 }
 
@@ -479,6 +481,29 @@ pub async fn request_llm_completion(
     let max_input_context = context_settings.max_input_context;
     let tool_call_group_visible_count = context_settings.tool_call_group_visible_count;
     let model_max_limit = context_settings.model_max_limit;
+    let tools_json = available_tools
+        .as_ref()
+        .map(|tools| serde_json::to_string(tools).unwrap_or_default());
+    let combined_system_prompt = match (&system_prompt, &session_context) {
+        (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
+        (Some(sp), None) => Some(sp.clone()),
+        (None, Some(sc)) => Some(sc.clone()),
+        (None, None) => None,
+    };
+    let system_prompt_tokens = combined_system_prompt
+        .as_ref()
+        .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
+        .unwrap_or(0);
+    let tools_tokens = tools_json
+        .as_ref()
+        .map(|json| crate::agent::llm::token_utils::estimate_text_tokens(json))
+        .unwrap_or(0);
+    let preserved_calibration_ratio =
+        crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+            &messages,
+            system_prompt_tokens,
+            tools_tokens,
+        );
 
     // --- Step A: Inject compact summary (if a valid record is cached) ---
     // Clone Arc refs while holding the outer read lock, then release it immediately.
@@ -562,22 +587,16 @@ pub async fn request_llm_completion(
     };
 
     log::info!(
-        "🧱 Prompt prefix composition: session={}, compact_summary_injected={}, message_count={}",
+        "🧱 Prompt prefix composition: session={}, compact_summary_injected={}, message_count={}, preserved_calibration_ratio={}",
         session_id,
         compact_summary_injected,
-        messages.len()
+        messages.len(),
+        preserved_calibration_ratio
+            .map(|ratio| format!("{:.4}", ratio))
+            .unwrap_or_else(|| "none".to_string())
     );
 
     let mut final_messages = messages.clone();
-    let tools_json = available_tools
-        .as_ref()
-        .map(|tools| serde_json::to_string(tools).unwrap_or_default());
-    let combined_system_prompt = match (&system_prompt, &session_context) {
-        (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
-        (Some(sp), None) => Some(sp.clone()),
-        (None, Some(sc)) => Some(sc.clone()),
-        (None, None) => None,
-    };
 
     if uses_compaction_strategy(&context_strategy) {
         let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
@@ -586,6 +605,7 @@ pub async fn request_llm_completion(
             tools_json.clone(),
             &provider,
             tool_call_group_visible_count,
+            preserved_calibration_ratio,
         );
 
         final_messages = crate::agent::llm::context_selector::select_messages_within_context(
@@ -647,19 +667,46 @@ pub async fn request_llm_completion(
 
     if uses_compaction_strategy(&context_strategy) {
         let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-        let system_prompt_tokens = combined_system_prompt
-            .as_ref()
-            .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
-            .unwrap_or(0);
-        let tools_tokens = tools_json
-            .as_ref()
-            .map(|json| crate::agent::llm::token_utils::estimate_text_tokens(json))
-            .unwrap_or(0);
+        final_messages =
+            crate::agent::llm::context_selector::trim_messages_to_fit_conservative_limit(
+                &final_messages,
+                &provider,
+                safe_input_token_limit,
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio,
+            );
+
+        final_messages = crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
+            &final_messages,
+            safe_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        );
+
+        if final_messages.is_empty() {
+            if trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
+                .await?
+            {
+                return Ok(());
+            }
+
+            return Err(
+                AgentRuntimeError::new(
+                    AgentRuntimeErrorType::EmptySelectionError,
+                    "No messages fit within the effective context window after overflow trimming. Increase the context limit or reduce the newest message size and retry.",
+                )
+                .with_code("EMPTY_MESSAGE_SELECTION"),
+            );
+        }
+
         let conservative_preflight_tokens =
             crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
                 &final_messages,
                 system_prompt_tokens,
                 tools_tokens,
+                preserved_calibration_ratio,
             );
 
         if conservative_preflight_tokens >= safe_input_token_limit {
@@ -682,7 +729,7 @@ pub async fn request_llm_completion(
                 AgentRuntimeError::new(
                     AgentRuntimeErrorType::ContextLimitError,
                     format!(
-                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens).",
+                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens). Compaction/overflow trimming could not shrink the remaining message further.",
                         conservative_preflight_tokens, safe_input_token_limit
                     ),
                 )
