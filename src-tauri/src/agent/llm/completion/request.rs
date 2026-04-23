@@ -731,13 +731,21 @@ pub async fn request_llm_completion(
             );
 
         if conservative_preflight_tokens >= safe_input_token_limit {
+            let selected_message_breakdown =
+                crate::agent::llm::token_utils::summarize_message_token_breakdown(&final_messages);
             log::info!(
-                "⛔ Rust preflight blocked LLM request: session={}, conservative_prompt_tokens={}, safe_input_token_limit={}, compact_summary_injected={}, selected_message_count={}",
+                "⛔ Rust preflight blocked LLM request: session={}, conservative_prompt_tokens={}, safe_input_token_limit={}, compact_summary_injected={}, selected_message_count={}, system_prompt_tokens={}, tools_tokens={}, preserved_calibration_ratio={}, selected_breakdown=[{}]",
                 session_id,
                 conservative_preflight_tokens,
                 safe_input_token_limit,
                 compact_summary_injected,
-                final_messages.len()
+                final_messages.len(),
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio
+                    .map(|ratio| format!("{:.4}", ratio))
+                    .unwrap_or_else(|| "none".to_string()),
+                selected_message_breakdown
             );
 
             if trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
@@ -761,6 +769,10 @@ pub async fn request_llm_completion(
                     "safeInputTokenLimit": safe_input_token_limit,
                     "compactSummaryInjected": compact_summary_injected,
                     "selectedMessageCount": final_messages.len(),
+                    "systemPromptTokens": system_prompt_tokens,
+                    "toolsTokens": tools_tokens,
+                    "preservedCalibrationRatio": preserved_calibration_ratio,
+                    "selectedBreakdown": selected_message_breakdown,
                 })),
             );
         }

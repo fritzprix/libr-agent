@@ -20,6 +20,34 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
+export function isSupersededRequestError(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') return false;
+  const e = error as Record<string, unknown>;
+  return (
+    typeof e['message'] === 'string' && e['message'] === 'Request superseded'
+  );
+}
+
+export function isWorkflowCancelledError(error: unknown): boolean {
+  if (typeof error === 'string') {
+    return (
+      error === 'Workflow was cancelled' || error === 'LLM response superseded'
+    );
+  }
+
+  if (error == null || typeof error !== 'object') {
+    return false;
+  }
+
+  const e = error as Record<string, unknown>;
+  return (
+    e['message'] === 'Workflow was cancelled' ||
+    e['message'] === 'LLM response superseded' ||
+    e['displayMessage'] === 'Workflow was cancelled' ||
+    e['displayMessage'] === 'LLM response superseded'
+  );
+}
+
 /**
  * Request from Rust backend to execute an LLM completion
  */
@@ -98,6 +126,7 @@ export interface LLMServiceContextValue {
    */
   executeCompletionRequest: (
     sessionId: string,
+    responseMessageId: string,
     messages: Message[],
     model: string,
     provider: string,

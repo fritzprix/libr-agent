@@ -713,17 +713,24 @@ fn test_grounded_total_tokens_keeps_summary_aware_anchor_after_compaction() {
 
 #[test]
 fn test_prompt_anchor_calibration_keeps_summary_aware_anchor_after_compaction() {
-    let summary =
-        make_compact_summary_message("compact-summary-123", "assistant", "Compacted summary");
+    let summary = make_compact_summary_message(
+        "compact-summary-123",
+        "assistant",
+        &"Compacted summary ".repeat(1500),
+    );
 
-    let intro = make_message_simple("user", "Existing tail before grounded response");
-    let mut grounded = make_message_simple("assistant", "Grounded assistant output");
-    grounded.usage = Some(json!({ "promptTokens": 200 }));
+    let intro = make_message_simple(
+        "user",
+        &"Existing tail before grounded response ".repeat(1000),
+    );
+    let grounded = make_message_simple("assistant", "Grounded assistant output");
 
     let messages = vec![summary.clone(), intro.clone(), grounded];
 
     let bpe_input = estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&intro) + 10 + 5;
-    let expected_ratio = 200.0 / bpe_input as f64;
+    let expected_ratio = (bpe_input as f64 * 0.9).ceil() / bpe_input as f64;
+    let mut messages = messages;
+    messages[2].usage = Some(json!({ "promptTokens": (bpe_input as f64 * 0.9).ceil() as usize }));
 
     let ratio = derive_bpe_calibration_ratio(&messages, 10, 5);
     assert!((ratio - expected_ratio).abs() < 1e-9);
@@ -731,15 +738,20 @@ fn test_prompt_anchor_calibration_keeps_summary_aware_anchor_after_compaction() 
 
 #[test]
 fn test_prompt_anchored_total_tokens_keeps_summary_aware_anchor_after_compaction() {
-    let summary =
-        make_compact_summary_message("compact-summary-123", "assistant", "Compacted summary");
+    let summary = make_compact_summary_message(
+        "compact-summary-123",
+        "assistant",
+        &"Compacted summary ".repeat(1500),
+    );
 
-    let intro = make_message_simple("user", "Existing tail before grounded response");
+    let intro = make_message_simple(
+        "user",
+        &"Existing tail before grounded response ".repeat(1000),
+    );
     let mut grounded = make_message_simple("assistant", "Grounded assistant output");
-    grounded.usage = Some(json!({ "promptTokens": 200 }));
     let tail = make_message_simple("user", "Fresh delta after anchor");
 
-    let messages = vec![
+    let mut messages = vec![
         summary.clone(),
         intro.clone(),
         grounded.clone(),
@@ -747,9 +759,12 @@ fn test_prompt_anchored_total_tokens_keeps_summary_aware_anchor_after_compaction
     ];
 
     let bpe_input = estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&intro) + 10 + 5;
-    let ratio = 200.0 / bpe_input as f64;
+    let prompt_tokens = (bpe_input as f64 * 0.9).ceil() as usize;
+    messages[2].usage = Some(json!({ "promptTokens": prompt_tokens }));
+    grounded.usage = Some(json!({ "promptTokens": prompt_tokens }));
+    let ratio = prompt_tokens as f64 / bpe_input as f64;
     let bpe_output = estimate_tokens_bpe(&grounded) + estimate_tokens_bpe(&tail);
-    let expected = 200 + (bpe_output as f64 * ratio).ceil() as usize;
+    let expected = prompt_tokens + (bpe_output as f64 * ratio).ceil() as usize;
 
     let tokens = calculate_prompt_anchored_total_tokens(&messages, 10, 5);
     assert_eq!(tokens, expected);
@@ -757,24 +772,29 @@ fn test_prompt_anchored_total_tokens_keeps_summary_aware_anchor_after_compaction
 
 #[test]
 fn test_conservative_preflight_prompt_tokens_biases_anchor_delta_upward() {
-    let summary =
-        make_compact_summary_message("compact-summary-1", "assistant", "Compacted summary");
-    let intro = make_message("intro", "user", "Stable tail before anchor");
+    let summary = make_compact_summary_message(
+        "compact-summary-1",
+        "assistant",
+        &"Compacted summary ".repeat(1500),
+    );
+    let intro = make_message("intro", "user", &"Stable tail before anchor ".repeat(1000));
     let mut grounded = make_message("assistant-anchor", "assistant", "Grounded output");
-    grounded.usage = Some(json!({ "promptTokens": 240 }));
     let tail = make_message("tail", "user", "Fresh delta after anchor");
 
-    let messages = vec![
+    let mut messages = vec![
         summary.clone(),
         intro.clone(),
         grounded.clone(),
         tail.clone(),
     ];
     let bpe_input = estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&intro) + 10 + 5;
-    let ratio = 240.0 / bpe_input as f64;
+    let prompt_tokens = (bpe_input as f64 * 0.9).ceil() as usize;
+    messages[2].usage = Some(json!({ "promptTokens": prompt_tokens }));
+    grounded.usage = Some(json!({ "promptTokens": prompt_tokens }));
+    let ratio = prompt_tokens as f64 / bpe_input as f64;
     let delta_bpe = estimate_tokens_bpe(&grounded) + estimate_tokens_bpe(&tail);
-    let anchored_total = 240 + (delta_bpe as f64 * ratio).ceil() as usize;
-    let expected = 240 + (delta_bpe as f64 * ratio * 1.05).ceil() as usize;
+    let anchored_total = prompt_tokens + (delta_bpe as f64 * ratio).ceil() as usize;
+    let expected = prompt_tokens + (delta_bpe as f64 * ratio * 1.05).ceil() as usize;
 
     let conservative = calculate_conservative_preflight_prompt_tokens(&messages, 10, 5, None);
     assert_eq!(conservative, expected);
@@ -795,18 +815,20 @@ fn test_conservative_preflight_prompt_tokens_fallback_biases_full_estimate_upwar
 
 #[test]
 fn test_conservative_preflight_prompt_tokens_uses_latest_prompt_anchor() {
-    let earlier_user = make_message("u1", "user", "Earlier context");
+    let earlier_user = make_message("u1", "user", &"Earlier context ".repeat(1200));
     let older_anchor_clone_for_bpe;
-    let mut older_anchor = make_message("a1", "assistant", "Older grounded output");
-    older_anchor.usage = Some(json!({ "promptTokens": 120 }));
+    let older_anchor = make_message("a1", "assistant", "Older grounded output");
     older_anchor_clone_for_bpe = older_anchor.clone();
 
-    let newer_user = make_message("u2", "user", "Newer context that should define the anchor");
+    let newer_user = make_message(
+        "u2",
+        "user",
+        &"Newer context that should define the anchor ".repeat(1000),
+    );
     let mut latest_anchor = make_message("a2", "assistant", "Latest grounded output");
-    latest_anchor.usage = Some(json!({ "promptTokens": 260 }));
 
     let tail = make_message("u3", "user", "Tail delta after latest anchor");
-    let messages = vec![
+    let mut messages = vec![
         earlier_user.clone(),
         older_anchor,
         newer_user.clone(),
@@ -819,11 +841,16 @@ fn test_conservative_preflight_prompt_tokens_uses_latest_prompt_anchor() {
         + estimate_tokens_bpe(&newer_user)
         + 10
         + 5;
-    let ratio = 260.0 / bpe_input as f64;
+    let prompt_tokens = (bpe_input as f64 * 0.92).ceil() as usize;
+    messages[3].usage = Some(json!({ "promptTokens": prompt_tokens }));
+    latest_anchor.usage = Some(json!({ "promptTokens": prompt_tokens }));
+    let ratio = prompt_tokens as f64 / bpe_input as f64;
     let delta_bpe = estimate_tokens_bpe(&latest_anchor) + estimate_tokens_bpe(&tail);
-    let expected = 260 + (delta_bpe as f64 * ratio * 1.05).ceil() as usize;
-    let stale_anchor_ratio = 120.0 / (estimate_tokens_bpe(&earlier_user) + 10 + 5) as f64;
-    let stale_anchor_estimate = 120
+    let expected = prompt_tokens + (delta_bpe as f64 * ratio * 1.05).ceil() as usize;
+    let stale_denominator = estimate_tokens_bpe(&earlier_user) + 10 + 5;
+    let stale_prompt_tokens = (stale_denominator as f64 * 0.92).ceil() as usize;
+    let stale_anchor_ratio = stale_prompt_tokens as f64 / stale_denominator as f64;
+    let stale_anchor_estimate = stale_prompt_tokens
         + ((estimate_tokens_bpe(&older_anchor_clone_for_bpe)
             + estimate_tokens_bpe(&newer_user)
             + estimate_tokens_bpe(&latest_anchor)
@@ -850,12 +877,16 @@ fn test_try_derive_bpe_calibration_ratio_returns_none_without_anchor() {
 #[test]
 fn test_conservative_preflight_prompt_tokens_uses_preserved_ratio_when_compaction_loses_anchor() {
     let preserved_context = vec![
-        make_message("u1", "user", "Large earlier context"),
-        make_message("a1", "assistant", "Older grounded output"),
+        make_message("u1", "user", &"Large earlier context ".repeat(1200)),
+        make_message("a1", "assistant", &"Older grounded output ".repeat(1000)),
     ];
     let mut grounded_anchor = make_message("a2", "assistant", "Latest grounded output");
-    grounded_anchor.usage = Some(json!({ "promptTokens": 180 }));
     let mut full_messages = preserved_context.clone();
+    let grounded_denominator =
+        full_messages.iter().map(estimate_tokens_bpe).sum::<usize>() + 10 + 5;
+    grounded_anchor.usage = Some(json!({
+        "promptTokens": (grounded_denominator as f64 * 0.9).ceil() as usize
+    }));
     full_messages.push(grounded_anchor.clone());
     let preserved_ratio = try_derive_bpe_calibration_ratio(&full_messages, 10, 5)
         .expect("expected grounded promptTokens anchor");
@@ -886,27 +917,106 @@ fn test_conservative_preflight_prompt_tokens_uses_preserved_ratio_when_compactio
 
 #[test]
 fn test_resolve_preserved_calibration_ratio_prefers_post_compaction_layout() {
-    let raw_prefix = make_message("u1", "user", "large raw prefix before compaction");
+    let raw_prefix = make_message(
+        "u1",
+        "user",
+        &"large raw prefix before compaction ".repeat(1200),
+    );
     let mut raw_anchor = make_message("a1", "assistant", "grounded output");
-    raw_anchor.usage = Some(json!({ "promptTokens": 120 }));
+    let raw_denominator = estimate_tokens_bpe(&raw_prefix) + 10 + 5;
+    raw_anchor.usage = Some(json!({
+      "promptTokens": (raw_denominator as f64 * 0.95).ceil() as usize
+    }));
     let raw_messages = vec![raw_prefix.clone(), raw_anchor];
 
-    let summary =
-        make_compact_summary_message("compact-summary-1", "assistant", "compacted summary");
-    let tail_user = make_message("u2", "user", "tail before anchor");
+    let summary = make_compact_summary_message(
+        "compact-summary-1",
+        "assistant",
+        &"compacted summary ".repeat(1500),
+    );
+    let tail_user = make_message("u2", "user", &"tail before anchor ".repeat(1000));
     let mut tail_anchor = make_message("a2", "assistant", "tail grounded output");
-    tail_anchor.usage = Some(json!({ "promptTokens": 90 }));
+    let prompt_denominator =
+        estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&tail_user) + 10 + 5;
+    tail_anchor.usage = Some(json!({
+      "promptTokens": (prompt_denominator as f64 * 0.9).ceil() as usize
+    }));
     let prompt_messages = vec![summary.clone(), tail_user.clone(), tail_anchor];
 
     let resolved = resolve_preserved_calibration_ratio(&raw_messages, &prompt_messages, 10, 5)
         .expect("expected calibration ratio");
 
-    let expected_post_ratio =
-        90.0 / (estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&tail_user) + 10 + 5) as f64;
-    let stale_raw_ratio = 120.0 / (estimate_tokens_bpe(&raw_prefix) + 10 + 5) as f64;
+    let expected_post_ratio = (prompt_denominator as f64 * 0.9).ceil() / prompt_denominator as f64;
+    let stale_raw_ratio = (raw_denominator as f64 * 0.95).ceil() / raw_denominator as f64;
 
     assert!((resolved - expected_post_ratio).abs() < 1e-9);
     assert_ne!(resolved, stale_raw_ratio);
+}
+
+#[test]
+fn test_try_derive_bpe_calibration_ratio_skips_short_prefix_anchor_and_uses_older_valid_anchor() {
+    let earlier_user = make_message("u1", "user", &"stable prefix ".repeat(1500));
+    let mut earlier_anchor = make_message("a1", "assistant", "older grounded output");
+    let earlier_denominator = estimate_tokens_bpe(&earlier_user) + 10 + 5;
+    earlier_anchor.usage = Some(json!({
+        "promptTokens": (earlier_denominator as f64 * 0.92).ceil() as usize
+    }));
+
+    let short_summary = make_compact_summary_message("compact-summary-1", "assistant", "tiny");
+    let mut latest_anchor = make_message("a2", "assistant", "latest but unstable anchor");
+    let latest_denominator = estimate_tokens_bpe(&earlier_user)
+        + estimate_tokens_bpe(&earlier_anchor)
+        + estimate_tokens_bpe(&short_summary)
+        + 10
+        + 5;
+    latest_anchor.usage = Some(json!({
+        "promptTokens": (latest_denominator as f64 * 1.6).ceil() as usize
+    }));
+
+    let messages = vec![
+        earlier_user,
+        earlier_anchor.clone(),
+        short_summary,
+        latest_anchor,
+    ];
+    let ratio = try_derive_bpe_calibration_ratio(&messages, 10, 5)
+        .expect("expected earlier valid anchor to be used");
+
+    let expected = (earlier_denominator as f64 * 0.92).ceil() / earlier_denominator as f64;
+    assert!((ratio - expected).abs() < 1e-9);
+}
+
+#[test]
+fn test_try_derive_bpe_calibration_ratio_accepts_valid_low_ratio_anchor() {
+    let prefix = make_message("u1", "user", &"cross tokenizer prefix ".repeat(1500));
+    let mut anchor = make_message("a1", "assistant", "grounded output");
+    let denominator = estimate_tokens_bpe(&prefix) + 10 + 5;
+    let valid_ratio = (PROMPT_ANCHOR_RATIO_MIN + 1.0) / 2.0;
+    let prompt_tokens = (denominator as f64 * valid_ratio).ceil() as usize;
+    anchor.usage = Some(json!({
+        "promptTokens": prompt_tokens
+    }));
+
+    let messages = vec![prefix, anchor];
+    let ratio = try_derive_bpe_calibration_ratio(&messages, 10, 5)
+        .expect("expected valid low grounded anchor to be accepted");
+
+    let expected = prompt_tokens as f64 / denominator as f64;
+    assert!((ratio - expected).abs() < 1e-9);
+}
+
+#[test]
+fn test_try_derive_bpe_calibration_ratio_rejects_extreme_low_ratio_anchor() {
+    let prefix = make_message("u1", "user", &"extreme ratio prefix ".repeat(1500));
+    let mut anchor = make_message("a1", "assistant", "grounded output");
+    let denominator = estimate_tokens_bpe(&prefix) + 10 + 5;
+    let invalid_ratio = PROMPT_ANCHOR_RATIO_MIN / 2.0;
+    anchor.usage = Some(json!({
+        "promptTokens": (denominator as f64 * invalid_ratio).ceil() as usize
+    }));
+
+    let messages = vec![prefix, anchor];
+    assert_eq!(try_derive_bpe_calibration_ratio(&messages, 10, 5), None);
 }
 
 #[test]

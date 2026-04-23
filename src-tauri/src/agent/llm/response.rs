@@ -85,6 +85,33 @@ async fn defer_for_post_response_compaction_if_needed(
     .await
 }
 
+pub fn validate_expected_response_id(
+    session_id: &str,
+    expected_response_id: Option<&str>,
+    received_message_id: &str,
+) -> Result<(), String> {
+    let Some(expected_response_id) = expected_response_id else {
+        log::info!(
+            "Ignoring stray LLM response for session {} (received_message_id={}, expected_response_id=<none>)",
+            session_id,
+            received_message_id
+        );
+        return Err("LLM response superseded".to_string());
+    };
+
+    if received_message_id != expected_response_id {
+        log::info!(
+            "Ignoring superseded LLM response for session {} (expected_response_id={}, received_message_id={})",
+            session_id,
+            expected_response_id,
+            received_message_id
+        );
+        return Err("LLM response superseded".to_string());
+    }
+
+    Ok(())
+}
+
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
     session_repo: &Arc<dyn SessionRepository>,
@@ -166,9 +193,12 @@ pub async fn handle_llm_response(
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(&session_id) {
             let mut expected_id = session.expected_response_id.write().await;
-            if let Some(id) = expected_id.take() {
-                assistant_message.id = id;
-            }
+            validate_expected_response_id(
+                &session_id,
+                expected_id.as_deref(),
+                &assistant_message.id,
+            )?;
+            expected_id.take();
         }
     }
 

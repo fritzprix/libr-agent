@@ -40,6 +40,12 @@ pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
 }
 
 const CONSERVATIVE_DELTA_SAFETY_MULTIPLIER: f64 = 1.05;
+// Cross-tokenizer providers like Gemini can legitimately report promptTokens
+// around ~0.63 of the equivalent cl100k_base estimate, so the acceptance band
+// must stay wide enough to preserve those grounded anchors.
+pub const PROMPT_ANCHOR_RATIO_MIN: f64 = 0.50;
+pub const PROMPT_ANCHOR_RATIO_MAX: f64 = 1.50;
+const MIN_PROMPT_ANCHOR_PREFIX_MESSAGE_BPE: usize = 2_048;
 
 fn usage_metric_as_usize(usage: &serde_json::Value, key: &str) -> Option<usize> {
     usage
@@ -77,20 +83,84 @@ fn get_prompt_anchor_ratio(
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> Option<(usize, usize, f64)> {
-    let (anchor_index, prompt_tokens) =
-        find_latest_assistant_usage_anchor(messages, "promptTokens")?;
-    let bpe_input: usize = messages[..anchor_index]
-        .iter()
-        .map(estimate_tokens_bpe)
-        .sum::<usize>()
-        + system_prompt_tokens
-        + tools_tokens;
-    let ratio = if bpe_input > 0 {
-        prompt_tokens as f64 / bpe_input as f64
-    } else {
-        1.0
-    };
-    Some((anchor_index, prompt_tokens, ratio))
+    for (anchor_index, anchor_message) in messages.iter().enumerate().rev() {
+        if anchor_message.role != "assistant" {
+            continue;
+        }
+
+        let Some(usage) = anchor_message.usage.as_ref() else {
+            continue;
+        };
+        let Some(prompt_tokens) = usage_metric_as_usize(usage, "promptTokens") else {
+            continue;
+        };
+        if prompt_tokens == 0 {
+            continue;
+        }
+
+        let prefix_messages = &messages[..anchor_index];
+        let prefix_message_bpe = prefix_messages
+            .iter()
+            .map(estimate_tokens_bpe)
+            .sum::<usize>();
+        let bpe_input = prefix_message_bpe + system_prompt_tokens + tools_tokens;
+        let ratio = if bpe_input > 0 {
+            prompt_tokens as f64 / bpe_input as f64
+        } else {
+            1.0
+        };
+        let message_breakdown = summarize_message_token_breakdown(prefix_messages);
+        log::debug!(
+            "promptTokens anchor ratio: anchor_index={}, anchor_id={}, anchor_role={}, prompt_tokens={}, prefix_message_bpe={}, system_prompt_tokens={}, tools_tokens={}, denominator_bpe={}, ratio={:.4}, prefix_breakdown=[{}]",
+            anchor_index,
+            anchor_message.id,
+            anchor_message.role,
+            prompt_tokens,
+            prefix_message_bpe,
+            system_prompt_tokens,
+            tools_tokens,
+            bpe_input,
+            ratio,
+            message_breakdown
+        );
+
+        if prefix_message_bpe < MIN_PROMPT_ANCHOR_PREFIX_MESSAGE_BPE {
+            log::warn!(
+                "Rejecting promptTokens anchor with insufficient message prefix: anchor_id={}, anchor_role={}, prompt_tokens={}, prefix_message_bpe={}, minimum_prefix_message_bpe={}, system_prompt_tokens={}, tools_tokens={}, denominator_bpe={}, ratio={:.4}, prefix_breakdown=[{}]",
+                anchor_message.id,
+                anchor_message.role,
+                prompt_tokens,
+                prefix_message_bpe,
+                MIN_PROMPT_ANCHOR_PREFIX_MESSAGE_BPE,
+                system_prompt_tokens,
+                tools_tokens,
+                bpe_input,
+                ratio,
+                message_breakdown
+            );
+            continue;
+        }
+
+        if !(PROMPT_ANCHOR_RATIO_MIN..=PROMPT_ANCHOR_RATIO_MAX).contains(&ratio) {
+            log::warn!(
+                "Suspicious promptTokens calibration ratio: anchor_id={}, anchor_role={}, prompt_tokens={}, prefix_message_bpe={}, system_prompt_tokens={}, tools_tokens={}, denominator_bpe={}, ratio={:.4}, prefix_breakdown=[{}]",
+                anchor_message.id,
+                anchor_message.role,
+                prompt_tokens,
+                prefix_message_bpe,
+                system_prompt_tokens,
+                tools_tokens,
+                bpe_input,
+                ratio,
+                message_breakdown
+            );
+            continue;
+        }
+
+        return Some((anchor_index, prompt_tokens, ratio));
+    }
+
+    None
 }
 
 fn normalize_calibration_ratio(ratio: f64) -> Option<f64> {
@@ -151,6 +221,34 @@ pub fn estimate_tokens_bpe(message: &Message) -> usize {
 
     let text = format!("{}: {}", message.role, parts.join(" "));
     estimate_text_tokens(&text)
+}
+
+pub fn summarize_message_token_breakdown(messages: &[Message]) -> String {
+    if messages.is_empty() {
+        return "none".to_string();
+    }
+
+    messages
+        .iter()
+        .map(|message| {
+            format!(
+                "{}:{}:bpe={}",
+                message.role,
+                shorten_message_id(&message.id),
+                estimate_tokens_bpe(message)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn shorten_message_id(message_id: &str) -> &str {
+    const SHORT_ID_LEN: usize = 12;
+    if message_id.len() <= SHORT_ID_LEN {
+        message_id
+    } else {
+        &message_id[..SHORT_ID_LEN]
+    }
 }
 
 /// Calculates a grounded token estimate by finding the last assistant message with
@@ -329,11 +427,17 @@ pub fn calculate_conservative_preflight_prompt_tokens(
         let conservative_total =
             (calibrated_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
         log::debug!(
-            "conservative preflight fallback (preserved calibration): base={}, ratio={:.4}, calibrated={}, total={}",
+            "conservative preflight fallback (preserved calibration): message_bpe={}, system_prompt_tokens={}, tools_tokens={}, base={}, ratio={:.4}, calibrated={}, total={}, breakdown=[{}]",
+            full_estimate
+                .saturating_sub(system_prompt_tokens)
+                .saturating_sub(tools_tokens),
+            system_prompt_tokens,
+            tools_tokens,
             full_estimate,
             ratio,
             calibrated_estimate,
-            conservative_total
+            conservative_total,
+            summarize_message_token_breakdown(messages)
         );
         return conservative_total;
     }

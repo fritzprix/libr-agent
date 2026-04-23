@@ -314,6 +314,7 @@ describe('AgentChatContext', () => {
       await act(async () => {
         promise = result.current.llm.executeCompletionRequest(
           'test-session',
+          'response-msg-agent-1',
           mockMessages,
           'test-model',
           'openai',

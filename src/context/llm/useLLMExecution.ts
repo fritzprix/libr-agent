@@ -9,7 +9,6 @@ import { useExecuteCompletion } from './useExecuteCompletion';
 
 interface UseLLMExecutionProps {
   settingsRef: React.MutableRefObject<Settings>;
-  streamingMessages: Map<string, Partial<Message>>;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;

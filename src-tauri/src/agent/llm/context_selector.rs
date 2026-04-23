@@ -583,6 +583,8 @@ pub fn truncate_single_oversized_message_to_fit_conservative_limit(
             continue;
         };
         let candidate_messages = vec![candidate];
+        let original_bpe = token_utils::estimate_tokens_bpe(original_message);
+        let candidate_bpe = token_utils::estimate_tokens_bpe(&candidate_messages[0]);
         let conservative_total = token_utils::calculate_conservative_preflight_prompt_tokens(
             &candidate_messages,
             system_prompt_tokens,
@@ -591,9 +593,11 @@ pub fn truncate_single_oversized_message_to_fit_conservative_limit(
         );
 
         log::info!(
-            "✂️ Truncated oversized single message for context fit: role={}, keep_ratio={:.2}, conservative_total={}, limit={}",
+            "✂️ Truncated oversized single message for context fit: role={}, keep_ratio={:.2}, original_bpe={}, candidate_bpe={}, conservative_total={}, limit={}",
             original_message.role,
             keep_ratio,
+            original_bpe,
+            candidate_bpe,
             conservative_total,
             safe_input_token_limit
         );
