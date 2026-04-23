@@ -499,8 +499,7 @@ fn can_truncate_message_for_context_fit(message: &Message) -> bool {
 }
 
 fn truncate_text_middle(text: &str, keep_ratio: f64) -> Option<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let total_chars = chars.len();
+    let total_chars = text.chars().count();
     let notice_chars = CONTEXT_FIT_TRUNCATION_NOTICE.chars().count();
     let requested_chars = ((total_chars as f64) * keep_ratio).floor() as usize;
     let min_visible_chars = MIN_CONTEXT_FIT_SIDE_CHARS.saturating_mul(2);
@@ -512,11 +511,23 @@ fn truncate_text_middle(text: &str, keep_ratio: f64) -> Option<String> {
 
     let head_chars = visible_chars / 2;
     let tail_chars = visible_chars.saturating_sub(head_chars);
-    let head: String = chars.iter().take(head_chars).collect();
-    let tail_start = total_chars.saturating_sub(tail_chars);
-    let tail: String = chars.iter().skip(tail_start).collect();
+    let head_end = byte_index_after_n_chars(text, head_chars);
+    let tail_start = byte_index_after_n_chars(text, total_chars.saturating_sub(tail_chars));
+    let head = &text[..head_end];
+    let tail = &text[tail_start..];
 
     Some(format!("{}{}{}", head, CONTEXT_FIT_TRUNCATION_NOTICE, tail))
+}
+
+fn byte_index_after_n_chars(text: &str, char_count: usize) -> usize {
+    if char_count == 0 {
+        return 0;
+    }
+
+    text.char_indices()
+        .nth(char_count)
+        .map(|(index, _)| index)
+        .unwrap_or(text.len())
 }
 
 fn truncate_message_for_context_fit(message: &Message, keep_ratio: f64) -> Option<Message> {

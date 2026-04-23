@@ -59,6 +59,26 @@ pub fn build_compact_context_selection_options(
     }
 }
 
+pub fn resolve_preserved_calibration_ratio(
+    raw_messages: &[Message],
+    prompt_messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> Option<f64> {
+    crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+        prompt_messages,
+        system_prompt_tokens,
+        tools_tokens,
+    )
+    .or_else(|| {
+        crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+            raw_messages,
+            system_prompt_tokens,
+            tools_tokens,
+        )
+    })
+}
+
 pub fn build_compact_summary_message(session_id: &str, text: String, created_at: i64) -> Message {
     Message {
         id: format!("compact-summary-{}", session_id),
@@ -498,12 +518,7 @@ pub async fn request_llm_completion(
         .as_ref()
         .map(|json| crate::agent::llm::token_utils::estimate_text_tokens(json))
         .unwrap_or(0);
-    let preserved_calibration_ratio =
-        crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
-            &messages,
-            system_prompt_tokens,
-            tools_tokens,
-        );
+    let raw_messages = messages.clone();
 
     // --- Step A: Inject compact summary (if a valid record is cached) ---
     // Clone Arc refs while holding the outer read lock, then release it immediately.
@@ -585,6 +600,12 @@ pub async fn request_llm_completion(
             (messages, false)
         }
     };
+    let preserved_calibration_ratio = resolve_preserved_calibration_ratio(
+        &raw_messages,
+        &messages,
+        system_prompt_tokens,
+        tools_tokens,
+    );
 
     log::info!(
         "🧱 Prompt prefix composition: session={}, compact_summary_injected={}, message_count={}, preserved_calibration_ratio={}",

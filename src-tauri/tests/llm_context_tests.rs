@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_context_selection_options, build_compact_summary_text,
     find_preflight_compaction_split_index, merge_consecutive_user_messages,
-    resolve_context_management_settings, should_skip_same_tail_compaction,
-    should_trigger_background_compaction, uses_compaction_strategy,
+    resolve_context_management_settings, resolve_preserved_calibration_ratio,
+    should_skip_same_tail_compaction, should_trigger_background_compaction,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -881,6 +882,31 @@ fn test_conservative_preflight_prompt_tokens_uses_preserved_ratio_when_compactio
         conservative,
         ((base as f64 * preserved_ratio).ceil() as f64 * 1.05).ceil() as usize
     );
+}
+
+#[test]
+fn test_resolve_preserved_calibration_ratio_prefers_post_compaction_layout() {
+    let raw_prefix = make_message("u1", "user", "large raw prefix before compaction");
+    let mut raw_anchor = make_message("a1", "assistant", "grounded output");
+    raw_anchor.usage = Some(json!({ "promptTokens": 120 }));
+    let raw_messages = vec![raw_prefix.clone(), raw_anchor];
+
+    let summary =
+        make_compact_summary_message("compact-summary-1", "assistant", "compacted summary");
+    let tail_user = make_message("u2", "user", "tail before anchor");
+    let mut tail_anchor = make_message("a2", "assistant", "tail grounded output");
+    tail_anchor.usage = Some(json!({ "promptTokens": 90 }));
+    let prompt_messages = vec![summary.clone(), tail_user.clone(), tail_anchor];
+
+    let resolved = resolve_preserved_calibration_ratio(&raw_messages, &prompt_messages, 10, 5)
+        .expect("expected calibration ratio");
+
+    let expected_post_ratio =
+        90.0 / (estimate_tokens_bpe(&summary) + estimate_tokens_bpe(&tail_user) + 10 + 5) as f64;
+    let stale_raw_ratio = 120.0 / (estimate_tokens_bpe(&raw_prefix) + 10 + 5) as f64;
+
+    assert!((resolved - expected_post_ratio).abs() < 1e-9);
+    assert_ne!(resolved, stale_raw_ratio);
 }
 
 #[test]
