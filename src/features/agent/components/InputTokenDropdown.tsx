@@ -33,34 +33,35 @@ export function InputTokenDropdown({
   const { t } = useTranslation();
   const count = mode.items.length;
   const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
+  const { kind, items } = mode;
 
   const handleEnter = useCallback(
     (index: number) => {
-      if (mode.kind === 'types') {
-        const item = mode.items[index];
+      if (kind === 'types') {
+        const item = items[index];
         if (item) onSelectType(item.name);
-      } else if (mode.kind === 'files') {
-        const item = mode.items[index];
+      } else if (kind === 'files') {
+        const item = items[index];
         if (item) onSelectArg(item);
-      } else if (mode.kind === 'tools') {
-        const item = mode.items[index];
+      } else if (kind === 'tools') {
+        const item = items[index];
         if (item) onSelectArg(item.name);
-      } else if (mode.kind === 'playbooks') {
-        const item = mode.items[index];
+      } else if (kind === 'playbooks') {
+        const item = items[index];
         if (item) onSelectArg(item.goal);
       } else {
-        const item = mode.items[index];
+        const item = items[index];
         if (item) onSelectArg(item.name);
       }
     },
-    [mode, onSelectType, onSelectArg],
+    [kind, items, onSelectType, onSelectArg],
   );
 
   const { activeIndex, setActiveIndex } = useListNavigation({
     itemCount: count,
     onEnter: handleEnter,
     onEscape: onDismiss,
-    resetDependencies: [mode.kind, mode.items],
+    resetDependencies: [kind, items],
   });
 
   const getSkillSourceLabel = (skill: SkillMetadata) => {

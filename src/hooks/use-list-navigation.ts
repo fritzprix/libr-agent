@@ -1,10 +1,24 @@
-import { useState, useEffect, type DependencyList } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  type DependencyList,
+  type SetStateAction,
+} from 'react';
 
 export interface UseListNavigationProps {
   itemCount: number;
   onEnter: (index: number) => void;
   onEscape?: () => void;
   resetDependencies?: DependencyList;
+}
+
+function clampIndex(index: number, itemCount: number) {
+  if (itemCount <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(index, 0), itemCount - 1);
 }
 
 export function useListNavigation({
@@ -14,10 +28,19 @@ export function useListNavigation({
   resetDependencies = [],
 }: UseListNavigationProps) {
   const [internalActiveIndex, setInternalActiveIndex] = useState(0);
+  const activeIndex = clampIndex(internalActiveIndex, itemCount);
 
-  // Ensure activeIndex is bounded by the new count during render to avoid action-effect chains
-  const activeIndex =
-    itemCount > 0 ? Math.min(internalActiveIndex, itemCount - 1) : 0;
+  const setActiveIndex = useCallback(
+    (value: SetStateAction<number>) => {
+      setInternalActiveIndex((currentIndex) =>
+        clampIndex(
+          typeof value === 'function' ? value(currentIndex) : value,
+          itemCount,
+        ),
+      );
+    },
+    [itemCount],
+  );
 
   // Reset active index when items array length changes (if enabled)
   useEffect(() => {
@@ -25,30 +48,32 @@ export function useListNavigation({
   }, resetDependencies);
 
   useEffect(() => {
+    setInternalActiveIndex((currentIndex) => clampIndex(currentIndex, itemCount));
+  }, [itemCount]);
+
+  useEffect(() => {
     if (itemCount === 0) return;
 
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setInternalActiveIndex((i) => Math.min(i + 1, itemCount - 1));
+        setActiveIndex((index) => index + 1);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setInternalActiveIndex((i) => Math.max(i - 1, 0));
+        setActiveIndex((index) => index - 1);
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         onEnter(activeIndex);
-      } else if (e.key === 'Escape') {
+      } else if (e.key === 'Escape' && onEscape) {
         e.preventDefault();
-        if (onEscape) {
-          onEscape();
-        }
+        onEscape();
       }
     };
 
     window.addEventListener('keydown', handler, { capture: true });
     return () =>
       window.removeEventListener('keydown', handler, { capture: true });
-  }, [itemCount, activeIndex, onEnter, onEscape]);
+  }, [itemCount, activeIndex, onEnter, onEscape, setActiveIndex]);
 
-  return { activeIndex, setActiveIndex: setInternalActiveIndex };
+  return { activeIndex, setActiveIndex };
 }
