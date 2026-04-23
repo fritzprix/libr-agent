@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.12] - 2026-04-24
+
+### 🚀 Features
+
+- **Markdown Tables in MCP History**: Optimized MCP history responses using Markdown tables for better readability and structured information presentation.
+- **Enhanced Token Dropdown**: Refactored `InputTokenDropdown` using a Custom Hook Pattern, improving maintainability and the navigation experience.
+
+### 🐛 Fixes
+
+- **LLM Recovery & Stability**: Hardened preflight overflow recovery and stale response handling to ensure smoother agent operations under context pressure.
+- **List Navigation Polish**: Resolved edge cases in list navigation to provide a more consistent keyboard and focus experience.
+- **Rust Backend Formatting**: Fixed formatting inconsistencies across the Rust codebase to ensure consistency with project standards.
+
+### 🔧 Internal
+
+- **Windows Test Stability**: Stabilized date utility tests specifically for Windows environments to ensure reliable CI pipelines.
+- **Performance Optimization**: Applied `React.memo` to `ScheduledTaskRow` to prevent inefficient O(N) list re-renders, improving responsiveness in large task lists.
+
 ## [0.7.11] - 2026-04-22
 
 ### 🚀 Features
