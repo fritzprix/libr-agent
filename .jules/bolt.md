@@ -97,3 +97,8 @@
 
 **Learning:** Extracting inline `.reduce()` calls that count matching items (like enabled tasks or bookmarked sessions) into `useMemo` hooks or integrating them into existing `useMemo` blocks prevents O(N) recalculations on every component render.
 **Action:** When computing scalar counts or metrics from arrays, calculate and store them in `useMemo` or integrate the logic directly into existing list mappings to ensure referential stability and eliminate redundant layout thrashing.
+
+## 2026-10-27 - Bypassing React.memo with Sets
+
+**Learning:** `ScheduledTaskRow` was rendering unnecessarily on every toggling or deletion. The parent component (`ScheduledTasksPage`) was passing `togglingIds` and `deletingIds` (which are `Set`s) as props to the row components. Since these sets were frequently recreated or mutated by the `useScheduledTasks` hook, `React.memo`'s shallow comparison failed, causing an O(N) re-render of all task rows whenever a single task was modified.
+**Action:** When using `React.memo` to optimize child list components, avoid passing complex collection objects (like Sets or Maps) as props. Compute and pass primitive values (e.g., `isToggling={togglingIds.has(task.id)}`) directly within the parent's mapping loop. Also ensure all passed callbacks (`onEdit`, `onToggle`, `onDelete`) are referentially stable using `useCallback`.
