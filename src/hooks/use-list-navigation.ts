@@ -48,7 +48,9 @@ export function useListNavigation({
   }, resetDependencies);
 
   useEffect(() => {
-    setInternalActiveIndex((currentIndex) => clampIndex(currentIndex, itemCount));
+    setInternalActiveIndex((currentIndex) =>
+      clampIndex(currentIndex, itemCount),
+    );
   }, [itemCount]);
 
   useEffect(() => {

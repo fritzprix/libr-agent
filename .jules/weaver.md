@@ -146,5 +146,6 @@
 **Action:** Continually hunt for "God useEffect" blocks handling disparate UI concerns (like file drop events) and encapsulate them inside specialized hooks.
 
 ## 2026-04-21 - [InputTokenDropdown]
+
 **Learning:** The ESLint configuration in this project does not define the `react-hooks/exhaustive-deps` rule, leading to errors when attempting to suppress it.
 **Action:** Avoid using `// eslint-disable-next-line react-hooks/exhaustive-deps`, and generally favor fixing dependency arrays natively rather than suppressing the missing rule.
