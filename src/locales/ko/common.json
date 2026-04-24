@@ -881,5 +881,53 @@
     "unknownError": "알 수 없는 오류가 발생했습니다.",
     "retrying": "재시도 중...",
     "tryAgain": "다시 시도"
+  },
+  "knowledge": {
+    "untitledEntry": "Untitled knowledge entry",
+    "detailTitle": "Knowledge Detail",
+    "detailDescription": "Inspect the selected entry, its evidence, and its local graph.",
+    "close": "Close",
+    "delete": "Delete",
+    "tabs": {
+      "overview": "Overview",
+      "graph": "Graph"
+    },
+    "metadataTitle": "Metadata",
+    "fields": {
+      "createdAt": "Created",
+      "primaryEntities": "Primary entities",
+      "relationships": "Relationships"
+    },
+    "entitiesTitle": "Entities",
+    "noEntities": "No linked entities for this entry.",
+    "primaryEntity": "Primary",
+    "relationshipListTitle": "Relationships",
+    "noRelationships": "No relationships linked to this entry.",
+    "loadListFailed": "Failed to load global knowledge entries.",
+    "loadDetailFailed": "Failed to load knowledge details.",
+    "loadMoreFailed": "Failed to load more knowledge entries.",
+    "deleteSuccess": "Knowledge entry deleted.",
+    "deleteSuccessDescription": "Removed {{entities}} orphan entities and {{relationships}} orphan relationships.",
+    "deleteFailed": "Failed to delete knowledge entry.",
+    "pageTitle": "Global Knowledge",
+    "pageSubtitle": "Search shared memory, inspect evidence, and prune stale knowledge.",
+    "refresh": "Refresh",
+    "browserTitle": "Knowledge Browser",
+    "browserDescription": "Find chunks first, then inspect their evidence and graph neighborhood.",
+    "searchPlaceholder": "Search content, tags, or source...",
+    "assistantFilterPlaceholder": "Filter by assistant",
+    "assistantFilterAll": "All assistants",
+    "emptyState": "No knowledge entries match the current filters.",
+    "loadMore": "Load more",
+    "endOfResults": "You have reached the end of the current results.",
+    "confirmDeleteTitle": "Delete knowledge entry",
+    "confirmDelete": "Delete this knowledge entry and clean up orphaned graph data?",
+    "cancel": "Cancel",
+    "graph": {
+      "empty": "No graph data linked to this knowledge entry.",
+      "primaryEntity": "Primary entity",
+      "relatedEntity": "Related entity"
+    },
+    "excerpt": "Excerpt"
   }
 }
