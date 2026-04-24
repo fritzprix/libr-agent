@@ -22,17 +22,20 @@ async fn clear_compaction_state(
     let handles = {
         let active = active_sessions.read().await;
         active.get(session_id).map(|session| {
-            session.compact_in_flight.store(false, Ordering::SeqCst);
+            session.compaction.in_flight.store(false, Ordering::SeqCst);
             session
-                .awaiting_compact_completion
+                .compaction
+                .awaiting_completion
                 .store(false, Ordering::SeqCst);
             session
+                .compaction
                 .finalize_workflow_after_compact
                 .store(false, Ordering::SeqCst);
             (
-                session.compact_started_at_ms.clone(),
-                clear_last_compacted_tail_id.then(|| session.last_compacted_tail_id.clone()),
-                session.deferred_workflow_step.clone(),
+                session.compaction.started_at_ms.clone(),
+                clear_last_compacted_tail_id
+                    .then(|| session.compaction.last_compacted_tail_id.clone()),
+                session.compaction.deferred_workflow_step.clone(),
             )
         })
     };
@@ -78,17 +81,26 @@ pub async fn handle_compact_error_state(
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             (
-                session.awaiting_compact_completion.load(Ordering::SeqCst),
                 session
+                    .compaction
+                    .awaiting_completion
+                    .load(Ordering::SeqCst),
+                session
+                    .compaction
                     .finalize_workflow_after_compact
                     .load(Ordering::SeqCst),
-                session.deferred_workflow_step.read().await.clone(),
+                session
+                    .compaction
+                    .deferred_workflow_step
+                    .read()
+                    .await
+                    .clone(),
                 session
                     .metadata
                     .name
                     .clone()
                     .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
-                Some(session.compact_started_at_ms.clone()),
+                Some(session.compaction.started_at_ms.clone()),
             )
         } else {
             (
@@ -121,6 +133,7 @@ pub async fn handle_compact_error_state(
         session_id: session_id.clone(),
         session_name: Some(session_name),
         compacting: false,
+        awaiting_compact: false,
         phase: CompactStatePhase::Failed,
         error: Some(error.display_message.clone()),
     };

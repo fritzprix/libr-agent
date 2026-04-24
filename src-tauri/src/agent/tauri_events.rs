@@ -1,5 +1,5 @@
 use crate::agent::events::{summarize_agent_event, AgentEvent, AgentEventDispatcher};
-use crate::agent::llm::types::CompactStateEvent;
+use crate::agent::llm::types::{CompactRequest, CompactStateEvent, CompactStatePhase};
 use log::info;
 use tauri::{AppHandle, Emitter};
 
@@ -38,6 +38,51 @@ pub fn emit_compact_state(app_handle: &AppHandle, event: CompactStateEvent) -> R
     app_handle
         .emit("llm:compact-state", event)
         .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))
+}
+
+pub fn emit_compact_started(
+    app_handle: &AppHandle,
+    session_id: impl Into<String>,
+    session_name: Option<String>,
+    awaiting_compact: bool,
+) -> Result<(), String> {
+    emit_compact_state(
+        app_handle,
+        CompactStateEvent {
+            session_id: session_id.into(),
+            session_name,
+            compacting: true,
+            awaiting_compact,
+            phase: CompactStatePhase::Started,
+            error: None,
+        },
+    )
+}
+
+pub fn emit_compact_finished(
+    app_handle: &AppHandle,
+    session_id: impl Into<String>,
+    session_name: Option<String>,
+    phase: CompactStatePhase,
+    error: Option<String>,
+) -> Result<(), String> {
+    emit_compact_state(
+        app_handle,
+        CompactStateEvent {
+            session_id: session_id.into(),
+            session_name,
+            compacting: false,
+            awaiting_compact: false,
+            phase,
+            error,
+        },
+    )
+}
+
+pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Result<(), String> {
+    app_handle
+        .emit("llm:compact-request", event)
+        .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))
 }
 
 /// Emit a resource update event (convenience wrapper)

@@ -337,6 +337,7 @@ The frontend also listens for:
 Current use:
 
 - expose `compacting: boolean` to the UI
+- expose whether the workflow is actively waiting for compaction completion
 - show compacting state without giving ownership of compaction orchestration to React
 
 This event is Rust-owned state, not a frontend guess.

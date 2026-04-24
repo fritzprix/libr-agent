@@ -186,6 +186,7 @@ pub struct CompactStateEvent {
     pub session_id: String,
     pub session_name: Option<String>,
     pub compacting: bool,
+    pub awaiting_compact: bool,
     pub phase: CompactStatePhase,
     pub error: Option<String>,
 }

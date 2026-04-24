@@ -57,6 +57,7 @@ interface CompactStatePayload {
   sessionId: string;
   sessionName?: string;
   compacting: boolean;
+  awaitingCompact: boolean;
   phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
 }
 
@@ -185,7 +186,7 @@ describe('compact state toast flow', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, phase: 'STARTED' },
+      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, awaitingCompact: false, phase: 'STARTED' },
       toast,
     );
     handleCompactStateEvent(
@@ -193,12 +194,13 @@ describe('compact state toast flow', () => {
         sessionId: SESSION_ID,
         sessionName: SESSION_NAME,
         compacting: false,
+        awaitingCompact: false,
         phase: 'SUCCEEDED',
       },
       toast,
     );
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: false, phase: 'FAILED' },
+      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: false, awaitingCompact: false, phase: 'FAILED' },
       toast,
     );
 
@@ -209,7 +211,7 @@ describe('compact state toast flow', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, phase: 'STARTED' },
+      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, awaitingCompact: false, phase: 'STARTED' },
       toast,
     );
 
@@ -232,6 +234,7 @@ describe('compact state toast flow', () => {
         sessionId: SESSION_ID,
         sessionName: SESSION_NAME,
         compacting: false,
+        awaitingCompact: false,
         phase: 'SUCCEEDED',
       },
       toast,
@@ -249,7 +252,7 @@ describe('compact state toast flow', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: false, phase: 'FAILED' },
+      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: false, awaitingCompact: false, phase: 'FAILED' },
       toast,
     );
 
@@ -265,7 +268,7 @@ describe('compact state toast flow', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, compacting: true, phase: 'STARTED' },
+      { sessionId: SESSION_ID, compacting: true, awaitingCompact: false, phase: 'STARTED' },
       toast,
     );
 
@@ -276,11 +279,11 @@ describe('compact state toast flow', () => {
     const toast = makeToast();
 
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, phase: 'STARTED' },
+      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, awaitingCompact: false, phase: 'STARTED' },
       toast,
     );
     handleCompactStateEvent(
-      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, phase: 'STARTED' },
+      { sessionId: SESSION_ID, sessionName: SESSION_NAME, compacting: true, awaitingCompact: false, phase: 'STARTED' },
       toast,
     );
 

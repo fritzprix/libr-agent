@@ -490,18 +490,15 @@ export function useLLMListener({
             fromId,
             toId,
             parentRequest,
-            resumeCompletionAfterCompact,
           } = event.payload;
           const messages = rawMessages.map(normalizeRustMessage);
           logger.info(
             `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
           );
-          setAwaitingCompactForSession(sessionId, resumeCompletionAfterCompact);
 
           const settings = settingsRef.current;
           if (!settings) {
             logger.error('No settings available for compact request');
-            setAwaitingCompactForSession(sessionId, false);
             await handleCompactError(
               sessionId,
               toAgentRuntimeError(
@@ -547,7 +544,6 @@ export function useLLMListener({
               `Compact LLM call failed: session=${sessionId}`,
               compactRuntimeError,
             );
-            setAwaitingCompactForSession(sessionId, false);
             await handleCompactError(sessionId, compactRuntimeError);
           }
         },
@@ -571,15 +567,24 @@ export function useLLMListener({
         sessionId: string;
         sessionName?: string;
         compacting: boolean;
+        awaitingCompact: boolean;
         phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
         error?: string;
       }>('llm:compact-state', (event) => {
-        const { sessionId, sessionName, compacting, phase, error } =
-          event.payload;
+        const {
+          sessionId,
+          sessionName,
+          compacting,
+          awaitingCompact,
+          phase,
+          error,
+        } = event.payload;
         const toastId = `compact-${sessionId}`;
         const description = sessionName ?? sessionId.slice(0, 8);
 
         setCompactingFromEvent(sessionId, compacting);
+        setAwaitingCompactForSession(sessionId, awaitingCompact);
+
         if (phase === 'STARTED') {
           toast.loading(`Compacting context…`, {
             id: toastId,
@@ -598,10 +603,6 @@ export function useLLMListener({
             description: error ? `${description} - ${error}` : description,
             duration: 4000,
           });
-        }
-
-        if (!compacting) {
-          setAwaitingCompactForSession(sessionId, false);
         }
       });
 
