@@ -93,14 +93,16 @@ pub async fn start_workflow(
             // Safety valve: clear any stale in-flight compaction flag.
             // Guards against the case where the frontend crashed mid-compaction
             // and never called agent_handle_compact_error to release the flag.
-            session.compact_in_flight.store(false, Ordering::SeqCst);
+            session.compaction.in_flight.store(false, Ordering::SeqCst);
             session
-                .awaiting_compact_completion
+                .compaction
+                .awaiting_completion
                 .store(false, Ordering::SeqCst);
             session
+                .compaction
                 .finalize_workflow_after_compact
                 .store(false, Ordering::SeqCst);
-            *session.deferred_workflow_step.write().await = None;
+            *session.compaction.deferred_workflow_step.write().await = None;
         }
     }
 

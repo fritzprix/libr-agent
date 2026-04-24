@@ -105,6 +105,69 @@ pub enum DeferredWorkflowStep {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct CompactionRuntimeState {
+    /// Guard: true while a llm:compact-request is in-flight (frontend hasn't returned yet).
+    /// Prevents double-triggering compaction within the same session.
+    pub in_flight: Arc<AtomicBool>,
+
+    /// The ID of the last message in the stack at the moment compaction was triggered.
+    /// On the next Step B evaluation, if messages.last().id still equals this value,
+    /// it means no new messages have been added since the last compaction — skip.
+    /// Replaced when a new compaction fires with a different tail.
+    pub last_compacted_tail_id: Arc<RwLock<Option<String>>>,
+
+    /// True when the current turn is blocked waiting for compaction to finish
+    /// before Rust should retry the LLM request.
+    pub awaiting_completion: Arc<AtomicBool>,
+
+    /// True when the current workflow has already produced its assistant response
+    /// and must not be marked complete until the triggered compaction finishes.
+    pub finalize_workflow_after_compact: Arc<AtomicBool>,
+
+    /// Workflow continuation deferred until the current compaction finishes.
+    /// This lets Rust block the next workflow step on a completed assistant response.
+    pub deferred_workflow_step: Arc<RwLock<Option<DeferredWorkflowStep>>>,
+
+    /// Timestamp (Unix ms) when the current in-flight compaction was started.
+    /// Used only for observability so logs can report end-to-end compaction duration.
+    pub started_at_ms: Arc<RwLock<Option<i64>>>,
+}
+
+impl CompactionRuntimeState {
+    pub fn new() -> Self {
+        Self {
+            in_flight: Arc::new(AtomicBool::new(false)),
+            last_compacted_tail_id: Arc::new(RwLock::new(None)),
+            awaiting_completion: Arc::new(AtomicBool::new(false)),
+            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
+            deferred_workflow_step: Arc::new(RwLock::new(None)),
+            started_at_ms: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub fn with_test_state(
+        in_flight: bool,
+        last_tail_id: Option<String>,
+        awaiting_completion: bool,
+    ) -> Self {
+        Self {
+            in_flight: Arc::new(AtomicBool::new(in_flight)),
+            last_compacted_tail_id: Arc::new(RwLock::new(last_tail_id)),
+            awaiting_completion: Arc::new(AtomicBool::new(awaiting_completion)),
+            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
+            deferred_workflow_step: Arc::new(RwLock::new(None)),
+            started_at_ms: Arc::new(RwLock::new(None)),
+        }
+    }
+}
+
+impl Default for CompactionRuntimeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Represents an active agent session with its runtime state
 #[derive(Debug)]
 pub struct AgentSession {
@@ -153,31 +216,8 @@ pub struct AgentSession {
     /// Compact context for the session (SP17)
     pub compact_context: Arc<RwLock<Option<CompactContextRecord>>>,
 
-    /// Guard: true while a llm:compact-request is in-flight (frontend hasn't returned yet).
-    /// Prevents double-triggering compaction within the same session.
-    pub compact_in_flight: Arc<AtomicBool>,
-
-    /// The ID of the last message in the stack at the moment compaction was triggered.
-    /// On the next Step B evaluation, if messages.last().id still equals this value,
-    /// it means no new messages have been added since the last compaction — skip.
-    /// Replaced when a new compaction fires with a different tail.
-    pub last_compacted_tail_id: Arc<RwLock<Option<String>>>,
-
-    /// True when the current turn is blocked waiting for compaction to finish
-    /// before Rust should retry the LLM request.
-    pub awaiting_compact_completion: Arc<AtomicBool>,
-
-    /// True when the current workflow has already produced its assistant response
-    /// and must not be marked complete until the triggered compaction finishes.
-    pub finalize_workflow_after_compact: Arc<AtomicBool>,
-
-    /// Workflow continuation deferred until the current compaction finishes.
-    /// This lets Rust block the next workflow step on a completed assistant response.
-    pub deferred_workflow_step: Arc<RwLock<Option<DeferredWorkflowStep>>>,
-
-    /// Timestamp (Unix ms) when the current in-flight compaction was started.
-    /// Used only for observability so logs can report end-to-end compaction duration.
-    pub compact_started_at_ms: Arc<RwLock<Option<i64>>>,
+    /// Transient runtime-only compaction orchestration state.
+    pub compaction: CompactionRuntimeState,
 
     /// The ID generated for the next assistant message response.
     /// Shared with the frontend via CompletionRequest so streaming and persisted messages match.

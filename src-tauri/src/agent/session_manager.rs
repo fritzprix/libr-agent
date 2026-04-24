@@ -809,8 +809,8 @@ impl AgentSessionManager {
                     .get(session_id)
                     .ok_or_else(|| format!("Session not found: {}", session_id))?;
                 (
-                    session.compact_in_flight.clone(),
-                    session.awaiting_compact_completion.clone(),
+                    session.compaction.in_flight.clone(),
+                    session.compaction.awaiting_completion.clone(),
                 )
             };
 
