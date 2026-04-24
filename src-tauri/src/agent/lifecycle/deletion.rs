@@ -109,7 +109,8 @@ pub async fn delete_session_only(
     active_sessions.write().await.remove(&session_id);
 
     // 3. Delete workspace and db
-    let orphaned_ids = crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
+    let orphaned_ids =
+        crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
 
     log::info!(
         "✅ Deleted session only (children orphaned): {}",
