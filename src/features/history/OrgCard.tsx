@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Building2, Play, Trash2 } from 'lucide-react';
+import { Building2, Play, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -43,15 +43,23 @@ export function OrgCard({ org }: OrgCardProps) {
   const { t } = useTranslation('common');
   const { deleteSession } = useAgentSessionListActions();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const ts = formatSessionTimestamp(org.updatedAt);
   const rootBadge = getStatusBadgeConfig(org.rootSession.status);
 
-  async function handleDelete() {
+  async function handleDelete(e: React.MouseEvent) {
+    // Prevent the dialog from closing automatically if we were using a simple trigger,
+    // but since we are using AlertDialogAction which usually closes, we need to handle it.
+    // However, Shadcn AlertDialogAction calls onOpenChange(false) internally.
+    // To prevent this, we manage the 'open' state of the AlertDialog manually.
+    e.preventDefault();
+
     setIsDeleting(true);
     try {
       await deleteSession(org.orgRootSessionId);
       toast.success(t('orgHistory.toasts.deleted', 'Organization deleted'));
+      setIsDialogOpen(false); // Only close on success
     } catch (error) {
       logger.error('Failed to delete organization', error);
       toast.error(
@@ -108,7 +116,7 @@ export function OrgCard({ org }: OrgCardProps) {
           </div>
         </div>
 
-        <AlertDialog>
+        <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <AlertDialogTrigger asChild>
             <Button
               variant="ghost"
@@ -135,12 +143,22 @@ export function OrgCard({ org }: OrgCardProps) {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogCancel disabled={isDeleting}>
+                {t('common.cancel')}
+              </AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleDelete}
+                disabled={isDeleting}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
-                {t('common.delete')}
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t('common.delete', 'Delete')}
+                  </>
+                ) : (
+                  t('common.delete', 'Delete')
+                )}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
