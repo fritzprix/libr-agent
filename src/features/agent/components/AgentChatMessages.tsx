@@ -103,8 +103,14 @@ export function AgentChatMessages() {
     retryMessage,
     workflowStatus,
   } = useAgentChat();
-  const { session, pendingApprovals, respondToToolApproval } =
-    useAgentSession();
+  const {
+    session,
+    pendingApprovals,
+    respondToToolApproval,
+    hasOlderMessages,
+    isLoadingOlderMessages,
+    loadOlderMessages,
+  } = useAgentSession();
   const { getCompactedRange } = useLLMService();
 
   // Compact range for divider rendering (null if no compaction has occurred)
@@ -113,10 +119,25 @@ export function AgentChatMessages() {
     : undefined;
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
+  function handleReachTop() {
+    if (!hasOlderMessages || isLoadingOlderMessages) {
+      return;
+    }
+
+    prepareForPrepend();
+    void loadOlderMessages().catch((err) => {
+      logger.error('Failed to load older messages after scroll trigger', err);
+    });
+  }
+
   // Use custom hooks for side effects
-  const { messagesEndRef, scrollContainerRef, contentRef } = useChatScroll({
-    messages,
-  });
+  const { messagesEndRef, scrollContainerRef, contentRef, prepareForPrepend } =
+    useChatScroll({
+      messages,
+      onReachTop: handleReachTop,
+      canLoadOlder: hasOlderMessages,
+      isLoadingOlder: isLoadingOlderMessages,
+    });
   useFileRefetcher({ messages, refetchSessionFiles });
 
   // Group messages for display
@@ -201,6 +222,15 @@ export function AgentChatMessages() {
           ref={contentRef}
           className="p-4 pb-32 flex flex-col gap-6 min-h-full"
         >
+          {(hasOlderMessages || isLoadingOlderMessages) && (
+            <div className="flex justify-center">
+              <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+                {isLoadingOlderMessages
+                  ? 'Loading older messages...'
+                  : 'Scroll up to load older messages'}
+              </div>
+            </div>
+          )}
           {groupedMessages.map((groupedMessage) => {
             const isCompactBoundary = groupedMessageContainsBoundary(
               groupedMessage,

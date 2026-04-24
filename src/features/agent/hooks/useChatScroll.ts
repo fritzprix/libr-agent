@@ -10,11 +10,20 @@ import type { Message } from '@/models/chat';
 
 interface UseChatScrollProps {
   messages: Message[];
+  onReachTop?: () => void;
+  canLoadOlder?: boolean;
+  isLoadingOlder?: boolean;
 }
 
 const BOTTOM_THRESHOLD_PX = 80;
+const TOP_LOAD_THRESHOLD_PX = 160;
 
-export function useChatScroll({ messages }: UseChatScrollProps) {
+export function useChatScroll({
+  messages,
+  onReachTop,
+  canLoadOlder = false,
+  isLoadingOlder = false,
+}: UseChatScrollProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -23,9 +32,14 @@ export function useChatScroll({ messages }: UseChatScrollProps) {
   const isProgrammaticScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
+  const pendingPrependAdjustmentRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
   const programmaticScrollTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const topLoadTriggeredRef = useRef(false);
 
   const setAutoScroll = useCallback((enabled: boolean) => {
     autoScrollEnabledRef.current = enabled;
@@ -88,6 +102,18 @@ export function useChatScroll({ messages }: UseChatScrollProps) {
     [scrollToBottom],
   );
 
+  const prepareForPrepend = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    pendingPrependAdjustmentRef.current = {
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop,
+    };
+  }, []);
+
   const handleScroll = useThrottle(() => {
     const container = scrollContainerRef.current;
     if (!container) {
@@ -113,6 +139,21 @@ export function useChatScroll({ messages }: UseChatScrollProps) {
     if (atBottom) {
       setAutoScroll(true);
     }
+
+    if (currentScrollTop > TOP_LOAD_THRESHOLD_PX) {
+      topLoadTriggeredRef.current = false;
+    }
+
+    if (
+      onReachTop &&
+      canLoadOlder &&
+      !isLoadingOlder &&
+      currentScrollTop <= TOP_LOAD_THRESHOLD_PX &&
+      !topLoadTriggeredRef.current
+    ) {
+      topLoadTriggeredRef.current = true;
+      onReachTop();
+    }
   }, 80);
 
   useEffect(() => {
@@ -128,6 +169,23 @@ export function useChatScroll({ messages }: UseChatScrollProps) {
       container.removeEventListener('scroll', handleScroll);
     };
   }, [handleScroll]);
+
+  useLayoutEffect(() => {
+    const pendingPrependAdjustment = pendingPrependAdjustmentRef.current;
+    const container = scrollContainerRef.current;
+    if (!pendingPrependAdjustment || !container) {
+      return;
+    }
+
+    const nextScrollTop =
+      container.scrollHeight -
+      pendingPrependAdjustment.scrollHeight +
+      pendingPrependAdjustment.scrollTop;
+    container.scrollTop = nextScrollTop;
+    lastScrollTopRef.current = nextScrollTop;
+    pendingPrependAdjustmentRef.current = null;
+    topLoadTriggeredRef.current = false;
+  }, [messages]);
 
   useLayoutEffect(() => {
     if (autoScrollEnabledRef.current) {
@@ -162,6 +220,12 @@ export function useChatScroll({ messages }: UseChatScrollProps) {
   }, [isNearBottom, setAutoScroll]);
 
   useEffect(() => {
+    if (!isLoadingOlder) {
+      topLoadTriggeredRef.current = false;
+    }
+  }, [isLoadingOlder]);
+
+  useEffect(() => {
     return () => {
       clearProgrammaticScrollTimeout();
 
@@ -178,5 +242,6 @@ export function useChatScroll({ messages }: UseChatScrollProps) {
     contentRef,
     autoScrollEnabled,
     scrollToBottom,
+    prepareForPrepend,
   };
 }

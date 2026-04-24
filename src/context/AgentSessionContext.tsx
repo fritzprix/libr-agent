@@ -1,9 +1,4 @@
 import React, { createContext, useContext, useMemo, useCallback } from 'react';
-import { getLogger } from '@/lib/logger';
-import { safeInvoke } from '@/lib/backend/core';
-import type { Page } from '@/lib/db/types';
-import type { RustMessage, Message } from '@/models/chat';
-import { rustMessageToMessage } from '@/models/chat';
 import { useAgentSessionListActions } from './AgentSessionListContext';
 import { useAgentSessionState as useAgentSessionStateLogic } from './agent-session/useAgentSessionState';
 import { useAgentSessionEvents } from './agent-session/useAgentSessionEvents';
@@ -16,8 +11,6 @@ import type {
 
 // Re-export types so we don't break existing imports
 export * from './agent-session/types';
-
-const logger = getLogger('AgentSessionContext');
 
 const AgentSessionStateContext = createContext<
   AgentSessionStateContextValue | undefined
@@ -59,27 +52,7 @@ export function AgentSessionProvider({
     [persistViewedAt],
   );
 
-  const loadMessages = useCallback(
-    async (sid: string) => {
-      try {
-        const page = await safeInvoke<Page<RustMessage>>('messages_get_page', {
-          sessionId: sid,
-          page: 1,
-          pageSize: 1000,
-        });
-
-        const msgs: Message[] = page.items.map(rustMessageToMessage);
-
-        stateProps.setters.setMessages(msgs);
-      } catch (err) {
-        logger.error('Failed to load messages', err);
-      }
-    },
-    [stateProps.setters],
-  );
-
   useAgentSessionEvents(sessionId, stateProps, {
-    loadMessages,
     persistViewedAt,
   });
 
@@ -93,6 +66,8 @@ export function AgentSessionProvider({
       session: stateProps.state.session,
       messages: stateProps.state.messages,
       isSessionLoading: stateProps.state.isSessionLoading,
+      isLoadingOlderMessages: stateProps.state.isLoadingOlderMessages,
+      hasOlderMessages: stateProps.state.hasOlderMessages,
       error: stateProps.state.error,
       llmError: stateProps.state.llmError,
       workflowStatus: stateProps.state.workflowStatus,
@@ -105,6 +80,8 @@ export function AgentSessionProvider({
       stateProps.state.session,
       stateProps.state.messages,
       stateProps.state.isSessionLoading,
+      stateProps.state.isLoadingOlderMessages,
+      stateProps.state.hasOlderMessages,
       stateProps.state.error,
       stateProps.state.llmError,
       stateProps.state.workflowStatus,

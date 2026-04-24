@@ -3,13 +3,32 @@ use crate::models::chat::Message;
 use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
-    sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set,
+    sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QueryResult, QuerySelect, Set, Statement,
 };
 
 use crate::entity::prelude::{Message as MessageEntity, MessageIndexMeta};
 use crate::entity::{message, message_index_meta, session};
 use crate::utils::json::{from_json_option, from_json_or_default, to_json_option};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessagePaginationCursor {
+    pub created_at: i64,
+    pub row_id: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageSlicePage {
+    pub items: Vec<Message>,
+    pub has_more_before: bool,
+    pub oldest_cursor: Option<MessagePaginationCursor>,
+}
+
+#[derive(Debug)]
+struct MessageRowWithCursor {
+    model: message::Model,
+    cursor: MessagePaginationCursor,
+}
 
 /// Message repository trait for abstraction and testability
 #[async_trait]
@@ -65,6 +84,24 @@ pub trait MessageRepository: Send + Sync {
         limit: u64,
     ) -> Result<Vec<Message>, DbError>;
 
+    /// Get the most recent messages for a session in ascending chronological order.
+    /// Returns `limit + 1` internally so callers can infer whether older messages exist.
+    async fn get_recent_slice(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<MessageSlicePage, DbError>;
+
+    /// Get messages older than a cursor for a session in ascending chronological order.
+    /// Cursor is exclusive and uses `(created_at, row_id)` for stable keyset pagination.
+    async fn get_messages_before(
+        &self,
+        session_id: &str,
+        before_created_at: i64,
+        before_row_id: i64,
+        limit: u64,
+    ) -> Result<MessageSlicePage, DbError>;
+
     /// Get recent messages across all sessions with limit
     async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError>;
 
@@ -95,6 +132,118 @@ impl SqliteMessageRepository {
     /// Create a new SQLite message repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
+    }
+
+    fn row_to_message_model(row: &QueryResult) -> Result<message::Model, DbError> {
+        Ok(message::Model {
+            id: row.try_get("", "id").map_err(DbError::SeaOrmQueryFailed)?,
+            session_id: row
+                .try_get("", "session_id")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            role: row
+                .try_get("", "role")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            content: row
+                .try_get("", "content")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            tool_calls: row
+                .try_get("", "tool_calls")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            tool_call_id: row
+                .try_get("", "tool_call_id")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            is_streaming: row
+                .try_get("", "is_streaming")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            thinking: row
+                .try_get("", "thinking")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            thinking_signature: row
+                .try_get("", "thinking_signature")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            assistant_id: row
+                .try_get("", "assistant_id")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            attachments: row
+                .try_get("", "attachments")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            tool_use: row
+                .try_get("", "tool_use")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            created_at: row
+                .try_get("", "created_at")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            updated_at: row
+                .try_get("", "updated_at")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            source: row
+                .try_get("", "source")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            error: row
+                .try_get("", "error")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            usage: row
+                .try_get("", "usage")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+        })
+    }
+
+    fn row_to_cursor(row: &QueryResult) -> Result<MessagePaginationCursor, DbError> {
+        Ok(MessagePaginationCursor {
+            created_at: row
+                .try_get("", "created_at")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+            row_id: row
+                .try_get("", "cursor_rowid")
+                .map_err(DbError::SeaOrmQueryFailed)?,
+        })
+    }
+
+    fn row_to_message_with_cursor(row: &QueryResult) -> Result<MessageRowWithCursor, DbError> {
+        Ok(MessageRowWithCursor {
+            model: Self::row_to_message_model(row)?,
+            cursor: Self::row_to_cursor(row)?,
+        })
+    }
+
+    async fn query_slice_rows(
+        &self,
+        sql: &str,
+        values: Vec<sea_orm::Value>,
+    ) -> Result<Vec<MessageRowWithCursor>, DbError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        rows.iter()
+            .map(Self::row_to_message_with_cursor)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    fn build_slice_page(mut rows: Vec<MessageRowWithCursor>, limit: u64) -> MessageSlicePage {
+        let has_more_before = rows.len() as u64 > limit;
+        if has_more_before {
+            rows.truncate(limit as usize);
+        }
+        rows.reverse();
+
+        let oldest_cursor = rows.first().map(|row| row.cursor.clone());
+        let items = rows
+            .into_iter()
+            .map(|row| Self::model_to_message(row.model))
+            .collect();
+
+        MessageSlicePage {
+            items,
+            has_more_before,
+            oldest_cursor,
+        }
     }
 
     /// Convert SeaORM message model to Message type
@@ -428,6 +577,55 @@ impl MessageRepository for SqliteMessageRepository {
             .get_message_models_by_session(session_id, limit)
             .await?;
         Ok(models.into_iter().map(Self::model_to_message).collect())
+    }
+
+    async fn get_recent_slice(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<MessageSlicePage, DbError> {
+        let fetch_limit = limit.saturating_add(1);
+        let rows = self
+            .query_slice_rows(
+                "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                 FROM messages \
+                 WHERE session_id = ? \
+                 ORDER BY created_at DESC, rowid DESC \
+                 LIMIT ?",
+                vec![session_id.into(), (fetch_limit as i64).into()],
+            )
+            .await?;
+
+        Ok(Self::build_slice_page(rows, limit))
+    }
+
+    async fn get_messages_before(
+        &self,
+        session_id: &str,
+        before_created_at: i64,
+        before_row_id: i64,
+        limit: u64,
+    ) -> Result<MessageSlicePage, DbError> {
+        let fetch_limit = limit.saturating_add(1);
+        let rows = self
+            .query_slice_rows(
+                "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                 FROM messages \
+                 WHERE session_id = ? \
+                   AND (created_at < ? OR (created_at = ? AND rowid < ?)) \
+                 ORDER BY created_at DESC, rowid DESC \
+                 LIMIT ?",
+                vec![
+                    session_id.into(),
+                    before_created_at.into(),
+                    before_created_at.into(),
+                    before_row_id.into(),
+                    (fetch_limit as i64).into(),
+                ],
+            )
+            .await?;
+
+        Ok(Self::build_slice_page(rows, limit))
     }
 
     async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError> {

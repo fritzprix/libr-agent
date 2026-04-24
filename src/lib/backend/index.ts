@@ -71,6 +71,8 @@ export {
 // Message management
 export {
   getMessagesPageForSession,
+  getMessagesBeforeCursor,
+  getRecentMessagesSlice,
   upsertMessages,
   upsertMessage,
   deleteMessage,
@@ -85,6 +87,7 @@ export {
   executeUiTauriAction,
   getAgentAvailableTools,
   agentCallBuiltinTool,
+  openAgentSession,
 } from './agent-commands';
 
 // Session management

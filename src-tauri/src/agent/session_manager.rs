@@ -257,6 +257,7 @@ impl AgentSessionManager {
         session_id: String,
         user_message: Message,
     ) -> Result<(), String> {
+        self.ensure_session_active(&session_id).await?;
         crate::agent::workflow::start_workflow(
             &self.session_repo,
             &self.active_sessions,
@@ -319,6 +320,7 @@ impl AgentSessionManager {
 
     /// Resume a paused workflow
     pub async fn resume_workflow(&self, session_id: String) -> Result<(), String> {
+        self.ensure_session_active(&session_id).await?;
         crate::agent::workflow::resume_workflow(
             &self.session_repo,
             &self.active_sessions,
@@ -365,6 +367,7 @@ impl AgentSessionManager {
         session_id: String,
         messages: Vec<Message>,
     ) -> Result<bool, String> {
+        self.ensure_session_active(&session_id).await?;
         let should_trigger_workflow = {
             let sessions = self.active_sessions.read().await;
             let session = sessions
@@ -443,6 +446,21 @@ impl AgentSessionManager {
         }
 
         Ok(should_trigger_workflow)
+    }
+
+    pub async fn ensure_session_active(&self, session_id: &str) -> Result<(), String> {
+        let is_active = {
+            let active = self.active_sessions.read().await;
+            active.contains_key(session_id)
+        };
+
+        if is_active {
+            return Ok(());
+        }
+
+        self.resume_session(session_id).await?;
+        self.init_session_with_messages(session_id).await?;
+        Ok(())
     }
 
     pub async fn inject_channel_notification(
