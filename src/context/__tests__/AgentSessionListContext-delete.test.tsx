@@ -143,7 +143,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
                     { id: 'parent', name: 'Parent', status: 'idle', createdAt: Date.now() },
                     { id: 'child', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'parent' },
                 ]);
-            if (cmd === 'agent_delete_session_only') return Promise.resolve();
+            if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'parent', orphanedIds: ['child'] } });
             return Promise.resolve();
         });
 
@@ -176,7 +176,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
                     { id: 'p', name: 'Parent', status: 'idle', createdAt: Date.now(), parentSessionId: 'gp' },
                     { id: 'c', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'p' },
                 ]);
-            if (cmd === 'agent_delete_session_only') return Promise.resolve();
+            if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'p', orphanedIds: ['c'] } });
             return Promise.resolve();
         });
 

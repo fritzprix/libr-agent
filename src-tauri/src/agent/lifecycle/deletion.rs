@@ -94,7 +94,7 @@ pub async fn delete_session_only(
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(String, Vec<String>), String> {
     // 1. Terminate workflow if running (this session only)
     let _ = crate::agent::workflow::terminate_session(
         session_repo,
@@ -109,11 +109,11 @@ pub async fn delete_session_only(
     active_sessions.write().await.remove(&session_id);
 
     // 3. Delete workspace and db
-    crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
+    let orphaned_ids = crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
 
     log::info!(
         "✅ Deleted session only (children orphaned): {}",
         session_id
     );
-    Ok(())
+    Ok((session_id, orphaned_ids))
 }
