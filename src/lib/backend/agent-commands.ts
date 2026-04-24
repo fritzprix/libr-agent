@@ -4,6 +4,7 @@ import type {
   AgentRuntimeError,
   HandleLLMResponseData,
   ExecuteUiTauriActionRequest,
+  AgentOpenSessionResponse,
 } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
@@ -118,6 +119,16 @@ export async function getAgentAvailableTools(
   sessionId: string,
 ): Promise<MCPTool[]> {
   return safeInvoke<MCPTool[]>('agent_get_available_tools', { sessionId });
+}
+
+export async function openAgentSession(
+  sessionId: string,
+  initialMessageLimit = 40,
+): Promise<AgentOpenSessionResponse> {
+  return safeInvoke<AgentOpenSessionResponse>('agent_open_session', {
+    sessionId,
+    initialMessageLimit,
+  });
 }
 
 /**

@@ -2,6 +2,7 @@ import { safeInvoke } from './core';
 import { isMessageSource, type Message, type RustMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import type { MessageSearchResult } from './types';
+import type { MessageSlice as RustMessageSlice } from '@/models/agent-ipc';
 
 export interface RustSearchResult {
   messageId: string;
@@ -9,6 +10,11 @@ export interface RustSearchResult {
   score: number;
   snippet: string | null;
   createdAt: number;
+}
+
+export interface MessageCursor {
+  createdAt: number;
+  rowId: number;
 }
 
 // ========================================
@@ -76,6 +82,27 @@ export async function getMessagesPageForSession(
   });
 
   // Deserialize messages from Rust format
+  return {
+    ...result,
+    items: result.items.map(deserializeMessage),
+  };
+}
+
+export async function getMessagesBeforeCursor(
+  sessionId: string,
+  cursor: MessageCursor,
+  limit: number,
+): Promise<RustMessageSlice<Message>> {
+  const result = await safeInvoke<RustMessageSlice<RustMessage>>(
+    'messages_get_messages_before',
+    {
+      sessionId,
+      beforeCreatedAt: cursor.createdAt,
+      beforeRowId: cursor.rowId,
+      limit,
+    },
+  );
+
   return {
     ...result,
     items: result.items.map(deserializeMessage),

@@ -79,6 +79,8 @@ export interface AgentSessionStateContextValue {
   session: AgentSession | null;
   messages: Message[];
   isSessionLoading: boolean;
+  isLoadingOlderMessages: boolean;
+  hasOlderMessages: boolean;
   error: MessageError | null;
   llmError: MessageError | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
@@ -96,6 +98,7 @@ export interface AgentSessionActionsContextValue {
   stopSession: () => Promise<void>;
   setError: (error: string | AgentRuntimeError | null) => void;
   addMessage: (message: Message) => void;
+  loadOlderMessages: () => Promise<void>;
   resumeSession: () => Promise<void>;
   respondToToolApproval: (
     toolCallId: string,

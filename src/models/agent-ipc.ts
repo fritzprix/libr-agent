@@ -178,3 +178,26 @@ export interface AgentSessionMetadata {
   isBookmarked?: boolean;
   yoloMode: boolean;
 }
+
+export interface MessageCursor {
+  createdAt: number;
+  rowId: number;
+}
+
+export interface MessageSlice<TMessage = RustMessage> {
+  items: TMessage[];
+  hasMoreBefore: boolean;
+  oldestCursor?: MessageCursor | null;
+}
+
+export interface PendingApprovalSnapshot {
+  toolCallId: string;
+  toolName: string;
+  arguments: string;
+}
+
+export interface AgentOpenSessionResponse {
+  session: AgentSessionMetadata;
+  messages: MessageSlice<RustMessage>;
+  pendingApprovals: PendingApprovalSnapshot[];
+}

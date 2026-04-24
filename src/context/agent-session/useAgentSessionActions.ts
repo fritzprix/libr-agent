@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { safeInvoke } from '@/lib/backend/core';
+import { getMessagesBeforeCursor } from '@/lib/backend/messages';
 import { getLogger } from '@/lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
 import type { AgentResponse, SendUserMessageRequest } from '@/models/agent-ipc';
@@ -82,6 +83,42 @@ export function useAgentSessionActionsLogic(
       logger.error('Failed to stop session', err);
     }
   }, [state.session]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (
+      !state.session ||
+      state.isLoadingOlderMessages ||
+      !state.hasOlderMessages ||
+      !state.oldestMessageCursor
+    ) {
+      return;
+    }
+
+    try {
+      setters.setIsLoadingOlderMessages(true);
+
+      const olderSlice = await getMessagesBeforeCursor(
+        state.session.id,
+        state.oldestMessageCursor,
+        50,
+      );
+
+      setters.prependMessages(olderSlice.items);
+      setters.setHasOlderMessages(olderSlice.hasMoreBefore);
+      setters.setOldestMessageCursor(olderSlice.oldestCursor ?? null);
+    } catch (err) {
+      logger.error('Failed to load older messages', err);
+      throw err;
+    } finally {
+      setters.setIsLoadingOlderMessages(false);
+    }
+  }, [
+    setters,
+    state.hasOlderMessages,
+    state.isLoadingOlderMessages,
+    state.oldestMessageCursor,
+    state.session,
+  ]);
 
   const resumeSession = useCallback(async () => {
     if (!state.session) return;
@@ -171,6 +208,7 @@ export function useAgentSessionActionsLogic(
   return {
     sendMessage,
     stopSession,
+    loadOlderMessages,
     resumeSession,
     respondToToolApproval,
     toggleYoloMode,

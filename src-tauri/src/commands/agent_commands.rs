@@ -1,7 +1,9 @@
 use crate::agent::AgentSessionManager;
+use crate::commands::messages_commands::MessageSlice;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::types::ChannelPermissionVerdict;
 use crate::mcp::types::ServiceContext;
+use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{CompactContextRecord, SessionMetadata, SessionRepository};
 use crate::state::get_session_repository;
 use serde::{Deserialize, Serialize};
@@ -118,6 +120,23 @@ pub struct AgentResponse {
     pub success: bool,
     pub message: String,
     pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentOpenSessionResponse {
+    pub session: SessionMetadata,
+    pub messages: MessageSlice,
+    #[serde(default)]
+    pub pending_approvals: Vec<PendingApprovalSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingApprovalSnapshot {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub arguments: String,
 }
 
 fn default_ui_action_params() -> serde_json::Value {
@@ -266,6 +285,52 @@ pub async fn agent_resume_session(
     session_id: String,
 ) -> Result<SessionMetadata, String> {
     manager.resume_session(&session_id).await
+}
+
+/// Resume a session and return only the recent transcript slice needed for initial UI rendering.
+#[command]
+pub async fn agent_open_session(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    initial_message_limit: Option<u64>,
+) -> Result<AgentOpenSessionResponse, String> {
+    const DEFAULT_INITIAL_MESSAGE_LIMIT: u64 = 40;
+
+    let session = manager
+        .get_session(&session_id)
+        .await?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let repo = crate::state::get_message_repository();
+    let message_slice = repo
+        .get_recent_slice(
+            &session_id,
+            initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT),
+        )
+        .await
+        .map_err(|e| format!("Failed to load recent session messages: {}", e))?;
+    let pending_approvals = {
+        let active = manager.active_sessions_arc();
+        let sessions = active.read().await;
+        if let Some(active_session) = sessions.get(&session_id) {
+            let approvals = active_session.pending_approvals.read().await;
+            approvals
+                .iter()
+                .map(|(tool_call_id, data)| PendingApprovalSnapshot {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: data.tool_name.clone(),
+                    arguments: data.arguments.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    };
+
+    Ok(AgentOpenSessionResponse {
+        session,
+        messages: message_slice.into(),
+        pending_approvals,
+    })
 }
 
 /// Initialize session with messages from database

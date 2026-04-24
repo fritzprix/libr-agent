@@ -37,10 +37,10 @@ use commands::agent_commands::{
     agent_handle_compact_error, agent_handle_compact_response, agent_handle_llm_error,
     agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
     agent_inject_channel_message, agent_inject_channel_message_auto, agent_inject_messages,
-    agent_mark_session_viewed, agent_pause_workflow, agent_respond_channel_permission,
-    agent_respond_tool_approval, agent_resume_session, agent_resume_workflow,
-    agent_save_compact_context, agent_send_message, agent_set_yolo_mode, agent_terminate_workflow,
-    agent_toggle_session_bookmark, agent_update_session_config,
+    agent_mark_session_viewed, agent_open_session, agent_pause_workflow,
+    agent_respond_channel_permission, agent_respond_tool_approval, agent_resume_session,
+    agent_resume_workflow, agent_save_compact_context, agent_send_message, agent_set_yolo_mode,
+    agent_terminate_workflow, agent_toggle_session_bookmark, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
@@ -72,8 +72,8 @@ use commands::mcp_server_config_commands::{
     list_mcp_server_presets, update_mcp_server_config,
 };
 use commands::messages_commands::{
-    messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
-    messages_upsert, messages_upsert_many,
+    messages_delete, messages_delete_all_for_session, messages_get_messages_before,
+    messages_get_page, messages_search, messages_upsert, messages_upsert_many,
 };
 use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
@@ -226,6 +226,7 @@ pub fn run() {
                 revoke_oauth_token,
                 // Message management commands
                 messages_get_page,
+                messages_get_messages_before,
                 messages_upsert_many,
                 messages_upsert,
                 messages_delete,
@@ -234,6 +235,7 @@ pub fn run() {
                 // Agent workflow commands
                 agent_create_session,
                 agent_resume_session,
+                agent_open_session,
                 agent_init_session_with_messages,
                 agent_send_message,
                 agent_execute_ui_tauri_action,
