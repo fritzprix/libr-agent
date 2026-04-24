@@ -131,6 +131,17 @@ export function useChatScroll({
 
     lastScrollTopRef.current = currentScrollTop;
 
+    if (
+      onReachTop &&
+      canLoadOlder &&
+      !isLoadingOlder &&
+      currentScrollTop <= TOP_LOAD_THRESHOLD_PX &&
+      !topLoadTriggeredRef.current
+    ) {
+      topLoadTriggeredRef.current = true;
+      onReachTop();
+    }
+
     if (isScrollingUp && !atBottom) {
       setAutoScroll(false);
       return;
@@ -142,17 +153,6 @@ export function useChatScroll({
 
     if (currentScrollTop > TOP_LOAD_THRESHOLD_PX) {
       topLoadTriggeredRef.current = false;
-    }
-
-    if (
-      onReachTop &&
-      canLoadOlder &&
-      !isLoadingOlder &&
-      currentScrollTop <= TOP_LOAD_THRESHOLD_PX &&
-      !topLoadTriggeredRef.current
-    ) {
-      topLoadTriggeredRef.current = true;
-      onReachTop();
     }
   }, 80);
 

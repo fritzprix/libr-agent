@@ -226,7 +226,21 @@ impl SqliteMessageRepository {
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn build_slice_page(mut rows: Vec<MessageRowWithCursor>, limit: u64) -> MessageSlicePage {
+    fn validate_slice_limit(limit: u64) -> Result<i64, DbError> {
+        if limit == 0 {
+            return Err(DbError::InvalidInput(
+                "Message slice limit must be greater than zero".to_string(),
+            ));
+        }
+
+        i64::try_from(limit.saturating_add(1))
+            .map_err(|_| DbError::InvalidInput("Message slice limit is too large".to_string()))
+    }
+
+    fn build_slice_page(
+        mut rows: Vec<MessageRowWithCursor>,
+        limit: u64,
+    ) -> Result<MessageSlicePage, DbError> {
         let has_more_before = rows.len() as u64 > limit;
         if has_more_before {
             rows.truncate(limit as usize);
@@ -239,11 +253,11 @@ impl SqliteMessageRepository {
             .map(|row| Self::model_to_message(row.model))
             .collect();
 
-        MessageSlicePage {
+        Ok(MessageSlicePage {
             items,
             has_more_before,
             oldest_cursor,
-        }
+        })
     }
 
     /// Convert SeaORM message model to Message type
@@ -584,7 +598,7 @@ impl MessageRepository for SqliteMessageRepository {
         session_id: &str,
         limit: u64,
     ) -> Result<MessageSlicePage, DbError> {
-        let fetch_limit = limit.saturating_add(1);
+        let fetch_limit = Self::validate_slice_limit(limit)?;
         let rows = self
             .query_slice_rows(
                 "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
@@ -592,11 +606,11 @@ impl MessageRepository for SqliteMessageRepository {
                  WHERE session_id = ? \
                  ORDER BY created_at DESC, rowid DESC \
                  LIMIT ?",
-                vec![session_id.into(), (fetch_limit as i64).into()],
+                vec![session_id.into(), fetch_limit.into()],
             )
             .await?;
 
-        Ok(Self::build_slice_page(rows, limit))
+        Self::build_slice_page(rows, limit)
     }
 
     async fn get_messages_before(
@@ -606,7 +620,7 @@ impl MessageRepository for SqliteMessageRepository {
         before_row_id: i64,
         limit: u64,
     ) -> Result<MessageSlicePage, DbError> {
-        let fetch_limit = limit.saturating_add(1);
+        let fetch_limit = Self::validate_slice_limit(limit)?;
         let rows = self
             .query_slice_rows(
                 "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
@@ -620,12 +634,12 @@ impl MessageRepository for SqliteMessageRepository {
                     before_created_at.into(),
                     before_created_at.into(),
                     before_row_id.into(),
-                    (fetch_limit as i64).into(),
+                    fetch_limit.into(),
                 ],
             )
             .await?;
 
-        Ok(Self::build_slice_page(rows, limit))
+        Self::build_slice_page(rows, limit)
     }
 
     async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError> {

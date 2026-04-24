@@ -2,8 +2,8 @@ mod common;
 
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
-    MessageRepository, SessionMetadata, SessionRepository, SessionStatus, SqliteMessageRepository,
-    SqliteSessionRepository,
+    DbError, MessageRepository, SessionMetadata, SessionRepository, SessionStatus,
+    SqliteMessageRepository, SqliteSessionRepository,
 };
 
 fn build_session_metadata(session_id: &str) -> SessionMetadata {
@@ -114,4 +114,33 @@ async fn message_history_pagination_uses_rowid_for_same_timestamp_ties() {
         .collect();
     assert_eq!(older_ids, vec!["msg-z".to_string(), "msg-a".to_string()]);
     assert!(!older_slice.has_more_before);
+}
+
+#[tokio::test]
+async fn message_slice_queries_reject_zero_limit() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let session_id = format!("pagination-zero-{}", uuid::Uuid::new_v4());
+
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+    message_repo
+        .insert(&build_message(&session_id, "msg-1", 1_712_345_678_900_i64))
+        .await
+        .expect("message insert should succeed");
+
+    let recent_error = message_repo
+        .get_recent_slice(&session_id, 0)
+        .await
+        .expect_err("zero limit should be rejected for recent slices");
+    assert!(matches!(recent_error, DbError::InvalidInput(_)));
+
+    let before_error = message_repo
+        .get_messages_before(&session_id, 1_712_345_678_900_i64, i64::MAX, 0)
+        .await
+        .expect_err("zero limit should be rejected for older slices");
+    assert!(matches!(before_error, DbError::InvalidInput(_)));
 }
