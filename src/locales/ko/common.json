@@ -227,6 +227,27 @@
       "subtitle": "대화를 시작하여 첫 번째 세션을 만드세요"
     }
   },
+  "orgHistory": {
+    "heading": "조직 뷰",
+    "description": "명시적으로 생성된 조직 리니지만 표시됩니다. 일회성 위임 세션은 일반 기록에 남습니다.",
+    "cardLabel": "명시적 조직",
+    "rootLabel": "루트 세션",
+    "updatedLabel": "업데이트됨",
+    "resumeRoot": "루트 세션 재개",
+    "delete": "조직 삭제",
+    "deleteConfirm": {
+      "title": "조직을 삭제하시겠습니까?",
+      "description": "이 조직과 관련된 모든 구성원 세션(파일 및 기록 포함)이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+    },
+    "toasts": {
+      "deleted": "조직이 삭제되었습니다",
+      "deleteFailed": "조직 삭제에 실패했습니다"
+    },
+    "emptyState": {
+      "title": "아직 조직 리니지가 없습니다",
+      "subtitle": "조직을 명시적으로 만든 다음, 조직 인식 도구를 통해 조직 구성원을 생성하세요. 일반 서브 에이전트 리니지는 여기에 포함되지 않습니다."
+    }
+  },
   "settings": {
     "title": "설정",
     "versionLabel": "{{appName}} v{{version}}",
