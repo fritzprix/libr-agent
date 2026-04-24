@@ -221,13 +221,19 @@ pub async fn handle_compact_response(
     );
 
     clear_compact_in_flight(&manager.active_sessions, session_id).await;
-    emit_compact_finished(
+    if let Err(error) = emit_compact_finished(
         &manager.app_handle,
         session_id.to_string(),
         session_name,
         CompactStatePhase::Succeeded,
         None,
-    )?;
+    ) {
+        log::warn!(
+            "Failed to emit compact finished state for session {} after successful compaction: {}",
+            session_id,
+            error
+        );
+    }
 
     if let Some(deferred_workflow_step) = deferred_workflow_step {
         match deferred_workflow_step {
