@@ -326,6 +326,12 @@
       "diffContextLinesDescription": "파일 편집 diff에 표시할 컨텍스트 라인 수 (1-10)."
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "프리텐다드 (표준 고딕)",
+        "inter": "인터 (깔끔한 UI 고딕)",
+        "nanumSquareNeo": "나눔스퀘어 네오 (모던 기하학)",
+        "d2coding": "D2Coding (개발자용 고정폭)"
+      },
       "metricsTitle": "성능 지표",
       "metricDisplayMode": "지표 표시 방식",
       "inline": "인라인 (메시지에 표시)",

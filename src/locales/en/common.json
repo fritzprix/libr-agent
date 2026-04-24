@@ -347,6 +347,12 @@
       "diffContextLinesDescription": "Number of context lines to show in file edit diffs (1-10)."
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "Pretendard (Standard Sans)",
+        "inter": "Inter (Clean UI Sans)",
+        "nanumSquareNeo": "NanumSquare Neo (Modern Geometric)",
+        "d2coding": "D2Coding (Developer Mono)"
+      },
       "metricsTitle": "Performance Metrics",
       "metricDisplayMode": "Metric Display Mode",
       "inline": "Inline (show in message)",
