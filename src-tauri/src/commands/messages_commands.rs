@@ -66,21 +66,6 @@ pub async fn messages_get_page(
         .map_err(|e| e.to_string())
 }
 
-/// Get the most recent messages for a session in ascending chronological order.
-#[command]
-pub async fn messages_get_recent_slice(
-    session_id: String,
-    limit: u64,
-) -> Result<MessageSlice, String> {
-    let repo = get_message_repository();
-    let slice = repo
-        .get_recent_slice(&session_id, limit)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(slice.into())
-}
-
 /// Get messages older than a cursor for a session in ascending chronological order.
 #[command]
 pub async fn messages_get_messages_before(

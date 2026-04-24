@@ -177,43 +177,27 @@ pub(crate) async fn ensure_proxy_exists(
         session_id
     );
 
-    let session_repo = crate::state::get_session_repository();
-    if let Some(session) = session_repo
-        .get_session(session_id)
+    match proxy_manager
+        .ensure_configured_proxy(session_id, Some(app_handle.clone()))
         .await
-        .map_err(|e| format!("Failed to get session for proxy recreation: {}", e))?
     {
-        if let Some(config_json) = session.agent_config {
-            let agent_config = crate::agent::AgentConfig::from_json(&config_json)
-                .map_err(|e| format!("Failed to parse agent config: {}", e))?;
-
-            let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-            let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
-            proxy_manager
-                .create_proxy(
-                    session_id.to_string(),
-                    tool_ids,
-                    mcp_server_ids,
-                    Some(app_handle.clone()),
-                )
-                .await?;
-
+        Ok(_) => {
             log::info!(
-                "✅ Successfully recreated MCP proxy for session: {}",
-                session_id
-            );
-        } else {
-            log::error!(
-                "Cannot recreate proxy: Session {} has no agent config",
+                "Successfully ensured configured MCP proxy for session: {}",
                 session_id
             );
         }
-    } else {
-        log::error!(
-            "Cannot recreate proxy: Session {} not found in DB",
-            session_id
-        );
+        Err(error)
+            if error == format!("Session not found: {}", session_id)
+                || error == "Session has no config" =>
+        {
+            log::error!(
+                "Cannot recreate proxy during workflow start for session {}: {}",
+                session_id,
+                error
+            );
+        }
+        Err(error) => return Err(error),
     }
 
     Ok(())

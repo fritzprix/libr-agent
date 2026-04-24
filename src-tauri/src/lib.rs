@@ -73,8 +73,7 @@ use commands::mcp_server_config_commands::{
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_messages_before,
-    messages_get_page, messages_get_recent_slice, messages_search, messages_upsert,
-    messages_upsert_many,
+    messages_get_page, messages_search, messages_upsert, messages_upsert_many,
 };
 use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
@@ -227,7 +226,6 @@ pub fn run() {
                 revoke_oauth_token,
                 // Message management commands
                 messages_get_page,
-                messages_get_recent_slice,
                 messages_get_messages_before,
                 messages_upsert_many,
                 messages_upsert,

@@ -88,24 +88,6 @@ export async function getMessagesPageForSession(
   };
 }
 
-export async function getRecentMessagesSlice(
-  sessionId: string,
-  limit: number,
-): Promise<RustMessageSlice<Message>> {
-  const result = await safeInvoke<RustMessageSlice<RustMessage>>(
-    'messages_get_recent_slice',
-    {
-      sessionId,
-      limit,
-    },
-  );
-
-  return {
-    ...result,
-    items: result.items.map(deserializeMessage),
-  };
-}
-
 export async function getMessagesBeforeCursor(
   sessionId: string,
   cursor: MessageCursor,

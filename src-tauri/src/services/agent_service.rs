@@ -817,6 +817,10 @@ impl AgentService {
 
         let proxy_manager = get_mcp_service_proxy_manager();
 
+        proxy_manager
+            .ensure_configured_proxy(&session_id, crate::state::get_app_handle().cloned())
+            .await?;
+
         let proxy = proxy_manager
             .get_proxy(&session_id)
             .await

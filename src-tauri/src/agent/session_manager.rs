@@ -628,21 +628,9 @@ impl AgentSessionManager {
         &self,
         session_id: &str,
     ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
-        let active = self.active_sessions.read().await;
-        let session = active
-            .get(session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        let agent_config = session
-            .metadata
-            .agent_config
-            .as_ref()
-            .ok_or_else(|| "Agent configuration is required".to_string())
-            .and_then(|json| {
-                crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string())
-            })?;
-
-        drop(active); // Release the read lock before async call
+        self.proxy_manager
+            .ensure_configured_proxy(session_id, Some(self.app_handle.clone()))
+            .await?;
 
         // Wait for background tool loading to finish (stdio/HTTP servers are spawned
         // asynchronously during proxy creation). Use a short timeout here (10 s) because
@@ -663,8 +651,7 @@ impl AgentSessionManager {
         }
 
         // Use existing collect_available_tools function (same as LLM request)
-        crate::agent::tools::collect_available_tools(session_id, &agent_config, &self.proxy_manager)
-            .await
+        crate::agent::tools::collect_available_tools(session_id, &self.proxy_manager).await
     }
 
     /// Get available tools for a session based on its config
@@ -672,34 +659,7 @@ impl AgentSessionManager {
         &self,
         session_id: &str,
     ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
-        // 1. Get session config
-        // Try active first
-        let config = {
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                if let Some(config_str) = &session.metadata.agent_config {
-                    crate::agent::AgentConfig::from_json(config_str)?
-                } else {
-                    return Err("Session has no config".to_string());
-                }
-            } else {
-                // Try DB
-                let session_opt =
-                    crate::agent::lifecycle::get_session(&self.session_repo, session_id).await?;
-                if let Some(session) = session_opt {
-                    if let Some(config_str) = &session.agent_config {
-                        crate::agent::AgentConfig::from_json(config_str)?
-                    } else {
-                        return Err("Session has no config".to_string());
-                    }
-                } else {
-                    return Err("Session not found".to_string());
-                }
-            }
-        };
-
-        // 2. Call collect_available_tools
-        crate::agent::tools::collect_available_tools(session_id, &config, &self.proxy_manager).await
+        self.get_available_tools(session_id).await
     }
 
     /// Remove a message from the in-memory cache

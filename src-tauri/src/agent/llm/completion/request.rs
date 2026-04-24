@@ -465,10 +465,9 @@ pub async fn request_llm_completion(
     let system_prompt = Some(stable_prompt);
 
     // Collect available tools
-    let available_tools =
-        crate::agent::tools::collect_available_tools(&session_id, &agent_config, proxy_manager)
-            .await
-            .ok();
+    let available_tools = crate::agent::tools::collect_available_tools(&session_id, proxy_manager)
+        .await
+        .ok();
 
     // Resolve @type:arg references in user messages (Late Binding).
     // The stored messages are NOT modified — only the CompletionRequest payload is enriched.

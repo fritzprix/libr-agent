@@ -93,10 +93,9 @@ pub fn classify_tool_result(
     ToolResultAcceptance::Accept
 }
 
-/// Collect available tools for a session based on agent configuration
+/// Collect available tools for a session from its configured proxy.
 pub async fn collect_available_tools(
     session_id: &str,
-    agent_config: &crate::agent::AgentConfig,
     proxy_manager: &Arc<MCPServiceProxyManager>,
 ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
     let mut all_tools = Vec::new();
@@ -129,35 +128,26 @@ pub async fn collect_available_tools(
             session_id
         );
 
-        // 2. Collect external MCP tools
-        if !agent_config.mcp_server_ids.is_empty() {
-            log::debug!(
-                "Agent config allows {} external MCP servers",
-                agent_config.mcp_server_ids.len()
-            );
+        // 2. Collect external MCP tools from the session-isolated proxy state.
+        let session_stdio_tools = proxy.get_session_stdio_tools().await;
 
-            // 2a. Get SESSION-ISOLATED stdio server tools (spawned per-session)
-            let session_stdio_tools = proxy.get_session_stdio_tools().await;
+        log::info!(
+            "Collected {} SESSION-ISOLATED stdio tools for session {}",
+            session_stdio_tools.len(),
+            session_id
+        );
 
-            log::info!(
-                "Collected {} SESSION-ISOLATED stdio tools for session {}",
-                session_stdio_tools.len(),
-                session_id
-            );
+        all_tools.extend(session_stdio_tools);
 
-            all_tools.extend(session_stdio_tools);
+        let session_http_tools = proxy.get_session_http_tools().await;
 
-            // 2b. Get SESSION-ISOLATED HTTP server tools (connected per-session)
-            let session_http_tools = proxy.get_session_http_tools().await;
+        log::info!(
+            "Collected {} SESSION-ISOLATED HTTP tools for session {}",
+            session_http_tools.len(),
+            session_id
+        );
 
-            log::info!(
-                "Collected {} SESSION-ISOLATED HTTP tools for session {}",
-                session_http_tools.len(),
-                session_id
-            );
-
-            all_tools.extend(session_http_tools);
-        }
+        all_tools.extend(session_http_tools);
     } else {
         log::warn!(
             "No proxy found for session {}, cannot collect tools",

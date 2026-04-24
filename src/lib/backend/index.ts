@@ -72,7 +72,6 @@ export {
 export {
   getMessagesPageForSession,
   getMessagesBeforeCursor,
-  getRecentMessagesSlice,
   upsertMessages,
   upsertMessage,
   deleteMessage,

@@ -700,6 +700,41 @@ impl MCPServiceProxyManager {
         Ok(proxy_arc)
     }
 
+    /// Ensure a session has a proxy that matches its persisted agent configuration.
+    ///
+    /// Unlike `ensure_builtin_proxy`, this path is config-aware: it loads the session's
+    /// stored `agent_config`, derives both builtin and external MCP requirements, and then
+    /// delegates to `create_proxy()`. That means an existing builtin-only lazy proxy will
+    /// be recreated when the session configuration requires stdio/HTTP MCP servers.
+    pub async fn ensure_configured_proxy(
+        &self,
+        session_id: &str,
+        app_handle: Option<AppHandle>,
+    ) -> Result<Arc<MCPServiceProxy>, String> {
+        use crate::agent::tools::extract_builtin_tool_ids;
+        use crate::repositories::session_repository::SessionRepository;
+
+        let session_repo = crate::state::get_session_repository();
+        let session = session_repo
+            .get_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to load session {}: {}", session_id, e))?
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        let config_json = session
+            .agent_config
+            .ok_or_else(|| "Session has no config".to_string())?;
+        let agent_config = crate::agent::AgentConfig::from_json(&config_json)?;
+        let tool_ids = extract_builtin_tool_ids(&agent_config);
+
+        self.create_proxy(
+            session_id.to_string(),
+            tool_ids,
+            agent_config.mcp_server_ids,
+            app_handle,
+        )
+        .await
+    }
+
     /// Lazily initialise a builtin-only proxy for a session that has no active proxy.
     ///
     /// Called by [`crate::mcp::service_proxy_manager::MCPServiceProxyManager::call_tool`] when a builtin tool is requested for a session whose proxy
