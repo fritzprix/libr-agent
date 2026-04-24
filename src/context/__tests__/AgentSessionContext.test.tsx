@@ -324,6 +324,43 @@ describe('AgentSessionContext (Local)', () => {
             });
         });
 
+        it('keeps cancelled workflows paused when workflowCompleted is emitted', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => useAgentSessionState(),
+                { wrapper: TestWrapper }
+            );
+
+            await waitFor(() => {
+                expect(result.current.isSessionLoading).toBe(false);
+                expect(eventHandler).toBeDefined();
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'workflowCompleted',
+                        sessionId: TEST_SESSION_ID,
+                        reason: 'cancelled',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.workflowStatus).toBe('paused');
+                expect(result.current.workflowPhase).toBe('idle');
+            });
+        });
+
         it('should append message on messageAdded event', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
             (listen as ReturnType<typeof vi.fn>).mockImplementation(

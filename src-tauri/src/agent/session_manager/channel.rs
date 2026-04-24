@@ -2,7 +2,6 @@ use super::AgentSessionManager;
 use crate::agent::channel_routing::{resolve_auto_routed_channel_target, ChannelRouteCandidate};
 use crate::mcp::types::ChannelNotification;
 use crate::models::chat::Message;
-use crate::repositories::SessionStatus;
 use std::collections::HashMap;
 
 pub async fn inject_channel_notification(
@@ -11,7 +10,7 @@ pub async fn inject_channel_notification(
     server_name: String,
     notification: ChannelNotification,
 ) -> Result<(String, bool), String> {
-    let session = manager
+    manager
         .get_session(&session_id)
         .await?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
@@ -24,11 +23,7 @@ pub async fn inject_channel_notification(
     );
     let message_id = message.id.clone();
 
-    let should_trigger_workflow = !matches!(session.status, SessionStatus::Busy);
-
-    manager
-        .inject_messages(session_id, vec![message], should_trigger_workflow)
-        .await?;
+    let should_trigger_workflow = manager.inject_messages(session_id, vec![message]).await?;
 
     Ok((message_id, should_trigger_workflow))
 }

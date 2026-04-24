@@ -248,7 +248,7 @@ async fn execute_task(
     };
 
     manager
-        .inject_messages(session_id.clone(), vec![user_message], true)
+        .inject_messages(session_id.clone(), vec![user_message])
         .await?;
 
     // ── 6. Record the run and schedule the next fire time ─────────────────────

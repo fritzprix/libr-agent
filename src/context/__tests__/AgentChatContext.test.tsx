@@ -376,15 +376,16 @@ describe('AgentChatContext', () => {
         await result.current.submit(newMessage);
       });
 
-      // Expect Date to be converted to Unix timestamp
-      expect(safeInvoke).toHaveBeenCalledWith('agent_send_message', {
+      expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
         request: expect.objectContaining({
           sessionId: 'test-session',
-          message: expect.objectContaining({
-            ...newMessage,
-            createdAt: createdAt.getTime(),
-            updatedAt: createdAt.getTime(),
-          }),
+          messages: [
+            expect.objectContaining({
+              ...newMessage,
+              createdAt: createdAt.getTime(),
+              updatedAt: createdAt.getTime(),
+            }),
+          ],
         }),
       });
     });
@@ -474,11 +475,11 @@ describe('AgentChatContext', () => {
       });
     });
 
-    it('should resume workflow when pending messages remain after returning to idle', async () => {
+    it('should inject through the backend while busy without frontend resume logic', async () => {
       const deferred = createDeferred<{ success: boolean }>();
       (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
         (command: string) => {
-          if (command === 'agent_send_message') {
+          if (command === 'agent_inject_messages') {
             return deferred.promise;
           }
           return Promise.resolve({ success: true });
@@ -501,7 +502,7 @@ describe('AgentChatContext', () => {
         createdAt: new Date(),
       };
 
-      const { result, rerender } = renderHook(() => useAgentChat(), {
+      const { result } = renderHook(() => useAgentChat(), {
         wrapper: TestWrapper,
       });
 
@@ -513,22 +514,61 @@ describe('AgentChatContext', () => {
         expect(result.current.pendingMessages).toEqual([pendingMessage]);
       });
 
+      expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
+        request: expect.objectContaining({
+          sessionId: 'test-session',
+          messages: [
+            expect.objectContaining({
+              id: pendingMessage.id,
+            }),
+          ],
+        }),
+      });
+
+      expect(mockResumeSession).not.toHaveBeenCalled();
+
+      deferred.resolve({ success: true });
+      await act(async () => {
+        await deferred.promise;
+      });
+    });
+
+    it('should reject submit while session is loading', async () => {
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
         session: { id: 'test-session', name: 'Test Session' },
         messages: mockMessages,
-        isSessionLoading: false,
+        isSessionLoading: true,
         error: null,
         llmError: null,
         workflowStatus: 'idle',
       });
 
-      rerender();
-
-      await waitFor(() => {
-        expect(mockResumeSession).toHaveBeenCalledTimes(1);
+      const { result } = renderHook(() => useAgentChat(), {
+        wrapper: TestWrapper,
       });
 
-      deferred.resolve({ success: true });
+      const newMessage: Message = {
+        id: 'msg-loading',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'user',
+        content: [{ type: 'text', text: 'Wait for init' }],
+        createdAt: new Date(),
+      };
+
+      await act(async () => {
+        await expect(result.current.submit(newMessage)).rejects.toThrow(
+          'Cannot submit while session is still loading',
+        );
+      });
+
+      expect(mockSetError).toHaveBeenCalledWith(
+        'Cannot submit while session is still loading',
+      );
+      expect(safeInvoke).not.toHaveBeenCalledWith(
+        'agent_inject_messages',
+        expect.anything(),
+      );
     });
 
     it('should handle submit errors', async () => {
@@ -561,6 +601,10 @@ describe('AgentChatContext', () => {
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
         session: null,
         messages: [],
+        isSessionLoading: false,
+        error: null,
+        llmError: null,
+        workflowStatus: 'idle',
       });
       console.error = vi.fn(); // Suppress error logs
       const { result } = renderHook(() => useAgentChat(), {

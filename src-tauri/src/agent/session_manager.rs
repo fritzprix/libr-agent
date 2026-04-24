@@ -9,6 +9,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
     CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
+    SessionStatus,
 };
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -357,25 +358,39 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Inject messages into the session and optionally trigger the workflow
+    /// Inject messages into the session and let the backend decide whether to
+    /// continue the workflow based on the current session state.
     pub async fn inject_messages(
         &self,
         session_id: String,
         messages: Vec<Message>,
-        emit_events_immediately: bool,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
+        let should_trigger_workflow = {
+            let sessions = self.active_sessions.read().await;
+            let session = sessions
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            let is_transitioning_to_busy = matches!(
+                session.status_transition.read().await.as_ref(),
+                Some(crate::agent::state::SessionStatusTransition::ToStatus(
+                    SessionStatus::Busy
+                ))
+            );
+
+            session.metadata.status != SessionStatus::Busy && !is_transitioning_to_busy
+        };
+
         // Delegate message persistence, caching, and event emission to MessageService
         crate::services::MessageService::inject_messages_to_session(
             &self.active_sessions,
             &self.app_handle,
             &session_id,
             messages,
-            emit_events_immediately,
+            should_trigger_workflow,
         )
         .await?;
 
-        // Trigger workflow if requested
-        if emit_events_immediately {
+        if should_trigger_workflow {
             log::info!(
                 "Triggering workflow after message injection for session: {}",
                 session_id
@@ -427,7 +442,7 @@ impl AgentSessionManager {
             .await?;
         }
 
-        Ok(())
+        Ok(should_trigger_workflow)
     }
 
     pub async fn inject_channel_notification(

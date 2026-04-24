@@ -100,7 +100,7 @@ function AgentChatInner() {
           'ui',
         );
 
-        await injectMessages([toolCallMsg, toolResultMsg], true);
+        await injectMessages([toolCallMsg, toolResultMsg]);
         toast.success('Playbook started automatically');
       } catch (error) {
         logger.error('Failed to auto-select playbook', error);

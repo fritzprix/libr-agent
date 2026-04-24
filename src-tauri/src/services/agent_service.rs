@@ -563,7 +563,6 @@ impl AgentService {
             persisted_session
         };
 
-        let is_busy = matches!(session.status, crate::repositories::SessionStatus::Busy);
         let message_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -594,17 +593,10 @@ impl AgentService {
             metadata: None,
         };
 
-        let status = if is_busy {
-            manager
-                .inject_messages(session_id.to_string(), vec![message], false)
-                .await?;
-            "queued"
-        } else {
-            manager
-                .start_workflow(session_id.to_string(), message)
-                .await?;
-            "processed"
-        };
+        let triggered = manager
+            .inject_messages(session_id.to_string(), vec![message])
+            .await?;
+        let status = if triggered { "processed" } else { "queued" };
 
         Ok(SendSessionMessageResponse {
             message_id,

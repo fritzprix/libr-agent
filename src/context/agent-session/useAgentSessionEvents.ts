@@ -246,10 +246,19 @@ export function useAgentSessionEvents(
             }
 
             case 'workflowCompleted': {
-              setters.setWorkflowStatus('idle');
+              const nextStatus =
+                payload.reason === 'cancelled' ? 'paused' : 'idle';
+              setters.setWorkflowStatus(nextStatus);
+              setters.setSession((prev) =>
+                prev ? { ...prev, status: nextStatus } : null,
+              );
               setters.setWorkflowPhase('idle');
               setters.setIsSessionLoading(false);
-              logger.info('Workflow phase: idle');
+              logger.info('Workflow phase: idle', {
+                sessionId,
+                reason: payload.reason,
+                status: nextStatus,
+              });
               break;
             }
           }

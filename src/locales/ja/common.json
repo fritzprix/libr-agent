@@ -715,6 +715,8 @@
       "cancelAriaLabel": "リクエストをキャンセル",
       "cancellingTooltip": "キャンセル中...",
       "cancelTooltip": "キャンセル",
+      "resumeAriaLabel": "ワークフローを再開",
+      "resumeTooltip": "再開",
       "sendAriaLabel": "メッセージを送信",
       "sendTooltip": "送信"
     },

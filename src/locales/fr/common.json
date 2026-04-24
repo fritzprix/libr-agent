@@ -725,6 +725,8 @@
       "cancelAriaLabel": "Annuler la requête",
       "cancellingTooltip": "Annulation...",
       "cancelTooltip": "Annuler",
+      "resumeAriaLabel": "Reprendre le workflow",
+      "resumeTooltip": "Reprendre",
       "sendAriaLabel": "Envoyer le message",
       "sendTooltip": "Envoyer"
     },

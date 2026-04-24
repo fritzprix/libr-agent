@@ -5,24 +5,19 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 
-import { useDebounce } from 'react-use';
 import {
-  useAgentSessionState,
   useAgentSessionActions,
+  useAgentSessionState,
 } from '@/context/AgentSessionContext';
-import { useLLMService } from './LLMServiceContext';
-import { getLogger } from '../lib/logger';
-import { isValidMessage } from '@/models/validation';
+import type { AgentResponse, InjectMessagesRequest } from '@/models/agent-ipc';
 import type { Message, MessageError, RustMessage } from '@/models/chat';
-import type {
-  SendUserMessageRequest,
-  InjectMessagesRequest,
-  AgentResponse,
-} from '@/models/agent-ipc';
+import { isValidMessage } from '@/models/validation';
+import { useDebounce } from 'react-use';
+import { getLogger } from '../lib/logger';
+import { useLLMService } from './LLMServiceContext';
 
 const logger = getLogger('AgentChatContext');
 
@@ -42,6 +37,27 @@ function extractTextContent(message: Message): string {
     )
     .map((item) => item.text)
     .join('');
+}
+
+function toRustMessage(message: Message): RustMessage {
+  const now = Date.now();
+  return {
+    ...message,
+    toolCalls: message.tool_calls,
+    toolCallId: message.tool_call_id,
+    createdAt:
+      message.createdAt instanceof Date
+        ? message.createdAt.getTime()
+        : message.createdAt || now,
+    updatedAt:
+      message.updatedAt instanceof Date
+        ? message.updatedAt.getTime()
+        : message.updatedAt ||
+          (message.createdAt instanceof Date
+            ? message.createdAt.getTime()
+            : message.createdAt) ||
+          now,
+  };
 }
 
 function summarizeMessageForLog(
@@ -223,12 +239,9 @@ interface AgentChatActionsContextValue {
 
   /**
    * Inject messages into the session directly
-   * Optionally triggers the workflow based on the updated history
+   * Backend decides whether the workflow should continue based on session state
    */
-  injectMessages: (
-    messages: Message[],
-    triggerWorkflow?: boolean,
-  ) => Promise<void>;
+  injectMessages: (messages: Message[]) => Promise<void>;
 
   /**
    * Resume a paused workflow
@@ -273,81 +286,21 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   // Pending messages queue for busy state
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
-  const pendingDrainRequestedRef = useRef(false);
 
   const enqueuePendingMessage = useCallback((message: Message) => {
     setPendingMessages((prev) => {
       if (prev.some((pending) => pending.id === message.id)) {
         return prev;
       }
-
-      logger.info('Adding message to pending queue', {
-        messageId: message.id,
-        currentPendingCount: prev.length,
-        newPendingCount: prev.length + 1,
-      });
-
       return [...prev, message];
     });
   }, []);
 
   const removePendingMessage = useCallback((messageId: string) => {
-    setPendingMessages((prev) =>
-      prev.filter((message) => message.id !== messageId),
-    );
+    setPendingMessages((prev) => {
+      return prev.filter((message) => message.id !== messageId);
+    });
   }, []);
-
-  /**
-   * Internal submit handler for merged messages
-   * (Separated to avoid circular dependency in 'submit' which uses the queue)
-   */
-  const submitMergedMessage = useCallback(
-    async (message: Message) => {
-      if (!session?.id) return;
-
-      logger.info('Submitting merged message', {
-        sessionId: session.id,
-        messageId: message.id,
-      });
-
-      enqueuePendingMessage(message);
-
-      try {
-        const now = Date.now();
-        const messageForRust: RustMessage = {
-          ...message,
-          toolCalls: message.tool_calls,
-          toolCallId: message.tool_call_id,
-          createdAt:
-            message.createdAt instanceof Date
-              ? message.createdAt.getTime()
-              : message.createdAt || now,
-          updatedAt:
-            message.updatedAt instanceof Date
-              ? message.updatedAt.getTime()
-              : message.updatedAt ||
-                (message.createdAt instanceof Date
-                  ? message.createdAt.getTime()
-                  : message.createdAt) ||
-                now,
-        };
-
-        const request: SendUserMessageRequest = {
-          sessionId: session.id,
-          message: messageForRust,
-        };
-
-        await safeInvoke<AgentResponse>('agent_send_message', { request });
-      } catch (err) {
-        removePendingMessage(message.id);
-        logger.error('Failed to submit merged message', err);
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        setError(errorMessage);
-        throw err;
-      }
-    },
-    [session?.id, enqueuePendingMessage, removePendingMessage, setError],
-  );
 
   // Fetch service contexts from backend
   const updateServiceContexts = useCallback(async () => {
@@ -417,12 +370,14 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     });
 
     setPendingMessages((prev) => {
+      const removed = prev.filter((pending) =>
+        sessionMessageIds.has(pending.id),
+      );
       const filtered = prev.filter(
         (pending) => !sessionMessageIds.has(pending.id),
       );
 
       if (filtered.length !== prev.length) {
-        const removed = prev.filter((p) => sessionMessageIds.has(p.id));
         logger.info('Removed messages from pending queue', {
           removedCount: prev.length - filtered.length,
           removedIds: removed.map((p) => p.id),
@@ -473,48 +428,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     currentStreamingMessage,
     session?.id,
     sessionMessages,
-  ]);
-
-  useEffect(() => {
-    const shouldDrainPendingQueue =
-      !!session?.id &&
-      !isSessionLoading &&
-      workflowStatus === 'idle' &&
-      pendingMessages.length > 0;
-
-    if (!shouldDrainPendingQueue) {
-      pendingDrainRequestedRef.current = false;
-      return;
-    }
-
-    if (pendingDrainRequestedRef.current) {
-      return;
-    }
-
-    pendingDrainRequestedRef.current = true;
-    logger.info(
-      'Workflow idle with pending injected messages; resuming workflow',
-      {
-        sessionId: session.id,
-        pendingCount: pendingMessages.length,
-      },
-    );
-
-    resumeSession().catch((error) => {
-      pendingDrainRequestedRef.current = false;
-      logger.error(
-        'Failed to resume workflow for pending injected messages',
-        error,
-      );
-      setError(error instanceof Error ? error.message : String(error));
-    });
-  }, [
-    isSessionLoading,
-    pendingMessages.length,
-    resumeSession,
-    session?.id,
-    setError,
-    workflowStatus,
   ]);
 
   /**
@@ -588,94 +501,10 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   }, [sessionMessages, pendingMessages, currentStreamingMessage, session?.id]);
 
   /**
-   * Submit a user message to the agent workflow
-   * This delegates to Rust backend via agent_send_message command
-   */
-  const submit = useCallback(
-    async (message: Message) => {
-      if (!session?.id) {
-        logger.error('Cannot submit: no active session');
-        return;
-      }
-
-      // Check if we should inject directly to backend cache (for next recursion)
-      if (
-        workflowStatus === 'busy' ||
-        workflowStatus === 'paused' ||
-        isSessionLoading
-      ) {
-        logger.info('Agent busy/paused, injecting message to backend cache', {
-          status: workflowStatus,
-          messageId: message.id,
-        });
-
-        // Inject immediately into backend cache (no workflow trigger)
-        // This makes the message available for the next LLM recursion
-        // The workflow will pick this up after tool execution completes
-        enqueuePendingMessage(message);
-
-        try {
-          const now = Date.now();
-          const messageForRust: RustMessage = {
-            ...message,
-            toolCalls: message.tool_calls,
-            toolCallId: message.tool_call_id,
-            createdAt:
-              message.createdAt instanceof Date
-                ? message.createdAt.getTime()
-                : message.createdAt || now,
-            updatedAt:
-              message.updatedAt instanceof Date
-                ? message.updatedAt.getTime()
-                : message.updatedAt ||
-                  (message.createdAt instanceof Date
-                    ? message.createdAt.getTime()
-                    : message.createdAt) ||
-                  now,
-          };
-
-          const request: InjectMessagesRequest = {
-            sessionId: session.id,
-            messages: [messageForRust],
-            triggerWorkflow: false, // Backend will include in next automatic LLM call
-          };
-
-          await safeInvoke<AgentResponse>('agent_inject_messages', { request });
-        } catch (err) {
-          removePendingMessage(message.id);
-          logger.error('Failed to inject message to backend', err);
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          setError(errorMessage);
-          return;
-        }
-
-        return;
-      }
-
-      logger.info('Submitting message to agent workflow', {
-        sessionId: session.id,
-        messageId: message.id,
-      });
-
-      // Delegate to internal logic which handles error state and re-throws
-      await submitMergedMessage(message);
-    },
-    [
-      session?.id,
-      workflowStatus,
-      isSessionLoading,
-      submitMergedMessage,
-      setError,
-      enqueuePendingMessage,
-      removePendingMessage,
-    ],
-  );
-
-  /**
    * Inject messages into the session
    */
   const injectMessages = useCallback(
-    async (messages: Message[], triggerWorkflow = false) => {
+    async (messages: Message[]) => {
       if (!session?.id) {
         logger.error('Cannot inject messages: no active session');
         return;
@@ -684,33 +513,15 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       logger.info('Injecting messages', {
         sessionId: session.id,
         count: messages.length,
-        triggerWorkflow,
+        status: workflowStatus,
       });
 
       try {
-        const now = Date.now();
-        const messagesForRust: RustMessage[] = messages.map((msg) => ({
-          ...msg,
-          toolCalls: msg.tool_calls,
-          toolCallId: msg.tool_call_id,
-          createdAt:
-            msg.createdAt instanceof Date
-              ? msg.createdAt.getTime()
-              : msg.createdAt || now,
-          updatedAt:
-            msg.updatedAt instanceof Date
-              ? msg.updatedAt.getTime()
-              : msg.updatedAt ||
-                (msg.createdAt instanceof Date
-                  ? msg.createdAt.getTime()
-                  : msg.createdAt) ||
-                now,
-        }));
+        const messagesForRust: RustMessage[] = messages.map(toRustMessage);
 
         const request: InjectMessagesRequest = {
           sessionId: session.id,
           messages: messagesForRust,
-          triggerWorkflow,
         };
 
         await safeInvoke<AgentResponse>('agent_inject_messages', { request });
@@ -719,9 +530,56 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         logger.error('Failed to inject messages', err);
         const errorMessage = err instanceof Error ? err.message : String(err);
         setError(errorMessage);
+        throw err;
       }
     },
-    [session?.id],
+    [session?.id, setError, workflowStatus],
+  );
+
+  /**
+   * Submit a user message to the agent workflow
+   */
+  const submit = useCallback(
+    async (message: Message) => {
+      if (!session?.id) {
+        logger.error('Cannot submit: no active session');
+        return;
+      }
+
+      if (isSessionLoading) {
+        const errorMessage = 'Cannot submit while session is still loading';
+        logger.warn(errorMessage, {
+          sessionId: session.id,
+          messageId: message.id,
+        });
+        setError(errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      logger.info('Submitting message through injection path', {
+        sessionId: session.id,
+        messageId: message.id,
+        status: workflowStatus,
+      });
+
+      enqueuePendingMessage(message);
+
+      try {
+        await injectMessages([message]);
+      } catch (err) {
+        removePendingMessage(message.id);
+        throw err;
+      }
+    },
+    [
+      enqueuePendingMessage,
+      injectMessages,
+      isSessionLoading,
+      removePendingMessage,
+      session?.id,
+      setError,
+      workflowStatus,
+    ],
   );
 
   /**
@@ -737,6 +595,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // 1. Immediately cancel any local streaming LLM requests
     cancelCompletionRequest(session.id);
+    clearStreamingMessage(session.id);
 
     // 2. Clear pending messages to remove them optimistically from UI
     setPendingMessages([]);
@@ -752,7 +611,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
     }
-  }, [session?.id, cancelCompletionRequest, setError]);
+  }, [session?.id, cancelCompletionRequest, clearStreamingMessage, setError]);
 
   /**
    * Retry the last failed message

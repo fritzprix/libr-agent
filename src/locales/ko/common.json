@@ -729,6 +729,8 @@
       "cancelAriaLabel": "요청 취소",
       "cancellingTooltip": "취소 중...",
       "cancelTooltip": "취소",
+      "resumeAriaLabel": "워크플로 재개",
+      "resumeTooltip": "재개",
       "sendAriaLabel": "메시지 보내기",
       "sendTooltip": "보내기"
     },

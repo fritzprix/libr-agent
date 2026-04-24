@@ -124,7 +124,7 @@ export function useWorkspaceFileDrop(
         );
 
         // Submit messages atomically using injectMessages
-        await injectMessages([toolCallMessage, toolResultMessage], true);
+        await injectMessages([toolCallMessage, toolResultMessage]);
 
         // Refresh directory after import
         onDropComplete();

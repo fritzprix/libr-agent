@@ -50,12 +50,14 @@ pub struct SendUserMessageRequest {
     pub message: Message,
 }
 
-/// Request to inject messages silently or with workflow trigger
+/// Request to inject messages. Workflow continuation is decided by backend
+/// session state. `trigger_workflow` is kept only for backward compatibility.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InjectMessagesRequest {
     pub session_id: String,
     pub messages: Vec<Message>,
+    #[serde(default)]
     pub trigger_workflow: bool,
 }
 
@@ -338,21 +340,17 @@ pub async fn agent_inject_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
-    manager
-        .inject_messages(
-            request.session_id.clone(),
-            request.messages,
-            request.trigger_workflow,
-        )
+    let triggered = manager
+        .inject_messages(request.session_id.clone(), request.messages)
         .await?;
 
     Ok(AgentResponse {
         success: true,
         message: format!(
             "Injected messages for session: {} (triggered: {})",
-            request.session_id, request.trigger_workflow
+            request.session_id, triggered
         ),
-        data: None,
+        data: Some(serde_json::json!({ "triggered": triggered })),
     })
 }
 
@@ -389,7 +387,6 @@ pub async fn agent_execute_ui_tauri_action(
         .inject_messages(
             request.session_id.clone(),
             vec![tool_call_message, tool_result_message],
-            true,
         )
         .await?;
 

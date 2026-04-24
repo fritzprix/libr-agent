@@ -725,6 +725,8 @@
       "cancelAriaLabel": "Anfrage abbrechen",
       "cancellingTooltip": "Wird abgebrochen...",
       "cancelTooltip": "Abbrechen",
+      "resumeAriaLabel": "Workflow fortsetzen",
+      "resumeTooltip": "Fortsetzen",
       "sendAriaLabel": "Nachricht senden",
       "sendTooltip": "Senden"
     },
