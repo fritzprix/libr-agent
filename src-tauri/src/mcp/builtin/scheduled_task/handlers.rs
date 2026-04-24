@@ -193,7 +193,7 @@ pub async fn handle_list_scheduled_tasks(
         body.push_str("|---|---|---|---|---|---|\n");
         body.push_str(&paged_tasks
             .iter()
-            .map(|t| render_task_line(t))
+            .map(render_task_line)
             .collect::<Vec<_>>()
             .join("\n"));
         body.push('\n');
