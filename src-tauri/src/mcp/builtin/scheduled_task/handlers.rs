@@ -164,19 +164,15 @@ pub async fn handle_list_scheduled_tasks(
     let header = match (args.assistant_id.as_deref(), args.enabled) {
         (Some(assistant_id), Some(enabled)) => format!(
             "Found {} scheduled task(s) for assistant '{}' with enabled={}:\n\n",
-            total,
-            assistant_id,
-            enabled
+            total, assistant_id, enabled
         ),
         (Some(assistant_id), None) => format!(
             "Found {} scheduled task(s) for assistant '{}':\n\n",
-            total,
-            assistant_id
+            total, assistant_id
         ),
         (None, Some(enabled)) => format!(
             "Found {} scheduled task(s) with enabled={}:\n\n",
-            total,
-            enabled
+            total, enabled
         ),
         (None, None) => format!("Found {} scheduled task(s):\n\n", total),
     };
@@ -184,18 +180,23 @@ pub async fn handle_list_scheduled_tasks(
     let mut body = String::new();
     if paged_tasks.is_empty() {
         if total > 0 {
-            body.push_str(&format!("No results for this page (offset {}, limit {}). Try a smaller offset.\n", offset, limit));
+            body.push_str(&format!(
+                "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+                offset, limit
+            ));
         } else {
             body.push_str("No scheduled tasks matched the filter.\n");
         }
     } else {
         body.push_str("| ID | Name | Status | Next Run | Assistant | Group |\n");
         body.push_str("|---|---|---|---|---|---|\n");
-        body.push_str(&paged_tasks
-            .iter()
-            .map(render_task_line)
-            .collect::<Vec<_>>()
-            .join("\n"));
+        body.push_str(
+            &paged_tasks
+                .iter()
+                .map(render_task_line)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
         body.push('\n');
     }
 
