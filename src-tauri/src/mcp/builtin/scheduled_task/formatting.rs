@@ -3,16 +3,16 @@ use serde_json::{json, Value};
 
 pub fn render_task_line(task: &ScheduledTaskModel) -> String {
     format!(
-        "- {} | {} | {} | next: {} | assistant: {}{}",
+        "| `{}` | {} | {} | {} | `{}` | {} |",
         task.id,
-        task.name,
+        task.name.replace('|', "\\|").replace('\n', " "),
         if task.enabled { "enabled" } else { "disabled" },
-        format_timestamp(task.next_run_at),
+        format_timestamp(task.next_run_at).replace('|', "\\|"),
         task.assistant_id,
         task.group_name
             .as_ref()
-            .map(|group| format!(" | group: {}", group))
-            .unwrap_or_default()
+            .map(|group| group.replace('|', "\\|").replace('\n', " "))
+            .unwrap_or_else(|| "-".to_string())
     )
 }
 

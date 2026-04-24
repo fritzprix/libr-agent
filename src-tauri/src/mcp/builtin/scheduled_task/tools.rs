@@ -113,6 +113,24 @@ fn list_scheduled_tasks_tool() -> MCPTool {
                     "enabled".to_string(),
                     boolean_prop(Some("Optional enabled-state filter.")),
                 ),
+                (
+                    "limit".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(100),
+                        20,
+                        Some("Maximum number of items to return."),
+                    ),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop_with_default(
+                        Some(0),
+                        None,
+                        0,
+                        Some("Pagination offset (0-based)."),
+                    ),
+                ),
             ],
             vec![],
             None,

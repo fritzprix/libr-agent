@@ -28,6 +28,8 @@ pub struct CreateScheduledTaskArgs {
 pub struct ListScheduledTasksArgs {
     assistant_id: Option<String>,
     enabled: Option<bool>,
+    limit: Option<usize>,
+    offset: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,45 +155,73 @@ pub async fn handle_list_scheduled_tasks(
         tasks.retain(|task| task.enabled == enabled);
     }
 
+    let total = tasks.len();
+    let limit = args.limit.unwrap_or(20);
+    let offset = args.offset.unwrap_or(0);
+
+    let paged_tasks: Vec<_> = tasks.into_iter().skip(offset).take(limit).collect();
+
     let header = match (args.assistant_id.as_deref(), args.enabled) {
         (Some(assistant_id), Some(enabled)) => format!(
-            "Found {} scheduled task(s) for assistant '{}' with enabled={}:",
-            tasks.len(),
+            "Found {} scheduled task(s) for assistant '{}' with enabled={}:\n\n",
+            total,
             assistant_id,
             enabled
         ),
         (Some(assistant_id), None) => format!(
-            "Found {} scheduled task(s) for assistant '{}':",
-            tasks.len(),
+            "Found {} scheduled task(s) for assistant '{}':\n\n",
+            total,
             assistant_id
         ),
         (None, Some(enabled)) => format!(
-            "Found {} scheduled task(s) with enabled={}:",
-            tasks.len(),
+            "Found {} scheduled task(s) with enabled={}:\n\n",
+            total,
             enabled
         ),
-        (None, None) => format!("Found {} scheduled task(s):", tasks.len()),
+        (None, None) => format!("Found {} scheduled task(s):\n\n", total),
     };
 
-    let body = if tasks.is_empty() {
-        "No scheduled tasks matched the filter.".to_string()
+    let mut body = String::new();
+    if paged_tasks.is_empty() {
+        if total > 0 {
+            body.push_str(&format!("No results for this page (offset {}, limit {}). Try a smaller offset.\n", offset, limit));
+        } else {
+            body.push_str("No scheduled tasks matched the filter.\n");
+        }
     } else {
-        tasks
+        body.push_str("| ID | Name | Status | Next Run | Assistant | Group |\n");
+        body.push_str("|---|---|---|---|---|---|\n");
+        body.push_str(&paged_tasks
             .iter()
-            .map(render_task_line)
+            .map(|t| render_task_line(t))
             .collect::<Vec<_>>()
-            .join("\n")
-    };
+            .join("\n"));
+        body.push('\n');
+    }
+
+    if offset.saturating_add(limit) < total {
+        body.push_str(&format!(
+            "\n*(Showing {} to {} of {} total results. Call this tool again with offset: {} to see more)*",
+            offset + 1,
+            offset + paged_tasks.len(),
+            total,
+            offset.saturating_add(limit)
+        ));
+    }
 
     Ok(SuccessHint::new(
         format!(
-            "{header}\n\n{body}\n\n💡 Use getScheduledTask(\"...\") for full detail before updating or deleting."
+            "{header}{body}\n\n💡 Use getScheduledTask(\"...\") for full detail before updating or deleting."
         ),
         vec!["Use getScheduledTask(\"...\") to inspect one task in detail".to_string()],
     )
     .to_mcp_result_with_data(Some(json!({
-        "tasks": tasks.iter().map(task_to_json).collect::<Vec<_>>(),
-        "total": tasks.len()
+        "query": args.assistant_id,
+        "enabled": args.enabled,
+        "offset": offset,
+        "limit": limit,
+        "totalResults": total,
+        "tasks": paged_tasks.iter().map(task_to_json).collect::<Vec<_>>(),
     }))))
 }
 
