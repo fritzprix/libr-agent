@@ -9,6 +9,24 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+
+pub async fn reset_session_execution_state(session: &mut AgentSession) {
+    session.cancel_pending.store(false, Ordering::SeqCst);
+    session.cancellation_token = CancellationToken::new();
+    // Safety valve: clear any stale in-flight compaction state before
+    // explicitly starting or restarting a workflow from the current stack.
+    session.compaction.in_flight.store(false, Ordering::SeqCst);
+    session
+        .compaction
+        .awaiting_completion
+        .store(false, Ordering::SeqCst);
+    session
+        .compaction
+        .finalize_workflow_after_compact
+        .store(false, Ordering::SeqCst);
+    *session.compaction.deferred_workflow_step.write().await = None;
+}
+
 pub async fn start_workflow(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -88,21 +106,7 @@ pub async fn start_workflow(
     {
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
-            session.cancel_pending.store(false, Ordering::SeqCst);
-            session.cancellation_token = CancellationToken::new();
-            // Safety valve: clear any stale in-flight compaction flag.
-            // Guards against the case where the frontend crashed mid-compaction
-            // and never called agent_handle_compact_error to release the flag.
-            session.compaction.in_flight.store(false, Ordering::SeqCst);
-            session
-                .compaction
-                .awaiting_completion
-                .store(false, Ordering::SeqCst);
-            session
-                .compaction
-                .finalize_workflow_after_compact
-                .store(false, Ordering::SeqCst);
-            *session.compaction.deferred_workflow_step.write().await = None;
+            reset_session_execution_state(session).await;
         }
     }
 

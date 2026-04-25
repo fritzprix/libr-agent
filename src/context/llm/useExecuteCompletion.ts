@@ -681,12 +681,22 @@ export function useExecuteCompletion({
 
   const cancelCompletionRequest = useCallback((sessionId: string) => {
     logger.info('Manually cancelling completion request', { sessionId });
+    activeRequestIdsRef.current.delete(sessionId);
+    lastStreamingUpdateRef.current.delete(sessionId);
+    const timeoutId = timeoutsRef.current.get(sessionId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutsRef.current.delete(sessionId);
+    }
     const service = activeServicesRef.current.get(sessionId);
     if (service) {
+      activeServicesRef.current.delete(sessionId);
       service.cancel();
+      service.dispose();
     }
     const abortController = abortControllersRef.current.get(sessionId);
     if (abortController) {
+      abortControllersRef.current.delete(sessionId);
       abortController.abort();
     }
   }, []);

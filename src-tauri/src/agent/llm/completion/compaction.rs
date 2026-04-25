@@ -22,6 +22,18 @@ pub fn should_trigger_background_compaction(
             > crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit)
 }
 
+pub fn should_trigger_post_response_compaction(
+    usage_total_tokens: usize,
+    safe_input_token_limit: usize,
+    context_strategy: &str,
+) -> bool {
+    should_trigger_background_compaction(
+        usage_total_tokens,
+        safe_input_token_limit,
+        context_strategy,
+    )
+}
+
 async fn resolve_parent_request(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -114,6 +126,112 @@ fn build_compaction_request_payload(
         split_idx,
         false,
     ))
+}
+
+fn provider_requires_compaction_tool_chain_cleanup(provider_id: &str) -> bool {
+    ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+}
+
+fn drop_oldest_compaction_message(messages: &mut Vec<Message>) -> bool {
+    if messages.len() <= 1 {
+        return false;
+    }
+
+    let drop_index = if messages[0].is_compact_summary() && messages.len() > 1 {
+        1
+    } else {
+        0
+    };
+    messages.remove(drop_index);
+    true
+}
+
+pub fn fit_compaction_request_messages_to_limit(
+    messages: &[Message],
+    provider_id: &str,
+    safe_input_token_limit: usize,
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> Result<Vec<Message>, String> {
+    let preserved_calibration_ratio =
+        crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+            messages,
+            system_prompt_tokens,
+            tools_tokens,
+        );
+
+    let mut fitted = messages.to_vec();
+    while fitted.len() > 1 {
+        let conservative_total =
+            crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+                &fitted,
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio,
+            );
+        if conservative_total < safe_input_token_limit {
+            return Ok(fitted);
+        }
+
+        if !drop_oldest_compaction_message(&mut fitted) {
+            break;
+        }
+
+        if provider_requires_compaction_tool_chain_cleanup(provider_id) {
+            fitted = crate::agent::llm::context_selector::remove_incomplete_tool_chains(fitted);
+        }
+    }
+
+    let single_message = if fitted.len() == 1 {
+        crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
+            &fitted,
+            safe_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        )
+    } else {
+        fitted
+    };
+
+    if single_message.len() == 1 && single_message[0].is_compact_summary() {
+        return Err(
+            "Compaction payload reduction exhausted the raw delta and would leave only the prior compact summary anchor.".to_string(),
+        );
+    }
+
+    let conservative_total =
+        crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+            &single_message,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        );
+
+    if conservative_total < safe_input_token_limit {
+        return Ok(single_message);
+    }
+
+    Err(format!(
+        "Compaction payload still exceeds the effective context limit after compaction-fit reduction ({} >= {}).",
+        conservative_total, safe_input_token_limit
+    ))
+}
+
+fn estimate_compaction_non_message_tokens(
+    parent_request: Option<&CompactionParentRequest>,
+) -> (usize, usize) {
+    let system_prompt_tokens = parent_request
+        .and_then(|request| request.system_prompt.as_ref())
+        .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
+        .unwrap_or(0);
+    let tools_tokens = parent_request
+        .and_then(|request| request.available_tools.as_ref())
+        .and_then(|tools| serde_json::to_string(tools).ok())
+        .map(|tools_json| crate::agent::llm::token_utils::estimate_text_tokens(&tools_json))
+        .unwrap_or(0);
+
+    (system_prompt_tokens, tools_tokens)
 }
 
 /// Determines the compactable prefix for preflight compaction.
@@ -270,13 +388,31 @@ pub(crate) async fn trigger_background_compaction(
         *compact_started_at_ms_handle.write().await = Some(started_at_ms);
     }
 
+    let settings = load_context_management_settings().await;
+    let safe_input_token_limit =
+        std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let resolved_parent_request =
+        resolve_parent_request(active_sessions, session_id, parent_request).await;
+    let (system_prompt_tokens, tools_tokens) =
+        estimate_compaction_non_message_tokens(resolved_parent_request.as_ref());
+    let compact_msgs = fit_compaction_request_messages_to_limit(
+        &compact_msgs,
+        resolved_parent_request
+            .as_ref()
+            .map(|request| request.provider.as_str())
+            .unwrap_or("openai"),
+        safe_input_token_limit,
+        system_prompt_tokens,
+        tools_tokens,
+    )?;
+
     let compact_event = CompactRequest {
         session_id: session_id.to_string(),
         session_name: session_name.to_string(),
         messages: compact_msgs,
         from_id,
         to_id,
-        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
+        parent_request: resolved_parent_request,
         resume_completion_after_compact: false,
     };
     let log_from_id = compact_event.from_id.clone();
@@ -324,17 +460,23 @@ pub async fn trigger_post_response_compaction_if_needed(
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
-    let should_trigger = uses_compaction_strategy(&settings.context_strategy)
-        && usage_total_tokens > safe_input_token_limit;
+    let trigger_threshold =
+        crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
+    let should_trigger = should_trigger_post_response_compaction(
+        usage_total_tokens,
+        safe_input_token_limit,
+        &settings.context_strategy,
+    );
 
     log::info!(
-        "🧮 Post-response compaction evaluation: session={}, total_tokens={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, should_trigger={}",
+        "🧮 Post-response compaction evaluation: session={}, total_tokens={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, trigger_threshold={}, should_trigger={}",
         session_id,
         usage_total_tokens,
         settings.context_strategy,
         settings.max_input_context,
         settings.model_max_limit,
         safe_input_token_limit,
+        trigger_threshold,
         should_trigger
     );
 
@@ -485,13 +627,31 @@ pub(crate) async fn try_trigger_preflight_compaction(
         *compact_started_at_ms_handle.write().await = Some(started_at_ms);
     }
 
+    let settings = load_context_management_settings().await;
+    let safe_input_token_limit =
+        std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let resolved_parent_request =
+        resolve_parent_request(active_sessions, session_id, parent_request).await;
+    let (system_prompt_tokens, tools_tokens) =
+        estimate_compaction_non_message_tokens(resolved_parent_request.as_ref());
+    let compact_msgs = fit_compaction_request_messages_to_limit(
+        &compact_msgs,
+        resolved_parent_request
+            .as_ref()
+            .map(|request| request.provider.as_str())
+            .unwrap_or("openai"),
+        safe_input_token_limit,
+        system_prompt_tokens,
+        tools_tokens,
+    )?;
+
     let compact_event = CompactRequest {
         session_id: session_id.to_string(),
         session_name: session_name.to_string(),
         messages: compact_msgs,
         from_id,
         to_id,
-        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
+        parent_request: resolved_parent_request,
         resume_completion_after_compact,
     };
     let log_from_id = compact_event.from_id.clone();

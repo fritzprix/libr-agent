@@ -400,9 +400,9 @@ impl AgentSessionManager {
             );
 
             {
-                let sessions = self.active_sessions.read().await;
-                if let Some(session) = sessions.get(&session_id) {
-                    session.cancel_pending.store(false, Ordering::SeqCst);
+                let mut sessions = self.active_sessions.write().await;
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    crate::agent::workflow::start::reset_session_execution_state(session).await;
                 }
             }
 

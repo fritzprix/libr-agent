@@ -26,10 +26,11 @@ pub fn estimate_text_tokens(text: &str) -> usize {
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 
-/// Calculates the threshold for compaction based on the effective limit.
-/// Corresponds to `calculateCompactThreshold` in TS.
+/// Calculates the post-response compaction trigger threshold using a 5% margin
+/// below the effective compact-mode request budget. Corresponds to
+/// `calculateCompactThreshold` in TS.
 pub fn calculate_compact_threshold(effective_limit: usize) -> usize {
-    (effective_limit as f64 * 0.9).floor() as usize
+    (effective_limit as f64 * 0.95).floor() as usize
 }
 
 /// Reserves extra headroom for provider-side tokenization drift and frontend-side

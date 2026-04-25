@@ -616,29 +616,10 @@ pub async fn request_llm_completion(
             .unwrap_or_else(|| "none".to_string())
     );
 
-    let mut final_messages = messages.clone();
-
-    if uses_compaction_strategy(&context_strategy) {
-        let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-        let context_options = build_compact_context_selection_options(
-            combined_system_prompt.clone(),
-            tools_json.clone(),
-            &provider,
-            tool_call_group_visible_count,
-            preserved_calibration_ratio,
-        );
-
-        final_messages = crate::agent::llm::context_selector::select_messages_within_context(
-            &final_messages,
-            &provider,
-            Some(safe_input_token_limit),
-            Some(&context_options),
-            Some(&crate::agent::llm::context_selector::ModelContextInfo {
-                context_window: model_max_limit,
-            }),
-        );
+    let final_messages = if uses_compaction_strategy(&context_strategy) {
+        messages.clone()
     } else {
-        final_messages = crate::agent::llm::context_selector::select_recent_messages_fifo(
+        crate::agent::llm::context_selector::select_recent_messages_fifo(
             &messages,
             &provider,
             window_size,
@@ -647,8 +628,8 @@ pub async fn request_llm_completion(
             } else {
                 tool_call_group_visible_count
             },
-        );
-    }
+        )
+    };
 
     let compaction_parent_request = Some(CompactionParentRequest {
         model: model.clone(),
@@ -687,40 +668,6 @@ pub async fn request_llm_completion(
 
     if uses_compaction_strategy(&context_strategy) {
         let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-        final_messages =
-            crate::agent::llm::context_selector::trim_messages_to_fit_conservative_limit(
-                &final_messages,
-                &provider,
-                safe_input_token_limit,
-                system_prompt_tokens,
-                tools_tokens,
-                preserved_calibration_ratio,
-            );
-
-        final_messages = crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
-            &final_messages,
-            safe_input_token_limit,
-            system_prompt_tokens,
-            tools_tokens,
-            preserved_calibration_ratio,
-        );
-
-        if final_messages.is_empty() {
-            if trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
-                .await?
-            {
-                return Ok(());
-            }
-
-            return Err(
-                AgentRuntimeError::new(
-                    AgentRuntimeErrorType::EmptySelectionError,
-                    "No messages fit within the effective context window after overflow trimming. Increase the context limit or reduce the newest message size and retry.",
-                )
-                .with_code("EMPTY_MESSAGE_SELECTION"),
-            );
-        }
-
         let conservative_preflight_tokens =
             crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
                 &final_messages,
@@ -757,7 +704,7 @@ pub async fn request_llm_completion(
                 AgentRuntimeError::new(
                     AgentRuntimeErrorType::ContextLimitError,
                     format!(
-                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens). Compaction/overflow trimming could not shrink the remaining message further.",
+                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens). Trigger preflight compaction or reduce the latest message size.",
                         conservative_preflight_tokens, safe_input_token_limit
                     ),
                 )

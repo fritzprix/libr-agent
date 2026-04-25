@@ -2,9 +2,10 @@ use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_context_selection_options, build_compact_summary_text,
-    find_preflight_compaction_split_index, merge_consecutive_user_messages,
-    resolve_context_management_settings, resolve_preserved_calibration_ratio,
-    should_skip_same_tail_compaction, should_trigger_background_compaction,
+    find_preflight_compaction_split_index, fit_compaction_request_messages_to_limit,
+    merge_consecutive_user_messages, resolve_context_management_settings,
+    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
+    should_trigger_background_compaction, should_trigger_post_response_compaction,
     uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
@@ -582,7 +583,7 @@ fn test_estimate_text_tokens() {
 
 #[test]
 fn test_calculate_compact_threshold() {
-    assert_eq!(calculate_compact_threshold(10000), 9000);
+    assert_eq!(calculate_compact_threshold(10000), 9500);
 }
 
 #[test]
@@ -607,6 +608,29 @@ fn test_background_compaction_trigger_respects_strategy() {
 
     assert!(!should_trigger_background_compaction(
         threshold + 500,
+        safe_limit,
+        "window"
+    ));
+}
+
+#[test]
+fn test_post_response_compaction_trigger_matches_background_threshold_contract() {
+    let safe_limit = 49152;
+    let threshold = calculate_compact_threshold(safe_limit);
+
+    assert!(!should_trigger_post_response_compaction(
+        threshold, safe_limit, "compact"
+    ));
+    assert!(should_trigger_post_response_compaction(
+        threshold + 1,
+        safe_limit,
+        "compact"
+    ));
+    assert!(should_trigger_post_response_compaction(
+        safe_limit, safe_limit, "compact"
+    ));
+    assert!(!should_trigger_post_response_compaction(
+        threshold + 1,
         safe_limit,
         "window"
     ));
@@ -1158,6 +1182,64 @@ fn test_truncate_single_oversized_message_to_fit_conservative_limit_skips_assist
     );
     assert!(truncated[0].tool_calls.is_some());
     assert_eq!(truncated[0].role, assistant.role);
+}
+
+#[test]
+fn test_fit_compaction_request_messages_to_limit_preserves_summary_anchor() {
+    let summary =
+        make_compact_summary_message("compact-summary-1", "assistant", &"summary ".repeat(700));
+    let older = make_message("older", "assistant", &"older context ".repeat(250));
+    let newest = make_message("newest", "user", "Newest actionable turn");
+    let limit = calculate_conservative_preflight_prompt_tokens(
+        &[summary.clone(), newest.clone()],
+        10,
+        5,
+        None,
+    ) + 1;
+
+    let fitted = fit_compaction_request_messages_to_limit(
+        &[summary.clone(), older, newest.clone()],
+        "gemini",
+        limit,
+        10,
+        5,
+    )
+    .expect("compaction payload should fit after dropping raw delta");
+
+    assert_eq!(fitted.len(), 2);
+    assert_eq!(fitted[0].id, summary.id);
+    assert_eq!(fitted[1].id, newest.id);
+}
+
+#[test]
+fn test_fit_compaction_request_messages_to_limit_rejects_summary_only_payload() {
+    let summary =
+        make_compact_summary_message("compact-summary-1", "assistant", &"summary ".repeat(700));
+    let delta = make_message("delta", "user", "Fresh delta that will be dropped");
+
+    let error = fit_compaction_request_messages_to_limit(&[summary, delta], "gemini", 80, 10, 5)
+        .expect_err("compaction should fail instead of summarizing only the prior summary");
+
+    assert!(error.contains("prior compact summary anchor"));
+}
+
+#[test]
+fn test_fit_compaction_request_messages_to_limit_truncates_single_raw_message() {
+    let oversized = make_message("user-1", "user", &"very large compact input ".repeat(600));
+
+    let fitted =
+        fit_compaction_request_messages_to_limit(&[oversized.clone()], "openai", 600, 10, 5)
+            .expect("single raw message should be truncated to fit compaction request");
+
+    assert_eq!(fitted.len(), 1);
+    assert_ne!(
+        estimate_tokens_bpe(&fitted[0]),
+        estimate_tokens_bpe(&oversized)
+    );
+    let MCPContent::Text { text, .. } = &fitted[0].content[0] else {
+        panic!("expected text content");
+    };
+    assert!(text.contains("...[truncated for context fit]..."));
 }
 
 #[test]

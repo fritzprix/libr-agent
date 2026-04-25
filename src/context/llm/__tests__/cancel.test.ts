@@ -280,17 +280,64 @@ describe('cancelCompletionRequest coordinates provider and local aborts', () => 
     const sessionId = 'session-abc';
     const controller = new AbortController();
     const controllers = new Map<string, AbortController>([[sessionId, controller]]);
-    const service = { cancel: vi.fn() };
-    const services = new Map<string, { cancel: () => void }>([[sessionId, service]]);
+    const service = { cancel: vi.fn(), dispose: vi.fn() };
+    const services = new Map<string, { cancel: () => void; dispose: () => void }>([
+      [sessionId, service],
+    ]);
+    const requestIds = new Map<string, string>([[sessionId, 'response-1']]);
+    const timeouts = new Map<string, number>([[sessionId, 123]]);
+    const lastStreamingUpdate = new Map<string, number>([[sessionId, 456]]);
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout').mockImplementation(() => {});
 
     const cancelCompletionRequest = (targetSessionId: string) => {
-      services.get(targetSessionId)?.cancel();
-      controllers.get(targetSessionId)?.abort();
+      requestIds.delete(targetSessionId);
+      lastStreamingUpdate.delete(targetSessionId);
+      const timeoutId = timeouts.get(targetSessionId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeouts.delete(targetSessionId);
+      }
+      const activeService = services.get(targetSessionId);
+      if (activeService) {
+        services.delete(targetSessionId);
+        activeService.cancel();
+        activeService.dispose();
+      }
+      const activeController = controllers.get(targetSessionId);
+      if (activeController) {
+        controllers.delete(targetSessionId);
+        activeController.abort();
+      }
     };
 
     cancelCompletionRequest(sessionId);
 
     expect(service.cancel).toHaveBeenCalledTimes(1);
+    expect(service.dispose).toHaveBeenCalledTimes(1);
     expect(controller.signal.aborted).toBe(true);
+    expect(requestIds.has(sessionId)).toBe(false);
+    expect(timeouts.has(sessionId)).toBe(false);
+    expect(lastStreamingUpdate.has(sessionId)).toBe(false);
+    expect(services.has(sessionId)).toBe(false);
+    expect(controllers.has(sessionId)).toBe(false);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(123);
+    clearTimeoutSpy.mockRestore();
+  });
+
+  it('invalidates request identity before a late chunk can re-render stale streaming UI', () => {
+    const sessionId = 'session-abc';
+    const responseMessageId = 'response-1';
+    const activeRequestIds = new Map<string, string>([[sessionId, responseMessageId]]);
+
+    const isCurrentRequest = (targetSessionId: string, targetResponseId: string) =>
+      activeRequestIds.get(targetSessionId) === targetResponseId;
+
+    const cancelCompletionRequest = (targetSessionId: string) => {
+      activeRequestIds.delete(targetSessionId);
+    };
+
+    cancelCompletionRequest(sessionId);
+
+    expect(isCurrentRequest(sessionId, responseMessageId)).toBe(false);
   });
 });

@@ -19,6 +19,37 @@ It covers:
 
 ---
 
+## 1A. Governing Principles
+
+The compact-mode contract is governed by five non-negotiable principles:
+
+1. **SSOT principle**
+   - Provider-reported `usage.promptTokens` is the source of truth for actual
+     submitted input size.
+   - Rust-emitted post-response compaction pressure is the source of truth for
+     compact-mode occupancy display and trigger evaluation.
+2. **Incremental estimation principle**
+   - Request-time control estimates must stay anchored to the latest grounded
+     `promptTokens` turn and estimate primarily the post-anchor delta.
+   - Compaction itself is incremental summary folding, not full-prefix
+     re-summarization.
+3. **5% compaction-trigger margin principle**
+   - Background post-response compaction should trigger once compact-mode
+     occupancy exceeds 95% of the effective request budget.
+   - This trigger threshold is distinct from the separate 5% conservative bias
+     applied to estimated delta/output occupancy.
+4. **Compaction-overflow-only drop principle**
+   - Message dropping or truncation is allowed only when shrinking the
+     compaction request payload itself so the compaction call can fit safely.
+   - Normal compact-mode requests must not silently drop messages merely to make
+     the next response request fit.
+5. **Rust ownership principle**
+   - All compact-mode routing, trigger, fit/no-fit, message slice, reinjection,
+     and overflow decisions are made in Rust.
+   - Frontend remains a provider bridge only.
+
+---
+
 ## 2. Context Strategies
 
 The system supports two context strategies:
@@ -173,11 +204,36 @@ safe_input_token_limit = min(max_input_context, model_max_limit)
    compact mode.
 2. System prompt, session context, and tool schema belong to the same effective
    request budget.
-3. Message selection should aim to keep assembled normal requests within that
-   budget.
-4. If actual submitted prompt size exceeds configured limit, that is a real
+3. In compact mode, Rust first assembles the next-response request from the
+   current compact-summary state plus the live tail, then evaluates that
+   candidate in the preflight gate. Rust must not silently drop or truncate
+   messages just to force-send that next response request.
+4. If the preflight gate determines that the assembled next-response request
+   exceeds the budget, Rust must stay in the same compact flow and trigger
+   preflight compaction first or raise an explicit context-limit error.
+5. Message dropping or truncation may still be used when fitting the compaction
+   input payload itself, because that step exists only to make the compaction
+   request fit safely, not to reshape the normal next-response request.
+6. If actual submitted prompt size exceeds configured limit, that is a real
    oversize condition even if the provider still accepts the request because the
    provider hard max is larger.
+
+### Background compaction trigger threshold
+
+Compact mode uses:
+
+```text
+compact_trigger_threshold = floor(safe_input_token_limit * 0.95)
+```
+
+### Contract
+
+1. Background post-response compaction should trigger only after occupancy
+   exceeds this 95% threshold.
+2. Equality at the threshold is not itself a trigger condition; crossing above
+   it is.
+3. This 5% trigger margin is separate from the 5% conservative upward bias used
+   inside token estimation helpers.
 
 ---
 
@@ -212,6 +268,10 @@ reported promptTokens + conservative output estimate
    the configured limit.
 4. post-response compaction pressure is a conservative occupancy signal for
    trigger/UI purposes, not a claim about pure submitted input size.
+5. Normal compact-mode requests must not introduce request-side message drop
+   noise into this SSOT signal; abrupt occupancy drops should come from
+   compaction/reinjection state changes or from the actual grounded request
+   history, not from pre-send compact-mode trimming.
 
 ---
 
@@ -268,6 +328,8 @@ delta added after the anchor.
    not the default strategy after compaction.
 5. Rust preflight should apply a conservative upward bias to the estimated
    post-anchor delta before deciding whether the next request may be sent.
+6. The estimator's job is to decide send/no-send and compaction/no-compaction in
+   Rust; it is not license for frontend-side request shaping.
 
 ### Post-response trigger estimate
 
@@ -417,6 +479,8 @@ persisted session history size and not a separate frontend estimate.
    estimator for control decisions.
 3. A sharp drop after compaction is expected because the next request is rebuilt
    from compact-summary state plus recent tail.
+4. A sharp drop caused by pre-send compact-mode request-side message dropping is
+   not part of this contract.
 
 ---
 
@@ -440,3 +504,5 @@ Core implementation is now aligned with this contract:
 3. normal requests and compaction requests preserve stable prompt-layout inputs
    as much as practical while keeping compaction payload bounded
 4. UI gauge uses Rust post-response compaction pressure as the displayed SSOT
+5. compact-mode request overflow handling is Rust-owned and separate from
+   compaction-payload overflow handling
