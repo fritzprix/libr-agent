@@ -3,11 +3,9 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 /// Pause a running workflow
 pub async fn pause_workflow(
     session_repo: &Arc<dyn SessionRepository>,
@@ -39,8 +37,7 @@ pub async fn resume_workflow(
     {
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
-            session.cancel_pending.store(false, Ordering::SeqCst);
-            session.cancellation_token = CancellationToken::new();
+            crate::agent::workflow::start::reset_session_execution_state(session).await;
         }
     }
 
@@ -62,7 +59,7 @@ pub async fn resume_workflow(
         .await?;
 
     // Trigger LLM to pick up where it left off
-    crate::agent::llm::request_llm_completion(
+    crate::agent::llm::request_llm_completion_with_recovery(
         session_repo,
         active_sessions,
         proxy_manager,

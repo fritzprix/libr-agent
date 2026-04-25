@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { safeInvoke } from '@/lib/backend/core';
+import { openAgentSession } from '@/lib/backend/agent-commands';
 import { getLogger } from '@/lib/logger';
 import { rustMessageToMessage } from '@/models/chat';
 import type { AgentSession } from '@/models/agent';
-import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
+import type { AgentResponse } from '@/models/agent-ipc';
 import type { AgentEventPayload } from './types';
 import { buildMessageError } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
@@ -15,7 +16,6 @@ export function useAgentSessionEvents(
   sessionId: string,
   stateProps: ReturnType<typeof useAgentSessionState>,
   actions: {
-    loadMessages: (sid: string) => Promise<void>;
     persistViewedAt: (viewedAt?: Date) => Promise<void>;
   },
 ) {
@@ -47,11 +47,6 @@ export function useAgentSessionEvents(
           ) {
             return;
           }
-
-          logger.debug('Agent session event received', {
-            type: payload.type,
-            sessionId,
-          });
 
           switch (payload.type) {
             case 'initializationStep': {
@@ -246,71 +241,69 @@ export function useAgentSessionEvents(
             }
 
             case 'workflowCompleted': {
-              setters.setWorkflowStatus('idle');
+              const nextStatus =
+                payload.reason === 'cancelled' ? 'paused' : 'idle';
+              setters.setWorkflowStatus(nextStatus);
+              setters.setSession((prev) =>
+                prev ? { ...prev, status: nextStatus } : null,
+              );
               setters.setWorkflowPhase('idle');
               setters.setIsSessionLoading(false);
-              logger.info('Workflow phase: idle');
+              logger.info('Workflow phase: idle', {
+                sessionId,
+                reason: payload.reason,
+                status: nextStatus,
+              });
               break;
             }
           }
         });
 
-        const response = await safeInvoke<AgentSessionMetadata | null>(
-          'agent_get_session',
-          { sessionId },
-        );
-
-        if (!response) {
-          throw new Error(`Session not found: ${sessionId}`);
-        }
+        const response = await openAgentSession(sessionId);
+        const sessionMetadata = response.session;
 
         if (!isMounted) return;
 
         let assistant: import('@/models/chat').Assistant | undefined;
-        if (response.agentConfig) {
+        if (sessionMetadata.agentConfig) {
           try {
-            assistant = JSON.parse(response.agentConfig);
+            assistant = JSON.parse(sessionMetadata.agentConfig);
           } catch (e) {
             logger.error('Failed to parse agent config', e);
           }
         }
 
         const sessionData: AgentSession = {
-          id: response.id,
-          name: response.name,
-          status: response.status,
-          model: response.model,
-          provider: response.provider,
+          id: sessionMetadata.id,
+          name: sessionMetadata.name,
+          status: sessionMetadata.status,
+          model: sessionMetadata.model,
+          provider: sessionMetadata.provider,
           assistant,
-          createdAt: new Date(response.createdAt),
-          updatedAt: response.updatedAt
-            ? new Date(response.updatedAt)
+          createdAt: new Date(sessionMetadata.createdAt),
+          updatedAt: sessionMetadata.updatedAt
+            ? new Date(sessionMetadata.updatedAt)
             : undefined,
-          lastViewedAt: response.lastViewedAt
-            ? new Date(response.lastViewedAt)
+          lastViewedAt: sessionMetadata.lastViewedAt
+            ? new Date(sessionMetadata.lastViewedAt)
             : undefined,
-          lastMessageAt: response.lastMessageAt
-            ? new Date(response.lastMessageAt)
+          lastMessageAt: sessionMetadata.lastMessageAt
+            ? new Date(sessionMetadata.lastMessageAt)
             : undefined,
-          lastAttentionAt: response.lastAttentionAt
-            ? new Date(response.lastAttentionAt)
+          lastAttentionAt: sessionMetadata.lastAttentionAt
+            ? new Date(sessionMetadata.lastAttentionAt)
             : undefined,
-          lastAttentionReason: response.lastAttentionReason,
-          yoloMode: response.yoloMode,
+          lastAttentionReason: sessionMetadata.lastAttentionReason,
+          yoloMode: sessionMetadata.yoloMode,
         };
 
         setters.setSession(sessionData);
         setters.setWorkflowStatus(sessionData.status);
         setters.setYoloModeEnabled(sessionData.yoloMode);
-
-        await safeInvoke<AgentSessionMetadata>('agent_resume_session', {
-          sessionId,
-        });
-        await safeInvoke<AgentResponse>('agent_init_session_with_messages', {
-          sessionId,
-        });
-
-        await actions.loadMessages(sessionId);
+        setters.setMessages(response.messages.items.map(rustMessageToMessage));
+        setters.setHasOlderMessages(response.messages.hasMoreBefore);
+        setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
+        setters.setPendingApprovals(response.pendingApprovals ?? []);
         void actions.persistViewedAt().catch((err) => {
           logger.error(
             'Failed to mark session viewed during initialization',
@@ -334,7 +327,7 @@ export function useAgentSessionEvents(
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [sessionId, actions.loadMessages, actions.persistViewedAt]);
+  }, [sessionId, actions.persistViewedAt]);
 
   useEffect(() => {
     const markViewedOnReturn = () => {

@@ -614,7 +614,9 @@ fn tool_transport_schema_allows_env_and_header_maps() {
                 ..
             } => assert_eq!(
                 *additional_properties,
-                Some(true),
+                Some(
+                    tauri_mcp_agent_lib::mcp::schema::JSONSchemaAdditionalProperties::Boolean(true)
+                ),
                 "{key} must allow arbitrary key/value pairs"
             ),
             other => panic!("{key} should be an object map, got {other:?}"),

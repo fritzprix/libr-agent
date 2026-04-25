@@ -5,11 +5,12 @@ use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::context::{load_context_management_settings, uses_compaction_strategy};
 use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
+use crate::agent::tauri_events::{emit_compact_request, emit_compact_started};
 
 pub fn should_trigger_background_compaction(
     current_tokens: usize,
@@ -19,6 +20,18 @@ pub fn should_trigger_background_compaction(
     uses_compaction_strategy(context_strategy)
         && current_tokens
             > crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit)
+}
+
+pub fn should_trigger_post_response_compaction(
+    usage_total_tokens: usize,
+    safe_input_token_limit: usize,
+    context_strategy: &str,
+) -> bool {
+    should_trigger_background_compaction(
+        usage_total_tokens,
+        safe_input_token_limit,
+        context_strategy,
+    )
 }
 
 async fn resolve_parent_request(
@@ -115,6 +128,112 @@ fn build_compaction_request_payload(
     ))
 }
 
+fn provider_requires_compaction_tool_chain_cleanup(provider_id: &str) -> bool {
+    ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+}
+
+fn drop_oldest_compaction_message(messages: &mut Vec<Message>) -> bool {
+    if messages.len() <= 1 {
+        return false;
+    }
+
+    let drop_index = if messages[0].is_compact_summary() && messages.len() > 1 {
+        1
+    } else {
+        0
+    };
+    messages.remove(drop_index);
+    true
+}
+
+pub fn fit_compaction_request_messages_to_limit(
+    messages: &[Message],
+    provider_id: &str,
+    safe_input_token_limit: usize,
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> Result<Vec<Message>, String> {
+    let preserved_calibration_ratio =
+        crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+            messages,
+            system_prompt_tokens,
+            tools_tokens,
+        );
+
+    let mut fitted = messages.to_vec();
+    while fitted.len() > 1 {
+        let conservative_total =
+            crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+                &fitted,
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio,
+            );
+        if conservative_total < safe_input_token_limit {
+            return Ok(fitted);
+        }
+
+        if !drop_oldest_compaction_message(&mut fitted) {
+            break;
+        }
+
+        if provider_requires_compaction_tool_chain_cleanup(provider_id) {
+            fitted = crate::agent::llm::context_selector::remove_incomplete_tool_chains(fitted);
+        }
+    }
+
+    let single_message = if fitted.len() == 1 {
+        crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
+            &fitted,
+            safe_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        )
+    } else {
+        fitted
+    };
+
+    if single_message.len() == 1 && single_message[0].is_compact_summary() {
+        return Err(
+            "Compaction payload reduction exhausted the raw delta and would leave only the prior compact summary anchor.".to_string(),
+        );
+    }
+
+    let conservative_total =
+        crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+            &single_message,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        );
+
+    if conservative_total < safe_input_token_limit {
+        return Ok(single_message);
+    }
+
+    Err(format!(
+        "Compaction payload still exceeds the effective context limit after compaction-fit reduction ({} >= {}).",
+        conservative_total, safe_input_token_limit
+    ))
+}
+
+fn estimate_compaction_non_message_tokens(
+    parent_request: Option<&CompactionParentRequest>,
+) -> (usize, usize) {
+    let system_prompt_tokens = parent_request
+        .and_then(|request| request.system_prompt.as_ref())
+        .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
+        .unwrap_or(0);
+    let tools_tokens = parent_request
+        .and_then(|request| request.available_tools.as_ref())
+        .and_then(|tools| serde_json::to_string(tools).ok())
+        .map(|tools_json| crate::agent::llm::token_utils::estimate_text_tokens(&tools_json))
+        .unwrap_or(0);
+
+    (system_prompt_tokens, tools_tokens)
+}
+
 /// Determines the compactable prefix for preflight compaction.
 ///
 /// Unlike background compaction, preflight compaction must preserve the newest
@@ -155,6 +274,40 @@ pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) 
     }
 
     split_idx <= 1
+}
+
+async fn load_merged_compaction_messages(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<(String, Vec<Message>), String> {
+    let (session_name, messages) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let session_name = session
+            .metadata
+            .name
+            .clone()
+            .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
+
+        let messages = session
+            .messages
+            .read()
+            .await
+            .iter()
+            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        (session_name, messages)
+    };
+
+    Ok((
+        session_name,
+        super::request::normalize_request_messages(messages),
+    ))
 }
 
 pub(crate) async fn trigger_background_compaction(
@@ -229,11 +382,29 @@ pub(crate) async fn trigger_background_compaction(
         let active = active_sessions.read().await;
         active
             .get(session_id)
-            .map(|session| session.compact_started_at_ms.clone())
+            .map(|session| session.compaction.started_at_ms.clone())
     };
     if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
         *compact_started_at_ms_handle.write().await = Some(started_at_ms);
     }
+
+    let settings = load_context_management_settings().await;
+    let safe_input_token_limit =
+        std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let resolved_parent_request =
+        resolve_parent_request(active_sessions, session_id, parent_request).await;
+    let (system_prompt_tokens, tools_tokens) =
+        estimate_compaction_non_message_tokens(resolved_parent_request.as_ref());
+    let compact_msgs = fit_compaction_request_messages_to_limit(
+        &compact_msgs,
+        resolved_parent_request
+            .as_ref()
+            .map(|request| request.provider.as_str())
+            .unwrap_or("openai"),
+        safe_input_token_limit,
+        system_prompt_tokens,
+        tools_tokens,
+    )?;
 
     let compact_event = CompactRequest {
         session_id: session_id.to_string(),
@@ -241,7 +412,7 @@ pub(crate) async fn trigger_background_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
-        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
+        parent_request: resolved_parent_request,
         resume_completion_after_compact: false,
     };
     let log_from_id = compact_event.from_id.clone();
@@ -250,17 +421,15 @@ pub(crate) async fn trigger_background_compaction(
     let state_session_id = session_id.to_string();
     let state_session_name = session_name.to_string();
     tokio::spawn(async move {
-        let state_event = crate::agent::llm::types::CompactStateEvent {
-            session_id: state_session_id.clone(),
-            session_name: Some(state_session_name),
-            compacting: true,
-            phase: crate::agent::llm::types::CompactStatePhase::Started,
-            error: None,
-        };
-        if let Err(e) = app.emit("llm:compact-state", state_event) {
+        if let Err(e) = emit_compact_started(
+            &app,
+            state_session_id.clone(),
+            Some(state_session_name),
+            false,
+        ) {
             log::error!("Failed to emit llm:compact-state: {}", e);
         }
-        if let Err(e) = app.emit("llm:compact-request", compact_event) {
+        if let Err(e) = emit_compact_request(&app, compact_event) {
             log::error!("Failed to emit llm:compact-request: {}", e);
         }
     });
@@ -291,17 +460,23 @@ pub async fn trigger_post_response_compaction_if_needed(
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
-    let should_trigger = uses_compaction_strategy(&settings.context_strategy)
-        && usage_total_tokens > safe_input_token_limit;
+    let trigger_threshold =
+        crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
+    let should_trigger = should_trigger_post_response_compaction(
+        usage_total_tokens,
+        safe_input_token_limit,
+        &settings.context_strategy,
+    );
 
     log::info!(
-        "🧮 Post-response compaction evaluation: session={}, total_tokens={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, should_trigger={}",
+        "🧮 Post-response compaction evaluation: session={}, total_tokens={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, trigger_threshold={}, should_trigger={}",
         session_id,
         usage_total_tokens,
         settings.context_strategy,
         settings.max_input_context,
         settings.model_max_limit,
         safe_input_token_limit,
+        trigger_threshold,
         should_trigger
     );
 
@@ -316,11 +491,11 @@ pub async fn trigger_post_response_compaction_if_needed(
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         (
             BackgroundCompactionHandles {
-                compact_in_flight_arc: session.compact_in_flight.clone(),
-                last_compacted_tail_id_arc: session.last_compacted_tail_id.clone(),
+                compact_in_flight_arc: session.compaction.in_flight.clone(),
+                last_compacted_tail_id_arc: session.compaction.last_compacted_tail_id.clone(),
             },
-            session.finalize_workflow_after_compact.clone(),
-            session.deferred_workflow_step.clone(),
+            session.compaction.finalize_workflow_after_compact.clone(),
+            session.compaction.deferred_workflow_step.clone(),
         )
     };
 
@@ -362,11 +537,20 @@ pub(crate) async fn try_trigger_preflight_compaction(
     resume_completion_after_compact: bool,
 ) -> Result<bool, String> {
     if messages.len() <= 1 {
+        log::debug!(
+            "⏭️ Preflight compaction skipped (insufficient messages): session={}, count={}",
+            session_id,
+            messages.len()
+        );
         return Ok(false);
     }
 
     let split_idx = find_preflight_compaction_split_index(messages);
     if split_idx == 0 {
+        log::debug!(
+            "⏭️ Preflight compaction skipped (split_idx=0): session={}",
+            session_id
+        );
         return Ok(false);
     }
     let (
@@ -380,9 +564,9 @@ pub(crate) async fn try_trigger_preflight_compaction(
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         (
-            session.compact_in_flight.clone(),
-            session.last_compacted_tail_id.clone(),
-            session.awaiting_compact_completion.clone(),
+            session.compaction.in_flight.clone(),
+            session.compaction.last_compacted_tail_id.clone(),
+            session.compaction.awaiting_completion.clone(),
             session.compact_context.clone(),
         )
     };
@@ -394,16 +578,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         if resume_completion_after_compact {
             awaiting_compact_arc.store(true, Ordering::SeqCst);
         }
-        let state_event = crate::agent::llm::types::CompactStateEvent {
-            session_id: session_id.to_string(),
-            session_name: Some(session_name.to_string()),
-            compacting: true,
-            phase: crate::agent::llm::types::CompactStatePhase::Started,
-            error: None,
-        };
-        app_handle
-            .emit("llm:compact-state", state_event)
-            .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))?;
+        emit_compact_started(
+            app_handle,
+            session_id.to_string(),
+            Some(session_name.to_string()),
+            resume_completion_after_compact,
+        )?;
         if resume_completion_after_compact {
             log::info!(
                 "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
@@ -424,6 +604,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         && should_skip_same_tail_compaction(messages, split_idx)
     {
         compact_in_flight_arc.store(false, Ordering::SeqCst);
+        log::debug!(
+            "⏭️ Preflight compaction skipped (same tail): session={}, tail={}, split_idx={}",
+            session_id,
+            current_tail_id.as_deref().unwrap_or("?"),
+            split_idx
+        );
         return Ok(false);
     }
 
@@ -439,6 +625,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         )
     else {
         compact_in_flight_arc.store(false, Ordering::SeqCst);
+        log::debug!(
+            "⏭️ Preflight compaction skipped (no new delta beyond previous summary): session={}, tail={}, split_idx={}",
+            session_id,
+            current_tail_id.as_deref().unwrap_or("?"),
+            split_idx
+        );
         return Ok(false);
     };
 
@@ -450,11 +642,29 @@ pub(crate) async fn try_trigger_preflight_compaction(
         let active = active_sessions.read().await;
         active
             .get(session_id)
-            .map(|session| session.compact_started_at_ms.clone())
+            .map(|session| session.compaction.started_at_ms.clone())
     };
     if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
         *compact_started_at_ms_handle.write().await = Some(started_at_ms);
     }
+
+    let settings = load_context_management_settings().await;
+    let safe_input_token_limit =
+        std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let resolved_parent_request =
+        resolve_parent_request(active_sessions, session_id, parent_request).await;
+    let (system_prompt_tokens, tools_tokens) =
+        estimate_compaction_non_message_tokens(resolved_parent_request.as_ref());
+    let compact_msgs = fit_compaction_request_messages_to_limit(
+        &compact_msgs,
+        resolved_parent_request
+            .as_ref()
+            .map(|request| request.provider.as_str())
+            .unwrap_or("openai"),
+        safe_input_token_limit,
+        system_prompt_tokens,
+        tools_tokens,
+    )?;
 
     let compact_event = CompactRequest {
         session_id: session_id.to_string(),
@@ -462,25 +672,18 @@ pub(crate) async fn try_trigger_preflight_compaction(
         messages: compact_msgs,
         from_id,
         to_id,
-        parent_request: resolve_parent_request(active_sessions, session_id, parent_request).await,
+        parent_request: resolved_parent_request,
         resume_completion_after_compact,
     };
     let log_from_id = compact_event.from_id.clone();
     let log_to_id = compact_event.to_id.clone();
-    let state_event = crate::agent::llm::types::CompactStateEvent {
-        session_id: session_id.to_string(),
-        session_name: Some(session_name.to_string()),
-        compacting: true,
-        phase: crate::agent::llm::types::CompactStatePhase::Started,
-        error: None,
-    };
-
-    app_handle
-        .emit("llm:compact-state", state_event)
-        .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))?;
-    app_handle
-        .emit("llm:compact-request", compact_event)
-        .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))?;
+    emit_compact_started(
+        app_handle,
+        session_id.to_string(),
+        Some(session_name.to_string()),
+        resume_completion_after_compact,
+    )?;
+    emit_compact_request(app_handle, compact_event)?;
 
     if resume_completion_after_compact {
         log::info!(
@@ -516,31 +719,8 @@ pub async fn trigger_preflight_compaction_for_session(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<bool, String> {
-    let (session_name, messages) = {
-        let active = active_sessions.read().await;
-        let session = active
-            .get(session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        let session_name = session
-            .metadata
-            .name
-            .clone()
-            .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
-
-        let messages = session
-            .messages
-            .read()
-            .await
-            .iter()
-            .filter(|m| m.source.as_deref() != Some("recovery"))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        (session_name, messages)
-    };
-
-    let merged_messages = super::request::merge_consecutive_user_messages(messages);
+    let (session_name, merged_messages) =
+        load_merged_compaction_messages(active_sessions, session_id).await?;
     try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
@@ -558,31 +738,8 @@ pub async fn trigger_manual_compaction_for_session(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<bool, String> {
-    let (session_name, messages) = {
-        let active = active_sessions.read().await;
-        let session = active
-            .get(session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        let session_name = session
-            .metadata
-            .name
-            .clone()
-            .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
-
-        let messages = session
-            .messages
-            .read()
-            .await
-            .iter()
-            .filter(|m| m.source.as_deref() != Some("recovery"))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        (session_name, messages)
-    };
-
-    let merged_messages = super::request::merge_consecutive_user_messages(messages);
+    let (session_name, merged_messages) =
+        load_merged_compaction_messages(active_sessions, session_id).await?;
     try_trigger_preflight_compaction(
         active_sessions,
         app_handle,

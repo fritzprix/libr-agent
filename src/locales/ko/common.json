@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "어시스턴트 이름 *",
     "namePlaceholder": "어시스턴트 이름을 입력하세요...",
@@ -226,8 +227,30 @@
       "subtitle": "대화를 시작하여 첫 번째 세션을 만드세요"
     }
   },
+  "orgHistory": {
+    "heading": "조직 뷰",
+    "description": "명시적으로 생성된 조직 리니지만 표시됩니다. 일회성 위임 세션은 일반 기록에 남습니다.",
+    "cardLabel": "명시적 조직",
+    "rootLabel": "루트 세션",
+    "updatedLabel": "업데이트됨",
+    "resumeRoot": "루트 세션 재개",
+    "delete": "조직 삭제",
+    "deleteConfirm": {
+      "title": "조직을 삭제하시겠습니까?",
+      "description": "이 조직과 관련된 모든 구성원 세션(파일 및 기록 포함)이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+    },
+    "toasts": {
+      "deleted": "조직이 삭제되었습니다",
+      "deleteFailed": "조직 삭제에 실패했습니다"
+    },
+    "emptyState": {
+      "title": "아직 조직 리니지가 없습니다",
+      "subtitle": "조직을 명시적으로 만든 다음, 조직 인식 도구를 통해 조직 구성원을 생성하세요. 일반 서브 에이전트 리니지는 여기에 포함되지 않습니다."
+    }
+  },
   "settings": {
     "title": "설정",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "미저장",
     "saved": "설정이 저장되었습니다",
     "saving": "저장 중...",
@@ -303,6 +326,12 @@
       "diffContextLinesDescription": "파일 편집 diff에 표시할 컨텍스트 라인 수 (1-10)."
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "프리텐다드 (표준 고딕)",
+        "inter": "인터 (깔끔한 UI 고딕)",
+        "nanumSquareNeo": "나눔스퀘어 네오 (모던 기하학)",
+        "d2coding": "D2Coding (개발자용 고정폭)"
+      },
       "metricsTitle": "성능 지표",
       "metricDisplayMode": "지표 표시 방식",
       "inline": "인라인 (메시지에 표시)",
@@ -343,6 +372,8 @@
       "maxConcurrentActiveProcessesDescription": "모든 에이전트 세션에서 동시에 실행되는 셸/코드 프로세스의 최대 수입니다.",
       "maxSuspendedProcesses": "최대 일시 중지된 셸 프로세스",
       "maxSuspendedProcessesDescription": "pollProcess 대기 중에 일시 중지될 수 있는 프로세스의 최대 수입니다. 활성 프로세스 수보다 크거나 같아야 합니다.",
+      "toolResultInlineLimit": "도구 결과 인라인 제한 (KB)",
+      "toolResultInlineLimitDescription": "LibrAgent가 전체 결과를 워크스페이스 파일로 넘기기 전에 인라인으로 유지할 도구 출력의 양을 조절합니다. 낮은 값일수록 에이전트 컨텍스트를 가볍게 유지합니다.",
       "shellIsolation": "셸 격리 수준",
       "shellIsolationModes": {
         "basic": "기본 - 전체 PATH 접근 (보안 낮음)",
@@ -606,6 +637,10 @@
     }
   },
   "agent": {
+    "messages": {
+      "loadingOlder": "이전 메시지를 불러오는 중...",
+      "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기"
+    },
     "draft": {
       "send": "메시지 보내기",
       "attachFiles": "파일 첨부",
@@ -725,6 +760,8 @@
       "cancelAriaLabel": "요청 취소",
       "cancellingTooltip": "취소 중...",
       "cancelTooltip": "취소",
+      "resumeAriaLabel": "워크플로 재개",
+      "resumeTooltip": "재개",
       "sendAriaLabel": "메시지 보내기",
       "sendTooltip": "보내기"
     },

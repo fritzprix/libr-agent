@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "Assistant Name *",
     "namePlaceholder": "Enter assistant name...",
@@ -247,8 +248,30 @@
       "subtitle": "Start a conversation to create your first session"
     }
   },
+  "orgHistory": {
+    "heading": "Org View",
+    "description": "Explicit org-created lineages only. One-off delegated sessions stay in ordinary history.",
+    "cardLabel": "Explicit Org",
+    "rootLabel": "Root Session",
+    "updatedLabel": "Updated",
+    "resumeRoot": "Resume Root Session",
+    "delete": "Delete Organization",
+    "deleteConfirm": {
+      "title": "Delete Organization?",
+      "description": "This will permanently delete this organization and all of its associated member sessions, including all files and histories. This action cannot be undone."
+    },
+    "toasts": {
+      "deleted": "Organization deleted",
+      "deleteFailed": "Failed to delete organization"
+    },
+    "emptyState": {
+      "title": "No org lineages yet",
+      "subtitle": "Create an org explicitly, then spawn org members through the org-aware tools. Plain sub-agent lineage does not belong here."
+    }
+  },
   "settings": {
     "title": "Settings",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "Unsaved",
     "saved": "Settings saved successfully",
     "saving": "Saving...",
@@ -324,6 +347,12 @@
       "diffContextLinesDescription": "Number of context lines to show in file edit diffs (1-10)."
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "Pretendard (Standard Sans)",
+        "inter": "Inter (Clean UI Sans)",
+        "nanumSquareNeo": "NanumSquare Neo (Modern Geometric)",
+        "d2coding": "D2Coding (Developer Mono)"
+      },
       "metricsTitle": "Performance Metrics",
       "metricDisplayMode": "Metric Display Mode",
       "inline": "Inline (show in message)",
@@ -364,6 +393,8 @@
       "maxConcurrentActiveProcessesDescription": "Maximum number of shell/code processes running simultaneously across all agent sessions.",
       "maxSuspendedProcesses": "Max Suspended Shell Processes",
       "maxSuspendedProcessesDescription": "Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.",
+      "toolResultInlineLimit": "Tool Result Inline Limit (KB)",
+      "toolResultInlineLimitDescription": "Controls how much tool output stays inline before LibrAgent spills the full result to a workspace file. Lower values keep the agent context leaner.",
       "shellIsolation": "Shell Isolation Level",
       "shellIsolationModes": {
         "basic": "Basic - Full PATH access (less secure)",
@@ -636,6 +667,10 @@
     }
   },
   "agent": {
+    "messages": {
+      "loadingOlder": "Loading older messages...",
+      "scrollToLoadOlder": "Scroll up to load older messages"
+    },
     "draft": {
       "send": "Send message",
       "attachFiles": "Attach files",
@@ -755,6 +790,8 @@
       "cancelAriaLabel": "Cancel request",
       "cancellingTooltip": "Cancelling...",
       "cancelTooltip": "Cancel",
+      "resumeAriaLabel": "Resume workflow",
+      "resumeTooltip": "Resume",
       "sendAriaLabel": "Send message",
       "sendTooltip": "Send"
     },

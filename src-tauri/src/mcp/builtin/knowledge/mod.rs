@@ -8,6 +8,7 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{
     BuiltinServerMetadata, ContextVolatility, MCPResult, MCPTool, ServiceContext,
 };
+use crate::repositories::SqliteKnowledgeV2Repository;
 
 pub mod embed;
 pub mod extraction;
@@ -43,6 +44,10 @@ impl KnowledgeServer {
                 .to_string(),
             icon: None,
         }
+    }
+
+    pub(crate) fn repository(&self) -> SqliteKnowledgeV2Repository {
+        SqliteKnowledgeV2Repository::new(self.db.as_ref().clone())
     }
 }
 

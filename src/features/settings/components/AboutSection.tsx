@@ -39,7 +39,9 @@ export function AboutSection() {
         {/* Version row */}
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-foreground">LibrAgent</p>
+            <p className="text-sm font-medium text-foreground">
+              {t('appName', 'LibrAgent')}
+            </p>
             <p className="text-xs text-muted-foreground">
               {t('settings.about.version', 'Version')} {__APP_VERSION__}
             </p>

@@ -1,7 +1,7 @@
 import { Route, Routes, Navigate } from 'react-router-dom';
 import { lazy, Suspense, useEffect } from 'react';
 import { emit } from '@tauri-apps/api/event';
-import { Toaster } from 'sonner';
+import { Toaster } from '../components/ui/sonner';
 import AppSidebar from '../components/layout/AppSidebar';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
@@ -165,7 +165,7 @@ function App() {
                             </div>
                           </DnDContextProvider>
                         </SidebarProvider>
-                        <Toaster />
+                        <Toaster position="top-right" />
                       </AgentSessionListProvider>
                     </AssistantContextProvider>
                   </MCPServerProvider>

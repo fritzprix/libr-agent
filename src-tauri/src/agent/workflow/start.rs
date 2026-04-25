@@ -9,6 +9,24 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+
+pub async fn reset_session_execution_state(session: &mut AgentSession) {
+    session.cancel_pending.store(false, Ordering::SeqCst);
+    session.cancellation_token = CancellationToken::new();
+    // Safety valve: clear any stale in-flight compaction state before
+    // explicitly starting or restarting a workflow from the current stack.
+    session.compaction.in_flight.store(false, Ordering::SeqCst);
+    session
+        .compaction
+        .awaiting_completion
+        .store(false, Ordering::SeqCst);
+    session
+        .compaction
+        .finalize_workflow_after_compact
+        .store(false, Ordering::SeqCst);
+    *session.compaction.deferred_workflow_step.write().await = None;
+}
+
 pub async fn start_workflow(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -88,19 +106,7 @@ pub async fn start_workflow(
     {
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
-            session.cancel_pending.store(false, Ordering::SeqCst);
-            session.cancellation_token = CancellationToken::new();
-            // Safety valve: clear any stale in-flight compaction flag.
-            // Guards against the case where the frontend crashed mid-compaction
-            // and never called agent_handle_compact_error to release the flag.
-            session.compact_in_flight.store(false, Ordering::SeqCst);
-            session
-                .awaiting_compact_completion
-                .store(false, Ordering::SeqCst);
-            session
-                .finalize_workflow_after_compact
-                .store(false, Ordering::SeqCst);
-            *session.deferred_workflow_step.write().await = None;
+            reset_session_execution_state(session).await;
         }
     }
 
@@ -148,7 +154,7 @@ pub async fn start_workflow(
     ensure_proxy_ready(proxy_manager, app_handle, &session_id, 60).await?;
 
     // Request LLM completion with cached messages (no DB query)
-    crate::agent::llm::request_llm_completion(
+    crate::agent::llm::request_llm_completion_with_recovery(
         session_repo,
         active_sessions,
         proxy_manager,
@@ -175,43 +181,27 @@ pub(crate) async fn ensure_proxy_exists(
         session_id
     );
 
-    let session_repo = crate::state::get_session_repository();
-    if let Some(session) = session_repo
-        .get_session(session_id)
+    match proxy_manager
+        .ensure_configured_proxy(session_id, Some(app_handle.clone()))
         .await
-        .map_err(|e| format!("Failed to get session for proxy recreation: {}", e))?
     {
-        if let Some(config_json) = session.agent_config {
-            let agent_config = crate::agent::AgentConfig::from_json(&config_json)
-                .map_err(|e| format!("Failed to parse agent config: {}", e))?;
-
-            let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-            let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
-            proxy_manager
-                .create_proxy(
-                    session_id.to_string(),
-                    tool_ids,
-                    mcp_server_ids,
-                    Some(app_handle.clone()),
-                )
-                .await?;
-
+        Ok(_) => {
             log::info!(
-                "✅ Successfully recreated MCP proxy for session: {}",
-                session_id
-            );
-        } else {
-            log::error!(
-                "Cannot recreate proxy: Session {} has no agent config",
+                "Successfully ensured configured MCP proxy for session: {}",
                 session_id
             );
         }
-    } else {
-        log::error!(
-            "Cannot recreate proxy: Session {} not found in DB",
-            session_id
-        );
+        Err(error)
+            if error == format!("Session not found: {}", session_id)
+                || error == "Session has no config" =>
+        {
+            log::error!(
+                "Cannot recreate proxy during workflow start for session {}: {}",
+                session_id,
+                error
+            );
+        }
+        Err(error) => return Err(error),
     }
 
     Ok(())

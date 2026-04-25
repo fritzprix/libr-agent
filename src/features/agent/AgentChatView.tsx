@@ -19,7 +19,6 @@ import {
   AgentPlanningProvider,
   useAgentPlanning,
 } from '@/context/AgentPlanningContext';
-import { AgentResourceAttachmentProvider } from './context/AgentResourceAttachmentContext';
 import { AgentChatHeader } from './components/AgentChatHeader';
 import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
@@ -30,6 +29,7 @@ import { AgentPlanningPanel } from './components/AgentPlanningPanel';
 import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
 
 const logger = getLogger('AgentChatView');
 
@@ -100,7 +100,7 @@ function AgentChatInner() {
           'ui',
         );
 
-        await injectMessages([toolCallMsg, toolResultMsg], true);
+        await injectMessages([toolCallMsg, toolResultMsg]);
         toast.success('Playbook started automatically');
       } catch (error) {
         logger.error('Failed to auto-select playbook', error);

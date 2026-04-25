@@ -9,6 +9,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
     CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
+    SessionStatus,
 };
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -256,6 +257,7 @@ impl AgentSessionManager {
         session_id: String,
         user_message: Message,
     ) -> Result<(), String> {
+        self.ensure_session_active(&session_id).await?;
         crate::agent::workflow::start_workflow(
             &self.session_repo,
             &self.active_sessions,
@@ -318,6 +320,7 @@ impl AgentSessionManager {
 
     /// Resume a paused workflow
     pub async fn resume_workflow(&self, session_id: String) -> Result<(), String> {
+        self.ensure_session_active(&session_id).await?;
         crate::agent::workflow::resume_workflow(
             &self.session_repo,
             &self.active_sessions,
@@ -357,34 +360,49 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Inject messages into the session and optionally trigger the workflow
+    /// Inject messages into the session and let the backend decide whether to
+    /// continue the workflow based on the current session state.
     pub async fn inject_messages(
         &self,
         session_id: String,
         messages: Vec<Message>,
-        emit_events_immediately: bool,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
+        self.ensure_session_active(&session_id).await?;
+        let should_trigger_workflow = {
+            let sessions = self.active_sessions.read().await;
+            let session = sessions
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            let is_transitioning_to_busy = matches!(
+                session.status_transition.read().await.as_ref(),
+                Some(crate::agent::state::SessionStatusTransition::ToStatus(
+                    SessionStatus::Busy
+                ))
+            );
+
+            session.metadata.status != SessionStatus::Busy && !is_transitioning_to_busy
+        };
+
         // Delegate message persistence, caching, and event emission to MessageService
         crate::services::MessageService::inject_messages_to_session(
             &self.active_sessions,
             &self.app_handle,
             &session_id,
             messages,
-            emit_events_immediately,
+            should_trigger_workflow,
         )
         .await?;
 
-        // Trigger workflow if requested
-        if emit_events_immediately {
+        if should_trigger_workflow {
             log::info!(
                 "Triggering workflow after message injection for session: {}",
                 session_id
             );
 
             {
-                let sessions = self.active_sessions.read().await;
-                if let Some(session) = sessions.get(&session_id) {
-                    session.cancel_pending.store(false, Ordering::SeqCst);
+                let mut sessions = self.active_sessions.write().await;
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    crate::agent::workflow::start::reset_session_execution_state(session).await;
                 }
             }
 
@@ -417,7 +435,7 @@ impl AgentSessionManager {
             )
             .await?;
 
-            crate::agent::llm::request_llm_completion(
+            crate::agent::llm::request_llm_completion_with_recovery(
                 &self.session_repo,
                 &self.active_sessions,
                 &self.proxy_manager,
@@ -427,6 +445,21 @@ impl AgentSessionManager {
             .await?;
         }
 
+        Ok(should_trigger_workflow)
+    }
+
+    pub async fn ensure_session_active(&self, session_id: &str) -> Result<(), String> {
+        let is_active = {
+            let active = self.active_sessions.read().await;
+            active.contains_key(session_id)
+        };
+
+        if is_active {
+            return Ok(());
+        }
+
+        self.resume_session(session_id).await?;
+        self.init_session_with_messages(session_id).await?;
         Ok(())
     }
 
@@ -595,21 +628,9 @@ impl AgentSessionManager {
         &self,
         session_id: &str,
     ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
-        let active = self.active_sessions.read().await;
-        let session = active
-            .get(session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        let agent_config = session
-            .metadata
-            .agent_config
-            .as_ref()
-            .ok_or_else(|| "Agent configuration is required".to_string())
-            .and_then(|json| {
-                crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string())
-            })?;
-
-        drop(active); // Release the read lock before async call
+        self.proxy_manager
+            .ensure_configured_proxy(session_id, Some(self.app_handle.clone()))
+            .await?;
 
         // Wait for background tool loading to finish (stdio/HTTP servers are spawned
         // asynchronously during proxy creation). Use a short timeout here (10 s) because
@@ -630,8 +651,7 @@ impl AgentSessionManager {
         }
 
         // Use existing collect_available_tools function (same as LLM request)
-        crate::agent::tools::collect_available_tools(session_id, &agent_config, &self.proxy_manager)
-            .await
+        crate::agent::tools::collect_available_tools(session_id, &self.proxy_manager).await
     }
 
     /// Get available tools for a session based on its config
@@ -639,34 +659,7 @@ impl AgentSessionManager {
         &self,
         session_id: &str,
     ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
-        // 1. Get session config
-        // Try active first
-        let config = {
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                if let Some(config_str) = &session.metadata.agent_config {
-                    crate::agent::AgentConfig::from_json(config_str)?
-                } else {
-                    return Err("Session has no config".to_string());
-                }
-            } else {
-                // Try DB
-                let session_opt =
-                    crate::agent::lifecycle::get_session(&self.session_repo, session_id).await?;
-                if let Some(session) = session_opt {
-                    if let Some(config_str) = &session.agent_config {
-                        crate::agent::AgentConfig::from_json(config_str)?
-                    } else {
-                        return Err("Session has no config".to_string());
-                    }
-                } else {
-                    return Err("Session not found".to_string());
-                }
-            }
-        };
-
-        // 2. Call collect_available_tools
-        crate::agent::tools::collect_available_tools(session_id, &config, &self.proxy_manager).await
+        self.get_available_tools(session_id).await
     }
 
     /// Remove a message from the in-memory cache
@@ -794,8 +787,8 @@ impl AgentSessionManager {
                     .get(session_id)
                     .ok_or_else(|| format!("Session not found: {}", session_id))?;
                 (
-                    session.compact_in_flight.clone(),
-                    session.awaiting_compact_completion.clone(),
+                    session.compaction.in_flight.clone(),
+                    session.compaction.awaiting_completion.clone(),
                 )
             };
 

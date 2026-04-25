@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.13] - 2026-04-25
+
+### 🚀 Features
+
+- **Enhanced History Deletion**: Added delete capability to `OrgCard` in the history view, allowing users to remove organization sessions directly.
+
+### 🐛 Fixes
+
+- **Session Loading & Readiness**: Hardened agent session loading and initialization readiness to prevent race conditions during startup.
+- **Compaction Lifecycle Improvements**: Refined the compaction lifecycle and threshold handling to reduce database pressure and improve long-term session stability.
+- **Localization Expansion**: Localized GeneralTab font settings and expanded Korean (KO) translation coverage via the Rosetta system.
+- **UI & Formatting Polish**: Standardized formatting for the general settings tab and fixed agent message locale keys for a more consistent interface.
+
+### 🔧 Internal
+
+- **Performance Optimizations**: Optimized knowledge vector bulk delete and preflight token estimation for faster background operations.
+- **Error Handling**: Improved graceful handling of compaction finish emit failures and restored terminal LLM error propagation.
+
+## [0.7.12] - 2026-04-24
+
+### 🚀 Features
+
+- **Markdown Tables in MCP History**: Optimized MCP history responses using Markdown tables for better readability and structured information presentation.
+- **Enhanced Token Dropdown**: Refactored `InputTokenDropdown` using a Custom Hook Pattern, improving maintainability and the navigation experience.
+
+### 🐛 Fixes
+
+- **LLM Recovery & Stability**: Hardened preflight overflow recovery and stale response handling to ensure smoother agent operations under context pressure.
+- **List Navigation Polish**: Resolved edge cases in list navigation to provide a more consistent keyboard and focus experience.
+- **Rust Backend Formatting**: Fixed formatting inconsistencies across the Rust codebase to ensure consistency with project standards.
+
+### 🔧 Internal
+
+- **Windows Test Stability**: Stabilized date utility tests specifically for Windows environments to ensure reliable CI pipelines.
+- **Performance Optimization**: Applied `React.memo` to `ScheduledTaskRow` to prevent inefficient O(N) list re-renders, improving responsiveness in large task lists.
+
+## [0.7.11] - 2026-04-22
+
+### 🚀 Features
+
+- **Unified Browser Content Reading**: Consolidated browser content retrieval around a clearer `getPageContent` flow, making it easier for agents to read current page state without juggling overlapping content tools.
+
+### 🐛 Fixes
+
+- **Safer Delegated Session Control**: Locked delegated agent controls (`checkSession`, `messageToSession`, `stopSession`, and manual compaction) to real descendant sessions only, preventing cross-lineage access and improving caller-session validation.
+- **Stronger MCP Server Registration Guards**: Fixed duplicate MCP server registration so lookup failures no longer fall through into accidental config mutation, and duplicate names are rejected more reliably.
+- **More Reliable Browser Cache Behavior**: Tightened browser session cache invalidation so content reads stay aligned with the active session state instead of serving stale page data.
+
+### 🔧 Internal
+
+- **Richer Tool Inventory Contracts**: Added structured payloads to tool-list responses and expanded regression coverage around delegated-session access, browser guidance contracts, and MCP server registration behavior.
+
+## [0.7.10] - 2026-04-21
+
+### 🚀 Features
+
+- **Expanded Localization**: Enhanced Korean translation coverage for the Settings page and unified translation patterns across the Rosetta system.
+
+### 🐛 Fixes
+
+- **MCP State Preservation**: Fixed an issue where unique IDs and creation dates were lost during MCP server updates, ensuring data continuity and reliable state management.
+- **Preset Restoration**: Restored missing HTTP presets for GitHub and Exa, and fixed a broken logo reference in the HuggingFace MCP preset.
+
+### 🔧 Internal
+
+- **Workflow Cleanup**: Removed the obsolete `fre4x-inspector-bridge` and updated the refactor validation workflow to improve development efficiency.
+- **Data Integrity**: Added unit tests for MCP server update logic to prevent regressions in data preservation.
+
 ## [0.7.9] - 2026-04-19
 
 ### 🚀 Features

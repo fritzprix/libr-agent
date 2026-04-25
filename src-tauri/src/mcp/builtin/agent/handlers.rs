@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::formatting::{
@@ -8,7 +9,7 @@ use crate::mcp::builtin::session_api::utils::{
     build_agent_session_tool_data, build_agent_tool_data,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
-use crate::repositories::message_repository::MessageRepository;
+use crate::repositories::{message_repository::MessageRepository, SessionMetadata};
 
 fn read_optional_string(args: &Value, key: &str) -> Result<Option<String>, String> {
     match args.get(key) {
@@ -123,6 +124,138 @@ fn invalid_explicit_org_result(org_id: &str) -> MCPResult {
         "Use list(type=\"sessions\") to inspect the current delegated lineage".to_string(),
     ])
     .to_mcp_result()
+}
+
+pub fn is_delegated_descendant_session(
+    sessions: &HashMap<String, SessionMetadata>,
+    caller_session_id: &str,
+    target_session_id: &str,
+) -> bool {
+    if caller_session_id == target_session_id {
+        return false;
+    }
+
+    let mut next_parent = sessions
+        .get(target_session_id)
+        .and_then(|session| session.parent_session_id.clone());
+    let mut seen = HashSet::new();
+
+    while let Some(parent_id) = next_parent {
+        if !seen.insert(parent_id.clone()) {
+            return false;
+        }
+        if parent_id == caller_session_id {
+            return true;
+        }
+        next_parent = sessions
+            .get(&parent_id)
+            .and_then(|session| session.parent_session_id.clone());
+    }
+
+    false
+}
+
+pub async fn load_accessible_delegated_session(
+    manager: &crate::agent::AgentSessionManager,
+    caller_session_id: &str,
+    target_session_id: &str,
+    tool_name: &str,
+) -> Result<SessionMetadata, MCPResult> {
+    let caller_exists = match manager.get_session(caller_session_id).await {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to load caller session metadata for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    };
+    if !caller_exists {
+        return Err(caller_session_not_found_result(caller_session_id));
+    }
+
+    let Some(target_session) = (match manager.get_session(target_session_id).await {
+        Ok(session) => session,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::InternalError,
+                format!(
+                    "Failed to load session metadata for {}: {}",
+                    tool_name, error
+                ),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                "Retry the operation once session metadata is available again".to_string(),
+                "If the issue persists, inspect the session repository health".to_string(),
+            ])
+            .to_mcp_result())
+        }
+    }) else {
+        return Err(
+            crate::mcp::builtin::error_guidance::missing_agent_session_error(target_session_id),
+        );
+    };
+
+    let mut next_parent = target_session.parent_session_id.clone();
+    let mut seen = HashSet::new();
+    while let Some(parent_id) = next_parent {
+        if !seen.insert(parent_id.clone()) {
+            break;
+        }
+        if parent_id == caller_session_id {
+            return Ok(target_session);
+        }
+        next_parent = match manager.get_session(&parent_id).await {
+            Ok(Some(session)) => session.parent_session_id,
+            Ok(None) => None,
+            Err(error) => {
+                return Err(guided_error(
+                    ErrorCategory::InternalError,
+                    format!(
+                        "Failed to load delegated session lineage for {}: {}",
+                        tool_name, error
+                    ),
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "Retry the operation once session metadata is available again".to_string(),
+                    "If the issue persists, inspect the session repository health".to_string(),
+                ])
+                .to_mcp_result())
+            }
+        };
+    }
+
+    Err(guided_error(
+        ErrorCategory::PermissionDenied,
+        format!(
+            "Session '{}' is not a delegated descendant of the current session '{}'.",
+            target_session_id, caller_session_id
+        ),
+        ToolGroup::Agent,
+    )
+    .with_guidance(vec![
+        format!(
+            "Use {} only with delegated child/descendant sessions started from the current session",
+            tool_name
+        ),
+        "Use list(type=\"sessions\") to inspect the delegated sessions you can control directly"
+            .to_string(),
+        "Start a new delegated session with startSession(...) if you need fresh child work"
+            .to_string(),
+    ])
+    .to_mcp_result())
 }
 
 fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> Value {

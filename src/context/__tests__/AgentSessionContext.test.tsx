@@ -7,7 +7,7 @@ import {
 } from '../AgentSessionContext';
 import { listen } from '@tauri-apps/api/event';
 import { safeInvoke } from '@/lib/backend/core';
-import * as messagesBackend from '@/lib/backend/messages';
+import * as agentCommandsBackend from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
 
 const mockMarkSessionViewed = vi.fn();
@@ -33,9 +33,8 @@ vi.mock('@/lib/logger', () => ({
     }),
 }));
 
-// Mock backend messages API
-vi.mock('@/lib/backend/messages', () => ({
-    getMessagesPageForSession: vi.fn(),
+vi.mock('@/lib/backend/agent-commands', () => ({
+    openAgentSession: vi.fn(),
 }));
 
 vi.mock('../AgentSessionListContext', () => ({
@@ -84,24 +83,23 @@ describe('AgentSessionContext (Local)', () => {
         mockMarkSessionViewed.mockResolvedValue(undefined);
         mockRefreshCompactedRange.mockResolvedValue(undefined);
         (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
-        // Mock getMessagesPageForSession to return empty list by default
-        (messagesBackend.getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
-            items: [],
-            total: 0,
-            page: 1,
-            pageSize: 50,
-            totalPages: 0,
+        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+            session: {
+                id: TEST_SESSION_ID,
+                name: 'Test Session',
+                status: 'idle',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                yoloMode: false,
+            },
+            messages: {
+                items: [],
+                hasMoreBefore: false,
+                oldestCursor: null,
+            },
+            pendingApprovals: [],
         });
-
-        // Mock get_session interaction for initialization
-        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
-            id: TEST_SESSION_ID,
-            name: 'Test Session',
-            status: 'idle',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            yoloMode: false,
-        });
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     });
 
     it('should initialize with session state', async () => {
@@ -121,7 +119,7 @@ describe('AgentSessionContext (Local)', () => {
         expect(result.current.workflowStatus).toBe('idle');
         expect(result.current.messages).toEqual([]);
 
-        expect(safeInvoke).toHaveBeenCalledWith('agent_get_session', { sessionId: TEST_SESSION_ID });
+        expect(agentCommandsBackend.openAgentSession).toHaveBeenCalledWith(TEST_SESSION_ID);
         expect(mockRefreshCompactedRange).toHaveBeenCalledWith(TEST_SESSION_ID);
     });
 
@@ -136,37 +134,24 @@ describe('AgentSessionContext (Local)', () => {
     });
 
     it('does not reinitialize the session when rerendered with the same sessionId', async () => {
-        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((command, args) => {
-            if (command === 'agent_get_session') {
-                return Promise.resolve({
-                    id: args.sessionId,
-                    name: `Session ${args.sessionId}`,
+        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
+            async (sessionId: string) => ({
+                session: {
+                    id: sessionId,
+                    name: `Session ${sessionId}`,
                     status: 'idle',
                     createdAt: Date.now(),
                     updatedAt: Date.now(),
                     yoloMode: false,
-                });
-            }
-
-            if (command === 'messages_get_page') {
-                return Promise.resolve({
+                },
+                messages: {
                     items: [],
-                    total: 0,
-                    page: 1,
-                    pageSize: 1000,
-                    totalPages: 0,
-                });
-            }
-
-            if (
-                command === 'agent_resume_session' ||
-                command === 'agent_init_session_with_messages'
-            ) {
-                return Promise.resolve({});
-            }
-
-            return Promise.resolve(undefined);
-        });
+                    hasMoreBefore: false,
+                    oldestCursor: null,
+                },
+                pendingApprovals: [],
+            })
+        );
 
         const { result, rerender } = renderHook(() => useAgentSessionState(), {
             wrapper: ({ children }) => (
@@ -184,61 +169,38 @@ describe('AgentSessionContext (Local)', () => {
         expect(mockRefreshCompactedRange).toHaveBeenCalledTimes(1);
         expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
 
-        const initialGetSessionCalls = (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
-            ([command]) => command === 'agent_get_session'
-        ).length;
-        const initialMessagePageCalls = (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
-            ([command]) => command === 'messages_get_page'
-        ).length;
+        const initialOpenSessionCalls = (
+            agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>
+        ).mock.calls.length;
 
         rerender();
 
-        expect(
-            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
-                ([command]) => command === 'agent_get_session'
-            )
-        ).toHaveLength(initialGetSessionCalls);
-        expect(
-            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
-                ([command]) => command === 'messages_get_page'
-            )
-        ).toHaveLength(initialMessagePageCalls);
+        expect(agentCommandsBackend.openAgentSession).toHaveBeenCalledTimes(
+            initialOpenSessionCalls
+        );
         expect(mockRefreshCompactedRange).toHaveBeenCalledTimes(1);
         expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
     });
 
     it('reinitializes exactly once when the active sessionId changes', async () => {
-        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((command, args) => {
-            if (command === 'agent_get_session') {
-                return Promise.resolve({
-                    id: args.sessionId,
-                    name: `Session ${args.sessionId}`,
+        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
+            async (sessionId: string) => ({
+                session: {
+                    id: sessionId,
+                    name: `Session ${sessionId}`,
                     status: 'idle',
                     createdAt: Date.now(),
                     updatedAt: Date.now(),
                     yoloMode: false,
-                });
-            }
-
-            if (command === 'messages_get_page') {
-                return Promise.resolve({
+                },
+                messages: {
                     items: [],
-                    total: 0,
-                    page: 1,
-                    pageSize: 1000,
-                    totalPages: 0,
-                });
-            }
-
-            if (
-                command === 'agent_resume_session' ||
-                command === 'agent_init_session_with_messages'
-            ) {
-                return Promise.resolve({});
-            }
-
-            return Promise.resolve(undefined);
-        });
+                    hasMoreBefore: false,
+                    oldestCursor: null,
+                },
+                pendingApprovals: [],
+            })
+        );
 
         let activeSessionId = 'session-1';
         const Wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -267,18 +229,7 @@ describe('AgentSessionContext (Local)', () => {
         expect(mockRefreshCompactedRange).toHaveBeenNthCalledWith(1, 'session-1');
         expect(mockRefreshCompactedRange).toHaveBeenNthCalledWith(2, 'session-2');
 
-        expect(
-            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
-                ([command, args]) =>
-                    command === 'agent_get_session' && args.sessionId === 'session-2'
-            )
-        ).toHaveLength(1);
-        expect(
-            (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
-                ([command, args]) =>
-                    command === 'messages_get_page' && args.sessionId === 'session-2'
-            )
-        ).toHaveLength(1);
+        expect(agentCommandsBackend.openAgentSession).toHaveBeenCalledWith('session-2');
         expect(mockMarkSessionViewed).toHaveBeenNthCalledWith(
             2,
             'session-2',
@@ -321,6 +272,43 @@ describe('AgentSessionContext (Local)', () => {
 
             await waitFor(() => {
                 expect(result.current.workflowStatus).toBe('busy');
+            });
+        });
+
+        it('keeps cancelled workflows paused when workflowCompleted is emitted', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => useAgentSessionState(),
+                { wrapper: TestWrapper }
+            );
+
+            await waitFor(() => {
+                expect(result.current.isSessionLoading).toBe(false);
+                expect(eventHandler).toBeDefined();
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'workflowCompleted',
+                        sessionId: TEST_SESSION_ID,
+                        reason: 'cancelled',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.workflowStatus).toBe('paused');
+                expect(result.current.workflowPhase).toBe('idle');
             });
         });
 

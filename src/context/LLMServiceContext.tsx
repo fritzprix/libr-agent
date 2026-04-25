@@ -120,7 +120,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     setAwaitingCompact,
   } = useLLMExecution({
     settingsRef,
-    streamingMessages,
     setStreamingMessages,
     updateSessionStatus,
   });

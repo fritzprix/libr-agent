@@ -1,10 +1,14 @@
 use crate::agent::session_manager::AgentSessionManager;
 use crate::models::chat::Message;
+use crate::repositories::message_repository::{
+    MessagePaginationCursor as RepositoryMessageCursor, MessageSlicePage as RepositoryMessageSlice,
+};
 use crate::repositories::MessageRepository;
 use crate::search::message_index::SearchResult;
 use crate::services::MessageService;
 use crate::state::get_message_repository;
 use crate::utils::pagination::Page;
+use serde::{Deserialize, Serialize};
 use tauri::command;
 use tauri::State;
 
@@ -14,6 +18,40 @@ use tauri::State;
 // ========================================
 // Tauri Commands
 // ========================================
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageCursor {
+    pub created_at: i64,
+    pub row_id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageSlice {
+    pub items: Vec<Message>,
+    pub has_more_before: bool,
+    pub oldest_cursor: Option<MessageCursor>,
+}
+
+impl From<RepositoryMessageCursor> for MessageCursor {
+    fn from(value: RepositoryMessageCursor) -> Self {
+        Self {
+            created_at: value.created_at,
+            row_id: value.row_id,
+        }
+    }
+}
+
+impl From<RepositoryMessageSlice> for MessageSlice {
+    fn from(value: RepositoryMessageSlice) -> Self {
+        Self {
+            items: value.items,
+            has_more_before: value.has_more_before,
+            oldest_cursor: value.oldest_cursor.map(Into::into),
+        }
+    }
+}
 
 /// Get a paginated list of messages for a session.
 #[command]
@@ -26,6 +64,23 @@ pub async fn messages_get_page(
     repo.get_page(&session_id, page, page_size)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Get messages older than a cursor for a session in ascending chronological order.
+#[command]
+pub async fn messages_get_messages_before(
+    session_id: String,
+    before_created_at: i64,
+    before_row_id: i64,
+    limit: u64,
+) -> Result<MessageSlice, String> {
+    let repo = get_message_repository();
+    let slice = repo
+        .get_messages_before(&session_id, before_created_at, before_row_id, limit)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(slice.into())
 }
 
 /// Insert or update multiple messages at once.

@@ -16,6 +16,10 @@ use super::database_backup::BackupManager;
 use super::database_error::{DatabaseError, DatabaseResult};
 use super::migration_verifier::MigrationVerifier;
 
+const SQLITE_POOL_MIN_CONNECTIONS: u32 = 1;
+const SQLITE_POOL_MAX_CONNECTIONS: u32 = 8;
+const SQLITE_POOL_ACQUIRE_TIMEOUT_SECS: u64 = 15;
+
 /// Extract the filesystem path from a `sqlite://` URL, stripping any query parameters.
 ///
 /// Returns `None` when the URL does not start with `sqlite://`.
@@ -93,7 +97,9 @@ async fn connect_existing_database(db_file_path: &str) -> DatabaseResult<Databas
         .create_if_missing(false);
 
     let sqlx_pool = sea_orm::sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
+        .min_connections(SQLITE_POOL_MIN_CONNECTIONS)
+        .max_connections(SQLITE_POOL_MAX_CONNECTIONS)
+        .acquire_timeout(Duration::from_secs(SQLITE_POOL_ACQUIRE_TIMEOUT_SECS))
         .connect_with(sqlite_opts)
         .await
         .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
@@ -278,8 +284,13 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
 
     // Connect via SqlxSqliteConnector which accepts SqliteConnectOptions directly.
     // This is the correct way to use non-URL options (WAL, busy_timeout) with sea-orm.
+    // WAL still allows only one writer at a time, but multiple pooled connections
+    // are important here because request preparation fans out several read-heavy
+    // service-context queries in parallel.
     let sqlx_pool = sea_orm::sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1) // SQLite: single writer
+        .min_connections(SQLITE_POOL_MIN_CONNECTIONS)
+        .max_connections(SQLITE_POOL_MAX_CONNECTIONS)
+        .acquire_timeout(Duration::from_secs(SQLITE_POOL_ACQUIRE_TIMEOUT_SECS))
         .connect_with(sqlite_opts)
         .await
         .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;

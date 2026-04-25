@@ -295,6 +295,70 @@ fn history_list_tool_status_filter_has_no_default() {
     );
 }
 
+#[test]
+fn history_tool_schemas_expose_runtime_defaults() {
+    let tools = HistoryServer::tools_static();
+
+    let list_tool = tools
+        .iter()
+        .find(|tool| tool.name == "list")
+        .expect("list tool should exist");
+    let read_session_tool = tools
+        .iter()
+        .find(|tool| tool.name == "readSession")
+        .expect("readSession tool should exist");
+    let read_message_tool = tools
+        .iter()
+        .find(|tool| tool.name == "readMessage")
+        .expect("readMessage tool should exist");
+    let search_tool = tools
+        .iter()
+        .find(|tool| tool.name == "search")
+        .expect("search tool should exist");
+
+    let list_properties = match &list_tool.input_schema.schema_type {
+        JSONSchemaType::Object {
+            properties: Some(properties),
+            ..
+        } => properties,
+        other => panic!("expected list object schema, got {other:?}"),
+    };
+    assert_eq!(list_properties["page"].default, Some(json!(1)));
+    assert_eq!(list_properties["pageSize"].default, Some(json!(20)));
+
+    let read_session_properties = match &read_session_tool.input_schema.schema_type {
+        JSONSchemaType::Object {
+            properties: Some(properties),
+            ..
+        } => properties,
+        other => panic!("expected readSession object schema, got {other:?}"),
+    };
+    assert_eq!(read_session_properties["page"].default, Some(json!(1)));
+    assert_eq!(read_session_properties["pageSize"].default, Some(json!(50)));
+
+    let read_message_properties = match &read_message_tool.input_schema.schema_type {
+        JSONSchemaType::Object {
+            properties: Some(properties),
+            ..
+        } => properties,
+        other => panic!("expected readMessage object schema, got {other:?}"),
+    };
+    assert_eq!(
+        read_message_properties["maxChars"].default,
+        Some(json!(3000))
+    );
+
+    let search_properties = match &search_tool.input_schema.schema_type {
+        JSONSchemaType::Object {
+            properties: Some(properties),
+            ..
+        } => properties,
+        other => panic!("expected search object schema, got {other:?}"),
+    };
+    assert_eq!(search_properties["page"].default, Some(json!(1)));
+    assert_eq!(search_properties["pageSize"].default, Some(json!(20)));
+}
+
 #[tokio::test]
 async fn history_list_filters_sessions_and_exposes_ids() {
     let _guard = TEST_GUARD.lock().await;
@@ -412,7 +476,7 @@ async fn history_search_returns_filtered_snippets() {
     let text = extract_text_content(&result);
     assert!(text.contains("history-message-a2"));
     assert!(!text.contains("history-message-b1"));
-    assert!(text.contains("session=history-session-a"));
+    assert!(text.contains("`history-session-a`"));
     assert!(text.contains("Use readSession(sessionId=\"...\")"));
     assert!(text.contains("Use readMessage(messageId=\"...\")"));
 

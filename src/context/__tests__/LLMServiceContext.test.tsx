@@ -215,6 +215,7 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         promise = result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-1',
           messages,
           'gpt-4',
           'openai',
@@ -270,6 +271,7 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         resultMessage = await result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-2',
           messages,
           'gpt-4',
           'openai',
@@ -324,6 +326,7 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         resultMessage = (await result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-3',
           messages,
           'gpt-4',
           'openai',
@@ -391,6 +394,7 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         promise = result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-4',
           messages,
           'gpt-4',
           'openai',
@@ -475,6 +479,7 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         promise = result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-5',
           messages,
           'gpt-4',
           'openai',
@@ -535,6 +540,7 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         promise = result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-6',
           messages,
           'gpt-4',
           'openai',
@@ -583,6 +589,7 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         resultMessage = (await result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-7',
           messages,
           'gpt-4',
           'openai',
@@ -622,6 +629,7 @@ describe('LLMServiceContext – Core', () => {
       await expect(
         result.current.executeCompletionRequest(
           'test-session',
+          'response-msg-8',
           messages,
           'gpt-4',
           'openai',
@@ -656,6 +664,7 @@ describe('LLMServiceContext – Core', () => {
 
       await result.current.executeCompletionRequest(
         'test-session',
+        'response-msg-9',
         messages,
         'gpt-4',
         'openai',

@@ -9,7 +9,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isAbortError } from '../types';
+import {
+  isAbortError,
+  isSupersededRequestError,
+  isWorkflowCancelledError,
+} from '../types';
 
 // ---------------------------------------------------------------------------
 // isAbortError utility
@@ -62,6 +66,31 @@ describe('isAbortError', () => {
 
   it('returns false for a non-null primitive (number)', () => {
     expect(isAbortError(42)).toBe(false);
+  });
+});
+
+describe('request lifecycle helper errors', () => {
+  it('returns true for Request superseded', () => {
+    expect(isSupersededRequestError(new Error('Request superseded'))).toBe(true);
+  });
+
+  it('returns false for non-superseded error', () => {
+    expect(isSupersededRequestError(new Error('Network error'))).toBe(false);
+  });
+
+  it('returns true for workflow cancelled shaped errors', () => {
+    expect(isWorkflowCancelledError(new Error('Workflow was cancelled'))).toBe(
+      true,
+    );
+    expect(
+      isWorkflowCancelledError({ displayMessage: 'LLM response superseded' }),
+    ).toBe(true);
+  });
+
+  it('returns false for unrelated workflow errors', () => {
+    expect(
+      isWorkflowCancelledError(new Error('Workflow failed unexpectedly')),
+    ).toBe(false);
   });
 });
 
@@ -145,7 +174,11 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
     error: unknown,
     sessionId: string,
   ) => {
-    if (isAbortError(error)) {
+    if (
+      isAbortError(error) ||
+      isSupersededRequestError(error) ||
+      isWorkflowCancelledError(error)
+    ) {
       return; // ← correct: do NOT call handleLLMError / report to Rust
     }
     await mockHandleLLMError(sessionId, String(error));
@@ -168,6 +201,18 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
     const err = new Error('API quota exceeded');
     await handleCatchInListener(err, 'session-1');
     expect(mockHandleLLMError).toHaveBeenCalledWith('session-1', 'Error: API quota exceeded');
+  });
+
+  it('does NOT call handleLLMError when request was superseded', async () => {
+    const err = new Error('Request superseded');
+    await handleCatchInListener(err, 'session-3');
+    expect(mockHandleLLMError).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call handleLLMError for workflow cancelled backend rejection', async () => {
+    const err = new Error('Workflow was cancelled');
+    await handleCatchInListener(err, 'session-4');
+    expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 });
 
@@ -235,17 +280,64 @@ describe('cancelCompletionRequest coordinates provider and local aborts', () => 
     const sessionId = 'session-abc';
     const controller = new AbortController();
     const controllers = new Map<string, AbortController>([[sessionId, controller]]);
-    const service = { cancel: vi.fn() };
-    const services = new Map<string, { cancel: () => void }>([[sessionId, service]]);
+    const service = { cancel: vi.fn(), dispose: vi.fn() };
+    const services = new Map<string, { cancel: () => void; dispose: () => void }>([
+      [sessionId, service],
+    ]);
+    const requestIds = new Map<string, string>([[sessionId, 'response-1']]);
+    const timeouts = new Map<string, number>([[sessionId, 123]]);
+    const lastStreamingUpdate = new Map<string, number>([[sessionId, 456]]);
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout').mockImplementation(() => {});
 
     const cancelCompletionRequest = (targetSessionId: string) => {
-      services.get(targetSessionId)?.cancel();
-      controllers.get(targetSessionId)?.abort();
+      requestIds.delete(targetSessionId);
+      lastStreamingUpdate.delete(targetSessionId);
+      const timeoutId = timeouts.get(targetSessionId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeouts.delete(targetSessionId);
+      }
+      const activeService = services.get(targetSessionId);
+      if (activeService) {
+        services.delete(targetSessionId);
+        activeService.cancel();
+        activeService.dispose();
+      }
+      const activeController = controllers.get(targetSessionId);
+      if (activeController) {
+        controllers.delete(targetSessionId);
+        activeController.abort();
+      }
     };
 
     cancelCompletionRequest(sessionId);
 
     expect(service.cancel).toHaveBeenCalledTimes(1);
+    expect(service.dispose).toHaveBeenCalledTimes(1);
     expect(controller.signal.aborted).toBe(true);
+    expect(requestIds.has(sessionId)).toBe(false);
+    expect(timeouts.has(sessionId)).toBe(false);
+    expect(lastStreamingUpdate.has(sessionId)).toBe(false);
+    expect(services.has(sessionId)).toBe(false);
+    expect(controllers.has(sessionId)).toBe(false);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(123);
+    clearTimeoutSpy.mockRestore();
+  });
+
+  it('invalidates request identity before a late chunk can re-render stale streaming UI', () => {
+    const sessionId = 'session-abc';
+    const responseMessageId = 'response-1';
+    const activeRequestIds = new Map<string, string>([[sessionId, responseMessageId]]);
+
+    const isCurrentRequest = (targetSessionId: string, targetResponseId: string) =>
+      activeRequestIds.get(targetSessionId) === targetResponseId;
+
+    const cancelCompletionRequest = (targetSessionId: string) => {
+      activeRequestIds.delete(targetSessionId);
+    };
+
+    cancelCompletionRequest(sessionId);
+
+    expect(isCurrentRequest(sessionId, responseMessageId)).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { AgentSession } from '@/models/agent';
 import type { Message, MessageError } from '@/models/chat';
-import type { AgentRuntimeError } from '@/models/agent-ipc';
+import type { AgentRuntimeError, MessageCursor } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type { WorkflowPhase, PendingApproval } from './types';
 import { buildMessageError } from './utils';
@@ -10,6 +10,10 @@ export function useAgentSessionState() {
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSessionLoading, setIsSessionLoading] = useState(false);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [oldestMessageCursor, setOldestMessageCursor] =
+    useState<MessageCursor | null>(null);
   const [error, setErrorState] = useState<MessageError | null>(null);
   const [llmError, setLlmError] = useState<MessageError | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<
@@ -56,11 +60,33 @@ export function useAgentSessionState() {
     });
   }, []);
 
+  const prependMessages = useCallback((olderMessages: Message[]) => {
+    if (olderMessages.length === 0) {
+      return;
+    }
+
+    setMessages((prev) => {
+      const existingIds = new Set(prev.map((message) => message.id));
+      const dedupedOlder = olderMessages.filter(
+        (message) => !existingIds.has(message.id),
+      );
+
+      if (dedupedOlder.length === 0) {
+        return prev;
+      }
+
+      return [...dedupedOlder, ...prev];
+    });
+  }, []);
+
   const setters = useMemo(
     () => ({
       setSession,
       setMessages,
       setIsSessionLoading,
+      setIsLoadingOlderMessages,
+      setHasOlderMessages,
+      setOldestMessageCursor,
       setError,
       setLlmError,
       setWorkflowStatus,
@@ -70,11 +96,15 @@ export function useAgentSessionState() {
       setYoloModeEnabled,
       applyLocalViewedAt,
       addMessage,
+      prependMessages,
     }),
     [
       setSession,
       setMessages,
       setIsSessionLoading,
+      setIsLoadingOlderMessages,
+      setHasOlderMessages,
+      setOldestMessageCursor,
       setError,
       setLlmError,
       setWorkflowStatus,
@@ -84,6 +114,7 @@ export function useAgentSessionState() {
       setYoloModeEnabled,
       applyLocalViewedAt,
       addMessage,
+      prependMessages,
     ],
   );
 
@@ -92,6 +123,9 @@ export function useAgentSessionState() {
       session,
       messages,
       isSessionLoading,
+      isLoadingOlderMessages,
+      hasOlderMessages,
+      oldestMessageCursor,
       error,
       llmError,
       workflowStatus,

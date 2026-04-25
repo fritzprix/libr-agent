@@ -725,6 +725,8 @@
       "cancelAriaLabel": "取消请求",
       "cancellingTooltip": "正在取消...",
       "cancelTooltip": "取消",
+      "resumeAriaLabel": "恢复工作流",
+      "resumeTooltip": "恢复",
       "sendAriaLabel": "发送消息",
       "sendTooltip": "发送"
     },

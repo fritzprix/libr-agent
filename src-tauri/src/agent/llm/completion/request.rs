@@ -18,15 +18,22 @@ use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactionParentRequest, CompletionRequest,
 };
 
-async fn trigger_preflight_compaction_or_error(
+async fn trigger_preflight_compaction_for_messages_or_error(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
+    session_name: &str,
+    messages: &[Message],
+    parent_request: Option<CompactionParentRequest>,
 ) -> Result<bool, AgentRuntimeError> {
-    super::compaction::trigger_preflight_compaction_for_session(
+    super::compaction::try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
         session_id,
+        session_name,
+        messages,
+        parent_request,
+        true,
     )
     .await
     .map_err(|error| {
@@ -43,6 +50,7 @@ pub fn build_compact_context_selection_options(
     tools_json: Option<String>,
     provider: &str,
     tool_call_group_visible_count: usize,
+    fallback_calibration_ratio: Option<f64>,
 ) -> crate::agent::llm::context_selector::SelectionOptions {
     crate::agent::llm::context_selector::SelectionOptions {
         system_prompt,
@@ -54,7 +62,28 @@ pub fn build_compact_context_selection_options(
             tool_call_group_visible_count
         }),
         pin_first_user_message: false,
+        fallback_calibration_ratio,
     }
+}
+
+pub fn resolve_preserved_calibration_ratio(
+    raw_messages: &[Message],
+    prompt_messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> Option<f64> {
+    crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+        prompt_messages,
+        system_prompt_tokens,
+        tools_tokens,
+    )
+    .or_else(|| {
+        crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+            raw_messages,
+            system_prompt_tokens,
+            tools_tokens,
+        )
+    })
 }
 
 pub fn build_compact_summary_message(session_id: &str, text: String, created_at: i64) -> Message {
@@ -93,6 +122,11 @@ struct CompactToolSnapshot {
     argument_preview: String,
     status: &'static str,
     result_preview: String,
+}
+
+pub fn normalize_request_messages(messages: Vec<Message>) -> Vec<Message> {
+    let merged_messages = merge_consecutive_user_messages(messages);
+    crate::agent::llm::context_selector::remove_incomplete_tool_chains(merged_messages)
 }
 
 pub fn build_compact_summary_text(summary: &str, compacted_messages: &[Message]) -> String {
@@ -428,6 +462,11 @@ pub async fn request_llm_completion(
 
     let model = session.metadata.model.clone();
     let provider = session.metadata.provider.clone();
+    let session_name = session
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
 
     let temperature = agent_config.temperature;
     let max_tokens = agent_config.max_tokens;
@@ -443,10 +482,9 @@ pub async fn request_llm_completion(
     let system_prompt = Some(stable_prompt);
 
     // Collect available tools
-    let available_tools =
-        crate::agent::tools::collect_available_tools(&session_id, &agent_config, proxy_manager)
-            .await
-            .ok();
+    let available_tools = crate::agent::tools::collect_available_tools(&session_id, proxy_manager)
+        .await
+        .ok();
 
     // Resolve @type:arg references in user messages (Late Binding).
     // The stored messages are NOT modified — only the CompletionRequest payload is enriched.
@@ -479,6 +517,24 @@ pub async fn request_llm_completion(
     let max_input_context = context_settings.max_input_context;
     let tool_call_group_visible_count = context_settings.tool_call_group_visible_count;
     let model_max_limit = context_settings.model_max_limit;
+    let tools_json = available_tools
+        .as_ref()
+        .map(|tools| serde_json::to_string(tools).unwrap_or_default());
+    let combined_system_prompt = match (&system_prompt, &session_context) {
+        (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
+        (Some(sp), None) => Some(sp.clone()),
+        (None, Some(sc)) => Some(sc.clone()),
+        (None, None) => None,
+    };
+    let system_prompt_tokens = combined_system_prompt
+        .as_ref()
+        .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
+        .unwrap_or(0);
+    let tools_tokens = tools_json
+        .as_ref()
+        .map(|json| crate::agent::llm::token_utils::estimate_text_tokens(json))
+        .unwrap_or(0);
+    let raw_messages = messages.clone();
 
     // --- Step A: Inject compact summary (if a valid record is cached) ---
     // Clone Arc refs while holding the outer read lock, then release it immediately.
@@ -494,6 +550,7 @@ pub async fn request_llm_completion(
         session.compact_context.clone()
     };
 
+    let normalized_messages = messages.clone();
     let (messages, compact_summary_injected) = {
         let compact_record = compact_context_arc.read().await.clone();
         if let Some(record) = compact_record {
@@ -560,45 +617,27 @@ pub async fn request_llm_completion(
             (messages, false)
         }
     };
-
-    log::info!(
-        "🧱 Prompt prefix composition: session={}, compact_summary_injected={}, message_count={}",
-        session_id,
-        compact_summary_injected,
-        messages.len()
+    let preserved_calibration_ratio = resolve_preserved_calibration_ratio(
+        &raw_messages,
+        &messages,
+        system_prompt_tokens,
+        tools_tokens,
     );
 
-    let mut final_messages = messages.clone();
-    let tools_json = available_tools
-        .as_ref()
-        .map(|tools| serde_json::to_string(tools).unwrap_or_default());
-    let combined_system_prompt = match (&system_prompt, &session_context) {
-        (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
-        (Some(sp), None) => Some(sp.clone()),
-        (None, Some(sc)) => Some(sc.clone()),
-        (None, None) => None,
-    };
+    log::info!(
+        "🧱 Prompt prefix composition: session={}, compact_summary_injected={}, message_count={}, preserved_calibration_ratio={}",
+        session_id,
+        compact_summary_injected,
+        messages.len(),
+        preserved_calibration_ratio
+            .map(|ratio| format!("{:.4}", ratio))
+            .unwrap_or_else(|| "none".to_string())
+    );
 
-    if uses_compaction_strategy(&context_strategy) {
-        let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-        let context_options = build_compact_context_selection_options(
-            combined_system_prompt.clone(),
-            tools_json.clone(),
-            &provider,
-            tool_call_group_visible_count,
-        );
-
-        final_messages = crate::agent::llm::context_selector::select_messages_within_context(
-            &final_messages,
-            &provider,
-            Some(safe_input_token_limit),
-            Some(&context_options),
-            Some(&crate::agent::llm::context_selector::ModelContextInfo {
-                context_window: model_max_limit,
-            }),
-        );
+    let final_messages = if uses_compaction_strategy(&context_strategy) {
+        messages.clone()
     } else {
-        final_messages = crate::agent::llm::context_selector::select_recent_messages_fifo(
+        crate::agent::llm::context_selector::select_recent_messages_fifo(
             &messages,
             &provider,
             window_size,
@@ -607,8 +646,8 @@ pub async fn request_llm_completion(
             } else {
                 tool_call_group_visible_count
             },
-        );
-    }
+        )
+    };
 
     let compaction_parent_request = Some(CompactionParentRequest {
         model: model.clone(),
@@ -628,8 +667,15 @@ pub async fn request_llm_completion(
 
     if final_messages.is_empty() {
         if uses_compaction_strategy(&context_strategy)
-            && trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
-                .await?
+            && trigger_preflight_compaction_for_messages_or_error(
+                active_sessions,
+                app_handle,
+                &session_id,
+                &session_name,
+                &normalized_messages,
+                compaction_parent_request.clone(),
+            )
+            .await?
         {
             return Ok(());
         }
@@ -647,33 +693,41 @@ pub async fn request_llm_completion(
 
     if uses_compaction_strategy(&context_strategy) {
         let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-        let system_prompt_tokens = combined_system_prompt
-            .as_ref()
-            .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
-            .unwrap_or(0);
-        let tools_tokens = tools_json
-            .as_ref()
-            .map(|json| crate::agent::llm::token_utils::estimate_text_tokens(json))
-            .unwrap_or(0);
         let conservative_preflight_tokens =
             crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
                 &final_messages,
                 system_prompt_tokens,
                 tools_tokens,
+                preserved_calibration_ratio,
             );
 
         if conservative_preflight_tokens >= safe_input_token_limit {
+            let selected_message_breakdown =
+                crate::agent::llm::token_utils::summarize_message_token_breakdown(&final_messages);
             log::info!(
-                "⛔ Rust preflight blocked LLM request: session={}, conservative_prompt_tokens={}, safe_input_token_limit={}, compact_summary_injected={}, selected_message_count={}",
+                "⛔ Rust preflight blocked LLM request: session={}, conservative_prompt_tokens={}, safe_input_token_limit={}, compact_summary_injected={}, selected_message_count={}, system_prompt_tokens={}, tools_tokens={}, preserved_calibration_ratio={}, selected_breakdown=[{}]",
                 session_id,
                 conservative_preflight_tokens,
                 safe_input_token_limit,
                 compact_summary_injected,
-                final_messages.len()
+                final_messages.len(),
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio
+                    .map(|ratio| format!("{:.4}", ratio))
+                    .unwrap_or_else(|| "none".to_string()),
+                selected_message_breakdown
             );
 
-            if trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
-                .await?
+            if trigger_preflight_compaction_for_messages_or_error(
+                active_sessions,
+                app_handle,
+                &session_id,
+                &session_name,
+                &normalized_messages,
+                compaction_parent_request.clone(),
+            )
+            .await?
             {
                 return Ok(());
             }
@@ -682,7 +736,7 @@ pub async fn request_llm_completion(
                 AgentRuntimeError::new(
                     AgentRuntimeErrorType::ContextLimitError,
                     format!(
-                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens).",
+                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens). Trigger preflight compaction or reduce the latest message size.",
                         conservative_preflight_tokens, safe_input_token_limit
                     ),
                 )
@@ -693,6 +747,10 @@ pub async fn request_llm_completion(
                     "safeInputTokenLimit": safe_input_token_limit,
                     "compactSummaryInjected": compact_summary_injected,
                     "selectedMessageCount": final_messages.len(),
+                    "systemPromptTokens": system_prompt_tokens,
+                    "toolsTokens": tools_tokens,
+                    "preservedCalibrationRatio": preserved_calibration_ratio,
+                    "selectedBreakdown": selected_message_breakdown,
                 })),
             );
         }

@@ -1,6 +1,5 @@
 use serde_json::Value;
 
-use crate::mcp::builtin::error_guidance::missing_agent_session_error;
 use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::session_api::formatting::{extract_session_status, is_terminal_status};
 use crate::mcp::builtin::session_api::utils::{
@@ -10,7 +9,10 @@ use crate::mcp::builtin::session_api::utils::{
 use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;
-use super::{build_paused_check_session_result, build_terminal_check_session_result};
+use super::{
+    build_paused_check_session_result, build_terminal_check_session_result,
+    load_accessible_delegated_session,
+};
 
 /// checkSession handler (from awaitAgent / getAgentStatus)
 pub async fn check_session(
@@ -25,9 +27,16 @@ pub async fn check_session(
     let wait = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
     let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
 
-    let current_session_meta = match manager.get_session(&session_id).await? {
-        Some(session) => session,
-        None => return Ok(missing_agent_session_error(&session_id)),
+    let current_session_meta = match load_accessible_delegated_session(
+        manager,
+        caller_session_id,
+        &session_id,
+        "checkSession",
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(result) => return Ok(result),
     };
     let current_status = format!("{:?}", current_session_meta.status).to_lowercase();
     let current_turn_count = count_session_turns(&session_id).await;

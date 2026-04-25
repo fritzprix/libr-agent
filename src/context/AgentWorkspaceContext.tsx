@@ -21,8 +21,6 @@ export function AgentWorkspaceProvider({
 }: AgentWorkspaceProviderProps) {
   const [showWorkspacePanel, setShowWorkspacePanel] = useState(false);
 
-  logger.debug('Provider render', { showWorkspacePanel });
-
   const toggleWorkspacePanel = useCallback(() => {
     const newValue = !showWorkspacePanel;
     logger.info('Workspace panel toggled', {

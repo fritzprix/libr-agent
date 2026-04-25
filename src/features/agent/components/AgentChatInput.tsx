@@ -16,7 +16,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui';
-import { Send, Square, Loader2 } from 'lucide-react';
+import { Send, Square, Loader2, Play } from 'lucide-react';
 import type { AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
@@ -49,7 +49,8 @@ interface AgentChatInputProps {
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
-  const { submit, isSessionLoading, workflowStatus, cancel } = useAgentChat();
+  const { submit, isSessionLoading, workflowStatus, cancel, resume } =
+    useAgentChat();
   const { isCompacting } = useLLMService();
   const [pendingCancel, setPendingCancel] = useState(false);
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
@@ -132,7 +133,6 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       isSessionLoading ||
       isSubmitting ||
       workflowStatus === 'busy' ||
-      workflowStatus === 'paused' ||
       (session?.id ? isCompacting(session.id) : false)
     );
   }, [
@@ -143,9 +143,16 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     isCompacting,
   ]);
 
+  const isPaused = workflowStatus === 'paused' && !isBusy;
+
   const isSendDisabled = useMemo(() => {
-    return !hasContent || isAttachmentLoading || hasProcessingFiles;
-  }, [hasContent, isAttachmentLoading, hasProcessingFiles]);
+    return (
+      !hasContent ||
+      isAttachmentLoading ||
+      hasProcessingFiles ||
+      isSessionLoading
+    );
+  }, [hasContent, isAttachmentLoading, hasProcessingFiles, isSessionLoading]);
 
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {
@@ -221,6 +228,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (
+          !isSendDisabled &&
           !isAttachmentLoading &&
           (input.trim() || attachedFiles.length > 0)
         ) {
@@ -231,6 +239,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       }
     },
     [
+      isSendDisabled,
       isAttachmentLoading,
       input,
       attachedFiles.length,
@@ -254,6 +263,14 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       setPendingCancel(false);
     }
   }, [cancel]);
+
+  const handleResume = useCallback(async () => {
+    try {
+      await resume();
+    } catch (err) {
+      logger.error('Failed to resume workflow:', err);
+    }
+  }, [resume]);
 
   // Drag-and-drop handlers
   useEffect(() => {
@@ -438,6 +455,23 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                 ? t('agent.input.cancellingTooltip')
                 : t('agent.input.cancelTooltip')}
             </TooltipContent>
+          </Tooltip>
+        ) : isPaused ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                onClick={handleResume}
+                variant="ghost"
+                size="icon"
+                className="mb-1 shrink-0"
+                aria-label={t('agent.input.resumeAriaLabel')}
+                title={t('agent.input.resumeAriaLabel')}
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('agent.input.resumeTooltip')}</TooltipContent>
           </Tooltip>
         ) : (
           <Tooltip>

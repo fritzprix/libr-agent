@@ -134,13 +134,14 @@ pub async fn cancel_workflow(
         return Ok(());
     }
 
-    // No in-flight tool-call batch: stop immediately.
+    // No in-flight tool-call batch: stop immediately and leave the workflow paused
+    // so the user can explicitly resume from the current stack.
     crate::agent::lifecycle::update_session_status(
         session_repo,
         active_sessions,
         app_handle,
         &session_id,
-        SessionStatus::Idle,
+        SessionStatus::Paused,
     )
     .await?;
 

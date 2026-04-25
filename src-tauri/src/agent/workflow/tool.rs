@@ -104,7 +104,7 @@ pub async fn continue_workflow_after_tool(
                     active_sessions,
                     app_handle,
                     &session_id,
-                    SessionStatus::Idle,
+                    SessionStatus::Paused,
                 )
                 .await;
 
@@ -187,7 +187,7 @@ pub async fn continue_workflow_after_tool(
                 }
 
                 // Request next LLM completion
-                if let Err(e) = crate::agent::llm::request_llm_completion(
+                if let Err(e) = crate::agent::llm::request_llm_completion_with_recovery(
                     session_repo,
                     active_sessions,
                     proxy_manager,

@@ -76,13 +76,15 @@ export interface SendUserMessageRequest {
 }
 
 /**
- * Request payload for injecting messages silently or with workflow trigger.
+ * Request payload for injecting messages.
+ * Workflow continuation is decided by the backend from current session state.
+ * `triggerWorkflow` is deprecated and ignored when provided.
  * Mirrors `InjectMessagesRequest` in `src-tauri/src/commands/agent_commands.rs`.
  */
 export interface InjectMessagesRequest {
   sessionId: string;
   messages: RustMessage[];
-  triggerWorkflow: boolean;
+  triggerWorkflow?: boolean;
 }
 
 /**
@@ -175,4 +177,27 @@ export interface AgentSessionMetadata {
   lastAttentionReason?: SessionAttentionReason;
   isBookmarked?: boolean;
   yoloMode: boolean;
+}
+
+export interface MessageCursor {
+  createdAt: number;
+  rowId: number;
+}
+
+export interface MessageSlice<TMessage = RustMessage> {
+  items: TMessage[];
+  hasMoreBefore: boolean;
+  oldestCursor?: MessageCursor | null;
+}
+
+export interface PendingApprovalSnapshot {
+  toolCallId: string;
+  toolName: string;
+  arguments: string;
+}
+
+export interface AgentOpenSessionResponse {
+  session: AgentSessionMetadata;
+  messages: MessageSlice<RustMessage>;
+  pendingApprovals: PendingApprovalSnapshot[];
 }

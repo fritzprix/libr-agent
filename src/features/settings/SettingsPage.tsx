@@ -573,7 +573,11 @@ export default function SettingsPage() {
                 {t('settings.title', 'Settings')}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                LibrAgent v{__APP_VERSION__}
+                {t('settings.versionLabel', {
+                  defaultValue: '{{appName}} v{{version}}',
+                  appName: t('appName', 'LibrAgent'),
+                  version: __APP_VERSION__,
+                })}
               </p>
             </div>
           </div>

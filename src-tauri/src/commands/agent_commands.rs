@@ -1,12 +1,14 @@
 use crate::agent::AgentSessionManager;
+use crate::commands::messages_commands::MessageSlice;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::types::ChannelPermissionVerdict;
 use crate::mcp::types::ServiceContext;
+use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{CompactContextRecord, SessionMetadata, SessionRepository};
 use crate::state::get_session_repository;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::{command, AppHandle, Emitter, State};
+use tauri::{command, AppHandle, State};
 
 use crate::models::chat::Message;
 use crate::services::AgentService;
@@ -50,12 +52,14 @@ pub struct SendUserMessageRequest {
     pub message: Message,
 }
 
-/// Request to inject messages silently or with workflow trigger
+/// Request to inject messages. Workflow continuation is decided by backend
+/// session state. `trigger_workflow` is kept only for backward compatibility.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InjectMessagesRequest {
     pub session_id: String,
     pub messages: Vec<Message>,
+    #[serde(default)]
     pub trigger_workflow: bool,
 }
 
@@ -116,6 +120,23 @@ pub struct AgentResponse {
     pub success: bool,
     pub message: String,
     pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentOpenSessionResponse {
+    pub session: SessionMetadata,
+    pub messages: MessageSlice,
+    #[serde(default)]
+    pub pending_approvals: Vec<PendingApprovalSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingApprovalSnapshot {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub arguments: String,
 }
 
 fn default_ui_action_params() -> serde_json::Value {
@@ -266,6 +287,52 @@ pub async fn agent_resume_session(
     manager.resume_session(&session_id).await
 }
 
+/// Resume a session and return only the recent transcript slice needed for initial UI rendering.
+#[command]
+pub async fn agent_open_session(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    initial_message_limit: Option<u64>,
+) -> Result<AgentOpenSessionResponse, String> {
+    const DEFAULT_INITIAL_MESSAGE_LIMIT: u64 = 40;
+
+    let session = manager
+        .get_session(&session_id)
+        .await?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let repo = crate::state::get_message_repository();
+    let message_slice = repo
+        .get_recent_slice(
+            &session_id,
+            initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT),
+        )
+        .await
+        .map_err(|e| format!("Failed to load recent session messages: {}", e))?;
+    let pending_approvals = {
+        let active = manager.active_sessions_arc();
+        let sessions = active.read().await;
+        if let Some(active_session) = sessions.get(&session_id) {
+            let approvals = active_session.pending_approvals.read().await;
+            approvals
+                .iter()
+                .map(|(tool_call_id, data)| PendingApprovalSnapshot {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: data.tool_name.clone(),
+                    arguments: data.arguments.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    };
+
+    Ok(AgentOpenSessionResponse {
+        session,
+        messages: message_slice.into(),
+        pending_approvals,
+    })
+}
+
 /// Initialize session with messages from database
 #[command]
 pub async fn agent_init_session_with_messages(
@@ -338,21 +405,17 @@ pub async fn agent_inject_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
-    manager
-        .inject_messages(
-            request.session_id.clone(),
-            request.messages,
-            request.trigger_workflow,
-        )
+    let triggered = manager
+        .inject_messages(request.session_id.clone(), request.messages)
         .await?;
 
     Ok(AgentResponse {
         success: true,
         message: format!(
             "Injected messages for session: {} (triggered: {})",
-            request.session_id, request.trigger_workflow
+            request.session_id, triggered
         ),
-        data: None,
+        data: Some(serde_json::json!({ "triggered": triggered })),
     })
 }
 
@@ -389,7 +452,6 @@ pub async fn agent_execute_ui_tauri_action(
         .inject_messages(
             request.session_id.clone(),
             vec![tool_call_message, tool_result_message],
-            true,
         )
         .await?;
 
@@ -865,7 +927,6 @@ pub async fn agent_save_compact_context(
 /// Stores the summary in-memory + DB and clears the in-flight flag.
 #[command]
 pub async fn agent_handle_compact_response(
-    app_handle: AppHandle,
     manager: State<'_, AgentSessionManager>,
     session_id: String,
     from_id: String,
@@ -875,18 +936,6 @@ pub async fn agent_handle_compact_response(
     manager
         .handle_compact_response(&session_id, from_id, to_id, summary)
         .await?;
-    let session_name = manager.get_session_display_name(&session_id).await;
-
-    let state_event = crate::agent::llm::types::CompactStateEvent {
-        session_id: session_id.clone(),
-        session_name,
-        compacting: false,
-        phase: crate::agent::llm::types::CompactStatePhase::Succeeded,
-        error: None,
-    };
-    if let Err(e) = app_handle.emit("llm:compact-state", state_event) {
-        log::error!("Failed to emit llm:compact-state (done): {}", e);
-    }
 
     Ok(AgentResponse {
         success: true,

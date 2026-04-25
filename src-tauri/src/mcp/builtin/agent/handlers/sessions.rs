@@ -12,8 +12,8 @@ use crate::mcp::types::MCPResult;
 use crate::repositories::SessionStatus;
 
 use super::super::AgentServer;
-use super::caller_session_not_found_result;
 use super::check_session::check_session;
+use super::{caller_session_not_found_result, load_accessible_delegated_session};
 
 fn self_target_session_action_result(
     tool_name: &str,
@@ -212,13 +212,23 @@ pub async fn start_session(
 pub async fn message_to_session(
     server: &AgentServer,
     args: Value,
-    _caller_session_id: &str,
+    caller_session_id: &str,
 ) -> Result<MCPResult, String> {
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
     let message_text = read_required_string(&args, "message")?;
+    if let Err(result) = load_accessible_delegated_session(
+        manager,
+        caller_session_id,
+        &session_id,
+        "messageToSession",
+    )
+    .await
+    {
+        return Ok(result);
+    }
     let response = match crate::services::AgentService::send_message_to_session(
         manager,
         &session_id,
@@ -279,6 +289,13 @@ pub async fn stop_session(
         ));
     }
 
+    if let Err(result) =
+        load_accessible_delegated_session(manager, caller_session_id, &session_id, "stopSession")
+            .await
+    {
+        return Ok(result);
+    }
+
     if let Err(error) = manager.terminate_session(session_id.clone()).await {
         if error.contains("not found") {
             return Ok(missing_agent_session_error(&session_id));
@@ -336,12 +353,19 @@ pub async fn compact_session_context(
                 "Use this tool only when you want to refresh another delegated session's compact summary"
                     .to_string(),
                 ],
-            ));
+        ));
     }
 
-    let target_session = match manager.get_session(&session_id).await? {
-        Some(session) => session,
-        None => return Ok(missing_agent_session_error(&session_id)),
+    let target_session = match load_accessible_delegated_session(
+        manager,
+        caller_session_id,
+        &session_id,
+        "compactSessionContext",
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(result) => return Ok(result),
     };
 
     if target_session.status == SessionStatus::Busy {

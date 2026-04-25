@@ -21,6 +21,22 @@ use crate::agent::llm::types::{
 use crate::agent::state::DeferredWorkflowStep;
 use crate::agent::tauri_events::TauriEventDispatcher;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmErrorHandlingOutcome {
+    RecoveredByCompaction,
+    FinalizedWorkflowError,
+}
+
+pub fn completion_result_from_error_handling_outcome(
+    outcome: LlmErrorHandlingOutcome,
+    error: AgentRuntimeError,
+) -> Result<(), String> {
+    match outcome {
+        LlmErrorHandlingOutcome::RecoveredByCompaction => Ok(()),
+        LlmErrorHandlingOutcome::FinalizedWorkflowError => Err(error.into()),
+    }
+}
+
 async fn calculate_post_response_compaction_pressure(
     assistant_message: &Message,
 ) -> Option<PostResponseCompactionPressure> {
@@ -83,6 +99,33 @@ async fn defer_for_post_response_compaction_if_needed(
         deferred_step,
     )
     .await
+}
+
+pub fn validate_expected_response_id(
+    session_id: &str,
+    expected_response_id: Option<&str>,
+    received_message_id: &str,
+) -> Result<(), String> {
+    let Some(expected_response_id) = expected_response_id else {
+        log::info!(
+            "Ignoring stray LLM response for session {} (received_message_id={}, expected_response_id=<none>)",
+            session_id,
+            received_message_id
+        );
+        return Err("LLM response superseded".to_string());
+    };
+
+    if received_message_id != expected_response_id {
+        log::info!(
+            "Ignoring superseded LLM response for session {} (expected_response_id={}, received_message_id={})",
+            session_id,
+            expected_response_id,
+            received_message_id
+        );
+        return Err("LLM response superseded".to_string());
+    }
+
+    Ok(())
 }
 
 /// Handle an LLM response from the frontend
@@ -166,9 +209,12 @@ pub async fn handle_llm_response(
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(&session_id) {
             let mut expected_id = session.expected_response_id.write().await;
-            if let Some(id) = expected_id.take() {
-                assistant_message.id = id;
-            }
+            validate_expected_response_id(
+                &session_id,
+                expected_id.as_deref(),
+                &assistant_message.id,
+            )?;
+            expected_id.take();
         }
     }
 
@@ -789,13 +835,13 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
 }
 
 /// Handle LLM error from frontend
-pub async fn handle_llm_error(
+pub async fn handle_llm_error_with_outcome(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: String,
     error: AgentRuntimeError,
-) -> Result<(), String> {
+) -> Result<LlmErrorHandlingOutcome, String> {
     log::error!(
         "LLM error for session {}: {}",
         session_id,
@@ -822,7 +868,7 @@ pub async fn handle_llm_error(
                     "Recovered context-limit error by arming compaction recovery for session {}",
                     session_id
                 );
-                return Ok(());
+                return Ok(LlmErrorHandlingOutcome::RecoveredByCompaction);
             }
             Ok(false) => {
                 log::warn!(
@@ -857,7 +903,21 @@ pub async fn handle_llm_error(
         session_id,
         error,
     )
-    .await
+    .await?;
+
+    Ok(LlmErrorHandlingOutcome::FinalizedWorkflowError)
+}
+
+pub async fn handle_llm_error(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: String,
+    error: AgentRuntimeError,
+) -> Result<(), String> {
+    handle_llm_error_with_outcome(session_repo, active_sessions, app_handle, session_id, error)
+        .await
+        .map(|_| ())
 }
 
 pub async fn finalize_workflow_error_with_dispatcher(

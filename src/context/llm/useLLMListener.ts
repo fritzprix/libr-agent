@@ -33,7 +33,11 @@ import type {
   CompactedRange,
   CompletionRequest,
 } from './types';
-import { isAbortError } from './types';
+import {
+  isAbortError,
+  isSupersededRequestError,
+  isWorkflowCancelledError,
+} from './types';
 import {
   applyServiceRuntimeConfig,
   buildServiceRuntimeConfig,
@@ -135,6 +139,7 @@ interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;
   executeCompletionRequest: (
     sessionId: string,
+    responseMessageId: string,
     messages: Message[],
     model: string,
     provider: string,
@@ -306,6 +311,7 @@ export function useLLMListener({
                 try {
                   return await executeCompletionRequest(
                     sessionId,
+                    responseMessageId,
                     messages,
                     targetModel,
                     targetProvider,
@@ -380,6 +386,7 @@ export function useLLMListener({
                 // One shot with fallback — no further retries
                 result = await executeCompletionRequest(
                   sessionId,
+                  responseMessageId,
                   messages,
                   fallbackModel.model,
                   fallbackModel.provider,
@@ -431,13 +438,20 @@ export function useLLMListener({
             // state transition to Idle. Reporting it would cause a race where Rust
             // transitions: Idle (cancel) → Error (stale abort) in wrong order.
             const isAborted = isAbortError(error);
+            const isSuperseded = isSupersededRequestError(error);
+            const isWorkflowCancelled = isWorkflowCancelledError(error);
 
-            if (isAborted) {
+            if (isAborted || isSuperseded || isWorkflowCancelled) {
               clearCompactionPressureForSession(sessionId);
-              logger.info(
-                'LLM request aborted due to cancellation, skipping error report to Rust',
-                { sessionId },
-              );
+              logger.info('Skipping benign LLM request error report to Rust', {
+                sessionId,
+                reason: isAborted
+                  ? 'aborted'
+                  : isSuperseded
+                    ? 'superseded'
+                    : 'workflow-cancelled',
+                error,
+              });
               return;
             }
 
@@ -476,18 +490,15 @@ export function useLLMListener({
             fromId,
             toId,
             parentRequest,
-            resumeCompletionAfterCompact,
           } = event.payload;
           const messages = rawMessages.map(normalizeRustMessage);
           logger.info(
             `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
           );
-          setAwaitingCompactForSession(sessionId, resumeCompletionAfterCompact);
 
           const settings = settingsRef.current;
           if (!settings) {
             logger.error('No settings available for compact request');
-            setAwaitingCompactForSession(sessionId, false);
             await handleCompactError(
               sessionId,
               toAgentRuntimeError(
@@ -533,7 +544,6 @@ export function useLLMListener({
               `Compact LLM call failed: session=${sessionId}`,
               compactRuntimeError,
             );
-            setAwaitingCompactForSession(sessionId, false);
             await handleCompactError(sessionId, compactRuntimeError);
           }
         },
@@ -557,15 +567,24 @@ export function useLLMListener({
         sessionId: string;
         sessionName?: string;
         compacting: boolean;
+        awaitingCompact: boolean;
         phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
         error?: string;
       }>('llm:compact-state', (event) => {
-        const { sessionId, sessionName, compacting, phase, error } =
-          event.payload;
+        const {
+          sessionId,
+          sessionName,
+          compacting,
+          awaitingCompact,
+          phase,
+          error,
+        } = event.payload;
         const toastId = `compact-${sessionId}`;
         const description = sessionName ?? sessionId.slice(0, 8);
 
         setCompactingFromEvent(sessionId, compacting);
+        setAwaitingCompactForSession(sessionId, awaitingCompact);
+
         if (phase === 'STARTED') {
           toast.loading(`Compacting context…`, {
             id: toastId,
@@ -584,10 +603,6 @@ export function useLLMListener({
             description: error ? `${description} - ${error}` : description,
             duration: 4000,
           });
-        }
-
-        if (!compacting) {
-          setAwaitingCompactForSession(sessionId, false);
         }
       });
 
