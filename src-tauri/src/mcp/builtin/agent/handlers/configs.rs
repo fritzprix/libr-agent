@@ -210,7 +210,7 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     let total_items = total;
     let page = (offset / limit.max(1)) + 1;
-    let total_pages = (total_items + limit.max(1) - 1) / limit.max(1);
+    let total_pages = total_items.div_ceil(limit.max(1));
     let has_next_page = offset + limit < total_items;
     let has_previous_page = offset > 0;
 
@@ -322,7 +322,7 @@ async fn list_delegated_sessions(caller_session_id: &str, args: &Value) -> Resul
 
     let total_items = total;
     let page = (offset / limit.max(1)) + 1;
-    let total_pages = (total_items + limit.max(1) - 1) / limit.max(1);
+    let total_pages = total_items.div_ceil(limit.max(1));
     let has_next_page = offset + limit < total_items;
     let has_previous_page = offset > 0;
 
