@@ -579,6 +579,17 @@
       "toggleFailed": "확장 기능 상태 변경 실패: {{error}}",
       "activated": "활성화",
       "deactivated": "비활성화"
+    },
+    "toolsModal": {
+      "title": "도구 목록",
+      "description": "MCP 서버에서 반환된 도구 이름 및 설명입니다.",
+      "connecting": "서버에 연결 중…",
+      "failedToLoad": "도구를 불러오는데 실패했습니다",
+      "noTools": "반환된 도구가 없습니다.",
+      "toolListAria": "도구 목록",
+      "inputSchema": "입력 스키마",
+      "toolsCount_one": "({{count}}개 도구)",
+      "toolsCount_other": "({{count}}개 도구)"
     }
   },
   "playbook": {

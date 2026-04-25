@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useServerTools } from '../hooks/useServerTools';
+import { useTranslation } from 'react-i18next';
 
 interface ServerToolsModalProps {
   serverId: string;
@@ -28,6 +29,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { t } = useTranslation('common');
   const { tools, isLoading, error } = useServerTools(serverId, isOpen);
 
   return (
@@ -45,25 +47,25 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
             {serverName}
             {tools.length > 0 && (
               <span className="text-muted-foreground font-normal text-sm">
-                ({tools.length} tools)
+                {t('mcpServer.toolsModal.toolsCount', { count: tools.length })}
               </span>
             )}
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground text-left">
-            Tool names and descriptions as returned by the MCP server.
+            {t('mcpServer.toolsModal.description')}
           </DialogDescription>
         </DialogHeader>
 
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3 text-muted-foreground">
             <LoadingSpinner />
-            <span className="text-sm">Connecting to server…</span>
+            <span className="text-sm">{t('mcpServer.toolsModal.connecting')}</span>
           </div>
         )}
 
         {error && (
           <div className="py-8 text-center text-destructive text-sm">
-            <p className="font-semibold mb-1">Failed to load tools</p>
+            <p className="font-semibold mb-1">{t('mcpServer.toolsModal.failedToLoad')}</p>
             <p className="opacity-90">{error}</p>
           </div>
         )}
@@ -72,10 +74,10 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
           <div className="overflow-y-auto flex-1 min-h-0 pr-1">
             {tools.length === 0 ? (
               <p className="text-center py-8 text-muted-foreground text-sm">
-                No tools returned.
+                {t('mcpServer.toolsModal.noTools')}
               </p>
             ) : (
-              <ul className="space-y-2" aria-label="Tool list">
+              <ul className="space-y-2" aria-label={t('mcpServer.toolsModal.toolListAria')}>
                 {tools.map((tool) => (
                   <li
                     key={tool.name}
@@ -96,7 +98,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
                             size={12}
                             className="transition-transform group-open:rotate-180"
                           />
-                          Input schema
+                          {t('mcpServer.toolsModal.inputSchema')}
                         </summary>
                         <pre className="text-xs text-foreground mt-1 bg-background p-2 rounded border border-border overflow-x-auto">
                           {JSON.stringify(tool.inputSchema, null, 2)}
@@ -112,7 +114,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
 
         <div className="mt-4 pt-4 border-t border-border flex justify-end">
           <Button variant="secondary" size="sm" onClick={onClose}>
-            Close
+            {t('close')}
           </Button>
         </div>
       </DialogContent>

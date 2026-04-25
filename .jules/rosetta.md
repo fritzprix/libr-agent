@@ -107,3 +107,9 @@
 **Extracted:** 0
 **Languages updated:** [EN]
 **Notes:** Updated default English fallback strings in `AgentDraftChatView.tsx` to exactly match their actual values in `en.json` to fix broken inline copy.
+
+## 2026-04-18 - [ServerToolsModal]
+
+**Extracted:** 8
+**Languages updated:** [EN, KO]
+**Notes:** Localized ServerToolsModal strings like "Tools List", "Connecting to server…", and input schema headers. Handled pluralization for tool counts and updated `common.json` namespace for `mcpServer.toolsModal`.
