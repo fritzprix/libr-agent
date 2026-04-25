@@ -108,6 +108,12 @@
 **Languages updated:** [EN]
 **Notes:** Updated default English fallback strings in `AgentDraftChatView.tsx` to exactly match their actual values in `en.json` to fix broken inline copy.
 
+## 2026-04-23 - [KnowledgePage]
+
+**Extracted:** 25
+**Languages updated:** [EN, KO]
+**Notes:** Fully localized `KnowledgePage.tsx` and its subcomponents (`KnowledgeGraphPreview`, `KnowledgeListItemCard`, `KnowledgeDetailDialog`). Added `knowledge` namespace to `common.json` for EN and KO. English used as placeholders in KO.
+
 ## 2026-04-18 - [ServerToolsModal]
 
 **Extracted:** 8

@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_context_selection_options, build_compact_summary_text,
     find_preflight_compaction_split_index, fit_compaction_request_messages_to_limit,
-    merge_consecutive_user_messages, resolve_context_management_settings,
-    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
-    should_trigger_background_compaction, should_trigger_post_response_compaction,
-    uses_compaction_strategy,
+    merge_consecutive_user_messages, normalize_request_messages,
+    resolve_context_management_settings, resolve_preserved_calibration_ratio,
+    should_skip_same_tail_compaction, should_trigger_background_compaction,
+    should_trigger_post_response_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -213,6 +213,52 @@ fn test_preflight_compaction_split_after_removing_incomplete_tool_chains() {
 
     let idx = find_preflight_compaction_split_index(&cleaned);
     assert_eq!(idx, cleaned.len());
+}
+
+#[test]
+fn test_normalize_request_messages_removes_stale_incomplete_tool_chains_before_compaction() {
+    let intro = make_message("m0", "user", "Need analysis");
+
+    let mut stale_assistant = make_message("m1", "assistant", "Old stale tool call");
+    stale_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "stale_call".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut current_assistant = make_message("m2", "assistant", "Current resolved tool call");
+    current_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "current_call".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolB".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut current_tool = make_message("m3", "tool", &"very large tool result ".repeat(200));
+    current_tool.tool_call_id = Some("current_call".to_string());
+
+    let normalized = normalize_request_messages(vec![
+        intro,
+        stale_assistant,
+        current_assistant,
+        current_tool,
+    ]);
+
+    assert_eq!(normalized.len(), 4);
+    assert_eq!(normalized[0].id, "m0");
+    assert_eq!(normalized[1].id, "m1");
+    assert!(normalized[1].tool_calls.is_none());
+    assert_eq!(normalized[2].id, "m2");
+    assert_eq!(normalized[3].id, "m3");
+    assert_eq!(
+        find_preflight_compaction_split_index(&normalized),
+        normalized.len()
+    );
 }
 
 #[test]

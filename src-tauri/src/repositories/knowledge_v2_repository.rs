@@ -462,15 +462,23 @@ impl KnowledgeV2Repository for SqliteKnowledgeV2Repository {
             )));
         }
 
-        for id in &requested_ids {
-            txn.execute(Statement::from_sql_and_values(
-                self.db.get_database_backend(),
-                "DELETE FROM knowledge_vectors WHERE rowid = ?",
-                [(*id).into()],
-            ))
-            .await
-            .map_err(DbError::SeaOrmQueryFailed)?;
-        }
+        let vector_delete_placeholders = vec!["?"; requested_ids.len()].join(", ");
+        let vector_delete_sql = format!(
+            "DELETE FROM knowledge_vectors WHERE rowid IN ({})",
+            vector_delete_placeholders
+        );
+        let vector_delete_values = requested_ids
+            .iter()
+            .copied()
+            .map(Into::into)
+            .collect::<Vec<Value>>();
+        txn.execute(Statement::from_sql_and_values(
+            self.db.get_database_backend(),
+            vector_delete_sql,
+            vector_delete_values,
+        ))
+        .await
+        .map_err(DbError::SeaOrmQueryFailed)?;
 
         knowledge_chunk_entity::Entity::delete_many()
             .filter(knowledge_chunk_entity::Column::ChunkId.is_in(requested_ids))

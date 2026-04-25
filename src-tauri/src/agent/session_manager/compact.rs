@@ -24,7 +24,7 @@ fn spawn_resume_completion(
     let resume_session_id = session_id.to_string();
 
     tokio::spawn(async move {
-        if let Err(error) = crate::agent::llm::request_llm_completion(
+        if let Err(error) = crate::agent::llm::request_llm_completion_with_recovery(
             &session_repo,
             &active_sessions,
             &proxy_manager,
@@ -39,23 +39,6 @@ fn spawn_resume_completion(
                 resume_session_id,
                 error
             );
-
-            if let Err(handle_error) = crate::agent::llm::handle_llm_error(
-                &session_repo,
-                &active_sessions,
-                &app_handle,
-                resume_session_id.clone(),
-                error,
-            )
-            .await
-            {
-                log::error!(
-                    "Failed to surface {} resume error for session {}: {}",
-                    log_label,
-                    resume_session_id,
-                    handle_error
-                );
-            }
         }
     });
 }

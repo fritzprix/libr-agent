@@ -1,5 +1,6 @@
 pub(crate) mod compaction;
 pub(crate) mod context;
+pub(crate) mod orchestration;
 pub(crate) mod request;
 
 pub use compaction::{
@@ -11,9 +12,11 @@ pub use compaction::{
 pub use context::{
     resolve_context_management_settings, uses_compaction_strategy, ContextManagementSettings,
 };
+pub use orchestration::request_llm_completion_with_recovery;
 pub use request::{
     build_compact_context_selection_options, build_compact_summary_text,
-    merge_consecutive_user_messages, request_llm_completion, resolve_preserved_calibration_ratio,
+    merge_consecutive_user_messages, normalize_request_messages, request_llm_completion,
+    resolve_preserved_calibration_ratio,
 };
 
 // Crate-internal re-exports for intra-module visibility

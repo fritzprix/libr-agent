@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { AgentSession } from '@/models/agent';
 import type { Message, MessageError } from '@/models/chat';
-import type { AgentRuntimeError } from '@/models/agent-ipc';
-import type { MessageCursor } from '@/lib/backend/messages';
+import type { AgentRuntimeError, MessageCursor } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type { WorkflowPhase, PendingApproval } from './types';
 import { buildMessageError } from './utils';
