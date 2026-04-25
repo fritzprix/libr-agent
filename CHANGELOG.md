@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.13] - 2026-04-25
+
+### 🚀 Features
+
+- **Enhanced History Deletion**: Added delete capability to `OrgCard` in the history view, allowing users to remove organization sessions directly.
+
+### 🐛 Fixes
+
+- **Session Loading & Readiness**: Hardened agent session loading and initialization readiness to prevent race conditions during startup.
+- **Compaction Lifecycle Improvements**: Refined the compaction lifecycle and threshold handling to reduce database pressure and improve long-term session stability.
+- **Localization Expansion**: Localized GeneralTab font settings and expanded Korean (KO) translation coverage via the Rosetta system.
+- **UI & Formatting Polish**: Standardized formatting for the general settings tab and fixed agent message locale keys for a more consistent interface.
+
+### 🔧 Internal
+
+- **Performance Optimizations**: Optimized knowledge vector bulk delete and preflight token estimation for faster background operations.
+- **Error Handling**: Improved graceful handling of compaction finish emit failures and restored terminal LLM error propagation.
+
 ## [0.7.12] - 2026-04-24
 
 ### 🚀 Features
