@@ -607,7 +607,6 @@
       "deactivated": "deactivated"
     },
     "toolsModal": {
-      "title": "Tools List",
       "description": "Tool names and descriptions as returned by the MCP server.",
       "connecting": "Connecting to server…",
       "failedToLoad": "Failed to load tools",

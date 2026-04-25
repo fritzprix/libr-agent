@@ -59,13 +59,17 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3 text-muted-foreground">
             <LoadingSpinner />
-            <span className="text-sm">{t('mcpServer.toolsModal.connecting')}</span>
+            <span className="text-sm">
+              {t('mcpServer.toolsModal.connecting')}
+            </span>
           </div>
         )}
 
         {error && (
           <div className="py-8 text-center text-destructive text-sm">
-            <p className="font-semibold mb-1">{t('mcpServer.toolsModal.failedToLoad')}</p>
+            <p className="font-semibold mb-1">
+              {t('mcpServer.toolsModal.failedToLoad')}
+            </p>
             <p className="opacity-90">{error}</p>
           </div>
         )}
@@ -77,7 +81,10 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
                 {t('mcpServer.toolsModal.noTools')}
               </p>
             ) : (
-              <ul className="space-y-2" aria-label={t('mcpServer.toolsModal.toolListAria')}>
+              <ul
+                className="space-y-2"
+                aria-label={t('mcpServer.toolsModal.toolListAria')}
+              >
                 {tools.map((tool) => (
                   <li
                     key={tool.name}
@@ -114,7 +121,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
 
         <div className="mt-4 pt-4 border-t border-border flex justify-end">
           <Button variant="secondary" size="sm" onClick={onClose}>
-            {t('close')}
+            {t('common.close', 'Close')}
           </Button>
         </div>
       </DialogContent>

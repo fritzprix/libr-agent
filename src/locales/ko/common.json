@@ -581,7 +581,6 @@
       "deactivated": "비활성화"
     },
     "toolsModal": {
-      "title": "도구 목록",
       "description": "MCP 서버에서 반환된 도구 이름 및 설명입니다.",
       "connecting": "서버에 연결 중…",
       "failedToLoad": "도구를 불러오는데 실패했습니다",
