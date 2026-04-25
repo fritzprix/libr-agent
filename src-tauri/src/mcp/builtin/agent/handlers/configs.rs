@@ -97,7 +97,7 @@ pub async fn list_agents_or_sessions(
 
     match list_type {
         "configs" => list_agent_configs(server, &args).await,
-        "sessions" => list_delegated_sessions(caller_session_id).await,
+        "sessions" => list_delegated_sessions(caller_session_id, &args).await,
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
             format!(
@@ -186,9 +186,14 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
         }));
     }
 
+    let mut next_actions = vec!["Use startSession(agentId=\"...\") to delegate work".to_string()];
+    if offset + limit < total {
+        next_actions.push(format!("Use list(type=\"configs\", offset={}) to see the next page of results", offset + limit));
+    }
+
     let hint = SuccessHint::new(
         text_summary,
-        vec!["Use startSession(agentId=\"...\") to delegate work".to_string()],
+        next_actions,
     );
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
@@ -202,13 +207,27 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             "reason": "Start a delegated session with one of the listed agent configurations.",
         })],
     );
+
+    let total_items = total;
+    let page = (offset / limit.max(1)) + 1;
+    let total_pages = (total_items + limit.max(1) - 1) / limit.max(1);
+    let has_next_page = offset + limit < total_items;
+    let has_previous_page = offset > 0;
+
     response_data.insert("type".to_string(), Value::String("configs".to_string()));
     response_data.insert("agents".to_string(), Value::Array(results));
-    response_data.insert("total".to_string(), json!(total));
+    response_data.insert("total".to_string(), json!(total_items));
+    response_data.insert("page".to_string(), json!(page));
+    response_data.insert("pageSize".to_string(), json!(limit));
+    response_data.insert("totalItems".to_string(), json!(total_items));
+    response_data.insert("totalPages".to_string(), json!(total_pages));
+    response_data.insert("hasNextPage".to_string(), json!(has_next_page));
+    response_data.insert("hasPreviousPage".to_string(), json!(has_previous_page));
+
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
-async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, String> {
+async fn list_delegated_sessions(caller_session_id: &str, args: &Value) -> Result<MCPResult, String> {
     let session_repo = crate::state::get_session_repository();
     use crate::repositories::session_repository::SessionRepository;
 
@@ -229,8 +248,14 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     };
 
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+    let total = child_ids.len();
+    let paged_child_ids: Vec<_> = child_ids.into_iter().skip(offset).take(limit).collect();
+
     let mut results = Vec::new();
-    for child_id in &child_ids {
+    for child_id in &paged_child_ids {
         if let Ok(Some(child_data)) = session_repo.get_session(child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
             results.push(json!({
@@ -241,7 +266,7 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     }
 
-    let mut message = format!("Found {} sub-agent sessions.\n\n", results.len());
+    let mut message = format!("Found {} sub-agent sessions.\n\n", total);
     if !results.is_empty() {
         message.push_str("| Name | Session ID | Status |\n");
         message.push_str("|---|---|---|\n");
@@ -266,11 +291,21 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
                 name_clean, id_clean, status_clean
             ));
         }
+    } else if total > 0 {
+        message.push_str(&format!(
+            "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+            offset, limit
+        ));
+    }
+
+    let mut next_actions = vec!["Use checkSession(sessionId) to get results".to_string()];
+    if offset + limit < total {
+        next_actions.push(format!("Use list(type=\"sessions\", offset={}) to see the next page of results", offset + limit));
     }
 
     let hint = SuccessHint::new(
         message,
-        vec!["Use checkSession(sessionId) to get results".to_string()],
+        next_actions,
     );
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
@@ -284,8 +319,22 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
             "reason": "Inspect one of the listed delegated sessions in more detail.",
         })],
     );
+
+    let total_items = total;
+    let page = (offset / limit.max(1)) + 1;
+    let total_pages = (total_items + limit.max(1) - 1) / limit.max(1);
+    let has_next_page = offset + limit < total_items;
+    let has_previous_page = offset > 0;
+
     response_data.insert("type".to_string(), Value::String("sessions".to_string()));
     response_data.insert("sessions".to_string(), Value::Array(results));
-    response_data.insert("total".to_string(), json!(child_ids.len()));
+    response_data.insert("total".to_string(), json!(total_items));
+    response_data.insert("page".to_string(), json!(page));
+    response_data.insert("pageSize".to_string(), json!(limit));
+    response_data.insert("totalItems".to_string(), json!(total_items));
+    response_data.insert("totalPages".to_string(), json!(total_pages));
+    response_data.insert("hasNextPage".to_string(), json!(has_next_page));
+    response_data.insert("hasPreviousPage".to_string(), json!(has_previous_page));
+
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
