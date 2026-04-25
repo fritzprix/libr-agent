@@ -64,6 +64,7 @@ import {
   type KnowledgeGraphEntity,
   type KnowledgeListCursor,
 } from '@/lib/backend/knowledge';
+import type { TFunction } from 'i18next';
 
 const logger = getLogger('KnowledgePage');
 const KNOWLEDGE_PAGE_SIZE = 60;
@@ -76,10 +77,10 @@ function formatTimestamp(timestamp: number): string {
   return knowledgeDateFormatter.format(new Date(timestamp));
 }
 
-function getKnowledgeCardTitle(preview: string): string {
+function getKnowledgeCardTitle(preview: string, t: TFunction): string {
   const normalizedPreview = preview.replace(/\s+/g, ' ').trim();
   if (!normalizedPreview) {
-    return 'Untitled knowledge entry';
+    return t('knowledge.untitledEntry', 'Untitled knowledge entry');
   }
 
   const sentenceMatch = normalizedPreview.match(/^(.{1,96}?[.!?])(?:\s|$)/);
@@ -125,6 +126,7 @@ function layoutGraphNodes(entities: KnowledgeGraphEntity[]) {
 }
 
 function KnowledgeGraphPreview({ detail }: { detail: KnowledgeChunkDetail }) {
+  const { t } = useTranslation('common');
   const positions = useMemo(
     () => layoutGraphNodes(detail.entities),
     [detail.entities],
@@ -133,7 +135,10 @@ function KnowledgeGraphPreview({ detail }: { detail: KnowledgeChunkDetail }) {
   if (!detail.entities.length) {
     return (
       <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
-        No graph data linked to this knowledge entry.
+        {t(
+          'knowledge.graph.empty',
+          'No graph data linked to this knowledge entry.',
+        )}
       </div>
     );
   }
@@ -212,11 +217,11 @@ function KnowledgeGraphPreview({ detail }: { detail: KnowledgeChunkDetail }) {
       <div className="flex flex-wrap gap-2 text-xs">
         <Badge variant="secondary" className="gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-primary" />
-          Primary entity
+          {t('knowledge.graph.primaryEntity', 'Primary entity')}
         </Badge>
         <Badge variant="outline" className="gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/60" />
-          Related entity
+          {t('knowledge.graph.relatedEntity', 'Related entity')}
         </Badge>
       </div>
     </div>
@@ -234,7 +239,8 @@ const KnowledgeListItemCard = memo(function KnowledgeListItemCard({
   isActive,
   onSelect,
 }: KnowledgeListItemCardProps) {
-  const title = getKnowledgeCardTitle(item.preview);
+  const { t } = useTranslation('common');
+  const title = getKnowledgeCardTitle(item.preview, t);
   const visibleTags = item.tags.slice(0, 2);
   const hiddenTagCount = Math.max(item.tags.length - visibleTags.length, 0);
 
@@ -283,7 +289,7 @@ const KnowledgeListItemCard = memo(function KnowledgeListItemCard({
 
       <div className="mt-4 rounded-xl border border-border/40 bg-muted/20 p-3">
         <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          Excerpt
+          {t('knowledge.excerpt', 'Excerpt')}
         </div>
         <p className="line-clamp-4 text-sm leading-6 text-foreground/90">
           {item.preview}
