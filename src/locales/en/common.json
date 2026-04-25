@@ -80,6 +80,10 @@
       "description": "Description",
       "expand": "Expand configuration",
       "collapse": "Collapse configuration"
+    },
+    "messages": {
+      "loadingOlder": "Loading older messages...",
+      "scrollToLoadOlder": "Scroll up to load older messages"
     }
   },
   "status": {

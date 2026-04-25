@@ -80,6 +80,10 @@
       "description": "설명",
       "expand": "설정 펼치기",
       "collapse": "설정 접기"
+    },
+    "messages": {
+      "loadingOlder": "이전 메시지를 불러오는 중...",
+      "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기"
     }
   },
   "status": {

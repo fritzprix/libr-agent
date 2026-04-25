@@ -2,7 +2,10 @@ import { safeInvoke } from './core';
 import { isMessageSource, type Message, type RustMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import type { MessageSearchResult } from './types';
-import type { MessageSlice as RustMessageSlice } from '@/models/agent-ipc';
+import type {
+  MessageCursor,
+  MessageSlice as RustMessageSlice,
+} from '@/models/agent-ipc';
 
 export interface RustSearchResult {
   messageId: string;
@@ -10,11 +13,6 @@ export interface RustSearchResult {
   score: number;
   snippet: string | null;
   createdAt: number;
-}
-
-export interface MessageCursor {
-  createdAt: number;
-  rowId: number;
 }
 
 // ========================================

@@ -16,6 +16,13 @@ const baseMessage: Message = {
 };
 
 const groupedToolMessages: Message[] = [
+  {
+    id: 'earlier-user',
+    sessionId: 'session-1',
+    threadId: 'session-1',
+    role: 'user',
+    content: [{ type: 'text', text: 'Earlier user message' }],
+  },
   baseMessage,
   {
     id: 'tool-1',
@@ -51,7 +58,7 @@ const groupedMessagesMock: GroupedMessage[] = [
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
-    messages: groupedToolMessages,
+    messages: groupedToolMessages.slice(1),
     pendingMessages: [],
     error: undefined,
     llmError: undefined,
@@ -71,7 +78,7 @@ vi.mock('@/context/AgentSessionContext', () => ({
 vi.mock('@/context/LLMServiceContext', () => ({
   useLLMService: () => ({
     getCompactedRange: () => ({
-      fromId: 'assistant-1',
+      fromId: 'earlier-user',
       toId: 'tool-1',
       summary: 'Compacted summary',
     }),
@@ -110,7 +117,9 @@ vi.mock('../shared', () => ({
 }));
 
 vi.mock('../shared/CompactEventDivider', () => ({
-  CompactEventDivider: () => <div>compact divider</div>,
+  CompactEventDivider: ({ summary }: { summary?: string }) => (
+    <div>{summary ?? 'compact divider'}</div>
+  ),
 }));
 
 vi.mock('../PendingApprovalWidget', () => ({
@@ -129,6 +138,6 @@ describe('AgentChatMessages compaction rendering', () => {
   it('renders the compact event when the boundary falls inside a tool group', () => {
     render(<AgentChatMessages />);
 
-    expect(screen.getByText('compact divider')).toBeInTheDocument();
+    expect(screen.getByText('Compacted summary')).toBeInTheDocument();
   });
 });
