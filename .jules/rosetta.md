@@ -113,3 +113,9 @@
 **Extracted:** 25
 **Languages updated:** [EN, KO]
 **Notes:** Fully localized `KnowledgePage.tsx` and its subcomponents (`KnowledgeGraphPreview`, `KnowledgeListItemCard`, `KnowledgeDetailDialog`). Added `knowledge` namespace to `common.json` for EN and KO. English used as placeholders in KO.
+
+## 2026-04-18 - [ServerToolsModal]
+
+**Extracted:** 8
+**Languages updated:** [EN, KO]
+**Notes:** Localized ServerToolsModal strings like "Tools List", "Connecting to server…", and input schema headers. Handled pluralization for tool counts and updated `common.json` namespace for `mcpServer.toolsModal`.

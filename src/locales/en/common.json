@@ -605,6 +605,16 @@
       "toggleFailed": "Failed to toggle extension: {{error}}",
       "activated": "activated",
       "deactivated": "deactivated"
+    },
+    "toolsModal": {
+      "description": "Tool names and descriptions as returned by the MCP server.",
+      "connecting": "Connecting to server…",
+      "failedToLoad": "Failed to load tools",
+      "noTools": "No tools returned.",
+      "toolListAria": "Tool list",
+      "inputSchema": "Input schema",
+      "toolsCount_one": "({{count}} tool)",
+      "toolsCount_other": "({{count}} tools)"
     }
   },
   "playbook": {
