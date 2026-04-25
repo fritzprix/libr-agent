@@ -24,14 +24,15 @@ pub async fn request_llm_completion_with_recovery(
     {
         Ok(()) => Ok(()),
         Err(error) => {
-            crate::agent::llm::handle_llm_error(
+            let outcome = crate::agent::llm::handle_llm_error_with_outcome(
                 session_repo,
                 active_sessions,
                 app_handle,
                 session_id,
-                error,
+                error.clone(),
             )
-            .await
+            .await?;
+            crate::agent::llm::completion_result_from_error_handling_outcome(outcome, error)
         }
     }
 }
