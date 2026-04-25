@@ -64,7 +64,7 @@ import {
   type KnowledgeGraphEntity,
   type KnowledgeListCursor,
 } from '@/lib/backend/knowledge';
-import { TFunction } from 'i18next';
+import type { TFunction } from 'i18next';
 
 const logger = getLogger('KnowledgePage');
 const KNOWLEDGE_PAGE_SIZE = 60;
@@ -77,10 +77,7 @@ function formatTimestamp(timestamp: number): string {
   return knowledgeDateFormatter.format(new Date(timestamp));
 }
 
-function getKnowledgeCardTitle(
-  preview: string,
-  t: TFunction,
-): string {
+function getKnowledgeCardTitle(preview: string, t: TFunction): string {
   const normalizedPreview = preview.replace(/\s+/g, ' ').trim();
   if (!normalizedPreview) {
     return t('knowledge.untitledEntry', 'Untitled knowledge entry');
@@ -138,7 +135,10 @@ function KnowledgeGraphPreview({ detail }: { detail: KnowledgeChunkDetail }) {
   if (!detail.entities.length) {
     return (
       <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
-        {t('knowledge.graph.empty', 'No graph data linked to this knowledge entry.')}
+        {t(
+          'knowledge.graph.empty',
+          'No graph data linked to this knowledge entry.',
+        )}
       </div>
     );
   }
