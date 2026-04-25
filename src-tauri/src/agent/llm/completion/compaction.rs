@@ -306,7 +306,7 @@ async fn load_merged_compaction_messages(
 
     Ok((
         session_name,
-        super::request::merge_consecutive_user_messages(messages),
+        super::request::normalize_request_messages(messages),
     ))
 }
 
@@ -537,11 +537,20 @@ pub(crate) async fn try_trigger_preflight_compaction(
     resume_completion_after_compact: bool,
 ) -> Result<bool, String> {
     if messages.len() <= 1 {
+        log::debug!(
+            "⏭️ Preflight compaction skipped (insufficient messages): session={}, count={}",
+            session_id,
+            messages.len()
+        );
         return Ok(false);
     }
 
     let split_idx = find_preflight_compaction_split_index(messages);
     if split_idx == 0 {
+        log::debug!(
+            "⏭️ Preflight compaction skipped (split_idx=0): session={}",
+            session_id
+        );
         return Ok(false);
     }
     let (
@@ -595,6 +604,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         && should_skip_same_tail_compaction(messages, split_idx)
     {
         compact_in_flight_arc.store(false, Ordering::SeqCst);
+        log::debug!(
+            "⏭️ Preflight compaction skipped (same tail): session={}, tail={}, split_idx={}",
+            session_id,
+            current_tail_id.as_deref().unwrap_or("?"),
+            split_idx
+        );
         return Ok(false);
     }
 
@@ -610,6 +625,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         )
     else {
         compact_in_flight_arc.store(false, Ordering::SeqCst);
+        log::debug!(
+            "⏭️ Preflight compaction skipped (no new delta beyond previous summary): session={}, tail={}, split_idx={}",
+            session_id,
+            current_tail_id.as_deref().unwrap_or("?"),
+            split_idx
+        );
         return Ok(false);
     };
 

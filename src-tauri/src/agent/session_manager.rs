@@ -435,7 +435,7 @@ impl AgentSessionManager {
             )
             .await?;
 
-            crate::agent::llm::request_llm_completion(
+            crate::agent::llm::request_llm_completion_with_recovery(
                 &self.session_repo,
                 &self.active_sessions,
                 &self.proxy_manager,

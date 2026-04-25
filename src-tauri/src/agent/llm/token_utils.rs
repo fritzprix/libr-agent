@@ -18,7 +18,6 @@ pub fn estimate_text_tokens(text: &str) -> usize {
         encoder.encode_with_special_tokens(text).len()
     } else {
         // Fallback: Use character-based estimation (~4 chars per token, conservative OpenAI estimate)
-        log::debug!("tiktoken encoding failed, using character-based fallback");
         (text.len() as f64 / 4.0).ceil() as usize
     }
 }
@@ -110,51 +109,11 @@ fn get_prompt_anchor_ratio(
         } else {
             1.0
         };
-        let message_breakdown = summarize_message_token_breakdown(prefix_messages);
-        log::debug!(
-            "promptTokens anchor ratio: anchor_index={}, anchor_id={}, anchor_role={}, prompt_tokens={}, prefix_message_bpe={}, system_prompt_tokens={}, tools_tokens={}, denominator_bpe={}, ratio={:.4}, prefix_breakdown=[{}]",
-            anchor_index,
-            anchor_message.id,
-            anchor_message.role,
-            prompt_tokens,
-            prefix_message_bpe,
-            system_prompt_tokens,
-            tools_tokens,
-            bpe_input,
-            ratio,
-            message_breakdown
-        );
-
         if prefix_message_bpe < MIN_PROMPT_ANCHOR_PREFIX_MESSAGE_BPE {
-            log::warn!(
-                "Rejecting promptTokens anchor with insufficient message prefix: anchor_id={}, anchor_role={}, prompt_tokens={}, prefix_message_bpe={}, minimum_prefix_message_bpe={}, system_prompt_tokens={}, tools_tokens={}, denominator_bpe={}, ratio={:.4}, prefix_breakdown=[{}]",
-                anchor_message.id,
-                anchor_message.role,
-                prompt_tokens,
-                prefix_message_bpe,
-                MIN_PROMPT_ANCHOR_PREFIX_MESSAGE_BPE,
-                system_prompt_tokens,
-                tools_tokens,
-                bpe_input,
-                ratio,
-                message_breakdown
-            );
             continue;
         }
 
         if !(PROMPT_ANCHOR_RATIO_MIN..=PROMPT_ANCHOR_RATIO_MAX).contains(&ratio) {
-            log::warn!(
-                "Suspicious promptTokens calibration ratio: anchor_id={}, anchor_role={}, prompt_tokens={}, prefix_message_bpe={}, system_prompt_tokens={}, tools_tokens={}, denominator_bpe={}, ratio={:.4}, prefix_breakdown=[{}]",
-                anchor_message.id,
-                anchor_message.role,
-                prompt_tokens,
-                prefix_message_bpe,
-                system_prompt_tokens,
-                tools_tokens,
-                bpe_input,
-                ratio,
-                message_breakdown
-            );
             continue;
         }
 
@@ -266,28 +225,12 @@ pub fn calculate_grounded_total_tokens(
             .iter()
             .map(estimate_tokens_bpe)
             .sum();
-        log::debug!(
-            "Using grounded token estimation. base={}, inc={}, final={}",
-            base_tokens,
-            incremental_tokens,
-            base_tokens + incremental_tokens
-        );
         return base_tokens + incremental_tokens;
     }
 
     // Fallback: Full BPE estimation
     let message_tokens: usize = messages.iter().map(estimate_tokens_bpe).sum();
-    let full_estimate = message_tokens + system_prompt_tokens + tools_tokens;
-
-    log::debug!(
-        "Using full BPE token estimation. msg={}, sys={}, tools={}, final={}",
-        message_tokens,
-        system_prompt_tokens,
-        tools_tokens,
-        full_estimate
-    );
-
-    full_estimate
+    message_tokens + system_prompt_tokens + tools_tokens
 }
 
 /// Derives the BPE-to-provider tokenizer calibration ratio from the most recent
@@ -363,28 +306,12 @@ pub fn calculate_prompt_anchored_total_tokens(
             .map(estimate_tokens_bpe)
             .sum();
         let calibrated_output = (bpe_output as f64 * ratio).ceil() as usize;
-        log::debug!(
-            "prompt-anchored estimate: prompt_tokens={}, ratio={:.4}, bpe_output={}, calibrated_output={}, total={}",
-            prompt_tokens,
-            ratio,
-            bpe_output,
-            calibrated_output,
-            prompt_tokens + calibrated_output
-        );
         return prompt_tokens + calibrated_output;
     }
 
     // Fallback: full BPE — no API anchor available yet (e.g. first turn).
     let message_tokens: usize = messages.iter().map(estimate_tokens_bpe).sum();
-    let full_estimate = message_tokens + system_prompt_tokens + tools_tokens;
-    log::debug!(
-        "full-BPE fallback (no promptTokens anchor): msg={}, sys={}, tools={}, total={}",
-        message_tokens,
-        system_prompt_tokens,
-        tools_tokens,
-        full_estimate
-    );
-    full_estimate
+    message_tokens + system_prompt_tokens + tools_tokens
 }
 
 /// Estimates the next request input size conservatively enough for a Rust-owned
@@ -409,14 +336,6 @@ pub fn calculate_conservative_preflight_prompt_tokens(
             .sum();
         let conservative_delta =
             ((delta_bpe as f64 * ratio) * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
-        log::debug!(
-            "conservative preflight estimate: prompt_tokens={}, ratio={:.4}, delta_bpe={}, conservative_delta={}, total={}",
-            prompt_tokens,
-            ratio,
-            delta_bpe,
-            conservative_delta,
-            prompt_tokens + conservative_delta
-        );
         return prompt_tokens + conservative_delta;
     }
 
@@ -427,30 +346,10 @@ pub fn calculate_conservative_preflight_prompt_tokens(
         let calibrated_estimate = (full_estimate as f64 * ratio).ceil() as usize;
         let conservative_total =
             (calibrated_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
-        log::debug!(
-            "conservative preflight fallback (preserved calibration): message_bpe={}, system_prompt_tokens={}, tools_tokens={}, base={}, ratio={:.4}, calibrated={}, total={}, breakdown=[{}]",
-            full_estimate
-                .saturating_sub(system_prompt_tokens)
-                .saturating_sub(tools_tokens),
-            system_prompt_tokens,
-            tools_tokens,
-            full_estimate,
-            ratio,
-            calibrated_estimate,
-            conservative_total,
-            summarize_message_token_breakdown(messages)
-        );
         return conservative_total;
     }
 
-    let conservative_total =
-        (full_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize;
-    log::debug!(
-        "conservative preflight fallback (no promptTokens anchor): base={}, total={}",
-        full_estimate,
-        conservative_total
-    );
-    conservative_total
+    (full_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize
 }
 
 /// Computes the post-response compaction trigger total from the provider-reported

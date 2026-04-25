@@ -154,7 +154,7 @@ pub async fn start_workflow(
     ensure_proxy_ready(proxy_manager, app_handle, &session_id, 60).await?;
 
     // Request LLM completion with cached messages (no DB query)
-    crate::agent::llm::request_llm_completion(
+    crate::agent::llm::request_llm_completion_with_recovery(
         session_repo,
         active_sessions,
         proxy_manager,
