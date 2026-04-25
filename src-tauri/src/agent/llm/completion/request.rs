@@ -18,15 +18,22 @@ use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactionParentRequest, CompletionRequest,
 };
 
-async fn trigger_preflight_compaction_or_error(
+async fn trigger_preflight_compaction_for_messages_or_error(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
+    session_name: &str,
+    messages: &[Message],
+    parent_request: Option<CompactionParentRequest>,
 ) -> Result<bool, AgentRuntimeError> {
-    super::compaction::trigger_preflight_compaction_for_session(
+    super::compaction::try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
         session_id,
+        session_name,
+        messages,
+        parent_request,
+        true,
     )
     .await
     .map_err(|error| {
@@ -115,6 +122,11 @@ struct CompactToolSnapshot {
     argument_preview: String,
     status: &'static str,
     result_preview: String,
+}
+
+pub fn normalize_request_messages(messages: Vec<Message>) -> Vec<Message> {
+    let merged_messages = merge_consecutive_user_messages(messages);
+    crate::agent::llm::context_selector::remove_incomplete_tool_chains(merged_messages)
 }
 
 pub fn build_compact_summary_text(summary: &str, compacted_messages: &[Message]) -> String {
@@ -450,6 +462,11 @@ pub async fn request_llm_completion(
 
     let model = session.metadata.model.clone();
     let provider = session.metadata.provider.clone();
+    let session_name = session
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
 
     let temperature = agent_config.temperature;
     let max_tokens = agent_config.max_tokens;
@@ -533,6 +550,7 @@ pub async fn request_llm_completion(
         session.compact_context.clone()
     };
 
+    let normalized_messages = messages.clone();
     let (messages, compact_summary_injected) = {
         let compact_record = compact_context_arc.read().await.clone();
         if let Some(record) = compact_record {
@@ -649,8 +667,15 @@ pub async fn request_llm_completion(
 
     if final_messages.is_empty() {
         if uses_compaction_strategy(&context_strategy)
-            && trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
-                .await?
+            && trigger_preflight_compaction_for_messages_or_error(
+                active_sessions,
+                app_handle,
+                &session_id,
+                &session_name,
+                &normalized_messages,
+                compaction_parent_request.clone(),
+            )
+            .await?
         {
             return Ok(());
         }
@@ -694,8 +719,15 @@ pub async fn request_llm_completion(
                 selected_message_breakdown
             );
 
-            if trigger_preflight_compaction_or_error(active_sessions, app_handle, &session_id)
-                .await?
+            if trigger_preflight_compaction_for_messages_or_error(
+                active_sessions,
+                app_handle,
+                &session_id,
+                &session_name,
+                &normalized_messages,
+                compaction_parent_request.clone(),
+            )
+            .await?
             {
                 return Ok(());
             }

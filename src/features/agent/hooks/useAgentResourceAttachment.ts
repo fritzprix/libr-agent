@@ -1,1 +1,4 @@
-export { useAgentResourceAttachment } from '../context/AgentResourceAttachmentContext';
+export {
+  AgentResourceAttachmentProvider,
+  useAgentResourceAttachment,
+} from '../context/AgentResourceAttachmentContext';

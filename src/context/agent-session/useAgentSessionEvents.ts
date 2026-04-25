@@ -48,11 +48,6 @@ export function useAgentSessionEvents(
             return;
           }
 
-          logger.debug('Agent session event received', {
-            type: payload.type,
-            sessionId,
-          });
-
           switch (payload.type) {
             case 'initializationStep': {
               const rawStatus = payload.status;

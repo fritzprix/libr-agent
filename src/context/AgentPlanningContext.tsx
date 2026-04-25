@@ -21,8 +21,6 @@ export function AgentPlanningProvider({
 }: AgentPlanningProviderProps) {
   const [showPlanningPanel, setShowPlanningPanel] = useState(false);
 
-  logger.debug('Provider render', { showPlanningPanel });
-
   const togglePlanningPanel = useCallback(() => {
     const newValue = !showPlanningPanel;
     logger.info('Planning panel toggled', {

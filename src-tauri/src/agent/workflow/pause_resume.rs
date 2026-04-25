@@ -59,7 +59,7 @@ pub async fn resume_workflow(
         .await?;
 
     // Trigger LLM to pick up where it left off
-    crate::agent::llm::request_llm_completion(
+    crate::agent::llm::request_llm_completion_with_recovery(
         session_repo,
         active_sessions,
         proxy_manager,

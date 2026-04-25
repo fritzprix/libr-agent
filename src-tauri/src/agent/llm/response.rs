@@ -21,6 +21,22 @@ use crate::agent::llm::types::{
 use crate::agent::state::DeferredWorkflowStep;
 use crate::agent::tauri_events::TauriEventDispatcher;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmErrorHandlingOutcome {
+    RecoveredByCompaction,
+    FinalizedWorkflowError,
+}
+
+pub fn completion_result_from_error_handling_outcome(
+    outcome: LlmErrorHandlingOutcome,
+    error: AgentRuntimeError,
+) -> Result<(), String> {
+    match outcome {
+        LlmErrorHandlingOutcome::RecoveredByCompaction => Ok(()),
+        LlmErrorHandlingOutcome::FinalizedWorkflowError => Err(error.into()),
+    }
+}
+
 async fn calculate_post_response_compaction_pressure(
     assistant_message: &Message,
 ) -> Option<PostResponseCompactionPressure> {
@@ -819,13 +835,13 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
 }
 
 /// Handle LLM error from frontend
-pub async fn handle_llm_error(
+pub async fn handle_llm_error_with_outcome(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: String,
     error: AgentRuntimeError,
-) -> Result<(), String> {
+) -> Result<LlmErrorHandlingOutcome, String> {
     log::error!(
         "LLM error for session {}: {}",
         session_id,
@@ -852,7 +868,7 @@ pub async fn handle_llm_error(
                     "Recovered context-limit error by arming compaction recovery for session {}",
                     session_id
                 );
-                return Ok(());
+                return Ok(LlmErrorHandlingOutcome::RecoveredByCompaction);
             }
             Ok(false) => {
                 log::warn!(
@@ -887,7 +903,21 @@ pub async fn handle_llm_error(
         session_id,
         error,
     )
-    .await
+    .await?;
+
+    Ok(LlmErrorHandlingOutcome::FinalizedWorkflowError)
+}
+
+pub async fn handle_llm_error(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: String,
+    error: AgentRuntimeError,
+) -> Result<(), String> {
+    handle_llm_error_with_outcome(session_repo, active_sessions, app_handle, session_id, error)
+        .await
+        .map(|_| ())
 }
 
 pub async fn finalize_workflow_error_with_dispatcher(
