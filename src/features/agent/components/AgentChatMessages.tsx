@@ -18,6 +18,7 @@ import { PendingApprovalWidget } from './PendingApprovalWidget';
 import { ScrollArea } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
+import { useTranslation } from 'react-i18next';
 
 const logger = getLogger('AgentChatMessages');
 
@@ -95,6 +96,7 @@ function groupedMessageContainsBoundary(
 }
 
 export function AgentChatMessages() {
+  const { t } = useTranslation();
   const {
     messages,
     pendingMessages,
@@ -167,14 +169,21 @@ export function AgentChatMessages() {
       (message) => message.id === compactedRange.toId,
     );
 
-    if (fromIndex === -1 || toIndex === -1 || fromIndex > toIndex) {
+    if (toIndex === -1) {
+      return undefined;
+    }
+
+    if (fromIndex > toIndex) {
       return undefined;
     }
 
     return {
-      earlierPreview: extractMessagePreview(messages[fromIndex]),
+      earlierPreview:
+        fromIndex === -1
+          ? undefined
+          : extractMessagePreview(messages[fromIndex]),
       latestIncludedPreview: extractMessagePreview(messages[toIndex]),
-      condensedCount: toIndex - fromIndex + 1,
+      condensedCount: fromIndex === -1 ? undefined : toIndex - fromIndex + 1,
       summary: compactedRange.summary,
     };
   }, [compactedRange, messages]);
@@ -226,8 +235,14 @@ export function AgentChatMessages() {
             <div className="flex justify-center">
               <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm">
                 {isLoadingOlderMessages
-                  ? 'Loading older messages...'
-                  : 'Scroll up to load older messages'}
+                  ? t(
+                      'agent.messages.loadingOlder',
+                      'Loading older messages...',
+                    )
+                  : t(
+                      'agent.messages.scrollToLoadOlder',
+                      'Scroll up to load older messages',
+                    )}
               </div>
             </div>
           )}

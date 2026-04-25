@@ -667,6 +667,10 @@
     }
   },
   "agent": {
+    "messages": {
+      "loadingOlder": "Loading older messages...",
+      "scrollToLoadOlder": "Scroll up to load older messages"
+    },
     "draft": {
       "send": "Send message",
       "attachFiles": "Attach files",
