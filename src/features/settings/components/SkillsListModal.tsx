@@ -3,6 +3,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   Button,
   Badge,
 } from '@/components/ui';
@@ -89,6 +90,12 @@ export function SkillsListModal({
               defaultValue: 'Installed Skills ({{count}})',
             })}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {t(
+              'settings.skills.modalDescription',
+              'A list of installed system and user skills for your assistants.',
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto min-h-0 pr-4">
