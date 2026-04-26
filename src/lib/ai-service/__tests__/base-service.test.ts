@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import { BaseAIService, stableStringify } from '../base-service';
-import { buildCompactionInstruction } from '../base-service-context';
+import { assembleRequestLayout } from '../base-service-context';
 import { AIServiceError, AIServiceProvider } from '../types';
 
 class TestBaseAIService extends BaseAIService<string, string> {
@@ -223,42 +223,35 @@ describe('BaseAIService.compact', () => {
   });
 });
 
-describe('buildCompactionInstruction', () => {
-  it('enforces a fixed compact schema and compression rules', () => {
-    const instruction = buildCompactionInstruction([]);
-
-    expect(instruction).toContain('Use EXACTLY these sections in this order');
-    expect(instruction).toContain('1. Stable Context');
-    expect(instruction).toContain('2. Key Decisions & Constraints');
-    expect(instruction).toContain('3. Current State');
-    expect(instruction).toContain('4. Recent Tool Results');
-    expect(instruction).toContain('5. Next Actions');
-    expect(instruction).toContain('Compression rules:');
-    expect(instruction).toContain('Use terse bullet points, not prose paragraphs.');
-    expect(instruction).toContain('Minimize adjectives, adverbs, filler, and repetition.');
-    expect(instruction).toContain('Section limits:');
-    expect(instruction).toContain('Stable Context: at most 6 bullets');
-    expect(instruction).toContain('Recent Tool Results: at most 5 bullets');
-  });
-
-  it('treats source-marked compact summaries as residual anchors', () => {
-    const instruction = buildCompactionInstruction([
+describe('assembleRequestLayout', () => {
+  it('passes completion requests through unchanged before provider injection', () => {
+    const messages: Message[] = [
       {
-        id: 'summary-1',
+        id: 'user-1',
         sessionId: 'session-1',
         threadId: 'session-1',
-        role: 'assistant',
-        source: 'compact-summary',
-        content: [{ type: 'text', text: 'Previous compact summary' }],
+        role: 'user',
+        content: [{ type: 'text', text: 'Hello' }],
       },
-    ]);
+    ];
 
-    expect(instruction).toContain(
-      'The first message is a previously accumulated compact summary',
+    const prepared = assembleRequestLayout(
+      {
+        systemPrompt: 'stable',
+        sessionContext: 'volatile',
+        messages,
+      },
+      {
+        prepareContextInjection: (systemPrompt, sessionContext, requestMessages) => ({
+          systemPrompt,
+          sessionContext,
+          messages: requestMessages,
+        }),
+      },
     );
-    expect(instruction).toContain('CRITICAL RESIDUAL RULE');
-    expect(instruction).toContain(
-      'You may tighten wording, remove duplication, and relocate items into the required sections',
-    );
+
+    expect(prepared.systemPrompt).toBe('stable');
+    expect(prepared.sessionContext).toBe('volatile');
+    expect(prepared.messages).toEqual(messages);
   });
 });

@@ -78,6 +78,16 @@ Frontend is only the provider bridge for:
 - `llm:compact-request`
 - `llm:compact-state`
 
+Frontend may still perform provider-specific request assembly as part of that
+bridge role, including:
+
+- provider-specific prompt/context injection
+- provider-specific tool normalization and request-body shaping
+- provider-specific prompt-cache or cache-breakpoint shaping
+
+But that bridge assembly must operate on Rust-owned contract inputs rather than
+introducing frontend-owned compaction policy.
+
 Frontend must not decide:
 
 - when compaction should trigger
@@ -187,6 +197,13 @@ For compact mode, Rust owns the final pre-send hard gate.
    rebuilt post-compaction payload.
 4. Frontend may perform provider-specific prompt injection, but it is not the
    authority for compact-mode send/no-send decisions.
+5. Rust's preflight contract must model the same logical request layout that the
+   frontend bridge will submit, including compact-summary reinjection, retained
+   tool schema, tool-use-disable policy, compaction-specific instruction input,
+   and provider-visible session-context placement.
+6. Frontend must not add compact-mode-only logical payload pieces that are
+   invisible to Rust's fit/no-fit contract. Provider-specific serialization is
+   allowed; frontend-owned logical reshaping is not.
 
 ---
 
@@ -381,6 +398,21 @@ next_output = llm_response(
    prompt layout merely because tool execution is disabled.
 4. The compaction request and normal request need not be identical, but their
    stable prefix should remain aligned as much as possible.
+5. Compaction should reuse the same provider-specific request-assembly path as
+   normal requests wherever practical, so prompt/context injection, tool
+   normalization, cache-key shaping, cache-breakpoint placement, and final
+   request-body construction stay aligned by default.
+6. Divergence between normal requests and compaction requests should be limited
+   to compact-specific semantics:
+   - `prev_summary + delta_messages_since_last_compaction` input shape
+   - compaction instruction content
+   - tool-use disabled while tool schema remains present
+   - Rust-owned overflow reduction needed only to make the compaction request
+     itself fit safely
+7. A separate frontend-only compaction payload builder that bypasses or drifts
+   from the normal vendor-specific assembly path is contrary to this contract,
+   unless the same behavior is explicitly shared through a common assembly
+   contract.
 
 Important clarification:
 
@@ -409,6 +441,10 @@ Runtime session state may additionally track:
 - completion blocking state
 - compaction start time / observability
 - last completion request layout for cache-preserving replay
+
+The tracked completion-request layout is a cache-preserving assembly contract,
+not merely a loose metadata snapshot. It exists so compaction can reuse the same
+stable provider-visible prompt layout as normal requests as much as practical.
 
 ### Contract
 
