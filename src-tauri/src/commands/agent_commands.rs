@@ -744,7 +744,7 @@ pub async fn agent_delete_session_only(
 
     Ok(AgentResponse {
         success: true,
-        message: format!("Session deleted (children orphaned): {}", session_id),
+        message: format!("Session deleted (children orphaned): {}", deleted_id),
         data: Some(serde_json::json!({
             "deletedId": deleted_id,
             "orphanedIds": orphaned_ids

@@ -459,18 +459,17 @@ export function AgentSessionListProvider({
           sessionId,
         });
 
-        clearSessionState(sessionId);
+        const actualDeletedId = response?.data?.deletedId || sessionId;
+        clearSessionState(actualDeletedId);
 
         const orphanedIds = new Set(response?.data?.orphanedIds || []);
 
         // Remove the session; update explicitly orphaned children to have no parent
         setSessions((prev) =>
           prev
-            .filter((s) => s.id !== sessionId)
+            .filter((s) => s.id !== actualDeletedId)
             .map((s) =>
-              orphanedIds.has(s.id)
-                ? { ...s, parentSessionId: undefined }
-                : s,
+              orphanedIds.has(s.id) ? { ...s, parentSessionId: undefined } : s,
             ),
         );
 
