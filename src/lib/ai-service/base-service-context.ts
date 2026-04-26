@@ -20,19 +20,6 @@ export function isCompactSummaryMessage(
   );
 }
 
-export function createCompactionInstructionMessage(
-  instruction: string,
-): Message {
-  return {
-    id: `compaction_instruction_${Date.now()}`,
-    sessionId: 'internal',
-    threadId: 'internal',
-    role: 'user',
-    content: [{ type: 'text', text: instruction }],
-    createdAt: new Date(),
-  };
-}
-
 export interface RequestAssemblyContext {
   prepareContextInjection: (
     systemPrompt: string | undefined,
@@ -45,24 +32,16 @@ export interface RequestAssemblyOptions {
   systemPrompt?: string;
   sessionContext?: string;
   messages: Message[];
-  compactionInstruction?: string;
 }
 
 export function assembleRequestLayout(
   options: RequestAssemblyOptions,
   context: RequestAssemblyContext,
 ): ContextInjectionResult {
-  const messages = options.compactionInstruction
-    ? [
-        ...options.messages,
-        createCompactionInstructionMessage(options.compactionInstruction),
-      ]
-    : options.messages;
-
   return context.prepareContextInjection(
     options.systemPrompt,
     options.sessionContext,
-    messages,
+    options.messages,
   );
 }
 
