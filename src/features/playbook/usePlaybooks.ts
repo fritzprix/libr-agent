@@ -52,20 +52,21 @@ export function usePlaybooks(
     sortState.bookmarkFirst,
   ];
 
-  const { data, isLoading, mutate } = useSWR(
+  const { data, isLoading, isValidating, mutate } = useSWR(
     swrKey,
     fetchPlaybooksAndAssistants,
     {
+      keepPreviousData: true,
       onError: (err) => {
         logger.error('Failed to load playbooks', err);
         if (onError) onError(err);
       },
-    }
+    },
   );
 
   const playbooks = data?.playbooks || [];
   const assistants = data?.assistants || {};
-  const loading = isLoading; // simplified, we can let the UI handle the rest since SWR is handling fetching
+  const loading = isLoading || isValidating;
 
   const fetchData = useCallback(async () => {
     await mutate();
@@ -84,11 +85,11 @@ export function usePlaybooks(
           return {
             ...prevData,
             playbooks: prevData.playbooks.map((p) =>
-              p.id === id ? { ...p, isBookmarked } : p
+              p.id === id ? { ...p, isBookmarked } : p,
             ),
           };
         },
-        { revalidate: false }
+        { revalidate: false },
       );
 
       await togglePlaybookBookmark(id, isBookmarked, agentId);
@@ -112,11 +113,11 @@ export function usePlaybooks(
           return {
             ...prevData,
             playbooks: prevData.playbooks.filter(
-              (p) => p.id !== playbookToDelete.id
+              (p) => p.id !== playbookToDelete.id,
             ),
           };
         },
-        { revalidate: false }
+        { revalidate: false },
       );
     } catch (error) {
       logger.error('Failed to delete playbook', error);
