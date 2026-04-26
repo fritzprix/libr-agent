@@ -119,3 +119,9 @@
 **Extracted:** 8
 **Languages updated:** [EN, KO]
 **Notes:** Localized ServerToolsModal strings like "Tools List", "Connecting to server…", and input schema headers. Handled pluralization for tool counts and updated `common.json` namespace for `mcpServer.toolsModal`.
+
+## 2024-05-28 - [SystemPerformanceSettings]
+
+**Extracted:** 5
+**Languages updated:** [EN, KO]
+**Notes:** Added missing translation keys for `settings.system.automation`, `maxScheduledTaskGroups`, and the `scheduledTaskMinimumInterval` label/description keys plus related placeholders in `common.json`. The strings were already wrapped in `t()` in the component but missing from the locales files.
