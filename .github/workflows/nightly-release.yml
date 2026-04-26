@@ -96,7 +96,7 @@ jobs:
             ## 🌙 Nightly Build
             This is an automated nightly build generated from the latest `dev` branch.
             **Warning:** Nightly builds may contain unstable features, unfinished changes, and bugs. Use them for testing purposes only.
-            
+
             ### 📦 Installation
             See the assets below to download for your platform.
           releaseDraft: false
