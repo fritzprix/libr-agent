@@ -27,10 +27,12 @@ export async function prepareDraftAttachments({
   getMimeType,
   onAttachmentError,
 }: PrepareDraftAttachmentsArgs): Promise<AttachmentReference[]> {
-  const attachments: AttachmentReference[] = [];
+  const attachments: Array<AttachmentReference | undefined> = new Array(
+    files.length,
+  ).fill(undefined);
   const workspaceDir = await getWorkspaceDir(sessionId);
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     try {
       const workspacePath = generateWorkspacePath(file.name);
       const arrayBuffer = await file.arrayBuffer();
@@ -63,7 +65,7 @@ export async function prepareDraftAttachments({
           ? ('image' as const)
           : ('audio' as const);
         const fileUrl = workspacePathToFileUrl(workspaceDir, workspacePath);
-        attachments.push({
+        attachments[index] = {
           sessionId,
           filename: file.name,
           mimeType: actualMimeType,
@@ -78,9 +80,9 @@ export async function prepareDraftAttachments({
             uri: fileUrl,
             mimeType: actualMimeType,
           },
-        });
+        };
       } else {
-        attachments.push({
+        attachments[index] = {
           sessionId,
           filename: file.name,
           mimeType: actualMimeType,
@@ -90,7 +92,7 @@ export async function prepareDraftAttachments({
           uploadedAt: now.toISOString(),
           status: 'workspace-only',
           workspacePath,
-        });
+        };
       }
     } catch (error) {
       logger.error('Failed to write pre-session attachment', error);
@@ -184,5 +186,7 @@ export async function prepareDraftAttachments({
     }
   }
 
-  return attachments;
+  return attachments.filter(
+    (attachment): attachment is AttachmentReference => attachment !== undefined,
+  );
 }
