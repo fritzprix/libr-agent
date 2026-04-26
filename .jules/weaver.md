@@ -149,3 +149,8 @@
 
 **Learning:** The ESLint configuration in this project does not define the `react-hooks/exhaustive-deps` rule, leading to errors when attempting to suppress it.
 **Action:** Avoid using `// eslint-disable-next-line react-hooks/exhaustive-deps`, and generally favor fixing dependency arrays natively rather than suppressing the missing rule.
+
+## 2025-04-25 - [ScheduledTaskModal] **Eradicated:** [God useEffect block / Mixed drag-and-drop side effects with presentation] **Woven:** [Custom Hook Pattern (useWorkspaceDropZone)]
+
+- **ScheduledTaskModal:** Extracted the complex Tauri drag-and-drop subscription logic (`subscribe`, path processing, and state management) into a dedicated custom hook `useWorkspaceDropZone`.
+- **Benefits:** Strictly separates drag-and-drop side-effects from the component's main render logic, drastically reducing the component's footprint and adhering to the modernized React custom hook pattern for isolated logic sharing.
