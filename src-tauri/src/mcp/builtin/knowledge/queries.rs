@@ -185,47 +185,50 @@ fn format_graph_context(entity_name: &str, depth: u32, context: &Value) -> Strin
         nodes.len()
     );
 
-    for node in &nodes {
-        let id = node
-            .get("id")
-            .and_then(|value| value.as_i64())
-            .unwrap_or_default();
-        let name = node
-            .get("name")
-            .and_then(|value| value.as_str())
-            .unwrap_or("unknown");
-        let entity_type = node
-            .get("type")
-            .and_then(|value| value.as_str())
-            .unwrap_or("unknown");
-        let node_depth = node
-            .get("depth")
-            .and_then(|value| value.as_i64())
-            .unwrap_or_default();
-        let description = node
-            .get("description")
-            .and_then(|value| value.as_str())
-            .unwrap_or("");
+    if nodes.is_empty() {
+        output.push_str("- none\n");
+    } else {
+        output.push_str("| ID | Name | Type | Depth | Description |\n|---|---|---|---|---|\n");
+        for node in &nodes {
+            let id = node
+                .get("id")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default();
+            let name = node
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            let entity_type = node
+                .get("type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            let node_depth = node
+                .get("depth")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default();
+            let description = node
+                .get("description")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .replace('\n', " ");
 
-        node_names.insert(id, name.to_string());
-        output.push_str(&format!(
-            "- [{}] {} | type: {} | depth: {}{}\n",
-            id,
-            name,
-            entity_type,
-            node_depth,
-            if description.is_empty() {
-                String::new()
-            } else {
-                format!(" | {}", description)
-            }
-        ));
+            node_names.insert(id, name.to_string());
+            output.push_str(&format!(
+                "| `{}` | {} | {} | {} | {} |\n",
+                id,
+                name,
+                entity_type,
+                node_depth,
+                description
+            ));
+        }
     }
 
     output.push_str(&format!("\nEdges ({}):\n", edges.len()));
     if edges.is_empty() {
         output.push_str("- none\n");
     } else {
+        output.push_str("| Source | Relation | Target |\n|---|---|---|\n");
         for edge in &edges {
             let source_id = edge
                 .get("source_id")
@@ -249,8 +252,8 @@ fn format_graph_context(entity_name: &str, depth: u32, context: &Value) -> Strin
                 .unwrap_or("unknown");
 
             output.push_str(&format!(
-                "- {} ({}) -[{}]-> {} ({})\n",
-                source_name, source_id, relation_type, target_name, target_id
+                "| `{}` ({}) | {} | `{}` ({}) |\n",
+                source_id, source_name, relation_type, target_id, target_name
             ));
         }
     }
@@ -262,6 +265,7 @@ fn format_graph_context(entity_name: &str, depth: u32, context: &Value) -> Strin
     if linked_chunks.is_empty() {
         output.push_str("- none\n");
     } else {
+        output.push_str("| Chunk ID | Source | Content |\n|---|---|---|\n");
         for chunk in &linked_chunks {
             let chunk_id = chunk
                 .get("id")
@@ -274,9 +278,10 @@ fn format_graph_context(entity_name: &str, depth: u32, context: &Value) -> Strin
             let content = chunk
                 .get("content")
                 .and_then(|value| value.as_str())
-                .unwrap_or("");
+                .unwrap_or("")
+                .replace('\n', "<br>");
             output.push_str(&format!(
-                "- Chunk {} | source: {} | {}\n",
+                "| `{}` | {} | {} |\n",
                 chunk_id, source, content
             ));
         }
