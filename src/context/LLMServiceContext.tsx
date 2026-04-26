@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -27,6 +28,9 @@ const logger = getLogger('LLMServiceContext');
 const LLMServiceContext = createContext<LLMServiceContextValue | undefined>(
   undefined,
 );
+const LLMStreamingMessagesContext = createContext<
+  Map<string, Partial<Message>> | undefined
+>(undefined);
 
 /**
  * Hook to access LLM Service Context
@@ -37,6 +41,28 @@ export function useLLMService(): LLMServiceContextValue {
     throw new Error('useLLMService must be used within LLMServiceProvider');
   }
   return context;
+}
+
+export function useStreamingMessages(): Map<string, Partial<Message>> {
+  const context = useContext(LLMStreamingMessagesContext);
+  if (!context) {
+    throw new Error(
+      'useStreamingMessages must be used within LLMServiceProvider',
+    );
+  }
+  return context;
+}
+
+export function useStreamingMessage(
+  sessionId: string | undefined,
+): Partial<Message> | undefined {
+  const streamingMessages = useStreamingMessages();
+  return useMemo(() => {
+    if (!sessionId) {
+      return undefined;
+    }
+    return streamingMessages.get(sessionId);
+  }, [sessionId, streamingMessages]);
 }
 
 interface LLMServiceProviderProps {
@@ -177,24 +203,40 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     [setCompactedRange],
   );
 
-  const value: LLMServiceContextValue = {
-    streamingMessages,
-    getSessionStatus,
-    clearStreamingMessage,
-    executeCompletionRequest,
-    cancelCompletionRequest,
-    isCompacting,
-    isAwaitingCompact,
-    getCompactionPressure,
-    getCompactedRange,
-    refreshCompactedRange,
-    clearSessionState,
-    clearAllCompactState,
-  };
+  const llmServiceValue = useMemo<LLMServiceContextValue>(
+    () => ({
+      getSessionStatus,
+      clearStreamingMessage,
+      executeCompletionRequest,
+      cancelCompletionRequest,
+      isCompacting,
+      isAwaitingCompact,
+      getCompactionPressure,
+      getCompactedRange,
+      refreshCompactedRange,
+      clearSessionState,
+      clearAllCompactState,
+    }),
+    [
+      getSessionStatus,
+      clearStreamingMessage,
+      executeCompletionRequest,
+      cancelCompletionRequest,
+      isCompacting,
+      isAwaitingCompact,
+      getCompactionPressure,
+      getCompactedRange,
+      refreshCompactedRange,
+      clearSessionState,
+      clearAllCompactState,
+    ],
+  );
 
   return (
-    <LLMServiceContext.Provider value={value}>
-      {children}
+    <LLMServiceContext.Provider value={llmServiceValue}>
+      <LLMStreamingMessagesContext.Provider value={streamingMessages}>
+        {children}
+      </LLMStreamingMessagesContext.Provider>
     </LLMServiceContext.Provider>
   );
 }

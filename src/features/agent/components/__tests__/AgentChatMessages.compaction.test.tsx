@@ -1,9 +1,11 @@
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
-
-import { AgentChatMessages } from '../AgentChatMessages';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  AgentChatMessages,
+  getInitialTopMostItemIndex,
+  getPrependedFirstItemIndex,
+} from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 
@@ -56,6 +58,10 @@ const groupedMessagesMock: GroupedMessage[] = [
   },
 ];
 
+const { virtuosoMock } = vi.hoisted(() => ({
+  virtuosoMock: vi.fn(),
+}));
+
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
     messages: groupedToolMessages.slice(1),
@@ -87,14 +93,6 @@ vi.mock('@/context/LLMServiceContext', () => ({
 
 vi.mock('@/features/agent/hooks/useAgentResourceAttachment', () => ({
   useAgentResourceAttachment: () => ({ refetchSessionFiles: vi.fn() }),
-}));
-
-vi.mock('@/features/agent/hooks/useChatScroll', () => ({
-  useChatScroll: () => ({
-    messagesEndRef: { current: null },
-    scrollContainerRef: { current: null },
-    contentRef: { current: null },
-  }),
 }));
 
 vi.mock('@/features/agent/hooks/useFileRefetcher', () => ({
@@ -130,14 +128,65 @@ vi.mock('@/components/shared/ErrorBubble', () => ({
   ErrorBubble: () => <div>error bubble</div>,
 }));
 
-vi.mock('@/components/ui', () => ({
-  ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: virtuosoMock,
 }));
 
 describe('AgentChatMessages compaction rendering', () => {
+  beforeEach(() => {
+    virtuosoMock.mockClear();
+    virtuosoMock.mockImplementation(
+      ({
+        components,
+        context,
+        data,
+        itemContent,
+      }: {
+        components?: {
+          Footer?: ({ context }: { context: unknown }) => JSX.Element | null;
+          Header?: ({ context }: { context: unknown }) => JSX.Element | null;
+        };
+        context: unknown;
+        data: GroupedMessage[];
+        itemContent: (
+          index: number,
+          item: GroupedMessage,
+        ) => JSX.Element | null;
+      }) => (
+        <div>
+          {components?.Header ? <components.Header context={context} /> : null}
+          {data.map((item, index) => (
+            <div key={item.message.id}>{itemContent(index, item)}</div>
+          ))}
+          {components?.Footer ? <components.Footer context={context} /> : null}
+        </div>
+      ),
+    );
+  });
+
   it('renders the compact event when the boundary falls inside a tool group', () => {
     render(<AgentChatMessages />);
 
     expect(screen.getByText('Compacted summary')).toBeInTheDocument();
+  });
+
+  it('uses the absolute firstItemIndex offset for the initial bottom position', () => {
+    render(<AgentChatMessages />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      firstItemIndex: number;
+      initialTopMostItemIndex: number;
+    };
+
+    expect(virtuosoProps.initialTopMostItemIndex).toBe(
+      virtuosoProps.firstItemIndex,
+    );
+    expect(getInitialTopMostItemIndex(10_000, 1)).toBe(10_000);
+    expect(getInitialTopMostItemIndex(10_000, 3)).toBe(10_002);
+  });
+
+  it('keeps prepend index adjustments monotonic at zero instead of rebounding to list length', () => {
+    expect(getPrependedFirstItemIndex(10_000, 3)).toBe(9_997);
+    expect(getPrependedFirstItemIndex(2, 3)).toBe(0);
   });
 });

@@ -105,11 +105,6 @@ export type SessionStatus = 'idle' | 'streaming' | 'error';
  */
 export interface LLMServiceContextValue {
   /**
-   * Map of session IDs to their current streaming messages
-   */
-  streamingMessages: Map<string, Partial<Message>>;
-
-  /**
    * Get the current status of a session
    */
   getSessionStatus: (sessionId: string) => SessionStatus;
