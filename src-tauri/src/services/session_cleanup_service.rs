@@ -141,7 +141,7 @@ impl SessionCleanupService {
     }
 
     /// Delete only this session data, leaving children as orphaned top-level sessions.
-    pub async fn delete_session_data_only(session_id: &str) -> Result<(), String> {
+    pub async fn delete_session_data_only(session_id: &str) -> Result<Vec<String>, String> {
         Self::delete_session_workspace(session_id).await?;
 
         if let Err(e) = delete_index(session_id) {
@@ -153,11 +153,17 @@ impl SessionCleanupService {
         }
 
         let session_repo = crate::state::get_session_repository();
+
+        let orphaned_ids = session_repo
+            .get_child_session_ids(session_id)
+            .await
+            .map_err(|e| format!("Failed to get child session ids: {}", e))?;
+
         session_repo
             .orphan_and_delete_session(session_id)
             .await
             .map_err(|e| format!("Failed to delete session metadata: {}", e))?;
 
-        Ok(())
+        Ok(orphaned_ids)
     }
 }

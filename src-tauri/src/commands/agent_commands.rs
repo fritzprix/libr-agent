@@ -805,12 +805,15 @@ pub async fn agent_delete_session_only(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    manager.delete_session_only(session_id.clone()).await?;
+    let (deleted_id, orphaned_ids) = manager.delete_session_only(session_id.clone()).await?;
 
     Ok(AgentResponse {
         success: true,
-        message: format!("Session deleted (children orphaned): {}", session_id),
-        data: None,
+        message: format!("Session deleted (children orphaned): {}", deleted_id),
+        data: Some(serde_json::json!({
+            "deletedId": deleted_id,
+            "orphanedIds": orphaned_ids
+        })),
     })
 }
 
