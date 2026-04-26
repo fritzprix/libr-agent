@@ -29,6 +29,20 @@ import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
 
+export function getPrependedFirstItemIndex(
+  current: number,
+  prependCount: number,
+): number {
+  return Math.max(0, current - prependCount);
+}
+
+export function getInitialTopMostItemIndex(
+  firstItemIndex: number,
+  itemCount: number,
+): number {
+  return itemCount > 0 ? firstItemIndex + itemCount - 1 : firstItemIndex;
+}
+
 interface AgentChatVirtuosoContext {
   agentError: ReturnType<typeof useAgentChat>['error'];
   agentLlmError: ReturnType<typeof useAgentChat>['llmError'];
@@ -367,7 +381,7 @@ export function AgentChatMessages() {
     ) {
       const prependCount = groupedMessages.length - previous.length;
       setFirstItemIndex((current) =>
-        Math.max(groupedMessages.length, current - prependCount),
+        getPrependedFirstItemIndex(current, prependCount),
       );
     }
 
@@ -539,9 +553,10 @@ export function AgentChatMessages() {
         computeItemKey={(_, groupedMessage) => groupedMessage.message.id}
         context={virtuosoContext}
         firstItemIndex={firstItemIndex}
-        initialTopMostItemIndex={
-          groupedMessages.length > 0 ? groupedMessages.length - 1 : 0
-        }
+        initialTopMostItemIndex={getInitialTopMostItemIndex(
+          firstItemIndex,
+          groupedMessages.length,
+        )}
         alignToBottom={true}
         atBottomThreshold={80}
         followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
