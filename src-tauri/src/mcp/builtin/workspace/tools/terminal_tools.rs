@@ -9,7 +9,10 @@ pub fn create_read_process_output_tool() -> MCPTool {
 
     props.insert(
         "stream".to_string(),
-        enum_prop_required(vec!["stdout", "stderr"], "Stream to read from"),
+        enum_prop_required(
+            vec!["stdout", "stderr", "both"],
+            "Stream to read: stdout, stderr, or both in one call",
+        ),
     );
 
     props.insert(
@@ -17,7 +20,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
         enum_prop(
             vec!["tail", "head"],
             "tail",
-            Some("Read mode: 'tail' reads last N lines, 'head' reads first N lines"),
+            Some("Read mode: 'tail' reads the latest lines, 'head' reads the earliest lines"),
         ),
     );
 
@@ -26,23 +29,12 @@ pub fn create_read_process_output_tool() -> MCPTool {
         integer_prop_with_default(Some(1), Some(100), 20, Some("Number of lines to read")),
     );
 
-    props.insert(
-        "start_line".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Start line number (1-based, inclusive)"),
-        ),
-    );
-    props.insert(
-        "end_line".to_string(),
-        integer_prop(Some(1), None, Some("End line number (1-based, inclusive)")),
-    );
-
     MCPTool {
         name: "readProcessOutput".to_string(),
         title: Some("Read Process Output".to_string()),
-        description: "Read captured stdout or stderr from a background process.".to_string(),
+        description:
+            "Read captured stdout, stderr, or both streams from a background process using head/tail line windows. Returns output_paths so file tools can inspect the full captured files."
+                .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
         annotations: None,

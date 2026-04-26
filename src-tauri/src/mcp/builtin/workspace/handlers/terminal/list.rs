@@ -135,19 +135,19 @@ impl WorkspaceServer {
             match first_status {
                 "failed" => {
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'stderr') to view error details",
+                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                 }
                 "finished" => {
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'stdout') to view output",
+                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                 }
                 "running" => {
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'stdout') to view output",
+                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                     actions.push(format!(
@@ -157,7 +157,7 @@ impl WorkspaceServer {
                 }
                 _ => {
                     actions.push(format!(
-                        "Use readProcessOutput('{}', 'stdout') to view output",
+                        "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
                 }
