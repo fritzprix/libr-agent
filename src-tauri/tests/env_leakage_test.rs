@@ -7,12 +7,15 @@ async fn test_env_leakage_in_unix_isolation() {
         IsolatedProcessConfig, IsolationLevel, ShellType,
     };
 
+    let workspace = tempfile::tempdir().expect("Failed to create workspace");
+    let host_home = std::env::var("HOME").expect("HOME should be available in test env");
+
     // Set a secret in the parent process
     std::env::set_var("SECRET_API_KEY", "super_secret_value");
 
     let config = IsolatedProcessConfig {
         session_id: "test-session".to_string(),
-        workspace_path: std::env::temp_dir(),
+        workspace_path: workspace.path().to_path_buf(),
         command: "env".to_string(), // Execute 'env' to list variables
         args: vec![],
         env_vars: HashMap::new(),
@@ -37,6 +40,16 @@ async fn test_env_leakage_in_unix_isolation() {
     assert!(
         stdout.contains("PATH="),
         "Expected PATH to be present in isolated environment, but it was missing."
+    );
+
+    assert!(
+        stdout.contains(&format!("HOME={host_home}")),
+        "Expected HOME to preserve the host home directory for config discovery."
+    );
+
+    assert!(
+        stdout.contains(&format!("PWD={}", workspace.path().display())),
+        "Expected PWD to remain pinned to the workspace directory."
     );
 
     // If TERM is set in the parent, it should also be present in the isolated environment
@@ -79,6 +92,9 @@ async fn test_env_leakage_in_linux_high_isolation() {
         return;
     }
 
+    let workspace = tempfile::tempdir().expect("Failed to create workspace");
+    let host_home = std::env::var("HOME").expect("HOME should be available in test env");
+
     // Set secrets in the parent process
     std::env::set_var("SECRET_API_KEY", "super_secret_value");
     std::env::set_var("XDG_RUNTIME_DIR", "/run/user/9999");
@@ -89,7 +105,7 @@ async fn test_env_leakage_in_linux_high_isolation() {
 
     let config = IsolatedProcessConfig {
         session_id: "test-high-session".to_string(),
-        workspace_path: std::env::temp_dir(),
+        workspace_path: workspace.path().to_path_buf(),
         command: "env".to_string(),
         args: vec![],
         env_vars: HashMap::new(),
@@ -120,6 +136,16 @@ async fn test_env_leakage_in_linux_high_isolation() {
     assert!(
         stdout.contains("PATH="),
         "PATH is missing from high isolation environment"
+    );
+
+    assert!(
+        stdout.contains(&format!("HOME={host_home}")),
+        "Expected HOME to preserve the host home directory in high isolation."
+    );
+
+    assert!(
+        stdout.contains(&format!("PWD={}", workspace.path().display())),
+        "Expected PWD to remain pinned to the workspace directory in high isolation."
     );
 
     // Clean up
