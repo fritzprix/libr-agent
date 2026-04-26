@@ -202,6 +202,17 @@ describe('AgentChatStatusBar', () => {
     );
   });
 
+  it('keeps the model picker enabled while the workflow is paused', () => {
+    mockAgentChat.workflowStatus = 'paused';
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('model-picker')).toHaveAttribute(
+      'data-disabled',
+      'false',
+    );
+  });
+
   it('disables the model picker while the workflow is busy', () => {
     mockAgentChat.workflowStatus = 'busy';
 
