@@ -57,6 +57,8 @@
 
 **Learning:** For Radix UI tooltips wrapping a trigger with `asChild`, ensuring `asChild` propagates the event up the DOM needs proper usage of Radix primitive, particularly combining `DropdownMenuTrigger` with `TooltipTrigger` on `Button`. Also `forwardRef` warnings show up if the inner button is not using forwardRef correctly, but in `SessionNotificationsBell` combining them with `asChild` creates refs warning if not nested correctly. `TooltipTrigger asChild` around `DropdownMenuTrigger asChild` is needed.
 **Action:** When nesting Tooltips around Radix `DropdownMenuTrigger`, ensure both have `asChild` property so the original `<Button>` element receives both tooltip and dropdown aria/ref properties.
+
 ## 2023-10-26 - [Interactive elements with group-hover opacity]
+
 **Learning:** Container elements using `group-hover:opacity-100` alongside a low base opacity (e.g. `opacity-60`) will obscure their internally focusable elements during keyboard navigation (tabbing). This degrades the experience for keyboard users who cannot easily perceive the focused element.
 **Action:** Always append `group-focus-within:opacity-100` to containers that use `group-hover:opacity-100` to expose interactive child elements (like buttons or TooltipTriggers).
