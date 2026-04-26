@@ -39,10 +39,7 @@ export function useWorkspaceDropZone(
               return;
             }
           } catch (error: unknown) {
-            logger.error('Failed to inspect dropped workspace path', {
-              filePath,
-              error,
-            });
+            logger.error('Failed to inspect dropped workspace path', { filePath }, error);
           }
         }
 
