@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
@@ -70,9 +77,39 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
+  const floatingInputContentRef = useRef<HTMLDivElement>(null);
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
   const assistantId = session?.assistant?.id;
+  const [inputOverlayHeight, setInputOverlayHeight] = useState(88);
+
+  useLayoutEffect(() => {
+    const floatingInputContent = floatingInputContentRef.current;
+    if (!floatingInputContent) {
+      return;
+    }
+
+    const updateHeight = () => {
+      const nextHeight = Math.ceil(
+        floatingInputContent.getBoundingClientRect().height,
+      );
+      setInputOverlayHeight((current) =>
+        current === nextHeight ? current : nextHeight,
+      );
+    };
+
+    updateHeight();
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+
+    observer.observe(floatingInputContent);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const executePlaybookSelection = useCallback(
     async (selectedPlaybookId: string) => {
@@ -147,7 +184,14 @@ function AgentChatInner() {
         {showWorkspacePanel && <AgentWorkspacePanel />}
 
         {/* Main chat area - components rendered directly inside provider scope */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
+        <div
+          className="flex-1 flex flex-col min-h-0 min-w-0 relative"
+          style={
+            {
+              '--agent-chat-input-offset': `${inputOverlayHeight}px`,
+            } as CSSProperties
+          }
+        >
           <AgentChatHeader />
           <AgentChatStatusBar />
           <AgentChatMessages />
@@ -156,7 +200,10 @@ function AgentChatInner() {
           <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
             <div className="h-24 bg-gradient-to-t from-background/90 via-background/40 to-transparent w-full" />
             <div className="p-4 pt-0">
-              <div className="w-full pointer-events-auto">
+              <div
+                ref={floatingInputContentRef}
+                className="w-full pointer-events-auto"
+              >
                 <AgentChatAttachedFiles />
                 <AgentChatInput />
               </div>

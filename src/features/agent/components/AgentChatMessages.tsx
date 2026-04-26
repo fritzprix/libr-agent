@@ -61,7 +61,7 @@ const AgentChatMessagesList = forwardRef<
       ref={ref}
       style={{
         ...style,
-        padding: '16px 16px 128px',
+        padding: '16px',
       }}
     >
       {children}
@@ -141,6 +141,13 @@ function AgentChatMessagesFooter({ context }: AgentChatVirtuosoContextProps) {
           />
         </div>
       )}
+
+      <div
+        aria-hidden="true"
+        style={{
+          height: 'calc(var(--agent-chat-input-offset, 176px) + 24px)',
+        }}
+      />
     </div>
   );
 }
