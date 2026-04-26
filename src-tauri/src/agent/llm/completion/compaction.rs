@@ -1,5 +1,6 @@
 use crate::agent::state::AgentSession;
 use crate::agent::state::DeferredWorkflowStep;
+use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
@@ -71,6 +72,77 @@ fn build_incremental_compact_summary_message(
     )
 }
 
+fn build_compaction_instruction(messages: &[Message]) -> String {
+    let mut instruction =
+        "Summarise the previous conversation history using strict compact Markdown.\n\n\
+Use EXACTLY these sections in this order:\n\
+1. Stable Context\n\
+2. Key Decisions & Constraints\n\
+3. Current State\n\
+4. Recent Tool Results\n\
+5. Next Actions\n\n\
+Compression rules:\n\
+- Use terse bullet points, not prose paragraphs.\n\
+- Prefer noun phrases and short action statements.\n\
+- Minimize adjectives, adverbs, filler, and repetition.\n\
+- Do not restate obvious chronology or narration.\n\
+- Preserve durable facts, decisions, constraints, user preferences, and unresolved work.\n\
+- Keep volatile/recent details in Current State, Recent Tool Results, or Next Actions.\n\
+- If a detail is recoverable from recent tool results, do not duplicate it in stable sections.\n\n\
+Section limits:\n\
+- Stable Context: at most 6 bullets\n\
+- Key Decisions & Constraints: at most 6 bullets\n\
+- Current State: at most 6 bullets\n\
+- Recent Tool Results: at most 5 bullets\n\
+- Next Actions: at most 5 bullets\n\
+- Each bullet should be one short sentence or fragment.\n\n\
+IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text."
+            .to_string();
+
+    if messages.first().map(|message| message.is_compact_summary()) == Some(true) {
+        instruction = format!(
+            "The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n\
+CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. \
+Do NOT drop durable information from the prior summary. \
+You may tighten wording, remove duplication, and relocate items into the required sections, but you must preserve the same meaning and operational usefulness. \
+Your new summary = (prior summary, preserved faithfully and reorganized if needed) + (new messages, summarised under the same schema).\n\n{}",
+            instruction
+        );
+    }
+
+    instruction
+}
+
+fn build_compaction_instruction_message(
+    session_id: &str,
+    instruction: String,
+    created_at: i64,
+) -> Message {
+    Message {
+        id: format!("compaction-instruction-{}", created_at),
+        session_id: session_id.to_string(),
+        role: "user".to_string(),
+        content: vec![MCPContent::Text {
+            text: instruction,
+            is_error: None,
+        }],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        created_at,
+        updated_at: created_at,
+        source: Some("compaction-instruction".to_string()),
+        error: None,
+        metadata: None,
+    }
+}
+
 fn build_compaction_request_payload(
     session_id: &str,
     messages: &[Message],
@@ -103,6 +175,13 @@ fn build_compaction_request_payload(
             ));
             compact_messages.extend(messages[first_delta_message_idx..split_idx].iter().cloned());
 
+            let instruction = build_compaction_instruction(&compact_messages);
+            compact_messages.push(build_compaction_instruction_message(
+                session_id,
+                instruction,
+                created_at,
+            ));
+
             return Some((
                 compact_messages,
                 record.from_id.clone(),
@@ -115,7 +194,13 @@ fn build_compaction_request_payload(
 
     // First compaction in a session has no previous compact summary yet, so the
     // compactable raw prefix becomes the initial delta baseline.
-    let compact_messages = messages[..split_idx].to_vec();
+    let mut compact_messages = messages[..split_idx].to_vec();
+    let instruction = build_compaction_instruction(&compact_messages);
+    compact_messages.push(build_compaction_instruction_message(
+        session_id,
+        instruction,
+        created_at,
+    ));
     Some((
         compact_messages,
         messages
@@ -194,9 +279,12 @@ pub fn fit_compaction_request_messages_to_limit(
         fitted
     };
 
-    if single_message.len() == 1 && single_message[0].is_compact_summary() {
+    if single_message
+        .iter()
+        .all(|message| message.is_compact_summary() || message.is_compaction_instruction())
+    {
         return Err(
-            "Compaction payload reduction exhausted the raw delta and would leave only the prior compact summary anchor.".to_string(),
+            "Compaction payload reduction exhausted the raw delta and would leave only the prior compact summary anchor and compaction instruction scaffolding.".to_string(),
         );
     }
 
@@ -221,8 +309,18 @@ pub fn fit_compaction_request_messages_to_limit(
 fn estimate_compaction_non_message_tokens(
     parent_request: Option<&CompactionParentRequest>,
 ) -> (usize, usize) {
-    let system_prompt_tokens = parent_request
-        .and_then(|request| request.system_prompt.as_ref())
+    let combined_system_prompt = parent_request.and_then(|request| {
+        match (&request.system_prompt, &request.session_context) {
+            (Some(system_prompt), Some(session_context)) => {
+                Some(format!("{}\n\n{}", system_prompt, session_context))
+            }
+            (Some(system_prompt), None) => Some(system_prompt.clone()),
+            (None, Some(session_context)) => Some(session_context.clone()),
+            (None, None) => None,
+        }
+    });
+    let system_prompt_tokens = combined_system_prompt
+        .as_ref()
         .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
         .unwrap_or(0);
     let tools_tokens = parent_request

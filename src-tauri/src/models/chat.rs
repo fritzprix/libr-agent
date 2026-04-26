@@ -50,4 +50,9 @@ impl Message {
     pub fn is_compact_summary(&self) -> bool {
         self.source.as_deref() == Some("compact-summary") || self.id.starts_with("compact-summary-")
     }
+
+    pub fn is_compaction_instruction(&self) -> bool {
+        self.source.as_deref() == Some("compaction-instruction")
+            || self.id.starts_with("compaction-instruction-")
+    }
 }

@@ -1,10 +1,7 @@
 import type { Message } from '@/models/chat';
 import { AIServiceError, type AIServiceProvider } from './types';
 import type { CompactOptions } from './base-service-shared';
-import {
-  buildCompactionInstruction,
-  createCompactionInstructionMessage,
-} from './base-service-context';
+import { assembleRequestLayout } from './base-service-context';
 
 interface CompactionContext {
   options?: CompactOptions;
@@ -37,18 +34,19 @@ export async function compactMessages(
   messages: Message[],
   context: CompactionContext,
 ): Promise<string> {
-  const compactMessages = [...messages];
-  const instruction = buildCompactionInstruction(compactMessages);
-  compactMessages.push(createCompactionInstructionMessage(instruction));
-
   const {
     systemPrompt: effectiveSystemPrompt,
     sessionContext: effectiveSessionContext,
     messages: effectiveMessages,
-  } = context.prepareContextInjection(
-    context.options?.systemPrompt,
-    context.options?.sessionContext,
-    compactMessages,
+  } = assembleRequestLayout(
+    {
+      systemPrompt: context.options?.systemPrompt,
+      sessionContext: context.options?.sessionContext,
+      messages,
+    },
+    {
+      prepareContextInjection: context.prepareContextInjection,
+    },
   );
 
   const streamGenerator = context.streamChat(effectiveMessages, {

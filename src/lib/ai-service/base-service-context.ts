@@ -20,47 +20,6 @@ export function isCompactSummaryMessage(
   );
 }
 
-export function buildCompactionInstruction(messages: Message[]): string {
-  let instruction =
-    'Summarise the previous conversation history using strict compact Markdown.\n\n' +
-    'Use EXACTLY these sections in this order:\n' +
-    '1. Stable Context\n' +
-    '2. Key Decisions & Constraints\n' +
-    '3. Current State\n' +
-    '4. Recent Tool Results\n' +
-    '5. Next Actions\n\n' +
-    'Compression rules:\n' +
-    '- Use terse bullet points, not prose paragraphs.\n' +
-    '- Prefer noun phrases and short action statements.\n' +
-    '- Minimize adjectives, adverbs, filler, and repetition.\n' +
-    '- Do not restate obvious chronology or narration.\n' +
-    '- Preserve durable facts, decisions, constraints, user preferences, and unresolved work.\n' +
-    '- Keep volatile/recent details in Current State, Recent Tool Results, or Next Actions.\n' +
-    '- If a detail is recoverable from recent tool results, do not duplicate it in stable sections.\n\n' +
-    'Section limits:\n' +
-    '- Stable Context: at most 6 bullets\n' +
-    '- Key Decisions & Constraints: at most 6 bullets\n' +
-    '- Current State: at most 6 bullets\n' +
-    '- Recent Tool Results: at most 5 bullets\n' +
-    '- Next Actions: at most 5 bullets\n' +
-    '- Each bullet should be one short sentence or fragment.\n\n' +
-    'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
-
-  const firstMsg = messages[0];
-  if (isCompactSummaryMessage(firstMsg)) {
-    instruction =
-      'The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n' +
-      'CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary ' +
-      'MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. ' +
-      'Do NOT drop durable information from the prior summary. ' +
-      'You may tighten wording, remove duplication, and relocate items into the required sections, but you must preserve the same meaning and operational usefulness. ' +
-      'Your new summary = (prior summary, preserved faithfully and reorganized if needed) + (new messages, summarised under the same schema).\n\n' +
-      instruction;
-  }
-
-  return instruction;
-}
-
 export function createCompactionInstructionMessage(
   instruction: string,
 ): Message {
@@ -72,6 +31,39 @@ export function createCompactionInstructionMessage(
     content: [{ type: 'text', text: instruction }],
     createdAt: new Date(),
   };
+}
+
+export interface RequestAssemblyContext {
+  prepareContextInjection: (
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ) => ContextInjectionResult;
+}
+
+export interface RequestAssemblyOptions {
+  systemPrompt?: string;
+  sessionContext?: string;
+  messages: Message[];
+  compactionInstruction?: string;
+}
+
+export function assembleRequestLayout(
+  options: RequestAssemblyOptions,
+  context: RequestAssemblyContext,
+): ContextInjectionResult {
+  const messages = options.compactionInstruction
+    ? [
+        ...options.messages,
+        createCompactionInstructionMessage(options.compactionInstruction),
+      ]
+    : options.messages;
+
+  return context.prepareContextInjection(
+    options.systemPrompt,
+    options.sessionContext,
+    messages,
+  );
 }
 
 export function mergeSessionContextIntoSystemPrompt(

@@ -11,6 +11,7 @@ import {
   isParsedIndexedToolCallDelta,
   parseStreamChunk,
 } from '@/lib/ai-service/stream-events';
+import { assembleRequestLayout } from '@/lib/ai-service/base-service-context';
 import { getLogger } from '@/lib/logger';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
@@ -235,10 +236,16 @@ export function useExecuteCompletion({
           systemPrompt: effectiveSystemPrompt,
           sessionContext: effectiveSessionContext,
           messages: effectiveMessages,
-        } = service.prepareContextInjection(
-          systemPrompt,
-          sessionContext,
-          enrichedMessages,
+        } = assembleRequestLayout(
+          {
+            systemPrompt,
+            sessionContext,
+            messages: enrichedMessages,
+          },
+          {
+            prepareContextInjection:
+              service.prepareContextInjection.bind(service),
+          },
         );
 
         const streamGenerator = service.streamChat(effectiveMessages, {
