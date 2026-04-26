@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import useSWR from 'swr';
 import {
   listPlaybooks,
   deletePlaybook,
@@ -20,53 +21,56 @@ export function usePlaybooks(
   sortState: PlaybookSortState,
   onError?: (error: unknown) => void,
 ) {
-  const [playbooks, setPlaybooks] = useState<PlaybookWithMeta[]>([]);
-  const [assistants, setAssistants] = useState<
-    Record<string, { name: string }>
-  >({});
-  const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [playbooksData, assistantsData] = await Promise.all([
-        listPlaybooks({
-          sortBy: sortState.sortMode,
-          sortOrder: sortState.sortOrder,
-          bookmarkFirst: sortState.bookmarkFirst,
-        }),
-        listAssistants(),
-      ]);
+  const fetchPlaybooksAndAssistants = async () => {
+    const [playbooksData, assistantsData] = await Promise.all([
+      listPlaybooks({
+        sortBy: sortState.sortMode,
+        sortOrder: sortState.sortOrder,
+        bookmarkFirst: sortState.bookmarkFirst,
+      }),
+      listAssistants(),
+    ]);
 
-      setPlaybooks(playbooksData);
+    const assistantMap = assistantsData.reduce<
+      Record<string, { name: string }>
+    >((acc, curr) => {
+      if (curr && curr.id) {
+        acc[curr.id] = { name: curr.name };
+      }
+      return acc;
+    }, {});
 
-      const assistantMap = assistantsData.reduce<
-        Record<string, { name: string }>
-      >((acc, curr) => {
-        if (curr && curr.id) {
-          acc[curr.id] = { name: curr.name };
-        }
-        return acc;
-      }, {});
-      setAssistants(assistantMap);
-    } catch (error) {
-      logger.error('Failed to load playbooks', error);
-      if (onError) onError(error);
-      throw error; // Let caller handle toast if needed
-    } finally {
-      setLoading(false);
-    }
-  }, [
+    return { playbooks: playbooksData, assistants: assistantMap };
+  };
+
+  const swrKey = [
+    'playbooks',
     sortState.sortMode,
     sortState.sortOrder,
     sortState.bookmarkFirst,
-    onError,
-  ]);
+  ];
 
-  useEffect(() => {
-    fetchData().catch(() => {});
-  }, [fetchData]);
+  const { data, isLoading, isValidating, mutate } = useSWR(
+    swrKey,
+    fetchPlaybooksAndAssistants,
+    {
+      keepPreviousData: true,
+      onError: (err) => {
+        logger.error('Failed to load playbooks', err);
+        if (onError) onError(err);
+      },
+    },
+  );
+
+  const playbooks = data?.playbooks || [];
+  const assistants = data?.assistants || {};
+  const loading = isLoading || isValidating;
+
+  const fetchData = useCallback(async () => {
+    await mutate();
+  }, [mutate]);
 
   const handleBookmarkToggle = async (
     id: string,
@@ -75,15 +79,24 @@ export function usePlaybooks(
   ) => {
     try {
       // Optimistic update
-      setPlaybooks((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, isBookmarked } : p)),
+      await mutate(
+        (prevData) => {
+          if (!prevData) return prevData;
+          return {
+            ...prevData,
+            playbooks: prevData.playbooks.map((p) =>
+              p.id === id ? { ...p, isBookmarked } : p,
+            ),
+          };
+        },
+        { revalidate: false },
       );
 
       await togglePlaybookBookmark(id, isBookmarked, agentId);
     } catch (error) {
       logger.error('Failed to toggle bookmark', error);
       // Revert on failure
-      fetchData().catch(() => {});
+      await mutate();
       throw error;
     }
   };
@@ -94,7 +107,18 @@ export function usePlaybooks(
 
     try {
       await deletePlaybook(playbookToDelete.id, playbookToDelete.agentId);
-      setPlaybooks((prev) => prev.filter((p) => p.id !== playbookToDelete.id));
+      await mutate(
+        (prevData) => {
+          if (!prevData) return prevData;
+          return {
+            ...prevData,
+            playbooks: prevData.playbooks.filter(
+              (p) => p.id !== playbookToDelete.id,
+            ),
+          };
+        },
+        { revalidate: false },
+      );
     } catch (error) {
       logger.error('Failed to delete playbook', error);
       throw error;
