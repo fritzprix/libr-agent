@@ -154,3 +154,7 @@
 
 - **ScheduledTaskModal:** Extracted the complex Tauri drag-and-drop subscription logic (`subscribe`, path processing, and state management) into a dedicated custom hook `useWorkspaceDropZone`.
 - **Benefits:** Strictly separates drag-and-drop side-effects from the component's main render logic, drastically reducing the component's footprint and adhering to the modernized React custom hook pattern for isolated logic sharing.
+
+## 2026-04-26 - [PlaybookPage / usePlaybooks]
+**Learning:** Refactoring an imperative `useEffect` fetch chain with manual loading, error, and list states into a declarative `useSWR` setup eliminates redundant state variables and significantly simplifies lifecycle handling, making revalidation deterministic.
+**Action:** When finding complex data fetching loops in features, immediately assess if `useSWR` or `react-query` can replace the `useEffect`/`useState` combinations.
