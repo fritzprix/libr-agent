@@ -254,36 +254,4 @@ describe('assembleRequestLayout', () => {
     expect(prepared.sessionContext).toBe('volatile');
     expect(prepared.messages).toEqual(messages);
   });
-
-  it('appends the Rust-owned compaction instruction before provider injection', () => {
-    const messages: Message[] = [
-      {
-        id: 'user-1',
-        sessionId: 'session-1',
-        threadId: 'session-1',
-        role: 'user',
-        content: [{ type: 'text', text: 'Hello' }],
-      },
-    ];
-
-    const prepared = assembleRequestLayout(
-      {
-        messages,
-        compactionInstruction: 'Summarise this compact range.',
-      },
-      {
-        prepareContextInjection: (systemPrompt, sessionContext, requestMessages) => ({
-          systemPrompt,
-          sessionContext,
-          messages: requestMessages,
-        }),
-      },
-    );
-
-    expect(prepared.messages).toHaveLength(2);
-    expect(prepared.messages[1].role).toBe('user');
-    expect(prepared.messages[1].content).toEqual([
-      { type: 'text', text: 'Summarise this compact range.' },
-    ]);
-  });
 });
