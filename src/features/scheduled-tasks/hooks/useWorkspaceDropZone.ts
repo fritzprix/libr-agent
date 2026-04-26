@@ -16,9 +16,9 @@ export function useWorkspaceDropZone(
 ) {
   const { t } = useTranslation();
   const { subscribe } = useDnDContext();
-  const [workspaceDragState, setWorkspaceDragState] = useState<'none' | 'valid' | 'invalid'>(
-    'none',
-  );
+  const [workspaceDragState, setWorkspaceDragState] = useState<
+    'none' | 'valid' | 'invalid'
+  >('none');
 
   useEffect(() => {
     const processDroppedPaths = (paths: string[]) => {
@@ -39,7 +39,11 @@ export function useWorkspaceDropZone(
               return;
             }
           } catch (error: unknown) {
-            logger.error('Failed to inspect dropped workspace path', { filePath }, error);
+            logger.error(
+              'Failed to inspect dropped workspace path',
+              { filePath },
+              error,
+            );
           }
         }
 
