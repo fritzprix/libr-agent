@@ -28,8 +28,7 @@ pub async fn create_basic_isolated_command(
     // whitelist of system variables required for basic shell and terminal behavior.
     cmd.env_clear();
 
-    // Whitelist essential variables from parent environment
-    // Note: HOME is deliberately excluded here as it's overridden below for isolation
+    // Whitelist essential variables from parent environment.
     // DISPLAY and XAUTHORITY are intentionally excluded to prevent GUI/X11 access
     // from within the isolated shell (screen capture, input injection, etc.)
     let preserved_vars = [
@@ -37,6 +36,7 @@ pub async fn create_basic_isolated_command(
         "USER",
         "LOGNAME",
         "SHELL",
+        "HOME",
         "http_proxy",
         "https_proxy",
         "no_proxy",
@@ -67,9 +67,7 @@ pub async fn create_basic_isolated_command(
         }
     }
 
-    // Set isolated environment variables
-    // Override HOME to workspace path for isolation
-    cmd.env("HOME", &config.workspace_path);
+    // Keep the host home directory for tool config discovery, but pin shell state to the workspace.
     cmd.env("PWD", &config.workspace_path);
     cmd.env("TMPDIR", config.workspace_path.join("tmp"));
     // Force English output for consistent AI reasoning

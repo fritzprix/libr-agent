@@ -44,9 +44,7 @@ pub async fn create_basic_isolated_command(
         cmd.env(k, v);
     }
 
-    // Configure base environment overrides
-    cmd.env("USERPROFILE", &config.workspace_path);
-    cmd.env("HOME", &config.workspace_path);
+    // Keep host home directories so CLI tools can discover their config, but isolate temp files.
     cmd.env("TEMP", config.workspace_path.join("tmp"));
     cmd.env("TMP", config.workspace_path.join("tmp"));
 
