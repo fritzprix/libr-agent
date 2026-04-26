@@ -215,11 +215,7 @@ fn format_graph_context(entity_name: &str, depth: u32, context: &Value) -> Strin
             node_names.insert(id, name.to_string());
             output.push_str(&format!(
                 "| `{}` | {} | {} | {} | {} |\n",
-                id,
-                name,
-                entity_type,
-                node_depth,
-                description
+                id, name, entity_type, node_depth, description
             ));
         }
     }
@@ -280,10 +276,7 @@ fn format_graph_context(entity_name: &str, depth: u32, context: &Value) -> Strin
                 .and_then(|value| value.as_str())
                 .unwrap_or("")
                 .replace('\n', "<br>");
-            output.push_str(&format!(
-                "| `{}` | {} | {} |\n",
-                chunk_id, source, content
-            ));
+            output.push_str(&format!("| `{}` | {} | {} |\n", chunk_id, source, content));
         }
     }
 
