@@ -25,10 +25,10 @@ jobs:
         shell: bash
         run: |
           # 스케줄 트리거 시 default 브랜치(main)에서 실행되므로, 최신 dev 브랜치를 찾아 체크아웃합니다.
-          LATEST_DEV=$(git branch -r | grep 'origin/dev/' | sort -V | tail -n 1 | sed 's/[[:space:]]*origin\///' | xargs)
+          LATEST_DEV=$(git for-each-ref --sort=-version:refname --format='%(refname:lstrip=3)' refs/remotes/origin/dev/ | head -n 1)
           if [ -n "$LATEST_DEV" ]; then
             echo "Switching to $LATEST_DEV"
-            git checkout $LATEST_DEV
+            git checkout "$LATEST_DEV"
           fi
 
       - name: Install dependencies (ubuntu only)
