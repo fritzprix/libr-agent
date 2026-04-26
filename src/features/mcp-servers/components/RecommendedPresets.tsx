@@ -115,25 +115,21 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                 </p>
               </div>
               {!isInstalled && (
-                <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 group-focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
                     {preset.command} {preset.args?.[0]}
                   </code>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
+                      <div
                         className={cn(
                           buttonVariants({ variant: 'ghost', size: 'icon' }),
-                          'h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary',
+                          'h-6 w-6 rounded-full group-hover:bg-primary/10 group-hover:text-primary transition-colors',
                         )}
-                        aria-label={t('mcpServer.installExtension', {
-                          name: preset.name,
-                          defaultValue: 'Install {{name}} extension',
-                        })}
+                        aria-hidden="true"
                       >
                         <Download className="w-3.5 h-3.5" />
-                      </button>
+                      </div>
                     </TooltipTrigger>
                     <TooltipContent>
                       {t('mcpServer.installExtension', {
