@@ -228,7 +228,22 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
               {selectedFile?.filename}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              {t('sessionFiles.fileDetails', 'Details and content of the selected file')}
+              {[
+                selectedFile?.mimeType
+                  ? `${t('sessionFiles.type', 'Type:')} ${selectedFile.mimeType}`
+                  : null,
+                selectedFile?.size
+                  ? `${t('sessionFiles.size', 'Size:')} ${formatFileSize(selectedFile.size)}`
+                  : null,
+                selectedFile?.uploadedAt
+                  ? `${t('sessionFiles.created', 'Created:')} ${formatDate(selectedFile.uploadedAt)}`
+                  : null,
+                selectedFile?.workspacePath
+                  ? `${t('sessionFiles.workspace', 'Workspace:')} ${selectedFile.workspacePath}`
+                  : null,
+              ]
+                .filter((value): value is string => Boolean(value))
+                .join(' • ')}
             </DialogDescription>
             <div className="text-xs text-muted-foreground">
               {selectedFile?.mimeType && (
