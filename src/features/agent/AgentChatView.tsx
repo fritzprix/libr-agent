@@ -55,7 +55,7 @@ const InitializationStatusDisplay = () => {
  * - Right: Planning panel (optional)
  *
  * Features:
- * - Message virtualization with react-virtuoso
+ * - Virtualized message rendering with react-virtuoso
  * - Tool call visualization with AgentToolCallGroup
  * - Side panel management with mutual exclusion
  * - Workflow status display

@@ -17,7 +17,7 @@ import type { Message, MessageError, RustMessage } from '@/models/chat';
 import { isValidMessage } from '@/models/validation';
 import { useDebounce } from 'react-use';
 import { getLogger } from '../lib/logger';
-import { useLLMService } from './LLMServiceContext';
+import { useLLMService, useStreamingMessage } from './LLMServiceContext';
 
 const logger = getLogger('AgentChatContext');
 
@@ -276,8 +276,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   const { setError, resumeSession } = useAgentSessionActions();
 
-  const { streamingMessages, cancelCompletionRequest, clearStreamingMessage } =
-    useLLMService();
+  const { cancelCompletionRequest, clearStreamingMessage } = useLLMService();
 
   // Service contexts state (still local to Chat view as it's UI context)
   const [serviceContexts, setServiceContexts] = useState<
@@ -392,10 +391,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
    * Extract streaming message for current session
    * Memoized to prevent unnecessary effect re-runs
    */
-  const currentStreamingMessage = useMemo(() => {
-    if (!session?.id) return undefined;
-    return streamingMessages.get(session.id);
-  }, [session?.id, streamingMessages]);
+  const currentStreamingMessage = useStreamingMessage(session?.id);
 
   useEffect(() => {
     if (!session?.id || !isValidMessage(currentStreamingMessage)) {

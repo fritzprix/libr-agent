@@ -1,8 +1,6 @@
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
-
 import { AgentChatMessages } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
@@ -89,14 +87,6 @@ vi.mock('@/features/agent/hooks/useAgentResourceAttachment', () => ({
   useAgentResourceAttachment: () => ({ refetchSessionFiles: vi.fn() }),
 }));
 
-vi.mock('@/features/agent/hooks/useChatScroll', () => ({
-  useChatScroll: () => ({
-    messagesEndRef: { current: null },
-    scrollContainerRef: { current: null },
-    contentRef: { current: null },
-  }),
-}));
-
 vi.mock('@/features/agent/hooks/useFileRefetcher', () => ({
   useFileRefetcher: vi.fn(),
 }));
@@ -130,8 +120,29 @@ vi.mock('@/components/shared/ErrorBubble', () => ({
   ErrorBubble: () => <div>error bubble</div>,
 }));
 
-vi.mock('@/components/ui', () => ({
-  ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: ({
+    components,
+    context,
+    data,
+    itemContent,
+  }: {
+    components?: {
+      Footer?: ({ context }: { context: unknown }) => JSX.Element | null;
+      Header?: ({ context }: { context: unknown }) => JSX.Element | null;
+    };
+    context: unknown;
+    data: GroupedMessage[];
+    itemContent: (index: number, item: GroupedMessage) => JSX.Element | null;
+  }) => (
+    <div>
+      {components?.Header ? <components.Header context={context} /> : null}
+      {data.map((item, index) => (
+        <div key={item.message.id}>{itemContent(index, item)}</div>
+      ))}
+      {components?.Footer ? <components.Footer context={context} /> : null}
+    </div>
+  ),
 }));
 
 describe('AgentChatMessages compaction rendering', () => {
