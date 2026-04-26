@@ -8,12 +8,8 @@ import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
-import {
-  messageToRustMessage,
-  type Message,
-  type MessageError,
-} from '@/models/chat';
-import type { AgentRuntimeError, CompactionPressure } from '@/models/agent-ipc';
+import { messageToRustMessage, type Message } from '@/models/chat';
+import type { CompactionPressure } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
@@ -21,11 +17,7 @@ import type {
   AIContextCompactionService,
   AIServiceConfig,
 } from '@/lib/ai-service/types';
-import {
-  isSpendingCapError,
-  normalizeAIServiceError,
-  normalizeRustMessage,
-} from '@/lib/ai-service/utils';
+import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
 import type {
@@ -42,98 +34,13 @@ import {
   applyServiceRuntimeConfig,
   buildServiceRuntimeConfig,
 } from './service-runtime-config';
+import {
+  extractCompactionPressure,
+  shouldBypassRetryAndFallback,
+  toAgentRuntimeError,
+} from './listener-utils';
 
 const logger = getLogger('useLLMListener');
-
-function isMessageError(error: unknown): error is MessageError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'displayMessage' in error &&
-    typeof error.displayMessage === 'string' &&
-    'type' in error &&
-    typeof error.type === 'string' &&
-    'recoverable' in error &&
-    typeof error.recoverable === 'boolean'
-  );
-}
-
-function toAgentRuntimeError(error: unknown): AgentRuntimeError {
-  if (isMessageError(error)) {
-    return error;
-  }
-
-  const normalizedAiError = normalizeAIServiceError(error);
-  if (normalizedAiError) {
-    return {
-      type: normalizedAiError.type,
-      displayMessage: normalizedAiError.displayMessage,
-      recoverable: normalizedAiError.recoverable,
-      details: {
-        originalError: error instanceof Error ? error.message : error,
-        errorCode: normalizedAiError.errorCode,
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-
-  const displayMessage =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'string'
-        ? error
-        : String(error);
-
-  return {
-    type: 'AI_SERVICE_ERROR',
-    displayMessage,
-    recoverable: true,
-    details: {
-      originalError: error instanceof Error ? error.message : error,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function shouldBypassRetryAndFallback(error: unknown): boolean {
-  if (toAgentRuntimeError(error).type === 'CONTEXT_LIMIT_ERROR') return true;
-  // Spending cap is a billing issue — no point retrying or trying a fallback model
-  if (isSpendingCapError(error)) return true;
-  return false;
-}
-
-function extractCompactionPressure(
-  data: unknown,
-): CompactionPressure | undefined {
-  if (typeof data !== 'object' || data === null) {
-    return undefined;
-  }
-
-  if (!('compactionPressure' in data)) {
-    return undefined;
-  }
-
-  const maybePressure = data.compactionPressure;
-  if (typeof maybePressure !== 'object' || maybePressure === null) {
-    return undefined;
-  }
-  if (
-    !('totalTokens' in maybePressure) ||
-    !('contextWindow' in maybePressure) ||
-    !('modelMaxContext' in maybePressure) ||
-    typeof maybePressure.totalTokens !== 'number' ||
-    typeof maybePressure.contextWindow !== 'number' ||
-    typeof maybePressure.modelMaxContext !== 'number'
-  ) {
-    return undefined;
-  }
-
-  return {
-    totalTokens: maybePressure.totalTokens,
-    contextWindow: maybePressure.contextWindow,
-    modelMaxContext: maybePressure.modelMaxContext,
-  };
-}
 
 interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;

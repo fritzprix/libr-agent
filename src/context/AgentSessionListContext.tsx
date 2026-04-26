@@ -14,13 +14,17 @@ import { matchPath, useLocation } from 'react-router-dom';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
 import { useBackendResource } from './GlobalEventContext';
-import { AgentSession, CreateSessionParams } from '@/models/agent';
+import type { AgentSession, CreateSessionParams } from '@/models/agent';
 import { getAssistant } from '@/lib/backend/assistants';
-import { Assistant } from '@/models/chat';
+import type { Assistant } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useSettings } from '@/context/SettingsContext';
 import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 import { useLLMService } from '@/context/LLMServiceContext';
+import {
+  mapSessionMetadataToAgentSession,
+  sortSessionsByLatestActivity,
+} from '@/lib/session-metadata';
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type {
   AgentSessionMetadata,
@@ -141,112 +145,7 @@ export function AgentSessionListProvider({
       const response = await safeInvoke<AgentSessionMetadata[]>(
         'agent_get_all_sessions',
       );
-
-      const sessionList: AgentSession[] = response.map((s) => {
-        let assistant: Assistant | undefined;
-        let parentSessionId: string | undefined = s.parentSessionId;
-        let lineageId: string | undefined = s.lineageId;
-        let depth: number | undefined = s.depth;
-        let orgId: string | undefined = s.orgId;
-        let orgName: string | undefined = s.orgName;
-        let orgRootSessionId: string | undefined = s.orgRootSessionId;
-
-        const readStringField = (
-          record: Record<string, unknown>,
-          ...keys: string[]
-        ): string | undefined => {
-          for (const key of keys) {
-            const value = record[key];
-            if (typeof value === 'string' && value.length > 0) {
-              return value;
-            }
-          }
-          return undefined;
-        };
-
-        const readNumberField = (
-          record: Record<string, unknown>,
-          ...keys: string[]
-        ): number | undefined => {
-          for (const key of keys) {
-            const value = record[key];
-            if (typeof value === 'number' && Number.isFinite(value)) {
-              return value;
-            }
-          }
-          return undefined;
-        };
-
-        if (s.agentConfig) {
-          try {
-            const parsed = JSON.parse(s.agentConfig) as unknown;
-            if (typeof parsed === 'object' && parsed !== null) {
-              const record = parsed as Record<string, unknown>;
-              parentSessionId =
-                parentSessionId ||
-                readStringField(record, 'parentSessionId', 'parent_session_id');
-              lineageId =
-                lineageId || readStringField(record, 'lineageId', 'lineage_id');
-              depth = depth ?? readNumberField(record, 'depth');
-              orgId = orgId || readStringField(record, 'orgId', 'org_id');
-              orgName =
-                orgName || readStringField(record, 'orgName', 'org_name');
-              orgRootSessionId =
-                orgRootSessionId ||
-                readStringField(
-                  record,
-                  'orgRootSessionId',
-                  'org_root_session_id',
-                );
-              assistant = parsed as Assistant;
-            }
-          } catch (e) {
-            logger.error('Failed to parse agent config', e);
-          }
-        }
-
-        if (!lineageId) {
-          lineageId = parentSessionId || s.id;
-        }
-
-        if (depth === undefined) {
-          depth = parentSessionId ? 1 : 0;
-        }
-
-        return {
-          id: s.id,
-          name: s.name,
-          status: s.status,
-          model: s.model,
-          provider: s.provider,
-          assistant,
-          parentSessionId,
-          lineageId,
-          depth,
-          orgId,
-          orgName,
-          orgRootSessionId,
-          createdAt: new Date(s.createdAt),
-          updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
-          lastViewedAt: s.lastViewedAt ? new Date(s.lastViewedAt) : undefined,
-          lastMessageAt: s.lastMessageAt
-            ? new Date(s.lastMessageAt)
-            : undefined,
-          lastAttentionAt: s.lastAttentionAt
-            ? new Date(s.lastAttentionAt)
-            : undefined,
-          lastAttentionReason: s.lastAttentionReason,
-          isBookmarked: s.isBookmarked ?? false,
-          yoloMode: s.yoloMode ?? false,
-          pendingApprovalCount: 0,
-        };
-      });
-      // Sort by updated at desc (or created at desc)
-      sessionList.sort((a, b) => {
-        const timeA = a.updatedAt?.getTime() || a.createdAt.getTime();
-        const timeB = b.updatedAt?.getTime() || b.createdAt.getTime();
-        return timeB - timeA;
-      });
+      const sessionMetadataList = Array.isArray(response) ? response : [];
 
       setSessions((prev) => {
         const pendingApprovalCounts = new Map(
@@ -256,12 +155,16 @@ export function AgentSessionListProvider({
           ]),
         );
 
-        return sessionList.map((session) => ({
-          ...session,
-          pendingApprovalCount: pendingApprovalCounts.get(session.id) ?? 0,
-        }));
+        return sortSessionsByLatestActivity(
+          sessionMetadataList.map((sessionMetadata) =>
+            mapSessionMetadataToAgentSession(
+              sessionMetadata,
+              pendingApprovalCounts.get(sessionMetadata.id) ?? 0,
+            ),
+          ),
+        );
       });
-      logger.info('Loaded sessions', { count: sessionList.length });
+      logger.info('Loaded sessions', { count: sessionMetadataList.length });
     } catch (err) {
       logger.error('Failed to load sessions', err);
       setSessions([]);

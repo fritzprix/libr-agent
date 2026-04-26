@@ -1,40 +1,24 @@
-import React, {
-  createContext,
-  useContext,
-  useCallback,
-  useState,
-  useRef,
-  useEffect,
-} from 'react';
+import React, { createContext, useContext, useCallback, useState } from 'react';
 import useSWR from 'swr';
 import { getLogger } from '@/lib/logger';
-import {
-  syncFileToWorkspace,
-  createFileSizeErrorMessage,
-} from '@/lib/workspace-sync-service';
+import { createFileSizeErrorMessage } from '@/lib/workspace-sync-service';
 import { useSettings } from '@/hooks/use-settings';
 import type { AttachmentItem } from '@/models/attachments';
 import { AttachmentReference } from '@/models/chat';
 import {
-  saveAgentFile,
   agentCallBuiltinTool,
   deleteAgentFile,
 } from '@/features/agent/api/agent-backend';
-import { getWorkspaceDir } from '@/lib/backend/workspace';
-import { workspacePathToFileUrl } from '@/lib/file-url';
-import { getMimeTypeFromFilename } from '@/lib/mime-utils';
+import {
+  cleanupPendingAttachmentBlobs,
+  createPendingAttachmentReferences,
+  type PendingFileInput,
+} from '../lib/resource-attachment-utils';
+import { addAgentAttachment } from '../lib/resource-attachment-operations';
 
 const logger = getLogger('AgentResourceAttachmentContext');
 
-export interface PendingFileInput {
-  file?: File;
-  url: string;
-  filename?: string;
-  mimeType: string;
-  originalPath?: string;
-  status?: AttachmentReference['status'];
-  blobCleanup?: () => void;
-}
+export type { PendingFileInput } from '../lib/resource-attachment-utils';
 
 interface AgentResourceAttachmentContextType {
   pendingFiles: AttachmentReference[];
@@ -170,99 +154,19 @@ export function AgentResourceAttachmentProvider({
     },
   );
 
-  // Track session ID for caching store IDs
-  // NOTE: Attachments are auto-created on first use (add/list)
-  // No explicit createStore tool is needed
-  const sessionStoreIdRef = useRef<string | undefined>();
-
-  // Update sessionId cache when the active session changes
-  // Note: pendingFiles are local state and naturally reset on component remount
-  // (which happens via key={sessionId} in parent)
-  useEffect(() => {
-    sessionStoreIdRef.current = sessionId;
-  }, [sessionId]);
-
-  const extractFilenameFromUrl = useCallback((url: string): string => {
-    try {
-      const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      return pathname.split('/').pop() || 'unknown_file';
-    } catch {
-      return `file_${Date.now()}`;
-    }
-  }, []);
-
-  const convertToBlobUrl = useCallback(
-    async (
-      url: string,
-    ): Promise<{
-      blobUrl: string;
-      cleanup: () => void;
-      size: number;
-      type: string;
-    }> => {
-      try {
-        if (url.startsWith('blob:')) {
-          return {
-            blobUrl: url,
-            cleanup: () => {},
-            size: 0,
-            type: '',
-          };
-        }
-
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(
-            `Failed to fetch ${url}: ${response.status} ${response.statusText}`,
-          );
-        }
-
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-
-        return {
-          blobUrl,
-          cleanup: () => URL.revokeObjectURL(blobUrl),
-          size: blob.size,
-          type: blob.type,
-        };
-      } catch (error) {
-        logger.error('Failed to convert URL to blob', { url, error });
-        throw new Error(
-          `Failed to process URL "${url}": ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    },
-    [],
-  );
-
   const addPendingFiles = useCallback(
     (
       files: (PendingFileInput & { status?: AttachmentReference['status'] })[],
     ) => {
-      const newPending: AttachmentReference[] = files.map((file) => ({
-        sessionId: sessionId || '',
-        pendingId: `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        status: file.status || ('pending' as const),
-        filename: file.filename || extractFilenameFromUrl(file.url),
-        mimeType: file.mimeType,
-        size: file.file?.size || 0,
-        lineCount: 0,
-        preview: file.filename || extractFilenameFromUrl(file.url),
-        uploadedAt: new Date().toISOString(),
-        chunkCount: 0,
-        lastAccessedAt: new Date().toISOString(),
-        originalUrl: file.url,
-        originalPath: file.originalPath,
-        file: file.file,
-        blobCleanup: file.blobCleanup,
-      }));
+      const newPending = createPendingAttachmentReferences(
+        files,
+        sessionId || '',
+      );
 
       setPendingFiles((prev) => [...prev, ...newPending]);
       return newPending;
     },
-    [sessionId, extractFilenameFromUrl],
+    [sessionId],
   );
 
   const updatePendingFile = useCallback(
@@ -281,237 +185,21 @@ export function AgentResourceAttachmentProvider({
       url: string,
       mimeType: string,
       filename?: string,
-      _originalPath?: string,
       file?: File,
     ): Promise<AttachmentReference> => {
-      const actualFilename = filename || extractFilenameFromUrl(url);
-
       if (!sessionId) {
         throw new Error('Session not available');
       }
 
-      // Store will be auto-created on first add call
-      const storeId = sessionId;
-
-      let fileUrl: string;
-      let actualMimeType: string;
-      let fileSize: number;
-      let workspacePath: string | undefined;
-      let fetchedBlob: Blob | undefined;
-
-      if (file) {
-        try {
-          workspacePath = await syncFileToWorkspace(file, sessionId);
-          const workspaceDir = await getWorkspaceDir(sessionId);
-          fileUrl = workspacePathToFileUrl(workspaceDir, workspacePath);
-          actualMimeType =
-            file.type || mimeType || getMimeTypeFromFilename(actualFilename);
-          fileSize = file.size;
-        } catch (syncError) {
-          logger.warn('Workspace sync failed, falling back to blob URL', {
-            filename: actualFilename,
-            error:
-              syncError instanceof Error
-                ? syncError.message
-                : String(syncError),
-          });
-          fileUrl = URL.createObjectURL(file);
-          actualMimeType =
-            file.type || mimeType || getMimeTypeFromFilename(actualFilename);
-          fileSize = file.size;
-        }
-      } else {
-        try {
-          const response = await fetch(url);
-          if (!response.ok) throw new Error(`Failed to fetch ${url}`);
-          fetchedBlob = await response.blob();
-          // Prefer the caller-supplied mimeType (already resolved from filename)
-          // over blob.type which is often 'application/octet-stream' for local files.
-          // Final fallback: derive from extension (handles Linux WebKitGTK empty type).
-          const resolvedMimeType =
-            mimeType && mimeType !== 'application/octet-stream'
-              ? mimeType
-              : fetchedBlob.type ||
-                mimeType ||
-                getMimeTypeFromFilename(actualFilename);
-          const downloadedFile = new File([fetchedBlob], actualFilename, {
-            type: resolvedMimeType,
-          });
-          workspacePath = await syncFileToWorkspace(downloadedFile, sessionId);
-          const workspaceDir = await getWorkspaceDir(sessionId);
-          fileUrl = workspacePathToFileUrl(workspaceDir, workspacePath);
-          actualMimeType = resolvedMimeType;
-          fileSize = fetchedBlob.size;
-        } catch (downloadError) {
-          logger.warn('URL download failed, falling back to blob URL', {
-            url,
-            filename: actualFilename,
-            error:
-              downloadError instanceof Error
-                ? downloadError.message
-                : String(downloadError),
-          });
-          const blobResult = await convertToBlobUrl(url);
-          fileUrl = blobResult.blobUrl;
-          actualMimeType =
-            mimeType ||
-            blobResult.type ||
-            getMimeTypeFromFilename(actualFilename);
-          fileSize = blobResult.size || 0;
-          fetchedBlob = undefined;
-        }
-      }
-
-      // --- Inline multimodal handling (image/audio) ---
-      // Image and audio files are passed directly to the LLM as base64 instead of
-      // being indexed in the attachments store. No workspace sync is needed.
-      if (
-        actualMimeType === 'application/octet-stream' ||
-        actualMimeType === ''
-      ) {
-        // Extension-based detection was exhausted — log for visibility.
-        logger.warn(
-          'Could not resolve MIME type from file.type, mimeType param, or extension',
-          { filename: actualFilename },
-        );
-      }
-      const isInlineType =
-        actualMimeType.startsWith('image/') ||
-        actualMimeType.startsWith('audio/');
-
-      if (isInlineType) {
-        logger.info(
-          'File is image/audio — storing stable inline media reference',
-          {
-            filename: actualFilename,
-            mimeType: actualMimeType,
-            hasStableUri: !fileUrl.startsWith('blob:'),
-          },
-        );
-
-        const inlineType = actualMimeType.startsWith('image/')
-          ? ('image' as const)
-          : ('audio' as const);
-
-        let fallbackBase64Data: string | undefined;
-        if (fileUrl.startsWith('blob:')) {
-          try {
-            const sourceBlob: Blob =
-              file ??
-              fetchedBlob ??
-              (() => {
-                throw new Error('No data source available for inline content');
-              })();
-            const buffer = await sourceBlob.arrayBuffer();
-            const bytes = new Uint8Array(buffer);
-            let binary = '';
-            for (let i = 0; i < bytes.length; i++) {
-              binary += String.fromCharCode(bytes[i]);
-            }
-            fallbackBase64Data = btoa(binary);
-          } catch (readError) {
-            logger.error('Failed to read fallback inline media as base64', {
-              filename: actualFilename,
-              error: readError,
-            });
-            throw new Error(
-              `Failed to read file "${actualFilename}" for inline attachment.`,
-            );
-          }
-        }
-
-        return {
-          sessionId,
-          status: 'inline',
-          filename: actualFilename,
-          mimeType: actualMimeType,
-          size: fileSize,
-          lineCount: 0,
-          preview: actualFilename,
-          uploadedAt: new Date().toISOString(),
-          inlineContent: {
-            type: inlineType,
-            data: fallbackBase64Data,
-            uri: fileUrl,
-            mimeType: actualMimeType,
-          },
-        };
-      }
-
-      const SUPPORTED_EXTENSIONS = /\.(txt|md|json|pdf|docx|xlsx)$/i;
-      const isSupported = SUPPORTED_EXTENSIONS.test(actualFilename);
-
-      if (!isSupported) {
-        logger.info(
-          'File type not supported by Attachments, saving to workspace only',
-          { filename: actualFilename },
-        );
-
-        // Return AttachmentReference without contentId for workspace-only files
-        return {
-          sessionId,
-          status: 'workspace-only',
-          filename: actualFilename,
-          mimeType: actualMimeType,
-          size: fileSize,
-          lineCount: 0,
-          preview: actualFilename,
-          uploadedAt: new Date().toISOString(),
-          workspacePath,
-        };
-      }
-
-      try {
-        // Use session-specific saveAgentFile instead of global server.add
-        // This ensures the file is associated with the correct agent session
-        const result = await saveAgentFile(storeId, actualFilename, {
-          content: undefined, // Content is handled via fileUrl or direct upload
-          fileUrl: fileUrl,
-          metadata: {
-            mimeType: actualMimeType,
-            size: fileSize,
-            uploadedAt: new Date().toISOString(),
-            filename: actualFilename,
-          },
-        });
-
-        if (!workspacePath && file) {
-          try {
-            workspacePath = await syncFileToWorkspace(file, sessionId);
-          } catch (error) {
-            logger.warn(
-              'Workspace sync failed (retry), continuing with content-store only',
-              { error },
-            );
-          }
-        }
-
-        // Debug logging to verify backend response
-        logger.debug('[AgentResourceAttachmentContext] saveAgentFile result:', {
-          result,
-        });
-
-        return {
-          sessionId: result.sessionId,
-          contentId: result.contentId,
-          status: 'committed',
-          filename: result.filename ?? actualFilename, // Fallback to computed filename
-          mimeType: result.mimeType,
-          size: Number(result.size ?? fileSize ?? 0),
-          lineCount: result.lineCount, // Correct: Rust returns 'lineCount'
-          preview: result.preview,
-          uploadedAt: result.uploadedAt ?? new Date().toISOString(),
-          chunkCount: result.chunkCount,
-          lastAccessedAt: new Date().toISOString(),
-          workspacePath,
-        };
-      } finally {
-        if (fileUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(fileUrl);
-        }
-      }
+      return addAgentAttachment({
+        sessionId,
+        url,
+        mimeType,
+        filename,
+        file,
+      });
     },
-    [sessionId, extractFilenameFromUrl, convertToBlobUrl],
+    [sessionId],
   );
 
   const commitPendingFiles = useCallback(async (): Promise<
@@ -529,7 +217,6 @@ export function AgentResourceAttachmentProvider({
             file.originalUrl || file.preview,
             file.mimeType,
             file.filename,
-            file.originalPath,
             file.file,
           );
           results.push(result);
@@ -547,15 +234,7 @@ export function AgentResourceAttachmentProvider({
         { revalidate: true },
       );
 
-      pendingFiles.forEach((file) => {
-        if (file.blobCleanup) {
-          try {
-            file.blobCleanup();
-          } catch (e) {
-            logger.warn('Blob cleanup failed', e);
-          }
-        }
-      });
+      cleanupPendingAttachmentBlobs(pendingFiles);
 
       setPendingFiles([]);
       return results;
@@ -571,7 +250,9 @@ export function AgentResourceAttachmentProvider({
         const fileToRemove = pendingFiles.find(
           (file) => file.pendingId === ref.pendingId,
         );
-        if (fileToRemove?.blobCleanup) fileToRemove.blobCleanup();
+        if (fileToRemove) {
+          cleanupPendingAttachmentBlobs([fileToRemove]);
+        }
         setPendingFiles((prev) =>
           prev.filter((p) => p.pendingId !== ref.pendingId),
         );
@@ -613,14 +294,7 @@ export function AgentResourceAttachmentProvider({
   );
 
   const clearPendingFiles = useCallback(() => {
-    pendingFiles.forEach((file) => {
-      if (file.blobCleanup)
-        try {
-          file.blobCleanup();
-        } catch (e) {
-          logger.warn('Blob cleanup failed', e);
-        }
-    });
+    cleanupPendingAttachmentBlobs(pendingFiles);
     setPendingFiles([]);
   }, [pendingFiles]);
 
