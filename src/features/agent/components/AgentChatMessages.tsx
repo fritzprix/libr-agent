@@ -28,6 +28,8 @@ import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
+const DEFAULT_BOTTOM_THRESHOLD = 80;
+const CHAT_INPUT_SPACER_GAP = 24;
 
 export function getPrependedFirstItemIndex(
   current: number,
@@ -41,6 +43,13 @@ export function getInitialTopMostItemIndex(
   itemCount: number,
 ): number {
   return itemCount > 0 ? firstItemIndex + itemCount - 1 : firstItemIndex;
+}
+
+export function getVisualBottomThreshold(inputOverlayHeight: number): number {
+  return Math.max(
+    DEFAULT_BOTTOM_THRESHOLD,
+    inputOverlayHeight + CHAT_INPUT_SPACER_GAP,
+  );
 }
 
 interface AgentChatVirtuosoContext {
@@ -239,7 +248,13 @@ function groupedMessageContainsBoundary(
   return groupedMessage.messages.some((message) => message.id === boundaryId);
 }
 
-export function AgentChatMessages() {
+interface AgentChatMessagesProps {
+  inputOverlayHeight?: number;
+}
+
+export function AgentChatMessages({
+  inputOverlayHeight = 88,
+}: AgentChatMessagesProps = {}) {
   const { t } = useTranslation();
   const {
     messages,
@@ -293,6 +308,10 @@ export function AgentChatMessages() {
   const assistantName = session?.assistant?.name || 'Agent';
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
+  );
+  const bottomThreshold = useMemo(
+    () => getVisualBottomThreshold(inputOverlayHeight),
+    [inputOverlayHeight],
   );
   const previousListStateRef = useRef<{
     firstId: string | undefined;
@@ -558,7 +577,7 @@ export function AgentChatMessages() {
           groupedMessages.length,
         )}
         alignToBottom={true}
-        atBottomThreshold={80}
+        atBottomThreshold={bottomThreshold}
         followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
         increaseViewportBy={{ top: 640, bottom: 960 }}
         startReached={handleReachTop}
