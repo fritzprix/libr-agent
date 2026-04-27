@@ -310,6 +310,28 @@ pub(super) fn parse_line_edit(
         }
     };
 
+    if start_line == 0 && action != EditAction::InsertAfter {
+        let action_name = match action {
+            EditAction::Replace => "replace",
+            EditAction::Delete => "delete",
+            EditAction::InsertAfter => "insert_after",
+        };
+        return Err(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "{edit_label}: 'startLine' must be >= 1 for '{}' edits",
+                action_name
+            ),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Use startLine: 0 only with op='insert_after' to prepend before the first line"
+                .to_string(),
+            "Use startLine >= 1 for replace and delete edits".to_string(),
+        ])
+        .to_mcp_result());
+    }
+
     let has_end_line = edit_obj.get("endLine").is_some();
     let end_line = match edit_obj.get("endLine").and_then(|value| value.as_u64()) {
         Some(line) if line >= start_line as u64 => line as usize,

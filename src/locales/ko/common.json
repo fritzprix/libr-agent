@@ -285,6 +285,8 @@
     "toolCallGroupVisibleCount": "도구 호출 표시 수",
     "toolCallGroupVisibleCountDescription": "접힌 그룹 보기에서 보여줄 도구 호출 수",
     "toolCallGroupVisibleCountPlaceholder": "예: 4",
+    "decreaseToolCallCount": "도구 호출 수 줄이기",
+    "increaseToolCallCount": "도구 호출 수 늘리기",
     "general": {
       "skillsDirectory": "스킬 디렉토리",
       "skillsDirectorySelectTitle": "스킬 디렉토리 선택",
@@ -323,7 +325,9 @@
     "chatInterface": {
       "diffContextLines": "Diff 컨텍스트 라인",
       "diffContextLinesPlaceholder": "예: 3",
-      "diffContextLinesDescription": "파일 편집 diff에 표시할 컨텍스트 라인 수 (1-10)."
+      "diffContextLinesDescription": "파일 편집 diff에 표시할 컨텍스트 라인 수 (1-10).",
+      "decreaseDiffLines": "Diff 컨텍스트 라인 줄이기",
+      "increaseDiffLines": "Diff 컨텍스트 라인 늘리기"
     },
     "display": {
       "fontFamilyOptions": {

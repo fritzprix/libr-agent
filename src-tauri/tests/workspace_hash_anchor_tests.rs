@@ -159,6 +159,44 @@ async fn edit_file_allows_hashless_insert_at_top() {
 }
 
 #[tokio::test]
+async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-rejects-zero-start-line";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+
+    for op in ["replace", "delete"] {
+        let mut edit = json!({
+            "op": op,
+            "startLine": 0,
+        });
+        if op == "replace" {
+            edit["content"] = json!("HEADER");
+        }
+
+        let result = server
+            .handle_edit_file(
+                json!({
+                    "path": "sample.txt",
+                    "edits": [edit]
+                }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("edit should return MCPResult");
+
+        let text = extract_text_content(&result);
+        assert_eq!(result.is_error, Some(true));
+        assert!(
+            text.contains("'startLine' must be >= 1"),
+            "expected invalid startLine guidance for op={op}, got: {text}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn edit_files_preserve_replace_and_insert_order_with_single_file_batch() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-replace-insert-order";
