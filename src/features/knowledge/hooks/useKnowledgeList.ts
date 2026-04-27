@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
@@ -11,6 +11,14 @@ import { useDebouncedValue } from './useDebouncedValue';
 
 const logger = getLogger('useKnowledgeList');
 const KNOWLEDGE_PAGE_SIZE = 60;
+
+function buildKnowledgeRequestKey(
+  assistantFilter: string,
+  normalizedQuery: string,
+  refreshToken: number,
+): string {
+  return `${assistantFilter}::${normalizedQuery}::${refreshToken}`;
+}
 
 interface UseKnowledgeListOptions {
   assistantFilter: string;
@@ -33,6 +41,13 @@ export function useKnowledgeList({
   );
   const debouncedQuery = useDebouncedValue(query, 250);
   const normalizedQuery = debouncedQuery.trim();
+  const requestKey = buildKnowledgeRequestKey(
+    assistantFilter,
+    normalizedQuery,
+    refreshToken,
+  );
+  const latestRequestKeyRef = useRef(requestKey);
+  latestRequestKeyRef.current = requestKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +97,7 @@ export function useKnowledgeList({
       return;
     }
 
+    const requestKeyAtInvocation = latestRequestKeyRef.current;
     setIsLoadingMore(true);
     try {
       const response = await listGlobalKnowledge({
@@ -90,6 +106,10 @@ export function useKnowledgeList({
         cursor: nextCursor,
         limit: KNOWLEDGE_PAGE_SIZE,
       });
+
+      if (latestRequestKeyRef.current !== requestKeyAtInvocation) {
+        return;
+      }
 
       setItems((current) => {
         const seenIds = new Set(current.map((item) => item.id));
