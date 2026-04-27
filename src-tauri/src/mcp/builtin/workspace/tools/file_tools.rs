@@ -548,7 +548,7 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
 
 fn create_edit_item_schema(path_required: bool) -> JSONSchema {
     let path_desc = "Relative path to the file to edit (from workspace root).";
-    let start_line_desc = "Target start line number (1-based). Use 0 to prepend at the file top.";
+    let start_line_desc = "Target start line number. Existing lines are 1-based. Use 0 only to prepend at the file top; to insert below an existing line, keep that line's 1-based number and set op='insert_after'.";
     let end_line_desc =
         "Inclusive end line for a multi-line replace/delete range. Omit for a single-line edit.";
     let start_anchor_desc =
@@ -556,7 +556,7 @@ fn create_edit_item_schema(path_required: bool) -> JSONSchema {
     let end_anchor_desc =
         "6-character opaque anchor for the end line. Required when endLine is set for a multi-line replace/delete range.";
     let content_desc =
-        "Replacement or inserted content. Omit it to delete. Keep op='insert_after' when inserting below an existing line; use startLine=0 to prepend at the top.";
+        "Replacement or inserted content. Omit it to delete. Existing lines stay 1-based; use startLine=0 only for prepend, or keep a 1-based existing line number with op='insert_after' to insert below it.";
 
     let mut props = HashMap::new();
     if path_required {
@@ -604,7 +604,7 @@ fn create_edit_item_schema(path_required: bool) -> JSONSchema {
         },
     );
     schema.description = Some(
-        "A single edit operation. Provide path + startLine, plus anchors for existing-line edits. op is optional for common replace/delete flows but still useful for insert_after.".to_string(),
+        "A single edit operation. Provide path + startLine, plus anchors for existing-line edits. Existing content uses 1-based line numbers; only startLine=0 prepends at the file top. op is optional for common replace/delete flows but still useful for insert_after.".to_string(),
     );
     schema
 }
@@ -652,6 +652,8 @@ pub fn create_edit_files_tool() -> MCPTool {
         description: "Apply multiple line edits across one or more files atomically in a single operation.
 
 PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values. For anchors, pass only the 6 hex characters between ':' and '|'.
+
+Line numbering is 1-based for existing content. The only valid 0 value is startLine=0, which prepends at the file top.
 
 Each edit item carries its own path. Keep the payload simple and let the server infer the common cases:
 - replace single line: path + startLine + startAnchor + content

@@ -79,6 +79,18 @@ fn edit_files_schema_uses_single_object_item_contract() {
     assert!(required
         .iter()
         .any(|value| value.as_str() == Some("startLine")));
+
+    let start_line_description = edits_items
+        .get("properties")
+        .and_then(|properties| properties.get("startLine"))
+        .and_then(|value| value.get("description"))
+        .and_then(|value| value.as_str())
+        .expect("startLine description");
+    assert!(
+        start_line_description.contains("Existing lines are 1-based")
+            && start_line_description.contains("Use 0 only to prepend"),
+        "startLine description should make the 1-based/0-based exception explicit: {start_line_description}"
+    );
 }
 
 #[tokio::test]
@@ -233,8 +245,57 @@ async fn edit_files_allows_replace_without_explicit_op() {
         .expect("edit batch should succeed");
 
     assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Anchors above are current for the edited ranges")
+            && text.contains("reuse them directly with editFiles"),
+        "success response should explain anchor reuse without rereading: {text}"
+    );
     let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
     assert_eq!(updated, "ALPHA\nbeta\n");
+}
+
+#[tokio::test]
+async fn edit_files_error_messages_include_edit_context() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-error-context";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+
+    let anchors = format_as_hashlines("alpha\nbeta\n");
+    let start_anchor = anchors
+        .lines()
+        .next()
+        .and_then(|line| line.split('|').next())
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("start anchor");
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "insert_after",
+                        "startLine": 1,
+                        "startAnchor": start_anchor
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit batch should return MCPResult");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Edit at index 0 [path='sample.txt', op='insert_after', startLine=1]")
+            && text.contains("'content' is required"),
+        "error should include offending edit context: {text}"
+    );
 }
 
 #[tokio::test]
