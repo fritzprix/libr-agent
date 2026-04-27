@@ -491,6 +491,23 @@
       "revert": "전역으로 되돌리기",
       "resetTitle": "스킬 재정의를 초기화하시겠습니까?",
       "resetConfirm": "이 작업은 모든 어시스턴트 전용 스킬을 제거하고 전역 기본값으로 되돌립니다. 이 작업은 되돌릴 수 없습니다."
+    },
+    "dev": {
+      "devOnly": "DEV ONLY",
+      "testerTitle": "sampleText / compact tester",
+      "provider": "Provider",
+      "noKey": " (no key)",
+      "promptLabel": "Prompt (for sampleText)",
+      "promptPlaceholder": "Enter a test prompt...",
+      "compactUses": "compact() uses {{count}} sample messages:",
+      "running": "Running…",
+      "runSampleText": "Run sampleText()",
+      "runCompact": "Run compact()",
+      "error": "ERROR",
+      "ok": "OK",
+      "model": "model: {{model}}",
+      "tokensInfo": "tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total",
+      "emptyResponse": "(empty response)"
     }
   },
   "mcpServer": {

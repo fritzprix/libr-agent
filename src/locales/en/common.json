@@ -517,6 +517,23 @@
       "revert": "Revert to global",
       "resetTitle": "Reset Skills Override?",
       "resetConfirm": "This will remove all assistant-specific skills and revert to global defaults. This action cannot be undone."
+    },
+    "dev": {
+      "devOnly": "DEV ONLY",
+      "testerTitle": "sampleText / compact tester",
+      "provider": "Provider",
+      "noKey": " (no key)",
+      "promptLabel": "Prompt (for sampleText)",
+      "promptPlaceholder": "Enter a test prompt...",
+      "compactUses": "compact() uses {{count}} sample messages:",
+      "running": "Running…",
+      "runSampleText": "Run sampleText()",
+      "runCompact": "Run compact()",
+      "error": "ERROR",
+      "ok": "OK",
+      "model": "model: {{model}}",
+      "tokensInfo": "tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total",
+      "emptyResponse": "(empty response)"
     }
   },
   "mcpServer": {
