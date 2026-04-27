@@ -29,7 +29,6 @@ export default function KnowledgePage() {
     closeDetail,
     deleteSelectedItem,
     detail,
-    entityNameById,
     hasMoreItems,
     isDeleteDialogOpen,
     isDeleting,
@@ -200,7 +199,6 @@ export default function KnowledgePage() {
       <KnowledgeDetailDialog
         open={isDetailOpen}
         detail={detail}
-        entityNameById={entityNameById}
         isDeleting={isDeleting}
         isDetailLoading={isDetailLoading}
         onClose={closeDetail}
