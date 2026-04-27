@@ -256,10 +256,7 @@ impl WorkspaceServer {
             let edit_obj = match edit_value.as_object() {
                 Some(obj) => obj,
                 None => {
-                    let context = edit_value
-                        .as_object()
-                        .map(|obj| format_edit_label(obj, idx))
-                        .unwrap_or_else(|| format!("Edit at index {}", idx));
+                    let context = format!("Edit at index {}", idx);
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("{context} must be an object"),
