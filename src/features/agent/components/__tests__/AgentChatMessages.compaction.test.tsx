@@ -5,6 +5,7 @@ import {
   AgentChatMessages,
   getInitialTopMostItemIndex,
   getPrependedFirstItemIndex,
+  getVisualBottomThreshold,
 } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
@@ -188,5 +189,19 @@ describe('AgentChatMessages compaction rendering', () => {
   it('keeps prepend index adjustments monotonic at zero instead of rebounding to list length', () => {
     expect(getPrependedFirstItemIndex(10_000, 3)).toBe(9_997);
     expect(getPrependedFirstItemIndex(2, 3)).toBe(0);
+  });
+
+  it('uses the input overlay height to define the visual bottom threshold', () => {
+    render(<AgentChatMessages inputOverlayHeight={144} />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      atBottomThreshold: number;
+    };
+
+    expect(virtuosoProps.atBottomThreshold).toBe(
+      getVisualBottomThreshold(144),
+    );
+    expect(getVisualBottomThreshold(20)).toBe(80);
+    expect(getVisualBottomThreshold(144)).toBe(168);
   });
 });

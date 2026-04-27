@@ -194,7 +194,7 @@ function AgentChatInner() {
         >
           <AgentChatHeader />
           <AgentChatStatusBar />
-          <AgentChatMessages />
+          <AgentChatMessages inputOverlayHeight={inputOverlayHeight} />
 
           {/* Floating Input Container */}
           <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
