@@ -165,6 +165,7 @@ function ChatInterfaceTabComponent({
               className="h-9 w-9 px-0"
               onClick={() => updateToolCallCount(-1)}
               disabled={localToolCallGroupVisibleCount <= 1}
+              aria-label={t('settings.decreaseToolCallCount', 'Decrease tool call count')}
             >
               -
             </Button>
@@ -177,6 +178,7 @@ function ChatInterfaceTabComponent({
               className="h-9 w-9 px-0"
               onClick={() => updateToolCallCount(1)}
               disabled={localToolCallGroupVisibleCount >= 20}
+              aria-label={t('settings.increaseToolCallCount', 'Increase tool call count')}
             >
               +
             </Button>
@@ -200,6 +202,7 @@ function ChatInterfaceTabComponent({
               className="h-9 w-9 px-0"
               onClick={() => updateDiffContextLines(-1)}
               disabled={(localAdvancedSettings.diffContextLines ?? 3) <= 1}
+              aria-label={t('settings.chatInterface.decreaseDiffLines', 'Decrease diff context lines')}
             >
               -
             </Button>
@@ -212,6 +215,7 @@ function ChatInterfaceTabComponent({
               className="h-9 w-9 px-0"
               onClick={() => updateDiffContextLines(1)}
               disabled={(localAdvancedSettings.diffContextLines ?? 3) >= 10}
+              aria-label={t('settings.chatInterface.increaseDiffLines', 'Increase diff context lines')}
             >
               +
             </Button>

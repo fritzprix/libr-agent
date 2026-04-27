@@ -62,3 +62,6 @@
 
 **Learning:** When using `opacity-X group-hover:opacity-100` to show controls inside a container on mouse hover, the controls remain invisible to keyboard users when the parent container receives focus, unless explicitly handled.
 **Action:** Always pair `group-hover:opacity-100` with `group-focus-visible:opacity-100` (or `group-focus-within:opacity-100` if the interactive element is inside the group) to ensure the UI elements become visible when accessed via keyboard navigation.
+## 2026-04-27 - [Accessible Symbol Controls]
+**Learning:** When using generic symbol controls like "+" or "-" inside components like ChatInterfaceTab, they remain ambiguous for screen readers without explicit ARIA labels, creating accessibility barriers for users.
+**Action:** Always provide explicit, translated `aria-label` attributes on icon-only or symbol-only interactive elements (like increment/decrement buttons) using `useTranslation`.
