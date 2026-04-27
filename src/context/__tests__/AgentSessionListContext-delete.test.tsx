@@ -143,7 +143,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
                     { id: 'parent', name: 'Parent', status: 'idle', createdAt: Date.now() },
                     { id: 'child', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'parent' },
                 ]);
-            if (cmd === 'agent_delete_session_only') return Promise.resolve();
+            if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'parent', orphanedIds: ['child'] } });
             return Promise.resolve();
         });
 
@@ -167,6 +167,41 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
         expect(safeInvoke).toHaveBeenCalledWith('agent_delete_session_only', { sessionId: 'parent' });
     });
 
+    it('deleteSessionOnly: uses deletedId from backend response when different from sessionId', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd === 'agent_get_all_sessions')
+                return Promise.resolve([
+                    { id: 'alias-id', name: 'Alias', status: 'idle', createdAt: Date.now() },
+                    { id: 'canonical-id', name: 'Parent', status: 'idle', createdAt: Date.now() },
+                    { id: 'child', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'canonical-id' },
+                ]);
+            // Mock backend resolving 'alias-id' to 'canonical-id'
+            if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'canonical-id', orphanedIds: ['child'] } });
+            return Promise.resolve();
+        });
+
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapper },
+        );
+
+        await waitFor(() => expect(result.current.state.sessions).toHaveLength(3));
+
+        await act(async () => {
+            await result.current.actions.deleteSessionOnly('alias-id');
+        });
+
+        await waitFor(() => expect(result.current.state.sessions).toHaveLength(2));
+
+        const remainingIds = result.current.state.sessions.map(s => s.id);
+        // Canonical ID should be removed, alias should remain
+        expect(remainingIds).not.toContain('canonical-id');
+        expect(remainingIds).toContain('alias-id');
+        
+        const orphanedChild = result.current.state.sessions.find((s) => s.id === 'child');
+        expect(orphanedChild?.parentSessionId).toBeUndefined();
+    });
+
     it('deleteSessionOnly: grandchild still linked to its own parent after orphan', async () => {
         // Tree: gp → p → c. Delete p with deleteSessionOnly.
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
@@ -176,7 +211,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
                     { id: 'p', name: 'Parent', status: 'idle', createdAt: Date.now(), parentSessionId: 'gp' },
                     { id: 'c', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'p' },
                 ]);
-            if (cmd === 'agent_delete_session_only') return Promise.resolve();
+            if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'p', orphanedIds: ['c'] } });
             return Promise.resolve();
         });
 

@@ -420,6 +420,11 @@
       "maxFileUploadSizeDescription": "Maximum size for a single file upload. Increase if you often work with large documents.",
       "workspaceCapacity": "Workspace Capacity (MB)",
       "workspaceCapacityDescription": "Total limit for your current workspace's text content.",
+      "automation": "Automation Governance",
+      "scheduledTaskMinimumInterval": "Scheduled Task Minimum Interval (Min)",
+      "scheduledTaskMinimumIntervalDescription": "Minimum allowed interval for new or re-enabled scheduled tasks. Set 0 to disable the guard.",
+      "maxScheduledTaskGroups": "Max Scheduled Task Groups",
+      "maxScheduledTaskGroupsDescription": "Maximum number of distinct scheduled task groups allowed across recurring teamwork automation.",
       "backgroundTasks": "Background Tasks",
       "searchIndexFrequency": "Search Index Frequency (Min)",
       "searchIndexFrequencyDescription": "How often the AI updates its memory search. Faster updates keep search fresh but use more battery/CPU.",
@@ -435,6 +440,8 @@
       "networkRestartFailed": "Failed to restart the app. Please restart manually.",
       "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app.",
       "placeholders": {
+        "scheduledTaskMinimumInterval": "0 = disabled",
+        "maxScheduledTaskGroups": "e.g., 10",
         "maxFileUploadSize": "e.g., 50",
         "workspaceCapacity": "e.g., 10",
         "searchIndexFrequency": "e.g., 5",
@@ -605,6 +612,16 @@
       "toggleFailed": "Failed to toggle extension: {{error}}",
       "activated": "activated",
       "deactivated": "deactivated"
+    },
+    "toolsModal": {
+      "description": "Tool names and descriptions as returned by the MCP server.",
+      "connecting": "Connecting to server…",
+      "failedToLoad": "Failed to load tools",
+      "noTools": "No tools returned.",
+      "toolListAria": "Tool list",
+      "inputSchema": "Input schema",
+      "toolsCount_one": "({{count}} tool)",
+      "toolsCount_other": "({{count}} tools)"
     }
   },
   "playbook": {
@@ -942,5 +959,53 @@
     "unknownError": "An unknown error occurred.",
     "retrying": "Retrying...",
     "tryAgain": "Try Again"
+  },
+  "knowledge": {
+    "untitledEntry": "Untitled knowledge entry",
+    "detailTitle": "Knowledge Detail",
+    "detailDescription": "Inspect the selected entry, its evidence, and its local graph.",
+    "close": "Close",
+    "delete": "Delete",
+    "tabs": {
+      "overview": "Overview",
+      "graph": "Graph"
+    },
+    "metadataTitle": "Metadata",
+    "fields": {
+      "createdAt": "Created",
+      "primaryEntities": "Primary entities",
+      "relationships": "Relationships"
+    },
+    "entitiesTitle": "Entities",
+    "noEntities": "No linked entities for this entry.",
+    "primaryEntity": "Primary",
+    "relationshipListTitle": "Relationships",
+    "noRelationships": "No relationships linked to this entry.",
+    "loadListFailed": "Failed to load global knowledge entries.",
+    "loadDetailFailed": "Failed to load knowledge details.",
+    "loadMoreFailed": "Failed to load more knowledge entries.",
+    "deleteSuccess": "Knowledge entry deleted.",
+    "deleteSuccessDescription": "Removed {{entities}} orphan entities and {{relationships}} orphan relationships.",
+    "deleteFailed": "Failed to delete knowledge entry.",
+    "pageTitle": "Global Knowledge",
+    "pageSubtitle": "Search shared memory, inspect evidence, and prune stale knowledge.",
+    "refresh": "Refresh",
+    "browserTitle": "Knowledge Browser",
+    "browserDescription": "Find chunks first, then inspect their evidence and graph neighborhood.",
+    "searchPlaceholder": "Search content, tags, or source...",
+    "assistantFilterPlaceholder": "Filter by assistant",
+    "assistantFilterAll": "All assistants",
+    "emptyState": "No knowledge entries match the current filters.",
+    "loadMore": "Load more",
+    "endOfResults": "You have reached the end of the current results.",
+    "confirmDeleteTitle": "Delete knowledge entry",
+    "confirmDelete": "Delete this knowledge entry and clean up orphaned graph data?",
+    "cancel": "Cancel",
+    "graph": {
+      "empty": "No graph data linked to this knowledge entry.",
+      "primaryEntity": "Primary entity",
+      "relatedEntity": "Related entity"
+    },
+    "excerpt": "Excerpt"
   }
 }

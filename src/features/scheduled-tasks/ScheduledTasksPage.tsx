@@ -1,39 +1,21 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  Plus,
-  Pencil,
-  Trash2,
-  Clock,
-  Zap,
-  FolderOpen,
-  Loader2,
-  Layers3,
-} from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { ScheduledTaskModal } from './components/ScheduledTaskModal';
-import { describeCron, getDisplayCron } from './components/ScheduleBuilder';
+import { ScheduledTasksContent } from './components/ScheduledTaskRow';
 import { useScheduledTasks } from './hooks/useScheduledTasks';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { getDateTimeFormatter } from '@/lib/date-utils';
+import {
+  buildScheduledTaskGroups,
+  compareScheduledTasks,
+  type ScheduledTaskGroupSection,
+} from './scheduled-task-utils';
 
 const logger = getLogger('ScheduledTasksPage');
 
@@ -47,14 +29,6 @@ interface ScheduledTaskFormData {
   yoloMode: boolean;
   workspaceOverride: string | null;
   clearGroup?: boolean;
-}
-
-interface ScheduledTaskGroupSection {
-  key: string;
-  groupId: string | null;
-  groupName: string;
-  tasks: ScheduledTask[];
-  enabledCount: number;
 }
 
 export function ScheduledTasksPage() {
@@ -133,42 +107,7 @@ export function ScheduledTasksPage() {
   );
 
   const groupedSections = useMemo<ScheduledTaskGroupSection[]>(() => {
-    const groups = new Map<string, ScheduledTaskGroupSection>();
-
-    for (const task of tasks) {
-      if (!task.groupName) {
-        continue;
-      }
-
-      const key = task.groupId ?? `group:${task.groupName}`;
-      const existing = groups.get(key);
-      if (existing) {
-        existing.tasks.push(task);
-        continue;
-      }
-
-      groups.set(key, {
-        key,
-        groupId: task.groupId,
-        groupName: task.groupName,
-        tasks: [task],
-        enabledCount: 0, // correctly assigned below
-      });
-    }
-
-    return Array.from(groups.values())
-      .map((group) => {
-        const sortedTasks = [...group.tasks].sort(compareScheduledTasks);
-        return {
-          ...group,
-          tasks: sortedTasks,
-          enabledCount: sortedTasks.reduce(
-            (count, task) => (task.enabled ? count + 1 : count),
-            0,
-          ),
-        };
-      })
-      .sort((left, right) => left.groupName.localeCompare(right.groupName));
+    return buildScheduledTaskGroups(tasks);
   }, [tasks]);
 
   const personalTasks = useMemo(
@@ -220,132 +159,19 @@ export function ScheduledTasksPage() {
         </Button>
       </div>
 
-      {tasks.length > 0 && (
-        <div className="grid gap-3 md:grid-cols-3">
-          <SummaryCard
-            title={t('scheduledTasks.summary.totalTasks', 'Total Tasks')}
-            value={tasks.length}
-            description={t(
-              'scheduledTasks.summary.totalTasksDescription',
-              'All recurring runs currently configured.',
-            )}
-          />
-          <SummaryCard
-            title={t('scheduledTasks.summary.taskGroups', 'Task Groups')}
-            value={groupedSections.length}
-            description={t(
-              'scheduledTasks.summary.taskGroupsDescription',
-              'Grouped automation teams sharing a recurring schedule surface.',
-            )}
-          />
-          <SummaryCard
-            title={t('scheduledTasks.summary.enabledTasks', 'Enabled Tasks')}
-            value={enabledTaskCount}
-            description={t(
-              'scheduledTasks.summary.enabledTasksDescription',
-              'Currently active recurring runs.',
-            )}
-          />
-        </div>
-      )}
-
-      {tasks.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-16 border border-dashed rounded-lg text-muted-foreground">
-          <Clock className="w-8 h-8 opacity-40" />
-          <p className="text-sm">{t('scheduledTasks.noTasks')}</p>
-          <Button variant="outline" size="sm" onClick={openCreate}>
-            {t('scheduledTasks.createFirst')}
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {groupedSections.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <Layers3 className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">
-                  {t('scheduledTasks.groupsTitle', 'Scheduled Task Groups')}
-                </h2>
-              </div>
-              {groupedSections.map((group) => {
-                // group.tasks is already sorted via compareScheduledTasks.
-                // This lookup relies on that ordering, so the first enabled task
-                // with a non-null nextRunAt is the group's earliest upcoming run.
-                const nextGroupRun =
-                  group.tasks.find(
-                    (task) => task.enabled && task.nextRunAt !== null,
-                  )?.nextRunAt ?? null;
-
-                return (
-                  <Card key={group.key} className="gap-4 py-4">
-                    <CardHeader className="gap-2 pb-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <CardTitle>{group.groupName}</CardTitle>
-                        <Badge variant="secondary" className="text-xs">
-                          {t('scheduledTasks.groupTaskCount', {
-                            count: group.tasks.length,
-                            defaultValue: '{{count}} tasks',
-                          })}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {t('scheduledTasks.groupEnabledCount', {
-                            count: group.enabledCount,
-                            defaultValue: '{{count}} enabled',
-                          })}
-                        </Badge>
-                      </div>
-                      <CardDescription>
-                        {t('scheduledTasks.groupNextRun', {
-                          time: formatNextRun(nextGroupRun),
-                          defaultValue: 'Next group run: {{time}}',
-                        })}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-4">
-                      <ul className="flex flex-col gap-3">
-                        {group.tasks.map((task) => (
-                          <ScheduledTaskRow
-                            key={task.id}
-                            task={task}
-                            formatNextRun={formatNextRun}
-                            onEdit={openEdit}
-                            onToggle={handleToggle}
-                            onDelete={handleDelete}
-                            isToggling={togglingIds.has(task.id)}
-                            isDeleting={deletingIds.has(task.id)}
-                          />
-                        ))}
-                      </ul>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </section>
-          )}
-
-          {personalTasks.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <h2 className="text-sm font-semibold">
-                {t('scheduledTasks.personalTitle', 'Standalone Tasks')}
-              </h2>
-              <ul className="flex flex-col gap-3">
-                {personalTasks.map((task) => (
-                  <ScheduledTaskRow
-                    key={task.id}
-                    task={task}
-                    formatNextRun={formatNextRun}
-                    onEdit={openEdit}
-                    onToggle={handleToggle}
-                    onDelete={handleDelete}
-                    isToggling={togglingIds.has(task.id)}
-                    isDeleting={deletingIds.has(task.id)}
-                  />
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
-      )}
+      <ScheduledTasksContent
+        enabledTaskCount={enabledTaskCount}
+        formatNextRun={formatNextRun}
+        groupedSections={groupedSections}
+        onCreate={openCreate}
+        onDelete={handleDelete}
+        onEdit={openEdit}
+        onToggle={handleToggle}
+        personalTasks={personalTasks}
+        tasks={tasks}
+        deletingIds={deletingIds}
+        togglingIds={togglingIds}
+      />
 
       <ScheduledTaskModal
         open={modalOpen}
@@ -356,175 +182,4 @@ export function ScheduledTasksPage() {
       />
     </div>
   );
-}
-
-function SummaryCard({
-  title,
-  value,
-  description,
-}: {
-  title: string;
-  value: number;
-  description: string;
-}) {
-  return (
-    <Card className="gap-3 py-4">
-      <CardHeader className="pb-0">
-        <CardDescription>{title}</CardDescription>
-        <CardTitle className="text-2xl">{value}</CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0 text-xs text-muted-foreground">
-        {description}
-      </CardContent>
-    </Card>
-  );
-}
-
-// Memoized to prevent all task rows from re-rendering when a single task is toggled or deleted.
-// Requires stable function references (useCallback) and primitive boolean props (isToggling/isDeleting)
-// instead of Sets to ensure shallow equality checks pass.
-const ScheduledTaskRow = React.memo(function ScheduledTaskRow({
-  task,
-  formatNextRun,
-  onEdit,
-  onToggle,
-  onDelete,
-  isToggling,
-  isDeleting,
-}: {
-  task: ScheduledTask;
-  formatNextRun: (ms: number | null) => string;
-  onEdit: (task: ScheduledTask) => void;
-  onToggle: (task: ScheduledTask) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
-  isToggling: boolean;
-  isDeleting: boolean;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <li className="flex items-start gap-4 rounded-lg border border-border p-4 bg-card">
-      <Switch
-        checked={task.enabled}
-        onCheckedChange={() => void onToggle(task)}
-        className="mt-0.5 shrink-0"
-        disabled={isToggling || isDeleting}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium truncate">{task.name}</span>
-          <Badge variant="secondary" className="text-xs shrink-0">
-            {describeCron(
-              getDisplayCron(
-                task.cronExpression,
-                task.scheduleTimezone,
-                task.nextRunAt,
-              ),
-              t,
-            )}
-          </Badge>
-          {task.scheduleTimezone === 'utc' && (
-            <Badge variant="outline" className="text-xs shrink-0">
-              {t('scheduledTasks.utcLegacy', 'UTC legacy')}
-            </Badge>
-          )}
-          {task.yoloMode && (
-            <Badge
-              variant="default"
-              className="text-xs shrink-0 bg-primary/80 hover:bg-primary/80"
-            >
-              <Zap size={10} className="mr-1 fill-current" />
-              YOLO
-            </Badge>
-          )}
-          {task.groupName && (
-            <Badge variant="outline" className="text-xs shrink-0">
-              {t('scheduledTasks.groupBadge', {
-                name: task.groupName,
-                defaultValue: 'Group: {{name}}',
-              })}
-            </Badge>
-          )}
-          {!task.enabled && (
-            <Badge variant="outline" className="text-xs shrink-0">
-              {t('scheduledTasks.disabled')}
-            </Badge>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground mt-1 line-clamp-2 break-all">
-          {task.message}
-        </p>
-        <p className="text-xs text-muted-foreground mt-1">
-          {t('scheduledTasks.nextRun', {
-            time: formatNextRun(task.nextRunAt),
-          })}
-        </p>
-        {task.workspaceOverride && (
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate" title={task.workspaceOverride}>
-              {task.workspaceOverride}
-            </span>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => onEdit(task)}
-              aria-label={t('scheduledTasks.editTaskAria', {
-                name: task.name,
-              })}
-            >
-              <Pencil className="w-4 h-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('scheduledTasks.editTask')}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive hover:text-destructive"
-              onClick={() => void onDelete(task.id)}
-              aria-label={t('scheduledTasks.deleteTaskAria', {
-                name: task.name,
-              })}
-              disabled={isDeleting || isToggling}
-            >
-              {isDeleting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Trash2 className="w-4 h-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('scheduledTasks.deleteTask')}</TooltipContent>
-        </Tooltip>
-      </div>
-    </li>
-  );
-});
-
-function compareScheduledTasks(left: ScheduledTask, right: ScheduledTask) {
-  if (left.enabled !== right.enabled) {
-    return left.enabled ? -1 : 1;
-  }
-
-  if (left.nextRunAt === null && right.nextRunAt !== null) {
-    return 1;
-  }
-  if (left.nextRunAt !== null && right.nextRunAt === null) {
-    return -1;
-  }
-  if (left.nextRunAt !== null && right.nextRunAt !== null) {
-    return left.nextRunAt - right.nextRunAt;
-  }
-
-  return left.name.localeCompare(right.name);
 }

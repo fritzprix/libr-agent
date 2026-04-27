@@ -14,181 +14,19 @@ import {
 } from '@/context/AgentSessionContext';
 import type { AgentResponse, InjectMessagesRequest } from '@/models/agent-ipc';
 import type { Message, MessageError, RustMessage } from '@/models/chat';
+import type { ServiceContext } from '@/models/service-context';
 import { isValidMessage } from '@/models/validation';
+import {
+  isAssistantStreamingMessageSuperseded,
+  summarizeMessageForLog,
+  toRustMessage,
+} from '@/lib/message-utils';
 import { useDebounce } from 'react-use';
 import { getLogger } from '../lib/logger';
-import { useLLMService } from './LLMServiceContext';
+import { useLLMService, useStreamingMessage } from './LLMServiceContext';
 
 const logger = getLogger('AgentChatContext');
-
-function toTimestamp(
-  value: Message['createdAt'] | Message['updatedAt'] | undefined,
-): number | null {
-  if (!value) return null;
-  if (value instanceof Date) return value.getTime();
-  return typeof value === 'number' ? value : null;
-}
-
-function extractTextContent(message: Message): string {
-  return (message.content ?? [])
-    .filter(
-      (item): item is { type: 'text'; text: string } =>
-        item.type === 'text' && typeof item.text === 'string',
-    )
-    .map((item) => item.text)
-    .join('');
-}
-
-function toRustMessage(message: Message): RustMessage {
-  const now = Date.now();
-  return {
-    ...message,
-    toolCalls: message.tool_calls,
-    toolCallId: message.tool_call_id,
-    createdAt:
-      message.createdAt instanceof Date
-        ? message.createdAt.getTime()
-        : message.createdAt || now,
-    updatedAt:
-      message.updatedAt instanceof Date
-        ? message.updatedAt.getTime()
-        : message.updatedAt ||
-          (message.createdAt instanceof Date
-            ? message.createdAt.getTime()
-            : message.createdAt) ||
-          now,
-  };
-}
-
-function summarizeMessageForLog(
-  message: Message | Partial<Message> | undefined,
-) {
-  if (!message) {
-    return null;
-  }
-
-  return {
-    id: message.id,
-    role: message.role,
-    isStreaming: message.isStreaming,
-    contentTypes: Array.isArray(message.content)
-      ? message.content.map((item) => item.type)
-      : [],
-    textLength: extractTextContent(message as Message).length,
-    thinkingLength: message.thinking?.length ?? 0,
-    toolCallCount: message.tool_calls?.length ?? 0,
-    toolCalls: (message.tool_calls ?? []).map((toolCall) => ({
-      id: toolCall.id,
-      name: toolCall.function.name,
-      argumentsLength: toolCall.function.arguments.length,
-    })),
-  };
-}
-
-function persistedToolCallsCoverStreamingState(
-  streamingMessage: Message,
-  persistedMessage: Message,
-): boolean {
-  const streamingToolCalls = streamingMessage.tool_calls ?? [];
-  if (streamingToolCalls.length === 0) {
-    return true;
-  }
-
-  const persistedToolCalls = persistedMessage.tool_calls ?? [];
-  if (persistedToolCalls.length < streamingToolCalls.length) {
-    return false;
-  }
-
-  return streamingToolCalls.every((streamingToolCall, index) => {
-    const persistedToolCall = persistedToolCalls[index];
-    if (!persistedToolCall) {
-      return false;
-    }
-
-    if (
-      streamingToolCall.id &&
-      persistedToolCall.id &&
-      streamingToolCall.id !== persistedToolCall.id
-    ) {
-      return false;
-    }
-
-    if (
-      streamingToolCall.function.name &&
-      persistedToolCall.function.name !== streamingToolCall.function.name
-    ) {
-      return false;
-    }
-
-    const streamingArguments = streamingToolCall.function.arguments || '';
-    const persistedArguments = persistedToolCall.function.arguments || '';
-
-    return (
-      persistedArguments.length >= streamingArguments.length &&
-      persistedArguments.startsWith(streamingArguments)
-    );
-  });
-}
-
-export function isAssistantStreamingMessageSuperseded(
-  streamingMessage: Message,
-  persistedMessage: Message,
-): boolean {
-  if (
-    streamingMessage.role !== 'assistant' ||
-    persistedMessage.role !== 'assistant'
-  ) {
-    return false;
-  }
-
-  const streamingTimestamp =
-    toTimestamp(streamingMessage.updatedAt) ??
-    toTimestamp(streamingMessage.createdAt);
-  const persistedTimestamp =
-    toTimestamp(persistedMessage.updatedAt) ??
-    toTimestamp(persistedMessage.createdAt);
-
-  if (
-    streamingTimestamp === null ||
-    persistedTimestamp === null ||
-    persistedTimestamp < streamingTimestamp
-  ) {
-    return false;
-  }
-
-  const streamingThinking = streamingMessage.thinking || '';
-  const persistedThinking = persistedMessage.thinking || '';
-  if (
-    streamingThinking &&
-    (persistedThinking.length < streamingThinking.length ||
-      !persistedThinking.startsWith(streamingThinking))
-  ) {
-    return false;
-  }
-
-  const streamingText = extractTextContent(streamingMessage);
-  const persistedText = extractTextContent(persistedMessage);
-  if (
-    streamingText &&
-    (persistedText.length < streamingText.length ||
-      !persistedText.startsWith(streamingText))
-  ) {
-    return false;
-  }
-
-  return persistedToolCallsCoverStreamingState(
-    streamingMessage,
-    persistedMessage,
-  );
-}
-
-/**
- * Service Context from Rust backend
- */
-export interface ServiceContext {
-  contextPrompt: string;
-  structuredState?: Record<string, unknown>;
-}
+export { isAssistantStreamingMessageSuperseded } from '@/lib/message-utils';
 
 /**
  * Agent event from Rust backend (currently using Record<string, unknown> in listeners)
@@ -276,8 +114,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   const { setError, resumeSession } = useAgentSessionActions();
 
-  const { streamingMessages, cancelCompletionRequest, clearStreamingMessage } =
-    useLLMService();
+  const { cancelCompletionRequest, clearStreamingMessage } = useLLMService();
 
   // Service contexts state (still local to Chat view as it's UI context)
   const [serviceContexts, setServiceContexts] = useState<
@@ -392,10 +229,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
    * Extract streaming message for current session
    * Memoized to prevent unnecessary effect re-runs
    */
-  const currentStreamingMessage = useMemo(() => {
-    if (!session?.id) return undefined;
-    return streamingMessages.get(session.id);
-  }, [session?.id, streamingMessages]);
+  const currentStreamingMessage = useStreamingMessage(session?.id);
 
   useEffect(() => {
     if (!session?.id || !isValidMessage(currentStreamingMessage)) {

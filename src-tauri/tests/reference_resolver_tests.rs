@@ -3,8 +3,8 @@
 /// Covers:
 ///   - `ReferenceRegistry::preprocess_message_text` output format
 ///   - `SkillReferenceResolver`: path in header, content wrapped in markdown fence, size guard
-///   - `FileReferenceResolver`: relative path header, content fence, size guard, binary guard,
-///     path traversal block
+///   - `FileReferenceResolver`: compact workspace-file references with targeted read guidance
+///     and path traversal protection
 use std::fs;
 use std::path::Path;
 use tauri_mcp_agent_lib::agent::references::{ReferenceRegistry, ReferenceResolver};
@@ -188,8 +188,6 @@ impl ReferenceResolver for TestFileResolver {
     }
 
     async fn resolve(&self, arg: &str) -> Option<String> {
-        const MAX_INLINE_BYTES: u64 = 100 * 1024;
-
         let rel = arg.trim_start_matches('/').trim_start_matches("./");
         let target = self.workspace.join(rel);
 
@@ -204,26 +202,27 @@ impl ReferenceResolver for TestFileResolver {
             return None;
         }
 
-        // Size guard
         let meta = tokio::fs::metadata(&canonical_target).await.ok()?;
         let rel_path = rel.replace('\\', "/");
-        if meta.len() > MAX_INLINE_BYTES {
-            return Some(format!(
-                "# File `{}`\n\n⚠️ File is too large to inline ({} KB). Use `workspace__readFile` tool to read it.",
-                rel_path,
-                meta.len() / 1024
-            ));
-        }
+        let extension = canonical_target
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
 
-        // Binary guard
-        let raw = tokio::fs::read(&canonical_target).await.ok()?;
-        match String::from_utf8(raw) {
-            Ok(content) => Some(format!("# File `{}`\n\n```\n{}\n```", rel_path, content)),
-            Err(_) => Some(format!(
-                "# File `{}`\n\n⚠️ Binary file — cannot be inlined as text. Use `workspace__readFile` tool if needed.",
-                rel_path
-            )),
-        }
+        Some(format!(
+            "# File Reference `{}`\n\n\
+             The file content was not inlined to avoid unnecessary context usage.\n\n\
+             - Relative path: `{}`\n\
+             - File size: {} bytes\n\
+             - Extension: `{}`\n\
+             - To inspect it, call: `workspace__readFile(path: \"{}\")`\n\
+             - Prefer reading only the relevant line range or searching before loading more content.",
+            rel_path,
+            rel_path,
+            meta.len(),
+            if extension.is_empty() { "(none)" } else { extension },
+            rel_path
+        ))
     }
 }
 
@@ -238,13 +237,16 @@ async fn test_file_resolve_normal_text_file() {
     let result = resolver.resolve("hello.txt").await.unwrap();
 
     assert!(
-        result.starts_with("# File `hello.txt`"),
+        result.starts_with("# File Reference `hello.txt`"),
         "Must have path header"
     );
-    assert!(result.contains("```"), "Must have code fence");
     assert!(
-        result.contains("Hello, world!"),
-        "Must contain file content"
+        result.contains("workspace__readFile(path: \"hello.txt\")"),
+        "Must contain targeted read guidance"
+    );
+    assert!(
+        !result.contains("Hello, world!"),
+        "Must not inline file content"
     );
 }
 
@@ -259,7 +261,7 @@ async fn test_file_resolve_nonexistent_returns_none() {
 }
 
 #[tokio::test]
-async fn test_file_resolve_large_file_returns_notice_not_content() {
+async fn test_file_resolve_large_file_returns_reference_not_content() {
     let tmp = TempDir::new().unwrap();
     // Write 101 KB of text
     let large = "a".repeat(101 * 1024);
@@ -271,14 +273,14 @@ async fn test_file_resolve_large_file_returns_notice_not_content() {
     let result = resolver.resolve("big.txt").await.unwrap();
 
     assert!(
-        result.contains("too large to inline"),
-        "Must contain size warning"
+        result.contains("workspace__readFile(path: \"big.txt\")"),
+        "Must contain targeted read guidance"
     );
     assert!(!result.contains("```"), "Must NOT inline file content");
 }
 
 #[tokio::test]
-async fn test_file_resolve_binary_file_returns_notice_not_content() {
+async fn test_file_resolve_binary_file_returns_reference_not_content() {
     let tmp = TempDir::new().unwrap();
     // Write bytes that are not valid UTF-8
     let binary: Vec<u8> = vec![0xFF, 0xFE, 0x00, 0x01, 0x80, 0x90];
@@ -290,8 +292,8 @@ async fn test_file_resolve_binary_file_returns_notice_not_content() {
     let result = resolver.resolve("data.bin").await.unwrap();
 
     assert!(
-        result.contains("Binary file"),
-        "Must contain binary warning"
+        result.contains("workspace__readFile(path: \"data.bin\")"),
+        "Must contain targeted read guidance"
     );
     assert!(!result.contains("```"), "Must NOT inline binary content");
 }
@@ -322,7 +324,8 @@ async fn test_file_resolve_strips_leading_slash() {
     // Leading slash should be stripped
     let result = resolver.resolve("/note.md").await.unwrap();
     assert!(result.contains("note.md"));
-    assert!(result.contains("# Note"));
+    assert!(result.contains("Relative path: `note.md`"));
+    assert!(!result.contains("# Note"));
 }
 
 #[tokio::test]
@@ -338,7 +341,7 @@ async fn test_file_resolve_output_uses_relative_path_in_header() {
 
     // Header must use the relative path, NOT an absolute path
     assert!(
-        result.starts_with("# File `src/main.rs`"),
+        result.starts_with("# File Reference `src/main.rs`"),
         "Header must show relative path, got: {result}"
     );
 }

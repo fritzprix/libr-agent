@@ -543,9 +543,7 @@ impl WorkspaceServer {
                         "Use waitForProcess(\"{}\", 0) to check status, or waitForProcess(\"{}\") to block until done",
                         process_id, process_id
                     ),
-                    "If status is 'failed', use readProcessOutput with 'stderr' to view errors"
-                        .to_string(),
-                    "If status is 'finished', use readProcessOutput with 'stdout' to view output"
+                    "Use readProcessOutput with 'both' to inspect stdout and stderr"
                         .to_string(),
                     "Use listProcesses to see all running processes".to_string(),
                 ],

@@ -42,7 +42,6 @@ pub async fn create_high_isolated_command(
         cmd.env(k, v);
     }
 
-    cmd.env("HOME", &config.workspace_path);
     cmd.env("PWD", &config.workspace_path);
 
     for (key, value) in &config.env_vars {

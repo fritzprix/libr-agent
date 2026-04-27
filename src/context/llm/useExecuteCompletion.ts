@@ -11,6 +11,7 @@ import {
   isParsedIndexedToolCallDelta,
   parseStreamChunk,
 } from '@/lib/ai-service/stream-events';
+import { assembleRequestLayout } from '@/lib/ai-service/base-service-context';
 import { getLogger } from '@/lib/logger';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
@@ -31,6 +32,12 @@ import {
   buildServiceRuntimeConfig,
 } from './service-runtime-config';
 import { isSupersededRequestError } from './types';
+import {
+  buildStreamingMessage,
+  extractThinkingText,
+  extractToolCalls,
+  hasRenderableAssistantOutput,
+} from './streaming-message-utils';
 
 const logger = getLogger('useExecuteCompletion');
 
@@ -235,10 +242,16 @@ export function useExecuteCompletion({
           systemPrompt: effectiveSystemPrompt,
           sessionContext: effectiveSessionContext,
           messages: effectiveMessages,
-        } = service.prepareContextInjection(
-          systemPrompt,
-          sessionContext,
-          enrichedMessages,
+        } = assembleRequestLayout(
+          {
+            systemPrompt,
+            sessionContext,
+            messages: enrichedMessages,
+          },
+          {
+            prepareContextInjection:
+              service.prepareContextInjection.bind(service),
+          },
         );
 
         const streamGenerator = service.streamChat(effectiveMessages, {
@@ -414,30 +427,16 @@ export function useExecuteCompletion({
                 return prev;
               }
               const next = new Map(prev);
-              const toolCalls: ToolCall[] = content
-                .filter((c) => c.type === 'tool_call')
-                .map((c) => {
-                  const tc = c as MCPToolCallContent;
-                  return {
-                    id: tc.id,
-                    type: 'function',
-                    function: { name: tc.name, arguments: tc.arguments },
-                  };
-                });
-              const thinking = content
-                .filter((c) => c.type === 'thinking')
-                .map((c) => (c as MCPThinkingContent).thinking)
-                .join('\n');
-              next.set(sessionId, {
-                ...streamingMessage,
-                content,
-                tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-                thinking: thinking || undefined,
-                thinkingSignature,
-                thinkingTime: currentThinkingTime,
-                usage: finalUsage,
-                isStreaming: true,
-              });
+              next.set(
+                sessionId,
+                buildStreamingMessage(
+                  streamingMessage,
+                  content,
+                  thinkingSignature,
+                  currentThinkingTime,
+                  finalUsage,
+                ),
+              );
               return next;
             });
           }
@@ -450,30 +449,16 @@ export function useExecuteCompletion({
             return prev;
           }
           const next = new Map(prev);
-          const toolCalls: ToolCall[] = content
-            .filter((c) => c.type === 'tool_call')
-            .map((c) => {
-              const tc = c as MCPToolCallContent;
-              return {
-                id: tc.id,
-                type: 'function',
-                function: { name: tc.name, arguments: tc.arguments },
-              };
-            });
-          const thinking = content
-            .filter((c) => c.type === 'thinking')
-            .map((c) => (c as MCPThinkingContent).thinking)
-            .join('\n');
-          next.set(sessionId, {
-            ...streamingMessage,
-            content,
-            tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-            thinking: thinking || undefined,
-            thinkingSignature,
-            thinkingTime: currentThinkingTime,
-            usage: finalUsage,
-            isStreaming: true,
-          });
+          next.set(
+            sessionId,
+            buildStreamingMessage(
+              streamingMessage,
+              content,
+              thinkingSignature,
+              currentThinkingTime,
+              finalUsage,
+            ),
+          );
           return next;
         });
 
@@ -498,21 +483,8 @@ export function useExecuteCompletion({
           }
         }
 
-        const finalToolCalls: ToolCall[] = content
-          .filter((c) => c.type === 'tool_call')
-          .map((c) => {
-            const tc = c as MCPToolCallContent;
-            return {
-              id: tc.id,
-              type: 'function',
-              function: { name: tc.name, arguments: tc.arguments },
-            };
-          });
-
-        const finalThinking = content
-          .filter((c) => c.type === 'thinking')
-          .map((c) => (c as MCPThinkingContent).thinking)
-          .join('\n');
+        const finalToolCalls: ToolCall[] = extractToolCalls(content);
+        const finalThinking = extractThinkingText(content);
 
         const finalMessage: Message = {
           id: responseMessageId,
@@ -522,7 +494,7 @@ export function useExecuteCompletion({
           content,
           createdAt: new Date(),
           tool_calls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-          thinking: finalThinking || undefined,
+          thinking: finalThinking,
           thinkingSignature,
           thinkingTime: thinkingStartTime
             ? (performance.now() - thinkingStartTime) / 1000
@@ -546,13 +518,7 @@ export function useExecuteCompletion({
             : undefined,
         });
 
-        const hasContent =
-          (finalMessage.content &&
-            finalMessage.content.some((c) =>
-              c.type === 'text' ? !!(c as MCPTextContent).text?.trim() : true,
-            )) ||
-          (finalMessage.tool_calls && finalMessage.tool_calls.length > 0) ||
-          !!finalMessage.thinking;
+        const hasContent = hasRenderableAssistantOutput(finalMessage);
 
         const hasUsage =
           finalMessage.usage && finalMessage.usage.completionTokens > 0;

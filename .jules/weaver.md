@@ -149,3 +149,13 @@
 
 **Learning:** The ESLint configuration in this project does not define the `react-hooks/exhaustive-deps` rule, leading to errors when attempting to suppress it.
 **Action:** Avoid using `// eslint-disable-next-line react-hooks/exhaustive-deps`, and generally favor fixing dependency arrays natively rather than suppressing the missing rule.
+
+## 2025-04-25 - [ScheduledTaskModal] **Eradicated:** [God useEffect block / Mixed drag-and-drop side effects with presentation] **Woven:** [Custom Hook Pattern (useWorkspaceDropZone)]
+
+- **ScheduledTaskModal:** Extracted the complex Tauri drag-and-drop subscription logic (`subscribe`, path processing, and state management) into a dedicated custom hook `useWorkspaceDropZone`.
+- **Benefits:** Strictly separates drag-and-drop side-effects from the component's main render logic, drastically reducing the component's footprint and adhering to the modernized React custom hook pattern for isolated logic sharing.
+
+## 2026-04-26 - [PlaybookPage / usePlaybooks]
+
+**Learning:** Refactoring an imperative `useEffect` fetch chain with manual loading, error, and list states into a declarative `useSWR` setup eliminates redundant state variables and significantly simplifies lifecycle handling, making revalidation deterministic.
+**Action:** When finding complex data fetching loops in features, immediately assess if `useSWR` or `react-query` can replace the `useEffect`/`useState` combinations.

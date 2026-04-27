@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui';
@@ -226,6 +227,24 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             <DialogTitle className="text-sm">
               {selectedFile?.filename}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              {[
+                selectedFile?.mimeType
+                  ? `${t('sessionFiles.type', 'Type:')} ${selectedFile.mimeType}`
+                  : null,
+                selectedFile?.size
+                  ? `${t('sessionFiles.size', 'Size:')} ${formatFileSize(selectedFile.size)}`
+                  : null,
+                selectedFile?.uploadedAt
+                  ? `${t('sessionFiles.created', 'Created:')} ${formatDate(selectedFile.uploadedAt)}`
+                  : null,
+                selectedFile?.workspacePath
+                  ? `${t('sessionFiles.workspace', 'Workspace:')} ${selectedFile.workspacePath}`
+                  : null,
+              ]
+                .filter((value): value is string => Boolean(value))
+                .join(' • ')}
+            </DialogDescription>
             <div className="text-xs text-muted-foreground">
               {selectedFile?.mimeType && (
                 <span className="mr-4">

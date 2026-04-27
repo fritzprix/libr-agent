@@ -151,7 +151,9 @@ export function AgentChatStatusBar() {
   const [isRetrying, setIsRetrying] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
   const canUpdateSessionConfig =
-    workflowStatus === 'idle' || workflowStatus === 'error';
+    workflowStatus === 'idle' ||
+    workflowStatus === 'paused' ||
+    workflowStatus === 'error';
 
   const handleRetry = async () => {
     if (isRetrying) return;

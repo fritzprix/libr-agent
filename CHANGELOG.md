@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.14] - 2026-04-27
+
+### 🚀 Features
+
+- **Broader UI Polish Across Agent Workflows**: Expanded localization coverage and keyboard/focus improvements across agent, playbook, settings, and MCP server surfaces to make day-to-day navigation feel steadier and more accessible.
+
+### 🐛 Fixes
+
+- **Paused Session Model Switching**: Restored the ability to change the active model/provider while an agent session is paused, keeping recovery and resume workflows flexible instead of forcing a full stop.
+- **Leaner File Mentions and Safer Draft Attachments**: Stopped `@file:` mentions from inlining whole file bodies into prompt context and fixed draft attachment preprocessing so file-to-attachment mapping stays correct even when some files fail earlier preprocessing steps.
+- **More Reliable Chat, Compaction, and Shell Behavior**: Tightened agent chat rendering/layout behavior, aligned compaction request/layout handling, and hardened shell/process output behavior so long-running sessions and workspace tooling stay more predictable.
+
+### 🔧 Internal
+
+- **Large-Scale Codebase Cleanup**: Split oversized frontend providers/pages and modularized the logger and Ollama service internals, reducing maintenance drag without changing the public app surface.
+- **Release and Diagnostics Maintenance**: Improved nightly release workflow portability and expanded architecture/refactor documentation to support safer ongoing development.
+
 ## [0.7.13] - 2026-04-25
 
 ### 🚀 Features

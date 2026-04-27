@@ -5,7 +5,8 @@ use std::path::Path;
 use tracing::warn;
 use walkdir::WalkDir;
 
-/// Resolves `@file:relative/path` references by reading the file from the session workspace.
+/// Resolves `@file:relative/path` references by pointing the agent at a workspace file
+/// without inlining the full file contents into prompt context.
 pub struct FileReferenceResolver {
     session_id: String,
 }
@@ -24,8 +25,9 @@ impl ReferenceResolver for FileReferenceResolver {
         "file"
     }
 
-    /// Reads `arg` as a relative path within the session workspace.
-    /// Returns `None` if the file does not exist or cannot be read.
+    /// Resolves `arg` as a relative path within the session workspace.
+    /// Returns a compact metadata block with targeted read guidance instead of
+    /// inlining the entire file body.
     async fn resolve(&self, arg: &str) -> Option<String> {
         let session_manager = get_session_manager()
             .map_err(|e| warn!("FileResolver: {e}"))
@@ -48,8 +50,6 @@ impl ReferenceResolver for FileReferenceResolver {
             return None;
         }
 
-        // Guard: reject files that are too large to inject into context
-        const MAX_INLINE_BYTES: u64 = 100 * 1024; // 100 KB
         let metadata = tokio::fs::metadata(&canonical_target).await.ok()?;
         let rel_path = {
             let p = rel.to_string();
@@ -57,26 +57,26 @@ impl ReferenceResolver for FileReferenceResolver {
             let p = p.replace('\\', "/");
             p
         };
-        if metadata.len() > MAX_INLINE_BYTES {
-            return Some(format!(
-                "# File `{}`\n\n⚠️ File is too large to inline ({} KB). Use `workspace__readFile` tool to read it.",
-                rel_path,
-                metadata.len() / 1024
-            ));
-        }
+        let file_size_bytes = metadata.len();
+        let extension = canonical_target
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
 
-        // Guard: read raw bytes first to detect binary files
-        let raw = tokio::fs::read(&canonical_target).await.ok()?;
-        match String::from_utf8(raw) {
-            Ok(content) => Some(format!(
-                "# File `{}`\n\n```\n{}\n```",
-                rel_path, content
-            )),
-            Err(_) => Some(format!(
-                "# File `{}`\n\n⚠️ Binary file — cannot be inlined as text. Use `workspace__readFile` tool if needed.",
-                rel_path
-            )),
-        }
+        Some(format!(
+            "# File Reference `{}`\n\n\
+             The file content was not inlined to avoid unnecessary context usage.\n\n\
+             - Relative path: `{}`\n\
+             - File size: {} bytes\n\
+             - Extension: `{}`\n\
+             - To inspect it, call: `workspace__readFile(path: \"{}\")`\n\
+             - Prefer reading only the relevant line range or searching before loading more content.",
+            rel_path,
+            rel_path,
+            file_size_bytes,
+            if extension.is_empty() { "(none)" } else { extension },
+            rel_path
+        ))
     }
 }
 

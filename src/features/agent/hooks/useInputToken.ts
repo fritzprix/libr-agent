@@ -30,7 +30,7 @@ export const BUILTIN_TOKEN_TYPES: TokenType[] = [
   {
     name: 'file',
     label: 'file:',
-    description: 'Inject workspace file content into context',
+    description: 'Reference a workspace file without inlining its full content',
   },
   {
     name: 'tool',

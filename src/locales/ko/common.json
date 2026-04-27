@@ -399,6 +399,11 @@
       "maxFileUploadSizeDescription": "단일 파일 업로드의 최대 크기입니다. 큰 문서를 자주 작업하는 경우 이 값을 늘리세요.",
       "workspaceCapacity": "워크스페이스 용량 (MB)",
       "workspaceCapacityDescription": "현재 워크스페이스의 텍스트 콘텐츠에 대한 총 제한입니다.",
+      "automation": "자동화 거버넌스",
+      "scheduledTaskMinimumInterval": "예약된 작업 최소 간격 (분)",
+      "scheduledTaskMinimumIntervalDescription": "새로 만들거나 다시 활성화된 예약 작업의 최소 허용 간격입니다. 보호를 비활성화하려면 0으로 설정하세요.",
+      "maxScheduledTaskGroups": "최대 예약 작업 그룹 수",
+      "maxScheduledTaskGroupsDescription": "반복되는 팀워크 자동화에서 허용되는 고유한 예약 작업 그룹의 최대 수입니다.",
       "backgroundTasks": "백그라운드 작업",
       "searchIndexFrequency": "검색 인덱스 빈도 (분)",
       "searchIndexFrequencyDescription": "AI가 메모리 검색을 업데이트하는 빈도입니다. 업데이트가 빠를수록 검색 결과가 최신 상태로 유지되지만 배터리/CPU를 더 많이 사용합니다.",
@@ -414,6 +419,8 @@
       "networkRestartFailed": "앱 재시작에 실패했습니다. 수동으로 재시작해 주세요.",
       "networkRestartNotice": "HTTP 서버 네트워크 설정 변경사항은 앱 재시작 후 적용됩니다.",
       "placeholders": {
+        "scheduledTaskMinimumInterval": "0 = 비활성화",
+        "maxScheduledTaskGroups": "예: 10",
         "maxFileUploadSize": "예: 50",
         "workspaceCapacity": "예: 10",
         "searchIndexFrequency": "예: 5",
@@ -579,6 +586,16 @@
       "toggleFailed": "확장 기능 상태 변경 실패: {{error}}",
       "activated": "활성화",
       "deactivated": "비활성화"
+    },
+    "toolsModal": {
+      "description": "MCP 서버에서 반환된 도구 이름 및 설명입니다.",
+      "connecting": "서버에 연결 중…",
+      "failedToLoad": "도구를 불러오는데 실패했습니다",
+      "noTools": "반환된 도구가 없습니다.",
+      "toolListAria": "도구 목록",
+      "inputSchema": "입력 스키마",
+      "toolsCount_one": "({{count}}개 도구)",
+      "toolsCount_other": "({{count}}개 도구)"
     }
   },
   "playbook": {
@@ -912,5 +929,53 @@
     "unknownError": "알 수 없는 오류가 발생했습니다.",
     "retrying": "재시도 중...",
     "tryAgain": "다시 시도"
+  },
+  "knowledge": {
+    "untitledEntry": "Untitled knowledge entry",
+    "detailTitle": "Knowledge Detail",
+    "detailDescription": "Inspect the selected entry, its evidence, and its local graph.",
+    "close": "Close",
+    "delete": "Delete",
+    "tabs": {
+      "overview": "Overview",
+      "graph": "Graph"
+    },
+    "metadataTitle": "Metadata",
+    "fields": {
+      "createdAt": "Created",
+      "primaryEntities": "Primary entities",
+      "relationships": "Relationships"
+    },
+    "entitiesTitle": "Entities",
+    "noEntities": "No linked entities for this entry.",
+    "primaryEntity": "Primary",
+    "relationshipListTitle": "Relationships",
+    "noRelationships": "No relationships linked to this entry.",
+    "loadListFailed": "Failed to load global knowledge entries.",
+    "loadDetailFailed": "Failed to load knowledge details.",
+    "loadMoreFailed": "Failed to load more knowledge entries.",
+    "deleteSuccess": "Knowledge entry deleted.",
+    "deleteSuccessDescription": "Removed {{entities}} orphan entities and {{relationships}} orphan relationships.",
+    "deleteFailed": "Failed to delete knowledge entry.",
+    "pageTitle": "Global Knowledge",
+    "pageSubtitle": "Search shared memory, inspect evidence, and prune stale knowledge.",
+    "refresh": "Refresh",
+    "browserTitle": "Knowledge Browser",
+    "browserDescription": "Find chunks first, then inspect their evidence and graph neighborhood.",
+    "searchPlaceholder": "Search content, tags, or source...",
+    "assistantFilterPlaceholder": "Filter by assistant",
+    "assistantFilterAll": "All assistants",
+    "emptyState": "No knowledge entries match the current filters.",
+    "loadMore": "Load more",
+    "endOfResults": "You have reached the end of the current results.",
+    "confirmDeleteTitle": "Delete knowledge entry",
+    "confirmDelete": "Delete this knowledge entry and clean up orphaned graph data?",
+    "cancel": "Cancel",
+    "graph": {
+      "empty": "No graph data linked to this knowledge entry.",
+      "primaryEntity": "Primary entity",
+      "relatedEntity": "Related entity"
+    },
+    "excerpt": "Excerpt"
   }
 }

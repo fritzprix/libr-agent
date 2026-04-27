@@ -1,6 +1,10 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
+import {
+  LLMServiceProvider,
+  useLLMService,
+  useStreamingMessages,
+} from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
@@ -56,6 +60,13 @@ function TestWrapper({ children }: { children: ReactNode }) {
   );
 }
 
+function useLLMServiceHarness() {
+  return {
+    ...useLLMService(),
+    streamingMessages: useStreamingMessages(),
+  };
+}
+
 describe('LLMServiceContext – Core', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
@@ -101,7 +112,7 @@ describe('LLMServiceContext – Core', () => {
 
   describe('Provider Setup', () => {
     it('should provide context value', () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -121,7 +132,7 @@ describe('LLMServiceContext – Core', () => {
         createdAt: Date.now(),
       });
 
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -180,7 +191,7 @@ describe('LLMServiceContext – Core', () => {
 
   describe('Session Status', () => {
     it('should return idle status by default', () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -188,7 +199,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('should track streaming status', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -246,7 +257,7 @@ describe('LLMServiceContext – Core', () => {
 
   describe('Execute Completion Request', () => {
     it('should execute completion and return message', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -293,7 +304,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('should handle tool calls in response', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -343,7 +354,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('surfaces streaming tool calls before the stream completes', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -428,7 +439,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('surfaces tool_call_starts before argument deltas complete', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -513,7 +524,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('creates a renderable streaming assistant placeholder before chunks complete', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -564,7 +575,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('should handle thinking content', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -605,7 +616,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('should handle errors and update status', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 
@@ -643,7 +654,7 @@ describe('LLMServiceContext – Core', () => {
     });
 
     it('should cleanup resources after completion', async () => {
-      const { result } = renderHook(() => useLLMService(), {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
 

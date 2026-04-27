@@ -1,9 +1,15 @@
-import React, { useMemo } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSession } from '@/context/AgentSessionContext';
 import { useLLMService } from '@/context/LLMServiceContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
-import { useChatScroll } from '@/features/agent/hooks/useChatScroll';
 import { useFileRefetcher } from '@/features/agent/hooks/useFileRefetcher';
 import {
   useMessageGrouping,
@@ -15,12 +21,150 @@ import { AnalysisLoader } from './shared';
 import { CompactEventDivider } from './shared/CompactEventDivider';
 import { Bot } from 'lucide-react';
 import { PendingApprovalWidget } from './PendingApprovalWidget';
-import { ScrollArea } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
 import { useTranslation } from 'react-i18next';
+import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
 
 const logger = getLogger('AgentChatMessages');
+const INITIAL_FIRST_ITEM_INDEX = 10_000;
+
+export function getPrependedFirstItemIndex(
+  current: number,
+  prependCount: number,
+): number {
+  return Math.max(0, current - prependCount);
+}
+
+export function getInitialTopMostItemIndex(
+  firstItemIndex: number,
+  itemCount: number,
+): number {
+  return itemCount > 0 ? firstItemIndex + itemCount - 1 : firstItemIndex;
+}
+
+interface AgentChatVirtuosoContext {
+  agentError: ReturnType<typeof useAgentChat>['error'];
+  agentLlmError: ReturnType<typeof useAgentChat>['llmError'];
+  hasOlderMessages: boolean;
+  isLoadingOlderMessages: boolean;
+  latestMessage: Message | undefined;
+  loadingOlderLabel: string;
+  pendingApprovals: ReturnType<typeof useAgentSession>['pendingApprovals'];
+  respondToToolApproval: ReturnType<
+    typeof useAgentSession
+  >['respondToToolApproval'];
+  retryMessage: ReturnType<typeof useAgentChat>['retryMessage'];
+  scrollToLoadOlderLabel: string;
+  sessionAssistantName: string;
+  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'];
+}
+
+type AgentChatVirtuosoContextProps = {
+  context: AgentChatVirtuosoContext;
+};
+
+const AgentChatMessagesList = forwardRef<
+  HTMLDivElement,
+  ListProps & AgentChatVirtuosoContextProps
+>(function AgentChatMessagesList({ children, context, style, ...props }, ref) {
+  void context;
+  return (
+    <div
+      {...props}
+      ref={ref}
+      style={{
+        ...style,
+        padding: '16px',
+      }}
+    >
+      {children}
+    </div>
+  );
+});
+
+function AgentChatMessagesHeader({ context }: AgentChatVirtuosoContextProps) {
+  if (!context.hasOlderMessages && !context.isLoadingOlderMessages) {
+    return null;
+  }
+
+  return (
+    <div className="flex justify-center px-4">
+      <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+        {context.isLoadingOlderMessages
+          ? context.loadingOlderLabel
+          : context.scrollToLoadOlderLabel}
+      </div>
+    </div>
+  );
+}
+
+function AgentChatMessagesFooter({ context }: AgentChatVirtuosoContextProps) {
+  const latestMessage = context.latestMessage;
+  const showAnalysisLoader =
+    context.workflowStatus === 'busy' &&
+    (latestMessage?.role !== 'assistant' ||
+      (latestMessage?.role === 'assistant' &&
+        !latestMessage.content?.length &&
+        !latestMessage.thinking &&
+        !latestMessage.tool_calls?.length));
+
+  return (
+    <div className="px-4">
+      {context.agentError && (
+        <div className="self-start mt-2">
+          <ErrorBubble
+            error={context.agentError}
+            onRetry={context.retryMessage}
+          />
+        </div>
+      )}
+
+      {context.agentLlmError && (
+        <div className="self-start mt-2">
+          <ErrorBubble
+            error={context.agentLlmError}
+            onRetry={context.retryMessage}
+          />
+        </div>
+      )}
+
+      {showAnalysisLoader && (
+        <div className="flex justify-start mb-8 mt-3">
+          <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
+                <Bot size={16} className="text-primary-foreground" />
+              </div>
+              <span className="text-xs font-medium">
+                {context.sessionAssistantName}
+              </span>
+            </div>
+            <div className="text-sm">
+              <AnalysisLoader size="md" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {context.pendingApprovals && context.pendingApprovals.length > 0 && (
+        <div className="flex justify-start mb-8 mt-3">
+          <PendingApprovalWidget
+            approvals={context.pendingApprovals}
+            onRespond={context.respondToToolApproval}
+          />
+        </div>
+      )}
+
+      <div
+        aria-hidden="true"
+        style={{
+          height: 'calc(var(--agent-chat-input-offset, 176px) + 24px)',
+        }}
+      />
+    </div>
+  );
+}
 
 function truncatePreview(value: string, maxLength = 96): string {
   const trimmed = value.replace(/\s+/g, ' ').trim();
@@ -126,20 +270,11 @@ export function AgentChatMessages() {
       return;
     }
 
-    prepareForPrepend();
     void loadOlderMessages().catch((err) => {
       logger.error('Failed to load older messages after scroll trigger', err);
     });
   }
 
-  // Use custom hooks for side effects
-  const { messagesEndRef, scrollContainerRef, contentRef, prepareForPrepend } =
-    useChatScroll({
-      messages,
-      onReachTop: handleReachTop,
-      canLoadOlder: hasOlderMessages,
-      isLoadingOlder: isLoadingOlderMessages,
-    });
   useFileRefetcher({ messages, refetchSessionFiles });
 
   // Group messages for display
@@ -152,10 +287,24 @@ export function AgentChatMessages() {
     [pendingMessages],
   );
 
-  const lastMessageWho = messages[messages.length - 1]?.role;
+  const latestMessage = messages[messages.length - 1];
 
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
   const assistantName = session?.assistant?.name || 'Agent';
+  const [firstItemIndex, setFirstItemIndex] = useState(
+    INITIAL_FIRST_ITEM_INDEX,
+  );
+  const previousListStateRef = useRef<{
+    firstId: string | undefined;
+    lastId: string | undefined;
+    length: number;
+    sessionId: string | undefined;
+  }>({
+    firstId: undefined,
+    lastId: undefined,
+    length: 0,
+    sessionId: undefined,
+  });
 
   const compactedEvent = useMemo(() => {
     if (!compactedRange) {
@@ -218,206 +367,203 @@ export function AgentChatMessages() {
     });
   }
 
-  return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
-      <ScrollArea
-        viewportRef={scrollContainerRef}
-        className="flex-1"
-        viewportProps={{
-          className: 'h-full w-full',
-        }}
-      >
-        <div
-          ref={contentRef}
-          className="p-4 pb-32 flex flex-col gap-6 min-h-full"
-        >
-          {(hasOlderMessages || isLoadingOlderMessages) && (
-            <div className="flex justify-center">
-              <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-                {isLoadingOlderMessages
-                  ? t(
-                      'agent.messages.loadingOlder',
-                      'Loading older messages...',
-                    )
-                  : t(
-                      'agent.messages.scrollToLoadOlder',
-                      'Scroll up to load older messages',
-                    )}
-              </div>
-            </div>
-          )}
-          {groupedMessages.map((groupedMessage) => {
-            const isCompactBoundary = groupedMessageContainsBoundary(
-              groupedMessage,
-              compactedRange?.toId,
-            );
+  useEffect(() => {
+    const previous = previousListStateRef.current;
+    const firstId = groupedMessages[0]?.message.id;
+    const lastId = groupedMessages[groupedMessages.length - 1]?.message.id;
 
-            if (groupedMessage.type === 'tool_group') {
-              return (
-                <React.Fragment key={groupedMessage.message.id}>
-                  <AgentMessageBubble
-                    message={groupedMessage.message}
-                    assistantName={assistantName}
-                    toolResultsMap={toolResultsMap}
-                    groupedToolCalls={groupedMessage.toolGroup.calls}
-                    groupedMessages={groupedMessage.messages}
-                    isPending={pendingMessageIds.has(groupedMessage.message.id)}
-                  />
-                  {isCompactBoundary && (
-                    <CompactEventDivider
-                      key={`compact-divider-${groupedMessage.message.id}`}
-                      earlierPreview={compactedEvent?.earlierPreview}
-                      latestIncludedPreview={
-                        compactedEvent?.latestIncludedPreview
-                      }
-                      condensedCount={compactedEvent?.condensedCount}
-                      summary={compactedEvent?.summary}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            }
+    if (previous.sessionId !== session?.id) {
+      setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
+    } else if (
+      groupedMessages.length > previous.length &&
+      previous.lastId === lastId &&
+      previous.firstId !== firstId
+    ) {
+      const prependCount = groupedMessages.length - previous.length;
+      setFirstItemIndex((current) =>
+        getPrependedFirstItemIndex(current, prependCount),
+      );
+    }
 
-            if (groupedMessage.type === 'tool_error_group') {
-              return (
-                <React.Fragment key={groupedMessage.message.id}>
-                  <AgentMessageBubble
-                    message={groupedMessage.message}
-                    assistantName={assistantName}
-                    groupedMessages={groupedMessage.messages}
-                    isPending={pendingMessageIds.has(groupedMessage.message.id)}
-                    toolErrorGroup={true}
-                  />
-                  {isCompactBoundary && (
-                    <CompactEventDivider
-                      key={`compact-divider-${groupedMessage.message.id}`}
-                      earlierPreview={compactedEvent?.earlierPreview}
-                      latestIncludedPreview={
-                        compactedEvent?.latestIncludedPreview
-                      }
-                      condensedCount={compactedEvent?.condensedCount}
-                      summary={compactedEvent?.summary}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            }
+    previousListStateRef.current = {
+      firstId,
+      lastId,
+      length: groupedMessages.length,
+      sessionId: session?.id,
+    };
+  }, [groupedMessages, session?.id]);
 
-            // Handle message-level errors
-            if (groupedMessage.message.error) {
-              return (
-                <React.Fragment key={groupedMessage.message.id}>
-                  <div className="self-start my-2">
-                    <ErrorBubble
-                      error={groupedMessage.message.error}
-                      onRetry={retryMessage}
-                    />
-                  </div>
-                  {isCompactBoundary && (
-                    <CompactEventDivider
-                      key={`compact-divider-${groupedMessage.message.id}`}
-                      earlierPreview={compactedEvent?.earlierPreview}
-                      latestIncludedPreview={
-                        compactedEvent?.latestIncludedPreview
-                      }
-                      condensedCount={compactedEvent?.condensedCount}
-                      summary={compactedEvent?.summary}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            }
+  const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
+    () => ({
+      agentError,
+      agentLlmError,
+      hasOlderMessages,
+      isLoadingOlderMessages,
+      latestMessage,
+      loadingOlderLabel: t(
+        'agent.messages.loadingOlder',
+        'Loading older messages...',
+      ),
+      pendingApprovals,
+      respondToToolApproval,
+      retryMessage,
+      scrollToLoadOlderLabel: t(
+        'agent.messages.scrollToLoadOlder',
+        'Scroll up to load older messages',
+      ),
+      sessionAssistantName: assistantName,
+      workflowStatus,
+    }),
+    [
+      agentError,
+      agentLlmError,
+      hasOlderMessages,
+      isLoadingOlderMessages,
+      latestMessage,
+      t,
+      pendingApprovals,
+      respondToToolApproval,
+      retryMessage,
+      assistantName,
+      workflowStatus,
+    ],
+  );
 
-            // Render regular message
-            const msg = groupedMessage.message;
+  const virtuosoComponents = useMemo<
+    Components<GroupedMessage, AgentChatVirtuosoContext>
+  >(
+    () => ({
+      Footer: AgentChatMessagesFooter,
+      Header: AgentChatMessagesHeader,
+      List: AgentChatMessagesList,
+    }),
+    [],
+  );
 
-            // Check if message has any renderable content
-            const hasContent = msg?.content && msg.content.length > 0;
-            const hasThinking = !!msg?.thinking;
-            const hasToolCalls = msg?.tool_calls && msg.tool_calls.length > 0;
+  const renderMessageGroup = useCallback(
+    (_index: number, groupedMessage: GroupedMessage) => {
+      const isCompactBoundary = groupedMessageContainsBoundary(
+        groupedMessage,
+        compactedRange?.toId,
+      );
 
-            if (
-              !msg ||
-              (!hasContent &&
-                !hasThinking &&
-                !hasToolCalls &&
-                workflowStatus === 'busy')
-            ) {
-              return null;
-            }
+      const compactDivider = isCompactBoundary ? (
+        <CompactEventDivider
+          key={`compact-divider-${groupedMessage.message.id}`}
+          earlierPreview={compactedEvent?.earlierPreview}
+          latestIncludedPreview={compactedEvent?.latestIncludedPreview}
+          condensedCount={compactedEvent?.condensedCount}
+          summary={compactedEvent?.summary}
+        />
+      ) : null;
 
-            return (
-              <React.Fragment key={msg.id}>
-                <AgentMessageBubble
-                  message={msg}
-                  assistantName={assistantName}
-                  isPending={pendingMessageIds.has(msg.id)}
-                />
-                {isCompactBoundary && (
-                  <CompactEventDivider
-                    key={`compact-divider-${msg.id}`}
-                    earlierPreview={compactedEvent?.earlierPreview}
-                    latestIncludedPreview={
-                      compactedEvent?.latestIncludedPreview
-                    }
-                    condensedCount={compactedEvent?.condensedCount}
-                    summary={compactedEvent?.summary}
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
+      if (groupedMessage.type === 'tool_group') {
+        return (
+          <div className="mb-6">
+            <AgentMessageBubble
+              message={groupedMessage.message}
+              assistantName={assistantName}
+              toolResultsMap={toolResultsMap}
+              groupedToolCalls={groupedMessage.toolGroup.calls}
+              groupedMessages={groupedMessage.messages}
+              isPending={pendingMessageIds.has(groupedMessage.message.id)}
+            />
+            {compactDivider}
+          </div>
+        );
+      }
 
-          {/* Global (top-level) error: render aligned with assistant bubbles */}
-          {agentError && (
-            <div className="self-start mt-2">
-              <ErrorBubble error={agentError} onRetry={retryMessage} />
-            </div>
-          )}
+      if (groupedMessage.type === 'tool_error_group') {
+        return (
+          <div className="mb-6">
+            <AgentMessageBubble
+              message={groupedMessage.message}
+              assistantName={assistantName}
+              groupedMessages={groupedMessage.messages}
+              isPending={pendingMessageIds.has(groupedMessage.message.id)}
+              toolErrorGroup={true}
+            />
+            {compactDivider}
+          </div>
+        );
+      }
 
-          {/* LLM specific error (e.g. malformed function call) */}
-          {agentLlmError && (
-            <div className="self-start mt-2">
-              <ErrorBubble error={agentLlmError} onRetry={retryMessage} />
-            </div>
-          )}
-          {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming/meaningful yet */}
-          {workflowStatus === 'busy' &&
-            (lastMessageWho !== 'assistant' ||
-              (messages[messages.length - 1]?.role === 'assistant' &&
-                !messages[messages.length - 1]?.content?.length &&
-                !messages[messages.length - 1]?.thinking &&
-                !messages[messages.length - 1]?.tool_calls?.length)) && (
-              <div className="flex justify-start mb-8 mt-3">
-                <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
-                      <Bot size={16} className="text-primary-foreground" />
-                    </div>
-                    <span className="text-xs font-medium">
-                      {session?.assistant?.name || 'Agent'}
-                    </span>
-                  </div>
-                  <div className="text-sm">
-                    <AnalysisLoader size="md" />
-                  </div>
-                </div>
-              </div>
-            )}
-
-          {/* Pending Approvals */}
-          {pendingApprovals && pendingApprovals.length > 0 && (
-            <div className="flex justify-start mb-8 mt-3">
-              <PendingApprovalWidget
-                approvals={pendingApprovals}
-                onRespond={respondToToolApproval}
+      if (groupedMessage.message.error) {
+        return (
+          <div className="mb-6">
+            <div className="self-start my-2">
+              <ErrorBubble
+                error={groupedMessage.message.error}
+                onRetry={retryMessage}
               />
             </div>
-          )}
+            {compactDivider}
+          </div>
+        );
+      }
 
-          <div ref={messagesEndRef} />
+      const msg = groupedMessage.message;
+      const hasContent = msg?.content && msg.content.length > 0;
+      const hasThinking = !!msg?.thinking;
+      const hasToolCalls = msg?.tool_calls && msg.tool_calls.length > 0;
+
+      if (
+        !msg ||
+        (!hasContent &&
+          !hasThinking &&
+          !hasToolCalls &&
+          workflowStatus === 'busy')
+      ) {
+        return null;
+      }
+
+      return (
+        <div className="mb-6">
+          <AgentMessageBubble
+            message={msg}
+            assistantName={assistantName}
+            isPending={pendingMessageIds.has(msg.id)}
+          />
+          {compactDivider}
         </div>
-      </ScrollArea>
+      );
+    },
+    [
+      assistantName,
+      compactedEvent?.condensedCount,
+      compactedEvent?.earlierPreview,
+      compactedEvent?.latestIncludedPreview,
+      compactedEvent?.summary,
+      compactedRange?.toId,
+      pendingMessageIds,
+      retryMessage,
+      toolResultsMap,
+      workflowStatus,
+    ],
+  );
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+      <Virtuoso
+        key={session?.id ?? 'agent-chat'}
+        className="flex-1"
+        style={{ height: '100%' }}
+        data={groupedMessages}
+        components={virtuosoComponents}
+        computeItemKey={(_, groupedMessage) => groupedMessage.message.id}
+        context={virtuosoContext}
+        firstItemIndex={firstItemIndex}
+        initialTopMostItemIndex={getInitialTopMostItemIndex(
+          firstItemIndex,
+          groupedMessages.length,
+        )}
+        alignToBottom={true}
+        atBottomThreshold={80}
+        followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
+        increaseViewportBy={{ top: 640, bottom: 960 }}
+        startReached={handleReachTop}
+        itemContent={renderMessageGroup}
+      />
     </div>
   );
 }

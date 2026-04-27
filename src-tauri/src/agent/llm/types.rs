@@ -160,6 +160,10 @@ pub struct CompactRequest {
     ///
     /// Subsequent compactions:
     ///   [synthetic previous compact-summary anchor] + [raw message delta since last compaction]
+    ///
+    /// Rust appends the final compaction-instruction user turn before emitting the
+    /// event so frontend submission reuses the exact same logical payload shape
+    /// that Rust preflight already fitted.
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,

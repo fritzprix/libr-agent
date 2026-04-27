@@ -1,62 +1,21 @@
-import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useLayoutEffect } from 'react';
 
 import {
   Button,
-  Badge,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui';
-import { AgentModelPicker } from './components/AgentModelPicker';
 import { AgentDraftWorkspacePreviewPanel } from './components/AgentDraftWorkspacePreviewPanel';
-import {
-  Send,
-  Square,
-  Loader2,
-  Bot,
-  Brain,
-  Globe,
-  Database,
-  FolderOpen,
-  Puzzle,
-  Paperclip,
-  X,
-} from 'lucide-react';
+import { DraftCapabilitiesSection } from './components/DraftCapabilitiesSection';
+import { DraftPendingFilesBar } from './components/DraftPendingFilesBar';
+import { Send, Loader2, Bot, Paperclip } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils';
-import {
-  enforceRuntimeBuiltinAliases,
-  OPTIONAL_BUILTIN_SERVICE_ALIASES,
-} from '@/lib/assistant/runtime-builtins';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
 import { useAgentDraftChat } from './hooks/useAgentDraftChat';
 import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
-
-// Icon mapping helper (since backend returns string IDs)
-const getIconForService = (iconId?: string) => {
-  switch (iconId) {
-    case 'globe':
-      return Globe;
-    case 'database':
-      return Database;
-    case 'brain':
-      return Brain;
-    case 'folder-open':
-      return FolderOpen;
-    case 'layout':
-      return Square; // Placeholder for UI
-    case 'server':
-      return Puzzle;
-    case 'book':
-      return Brain;
-    case 'bot':
-      return Bot;
-    default:
-      return Square;
-  }
-};
 
 const textareaStyle = {
   msOverflowStyle: 'none',
@@ -131,16 +90,6 @@ function DraftChatInner() {
   }
 
   if (!assistant) return null;
-
-  const effectiveBuiltinAliases = enforceRuntimeBuiltinAliases(
-    assistant.allowedBuiltInServiceAliases,
-  );
-
-  const enabledOptionalAliases = effectiveBuiltinAliases.filter((alias) =>
-    OPTIONAL_BUILTIN_SERVICE_ALIASES.includes(
-      alias as (typeof OPTIONAL_BUILTIN_SERVICE_ALIASES)[number],
-    ),
-  );
 
   // Synchronized placeholder logic from AgentChatInput
   const inputPlaceholder = (() => {
@@ -233,118 +182,23 @@ function DraftChatInner() {
               </div>
             )}
 
-            {/* Capabilities Grid */}
-            <div className="flex flex-wrap gap-2 justify-center max-w-2xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
-              <Tooltip delayDuration={300}>
-                <TooltipTrigger asChild>
-                  <div className="cursor-help">
-                    <Badge
-                      variant="secondary"
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium font-sans bg-muted/40 hover:bg-muted transition-colors border border-transparent hover:border-border/50"
-                    >
-                      <Square size={12} className="text-primary/70" />
-                      {t('agent.draft.basicTools', 'Basic Tools')}
-                    </Badge>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-xl border">
-                  <p className="text-xs">
-                    {t(
-                      'agent.draft.basicToolsDescription',
-                      'Includes core capabilities like reading files, managing tasks, and executing code. Always available to help you!',
-                    )}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-
-              {enabledOptionalAliases.map((alias) => {
-                const info = builtinServices.find((s) => s.name === alias);
-                const label = info?.metadata.displayName || alias;
-                const Icon = getIconForService(info?.metadata.icon);
-
-                return (
-                  <Tooltip key={alias} delayDuration={300}>
-                    <TooltipTrigger asChild>
-                      <div className="cursor-help">
-                        <Badge
-                          variant="secondary"
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium font-sans bg-muted/40 hover:bg-muted transition-colors border border-transparent hover:border-border/50"
-                        >
-                          <Icon size={12} className="text-primary/70" />
-                          {label}
-                        </Badge>
-                      </div>
-                    </TooltipTrigger>
-                    {info?.metadata.description && (
-                      <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-xl border">
-                        <p className="text-xs">{info.metadata.description}</p>
-                      </TooltipContent>
-                    )}
-                  </Tooltip>
-                );
-              })}
-
-              {assistant.mcpServerIds?.map((serverId) => {
-                const serverConfig = mcpServers.find((s) => s.id === serverId);
-                const label = serverConfig?.name || serverId;
-                return (
-                  <Badge
-                    key={serverId}
-                    variant="outline"
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium font-sans border-dashed border-primary/30 text-primary/80 bg-primary/5"
-                  >
-                    <Puzzle size={12} />
-                    {label}
-                  </Badge>
-                );
-              })}
-
-              <Link to="/assistants">
-                <Tooltip delayDuration={300}>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] text-muted-foreground/60 border-dashed font-sans font-normal cursor-pointer hover:opacity-100 hover:bg-muted hover:text-foreground transition-all px-3 py-1.5"
-                    >
-                      {t('agent.draft.addTools', '+ Add tools')}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-xl">
-                    <p className="text-xs">
-                      {t(
-                        'agent.draft.addMoreCapabilities',
-                        'Add more capabilities in the settings',
-                      )}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </Link>
-            </div>
-
-            {/* Configuration Section */}
-            <div className="flex flex-col items-center gap-5 mt-4 pt-8 border-t border-border/40 w-full max-w-md animate-in fade-in duration-1000">
-              <AgentModelPicker
-                currentModel={
-                  overrideModel || settings?.preferredModel?.model || 'gpt-4'
-                }
-                currentProvider={
-                  overrideProvider ||
-                  settings?.preferredModel?.provider ||
-                  'openai'
-                }
-                onConfigUpdate={(model, provider) => {
-                  setOverrideModel(model);
-                  setOverrideProvider(provider);
-                }}
-                className="w-full max-w-xs shadow-sm"
-              />
-              <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/30 font-bold font-sans">
-                <div className="h-px w-6 bg-border/40" />
-                <Bot size={14} className="opacity-50" />
-                {t('agent.draft.localContext', 'Local Context')}
-                <div className="h-px w-6 bg-border/40" />
-              </div>
-            </div>
+            <DraftCapabilitiesSection
+              assistant={assistant}
+              builtinServices={builtinServices}
+              mcpServers={mcpServers}
+              currentModel={
+                overrideModel || settings?.preferredModel?.model || 'gpt-4'
+              }
+              currentProvider={
+                overrideProvider ||
+                settings?.preferredModel?.provider ||
+                'openai'
+              }
+              onConfigUpdate={(model, provider) => {
+                setOverrideModel(model);
+                setOverrideProvider(provider);
+              }}
+            />
           </div>
         </div>
 
@@ -355,37 +209,10 @@ function DraftChatInner() {
             <div className="w-full max-w-5xl mx-auto pointer-events-auto">
               {/* Attached Files List - Mirrored from AgentChatAttachedFiles */}
               {hasAttachedFiles && (
-                <div className="px-4 py-3 bg-background/60 backdrop-blur-md rounded-t-xl border-x border-t border-border/50 animate-in slide-in-from-bottom-2 duration-300">
-                  <div className="text-[10px] mb-2 flex items-center gap-1.5 font-bold text-muted-foreground font-sans uppercase tracking-widest">
-                    <Paperclip className="w-3.5 h-3.5" />
-                    <span>
-                      {t('agent.draft.attachedFiles', 'Attached Files')}:
-                    </span>
-                  </div>
-                  <ul className="flex flex-wrap gap-2">
-                    {pendingFiles.map((file, index) => (
-                      <li
-                        key={`${file.name}-${index}`}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-background/50 shadow-sm transition-all hover:border-primary/30"
-                      >
-                        <span className="text-xs font-medium font-sans truncate max-w-[200px]">
-                          {file.name}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleFileRemove(index)}
-                          className="text-muted-foreground hover:text-destructive transition-colors focus:outline-none"
-                          aria-label={t('fileAttachment.removeFile', {
-                            name: file.name,
-                            defaultValue: `Remove ${file.name}`,
-                          })}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <DraftPendingFilesBar
+                  pendingFiles={pendingFiles}
+                  onRemoveFile={handleFileRemove}
+                />
               )}
 
               {/* Input Form - Exact match for AgentChatInput formClassName */}

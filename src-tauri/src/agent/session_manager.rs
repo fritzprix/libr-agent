@@ -611,7 +611,10 @@ impl AgentSessionManager {
     /// - Direct children have their `parent_session_id` set to NULL (become top-level)
     /// - Only this session's workspace and search index are removed
     /// - No cascade to descendants
-    pub async fn delete_session_only(&self, session_id: String) -> Result<(), String> {
+    pub async fn delete_session_only(
+        &self,
+        session_id: String,
+    ) -> Result<(String, Vec<String>), String> {
         crate::agent::lifecycle::delete_session_only(
             &self.session_repo,
             &self.active_sessions,
