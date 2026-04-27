@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import type { ServiceConfig } from '@/lib/services/settings-service';
 import type { Message } from '@/models/chat';
@@ -77,6 +78,7 @@ interface DevTabProps {
 }
 
 export default function DevTab({ serviceConfigs }: DevTabProps) {
+  const { t } = useTranslation('common');
   const [selectedProvider, setSelectedProvider] = useState<AIServiceProvider>(
     AIServiceProvider.OpenAI,
   );
@@ -103,7 +105,7 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
         response.result?.content
           ?.filter((c) => c.type === 'text')
           .map((c) => (c as { type: 'text'; text: string }).text)
-          .join('') || '(empty response)';
+          .join('') || t('settings.dev.emptyResponse', '(empty response)');
       setResult({
         type: 'sampleText',
         output: text,
@@ -159,15 +161,15 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
     <div className="space-y-6 p-1">
       <div className="flex items-center gap-2">
         <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-xs font-mono text-yellow-500">
-          DEV ONLY
+          {t('settings.dev.devOnly', 'DEV ONLY')}
         </span>
-        <h2 className="text-sm font-semibold">sampleText / compact tester</h2>
+        <h2 className="text-sm font-semibold">{t('settings.dev.testerTitle', 'sampleText / compact tester')}</h2>
       </div>
 
       {/* Provider selector */}
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground">
-          Provider
+          {t('settings.dev.provider', 'Provider')}
         </label>
         <Select
           value={selectedProvider}
@@ -180,7 +182,7 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
             {providers.map((p) => (
               <SelectItem key={p} value={p}>
                 {p}
-                {serviceConfigs[p]?.apiKey ? ' ✓' : ' (no key)'}
+                {serviceConfigs[p]?.apiKey ? ' ✓' : t('settings.dev.noKey', ' (no key)')}
               </SelectItem>
             ))}
           </SelectContent>
@@ -190,21 +192,21 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
       {/* Prompt input */}
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground">
-          Prompt (for sampleText)
+          {t('settings.dev.promptLabel', 'Prompt (for sampleText)')}
         </label>
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={3}
           className="font-mono text-xs"
-          placeholder="Enter a test prompt..."
+          placeholder={t('settings.dev.promptPlaceholder', 'Enter a test prompt...')}
         />
       </div>
 
       {/* Compact preview */}
       <div className="rounded border border-dashed border-border p-3 text-xs text-muted-foreground">
         <p className="mb-1 font-medium">
-          compact() uses {SAMPLE_MESSAGES.length} sample messages:
+          {t('settings.dev.compactUses', 'compact() uses {{count}} sample messages:', { count: SAMPLE_MESSAGES.length })}
         </p>
         {SAMPLE_MESSAGES.map((m) => {
           const text = m.content
@@ -229,7 +231,7 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
           onClick={runSampleText}
           disabled={isRunning || !prompt.trim()}
         >
-          {isRunning ? 'Running…' : 'Run sampleText()'}
+          {isRunning ? t('settings.dev.running', 'Running…') : t('settings.dev.runSampleText', 'Run sampleText()')}
         </Button>
         <Button
           size="sm"
@@ -237,7 +239,7 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
           onClick={runCompact}
           disabled={isRunning}
         >
-          {isRunning ? 'Running…' : 'Run compact()'}
+          {isRunning ? t('settings.dev.running', 'Running…') : t('settings.dev.runCompact', 'Run compact()')}
         </Button>
       </div>
 
@@ -249,22 +251,24 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
           <div className="mb-2 flex items-center gap-3 font-mono">
             <span className="font-semibold">{result.type}()</span>
             {result.error ? (
-              <span className="text-destructive">ERROR</span>
+              <span className="text-destructive">{t('settings.dev.error', 'ERROR')}</span>
             ) : (
-              <span className="text-green-500">OK</span>
+              <span className="text-green-500">{t('settings.dev.ok', 'OK')}</span>
             )}
             <span className="text-muted-foreground">{result.durationMs}ms</span>
             {result.model && (
               <span className="text-muted-foreground">
-                model: {result.model}
+                {t('settings.dev.model', 'model: {{model}}', { model: result.model })}
               </span>
             )}
           </div>
           {result.usage && (
             <p className="mb-2 text-muted-foreground">
-              tokens: {result.usage.promptTokens ?? '?'} prompt +{' '}
-              {result.usage.completionTokens ?? '?'} completion ={' '}
-              {result.usage.totalTokens ?? '?'} total
+              {t('settings.dev.tokensInfo', 'tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total', {
+                promptTokens: result.usage.promptTokens ?? '?',
+                completionTokens: result.usage.completionTokens ?? '?',
+                totalTokens: result.usage.totalTokens ?? '?'
+              })}
             </p>
           )}
           {result.error ? (
