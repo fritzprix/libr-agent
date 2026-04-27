@@ -12,7 +12,7 @@ mod types;
 use apply::prepare_file_edit_batch;
 use args::{
     canonicalize_edit_files_args, canonicalize_legacy_edit_file_args_as_edit_files,
-    parse_line_edit, validate_edit_files_arguments,
+    format_edit_label, parse_line_edit, validate_edit_files_arguments,
 };
 use response::build_edit_files_success;
 use types::{LineEdit, ParsedEdit, PreparedFileEdit};
@@ -212,6 +212,7 @@ impl WorkspaceServer {
                 "Insert top: [{\"path\": \"src/a.ts\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
                 "Insert below a line: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
                 "Delete range: [{\"path\": \"src/b.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                "Existing lines are 1-based; use startLine=0 only to prepend at the top".to_string(),
                 "Use readFile(showLineAnchors=true) first to get anchor values".to_string(),
             ])
             .to_mcp_result());
@@ -233,6 +234,7 @@ impl WorkspaceServer {
                     "Insert-top: [{\"path\": \"src/a.ts\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
                     "Insert below a line: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
                     "Delete range: [{\"path\": \"src/b.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                    "Existing lines are 1-based; use startLine=0 only to prepend at the top".to_string(),
                     "Use readFile(showLineAnchors=true) to get anchor values first".to_string(),
                 ])
                 .to_mcp_result());
@@ -254,9 +256,13 @@ impl WorkspaceServer {
             let edit_obj = match edit_value.as_object() {
                 Some(obj) => obj,
                 None => {
+                    let context = edit_value
+                        .as_object()
+                        .map(|obj| format_edit_label(obj, idx))
+                        .unwrap_or_else(|| format!("Edit at index {}", idx));
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
-                        format!("Edit at index {} must be an object", idx),
+                        format!("{context} must be an object"),
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
@@ -270,11 +276,11 @@ impl WorkspaceServer {
             let path = match edit_obj.get("path").and_then(|value| value.as_str()) {
                 Some(path) if !path.trim().is_empty() => path.trim().to_string(),
                 _ => {
+                    let edit_label = format_edit_label(edit_obj, idx);
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!(
-                            "Edit at index {}: 'path' field is required and must be a non-empty string",
-                            idx
+                            "{edit_label}: 'path' field is required and must be a non-empty string"
                         ),
                         ToolGroup::Workspace,
                     )

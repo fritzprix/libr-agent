@@ -149,6 +149,37 @@ fn canonicalize_edit_file_args(args: &Value) -> Value {
     Value::Object(canonical)
 }
 
+pub(super) fn format_edit_label(edit_obj: &Map<String, Value>, idx: usize) -> String {
+    let mut parts = Vec::new();
+
+    if let Some(path) = edit_obj
+        .get("path")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        parts.push(format!("path='{}'", path));
+    }
+
+    if let Some(op) = edit_obj.get("op").and_then(|value| value.as_str()) {
+        parts.push(format!("op='{}'", op));
+    }
+
+    if let Some(start_line) = edit_obj.get("startLine").and_then(|value| value.as_u64()) {
+        parts.push(format!("startLine={}", start_line));
+    }
+
+    if let Some(end_line) = edit_obj.get("endLine").and_then(|value| value.as_u64()) {
+        parts.push(format!("endLine={}", end_line));
+    }
+
+    if parts.is_empty() {
+        format!("Edit at index {}", idx)
+    } else {
+        format!("Edit at index {} [{}]", idx, parts.join(", "))
+    }
+}
+
 pub(super) fn canonicalize_edit_files_args(args: &Value) -> Value {
     let Some(args_obj) = args.as_object() else {
         return args.clone();
@@ -227,20 +258,19 @@ pub(super) fn parse_line_edit(
     edit_obj: &Map<String, Value>,
     idx: usize,
 ) -> Result<LineEdit, MCPResult> {
+    let edit_label = format_edit_label(edit_obj, idx);
     let start_line = match edit_obj.get("startLine").and_then(|value| value.as_u64()) {
         Some(line) => line as usize,
         _ => {
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
-                format!(
-                    "Edit at index {}: 'startLine' field is required and must be an integer",
-                    idx
-                ),
+                format!("{edit_label}: 'startLine' field is required and must be an integer"),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
                 "Provide startLine as an integer (e.g., \"startLine\": 10)".to_string(),
-                "Use startLine: 0 to insert at the beginning of the file".to_string(),
+                "Existing lines are 1-based: use startLine: 1 for the first line".to_string(),
+                "Use startLine: 0 only to prepend at the beginning of the file".to_string(),
             ])
             .to_mcp_result());
         }
@@ -261,7 +291,7 @@ pub(super) fn parse_line_edit(
         Some(other) => {
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
-                format!("Edit at index {}: invalid op '{}'", idx, other),
+                format!("{edit_label}: invalid op '{}'", other),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
@@ -287,8 +317,8 @@ pub(super) fn parse_line_edit(
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "Edit at index {}: 'endLine' ({}) must be ≥ 'startLine' ({})",
-                    idx, line, start_line
+                    "{edit_label}: 'endLine' ({}) must be ≥ 'startLine' ({})",
+                    line, start_line
                 ),
                 ToolGroup::Workspace,
             )
@@ -307,10 +337,7 @@ pub(super) fn parse_line_edit(
     if action == EditAction::InsertAfter && has_end_line {
         return Err(guided_error(
             ErrorCategory::InvalidInput,
-            format!(
-                "Edit at index {}: 'endLine' cannot be used with op 'insert_after'",
-                idx
-            ),
+            format!("{edit_label}: 'endLine' cannot be used with op 'insert_after'"),
             ToolGroup::Workspace,
         )
         .guidance(vec![
@@ -326,8 +353,7 @@ pub(super) fn parse_line_edit(
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "Edit at index {}: delete edits must omit 'content' (or set op='replace' if you meant to replace)",
-                    idx
+                    "{edit_label}: delete edits must omit 'content' (or set op='replace' if you meant to replace)"
                 ),
                 ToolGroup::Workspace,
             )
@@ -342,10 +368,7 @@ pub(super) fn parse_line_edit(
         (_, Some(_)) => {
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
-                format!(
-                    "Edit at index {}: 'content' must be a string when provided",
-                    idx
-                ),
+                format!("{edit_label}: 'content' must be a string when provided"),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
@@ -356,10 +379,7 @@ pub(super) fn parse_line_edit(
         (_, None) => {
             return Err(guided_error(
                 ErrorCategory::InvalidInput,
-                format!(
-                    "Edit at index {}: 'content' is required for replace and insert_after",
-                    idx
-                ),
+                format!("{edit_label}: 'content' is required for replace and insert_after"),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
@@ -382,10 +402,7 @@ pub(super) fn parse_line_edit(
     if requires_anchor && start_anchor.is_none() {
         return Err(guided_error(
             ErrorCategory::InvalidInput,
-            format!(
-                "Edit at index {} targets existing content and requires 'startAnchor'",
-                idx
-            ),
+            format!("{edit_label} targets existing content and requires 'startAnchor'"),
             ToolGroup::Workspace,
         )
         .guidance(vec![
@@ -405,10 +422,7 @@ pub(super) fn parse_line_edit(
     {
         return Err(guided_error(
             ErrorCategory::InvalidInput,
-            format!(
-                "Edit at index {} uses 'endLine' and requires 'endAnchor' for the exact end line",
-                idx
-            ),
+            format!("{edit_label} uses 'endLine' and requires 'endAnchor' for the exact end line"),
             ToolGroup::Workspace,
         )
         .guidance(vec![
