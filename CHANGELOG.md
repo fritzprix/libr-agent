@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.15] - 2026-04-28
+
+### 🚀 Features
+
+- **Broader Accessibility and Localization Polish**: Added clearer ARIA labels in chat/settings surfaces and expanded localized settings copy so everyday navigation feels more consistent and understandable.
+
+### 🐛 Fixes
+
+- **Knowledge Browser Pagination Stays Consistent**: Prevented stale "load more" responses from leaking old pages into newly filtered or refreshed knowledge results.
+- **Agent Chat Bottom-Follow Feels More Accurate**: Adjusted bottom-threshold handling around the floating input area so new activity stays anchored more reliably near the visible bottom of the chat.
+- **Safer Workspace Line Edits**: Tightened `editFiles` validation and guidance so invalid line-edit inputs are rejected earlier and workspace anchor behavior stays more predictable.
+
+### 🔧 Internal
+
+- **Knowledge Browser Refactor**: Split the knowledge browser state and detail dialog into smaller hooks and components, reducing maintenance drag without changing the overall workflow.
+- **Session Metadata and Dependency Maintenance**: Cached repeated session metadata access and refreshed supporting Rust dependencies and generated assets to keep the release branch tidy.
+
 ## [0.7.14] - 2026-04-27
 
 ### 🚀 Features

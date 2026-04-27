@@ -125,3 +125,9 @@
 **Extracted:** 5
 **Languages updated:** [EN, KO]
 **Notes:** Added missing translation keys for `settings.system.automation`, `maxScheduledTaskGroups`, and the `scheduledTaskMinimumInterval` label/description keys plus related placeholders in `common.json`. The strings were already wrapped in `t()` in the component but missing from the locales files.
+
+## 2026-04-27 - [Settings/DevTab]
+
+**Extracted:** 15
+**Languages updated:** [EN, KO]
+**Notes:** Localized `DevTab`. Added `settings.dev` namespace to `common.json`. Handled standard text, placeholders, and error/status indicators. Used English as placeholders for Korean.

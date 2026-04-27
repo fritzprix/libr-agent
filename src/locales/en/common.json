@@ -306,6 +306,8 @@
     "toolCallGroupVisibleCount": "Tool Calls Visible Count",
     "toolCallGroupVisibleCountDescription": "Number of tool calls to show in collapsed group view",
     "toolCallGroupVisibleCountPlaceholder": "e.g., 4",
+    "decreaseToolCallCount": "Decrease tool call count",
+    "increaseToolCallCount": "Increase tool call count",
     "general": {
       "skillsDirectory": "Skills Directory",
       "skillsDirectorySelectTitle": "Select Skills Directory",
@@ -344,7 +346,9 @@
     "chatInterface": {
       "diffContextLines": "Diff Context Lines",
       "diffContextLinesPlaceholder": "e.g., 3",
-      "diffContextLinesDescription": "Number of context lines to show in file edit diffs (1-10)."
+      "diffContextLinesDescription": "Number of context lines to show in file edit diffs (1-10).",
+      "decreaseDiffLines": "Decrease diff context lines",
+      "increaseDiffLines": "Increase diff context lines"
     },
     "display": {
       "fontFamilyOptions": {
@@ -517,6 +521,23 @@
       "revert": "Revert to global",
       "resetTitle": "Reset Skills Override?",
       "resetConfirm": "This will remove all assistant-specific skills and revert to global defaults. This action cannot be undone."
+    },
+    "dev": {
+      "devOnly": "DEV ONLY",
+      "testerTitle": "sampleText / compact tester",
+      "provider": "Provider",
+      "noKey": " (no key)",
+      "promptLabel": "Prompt (for sampleText)",
+      "promptPlaceholder": "Enter a test prompt...",
+      "compactUses": "compact() uses {{count}} sample messages:",
+      "running": "Running…",
+      "runSampleText": "Run sampleText()",
+      "runCompact": "Run compact()",
+      "error": "ERROR",
+      "ok": "OK",
+      "model": "model: {{model}}",
+      "tokensInfo": "tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total",
+      "emptyResponse": "(empty response)"
     }
   },
   "mcpServer": {

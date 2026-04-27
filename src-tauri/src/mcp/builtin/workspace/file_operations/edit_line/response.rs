@@ -54,8 +54,8 @@ pub(super) fn build_edit_files_success(prepared_batches: &[PreparedFileEdit]) ->
             file_sections.join("\n\n")
         ),
         vec![
-            "Anchors above are current — reuse them with editFiles per file".to_string(),
-            "Use readFile only if you need broader context beyond the edited ranges".to_string(),
+            "Anchors above are current for the edited ranges — reuse them directly with editFiles for follow-up edits in those same ranges".to_string(),
+            "Use readFile only when you need broader context, untouched lines, or fresh anchors outside the ranges shown above".to_string(),
         ],
     );
 
