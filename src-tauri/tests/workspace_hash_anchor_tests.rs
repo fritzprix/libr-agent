@@ -54,7 +54,7 @@ fn later_prefix_hash_changes_when_earlier_content_changes() {
 }
 
 #[test]
-fn edit_files_schema_exposes_op_variants_via_one_of() {
+fn edit_files_schema_uses_single_object_item_contract() {
     let schema_json =
         serde_json::to_value(create_edit_files_input_schema()).expect("serialize editFiles schema");
     let edits_items = schema_json
@@ -62,22 +62,23 @@ fn edit_files_schema_exposes_op_variants_via_one_of() {
         .and_then(|properties| properties.get("edits"))
         .and_then(|edits| edits.get("items"))
         .expect("edits.items schema");
-    let variants = edits_items
-        .get("oneOf")
-        .and_then(|value| value.as_array())
-        .expect("oneOf variants");
+    assert_eq!(
+        edits_items.get("type").and_then(|value| value.as_str()),
+        Some("object")
+    );
+    assert!(
+        edits_items.get("oneOf").is_none(),
+        "model-facing schema should avoid oneOf-heavy edit variants"
+    );
 
-    assert_eq!(variants.len(), 6, "expected replace/insert/delete variants");
-    for variant in variants {
-        let required = variant
-            .get("required")
-            .and_then(|value| value.as_array())
-            .expect("variant required array");
-        assert!(
-            required.iter().any(|value| value.as_str() == Some("path")),
-            "every editFiles variant should require path"
-        );
-    }
+    let required = edits_items
+        .get("required")
+        .and_then(|value| value.as_array())
+        .expect("required array");
+    assert!(required.iter().any(|value| value.as_str() == Some("path")));
+    assert!(required
+        .iter()
+        .any(|value| value.as_str() == Some("startLine")));
 }
 
 #[tokio::test]
@@ -109,7 +110,7 @@ async fn edit_file_rejects_hashless_replace_of_existing_line() {
     let text = extract_text_content(&result);
     assert_eq!(result.is_error, Some(true));
     assert!(
-        text.contains("declared schema") && text.contains("startAnchor"),
+        text.contains("requires 'startAnchor'"),
         "expected missing-anchor error, got: {text}"
     );
 }
@@ -195,6 +196,45 @@ async fn edit_files_preserve_replace_and_insert_order_with_single_file_batch() {
     assert_eq!(result.is_error, Some(false));
     let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
     assert_eq!(updated, "A\nb\nB+\nc\n");
+}
+
+#[tokio::test]
+async fn edit_files_allows_replace_without_explicit_op() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-infers-replace";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+
+    let anchors = format_as_hashlines("alpha\nbeta\n");
+    let first_anchor = anchors
+        .lines()
+        .next()
+        .and_then(|line| line.split('|').next())
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("first anchor");
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "startLine": 1,
+                        "startAnchor": first_anchor,
+                        "content": "ALPHA"
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit batch should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "ALPHA\nbeta\n");
 }
 
 #[tokio::test]

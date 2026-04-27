@@ -1,8 +1,6 @@
 use super::super::super::tools::file_tools::create_edit_files_input_schema;
 use super::types::{EditAction, LineEdit};
-use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, ErrorCategory, ToolGroup,
-};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 use once_cell::sync::Lazy;
 use serde_json::{json, Map, Value};
@@ -229,6 +227,32 @@ pub(super) fn parse_line_edit(
     edit_obj: &Map<String, Value>,
     idx: usize,
 ) -> Result<LineEdit, MCPResult> {
+    let start_line = match edit_obj.get("startLine").and_then(|value| value.as_u64()) {
+        Some(line) => line as usize,
+        _ => {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Edit at index {}: 'startLine' field is required and must be an integer",
+                    idx
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Provide startLine as an integer (e.g., \"startLine\": 10)".to_string(),
+                "Use startLine: 0 to insert at the beginning of the file".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
+
+    let content_value = edit_obj.get("content");
+    let has_content_field = content_value.is_some();
+    let content_is_empty_string = content_value
+        .and_then(|value| value.as_str())
+        .map(|content| content.is_empty())
+        .unwrap_or(false);
+
     let op_str = edit_obj.get("op").and_then(|value| value.as_str());
     let action = match op_str {
         Some("replace") => EditAction::Replace,
@@ -246,43 +270,15 @@ pub(super) fn parse_line_edit(
             .to_mcp_result());
         }
         None => {
-            return Err(missing_param_error("op", ToolGroup::Workspace));
+            if start_line == 0 {
+                EditAction::InsertAfter
+            } else if has_content_field && !content_is_empty_string {
+                EditAction::Replace
+            } else {
+                EditAction::Delete
+            }
         }
     };
-
-    let start_line = match edit_obj.get("startLine").and_then(|value| value.as_u64()) {
-        Some(line) => line as usize,
-        _ => {
-            return Err(guided_error(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "Edit at index {}: 'startLine' field is required and must be an integer",
-                    idx
-                ),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Provide startLine as an integer (e.g., \"startLine\": 10)".to_string(),
-                "Use startLine: 0 ONLY with op='insert_after' to insert at top".to_string(),
-            ])
-            .to_mcp_result());
-        }
-    };
-
-    if start_line == 0 && action != EditAction::InsertAfter {
-        return Err(guided_error(
-            ErrorCategory::InvalidInput,
-            format!(
-                "Edit at index {}: startLine 0 is only valid for op 'insert_after'",
-                idx
-            ),
-            ToolGroup::Workspace,
-        )
-        .guidance(vec![
-            "To insert at the beginning, use startLine: 0 and op: 'insert_after'".to_string(),
-        ])
-        .to_mcp_result());
-    }
 
     let has_end_line = edit_obj.get("endLine").is_some();
     let end_line = match edit_obj.get("endLine").and_then(|value| value.as_u64()) {
@@ -323,25 +319,53 @@ pub(super) fn parse_line_edit(
         .to_mcp_result());
     }
 
-    let new_value = match edit_obj.get("content").and_then(|value| value.as_str()) {
-        Some(content) => content.to_string(),
-        None => {
-            if action == EditAction::Delete {
-                String::new()
-            } else {
-                return Err(guided_error(
-                    ErrorCategory::InvalidInput,
-                    format!(
-                        "Edit at index {}: 'content' is required for replace and insert_after",
-                        idx
-                    ),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Provide replacement/insertion content as a string".to_string()
-                ])
-                .to_mcp_result());
-            }
+    let new_value = match (action, content_value) {
+        (EditAction::Delete, None) => String::new(),
+        (EditAction::Delete, Some(Value::String(content))) if content.is_empty() => String::new(),
+        (EditAction::Delete, Some(Value::String(_))) => {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Edit at index {}: delete edits must omit 'content' (or set op='replace' if you meant to replace)",
+                    idx
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "For deletion, omit 'content' entirely".to_string(),
+                "For replacement, include non-empty 'content' and optionally set op='replace'"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+        (_, Some(Value::String(content))) => content.to_string(),
+        (_, Some(_)) => {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Edit at index {}: 'content' must be a string when provided",
+                    idx
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Provide replacement/insertion content as a string".to_string()
+            ])
+            .to_mcp_result());
+        }
+        (_, None) => {
+            return Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Edit at index {}: 'content' is required for replace and insert_after",
+                    idx
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Provide replacement/insertion content as a string".to_string()
+            ])
+            .to_mcp_result());
         }
     };
 

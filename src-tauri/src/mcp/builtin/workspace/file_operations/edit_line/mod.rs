@@ -208,9 +208,10 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Replace: [{\"path\": \"src/a.ts\", \"op\": \"replace\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
-                "Insert top: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
-                "Delete range: [{\"path\": \"src/b.ts\", \"op\": \"delete\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                "Replace: [{\"path\": \"src/a.ts\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
+                "Insert top: [{\"path\": \"src/a.ts\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
+                "Insert below a line: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
+                "Delete range: [{\"path\": \"src/b.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
                 "Use readFile(showLineAnchors=true) first to get anchor values".to_string(),
             ])
             .to_mcp_result());
@@ -228,9 +229,10 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Replace: [{\"path\": \"src/a.ts\", \"op\": \"replace\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
-                    "Insert-top: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
-                    "Delete range: [{\"path\": \"src/b.ts\", \"op\": \"delete\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
+                    "Replace: [{\"path\": \"src/a.ts\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
+                    "Insert-top: [{\"path\": \"src/a.ts\", \"startLine\": 0, \"content\": \"header\"}]".to_string(),
+                    "Insert below a line: [{\"path\": \"src/a.ts\", \"op\": \"insert_after\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}]".to_string(),
+                    "Delete range: [{\"path\": \"src/b.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\"}]".to_string(),
                     "Use readFile(showLineAnchors=true) to get anchor values first".to_string(),
                 ])
                 .to_mcp_result());
@@ -258,8 +260,8 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Single-line: {\"path\": \"src/a.ts\", \"op\": \"replace\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
-                        "Range: {\"path\": \"src/a.ts\", \"op\": \"replace\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
+                        "Single-line: {\"path\": \"src/a.ts\", \"startLine\": 10, \"startAnchor\": \"a31f2c\", \"content\": \"text\"}".to_string(),
+                        "Range: {\"path\": \"src/a.ts\", \"startLine\": 10, \"endLine\": 15, \"startAnchor\": \"a31f2c\", \"endAnchor\": \"b47aa1\", \"content\": \"...\"}".to_string(),
                     ])
                     .to_mcp_result());
                 }
