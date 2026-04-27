@@ -2,6 +2,51 @@ import type { AgentSession } from '@/models/agent';
 import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import type { Assistant } from '@/models/chat';
 
+const AGENT_CONFIG_PARSE_CACHE_LIMIT = 200;
+const parsedAgentConfigCache = new Map<
+  string,
+  Record<string, unknown> | null
+>();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function cacheParsedAgentConfig(
+  agentConfig: string,
+  record: Record<string, unknown> | null,
+): Record<string, unknown> | undefined {
+  if (!parsedAgentConfigCache.has(agentConfig)) {
+    if (parsedAgentConfigCache.size >= AGENT_CONFIG_PARSE_CACHE_LIMIT) {
+      const oldestKey = parsedAgentConfigCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        parsedAgentConfigCache.delete(oldestKey);
+      }
+    }
+    parsedAgentConfigCache.set(agentConfig, record);
+  }
+
+  return record ?? undefined;
+}
+
+function getParsedAgentConfigRecord(
+  agentConfig: string,
+): Record<string, unknown> | undefined {
+  if (parsedAgentConfigCache.has(agentConfig)) {
+    return parsedAgentConfigCache.get(agentConfig) ?? undefined;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(agentConfig);
+    return cacheParsedAgentConfig(
+      agentConfig,
+      isRecord(parsed) ? parsed : null,
+    );
+  } catch {
+    return cacheParsedAgentConfig(agentConfig, null);
+  }
+}
+
 function readStringField(
   record: Record<string, unknown>,
   ...keys: string[]
@@ -57,6 +102,14 @@ function readStringArrayField(
   return undefined;
 }
 
+function cloneStringArrayField(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): string[] | undefined {
+  const value = readStringArrayField(record, ...keys);
+  return value ? [...value] : undefined;
+}
+
 interface ParsedAgentConfigMetadata {
   assistant?: Assistant;
   parentSessionId?: string;
@@ -86,22 +139,22 @@ function buildAssistantFromAgentConfig(
     description: readStringField(record, 'description'),
     avatar: readStringField(record, 'avatar'),
     systemPrompt,
-    mcpServerIds: readStringArrayField(
+    mcpServerIds: cloneStringArrayField(
       record,
       'mcpServerIds',
       'mcp_server_ids',
     ),
-    localServices: readStringArrayField(
+    localServices: cloneStringArrayField(
       record,
       'localServices',
       'local_services',
     ),
-    disabledSkills: readStringArrayField(
+    disabledSkills: cloneStringArrayField(
       record,
       'disabledSkills',
       'disabled_skills',
     ),
-    allowedBuiltInServiceAliases: readStringArrayField(
+    allowedBuiltInServiceAliases: cloneStringArrayField(
       record,
       'allowedBuiltInServiceAliases',
       'allowed_built_in_service_aliases',
@@ -123,34 +176,28 @@ export function parseAgentConfigMetadata(
     return {};
   }
 
-  try {
-    const parsed: unknown = JSON.parse(agentConfig);
-    if (typeof parsed !== 'object' || parsed === null) {
-      return {};
-    }
-
-    const record = parsed as Record<string, unknown>;
-
-    return {
-      assistant: buildAssistantFromAgentConfig(record, createdAt, updatedAt),
-      parentSessionId: readStringField(
-        record,
-        'parentSessionId',
-        'parent_session_id',
-      ),
-      lineageId: readStringField(record, 'lineageId', 'lineage_id'),
-      depth: readNumberField(record, 'depth'),
-      orgId: readStringField(record, 'orgId', 'org_id'),
-      orgName: readStringField(record, 'orgName', 'org_name'),
-      orgRootSessionId: readStringField(
-        record,
-        'orgRootSessionId',
-        'org_root_session_id',
-      ),
-    };
-  } catch {
+  const record = getParsedAgentConfigRecord(agentConfig);
+  if (!record) {
     return {};
   }
+
+  return {
+    assistant: buildAssistantFromAgentConfig(record, createdAt, updatedAt),
+    parentSessionId: readStringField(
+      record,
+      'parentSessionId',
+      'parent_session_id',
+    ),
+    lineageId: readStringField(record, 'lineageId', 'lineage_id'),
+    depth: readNumberField(record, 'depth'),
+    orgId: readStringField(record, 'orgId', 'org_id'),
+    orgName: readStringField(record, 'orgName', 'org_name'),
+    orgRootSessionId: readStringField(
+      record,
+      'orgRootSessionId',
+      'org_root_session_id',
+    ),
+  };
 }
 
 export function mapSessionMetadataToAgentSession(
