@@ -34,11 +34,16 @@ export function AgentPlanningPanel() {
     () => parseScratchpadState(serviceContexts.scratchpad?.structuredState),
     [serviceContexts.scratchpad?.structuredState],
   );
-  const completedTodos =
-    planningState?.todos.reduce(
+
+  // Performance optimization: Memoize the reduction of completed todos
+  // to avoid O(N) recalculation on every render loop
+  const completedTodos = useMemo(() => {
+    return planningState?.todos.reduce(
       (acc, todo) => (todo.checked ? acc + 1 : acc),
       0,
     ) ?? 0;
+  }, [planningState?.todos]);
+
   const totalTodos = planningState?.todos.length ?? 0;
   const scratchpadCount = scratchpadState?.items.length ?? 0;
   const progressPercent =
