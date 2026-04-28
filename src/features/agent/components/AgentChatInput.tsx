@@ -336,7 +336,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const hasAttachedFiles = attachedFiles.length > 0;
 
   const formClassName = cn(
-    'flex items-end gap-2 bg-background/60 backdrop-blur-md p-3 border border-border/50 shadow-2xl focus-within:ring-1 focus-within:ring-primary/20 transition-all',
+    'flex items-end gap-2 border border-border/40 bg-background/45 p-3 shadow-[0_20px_48px_-28px_rgba(0,0,0,0.55)] transition-all supports-[backdrop-filter]:bg-background/30 backdrop-blur-xl focus-within:ring-1 focus-within:ring-primary/20',
     hasAttachedFiles ? 'rounded-b-xl border-t-0' : 'rounded-xl',
     dragState === 'valid' && 'bg-success/5 border-success/50 shadow-success/10',
     dragState === 'invalid' &&

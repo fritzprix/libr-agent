@@ -120,6 +120,12 @@ export function useAgentSessionState(): AgentSessionStateContextValue {
   return context;
 }
 
+export function useOptionalAgentSessionState():
+  | AgentSessionStateContextValue
+  | undefined {
+  return useContext(AgentSessionStateContext);
+}
+
 export function useAgentSessionActions(): AgentSessionActionsContextValue {
   const context = useContext(AgentSessionActionsContext);
   if (!context) {

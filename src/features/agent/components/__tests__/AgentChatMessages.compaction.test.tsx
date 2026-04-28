@@ -6,6 +6,7 @@ import {
   getInitialTopMostItemIndex,
   getPrependedFirstItemIndex,
   getVisualBottomThreshold,
+  shouldAutoFollowOutput,
 } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
@@ -191,17 +192,45 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(getPrependedFirstItemIndex(2, 3)).toBe(0);
   });
 
-  it('uses the input overlay height to define the visual bottom threshold', () => {
-    render(<AgentChatMessages inputOverlayHeight={144} />);
+  it('uses a fixed bottom threshold after moving input into layout flow', () => {
+    render(<AgentChatMessages />);
 
     const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
       atBottomThreshold: number;
     };
 
-    expect(virtuosoProps.atBottomThreshold).toBe(
-      getVisualBottomThreshold(144),
-    );
-    expect(getVisualBottomThreshold(20)).toBe(80);
-    expect(getVisualBottomThreshold(144)).toBe(168);
+    expect(virtuosoProps.atBottomThreshold).toBe(getVisualBottomThreshold());
+    expect(getVisualBottomThreshold()).toBe(32);
+  });
+
+  it('only auto-follows while the workflow is actively producing output', () => {
+    expect(
+      shouldAutoFollowOutput(
+        {
+          ...baseMessage,
+          isStreaming: true,
+        },
+        'busy',
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoFollowOutput(
+        {
+          ...baseMessage,
+          isStreaming: false,
+        },
+        'idle',
+      ),
+    ).toBe(false);
+    expect(
+      shouldAutoFollowOutput(
+        {
+          ...baseMessage,
+          content: [],
+          isStreaming: false,
+        },
+        'busy',
+      ),
+    ).toBe(true);
   });
 });

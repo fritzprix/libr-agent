@@ -19,7 +19,7 @@ export function AgentChatAttachedFiles() {
   if (attachedFiles.length === 0) return null;
 
   return (
-    <div className="px-4 py-2 bg-background/60 backdrop-blur-md rounded-t-xl border-x border-t border-border/50">
+    <div className="rounded-t-xl border-x border-t border-border/40 bg-background/40 px-4 py-2 supports-[backdrop-filter]:bg-background/25 backdrop-blur-xl">
       <div className="text-xs mb-2 flex items-center gap-1 font-medium text-muted-foreground font-sans uppercase tracking-tight">
         <Paperclip className="w-4 h-4" />
         <span>Attached Files:</span>
@@ -28,7 +28,7 @@ export function AgentChatAttachedFiles() {
         {attachedFiles.map((file) => (
           <li
             key={file.contentId}
-            className="flex items-center px-2 py-1 rounded-md border border-border bg-muted/20"
+            className="flex items-center rounded-md border border-border/45 bg-background/45 px-2 py-1"
           >
             <span className="text-xs truncate max-w-36">{file.filename}</span>
             <Button

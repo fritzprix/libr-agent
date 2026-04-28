@@ -1,4 +1,5 @@
 import {
+  type ComponentPropsWithoutRef,
   forwardRef,
   useCallback,
   useEffect,
@@ -25,11 +26,12 @@ import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
+import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
-const DEFAULT_BOTTOM_THRESHOLD = 80;
-const CHAT_INPUT_SPACER_GAP = 24;
+const DEFAULT_BOTTOM_THRESHOLD = 32;
+const CHAT_COMPOSER_CLEARANCE = 24;
 
 export function getPrependedFirstItemIndex(
   current: number,
@@ -45,10 +47,25 @@ export function getInitialTopMostItemIndex(
   return itemCount > 0 ? firstItemIndex + itemCount - 1 : firstItemIndex;
 }
 
-export function getVisualBottomThreshold(inputOverlayHeight: number): number {
-  return Math.max(
-    DEFAULT_BOTTOM_THRESHOLD,
-    inputOverlayHeight + CHAT_INPUT_SPACER_GAP,
+export function getVisualBottomThreshold(): number {
+  return DEFAULT_BOTTOM_THRESHOLD;
+}
+
+export function shouldAutoFollowOutput(
+  latestMessage: Message | undefined,
+  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'],
+): boolean {
+  const assistantHasNoVisibleOutput =
+    latestMessage?.role === 'assistant' &&
+    !latestMessage.content?.length &&
+    !latestMessage.thinking &&
+    !latestMessage.tool_calls?.length;
+
+  return (
+    workflowStatus === 'busy' &&
+    (latestMessage?.role !== 'assistant' ||
+      latestMessage.isStreaming === true ||
+      assistantHasNoVisibleOutput)
   );
 }
 
@@ -89,6 +106,19 @@ const AgentChatMessagesList = forwardRef<
     >
       {children}
     </div>
+  );
+});
+
+const AgentChatMessagesScroller = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<'div'>
+>(function AgentChatMessagesScroller({ className, ...props }, ref) {
+  return (
+    <div
+      {...props}
+      ref={ref}
+      className={cn('agent-chat-scrollbar', className)}
+    />
   );
 });
 
@@ -168,7 +198,7 @@ function AgentChatMessagesFooter({ context }: AgentChatVirtuosoContextProps) {
       <div
         aria-hidden="true"
         style={{
-          height: 'calc(var(--agent-chat-input-offset, 176px) + 24px)',
+          height: `calc(var(--agent-chat-composer-overlap, 64px) + ${CHAT_COMPOSER_CLEARANCE}px)`,
         }}
       />
     </div>
@@ -248,13 +278,7 @@ function groupedMessageContainsBoundary(
   return groupedMessage.messages.some((message) => message.id === boundaryId);
 }
 
-interface AgentChatMessagesProps {
-  inputOverlayHeight?: number;
-}
-
-export function AgentChatMessages({
-  inputOverlayHeight = 88,
-}: AgentChatMessagesProps = {}) {
+export function AgentChatMessages() {
   const { t } = useTranslation();
   const {
     messages,
@@ -309,9 +333,10 @@ export function AgentChatMessages({
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
-  const bottomThreshold = useMemo(
-    () => getVisualBottomThreshold(inputOverlayHeight),
-    [inputOverlayHeight],
+  const bottomThreshold = getVisualBottomThreshold();
+  const autoFollowOutput = useMemo(
+    () => shouldAutoFollowOutput(latestMessage, workflowStatus),
+    [latestMessage, workflowStatus],
   );
   const previousListStateRef = useRef<{
     firstId: string | undefined;
@@ -455,6 +480,7 @@ export function AgentChatMessages({
       Footer: AgentChatMessagesFooter,
       Header: AgentChatMessagesHeader,
       List: AgentChatMessagesList,
+      Scroller: AgentChatMessagesScroller,
     }),
     [],
   );
@@ -578,7 +604,9 @@ export function AgentChatMessages({
         )}
         alignToBottom={true}
         atBottomThreshold={bottomThreshold}
-        followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
+        followOutput={(isAtBottom) =>
+          autoFollowOutput && isAtBottom ? 'auto' : false
+        }
         increaseViewportBy={{ top: 640, bottom: 960 }}
         startReached={handleReachTop}
         itemContent={renderMessageGroup}

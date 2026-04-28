@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react';
+import { useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
@@ -16,7 +9,11 @@ import {
   useAgentChatActions,
   useAgentChatState,
 } from '@/context/AgentChatContext';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import {
+  AgentSessionProvider,
+  useAgentSessionState,
+  useOptionalAgentSessionState,
+} from '@/context/AgentSessionContext';
 import { AgentChatProvider } from '@/context/AgentChatContext';
 import {
   AgentWorkspaceProvider,
@@ -77,39 +74,9 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
-  const floatingInputContentRef = useRef<HTMLDivElement>(null);
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
   const assistantId = session?.assistant?.id;
-  const [inputOverlayHeight, setInputOverlayHeight] = useState(88);
-
-  useLayoutEffect(() => {
-    const floatingInputContent = floatingInputContentRef.current;
-    if (!floatingInputContent) {
-      return;
-    }
-
-    const updateHeight = () => {
-      const nextHeight = Math.ceil(
-        floatingInputContent.getBoundingClientRect().height,
-      );
-      setInputOverlayHeight((current) =>
-        current === nextHeight ? current : nextHeight,
-      );
-    };
-
-    updateHeight();
-
-    const observer = new ResizeObserver(() => {
-      updateHeight();
-    });
-
-    observer.observe(floatingInputContent);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
 
   const executePlaybookSelection = useCallback(
     async (selectedPlaybookId: string) => {
@@ -185,28 +152,32 @@ function AgentChatInner() {
 
         {/* Main chat area - components rendered directly inside provider scope */}
         <div
-          className="flex-1 flex flex-col min-h-0 min-w-0 relative"
+          className="flex-1 flex flex-col min-h-0 min-w-0"
           style={
             {
-              '--agent-chat-input-offset': `${inputOverlayHeight}px`,
+              '--agent-chat-composer-overlap': '64px',
             } as CSSProperties
           }
         >
           <AgentChatHeader />
           <AgentChatStatusBar />
-          <AgentChatMessages inputOverlayHeight={inputOverlayHeight} />
+          <AgentChatMessages />
 
-          {/* Floating Input Container */}
-          <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
-            <div className="h-24 bg-gradient-to-t from-background/90 via-background/40 to-transparent w-full" />
-            <div className="p-4 pt-0">
-              <div
-                ref={floatingInputContentRef}
-                className="w-full pointer-events-auto"
-              >
-                <AgentChatAttachedFiles />
-                <AgentChatInput />
-              </div>
+          <div className="relative shrink-0 px-4 pb-4">
+            <div
+              aria-hidden="true"
+              style={{ height: 'var(--agent-chat-composer-overlap, 64px)' }}
+            />
+            <div
+              className="relative z-10"
+              style={{
+                marginTop:
+                  'calc(var(--agent-chat-composer-overlap, 64px) * -1)',
+              }}
+            >
+              <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
+              <AgentChatAttachedFiles />
+              <AgentChatInput />
             </div>
           </div>
         </div>
@@ -221,7 +192,27 @@ function AgentChatInner() {
 
 export default function AgentChatView() {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
-  const { session, isSessionLoading } = useAgentSessionState();
+  const optionalSessionState = useOptionalAgentSessionState();
+  const shouldProvideSession =
+    optionalSessionState === undefined && !!routeSessionId;
+
+  if (shouldProvideSession && routeSessionId) {
+    return (
+      <AgentSessionProvider sessionId={routeSessionId} key={routeSessionId}>
+        <AgentChatView />
+      </AgentSessionProvider>
+    );
+  }
+
+  if (!optionalSessionState) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <div className="text-destructive">Session context is unavailable.</div>
+      </div>
+    );
+  }
+
+  const { session, isSessionLoading } = optionalSessionState;
   const attachmentSessionId = session?.id ?? routeSessionId ?? '';
 
   return (
