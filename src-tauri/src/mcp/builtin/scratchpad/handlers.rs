@@ -295,23 +295,27 @@ pub async fn list(
         }
     } else {
         text_output.push_str(&format!(
-            "Scratchpad Notes (Page {}/{}):\n",
+            "Scratchpad Notes (Page {}/{}):\n\n",
             page,
             (total_items as f64 / page_size as f64).ceil() as u64
         ));
+        text_output.push_str("| ID | Title | Preview | Tags |\n");
+        text_output.push_str("|---|---|---|---|\n");
         for item in &paged_items {
             let id = item.id;
-            let title = item.title.clone().unwrap_or_else(|| "Untitled".to_string());
+            let title = item.title.clone().unwrap_or_else(|| "Untitled".to_string())
+                .replace('|', "\\|").replace('\n', " ");
             let preview = if item.content.chars().count() > 200 {
                 let truncated: String = item.content.chars().take(200).collect();
-                format!("{}...", truncated.replace('\n', " "))
+                format!("{}...", truncated)
             } else {
-                item.content.replace('\n', " ")
-            };
+                item.content.clone()
+            }.replace('|', "\\|").replace('\n', " ");
+
             let tags_str = if let Some(t) = &item.tags {
                 if let Ok(parsed) = serde_json::from_str::<Vec<String>>(t) {
                     if !parsed.is_empty() {
-                        format!(" [{}]", parsed.join(", "))
+                        parsed.join(", ").replace('|', "\\|")
                     } else {
                         String::new()
                     }
@@ -322,7 +326,7 @@ pub async fn list(
                 String::new()
             };
             text_output.push_str(&format!(
-                "- **ID: {}** | {} | {}{}\n",
+                "| `{}` | {} | {} | {} |\n",
                 id, title, preview, tags_str
             ));
         }
