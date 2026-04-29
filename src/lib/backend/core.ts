@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getLogger } from '@/lib/logger';
+import { recordStartupIpcCall } from '@/lib/performance/startup-metrics';
 
 const logger = getLogger('RustBackendClient');
 
@@ -18,10 +19,22 @@ export async function safeInvoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
 ): Promise<T> {
+  const startedAt =
+    typeof performance !== 'undefined' ? performance.now() : Date.now();
+
   try {
     logger.debug('invoke', { cmd, args });
-    return await invoke<T>(cmd, args ?? {});
+    const result = await invoke<T>(cmd, args ?? {});
+    const durationMs =
+      (typeof performance !== 'undefined' ? performance.now() : Date.now()) -
+      startedAt;
+    recordStartupIpcCall(cmd, durationMs, true);
+    return result;
   } catch (err) {
+    const durationMs =
+      (typeof performance !== 'undefined' ? performance.now() : Date.now()) -
+      startedAt;
+    recordStartupIpcCall(cmd, durationMs, false);
     logger.error('invoke failed', { cmd, err });
     throw err;
   }
