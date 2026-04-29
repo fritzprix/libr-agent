@@ -201,6 +201,11 @@ pub fn get_session_repository() -> &'static SqliteSessionRepository {
         .expect("Session repository not initialized. Call set_session_repository() first.")
 }
 
+/// Gets a reference to the global session repository if it has been initialized.
+pub fn try_get_session_repository() -> Option<&'static SqliteSessionRepository> {
+    SESSION_REPOSITORY.get()
+}
+
 /// Sets the global settings repository instance.
 pub fn set_settings_repository(repo: SqliteSettingsRepository) {
     SETTINGS_REPOSITORY

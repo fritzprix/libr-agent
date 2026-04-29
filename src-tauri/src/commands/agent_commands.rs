@@ -296,6 +296,10 @@ pub async fn agent_open_session(
 ) -> Result<AgentOpenSessionResponse, String> {
     const DEFAULT_INITIAL_MESSAGE_LIMIT: u64 = 40;
 
+    let session_manager = crate::session::get_session_manager()?;
+    crate::session::hydrate_persisted_workspace_override_from_global(session_manager, &session_id)
+        .await?;
+
     let session = manager
         .get_session(&session_id)
         .await?

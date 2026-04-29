@@ -413,10 +413,10 @@ impl MCPServiceProxyManager {
             }
         }
 
-        // Create session stdio manager
-        let workspace_dir = self
-            .session_manager
-            .get_session_workspace_dir_by_id(&session_id);
+        // Hydrate persisted session overrides before resolving the runtime workspace path.
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(&self.session_manager, &session_id)
+                .await?;
         let tool_discovery_timeout = Duration::from_secs(config.process_startup_timeout_seconds);
 
         let stdio_manager = SessionMCPManager::new(
@@ -830,10 +830,10 @@ impl MCPServiceProxyManager {
         // Resolve tool_ids from the session's agent_config (fallback to core builtins)
         let tool_ids = self.resolve_tool_ids_for_session(session_id).await;
 
-        // Create lightweight empty external managers (no stdio/HTTP servers started)
-        let workspace_dir = self
-            .session_manager
-            .get_session_workspace_dir_by_id(session_id);
+        // Hydrate persisted session overrides before resolving the runtime workspace path.
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(&self.session_manager, session_id)
+                .await?;
         let empty_stdio = SessionMCPManager::new(
             session_id.to_string(),
             HashMap::new(),

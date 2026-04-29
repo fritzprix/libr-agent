@@ -49,11 +49,11 @@ impl WorkspaceService {
         path: Option<String>,
         session_id: Option<String>,
     ) -> Result<Vec<WorkspaceFileItem>, String> {
-        // Get the workspace base directory from session manager
         let session_manager =
             get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-        let base_dir = session_manager
-            .get_session_workspace_dir_by_id(&session_id.unwrap_or_else(|| "default".to_string()));
+        let session_id = session_id.unwrap_or_else(|| "default".to_string());
+        let base_dir =
+            crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
 
         // Default to current directory if no path provided
         let target_path = path.unwrap_or_else(|| ".".to_string());
@@ -147,10 +147,10 @@ impl WorkspaceService {
         file_path: String,
         session_id: Option<String>,
     ) -> Result<(), String> {
-        // Get workspace directory via SessionManager
         let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-        let workspace_dir = session_manager
-            .get_session_workspace_dir_by_id(&session_id.unwrap_or_else(|| "default".to_string()));
+        let session_id = session_id.unwrap_or_else(|| "default".to_string());
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
 
         // Resolve and validate path securely
         let full_path = crate::utils::security::resolve_secure_path(&workspace_dir, &file_path)
@@ -177,9 +177,11 @@ impl WorkspaceService {
     /// Gets the current workspace override for a session.
     pub async fn get_override(session_id: &str) -> Result<Option<String>, String> {
         let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-
-        // Ensure session workspace exists in pool (triggers lazy loading)
-        let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
+        crate::session::hydrate_persisted_workspace_override_from_global(
+            session_manager,
+            session_id,
+        )
+        .await?;
 
         let info = session_manager
             .get_session_info(session_id)
@@ -209,9 +211,7 @@ impl WorkspaceService {
         }
 
         let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-
-        // Ensure session workspace exists in pool (triggers lazy loading)
-        let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
+        crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
 
         // Reject non-UTF-8 paths: they cannot be round-tripped through the DB correctly
         let override_str = override_path
@@ -245,9 +245,12 @@ impl WorkspaceService {
     /// Cancels the workspace override for a session.
     pub async fn cancel_override(session_id: &str) -> Result<(), String> {
         let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-
-        // Ensure session workspace exists in pool (triggers lazy loading)
-        let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
+        crate::session::ensure_session_workspace_dir(
+            crate::state::get_session_repository(),
+            session_manager,
+            session_id,
+        )
+        .await?;
 
         // Clear from DB first — if this fails we return early before touching in-memory state,
         // keeping both sources of truth consistent.
@@ -300,7 +303,8 @@ impl WorkspaceService {
 
         // Session ID is mandatory for workspace operations in V2 logic
         if let Some(sid) = session_id {
-            let workspace_dir = session_manager.get_session_workspace_dir_by_id(&sid);
+            let workspace_dir =
+                crate::session::resolve_session_workspace_dir(session_manager, &sid).await?;
             // Create a temporary secure file manager for this operation
             let manager = crate::services::SecureFileManager::new_with_base_dir(workspace_dir);
             return manager.write_file(file_path, content).await;
