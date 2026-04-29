@@ -23,3 +23,31 @@ impl From<AssistantModel> for AssistantDto {
         }
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantSummaryDto {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub deletion_protected: bool,
+}
+
+impl From<AssistantModel> for AssistantSummaryDto {
+    fn from(model: AssistantModel) -> Self {
+        let config = serde_json::from_str::<Value>(&model.config).unwrap_or(Value::Null);
+
+        Self {
+            id: model.id,
+            name: model.name,
+            description: config
+                .get("description")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string()),
+            deletion_protected: config
+                .get("deletionProtected")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
+        }
+    }
+}

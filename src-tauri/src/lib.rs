@@ -43,8 +43,8 @@ use commands::agent_commands::{
     agent_terminate_workflow, agent_toggle_session_bookmark, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
-    batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
-    search_assistants, update_assistant,
+    batch_upsert_assistants, create_assistant, delete_assistant, get_assistant,
+    list_assistant_summaries, list_assistants, search_assistants, update_assistant,
 };
 use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
@@ -277,6 +277,7 @@ pub fn run() {
                 update_assistant,
                 delete_assistant,
                 list_assistants,
+                list_assistant_summaries,
                 get_assistant,
                 search_assistants,
                 batch_upsert_assistants,

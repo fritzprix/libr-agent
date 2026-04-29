@@ -8,7 +8,6 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
 import { SessionNotificationsBell } from '../components/layout/SessionNotificationsBell';
 import { SidebarProvider } from '../components/ui/sidebar';
-import { AssistantContextProvider } from '../context/AssistantContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
 import { MCPServerRegistryProvider } from '../context/MCPServerRegistryContext';
 import { ModelOptionsProvider } from '../context/ModelProvider';
@@ -30,7 +29,9 @@ const AgentSessionRoute = lazy(
 const AgentDraftChatView = lazy(
   () => import('@/features/agent/AgentDraftChatView'),
 );
-const AssistantList = lazy(() => import('@/features/assistant/List'));
+const AssistantListRoute = lazy(
+  () => import('@/features/assistant/AssistantListRoute'),
+);
 const PlaybookList = lazy(() => import('@/features/playbook/List'));
 const History = lazy(() => import('@/features/history/History'));
 const Org = lazy(() => import('@/features/history/Org'));
@@ -39,10 +40,8 @@ const MCPServerPage = lazy(
   () => import('@/features/mcp-servers/MCPServerPage'),
 );
 const KnowledgePage = lazy(() => import('@/features/knowledge/KnowledgePage'));
-const ScheduledTasksPage = lazy(() =>
-  import('@/features/scheduled-tasks/ScheduledTasksPage').then((m) => ({
-    default: m.ScheduledTasksPage,
-  })),
+const ScheduledTasksPage = lazy(
+  () => import('@/features/scheduled-tasks/ScheduledTasksRoute'),
 );
 
 function StartupRouteMountMarker({
@@ -121,135 +120,133 @@ function App() {
               <LLMServiceProvider>
                 <MCPServerRegistryProvider>
                   <MCPServerProvider>
-                    <AssistantContextProvider>
-                      <AgentSessionListProvider>
-                        <SidebarProvider className="h-full overflow-hidden">
-                          <DnDContextProvider>
-                            <AppSidebar />
-                            {/* Main Content Area (children of AppSidebar) */}
-                            <div className="flex flex-1 flex-col min-w-0">
-                              <AppHeader>
-                                <SessionNotificationsBell />
-                                <ThemeToggle />
-                              </AppHeader>
-                              <div className="flex-1 w-full min-h-0 overflow-y-auto">
-                                <Suspense
-                                  fallback={
-                                    <div className="flex items-center justify-center h-full">
-                                      Loading...
-                                    </div>
-                                  }
-                                >
-                                  <Routes>
-                                    <Route
-                                      path="/"
-                                      element={<Navigate to="/agent" replace />}
-                                    />
-                                    <Route
-                                      path="/agent"
-                                      element={
-                                        <StartupRouteMountMarker routeName="agent">
-                                          <AgentStartRoute />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/agent/draft"
-                                      element={
-                                        <StartupRouteMountMarker routeName="agent-draft">
-                                          <AgentDraftChatView />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/agent/:sessionId"
-                                      element={
-                                        <StartupRouteMountMarker routeName="agent-session">
-                                          <AgentSessionRoute />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/assistants"
-                                      element={
-                                        <StartupRouteMountMarker routeName="assistants">
-                                          <AssistantList />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/playbooks"
-                                      element={
-                                        <StartupRouteMountMarker routeName="playbooks">
-                                          <PlaybookList />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/history"
-                                      element={
-                                        <StartupRouteMountMarker routeName="history">
-                                          <History />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/history/search"
-                                      element={
-                                        <StartupRouteMountMarker routeName="history-search">
-                                          <History />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/org"
-                                      element={
-                                        <StartupRouteMountMarker routeName="org">
-                                          <Org />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/settings"
-                                      element={
-                                        <StartupRouteMountMarker routeName="settings">
-                                          <SettingsPage />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/mcp-servers"
-                                      element={
-                                        <StartupRouteMountMarker routeName="mcp-servers">
-                                          <MCPServerPage />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/knowledge"
-                                      element={
-                                        <StartupRouteMountMarker routeName="knowledge">
-                                          <KnowledgePage />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                    <Route
-                                      path="/scheduled-tasks"
-                                      element={
-                                        <StartupRouteMountMarker routeName="scheduled-tasks">
-                                          <ScheduledTasksPage />
-                                        </StartupRouteMountMarker>
-                                      }
-                                    />
-                                  </Routes>
-                                </Suspense>
-                              </div>
+                    <AgentSessionListProvider>
+                      <SidebarProvider className="h-full overflow-hidden">
+                        <DnDContextProvider>
+                          <AppSidebar />
+                          {/* Main Content Area (children of AppSidebar) */}
+                          <div className="flex flex-1 flex-col min-w-0">
+                            <AppHeader>
+                              <SessionNotificationsBell />
+                              <ThemeToggle />
+                            </AppHeader>
+                            <div className="flex-1 w-full min-h-0 overflow-y-auto">
+                              <Suspense
+                                fallback={
+                                  <div className="flex items-center justify-center h-full">
+                                    Loading...
+                                  </div>
+                                }
+                              >
+                                <Routes>
+                                  <Route
+                                    path="/"
+                                    element={<Navigate to="/agent" replace />}
+                                  />
+                                  <Route
+                                    path="/agent"
+                                    element={
+                                      <StartupRouteMountMarker routeName="agent">
+                                        <AgentStartRoute />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/agent/draft"
+                                    element={
+                                      <StartupRouteMountMarker routeName="agent-draft">
+                                        <AgentDraftChatView />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/agent/:sessionId"
+                                    element={
+                                      <StartupRouteMountMarker routeName="agent-session">
+                                        <AgentSessionRoute />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/assistants"
+                                    element={
+                                      <StartupRouteMountMarker routeName="assistants">
+                                        <AssistantListRoute />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/playbooks"
+                                    element={
+                                      <StartupRouteMountMarker routeName="playbooks">
+                                        <PlaybookList />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/history"
+                                    element={
+                                      <StartupRouteMountMarker routeName="history">
+                                        <History />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/history/search"
+                                    element={
+                                      <StartupRouteMountMarker routeName="history-search">
+                                        <History />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/org"
+                                    element={
+                                      <StartupRouteMountMarker routeName="org">
+                                        <Org />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/settings"
+                                    element={
+                                      <StartupRouteMountMarker routeName="settings">
+                                        <SettingsPage />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/mcp-servers"
+                                    element={
+                                      <StartupRouteMountMarker routeName="mcp-servers">
+                                        <MCPServerPage />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/knowledge"
+                                    element={
+                                      <StartupRouteMountMarker routeName="knowledge">
+                                        <KnowledgePage />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                  <Route
+                                    path="/scheduled-tasks"
+                                    element={
+                                      <StartupRouteMountMarker routeName="scheduled-tasks">
+                                        <ScheduledTasksPage />
+                                      </StartupRouteMountMarker>
+                                    }
+                                  />
+                                </Routes>
+                              </Suspense>
                             </div>
-                          </DnDContextProvider>
-                        </SidebarProvider>
-                        <Toaster position="top-right" />
-                      </AgentSessionListProvider>
-                    </AssistantContextProvider>
+                          </div>
+                        </DnDContextProvider>
+                      </SidebarProvider>
+                      <Toaster position="top-right" />
+                    </AgentSessionListProvider>
                   </MCPServerProvider>
                 </MCPServerRegistryProvider>
               </LLMServiceProvider>

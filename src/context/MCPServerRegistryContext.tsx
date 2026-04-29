@@ -34,6 +34,7 @@ export interface MCPServerRegistryContextType {
   saveServer: (server: MCPServerEntity) => Promise<MCPServerEntity>;
   deleteServer: (id: string) => Promise<void>;
   toggleActive: (id: string, active: boolean) => Promise<void>;
+  ensureLoaded: () => Promise<void>;
   refreshAll: () => Promise<void>;
 }
 
@@ -69,6 +70,7 @@ export const MCPServerRegistryProvider = ({
 
   // Use ref to avoid stale closures in event handlers
   const allServersRef = useRef<MCPServerEntity[]>([]);
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     allServersRef.current = allServers;
@@ -83,6 +85,7 @@ export const MCPServerRegistryProvider = ({
     try {
       const servers = await mcpServerService.getAll();
       setAllServers(servers);
+      hasLoadedRef.current = true;
       setError(undefined);
       logger.debug(`Loaded ${servers.length} MCP servers from service`);
     } catch (err) {
@@ -93,6 +96,14 @@ export const MCPServerRegistryProvider = ({
       setLoading(false);
     }
   }, [mcpServerService]);
+
+  const ensureLoaded = useCallback(async () => {
+    if (hasLoadedRef.current || loading) {
+      return;
+    }
+
+    await refreshAll();
+  }, [loading, refreshAll]);
 
   /**
    * Saves or updates an MCP server
@@ -163,24 +174,25 @@ export const MCPServerRegistryProvider = ({
   // Subscribe to local service events (Main Thread changes)
   useEffect(() => {
     const unsubscribe = mcpServerService.onRevalidate((event) => {
+      if (!hasLoadedRef.current) {
+        return;
+      }
       logger.debug('Local service changed, refreshing...', event);
-      refreshAll();
+      void refreshAll();
     });
     return unsubscribe;
   }, [mcpServerService, refreshAll]);
 
   // Subscribe to agent:event for AI agent resource updates via centralized hook
   useBackendResource('mcpServer', () => {
+    if (!hasLoadedRef.current) {
+      return;
+    }
     logger.debug(
       'Agent updated MCP server resource, refreshing MCP servers...',
     );
-    refreshAll();
+    void refreshAll();
   });
-
-  // Initial load on mount
-  useEffect(() => {
-    refreshAll();
-  }, [refreshAll]);
 
   const value: MCPServerRegistryContextType = useMemo(
     () => ({
@@ -191,6 +203,7 @@ export const MCPServerRegistryProvider = ({
       saveServer,
       deleteServer,
       toggleActive,
+      ensureLoaded,
       refreshAll,
     }),
     [
@@ -201,6 +214,7 @@ export const MCPServerRegistryProvider = ({
       saveServer,
       deleteServer,
       toggleActive,
+      ensureLoaded,
       refreshAll,
     ],
   );

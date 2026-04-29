@@ -1,12 +1,12 @@
 import { cn } from '@/lib/utils';
 import { Bot } from 'lucide-react';
-import type { Assistant } from '@/models/chat';
+import type { AssistantSummary } from '@/lib/backend/assistants';
 
 interface AssistantSelectionCardProps {
-  assistant: Assistant;
+  assistant: AssistantSummary;
   isStarting: boolean;
   disabled: boolean;
-  onSelect: (assistant: Assistant) => void;
+  onSelect: (assistant: AssistantSummary) => void;
 }
 
 export function AssistantSelectionCard({

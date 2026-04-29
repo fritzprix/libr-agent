@@ -14,6 +14,20 @@ export interface AssistantDto {
   updatedAt: number;
 }
 
+export interface AssistantSummaryDto {
+  id: string;
+  name: string;
+  description?: string;
+  deletionProtected: boolean;
+}
+
+export interface AssistantSummary {
+  id: string;
+  name: string;
+  description?: string;
+  deletionProtected: boolean;
+}
+
 // Convert frontend Assistant model to backend params
 function serializeAssistant(assistant: Assistant): {
   id: string;
@@ -83,6 +97,18 @@ export async function deleteAssistant(id: string): Promise<void> {
 export async function listAssistants(): Promise<Assistant[]> {
   const dtos = await safeInvoke<AssistantDto[]>('list_assistants');
   return dtos.map(parseAssistant);
+}
+
+export async function listAssistantSummaries(): Promise<AssistantSummary[]> {
+  const dtos = await safeInvoke<AssistantSummaryDto[]>(
+    'list_assistant_summaries',
+  );
+  return dtos.map((dto) => ({
+    id: dto.id,
+    name: dto.name,
+    description: dto.description,
+    deletionProtected: dto.deletionProtected,
+  }));
 }
 
 /**
