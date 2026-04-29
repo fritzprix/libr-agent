@@ -1,5 +1,8 @@
 mod common;
 
+use migration::MigratorTrait;
+use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use std::str::FromStr;
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
@@ -9,18 +12,47 @@ use tauri_mcp_agent_lib::session::{
     SessionManager,
 };
 use tauri_mcp_agent_lib::set_session_repository;
-use tokio::sync::OnceCell;
+use tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url;
+use tempfile::TempDir;
+use tokio::sync::{Mutex, MutexGuard, OnceCell};
 
-static TEST_DB: OnceCell<sea_orm::DatabaseConnection> = OnceCell::const_new();
+struct TestContext {
+    _temp_dir: TempDir,
+    db: sea_orm::DatabaseConnection,
+}
+
+static TEST_CONTEXT: OnceCell<TestContext> = OnceCell::const_new();
+static TEST_MUTEX: Mutex<()> = Mutex::const_new(());
 
 async fn test_db() -> sea_orm::DatabaseConnection {
-    TEST_DB
+    TEST_CONTEXT
         .get_or_init(|| async {
-            let db = common::setup_test_db_with_migrations().await;
+            common::register_sqlite_vec();
+            let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+            let db_path = temp_dir
+                .path()
+                .join("workspace-override-hydration-tests.db");
+            let url = format_sqlite_url(&db_path.to_string_lossy());
+            let options = SqliteConnectOptions::from_str(&url)
+                .expect("sqlite url should be valid")
+                .create_if_missing(true);
+            let pool = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options)
+                .await
+                .expect("sqlite pool should connect");
+            let db = sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+            tauri_mcp_agent_lib::migration::Migrator::up(&db, None)
+                .await
+                .expect("migrations should run");
             set_session_repository(SqliteSessionRepository::new(db.clone()));
-            db
+            TestContext {
+                _temp_dir: temp_dir,
+                db,
+            }
         })
         .await
+        .db
         .clone()
 }
 
@@ -52,8 +84,13 @@ fn make_session(session_id: &str, workspace_override: Option<String>) -> Session
     }
 }
 
+async fn test_guard() -> MutexGuard<'static, ()> {
+    TEST_MUTEX.lock().await
+}
+
 #[tokio::test]
 async fn hydrates_persisted_workspace_override_into_session_manager() {
+    let _guard = test_guard().await;
     let db = test_db().await;
     let repo = SqliteSessionRepository::new(db);
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
@@ -90,6 +127,7 @@ async fn hydrates_persisted_workspace_override_into_session_manager() {
 
 #[tokio::test]
 async fn ensure_session_workspace_dir_repairs_poisoned_default_workspace_entry() {
+    let _guard = test_guard().await;
     let db = test_db().await;
     let repo = SqliteSessionRepository::new(db);
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
@@ -136,6 +174,7 @@ async fn ensure_session_workspace_dir_repairs_poisoned_default_workspace_entry()
 
 #[tokio::test]
 async fn resolve_session_workspace_dir_repairs_poisoned_entry_via_global_repo() {
+    let _guard = test_guard().await;
     let db = test_db().await;
     let repo = SqliteSessionRepository::new(db);
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
@@ -174,6 +213,7 @@ async fn resolve_session_workspace_dir_repairs_poisoned_entry_via_global_repo() 
 
 #[tokio::test]
 async fn global_hydration_repairs_poisoned_entry_without_reading_workspace_first() {
+    let _guard = test_guard().await;
     let db = test_db().await;
     let repo = SqliteSessionRepository::new(db);
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
