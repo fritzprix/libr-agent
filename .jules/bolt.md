@@ -102,6 +102,8 @@
 
 **Learning:** `ScheduledTaskRow` was rendering unnecessarily on every toggling or deletion. The parent component (`ScheduledTasksPage`) was passing `togglingIds` and `deletingIds` (which are `Set`s) as props to the row components. Since these sets were frequently recreated or mutated by the `useScheduledTasks` hook, `React.memo`'s shallow comparison failed, causing an O(N) re-render of all task rows whenever a single task was modified.
 **Action:** When using `React.memo` to optimize child list components, avoid passing complex collection objects (like Sets or Maps) as props. Compute and pass primitive values (e.g., `isToggling={togglingIds.has(task.id)}`) directly within the parent's mapping loop. Also ensure all passed callbacks (`onEdit`, `onToggle`, `onDelete`) are referentially stable using `useCallback`.
+
 ## 2026-04-28 - Memoize Expensive Array Reductions
+
 **Learning:** Found instances where `Array.prototype.reduce` was used directly in the render body for derived metrics (like calculating completed todos). In components that re-render frequently (like `AgentPlanningUpdates` and `AgentPlanningPanel`), this causes unnecessary O(N) recalculations on every render.
 **Action:** Use `useMemo` to cache derived values (especially array reductions and filter loops) where the underlying dependencies change infrequently.

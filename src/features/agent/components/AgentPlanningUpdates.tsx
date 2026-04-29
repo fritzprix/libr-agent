@@ -106,10 +106,7 @@ function PlanningToastSummary({
   // Performance optimization: Memoize the reduction of completed todos
   // to avoid O(N) recalculation on every render cycle
   const completedTodos = useMemo(() => {
-    return todos.reduce(
-      (acc, todo) => (todo.checked ? acc + 1 : acc),
-      0,
-    );
+    return todos.reduce((acc, todo) => (todo.checked ? acc + 1 : acc), 0);
   }, [todos]);
 
   const progressPercent =
