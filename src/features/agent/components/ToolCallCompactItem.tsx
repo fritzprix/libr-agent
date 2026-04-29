@@ -99,10 +99,14 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
 
   // Auto-expand when an error first appears or a UI resource arrives (last item only).
   // Tracks transitions using refs during render to avoid extra effect or state re-renders.
-  if (!isSimpleMode && (hasError !== prevHasErrorRef.current || hasResource !== prevHasResourceRef.current)) {
+  if (
+    !isSimpleMode &&
+    (hasError !== prevHasErrorRef.current ||
+      hasResource !== prevHasResourceRef.current)
+  ) {
     const errorBecameVisible = !prevHasErrorRef.current && hasError;
     const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
-    
+
     prevHasErrorRef.current = hasError;
     prevHasResourceRef.current = hasResource;
 

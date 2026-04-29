@@ -28,11 +28,7 @@ import { PendingApprovalWidget } from './PendingApprovalWidget';
 import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
 import { useTranslation } from 'react-i18next';
-import {
-  Virtuoso,
-  type Components,
-  type ListProps,
-} from 'react-virtuoso';
+import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatMessages');
@@ -169,9 +165,7 @@ export function shouldSoftFollowOutputOnTailChange(args: {
   autoFollowOutput: boolean;
 }): boolean {
   return (
-    args.tailChanged &&
-    args.wasAtBottomBeforeChange &&
-    args.autoFollowOutput
+    args.tailChanged && args.wasAtBottomBeforeChange && args.autoFollowOutput
   );
 }
 

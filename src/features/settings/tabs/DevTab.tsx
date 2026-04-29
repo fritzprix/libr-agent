@@ -163,7 +163,9 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
         <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-xs font-mono text-yellow-500">
           {t('settings.dev.devOnly', 'DEV ONLY')}
         </span>
-        <h2 className="text-sm font-semibold">{t('settings.dev.testerTitle', 'sampleText / compact tester')}</h2>
+        <h2 className="text-sm font-semibold">
+          {t('settings.dev.testerTitle', 'sampleText / compact tester')}
+        </h2>
       </div>
 
       {/* Provider selector */}
@@ -182,7 +184,9 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
             {providers.map((p) => (
               <SelectItem key={p} value={p}>
                 {p}
-                {serviceConfigs[p]?.apiKey ? ' ✓' : t('settings.dev.noKey', ' (no key)')}
+                {serviceConfigs[p]?.apiKey
+                  ? ' ✓'
+                  : t('settings.dev.noKey', ' (no key)')}
               </SelectItem>
             ))}
           </SelectContent>
@@ -199,14 +203,21 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
           onChange={(e) => setPrompt(e.target.value)}
           rows={3}
           className="font-mono text-xs"
-          placeholder={t('settings.dev.promptPlaceholder', 'Enter a test prompt...')}
+          placeholder={t(
+            'settings.dev.promptPlaceholder',
+            'Enter a test prompt...',
+          )}
         />
       </div>
 
       {/* Compact preview */}
       <div className="rounded border border-dashed border-border p-3 text-xs text-muted-foreground">
         <p className="mb-1 font-medium">
-          {t('settings.dev.compactUses', 'compact() uses {{count}} sample messages:', { count: SAMPLE_MESSAGES.length })}
+          {t(
+            'settings.dev.compactUses',
+            'compact() uses {{count}} sample messages:',
+            { count: SAMPLE_MESSAGES.length },
+          )}
         </p>
         {SAMPLE_MESSAGES.map((m) => {
           const text = m.content
@@ -231,7 +242,9 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
           onClick={runSampleText}
           disabled={isRunning || !prompt.trim()}
         >
-          {isRunning ? t('settings.dev.running', 'Running…') : t('settings.dev.runSampleText', 'Run sampleText()')}
+          {isRunning
+            ? t('settings.dev.running', 'Running…')
+            : t('settings.dev.runSampleText', 'Run sampleText()')}
         </Button>
         <Button
           size="sm"
@@ -239,7 +252,9 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
           onClick={runCompact}
           disabled={isRunning}
         >
-          {isRunning ? t('settings.dev.running', 'Running…') : t('settings.dev.runCompact', 'Run compact()')}
+          {isRunning
+            ? t('settings.dev.running', 'Running…')
+            : t('settings.dev.runCompact', 'Run compact()')}
         </Button>
       </div>
 
@@ -251,24 +266,34 @@ export default function DevTab({ serviceConfigs }: DevTabProps) {
           <div className="mb-2 flex items-center gap-3 font-mono">
             <span className="font-semibold">{result.type}()</span>
             {result.error ? (
-              <span className="text-destructive">{t('settings.dev.error', 'ERROR')}</span>
+              <span className="text-destructive">
+                {t('settings.dev.error', 'ERROR')}
+              </span>
             ) : (
-              <span className="text-green-500">{t('settings.dev.ok', 'OK')}</span>
+              <span className="text-green-500">
+                {t('settings.dev.ok', 'OK')}
+              </span>
             )}
             <span className="text-muted-foreground">{result.durationMs}ms</span>
             {result.model && (
               <span className="text-muted-foreground">
-                {t('settings.dev.model', 'model: {{model}}', { model: result.model })}
+                {t('settings.dev.model', 'model: {{model}}', {
+                  model: result.model,
+                })}
               </span>
             )}
           </div>
           {result.usage && (
             <p className="mb-2 text-muted-foreground">
-              {t('settings.dev.tokensInfo', 'tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total', {
-                promptTokens: result.usage.promptTokens ?? '?',
-                completionTokens: result.usage.completionTokens ?? '?',
-                totalTokens: result.usage.totalTokens ?? '?'
-              })}
+              {t(
+                'settings.dev.tokensInfo',
+                'tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total',
+                {
+                  promptTokens: result.usage.promptTokens ?? '?',
+                  completionTokens: result.usage.completionTokens ?? '?',
+                  totalTokens: result.usage.totalTokens ?? '?',
+                },
+              )}
             </p>
           )}
           {result.error ? (
