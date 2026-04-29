@@ -71,6 +71,7 @@ export const MCPServerRegistryProvider = ({
   // Use ref to avoid stale closures in event handlers
   const allServersRef = useRef<MCPServerEntity[]>([]);
   const hasLoadedRef = useRef(false);
+  const refreshRequestRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     allServersRef.current = allServers;
@@ -81,29 +82,40 @@ export const MCPServerRegistryProvider = ({
    * This provides the full list for filtering and reference
    */
   const refreshAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const servers = await mcpServerService.getAll();
-      setAllServers(servers);
-      hasLoadedRef.current = true;
-      setError(undefined);
-      logger.debug(`Loaded ${servers.length} MCP servers from service`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      logger.error('Failed to load all MCP servers', err);
-      setError(message);
-    } finally {
-      setLoading(false);
+    if (refreshRequestRef.current) {
+      await refreshRequestRef.current;
+      return;
     }
+
+    const request = (async () => {
+      setLoading(true);
+      try {
+        const servers = await mcpServerService.getAll();
+        setAllServers(servers);
+        hasLoadedRef.current = true;
+        setError(undefined);
+        logger.debug(`Loaded ${servers.length} MCP servers from service`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        logger.error('Failed to load all MCP servers', err);
+        setError(message);
+      } finally {
+        setLoading(false);
+        refreshRequestRef.current = null;
+      }
+    })();
+
+    refreshRequestRef.current = request;
+    await request;
   }, [mcpServerService]);
 
   const ensureLoaded = useCallback(async () => {
-    if (hasLoadedRef.current || loading) {
+    if (hasLoadedRef.current) {
       return;
     }
 
     await refreshAll();
-  }, [loading, refreshAll]);
+  }, [refreshAll]);
 
   /**
    * Saves or updates an MCP server

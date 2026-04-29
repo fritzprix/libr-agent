@@ -17,7 +17,7 @@ export interface AssistantDto {
 export interface AssistantSummaryDto {
   id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   deletionProtected: boolean;
 }
 
@@ -106,7 +106,7 @@ export async function listAssistantSummaries(): Promise<AssistantSummary[]> {
   return dtos.map((dto) => ({
     id: dto.id,
     name: dto.name,
-    description: dto.description,
+    description: dto.description ?? undefined,
     deletionProtected: dto.deletionProtected,
   }));
 }
