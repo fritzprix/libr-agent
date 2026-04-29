@@ -1,5 +1,11 @@
 # ROSETTA'S JOURNAL - LOCALIZATION LOG
 
+## 2026-05-18 - [DangerZoneSettings]
+
+**Extracted:** 0
+**Languages updated:** [EN, KO]
+**Notes:** Added missing `dangerZone.description`, `factoryReset.typeReset`, and `factoryReset.typeResetPlaceholder` keys to `common.json` which were already translated with `t()` but had no keys in translation files.
+
 ## 2026-03-20 - [AgentPlanningPanel]
 
 **Extracted:** 8
