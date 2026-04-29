@@ -1,7 +1,7 @@
 import { useEditor } from '@/context/EditorContext';
 import { Assistant, MCPServerEntity } from '@/models/chat';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { useState, useMemo, useDeferredValue } from 'react';
+import { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import {
   Button,
   Dialog,
@@ -102,9 +102,13 @@ export default function AssistantEditor() {
 
 function MCPServersTab() {
   const { draft, update } = useEditor<Assistant>();
-  const { activeServers } = useMCPServerRegistry();
+  const { activeServers, loading, ensureLoaded } = useMCPServerRegistry();
   const [searchQuery, setSearchQuery] = useState('');
   const { t } = useTranslation('common');
+
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const isPending = searchQuery !== deferredSearchQuery;
@@ -145,7 +149,14 @@ function MCPServersTab() {
         </p>
       </div>
 
-      {activeServers.length === 0 ? (
+      {loading && activeServers.length === 0 ? (
+        <div className="text-center py-8 border rounded-lg bg-muted/20">
+          <Server className="h-12 w-12 mx-auto mb-3 text-muted-foreground animate-pulse" />
+          <p className="text-sm text-muted-foreground">
+            {t('assistant.mcp.loading', 'Loading MCP servers...')}
+          </p>
+        </div>
+      ) : activeServers.length === 0 ? (
         <div className="text-center py-8 border rounded-lg bg-muted/20">
           <Server className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
           <p className="text-sm text-muted-foreground mb-2">

@@ -19,6 +19,7 @@ import { safeInvoke } from '@/lib/backend/core';
 import {
   getUpdateInstallCapability,
   openExternalUrl,
+  type UpdateInstallCapability,
 } from '@/lib/backend/utils';
 
 const logger = getLogger('UpdateContext');
@@ -82,37 +83,47 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
   // Keep a ref to the pending Update object so installUpdate can access it
   const pendingUpdate = useRef<Update | null>(null);
   const autoChecked = useRef(false);
+  const installCapabilityRef = useRef<UpdateInstallCapability | null>(null);
+  const capabilityRequestRef = useRef<Promise<void> | null>(null);
 
   const openReleaseNotes = useCallback(async (version: string) => {
     const tagUrl = `${RELEASES_URL}/tag/v${encodeURIComponent(version)}`;
     await openExternalUrl(tagUrl);
   }, []);
 
-  useEffect(() => {
-    let isMounted = true;
+  const ensureInstallCapabilityResolved = useCallback(async () => {
+    if (capabilityRequestRef.current) {
+      await capabilityRequestRef.current;
+      return installCapabilityRef.current;
+    }
 
-    void (async () => {
+    const request = (async () => {
       try {
         const capability = await getUpdateInstallCapability();
-        if (!isMounted) return;
-
+        installCapabilityRef.current = capability;
         setCanInstallUpdate(capability.supported);
         setInstallHint(capability.reason);
       } catch (err: unknown) {
         logger.warn('Failed to resolve update install capability:', err);
+      } finally {
+        capabilityRequestRef.current = null;
       }
     })();
 
-    return () => {
-      isMounted = false;
-    };
+    capabilityRequestRef.current = request;
+    await request;
+    return installCapabilityRef.current;
   }, []);
 
   const doInstall = useCallback(
     async (update: Update) => {
-      if (!canInstallUpdate) {
+      const capability = await ensureInstallCapabilityResolved();
+      const installSupported = capability?.supported ?? canInstallUpdate;
+      const currentInstallHint = capability?.reason ?? installHint;
+
+      if (!installSupported) {
         const message =
-          installHint ??
+          currentInstallHint ??
           'This installation cannot apply updates in-app. Please install the latest release manually.';
         logger.warn('Blocked in-app update install:', message);
         setStatus('error');
@@ -172,7 +183,7 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
         const msg =
           rawMessage.includes('os error 13') ||
           rawMessage.includes('Permission denied')
-            ? (installHint ??
+            ? (currentInstallHint ??
               'Update install failed because this Linux installation is not writable. If you installed LibrAgent via .deb/.rpm, update it with your package manager. For in-app updates, run the AppImage from a writable folder in your home directory.')
             : rawMessage;
         logger.error('Update installation failed:', err);
@@ -184,7 +195,7 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
         });
       }
     },
-    [canInstallUpdate, installHint],
+    [canInstallUpdate, ensureInstallCapabilityResolved, installHint],
   );
 
   const checkForUpdate = useCallback(async () => {
@@ -198,6 +209,8 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
     setStatus('checking');
     setError(null);
     try {
+      const capability = await ensureInstallCapabilityResolved();
+      const installSupported = capability?.supported ?? canInstallUpdate;
       logger.debug('Checking for updates...');
       const update = await check();
 
@@ -214,14 +227,14 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
       setAvailableVersion(update.version);
       setStatus('available');
 
-      const description = canInstallUpdate
+      const description = installSupported
         ? 'A new version is ready to install.'
         : 'A new version is available. Install it from the release page.';
 
       toast.info(`LibrAgent ${update.version} is available`, {
         description,
         duration: Infinity,
-        action: canInstallUpdate
+        action: installSupported
           ? {
               label: 'Install',
               onClick: () => {
@@ -235,9 +248,9 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
               },
             },
         cancel: {
-          label: canInstallUpdate ? 'View changelog' : 'Later',
+          label: installSupported ? 'View changelog' : 'Later',
           onClick: () => {
-            if (canInstallUpdate) {
+            if (installSupported) {
               void openReleaseNotes(update.version);
               return;
             }
@@ -252,7 +265,13 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
       setStatus('error');
       setError(msg);
     }
-  }, [canInstallUpdate, doInstall, openReleaseNotes, status]);
+  }, [
+    canInstallUpdate,
+    doInstall,
+    ensureInstallCapabilityResolved,
+    openReleaseNotes,
+    status,
+  ]);
 
   const installUpdate = useCallback(async () => {
     const update = pendingUpdate.current;

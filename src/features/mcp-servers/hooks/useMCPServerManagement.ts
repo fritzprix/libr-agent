@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import useSWRInfinite from 'swr/infinite';
 import useSWRImmutable from 'swr/immutable';
 import { useTranslation } from 'react-i18next';
@@ -20,8 +20,13 @@ const logger = getLogger('MCPServerManagement');
 
 export function useMCPServerManagement(service?: McpServerService) {
   const { t } = useTranslation('common');
-  const { saveServer, deleteServer, toggleActive } = useMCPServerRegistry();
+  const { saveServer, deleteServer, toggleActive, ensureLoaded } =
+    useMCPServerRegistry();
   const { value: settings } = useSettings();
+
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
 
   // Fetch Recommended Presets
   const { data: presets } = useSWRImmutable<MCPServerPreset[]>(
