@@ -1,4 +1,4 @@
-import React, { useState, memo, useMemo } from 'react';
+import React, { useState, memo, useMemo, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -66,8 +66,8 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [prevHasError, setPrevHasError] = useState(false);
-  const [prevHasResource, setPrevHasResource] = useState(false);
+  const prevHasErrorRef = useRef(false);
+  const prevHasResourceRef = useRef(false);
 
   // Parse tool name (remove server prefix)
   const toolName = useMemo(
@@ -98,12 +98,14 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const detailsId = `tool-call-details-${toolCall.id}`;
 
   // Auto-expand when an error first appears or a UI resource arrives (last item only).
-  // Uses state adjustment during render to track transitions without triggering extra effect renders.
-  if (!isSimpleMode && (hasError !== prevHasError || hasResource !== prevHasResource)) {
-    setPrevHasError(hasError);
-    setPrevHasResource(hasResource);
-    const errorBecameVisible = !prevHasError && hasError;
-    const resourceBecameVisible = !prevHasResource && hasResource;
+  // Tracks transitions using refs during render to avoid extra effect or state re-renders.
+  if (!isSimpleMode && (hasError !== prevHasErrorRef.current || hasResource !== prevHasResourceRef.current)) {
+    const errorBecameVisible = !prevHasErrorRef.current && hasError;
+    const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
+    
+    prevHasErrorRef.current = hasError;
+    prevHasResourceRef.current = hasResource;
+
     if (errorBecameVisible || (resourceBecameVisible && isLast)) {
       setIsExpanded(true);
     }
