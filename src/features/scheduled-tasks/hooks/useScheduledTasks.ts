@@ -17,9 +17,17 @@ const logger = getLogger('useScheduledTasks');
 export function useScheduledTasks() {
   const {
     data: tasks = [],
-    isLoading: loading,
+    isLoading,
+    isValidating,
     mutate,
-  } = useSWR<ScheduledTask[]>('scheduled-tasks', () => listScheduledTasks());
+  } = useSWR<ScheduledTask[]>('scheduled-tasks', () => listScheduledTasks(), {
+    revalidateOnFocus: false,
+    onError: (error: unknown) => {
+      logger.error('Failed to load scheduled tasks', error);
+    },
+  });
+
+  const loading = isLoading || isValidating;
 
   // Use Sets to keep track of tasks that are currently transitioning
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
@@ -118,7 +126,11 @@ export function useScheduledTasks() {
   );
 
   const loadTasks = useCallback(async () => {
-    await mutate();
+    try {
+      await mutate();
+    } catch (e: unknown) {
+      logger.error('Failed to reload scheduled tasks', e);
+    }
   }, [mutate]);
 
   return {
