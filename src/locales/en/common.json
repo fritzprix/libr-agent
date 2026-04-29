@@ -468,7 +468,8 @@
       "checkForUpdates": "Check for Updates"
     },
     "dangerZone": {
-      "title": "⚠️ Danger Zone"
+      "title": "⚠️ Danger Zone",
+      "description": "These actions permanently delete local data. Double-check the scope before continuing."
     },
     "factoryReset": {
       "title": "Factory Reset",
@@ -476,6 +477,8 @@
       "button": "Reset All Data & Settings",
       "confirmTitle": "Factory Reset Confirmation",
       "confirmDescription": "This will permanently delete ALL data including sessions, assistants, MCP servers, and playbooks. Are you sure?",
+      "typeReset": "Type RESET to enable factory reset.",
+      "typeResetPlaceholder": "Type RESET",
       "confirmButton": "Reset Everything",
       "resetting": "Resetting...",
       "success": "Factory reset complete. Restart required to fully apply changes.",
