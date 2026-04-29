@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.16] - 2026-04-29
+
+### 🚀 Features
+
+- **Optimized Startup Performance**: Implemented deferred loading for the startup assistant and registry, added startup instrumentation, and split the agent startup route to reduce initial load time and prevent UI blockers.
+- **Enhanced Agent Chat UX**: Fixed scroll anchoring issues and polished the chat composer interaction for a smoother messaging experience.
+- **Localization Expansion**: Expanded Rosetta coverage for DangerZone settings and improved Korean (KO) translations for better consistency.
+- **A11y & Semantic Polish**: Converted `PlaybookGroup` container to a semantic button to improve keyboard navigation and screen reader accessibility.
+
+### 🐛 Fixes
+
+- **Reliable Workspace Hydration**: Fixed edge cases where workspace overrides would fail to hydrate during idle sessions or trigger flaky test results.
+- **Startup Registry Blockers**: Resolved race conditions in registry loading that could occasionally hang the application during the boot sequence.
+
+### 🔧 Internal
+
+- **Performance Optimizations**: Memoized `completedTodos` calculations in planning panels and refactored `useScheduledTasks` to use a declarative SWR pattern for more efficient state management.
+- **React Render Refactor**: Applied the "Adjusting State During Render" pattern to `ToolCallCompactItem`, eliminating redundant `useEffect` synchronizations and improving UI responsiveness.
+- **Maintenance & Cleanup**: Removed the JS bundle budget gate and applied consistent code style formatting throughout the codebase.
+
 ## [0.7.15] - 2026-04-28
 
 ### 🚀 Features
