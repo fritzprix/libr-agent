@@ -18,6 +18,7 @@ import {
   ContextStrategy,
   DEFAULT_SETTING,
 } from '@/lib/services/settings-service';
+import { markStartupMilestone } from '@/lib/performance/startup-metrics';
 
 const logger = getLogger('SettingsContext');
 
@@ -72,6 +73,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    markStartupMilestone('settings-settled', error ? 'error' : 'ready');
+  }, [loading, error]);
 
   // Update method
   const update = useCallback(

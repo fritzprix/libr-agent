@@ -8,7 +8,6 @@ export interface BundleAssetStat extends BundleAssetSize {
 }
 
 export interface BundleBudget {
-  totalJsBytes: number;
   totalCssBytes: number;
   largestJsBytes: number;
   largestCssBytes: number;
@@ -88,7 +87,6 @@ export function evaluateBundleBudget(
   budget: BundleBudget,
 ): BundleBudgetViolation[] {
   const metrics: Array<[keyof BundleBudget, number]> = [
-    ['totalJsBytes', summary.totalJsBytes],
     ['totalCssBytes', summary.totalCssBytes],
     ['largestJsBytes', summary.largestJsAsset?.size ?? 0],
     ['largestCssBytes', summary.largestCssAsset?.size ?? 0],

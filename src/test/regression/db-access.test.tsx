@@ -71,6 +71,10 @@ describe('DB Access Regression Tests', () => {
         // Initial load should be empty
         expect(result.current.allServers).toHaveLength(0);
 
+        await act(async () => {
+            await result.current.ensureLoaded();
+        });
+
         const newServer = {
             id: 'test-server', // Will be overwritten by backend using 'name' as ID
             name: 'Test Server',
@@ -107,6 +111,10 @@ describe('DB Access Regression Tests', () => {
 
     it('should delete MCP servers via service layer', async () => {
         const { result } = renderHook(() => useMCPServerRegistry(), { wrapper });
+
+        await act(async () => {
+            await result.current.ensureLoaded();
+        });
 
         // First, save a server
         const newServer = {

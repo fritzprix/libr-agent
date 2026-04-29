@@ -21,6 +21,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { useSettings } from '@/context/SettingsContext';
 import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 import { useLLMService } from '@/context/LLMServiceContext';
+import { markStartupMilestone } from '@/lib/performance/startup-metrics';
 import {
   mapSessionMetadataToAgentSession,
   sortSessionsByLatestActivity,
@@ -112,6 +113,7 @@ export function AgentSessionListProvider({
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
   const pendingApprovalKeysRef = useRef(new Set<string>());
+  const startupLoadRecordedRef = useRef(false);
   const activeSessionId = useMemo(() => {
     const sessionId = matchPath('/agent/:sessionId', location.pathname)?.params
       .sessionId;
@@ -170,6 +172,10 @@ export function AgentSessionListProvider({
       setSessions([]);
     } finally {
       setIsSessionsListLoading(false);
+      if (!startupLoadRecordedRef.current) {
+        startupLoadRecordedRef.current = true;
+        markStartupMilestone('session-list-settled');
+      }
     }
   }, []);
 
