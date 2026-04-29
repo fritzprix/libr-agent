@@ -104,7 +104,7 @@ function PlanningToastSummary({
       : 0;
 
   // Performance optimization: Memoize the reduction of completed todos
-  // to avoid O(N) recalculation on every render loop
+  // to avoid O(N) recalculation on every render cycle
   const completedTodos = useMemo(() => {
     return todos.reduce(
       (acc, todo) => (todo.checked ? acc + 1 : acc),

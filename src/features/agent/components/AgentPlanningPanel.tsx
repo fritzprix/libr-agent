@@ -36,7 +36,7 @@ export function AgentPlanningPanel() {
   );
 
   // Performance optimization: Memoize the reduction of completed todos
-  // to avoid O(N) recalculation on every render loop
+  // to avoid O(N) recalculation on every render
   const completedTodos = useMemo(() => {
     return planningState?.todos.reduce(
       (acc, todo) => (todo.checked ? acc + 1 : acc),
