@@ -103,10 +103,15 @@ function PlanningToastSummary({
       ? Math.max(todos.length - (lastVisibleIndex + 1), 0)
       : 0;
 
-  const completedTodos = todos.reduce(
-    (acc, todo) => (todo.checked ? acc + 1 : acc),
-    0,
-  );
+  // Performance optimization: Memoize the reduction of completed todos
+  // to avoid O(N) recalculation on every render cycle
+  const completedTodos = useMemo(() => {
+    return todos.reduce(
+      (acc, todo) => (todo.checked ? acc + 1 : acc),
+      0,
+    );
+  }, [todos]);
+
   const progressPercent =
     todos.length > 0 ? Math.round((completedTodos / todos.length) * 100) : 0;
 
