@@ -1,4 +1,4 @@
-import React, { useState, memo, useMemo, useEffect, useRef } from 'react';
+import React, { useState, memo, useMemo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -66,8 +66,8 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const prevHasErrorRef = useRef(false);
-  const prevHasResourceRef = useRef(false);
+  const [prevHasError, setPrevHasError] = useState(false);
+  const [prevHasResource, setPrevHasResource] = useState(false);
 
   // Parse tool name (remove server prefix)
   const toolName = useMemo(
@@ -98,20 +98,16 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const detailsId = `tool-call-details-${toolCall.id}`;
 
   // Auto-expand when an error first appears or a UI resource arrives (last item only).
-  // Uses refs as sentinels to track transitions without triggering extra renders.
-  useEffect(() => {
-    if (isSimpleMode) return;
-
-    const errorBecameVisible = !prevHasErrorRef.current && hasError;
-    const resourceBecameVisible = !prevHasResourceRef.current && hasResource;
-
+  // Uses state adjustment during render to track transitions without triggering extra effect renders.
+  if (!isSimpleMode && (hasError !== prevHasError || hasResource !== prevHasResource)) {
+    setPrevHasError(hasError);
+    setPrevHasResource(hasResource);
+    const errorBecameVisible = !prevHasError && hasError;
+    const resourceBecameVisible = !prevHasResource && hasResource;
     if (errorBecameVisible || (resourceBecameVisible && isLast)) {
       setIsExpanded(true);
     }
-
-    prevHasErrorRef.current = hasError;
-    prevHasResourceRef.current = hasResource;
-  }, [hasError, hasResource, isSimpleMode, isLast]);
+  }
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution
