@@ -30,7 +30,7 @@ export function DraftPendingFilesBar({
             <button
               type="button"
               onClick={() => onRemoveFile(index)}
-              className="text-muted-foreground hover:text-destructive transition-colors focus:outline-none"
+              className="text-muted-foreground hover:text-destructive transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t('fileAttachment.removeFile', {
                 name: file.name,
                 defaultValue: `Remove ${file.name}`,
