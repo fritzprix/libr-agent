@@ -59,6 +59,19 @@ vi.mock('../ModelProvider', () => ({
 }));
 
 const TEST_SESSION_ID = 'session-1';
+const READY_RUNTIME_STATE = {
+    phase: 'ready' as const,
+    proxy: {
+        exists: true,
+        mode: 'builtin_only' as const,
+        ready: true,
+    },
+    initialization: {
+        currentStep: 'Session initialization complete',
+        result: 'success' as const,
+    },
+    servers: [],
+};
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
     // Provide a mocked sessionId prop
@@ -98,6 +111,7 @@ describe('AgentSessionContext (Local)', () => {
                 oldestCursor: null,
             },
             pendingApprovals: [],
+            runtimeState: READY_RUNTIME_STATE,
         });
         (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     });
@@ -150,6 +164,7 @@ describe('AgentSessionContext (Local)', () => {
                     oldestCursor: null,
                 },
                 pendingApprovals: [],
+                runtimeState: READY_RUNTIME_STATE,
             })
         );
 
@@ -199,6 +214,7 @@ describe('AgentSessionContext (Local)', () => {
                     oldestCursor: null,
                 },
                 pendingApprovals: [],
+                runtimeState: READY_RUNTIME_STATE,
             })
         );
 

@@ -137,6 +137,58 @@ export type WorkflowCompletionReason =
   | 'recurringStop'
   | 'cancelled';
 
+export type SessionRuntimePhase =
+  | 'not_started'
+  | 'hydrating'
+  | 'initializing'
+  | 'ready'
+  | 'degraded'
+  | 'failed';
+
+export type SessionRuntimeInitResult =
+  | 'pending'
+  | 'success'
+  | 'partial'
+  | 'failed';
+
+export type SessionRuntimeProxyMode = 'none' | 'builtin_only' | 'configured';
+
+export type SessionRuntimeTransport = 'stdio' | 'http';
+
+export type SessionRuntimeServerStatus =
+  | 'not_started'
+  | 'connecting'
+  | 'discovering_tools'
+  | 'ready'
+  | 'failed';
+
+export interface SessionRuntimeProxyState {
+  exists: boolean;
+  mode: SessionRuntimeProxyMode;
+  ready: boolean;
+}
+
+export interface SessionRuntimeInitializationState {
+  currentStep?: string;
+  result: SessionRuntimeInitResult;
+  error?: string;
+}
+
+export interface SessionRuntimeServerState {
+  name: string;
+  transport: SessionRuntimeTransport;
+  status: SessionRuntimeServerStatus;
+  toolCount: number;
+  error?: string;
+}
+
+export interface SessionRuntimeState {
+  phase: SessionRuntimePhase;
+  proxy: SessionRuntimeProxyState;
+  initialization: SessionRuntimeInitializationState;
+  servers: SessionRuntimeServerState[];
+}
+
 /**
  * Tool execution result from frontend.
  * Mirrors `ToolExecutionResult` in `src-tauri/src/commands/agent_commands.rs`.
@@ -200,4 +252,5 @@ export interface AgentOpenSessionResponse {
   session: AgentSessionMetadata;
   messages: MessageSlice<RustMessage>;
   pendingApprovals: PendingApprovalSnapshot[];
+  runtimeState: SessionRuntimeState;
 }

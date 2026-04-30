@@ -1,4 +1,5 @@
 use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent};
+use crate::agent::runtime_state::SessionRuntimeState;
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
 use serde::{Deserialize, Serialize};
@@ -108,6 +109,13 @@ pub enum AgentEvent {
         status: InitializationStatus,
     },
 
+    /// Structured runtime-state update for session initialization/readiness.
+    #[serde(rename_all = "camelCase")]
+    SessionRuntimeStateUpdated {
+        session_id: String,
+        runtime_state: SessionRuntimeState,
+    },
+
     /// Resource updated (assistants, MCP servers, playbooks, etc.)
     /// Emitted when builtin tools modify global resources
     #[serde(rename_all = "camelCase")]
@@ -195,6 +203,13 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             step,
             status,
         } => format!("InitializationStep(session={session_id}, step={step}, status={status:?})"),
+        AgentEvent::SessionRuntimeStateUpdated {
+            session_id,
+            runtime_state,
+        } => format!(
+            "SessionRuntimeStateUpdated(session={session_id}, phase={:?}, proxy_mode={:?})",
+            runtime_state.phase, runtime_state.proxy.mode
+        ),
         AgentEvent::ResourceUpdated {
             resource_type,
             action,

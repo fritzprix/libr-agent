@@ -657,6 +657,13 @@ impl AgentSessionManager {
         crate::agent::tools::collect_available_tools(session_id, &self.proxy_manager).await
     }
 
+    pub async fn get_runtime_state(
+        &self,
+        session_id: &str,
+    ) -> crate::agent::runtime_state::SessionRuntimeState {
+        self.proxy_manager.get_runtime_state(session_id).await
+    }
+
     /// Get available tools for a session based on its config
     pub async fn get_tools_for_session(
         &self,

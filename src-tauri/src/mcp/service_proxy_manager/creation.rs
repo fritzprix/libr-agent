@@ -1,15 +1,21 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::super::session_isolation_config::SessionIsolationConfig;
-use super::persist_tool_cache_for_server;
+use super::background_discovery::{spawn_background_tool_loading, BackgroundDiscoveryPlan};
+use super::proxy_config::{
+    apply_startup_timeout_settings, decide_existing_proxy_disposition,
+    load_requested_server_configs, ExistingProxyDisposition,
+};
+use super::runtime_updates::{
+    apply_config_load_failed, apply_http_connecting, apply_loading_tool_config,
+    apply_proxy_created, apply_server_discovering, apply_server_failed,
+    build_bootstrap_runtime_state, emit_runtime_state, mutate_runtime_state_store,
+};
 use super::MCPServiceProxyManager;
-use crate::agent::events::InitializationStatus;
-use crate::repositories::settings_repository::SettingsRepository;
-use crate::services::mcp_server_service::summarize_tool_names;
+use crate::agent::runtime_state::{SessionRuntimeState, SessionRuntimeTransport};
 use crate::session::SessionManager;
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
-use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,72 +23,79 @@ use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinSet;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExistingProxyDisposition {
-    Reuse,
-    Recreate,
-    Fail,
+struct HttpStartupResult {
+    server_name: String,
+    outcome: Result<(), String>,
 }
 
-pub fn decide_existing_proxy_disposition(
-    existing_builtin_ids: &[String],
-    existing_external_server_names: &[String],
-    requested_builtin_ids: &[String],
-    requested_external_server_names: &[String],
-    config_load_failed: bool,
-) -> ExistingProxyDisposition {
-    let normalize = |values: &[String]| {
-        let mut normalized = values.to_vec();
-        normalized.sort();
-        normalized.dedup();
-        normalized
-    };
-
-    let existing_builtin_ids = normalize(existing_builtin_ids);
-    let existing_external_server_names = normalize(existing_external_server_names);
-    let requested_builtin_ids = normalize(requested_builtin_ids);
-    let requested_external_server_names = normalize(requested_external_server_names);
-
-    if config_load_failed {
-        if existing_builtin_ids == requested_builtin_ids {
-            ExistingProxyDisposition::Reuse
-        } else {
-            ExistingProxyDisposition::Fail
-        }
-    } else if existing_builtin_ids == requested_builtin_ids
-        && existing_external_server_names == requested_external_server_names
+async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id: &str) {
+    manager.proxy_readiness.write().await.remove(session_id);
+    manager.runtime_states.write().await.remove(session_id);
+    if let Some(old_mgr) = manager
+        .session_stdio_managers
+        .write()
+        .await
+        .remove(session_id)
     {
-        ExistingProxyDisposition::Reuse
-    } else {
-        ExistingProxyDisposition::Recreate
+        tokio::spawn(async move {
+            old_mgr.shutdown_all().await;
+        });
     }
+    manager
+        .session_http_managers
+        .write()
+        .await
+        .remove(session_id);
 }
 
-async fn await_tool_discovery<T, E, F>(
-    future: F,
-    timeout: Duration,
-    transport: &str,
-    server_name: &str,
+async fn commit_runtime_state_update<F>(
+    manager: &MCPServiceProxyManager,
     session_id: &str,
-) -> Result<T, String>
+    app_handle: Option<&AppHandle>,
+    update: F,
+) -> SessionRuntimeState
 where
-    F: Future<Output = Result<T, E>>,
-    E: std::fmt::Display,
+    F: FnOnce(&mut SessionRuntimeState),
 {
-    match tokio::time::timeout(timeout, future).await {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(format!(
-            "{} server '{}' tool discovery failed for session '{}': {}",
-            transport, server_name, session_id, error
-        )),
-        Err(_) => Err(format!(
-            "{} server '{}' tool discovery timed out after {}s for session '{}'",
-            transport,
-            server_name,
-            timeout.as_secs(),
-            session_id
-        )),
+    let runtime_state =
+        mutate_runtime_state_store(&manager.runtime_states, session_id, update).await;
+    emit_runtime_state(session_id, &runtime_state, app_handle);
+    runtime_state
+}
+
+async fn start_http_servers_in_parallel(
+    http_manager: &HttpSessionManager,
+    http_configs: &HashMap<String, crate::mcp::types::MCPServerConfig>,
+) -> Vec<HttpStartupResult> {
+    let mut tasks: JoinSet<HttpStartupResult> = JoinSet::new();
+
+    for (server_name, config) in http_configs {
+        let manager = http_manager.clone();
+        let server_name = server_name.clone();
+        let config = config.clone();
+        tasks.spawn(async move {
+            let outcome = manager
+                .start_server(&server_name, config)
+                .await
+                .map_err(|error| error.to_string());
+            HttpStartupResult {
+                server_name,
+                outcome,
+            }
+        });
     }
+
+    let mut results = Vec::with_capacity(http_configs.len());
+    while let Some(result) = tasks.join_next().await {
+        match result {
+            Ok(startup_result) => results.push(startup_result),
+            Err(error) => {
+                log::error!("HTTP server startup task panicked: {:?}", error);
+            }
+        }
+    }
+    results.sort_by(|left, right| left.server_name.cmp(&right.server_name));
+    results
 }
 
 impl MCPServiceProxyManager {
@@ -117,6 +130,7 @@ impl MCPServiceProxyManager {
             config,
             proxy_readiness: Arc::new(RwLock::new(HashMap::new())),
             creation_guards: Arc::new(Mutex::new(HashMap::new())),
+            runtime_states: Arc::new(RwLock::new(HashMap::new())),
         };
 
         manager.start_cleanup_task();
@@ -132,8 +146,6 @@ impl MCPServiceProxyManager {
 
         let db = get_database_connection();
         let db_arc = Arc::new(db.clone());
-
-        // Get SessionManager from the session module
         let session_manager =
             crate::session::get_session_manager().expect("SessionManager not initialized");
         let session_manager_arc = Arc::new(session_manager.clone());
@@ -151,17 +163,6 @@ impl MCPServiceProxyManager {
     /// # Returns
     /// * `Ok(Arc<MCPServiceProxy>)` - Session-bound proxy instance
     /// * `Err(String)` - Error message if proxy creation fails
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// // Example needs DatabaseConnection and SessionManager initialized, so we use ignore
-    /// let proxy = manager.create_proxy(
-    ///     "session-123".to_string(),
-    ///     vec!["knowledge".to_string(), "planning".to_string()],
-    ///     vec!["filesystem".to_string()],
-    ///     None
-    /// ).await?;
-    /// ```
     pub async fn create_proxy(
         &self,
         session_id: String,
@@ -169,23 +170,6 @@ impl MCPServiceProxyManager {
         mcp_server_ids: Vec<String>,
         app_handle: Option<AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
-        // Helper to emit status updates
-        let emit_status = |step: &str, status: crate::agent::events::InitializationStatus| {
-            if let Some(app) = &app_handle {
-                let event = crate::agent::events::AgentEvent::InitializationStep {
-                    session_id: session_id.clone(),
-                    step: step.to_string(),
-                    status,
-                };
-                if let Err(e) = crate::agent::tauri_events::emit_agent_event(app, event) {
-                    log::warn!("Failed to emit initialization status: {}", e);
-                }
-            }
-        };
-
-        // Acquire a per-session creation lock to serialize concurrent create_proxy calls
-        // for the same session_id (singleflight). The second caller blocks here until the
-        // first finishes; the re-check below then returns the already-created proxy.
         let session_guard = {
             let mut guards = self.creation_guards.lock().await;
             guards
@@ -195,113 +179,7 @@ impl MCPServiceProxyManager {
         };
         let _session_lock = session_guard.lock().await;
 
-        // Fetch configs directly from DB to support Session Isolation (independent of global connections)
-        use crate::repositories::mcp_server_repository::MCPServerRepository;
-        use crate::state::get_mcp_server_repository;
-
-        let mut stdio_configs = HashMap::new();
-        let mut http_configs = HashMap::new();
-        let mut server_name_to_id = HashMap::new(); // Map server names to IDs for tool count updates
-        let mut config_load_error: Option<String> = None;
-        let repo = get_mcp_server_repository();
-
-        // Filter servers based on mcp_server_ids:
-        // - Empty array = NO external servers (assistant doesn't use any)
-        // - Non-empty array = Only specified servers
-        let use_external_servers = !mcp_server_ids.is_empty();
-
-        match repo.list().await {
-            Ok(models) => {
-                log::debug!(
-                    "Loaded {} MCP server configs from DB for session {} (use_external_servers: {}, allowed_ids: {:?})",
-                    models.len(),
-                    session_id,
-                    use_external_servers,
-                    mcp_server_ids
-                );
-
-                // Skip all external servers if mcp_server_ids is empty
-                if !use_external_servers {
-                    log::info!(
-                        "Session {} has no external MCP servers configured (mcp_server_ids is empty)",
-                        session_id
-                    );
-                } else {
-                    for model in models {
-                        // Only load servers specified in mcp_server_ids (IDs, not names)
-                        if !mcp_server_ids.contains(&model.id) {
-                            log::debug!(
-                                "Skipping MCP server '{}' (ID: {}) - not in assistant's mcp_server_ids",
-                                model.name,
-                                model.id
-                            );
-                            continue;
-                        }
-
-                        match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(
-                            &model.config,
-                        ) {
-                            Ok(mut config) => {
-                                // Use DB name if JSON doesn't specify one (type-safe approach)
-                                let server_name = config.name.unwrap_or_else(|| model.name.clone());
-                                config.name = Some(server_name.clone());
-
-                                // Store name -> ID mapping for tool count updates
-                                server_name_to_id.insert(server_name.clone(), model.id.clone());
-
-                                log::debug!(
-                                    "Loading MCP server '{}' (ID: {}) into session {}",
-                                    server_name,
-                                    model.id,
-                                    session_id
-                                );
-
-                                match config.transport {
-                                    crate::mcp::types::TransportConfig::Stdio { .. } => {
-                                        stdio_configs.insert(server_name, config);
-                                    }
-                                    crate::mcp::types::TransportConfig::Http { .. } => {
-                                        http_configs.insert(server_name, config);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "Failed to parse config for MCP server '{}' (ID: {}): {}",
-                                    model.name,
-                                    model.id,
-                                    e
-                                );
-                            }
-                        }
-                    }
-                }
-
-                log::info!(
-                    "Session {} will connect to {} stdio servers and {} HTTP servers",
-                    session_id,
-                    stdio_configs.len(),
-                    http_configs.len()
-                );
-            }
-            Err(e) => {
-                config_load_error = Some(e.to_string());
-                log::error!(
-                    "Failed to fetch MCP server configs from DB for session {}: {}",
-                    session_id,
-                    e
-                );
-            }
-        }
-
-        let mut requested_builtin_ids = tool_ids.clone();
-        requested_builtin_ids.sort();
-        requested_builtin_ids.dedup();
-
-        let mut requested_external_server_names = stdio_configs.keys().cloned().collect::<Vec<_>>();
-        requested_external_server_names.extend(http_configs.keys().cloned());
-        requested_external_server_names.sort();
-        requested_external_server_names.dedup();
+        let loaded = load_requested_server_configs(&mcp_server_ids, &tool_ids, &session_id).await;
 
         if let Some(existing) = self.get_proxy(&session_id).await {
             let mut existing_builtin_ids = existing.builtin_tool_ids();
@@ -312,12 +190,12 @@ impl MCPServiceProxyManager {
             match decide_existing_proxy_disposition(
                 &existing_builtin_ids,
                 &existing_external_server_names,
-                &requested_builtin_ids,
-                &requested_external_server_names,
-                config_load_error.is_some(),
+                &loaded.requested_builtin_ids,
+                &loaded.requested_external_server_names,
+                loaded.config_load_error.is_some(),
             ) {
                 ExistingProxyDisposition::Reuse => {
-                    if let Some(load_error) = config_load_error.as_ref() {
+                    if let Some(load_error) = loaded.config_load_error.as_ref() {
                         log::warn!(
                             "Reusing existing proxy for session {} because MCP server configs could not be loaded: {}",
                             session_id,
@@ -326,94 +204,56 @@ impl MCPServiceProxyManager {
                     } else {
                         log::debug!("Proxy already exists for session: {}", session_id);
                     }
-                    emit_status("Session services ready", InitializationStatus::Complete);
+                    let runtime_state = self.get_runtime_state(&session_id).await;
+                    self.set_runtime_state(&session_id, runtime_state, app_handle.as_ref())
+                        .await;
                     return Ok(existing);
                 }
                 ExistingProxyDisposition::Fail => {
-                    let load_error = config_load_error.as_deref().unwrap_or("unknown error");
+                    let load_error = loaded
+                        .config_load_error
+                        .as_deref()
+                        .unwrap_or("unknown error");
                     return Err(format!(
                         "Failed to load MCP server configs for session {} while updating builtin tools: {}",
                         session_id, load_error
                     ));
                 }
-                ExistingProxyDisposition::Recreate => {}
+                ExistingProxyDisposition::Recreate => {
+                    log::warn!(
+                        "Recreating proxy for session {} due to config mismatch (builtin: {:?} -> {:?}, external: {:?} -> {:?})",
+                        session_id,
+                        existing_builtin_ids,
+                        loaded.requested_builtin_ids,
+                        existing_external_server_names,
+                        loaded.requested_external_server_names
+                    );
+                    self.proxies.write().await.remove(&session_id);
+                    cleanup_session_resources(self, &session_id).await;
+                }
             }
-
-            log::warn!(
-                "Recreating proxy for session {} due to config mismatch (builtin: {:?} -> {:?}, external: {:?} -> {:?})",
-                session_id,
-                existing_builtin_ids,
-                requested_builtin_ids,
-                existing_external_server_names,
-                requested_external_server_names
-            );
-
-            self.proxies.write().await.remove(&session_id);
-            self.proxy_readiness.write().await.remove(&session_id);
-
-            if let Some(old_mgr) = self
-                .session_stdio_managers
-                .write()
-                .await
-                .remove(&session_id)
-            {
-                tokio::spawn(async move {
-                    old_mgr.shutdown_all().await;
-                });
-            }
-
-            self.session_http_managers.write().await.remove(&session_id);
         }
 
-        if let Some(load_error) = config_load_error {
+        cleanup_session_resources(self, &session_id).await;
+
+        let runtime_servers = loaded.runtime_servers.clone();
+        if let Some(load_error) = loaded.config_load_error.clone() {
+            self.update_runtime_state(&session_id, app_handle.as_ref(), |state| {
+                apply_config_load_failed(
+                    state,
+                    loaded.use_external_servers,
+                    runtime_servers.clone(),
+                    load_error.clone(),
+                );
+            })
+            .await;
             return Err(format!(
                 "Failed to load MCP server configs for session {}: {}",
                 session_id, load_error
             ));
         }
 
-        emit_status(
-            "Initializing session environment",
-            InitializationStatus::Running,
-        );
-        emit_status("Loading tool configurations", InitializationStatus::Running);
-
-        // Clean up any leftover per-session managers/readiness state before rebuilding.
-        // This preserves the old "stale manager" cleanup behavior for sessions that
-        // somehow lost their proxy entry but still have session-scoped manager state.
-        self.proxy_readiness.write().await.remove(&session_id);
-        if let Some(old_mgr) = self
-            .session_stdio_managers
-            .write()
-            .await
-            .remove(&session_id)
-        {
-            tokio::spawn(async move {
-                old_mgr.shutdown_all().await;
-            });
-        }
-        self.session_http_managers.write().await.remove(&session_id);
-
-        // Apply user settings to config (especially startup timeout)
-        let mut config = self.config.clone();
-        if let Ok(settings_repo) = std::panic::catch_unwind(crate::state::get_settings_repository) {
-            if let Ok(Some(model)) = settings_repo.get("systemSettings").await {
-                #[derive(serde::Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                struct SystemSettings {
-                    mcp_server_startup_timeout_seconds: Option<u64>,
-                }
-
-                if let Ok(settings) = serde_json::from_str::<SystemSettings>(&model.value) {
-                    if let Some(timeout) = settings.mcp_server_startup_timeout_seconds {
-                        log::debug!("Applying user setting: MCP startup timeout = {}s", timeout);
-                        config = config.with_startup_timeout(timeout);
-                    }
-                }
-            }
-        }
-
-        // Hydrate persisted session overrides before resolving the runtime workspace path.
+        let config = apply_startup_timeout_settings(self.config.clone()).await;
         let workspace_dir =
             crate::session::resolve_session_workspace_dir(&self.session_manager, &session_id)
                 .await?;
@@ -421,34 +261,60 @@ impl MCPServiceProxyManager {
 
         let stdio_manager = SessionMCPManager::new(
             session_id.clone(),
-            stdio_configs.clone(),
+            loaded.stdio_configs.clone(),
             config,
             workspace_dir,
         );
+        let http_manager = HttpSessionManager::new(session_id.clone(), loaded.http_configs.clone());
 
-        // Create session HTTP manager
-        let http_manager = HttpSessionManager::new(session_id.clone(), http_configs.clone());
-
-        // Start HTTP servers eagerly for session isolation
-        if !http_configs.is_empty() {
-            emit_status(
-                "Connecting to HTTP tool servers",
-                InitializationStatus::Running,
-            );
+        let http_server_names = loaded.http_configs.keys().cloned().collect::<Vec<_>>();
+        let mut initial_runtime_state =
+            build_bootstrap_runtime_state(loaded.has_external_servers(), runtime_servers);
+        apply_loading_tool_config(&mut initial_runtime_state);
+        if !http_server_names.is_empty() {
+            apply_http_connecting(&mut initial_runtime_state, &http_server_names);
         }
+        self.set_runtime_state(&session_id, initial_runtime_state, app_handle.as_ref())
+            .await;
 
-        for (server_name, config) in &http_configs {
-            if let Err(e) = http_manager.start_server(server_name, config.clone()).await {
-                log::error!(
-                    "Failed to start HTTP server {} for session {}: {}",
-                    server_name,
-                    session_id,
-                    e
-                );
+        if !loaded.http_configs.is_empty() {
+            let http_startup_results =
+                start_http_servers_in_parallel(&http_manager, &loaded.http_configs).await;
+            commit_runtime_state_update(self, &session_id, app_handle.as_ref(), |state| {
+                for startup_result in &http_startup_results {
+                    match &startup_result.outcome {
+                        Ok(()) => {
+                            apply_server_discovering(
+                                state,
+                                &startup_result.server_name,
+                                SessionRuntimeTransport::Http,
+                            );
+                        }
+                        Err(error_message) => {
+                            apply_server_failed(
+                                state,
+                                &startup_result.server_name,
+                                SessionRuntimeTransport::Http,
+                                error_message.clone(),
+                            );
+                        }
+                    }
+                }
+            })
+            .await;
+
+            for startup_result in http_startup_results {
+                if let Err(error_message) = startup_result.outcome {
+                    log::error!(
+                        "Failed to start HTTP server {} for session {}: {}",
+                        startup_result.server_name,
+                        session_id,
+                        error_message
+                    );
+                }
             }
         }
 
-        // Create builtin proxy
         let proxy = MCPServiceProxy::builder(
             session_id.clone(),
             self.db.clone(),
@@ -457,462 +323,55 @@ impl MCPServiceProxyManager {
             Arc::new(stdio_manager.clone()),
         )
         .with_tool_ids(tool_ids)
-        .with_app_handle(app_handle.clone()) // Pass clone for internal use
+        .with_app_handle(app_handle.clone())
         .build()
         .await?;
 
-        // Store proxy
         let proxy_arc = Arc::new(proxy);
         self.proxies
             .write()
             .await
             .insert(session_id.clone(), proxy_arc.clone());
-
         self.session_stdio_managers
             .write()
             .await
             .insert(session_id.clone(), stdio_manager.clone());
-
         self.session_http_managers
             .write()
             .await
             .insert(session_id.clone(), http_manager.clone());
 
-        // Spawn background tool loading to decouple proxy availability from external MCP server
-        // startup time. POST /api/sessions must return quickly; stdio process spawn and HTTP
-        // discovery can take 10-30s which previously caused the internal HTTP client to time out.
-        //
-        // The proxy is already registered in self.proxies at this point, so tool calls can be
-        // routed immediately. Tools discovered in the background are registered via
-        // set_session_stdio_tools / set_session_http_tools as they come online.
-        let has_external_servers = !stdio_configs.is_empty() || !http_configs.is_empty();
+        commit_runtime_state_update(self, &session_id, app_handle.as_ref(), |state| {
+            apply_proxy_created(state, loaded.has_external_servers());
+        })
+        .await;
 
-        if has_external_servers {
-            // Create a readiness signal so start_workflow() can wait for tool loading to complete.
-            // The Sender is stored in proxy_readiness; the background task sends true when done.
-            let (ready_tx, _) = tokio::sync::watch::channel(false);
-            let ready_tx = Arc::new(ready_tx);
-            self.proxy_readiness
-                .write()
-                .await
-                .insert(session_id.clone(), ready_tx.clone());
-            let ready_tx_bg = ready_tx;
-
-            let proxy_bg = proxy_arc.clone();
-            let stdio_manager_bg = stdio_manager;
-            let http_manager_bg = http_manager;
-            let session_id_bg = session_id.clone();
-            let app_handle_bg = app_handle.clone(); // clone so emit_status (else branch) can still use original
-            let server_name_to_id_bg = server_name_to_id;
-            let stdio_configs_bg = stdio_configs;
-            let http_configs_bg = http_configs;
-            let tool_discovery_timeout_bg = tool_discovery_timeout;
-
-            tokio::spawn(async move {
-                let emit_bg = |step: &str, status: InitializationStatus| {
-                    if let Some(app) = &app_handle_bg {
-                        let event = crate::agent::events::AgentEvent::InitializationStep {
-                            session_id: session_id_bg.clone(),
-                            step: step.to_string(),
-                            status,
-                        };
-                        if let Err(e) = crate::agent::tauri_events::emit_agent_event(app, event) {
-                            log::warn!("Failed to emit initialization status: {}", e);
-                        }
-                    }
-                };
-
-                // Wrap shared lookup map in Arc so parallel tasks can share it cheaply.
-                let server_name_to_id_arc = Arc::new(server_name_to_id_bg);
-
-                // Load stdio server tools — all servers spawned concurrently.
-                if !stdio_configs_bg.is_empty() {
-                    log::info!(
-                        "[bg] Loading tools for {} stdio servers in parallel (session: {})",
-                        stdio_configs_bg.len(),
-                        session_id_bg
-                    );
-                    emit_bg(
-                        &format!("Connecting to {} stdio servers", stdio_configs_bg.len()),
-                        InitializationStatus::Running,
-                    );
-                }
-
-                let mut stdio_tasks: JoinSet<()> = JoinSet::new();
-                for server_name in stdio_configs_bg.keys() {
-                    let mgr = stdio_manager_bg.clone();
-                    let proxy = proxy_bg.clone();
-                    let id_map = server_name_to_id_arc.clone();
-                    let session_id = session_id_bg.clone();
-                    let app = app_handle_bg.clone();
-                    let server_name = server_name.clone();
-                    let tool_discovery_timeout = tool_discovery_timeout_bg;
-                    stdio_tasks.spawn(async move {
-                        let emit = |step: &str, status: InitializationStatus| {
-                            if let Some(app_h) = &app {
-                                let event = crate::agent::events::AgentEvent::InitializationStep {
-                                    session_id: session_id.clone(),
-                                    step: step.to_string(),
-                                    status,
-                                };
-                                if let Err(e) =
-                                    crate::agent::tauri_events::emit_agent_event(app_h, event)
-                                {
-                                    log::warn!("Failed to emit initialization status: {}", e);
-                                }
-                            }
-                        };
-                        emit(
-                            &format!("Connecting to {}", server_name),
-                            InitializationStatus::Running,
-                        );
-                        log::debug!(
-                            "[bg] Fetching tools from stdio server '{}' for session '{}'",
-                            server_name,
-                            session_id
-                        );
-                        match await_tool_discovery(
-                            mgr.list_tools(&server_name),
-                            tool_discovery_timeout,
-                            "stdio",
-                            &server_name,
-                            &session_id,
-                        )
-                        .await
-                        {
-                            Ok(tools) => {
-                                log::info!(
-                                    "[bg] ✅ Fetched {} tools from stdio server '{}' for session '{}': raw=[{}]",
-                                    tools.len(),
-                                    server_name,
-                                    session_id,
-                                    summarize_tool_names(&tools)
-                                );
-                                if let Some(server_id) = id_map.get(&server_name) {
-                                    persist_tool_cache_for_server(
-                                        &server_name,
-                                        Some(server_id.as_str()),
-                                        "stdio",
-                                        &tools,
-                                    )
-                                    .await;
-                                }
-                                let prefixed_tools: Vec<_> = tools
-                                    .into_iter()
-                                    .map(|mut tool| {
-                                        tool.name = format!("{}__{}", server_name, tool.name);
-                                        tool
-                                    })
-                                    .collect();
-                                log::info!(
-                                    "[bg] Session-visible stdio tools for '{}' in session '{}': [{}]",
-                                    server_name,
-                                    session_id,
-                                    summarize_tool_names(&prefixed_tools)
-                                );
-                                proxy
-                                    .set_session_stdio_tools(server_name.clone(), prefixed_tools)
-                                    .await;
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "[bg] ❌ {}",
-                                    e
-                                );
-                            }
-                        }
-                    });
-                }
-                // Await all stdio init tasks before proceeding.
-                while let Some(res) = stdio_tasks.join_next().await {
-                    if let Err(e) = res {
-                        log::error!("[bg] stdio server init task panicked: {:?}", e);
-                    }
-                }
-
-                // Load HTTP server tools — all servers spawned concurrently.
-                if !http_configs_bg.is_empty() {
-                    log::info!(
-                        "[bg] Loading tools for {} HTTP servers in parallel (session: {})",
-                        http_configs_bg.len(),
-                        session_id_bg
-                    );
-                    emit_bg(
-                        "Loading tools from HTTP servers",
-                        InitializationStatus::Running,
-                    );
-                }
-
-                let mut http_tasks: JoinSet<()> = JoinSet::new();
-                for server_name in http_configs_bg.keys() {
-                    let mgr = http_manager_bg.clone();
-                    let proxy = proxy_bg.clone();
-                    let id_map = server_name_to_id_arc.clone();
-                    let session_id = session_id_bg.clone();
-                    let server_name = server_name.clone();
-                    let tool_discovery_timeout = tool_discovery_timeout_bg;
-                    http_tasks.spawn(async move {
-                        let has_cache = proxy.has_http_tools_cached(&server_name).await;
-                        if has_cache {
-                            log::info!(
-                                "[bg] ⚡ Skipping HTTP server '{}' - tools already cached",
-                                server_name
-                            );
-                            return;
-                        }
-                        log::debug!(
-                            "[bg] Fetching tools from HTTP server '{}' for session '{}'",
-                            server_name,
-                            session_id
-                        );
-                        match await_tool_discovery(
-                            mgr.list_tools(&server_name),
-                            tool_discovery_timeout,
-                            "http",
-                            &server_name,
-                            &session_id,
-                        )
-                        .await
-                        {
-                            Ok(tools) => {
-                                log::info!(
-                                    "[bg] ✅ Fetched {} tools from HTTP server '{}' for session '{}': raw=[{}]",
-                                    tools.len(),
-                                    server_name,
-                                    session_id,
-                                    summarize_tool_names(&tools)
-                                );
-                                if let Some(server_id) = id_map.get(&server_name) {
-                                    persist_tool_cache_for_server(
-                                        &server_name,
-                                        Some(server_id.as_str()),
-                                        "http",
-                                        &tools,
-                                    )
-                                    .await;
-                                }
-                                let prefixed_tools: Vec<_> = tools
-                                    .into_iter()
-                                    .map(|mut tool| {
-                                        tool.name = format!("{}__{}", server_name, tool.name);
-                                        tool
-                                    })
-                                    .collect();
-                                log::info!(
-                                    "[bg] Session-visible HTTP tools for '{}' in session '{}': [{}]",
-                                    server_name,
-                                    session_id,
-                                    summarize_tool_names(&prefixed_tools)
-                                );
-                                proxy
-                                    .set_session_http_tools(server_name.clone(), prefixed_tools)
-                                    .await;
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "[bg] ❌ {}",
-                                    e
-                                );
-                            }
-                        }
-                    });
-                }
-                // Await all HTTP init tasks before signalling readiness.
-                while let Some(res) = http_tasks.join_next().await {
-                    if let Err(e) = res {
-                        log::error!("[bg] HTTP server init task panicked: {:?}", e);
-                    }
-                }
-
-                log::info!("[bg] Tool loading complete for session: {}", session_id_bg);
-                // Signal workflow start that tool loading is done.
-                let _ = ready_tx_bg.send(true);
-                emit_bg(
-                    "Session initialization complete",
-                    InitializationStatus::Complete,
-                );
-            });
+        if loaded.has_external_servers() {
+            spawn_background_tool_loading(
+                self,
+                BackgroundDiscoveryPlan {
+                    session_id: session_id.clone(),
+                    proxy: proxy_arc.clone(),
+                    stdio_manager,
+                    http_manager,
+                    stdio_configs: loaded.stdio_configs,
+                    http_configs: loaded.http_configs,
+                    server_name_to_id: loaded.server_name_to_id,
+                    tool_discovery_timeout,
+                    app_handle: app_handle.clone(),
+                },
+            )
+            .await;
         } else {
-            // No external servers - emit complete immediately
-            emit_status(
-                "Session initialization complete",
-                InitializationStatus::Complete,
-            );
+            self.set_runtime_state(
+                &session_id,
+                SessionRuntimeState::builtin_ready(),
+                app_handle.as_ref(),
+            )
+            .await;
         }
 
         log::info!("Created MCP service proxy for session: {}", session_id);
-
         Ok(proxy_arc)
-    }
-
-    /// Ensure a session has a proxy that matches its persisted agent configuration.
-    ///
-    /// Unlike `ensure_builtin_proxy`, this path is config-aware: it loads the session's
-    /// stored `agent_config`, derives both builtin and external MCP requirements, and then
-    /// delegates to `create_proxy()`. That means an existing builtin-only lazy proxy will
-    /// be recreated when the session configuration requires stdio/HTTP MCP servers.
-    pub async fn ensure_configured_proxy(
-        &self,
-        session_id: &str,
-        app_handle: Option<AppHandle>,
-    ) -> Result<Arc<MCPServiceProxy>, String> {
-        use crate::agent::tools::extract_builtin_tool_ids;
-        use crate::repositories::session_repository::SessionRepository;
-
-        let session_repo = crate::state::get_session_repository();
-        let session = session_repo
-            .get_session(session_id)
-            .await
-            .map_err(|e| format!("Failed to load session {}: {}", session_id, e))?
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        let config_json = session
-            .agent_config
-            .ok_or_else(|| "Session has no config".to_string())?;
-        let agent_config = crate::agent::AgentConfig::from_json(&config_json)?;
-        let tool_ids = extract_builtin_tool_ids(&agent_config);
-
-        self.create_proxy(
-            session_id.to_string(),
-            tool_ids,
-            agent_config.mcp_server_ids,
-            app_handle,
-        )
-        .await
-    }
-
-    /// Lazily initialise a builtin-only proxy for a session that has no active proxy.
-    ///
-    /// Called by [`crate::mcp::service_proxy_manager::MCPServiceProxyManager::call_tool`] when a builtin tool is requested for a session whose proxy
-    /// (e.g., a session that exists in the DB but has not yet run
-    /// a workflow in this app session). This prevents spurious "Session context not found"
-    /// errors when UI components poll builtin tools (e.g., attachments listing) for
-    /// idle sessions.
-    ///
-    /// Only builtins are wired up — no external stdio/HTTP servers are started.
-    /// If the session's agent config cannot be loaded, falls back to
-    /// `CORE_BUILTIN_SERVICE_ALIASES` (the full non-optional builtin set).
-    ///
-    /// # Arguments
-    /// * `session_id` - The session to ensure a proxy for
-    ///
-    /// # Returns
-    /// * `Ok(Arc<MCPServiceProxy>)` - Newly created (or pre-existing) proxy
-    /// * `Err(String)` - If proxy creation fails
-    pub async fn ensure_builtin_proxy(
-        &self,
-        session_id: &str,
-    ) -> Result<Arc<MCPServiceProxy>, String> {
-        // Fast path: proxy already exists
-        if let Some(existing) = self.get_proxy(session_id).await {
-            return Ok(existing);
-        }
-
-        // Serialise concurrent callers for the same session_id (singleflight)
-        let session_guard = {
-            let mut guards = self.creation_guards.lock().await;
-            guards
-                .entry(session_id.to_string())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone()
-        };
-        let _lock = session_guard.lock().await;
-
-        // Re-check after acquiring lock in case another caller just created it
-        if let Some(existing) = self.get_proxy(session_id).await {
-            return Ok(existing);
-        }
-
-        log::debug!(
-            "Lazily initialising builtin-only proxy for idle session: {}",
-            session_id
-        );
-
-        // Resolve tool_ids from the session's agent_config (fallback to core builtins)
-        let tool_ids = self.resolve_tool_ids_for_session(session_id).await;
-
-        // Hydrate persisted session overrides before resolving the runtime workspace path.
-        let workspace_dir =
-            crate::session::resolve_session_workspace_dir(&self.session_manager, session_id)
-                .await?;
-        let empty_stdio = SessionMCPManager::new(
-            session_id.to_string(),
-            HashMap::new(),
-            SessionIsolationConfig::default(),
-            workspace_dir,
-        );
-        let empty_http = HttpSessionManager::new(session_id.to_string(), HashMap::new());
-
-        let proxy = MCPServiceProxy::builder(
-            session_id.to_string(),
-            self.db.clone(),
-            self.session_manager.clone(),
-            Arc::new(empty_http.clone()),
-            Arc::new(empty_stdio.clone()),
-        )
-        .with_tool_ids(tool_ids.clone())
-        .build()
-        .await?;
-
-        let proxy_arc = Arc::new(proxy);
-        self.proxies
-            .write()
-            .await
-            .insert(session_id.to_string(), proxy_arc.clone());
-        self.session_stdio_managers
-            .write()
-            .await
-            .insert(session_id.to_string(), empty_stdio);
-        self.session_http_managers
-            .write()
-            .await
-            .insert(session_id.to_string(), empty_http);
-
-        log::info!(
-            "Lazily initialised builtin-only proxy for idle session {} with tools: {:?}",
-            session_id,
-            tool_ids
-        );
-
-        Ok(proxy_arc)
-    }
-
-    /// Resolve the builtin tool IDs for a session by reading its `agent_config` from the DB.
-    ///
-    /// Falls back to [`CORE_BUILTIN_SERVICE_ALIASES`] if the session or its config cannot
-    /// be loaded.
-    async fn resolve_tool_ids_for_session(&self, session_id: &str) -> Vec<String> {
-        use crate::agent::tools::extract_builtin_tool_ids;
-        use crate::mcp::builtin::service_id::CORE_BUILTIN_SERVICE_ALIASES;
-        use crate::repositories::session_repository::SessionRepository;
-
-        let repo = crate::state::get_session_repository();
-        match repo.get_session(session_id).await {
-            Ok(Some(session)) => {
-                if let Some(config_str) = &session.agent_config {
-                    if let Ok(agent_config) = crate::agent::AgentConfig::from_json(config_str) {
-                        return extract_builtin_tool_ids(&agent_config);
-                    }
-                }
-            }
-            Ok(None) => {
-                log::warn!(
-                    "Session {} not found in DB during lazy proxy init; using core builtins",
-                    session_id
-                );
-            }
-            Err(e) => {
-                log::warn!(
-                    "DB error loading session {} for lazy proxy init: {}; using core builtins",
-                    session_id,
-                    e
-                );
-            }
-        }
-
-        // Fallback: core non-optional builtin set
-        CORE_BUILTIN_SERVICE_ALIASES
-            .iter()
-            .map(|s: &&str| s.to_string())
-            .collect()
     }
 }

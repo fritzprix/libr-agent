@@ -2,6 +2,7 @@ import type { Message, MessageError, RustMessage } from '@/models/chat';
 import type { AgentSession } from '@/models/agent';
 import type {
   AgentRuntimeError,
+  SessionRuntimeState,
   WorkflowCompletionReason,
 } from '@/models/agent-ipc';
 
@@ -49,10 +50,9 @@ export type AgentEventPayload =
       approved: boolean;
     }
   | {
-      type: 'initializationStep';
+      type: 'sessionRuntimeStateUpdated';
       sessionId: string;
-      step: string;
-      status: 'running' | 'complete' | 'error';
+      runtimeState: SessionRuntimeState;
     }
   | {
       type: 'resourceUpdated';
@@ -85,6 +85,7 @@ export interface AgentSessionStateContextValue {
   llmError: MessageError | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
   workflowPhase: WorkflowPhase;
+  runtimeState: SessionRuntimeState;
   initializationStep: {
     step: string;
     status: 'running' | 'complete' | 'error';

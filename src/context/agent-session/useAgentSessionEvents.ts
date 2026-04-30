@@ -9,8 +9,40 @@ import type { AgentResponse } from '@/models/agent-ipc';
 import type { AgentEventPayload } from './types';
 import { buildMessageError } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
+import type { SessionRuntimeState } from '@/models/agent-ipc';
 
 const logger = getLogger('AgentSessionEvents');
+
+const HYDRATING_RUNTIME_STATE: SessionRuntimeState = {
+  phase: 'hydrating',
+  proxy: {
+    exists: false,
+    mode: 'none',
+    ready: false,
+  },
+  initialization: {
+    currentStep: 'Starting session...',
+    result: 'pending',
+  },
+  servers: [],
+};
+
+function createRuntimeFailureState(errorMessage: string): SessionRuntimeState {
+  return {
+    phase: 'failed',
+    proxy: {
+      exists: false,
+      mode: 'none',
+      ready: false,
+    },
+    initialization: {
+      currentStep: 'Failed to open session',
+      result: 'failed',
+      error: errorMessage,
+    },
+    servers: [],
+  };
+}
 
 export function useAgentSessionEvents(
   sessionId: string,
@@ -27,12 +59,8 @@ export function useAgentSessionEvents(
 
     const initSession = async () => {
       logger.info('Initializing agent session', { sessionId });
-      setters.setIsSessionLoading(true);
       setters.setError(null);
-      setters.setInitializationStep({
-        step: 'Starting session...',
-        status: 'running',
-      });
+      setters.setRuntimeState(HYDRATING_RUNTIME_STATE);
 
       try {
         unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
@@ -49,27 +77,8 @@ export function useAgentSessionEvents(
           }
 
           switch (payload.type) {
-            case 'initializationStep': {
-              const rawStatus = payload.status;
-              const isValidStatus =
-                rawStatus === 'running' ||
-                rawStatus === 'complete' ||
-                rawStatus === 'error';
-              const safeStatus: 'running' | 'complete' | 'error' = isValidStatus
-                ? rawStatus
-                : 'error';
-
-              if (!isValidStatus) {
-                logger.warn(
-                  'Received invalid initialization status from backend',
-                  { sessionId, rawStatus },
-                );
-              }
-
-              setters.setInitializationStep({
-                step: payload.step,
-                status: safeStatus,
-              });
+            case 'sessionRuntimeStateUpdated': {
+              setters.setRuntimeState(payload.runtimeState);
               break;
             }
 
@@ -103,7 +112,6 @@ export function useAgentSessionEvents(
 
             case 'workflowError': {
               setters.setWorkflowStatus('error');
-              setters.setIsSessionLoading(false);
               const nextError = buildMessageError(payload.error);
 
               if (
@@ -248,7 +256,6 @@ export function useAgentSessionEvents(
                 prev ? { ...prev, status: nextStatus } : null,
               );
               setters.setWorkflowPhase('idle');
-              setters.setIsSessionLoading(false);
               logger.info('Workflow phase: idle', {
                 sessionId,
                 reason: payload.reason,
@@ -304,20 +311,21 @@ export function useAgentSessionEvents(
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
         setters.setPendingApprovals(response.pendingApprovals ?? []);
+        setters.setRuntimeState(
+          response.runtimeState ?? HYDRATING_RUNTIME_STATE,
+        );
         void actions.persistViewedAt().catch((err) => {
           logger.error(
             'Failed to mark session viewed during initialization',
             err,
           );
         });
-
-        if (isMounted) setters.setIsSessionLoading(false);
       } catch (err) {
         if (!isMounted) return;
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error('Failed to initialize session', err);
+        setters.setRuntimeState(createRuntimeFailureState(errorMessage));
         setters.setError(errorMessage);
-        setters.setIsSessionLoading(false);
       }
     };
 

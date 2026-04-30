@@ -1,15 +1,31 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { AgentSession } from '@/models/agent';
 import type { Message, MessageError } from '@/models/chat';
-import type { AgentRuntimeError, MessageCursor } from '@/models/agent-ipc';
+import type {
+  AgentRuntimeError,
+  MessageCursor,
+  SessionRuntimeState,
+} from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type { WorkflowPhase, PendingApproval } from './types';
 import { buildMessageError } from './utils';
 
+const DEFAULT_RUNTIME_STATE: SessionRuntimeState = {
+  phase: 'not_started',
+  proxy: {
+    exists: false,
+    mode: 'none',
+    ready: false,
+  },
+  initialization: {
+    result: 'pending',
+  },
+  servers: [],
+};
+
 export function useAgentSessionState() {
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isSessionLoading, setIsSessionLoading] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [oldestMessageCursor, setOldestMessageCursor] =
@@ -20,10 +36,9 @@ export function useAgentSessionState() {
     'idle' | 'busy' | 'paused' | 'error'
   >('idle');
   const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('idle');
-  const [initializationStep, setInitializationStep] = useState<{
-    step: string;
-    status: 'running' | 'complete' | 'error';
-  } | null>(null);
+  const [runtimeState, setRuntimeState] = useState<SessionRuntimeState>(
+    DEFAULT_RUNTIME_STATE,
+  );
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
   );
@@ -83,7 +98,6 @@ export function useAgentSessionState() {
     () => ({
       setSession,
       setMessages,
-      setIsSessionLoading,
       setIsLoadingOlderMessages,
       setHasOlderMessages,
       setOldestMessageCursor,
@@ -91,7 +105,7 @@ export function useAgentSessionState() {
       setLlmError,
       setWorkflowStatus,
       setWorkflowPhase,
-      setInitializationStep,
+      setRuntimeState,
       setPendingApprovals,
       setYoloModeEnabled,
       applyLocalViewedAt,
@@ -101,7 +115,6 @@ export function useAgentSessionState() {
     [
       setSession,
       setMessages,
-      setIsSessionLoading,
       setIsLoadingOlderMessages,
       setHasOlderMessages,
       setOldestMessageCursor,
@@ -109,7 +122,7 @@ export function useAgentSessionState() {
       setLlmError,
       setWorkflowStatus,
       setWorkflowPhase,
-      setInitializationStep,
+      setRuntimeState,
       setPendingApprovals,
       setYoloModeEnabled,
       applyLocalViewedAt,
@@ -118,11 +131,29 @@ export function useAgentSessionState() {
     ],
   );
 
+  const initializationStep: {
+    step: string;
+    status: 'running' | 'complete' | 'error';
+  } | null = runtimeState.initialization.currentStep
+    ? {
+        step: runtimeState.initialization.currentStep,
+        status:
+          runtimeState.phase === 'failed'
+            ? 'error'
+            : runtimeState.phase === 'ready' ||
+                runtimeState.phase === 'degraded'
+              ? 'complete'
+              : 'running',
+      }
+    : null;
+
   return {
     state: {
       session,
       messages,
-      isSessionLoading,
+      isSessionLoading:
+        runtimeState.phase === 'hydrating' ||
+        runtimeState.phase === 'initializing',
       isLoadingOlderMessages,
       hasOlderMessages,
       oldestMessageCursor,
@@ -130,6 +161,7 @@ export function useAgentSessionState() {
       llmError,
       workflowStatus,
       workflowPhase,
+      runtimeState,
       initializationStep,
       pendingApprovals,
       yoloModeEnabled,

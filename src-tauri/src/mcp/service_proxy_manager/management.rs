@@ -1,8 +1,11 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
+use super::runtime_updates::{emit_runtime_state, update_runtime_state_store};
 use super::MCPServiceProxyManager;
+use crate::agent::runtime_state::SessionRuntimeState;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use std::sync::Arc;
+use tauri::AppHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProxyReadinessState {
@@ -25,6 +28,40 @@ pub fn decide_proxy_readiness_state(
 }
 
 impl MCPServiceProxyManager {
+    pub async fn get_runtime_state(&self, session_id: &str) -> SessionRuntimeState {
+        self.runtime_states
+            .read()
+            .await
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub async fn set_runtime_state(
+        &self,
+        session_id: &str,
+        runtime_state: SessionRuntimeState,
+        app_handle: Option<&AppHandle>,
+    ) {
+        self.runtime_states
+            .write()
+            .await
+            .insert(session_id.to_string(), runtime_state.clone());
+        emit_runtime_state(session_id, &runtime_state, app_handle);
+    }
+
+    pub async fn update_runtime_state<F>(
+        &self,
+        session_id: &str,
+        app_handle: Option<&AppHandle>,
+        update: F,
+    ) -> SessionRuntimeState
+    where
+        F: FnOnce(&mut SessionRuntimeState),
+    {
+        update_runtime_state_store(&self.runtime_states, session_id, app_handle, update).await
+    }
+
     /// Get an existing proxy for a session
     ///
     /// # Arguments
@@ -50,6 +87,7 @@ impl MCPServiceProxyManager {
 
         // 2. Cleanup readiness signal (drops Sender, waking any waiters with RecvError)
         self.proxy_readiness.write().await.remove(session_id);
+        self.runtime_states.write().await.remove(session_id);
 
         // 3. Shutdown stdio processes
         if let Some(stdio_mgr) = self.session_stdio_managers.write().await.remove(session_id) {
