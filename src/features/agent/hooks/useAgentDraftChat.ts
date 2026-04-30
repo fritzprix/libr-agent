@@ -313,10 +313,13 @@ export function useAgentDraftChat() {
       try {
         unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
           if (
-            event.payload.type === 'initializationStep' &&
+            event.payload.type === 'sessionRuntimeStateUpdated' &&
             event.payload.sessionId === newSessionId
           ) {
-            const step = event.payload.step;
+            const step = event.payload.runtimeState.initialization.currentStep;
+            if (!step) {
+              return;
+            }
             if (toastId) {
               toast.loading(step, { id: toastId });
             } else {

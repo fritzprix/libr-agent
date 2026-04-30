@@ -7,6 +7,7 @@ pub mod events;
 pub mod lifecycle;
 pub mod llm;
 pub mod references;
+pub mod runtime_state;
 pub mod session_bus;
 pub mod session_manager;
 pub mod state;

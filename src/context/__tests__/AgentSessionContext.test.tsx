@@ -59,6 +59,20 @@ vi.mock('../ModelProvider', () => ({
 }));
 
 const TEST_SESSION_ID = 'session-1';
+const READY_RUNTIME_STATE = {
+    sequence: 1,
+    phase: 'ready' as const,
+    proxy: {
+        exists: true,
+        mode: 'builtin_only' as const,
+        ready: true,
+    },
+    initialization: {
+        currentStep: 'Session initialization complete',
+        result: 'success' as const,
+    },
+    servers: [],
+};
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
     // Provide a mocked sessionId prop
@@ -98,6 +112,7 @@ describe('AgentSessionContext (Local)', () => {
                 oldestCursor: null,
             },
             pendingApprovals: [],
+            runtimeState: READY_RUNTIME_STATE,
         });
         (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     });
@@ -150,6 +165,7 @@ describe('AgentSessionContext (Local)', () => {
                     oldestCursor: null,
                 },
                 pendingApprovals: [],
+                runtimeState: READY_RUNTIME_STATE,
             })
         );
 
@@ -199,6 +215,7 @@ describe('AgentSessionContext (Local)', () => {
                     oldestCursor: null,
                 },
                 pendingApprovals: [],
+                runtimeState: READY_RUNTIME_STATE,
             })
         );
 
@@ -238,6 +255,145 @@ describe('AgentSessionContext (Local)', () => {
     });
 
     describe('Event Handling', () => {
+        it('ignores stale runtime-state snapshots that arrive after a newer one', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            let resolveOpenSession:
+                | ((
+                      value: Awaited<
+                          ReturnType<typeof agentCommandsBackend.openAgentSession>
+                      >,
+                  ) => void)
+                | undefined;
+
+            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+                async (_eventName, handler) => {
+                    eventHandler = handler;
+                    return mockUnlisten;
+                },
+            );
+            (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>)
+                .mockImplementation(
+                    () =>
+                        new Promise((resolve) => {
+                            resolveOpenSession = resolve;
+                        }),
+                );
+
+            const { result } = renderHook(() => useAgentSessionState(), {
+                wrapper: TestWrapper,
+            });
+
+            await waitFor(() => {
+                expect(eventHandler).toBeDefined();
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'sessionRuntimeStateUpdated',
+                        sessionId: TEST_SESSION_ID,
+                        runtimeState: {
+                            ...READY_RUNTIME_STATE,
+                            sequence: 3,
+                            initialization: {
+                                currentStep: 'Newer runtime state',
+                                result: 'success' as const,
+                            },
+                        },
+                    },
+                });
+            });
+
+            await act(async () => {
+                resolveOpenSession?.({
+                    session: {
+                        id: TEST_SESSION_ID,
+                        name: 'Test Session',
+                        status: 'idle',
+                        model: 'test-model',
+                        provider: 'test-provider',
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                        yoloMode: false,
+                    },
+                    messages: {
+                        items: [],
+                        hasMoreBefore: false,
+                        oldestCursor: null,
+                    },
+                    pendingApprovals: [],
+                    runtimeState: READY_RUNTIME_STATE,
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.runtimeState.sequence).toBe(3);
+                expect(result.current.runtimeState.initialization.currentStep).toBe(
+                    'Newer runtime state',
+                );
+            });
+        });
+
+        it('ignores stale runtime-state events that arrive after a newer event snapshot', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+                async (_eventName, handler) => {
+                    eventHandler = handler;
+                    return mockUnlisten;
+                },
+            );
+
+            const { result } = renderHook(() => useAgentSessionState(), {
+                wrapper: TestWrapper,
+            });
+
+            await waitFor(() => {
+                expect(result.current.isSessionLoading).toBe(false);
+                expect(eventHandler).toBeDefined();
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'sessionRuntimeStateUpdated',
+                        sessionId: TEST_SESSION_ID,
+                        runtimeState: {
+                            ...READY_RUNTIME_STATE,
+                            sequence: 4,
+                            initialization: {
+                                currentStep: 'Newest runtime state',
+                                result: 'success' as const,
+                            },
+                        },
+                    },
+                });
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'sessionRuntimeStateUpdated',
+                        sessionId: TEST_SESSION_ID,
+                        runtimeState: {
+                            ...READY_RUNTIME_STATE,
+                            sequence: 2,
+                            initialization: {
+                                currentStep: 'Stale runtime state',
+                                result: 'success' as const,
+                            },
+                        },
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.runtimeState.sequence).toBe(4);
+                expect(result.current.runtimeState.initialization.currentStep).toBe(
+                    'Newest runtime state',
+                );
+            });
+        });
+
         it('should update workflow status on statusChanged event', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
             (listen as ReturnType<typeof vi.fn>).mockImplementation(

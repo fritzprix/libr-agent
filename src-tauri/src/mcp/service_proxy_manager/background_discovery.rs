@@ -1,0 +1,574 @@
+use super::super::service_proxy::MCPServiceProxy;
+use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
+use super::persist_tool_cache_for_server;
+use super::runtime_updates::{
+    apply_batch_step, apply_initialization_complete, apply_server_connecting,
+    apply_server_discovering, apply_server_failed, apply_server_ready, update_runtime_state_store,
+};
+use super::MCPServiceProxyManager;
+use crate::agent::runtime_state::SessionRuntimeTransport;
+use crate::services::mcp_server_service::summarize_tool_names;
+use futures::FutureExt;
+use std::any::Any;
+use std::collections::HashMap;
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
+use tauri::AppHandle;
+use tokio::task::JoinSet;
+
+type RuntimeStateStore =
+    Arc<tokio::sync::RwLock<HashMap<String, crate::agent::runtime_state::SessionRuntimeState>>>;
+
+#[derive(Clone)]
+struct DiscoveryContext {
+    session_id: String,
+    app_handle: Option<AppHandle>,
+    runtime_states: RuntimeStateStore,
+    server_name_to_id: Arc<HashMap<String, String>>,
+    tool_discovery_timeout: Duration,
+    runtime_state_emits: Arc<AtomicU32>,
+}
+
+struct PanicDiscoveryResult {
+    server_name: String,
+    panic_error: Option<String>,
+}
+
+pub(super) struct BackgroundDiscoveryPlan {
+    pub(super) session_id: String,
+    pub(super) proxy: Arc<MCPServiceProxy>,
+    pub(super) stdio_manager: SessionMCPManager,
+    pub(super) http_manager: HttpSessionManager,
+    pub(super) stdio_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
+    pub(super) http_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
+    pub(super) server_name_to_id: HashMap<String, String>,
+    pub(super) tool_discovery_timeout: Duration,
+    pub(super) app_handle: Option<AppHandle>,
+}
+
+fn describe_panic_payload(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        return (*message).to_string();
+    }
+    "unknown panic payload".to_string()
+}
+
+async fn mark_server_failed(
+    context: &DiscoveryContext,
+    server_name: &str,
+    transport: SessionRuntimeTransport,
+    error: String,
+) {
+    let update_result = update_runtime_state_store(
+        &context.runtime_states,
+        &context.session_id,
+        context.app_handle.as_ref(),
+        |state| {
+            apply_server_failed(state, server_name, transport, error.clone());
+        },
+    )
+    .await;
+    if update_result.emitted {
+        context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn log_background_discovery_metrics(
+    session_id: &str,
+    stdio_servers: usize,
+    http_servers: usize,
+    runtime_state_emits: u32,
+    total_ms: u128,
+    stdio_ms: u128,
+    http_ms: u128,
+) {
+    log::info!(
+        "proxy_discovery_metrics session_id={} stdio_servers={} http_servers={} runtime_state_emits={} total_ms={} stdio_ms={} http_ms={}",
+        session_id,
+        stdio_servers,
+        http_servers,
+        runtime_state_emits,
+        total_ms,
+        stdio_ms,
+        http_ms
+    );
+}
+
+async fn await_tool_discovery<T, E, F>(
+    future: F,
+    timeout: Duration,
+    transport: &str,
+    server_name: &str,
+    session_id: &str,
+) -> Result<T, String>
+where
+    F: Future<Output = Result<T, E>>,
+    E: std::fmt::Display,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(format!(
+            "{} server '{}' tool discovery failed for session '{}': {}",
+            transport, server_name, session_id, error
+        )),
+        Err(_) => Err(format!(
+            "{} server '{}' tool discovery timed out after {}s for session '{}'",
+            transport,
+            server_name,
+            timeout.as_secs(),
+            session_id
+        )),
+    }
+}
+
+async fn load_stdio_tools(
+    context: DiscoveryContext,
+    stdio_manager: SessionMCPManager,
+    proxy: Arc<MCPServiceProxy>,
+    stdio_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
+) {
+    if !stdio_configs.is_empty() {
+        log::info!(
+            "[bg] Loading tools for {} stdio servers in parallel (session: {})",
+            stdio_configs.len(),
+            context.session_id
+        );
+        let update_result = update_runtime_state_store(
+            &context.runtime_states,
+            &context.session_id,
+            context.app_handle.as_ref(),
+            |state| {
+                apply_batch_step(
+                    state,
+                    format!("Connecting to {} stdio servers", stdio_configs.len()),
+                );
+                for server_name in stdio_configs.keys() {
+                    apply_server_connecting(state, server_name, SessionRuntimeTransport::Stdio);
+                }
+            },
+        )
+        .await;
+        if update_result.emitted {
+            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let mut stdio_tasks: JoinSet<PanicDiscoveryResult> = JoinSet::new();
+    for server_name in stdio_configs.keys() {
+        let manager = stdio_manager.clone();
+        let proxy = proxy.clone();
+        let id_map = context.server_name_to_id.clone();
+        let task_context = context.clone();
+        let server_name = server_name.clone();
+        stdio_tasks.spawn(async move {
+            let panic_server_name = server_name.clone();
+            let panic_server_name_for_message = panic_server_name.clone();
+            let panic_session_id = task_context.session_id.clone();
+            match AssertUnwindSafe(async move {
+                log::debug!(
+                    "[bg] Fetching tools from stdio server '{}' for session '{}'",
+                    server_name,
+                    task_context.session_id
+                );
+                match await_tool_discovery(
+                    manager.list_tools(&server_name),
+                    task_context.tool_discovery_timeout,
+                    "stdio",
+                    &server_name,
+                    &task_context.session_id,
+                )
+                .await
+                {
+                    Ok(tools) => {
+                        let tool_count = tools.len();
+                        log::info!(
+                            "[bg] ✅ Fetched {} tools from stdio server '{}' for session '{}': raw=[{}]",
+                            tool_count,
+                            server_name,
+                            task_context.session_id,
+                            summarize_tool_names(&tools)
+                        );
+                        if let Some(server_id) = id_map.get(&server_name) {
+                            persist_tool_cache_for_server(
+                                &server_name,
+                                Some(server_id.as_str()),
+                                "stdio",
+                                &tools,
+                            )
+                            .await;
+                        }
+                        let prefixed_tools: Vec<_> = tools
+                            .into_iter()
+                            .map(|mut tool| {
+                                tool.name = format!("{}__{}", server_name, tool.name);
+                                tool
+                            })
+                            .collect();
+                        log::info!(
+                            "[bg] Session-visible stdio tools for '{}' in session '{}': [{}]",
+                            server_name,
+                            task_context.session_id,
+                            summarize_tool_names(&prefixed_tools)
+                        );
+                        proxy
+                            .set_session_stdio_tools(server_name.clone(), prefixed_tools)
+                            .await;
+                        let update_result = update_runtime_state_store(
+                            &task_context.runtime_states,
+                            &task_context.session_id,
+                            task_context.app_handle.as_ref(),
+                            |state| {
+                                apply_server_ready(
+                                    state,
+                                    &server_name,
+                                    SessionRuntimeTransport::Stdio,
+                                    tool_count,
+                                );
+                            },
+                        )
+                        .await;
+                        if update_result.emitted {
+                            task_context
+                                .runtime_state_emits
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    Err(error) => {
+                        mark_server_failed(
+                            &task_context,
+                            &server_name,
+                            SessionRuntimeTransport::Stdio,
+                            error.clone(),
+                        )
+                        .await;
+                        log::error!("[bg] ❌ {}", error);
+                    }
+                }
+            })
+            .catch_unwind()
+            .await
+            {
+                Ok(()) => PanicDiscoveryResult {
+                    server_name: panic_server_name,
+                    panic_error: None,
+                },
+                Err(payload) => PanicDiscoveryResult {
+                    server_name: panic_server_name,
+                    panic_error: Some(format!(
+                        "stdio server '{}' tool discovery panicked for session '{}': {}",
+                        panic_server_name_for_message,
+                        panic_session_id,
+                        describe_panic_payload(payload.as_ref())
+                    )),
+                },
+            }
+        });
+    }
+
+    while let Some(result) = stdio_tasks.join_next().await {
+        match result {
+            Ok(PanicDiscoveryResult {
+                server_name,
+                panic_error: Some(error),
+            }) => {
+                log::error!("[bg] ❌ {}", error);
+                mark_server_failed(
+                    &context,
+                    &server_name,
+                    SessionRuntimeTransport::Stdio,
+                    error,
+                )
+                .await;
+            }
+            Ok(PanicDiscoveryResult {
+                panic_error: None, ..
+            }) => {}
+            Err(error) => {
+                log::error!("[bg] stdio server init task join failed: {:?}", error);
+            }
+        }
+    }
+}
+
+async fn load_http_tools(
+    context: DiscoveryContext,
+    http_manager: HttpSessionManager,
+    proxy: Arc<MCPServiceProxy>,
+    http_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
+) {
+    if !http_configs.is_empty() {
+        log::info!(
+            "[bg] Loading tools for {} HTTP servers in parallel (session: {})",
+            http_configs.len(),
+            context.session_id
+        );
+        let update_result = update_runtime_state_store(
+            &context.runtime_states,
+            &context.session_id,
+            context.app_handle.as_ref(),
+            |state| {
+                apply_batch_step(state, "Loading tools from HTTP servers");
+            },
+        )
+        .await;
+        if update_result.emitted {
+            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let mut http_tasks: JoinSet<PanicDiscoveryResult> = JoinSet::new();
+    for server_name in http_configs.keys() {
+        let manager = http_manager.clone();
+        let proxy = proxy.clone();
+        let id_map = context.server_name_to_id.clone();
+        let task_context = context.clone();
+        let server_name = server_name.clone();
+        http_tasks.spawn(async move {
+            let panic_server_name = server_name.clone();
+            let panic_server_name_for_message = panic_server_name.clone();
+            let panic_session_id = task_context.session_id.clone();
+            match AssertUnwindSafe(async move {
+                if proxy.has_http_tools_cached(&server_name).await {
+                    log::info!(
+                        "[bg] ⚡ Skipping HTTP server '{}' - tools already cached",
+                        server_name
+                    );
+                    let update_result = update_runtime_state_store(
+                        &task_context.runtime_states,
+                        &task_context.session_id,
+                        task_context.app_handle.as_ref(),
+                        |state| {
+                            apply_server_ready(
+                                state,
+                                &server_name,
+                                SessionRuntimeTransport::Http,
+                                0,
+                            );
+                        },
+                    )
+                    .await;
+                    if update_result.emitted {
+                        task_context
+                            .runtime_state_emits
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                    return;
+                }
+
+                let update_result = update_runtime_state_store(
+                    &task_context.runtime_states,
+                    &task_context.session_id,
+                    task_context.app_handle.as_ref(),
+                    |state| {
+                        apply_server_discovering(
+                            state,
+                            &server_name,
+                            SessionRuntimeTransport::Http,
+                        );
+                    },
+                )
+                .await;
+                if update_result.emitted {
+                    task_context
+                        .runtime_state_emits
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                log::debug!(
+                    "[bg] Fetching tools from HTTP server '{}' for session '{}'",
+                    server_name,
+                    task_context.session_id
+                );
+                match await_tool_discovery(
+                    manager.list_tools(&server_name),
+                    task_context.tool_discovery_timeout,
+                    "http",
+                    &server_name,
+                    &task_context.session_id,
+                )
+                .await
+                {
+                    Ok(tools) => {
+                        let tool_count = tools.len();
+                        log::info!(
+                            "[bg] ✅ Fetched {} tools from HTTP server '{}' for session '{}': raw=[{}]",
+                            tool_count,
+                            server_name,
+                            task_context.session_id,
+                            summarize_tool_names(&tools)
+                        );
+                        if let Some(server_id) = id_map.get(&server_name) {
+                            persist_tool_cache_for_server(
+                                &server_name,
+                                Some(server_id.as_str()),
+                                "http",
+                                &tools,
+                            )
+                            .await;
+                        }
+                        let prefixed_tools: Vec<_> = tools
+                            .into_iter()
+                            .map(|mut tool| {
+                                tool.name = format!("{}__{}", server_name, tool.name);
+                                tool
+                            })
+                            .collect();
+                        log::info!(
+                            "[bg] Session-visible HTTP tools for '{}' in session '{}': [{}]",
+                            server_name,
+                            task_context.session_id,
+                            summarize_tool_names(&prefixed_tools)
+                        );
+                        proxy
+                            .set_session_http_tools(server_name.clone(), prefixed_tools)
+                            .await;
+                        let update_result = update_runtime_state_store(
+                            &task_context.runtime_states,
+                            &task_context.session_id,
+                            task_context.app_handle.as_ref(),
+                            |state| {
+                                apply_server_ready(
+                                    state,
+                                    &server_name,
+                                    SessionRuntimeTransport::Http,
+                                    tool_count,
+                                );
+                            },
+                        )
+                        .await;
+                        if update_result.emitted {
+                            task_context
+                                .runtime_state_emits
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    Err(error) => {
+                        mark_server_failed(
+                            &task_context,
+                            &server_name,
+                            SessionRuntimeTransport::Http,
+                            error.clone(),
+                        )
+                        .await;
+                        log::error!("[bg] ❌ {}", error);
+                    }
+                }
+            })
+            .catch_unwind()
+            .await
+            {
+                Ok(()) => PanicDiscoveryResult {
+                    server_name: panic_server_name,
+                    panic_error: None,
+                },
+                Err(payload) => PanicDiscoveryResult {
+                    server_name: panic_server_name,
+                    panic_error: Some(format!(
+                        "http server '{}' tool discovery panicked for session '{}': {}",
+                        panic_server_name_for_message,
+                        panic_session_id,
+                        describe_panic_payload(payload.as_ref())
+                    )),
+                },
+            }
+        });
+    }
+
+    while let Some(result) = http_tasks.join_next().await {
+        match result {
+            Ok(PanicDiscoveryResult {
+                server_name,
+                panic_error: Some(error),
+            }) => {
+                log::error!("[bg] ❌ {}", error);
+                mark_server_failed(&context, &server_name, SessionRuntimeTransport::Http, error)
+                    .await;
+            }
+            Ok(PanicDiscoveryResult {
+                panic_error: None, ..
+            }) => {}
+            Err(error) => {
+                log::error!("[bg] HTTP server init task join failed: {:?}", error);
+            }
+        }
+    }
+}
+
+pub(super) async fn spawn_background_tool_loading(
+    manager: &MCPServiceProxyManager,
+    plan: BackgroundDiscoveryPlan,
+) {
+    let (ready_tx, _) = tokio::sync::watch::channel(false);
+    let ready_tx = Arc::new(ready_tx);
+    manager
+        .proxy_readiness
+        .write()
+        .await
+        .insert(plan.session_id.clone(), ready_tx.clone());
+
+    let context = DiscoveryContext {
+        session_id: plan.session_id,
+        app_handle: plan.app_handle,
+        runtime_states: manager.runtime_states.clone(),
+        server_name_to_id: Arc::new(plan.server_name_to_id),
+        tool_discovery_timeout: plan.tool_discovery_timeout,
+        runtime_state_emits: Arc::new(AtomicU32::new(0)),
+    };
+    tokio::spawn(async move {
+        let total_start = Instant::now();
+        let stdio_start = Instant::now();
+        let stdio_server_count = plan.stdio_configs.len();
+        let http_server_count = plan.http_configs.len();
+        load_stdio_tools(
+            context.clone(),
+            plan.stdio_manager,
+            plan.proxy.clone(),
+            plan.stdio_configs,
+        )
+        .await;
+        let stdio_ms = stdio_start.elapsed().as_millis();
+
+        let http_start = Instant::now();
+        load_http_tools(
+            context.clone(),
+            plan.http_manager,
+            plan.proxy,
+            plan.http_configs,
+        )
+        .await;
+        let http_ms = http_start.elapsed().as_millis();
+
+        log::info!(
+            "[bg] Tool loading complete for session: {}",
+            context.session_id
+        );
+        let _ = ready_tx.send(true);
+        let update_result = update_runtime_state_store(
+            &context.runtime_states,
+            &context.session_id,
+            context.app_handle.as_ref(),
+            |state| {
+                apply_initialization_complete(state);
+            },
+        )
+        .await;
+        if update_result.emitted {
+            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+        }
+        log_background_discovery_metrics(
+            &context.session_id,
+            stdio_server_count,
+            http_server_count,
+            context.runtime_state_emits.load(Ordering::Relaxed),
+            total_start.elapsed().as_millis(),
+            stdio_ms,
+            http_ms,
+        );
+    });
+}
