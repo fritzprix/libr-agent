@@ -308,7 +308,10 @@ function AIModelsTabComponent({
           </label>
           <Input
             type="url"
-            placeholder="https://api.agenthub.com"
+            placeholder={t(
+              'settings.aiModels.agentHubUrlPlaceholder',
+              'https://api.agenthub.com',
+            )}
             value={localAgentHubUrl}
             onChange={(e) => onAgentHubUrlChange(e.target.value)}
             className="bg-background border text-foreground w-full"
