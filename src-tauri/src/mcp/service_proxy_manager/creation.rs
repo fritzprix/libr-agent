@@ -14,8 +14,11 @@ use super::runtime_updates::{
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::{SessionRuntimeState, SessionRuntimeTransport};
 use crate::session::SessionManager;
+use futures::FutureExt;
 use sea_orm::DatabaseConnection;
+use std::any::Any;
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,6 +30,16 @@ use tokio::task::JoinSet;
 struct HttpStartupResult {
     server_name: String,
     outcome: Result<(), String>,
+}
+
+fn describe_panic_payload(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        return (*message).to_string();
+    }
+    "unknown panic payload".to_string()
 }
 
 struct CreateProxyMetrics<'a> {
@@ -91,12 +104,25 @@ async fn start_http_servers_in_parallel(
         let server_name = server_name.clone();
         let config = config.clone();
         tasks.spawn(async move {
-            let outcome = manager
-                .start_server(&server_name, config)
-                .await
-                .map_err(|error| error.to_string());
+            let panic_server_name = server_name.clone();
+            let outcome = match AssertUnwindSafe(async move {
+                manager
+                    .start_server(&server_name, config)
+                    .await
+                    .map_err(|error| error.to_string())
+            })
+            .catch_unwind()
+            .await
+            {
+                Ok(result) => result,
+                Err(payload) => Err(format!(
+                    "HTTP server '{}' startup panicked: {}",
+                    panic_server_name,
+                    describe_panic_payload(payload.as_ref())
+                )),
+            };
             HttpStartupResult {
-                server_name,
+                server_name: panic_server_name,
                 outcome,
             }
         });
@@ -107,7 +133,7 @@ async fn start_http_servers_in_parallel(
         match result {
             Ok(startup_result) => results.push(startup_result),
             Err(error) => {
-                log::error!("HTTP server startup task panicked: {:?}", error);
+                log::error!("HTTP server startup task join failed: {:?}", error);
             }
         }
     }
