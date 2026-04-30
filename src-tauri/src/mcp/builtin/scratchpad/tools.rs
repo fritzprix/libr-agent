@@ -98,7 +98,7 @@ fn list_tool() -> MCPTool {
     MCPTool {
         name: "list".to_string(),
         title: Some("List Scratchpad Notes".to_string()),
-        description: "List scratchpad notes with metadata (ID, title, tags) and content preview. Use this to find the IDs of items you want to read fully. Supports pagination and tag filtering.".to_string(),
+        description: "List scratchpad notes in a Markdown table with metadata (ID, title, tags) and content preview. Use this to find the IDs of items you want to read fully. Supports pagination and tag filtering.".to_string(),
         input_schema: object_prop(
             vec![
                 (
