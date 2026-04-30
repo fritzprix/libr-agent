@@ -11,6 +11,7 @@ import type { WorkflowPhase, PendingApproval } from './types';
 import { buildMessageError } from './utils';
 
 const DEFAULT_RUNTIME_STATE: SessionRuntimeState = {
+  sequence: 0,
   phase: 'not_started',
   proxy: {
     exists: false,

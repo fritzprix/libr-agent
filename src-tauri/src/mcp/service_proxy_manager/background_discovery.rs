@@ -3,16 +3,17 @@ use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::persist_tool_cache_for_server;
 use super::runtime_updates::{
     apply_batch_step, apply_initialization_complete, apply_server_connecting,
-    apply_server_discovering, apply_server_failed, apply_server_ready, emit_runtime_state,
-    mutate_runtime_state_store,
+    apply_server_discovering, apply_server_failed, apply_server_ready, update_runtime_state_store,
 };
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeTransport;
 use crate::services::mcp_server_service::summarize_tool_names;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tauri::AppHandle;
 use tokio::task::JoinSet;
 
@@ -26,6 +27,7 @@ struct DiscoveryContext {
     runtime_states: RuntimeStateStore,
     server_name_to_id: Arc<HashMap<String, String>>,
     tool_discovery_timeout: Duration,
+    runtime_state_emits: Arc<AtomicU32>,
 }
 
 pub(super) struct BackgroundDiscoveryPlan {
@@ -40,16 +42,24 @@ pub(super) struct BackgroundDiscoveryPlan {
     pub(super) app_handle: Option<AppHandle>,
 }
 
-async fn commit_runtime_state_update<F>(context: &DiscoveryContext, update: F)
-where
-    F: FnOnce(&mut crate::agent::runtime_state::SessionRuntimeState),
-{
-    let runtime_state =
-        mutate_runtime_state_store(&context.runtime_states, &context.session_id, update).await;
-    emit_runtime_state(
-        &context.session_id,
-        &runtime_state,
-        context.app_handle.as_ref(),
+fn log_background_discovery_metrics(
+    session_id: &str,
+    stdio_servers: usize,
+    http_servers: usize,
+    runtime_state_emits: u32,
+    total_ms: u128,
+    stdio_ms: u128,
+    http_ms: u128,
+) {
+    log::info!(
+        "proxy_discovery_metrics session_id={} stdio_servers={} http_servers={} runtime_state_emits={} total_ms={} stdio_ms={} http_ms={}",
+        session_id,
+        stdio_servers,
+        http_servers,
+        runtime_state_emits,
+        total_ms,
+        stdio_ms,
+        http_ms
     );
 }
 
@@ -92,16 +102,24 @@ async fn load_stdio_tools(
             stdio_configs.len(),
             context.session_id
         );
-        commit_runtime_state_update(&context, |state| {
-            apply_batch_step(
-                state,
-                format!("Connecting to {} stdio servers", stdio_configs.len()),
-            );
-            for server_name in stdio_configs.keys() {
-                apply_server_connecting(state, server_name, SessionRuntimeTransport::Stdio);
-            }
-        })
+        let update_result = update_runtime_state_store(
+            &context.runtime_states,
+            &context.session_id,
+            context.app_handle.as_ref(),
+            |state| {
+                apply_batch_step(
+                    state,
+                    format!("Connecting to {} stdio servers", stdio_configs.len()),
+                );
+                for server_name in stdio_configs.keys() {
+                    apply_server_connecting(state, server_name, SessionRuntimeTransport::Stdio);
+                }
+            },
+        )
         .await;
+        if update_result.emitted {
+            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     let mut stdio_tasks: JoinSet<()> = JoinSet::new();
@@ -160,26 +178,46 @@ async fn load_stdio_tools(
                     proxy
                         .set_session_stdio_tools(server_name.clone(), prefixed_tools)
                         .await;
-                    commit_runtime_state_update(&task_context, |state| {
-                        apply_server_ready(
-                            state,
-                            &server_name,
-                            SessionRuntimeTransport::Stdio,
-                            tool_count,
-                        );
-                    })
+                    let update_result = update_runtime_state_store(
+                        &task_context.runtime_states,
+                        &task_context.session_id,
+                        task_context.app_handle.as_ref(),
+                        |state| {
+                            apply_server_ready(
+                                state,
+                                &server_name,
+                                SessionRuntimeTransport::Stdio,
+                                tool_count,
+                            );
+                        },
+                    )
                     .await;
+                    if update_result.emitted {
+                        task_context
+                            .runtime_state_emits
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
                 }
                 Err(error) => {
-                    commit_runtime_state_update(&task_context, |state| {
-                        apply_server_failed(
-                            state,
-                            &server_name,
-                            SessionRuntimeTransport::Stdio,
-                            error.clone(),
-                        );
-                    })
+                    let update_result = update_runtime_state_store(
+                        &task_context.runtime_states,
+                        &task_context.session_id,
+                        task_context.app_handle.as_ref(),
+                        |state| {
+                            apply_server_failed(
+                                state,
+                                &server_name,
+                                SessionRuntimeTransport::Stdio,
+                                error.clone(),
+                            );
+                        },
+                    )
                     .await;
+                    if update_result.emitted {
+                        task_context
+                            .runtime_state_emits
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
                     log::error!("[bg] ❌ {}", error);
                 }
             }
@@ -205,10 +243,18 @@ async fn load_http_tools(
             http_configs.len(),
             context.session_id
         );
-        commit_runtime_state_update(&context, |state| {
-            apply_batch_step(state, "Loading tools from HTTP servers");
-        })
+        let update_result = update_runtime_state_store(
+            &context.runtime_states,
+            &context.session_id,
+            context.app_handle.as_ref(),
+            |state| {
+                apply_batch_step(state, "Loading tools from HTTP servers");
+            },
+        )
         .await;
+        if update_result.emitted {
+            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     let mut http_tasks: JoinSet<()> = JoinSet::new();
@@ -224,21 +270,37 @@ async fn load_http_tools(
                     "[bg] ⚡ Skipping HTTP server '{}' - tools already cached",
                     server_name
                 );
-                commit_runtime_state_update(&task_context, |state| {
-                    apply_server_ready(state, &server_name, SessionRuntimeTransport::Http, 0);
-                })
+                let update_result = update_runtime_state_store(
+                    &task_context.runtime_states,
+                    &task_context.session_id,
+                    task_context.app_handle.as_ref(),
+                    |state| {
+                        apply_server_ready(state, &server_name, SessionRuntimeTransport::Http, 0);
+                    },
+                )
                 .await;
+                if update_result.emitted {
+                    task_context
+                        .runtime_state_emits
+                        .fetch_add(1, Ordering::Relaxed);
+                }
                 return;
             }
 
-            let _ = mutate_runtime_state_store(
+            let update_result = update_runtime_state_store(
                 &task_context.runtime_states,
                 &task_context.session_id,
+                task_context.app_handle.as_ref(),
                 |state| {
                     apply_server_discovering(state, &server_name, SessionRuntimeTransport::Http);
                 },
             )
             .await;
+            if update_result.emitted {
+                task_context
+                    .runtime_state_emits
+                    .fetch_add(1, Ordering::Relaxed);
+            }
             log::debug!(
                 "[bg] Fetching tools from HTTP server '{}' for session '{}'",
                 server_name,
@@ -287,26 +349,46 @@ async fn load_http_tools(
                     proxy
                         .set_session_http_tools(server_name.clone(), prefixed_tools)
                         .await;
-                    commit_runtime_state_update(&task_context, |state| {
-                        apply_server_ready(
-                            state,
-                            &server_name,
-                            SessionRuntimeTransport::Http,
-                            tool_count,
-                        );
-                    })
+                    let update_result = update_runtime_state_store(
+                        &task_context.runtime_states,
+                        &task_context.session_id,
+                        task_context.app_handle.as_ref(),
+                        |state| {
+                            apply_server_ready(
+                                state,
+                                &server_name,
+                                SessionRuntimeTransport::Http,
+                                tool_count,
+                            );
+                        },
+                    )
                     .await;
+                    if update_result.emitted {
+                        task_context
+                            .runtime_state_emits
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
                 }
                 Err(error) => {
-                    commit_runtime_state_update(&task_context, |state| {
-                        apply_server_failed(
-                            state,
-                            &server_name,
-                            SessionRuntimeTransport::Http,
-                            error.clone(),
-                        );
-                    })
+                    let update_result = update_runtime_state_store(
+                        &task_context.runtime_states,
+                        &task_context.session_id,
+                        task_context.app_handle.as_ref(),
+                        |state| {
+                            apply_server_failed(
+                                state,
+                                &server_name,
+                                SessionRuntimeTransport::Http,
+                                error.clone(),
+                            );
+                        },
+                    )
                     .await;
+                    if update_result.emitted {
+                        task_context
+                            .runtime_state_emits
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
                     log::error!("[bg] ❌ {}", error);
                 }
             }
@@ -338,8 +420,13 @@ pub(super) async fn spawn_background_tool_loading(
         runtime_states: manager.runtime_states.clone(),
         server_name_to_id: Arc::new(plan.server_name_to_id),
         tool_discovery_timeout: plan.tool_discovery_timeout,
+        runtime_state_emits: Arc::new(AtomicU32::new(0)),
     };
     tokio::spawn(async move {
+        let total_start = Instant::now();
+        let stdio_start = Instant::now();
+        let stdio_server_count = plan.stdio_configs.len();
+        let http_server_count = plan.http_configs.len();
         load_stdio_tools(
             context.clone(),
             plan.stdio_manager,
@@ -347,7 +434,9 @@ pub(super) async fn spawn_background_tool_loading(
             plan.stdio_configs,
         )
         .await;
+        let stdio_ms = stdio_start.elapsed().as_millis();
 
+        let http_start = Instant::now();
         load_http_tools(
             context.clone(),
             plan.http_manager,
@@ -355,15 +444,33 @@ pub(super) async fn spawn_background_tool_loading(
             plan.http_configs,
         )
         .await;
+        let http_ms = http_start.elapsed().as_millis();
 
         log::info!(
             "[bg] Tool loading complete for session: {}",
             context.session_id
         );
         let _ = ready_tx.send(true);
-        commit_runtime_state_update(&context, |state| {
-            apply_initialization_complete(state);
-        })
+        let update_result = update_runtime_state_store(
+            &context.runtime_states,
+            &context.session_id,
+            context.app_handle.as_ref(),
+            |state| {
+                apply_initialization_complete(state);
+            },
+        )
         .await;
+        if update_result.emitted {
+            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+        }
+        log_background_discovery_metrics(
+            &context.session_id,
+            stdio_server_count,
+            http_server_count,
+            context.runtime_state_emits.load(Ordering::Relaxed),
+            total_start.elapsed().as_millis(),
+            stdio_ms,
+            http_ms,
+        );
     });
 }

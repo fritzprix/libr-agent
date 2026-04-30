@@ -183,6 +183,7 @@ export interface SessionRuntimeServerState {
 }
 
 export interface SessionRuntimeState {
+  sequence: number;
   phase: SessionRuntimePhase;
   proxy: SessionRuntimeProxyState;
   initialization: SessionRuntimeInitializationState;

@@ -207,8 +207,8 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             session_id,
             runtime_state,
         } => format!(
-            "SessionRuntimeStateUpdated(session={session_id}, phase={:?}, proxy_mode={:?})",
-            runtime_state.phase, runtime_state.proxy.mode
+            "SessionRuntimeStateUpdated(session={session_id}, sequence={}, phase={:?}, proxy_mode={:?})",
+            runtime_state.sequence, runtime_state.phase, runtime_state.proxy.mode
         ),
         AgentEvent::ResourceUpdated {
             resource_type,

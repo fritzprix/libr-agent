@@ -1,6 +1,9 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
-use super::runtime_updates::{emit_runtime_state, update_runtime_state_store};
+use super::runtime_updates::{
+    emit_runtime_state, replace_runtime_state_store, update_runtime_state_store,
+    RuntimeStateUpdateResult,
+};
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
@@ -37,25 +40,26 @@ impl MCPServiceProxyManager {
             .unwrap_or_default()
     }
 
-    pub async fn set_runtime_state(
+    pub(super) async fn set_runtime_state(
         &self,
         session_id: &str,
         runtime_state: SessionRuntimeState,
         app_handle: Option<&AppHandle>,
-    ) {
-        self.runtime_states
-            .write()
-            .await
-            .insert(session_id.to_string(), runtime_state.clone());
-        emit_runtime_state(session_id, &runtime_state, app_handle);
+    ) -> RuntimeStateUpdateResult {
+        let mut result =
+            replace_runtime_state_store(&self.runtime_states, session_id, runtime_state).await;
+        if result.changed {
+            result.emitted = emit_runtime_state(session_id, &result.runtime_state, app_handle);
+        }
+        result
     }
 
-    pub async fn update_runtime_state<F>(
+    pub(super) async fn update_runtime_state<F>(
         &self,
         session_id: &str,
         app_handle: Option<&AppHandle>,
         update: F,
-    ) -> SessionRuntimeState
+    ) -> RuntimeStateUpdateResult
     where
         F: FnOnce(&mut SessionRuntimeState),
     {

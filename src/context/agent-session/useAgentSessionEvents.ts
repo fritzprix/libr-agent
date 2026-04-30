@@ -14,6 +14,7 @@ import type { SessionRuntimeState } from '@/models/agent-ipc';
 const logger = getLogger('AgentSessionEvents');
 
 const HYDRATING_RUNTIME_STATE: SessionRuntimeState = {
+  sequence: 0,
   phase: 'hydrating',
   proxy: {
     exists: false,
@@ -29,6 +30,7 @@ const HYDRATING_RUNTIME_STATE: SessionRuntimeState = {
 
 function createRuntimeFailureState(errorMessage: string): SessionRuntimeState {
   return {
+    sequence: 0,
     phase: 'failed',
     proxy: {
       exists: false,
@@ -42,6 +44,13 @@ function createRuntimeFailureState(errorMessage: string): SessionRuntimeState {
     },
     servers: [],
   };
+}
+
+function shouldApplyRuntimeState(
+  currentState: SessionRuntimeState,
+  nextState: SessionRuntimeState,
+): boolean {
+  return nextState.sequence >= currentState.sequence;
 }
 
 export function useAgentSessionEvents(
@@ -78,7 +87,11 @@ export function useAgentSessionEvents(
 
           switch (payload.type) {
             case 'sessionRuntimeStateUpdated': {
-              setters.setRuntimeState(payload.runtimeState);
+              setters.setRuntimeState((currentState) =>
+                shouldApplyRuntimeState(currentState, payload.runtimeState)
+                  ? payload.runtimeState
+                  : currentState,
+              );
               break;
             }
 
@@ -311,9 +324,12 @@ export function useAgentSessionEvents(
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);
         setters.setPendingApprovals(response.pendingApprovals ?? []);
-        setters.setRuntimeState(
-          response.runtimeState ?? HYDRATING_RUNTIME_STATE,
-        );
+        setters.setRuntimeState((currentState) => {
+          const nextState = response.runtimeState ?? HYDRATING_RUNTIME_STATE;
+          return shouldApplyRuntimeState(currentState, nextState)
+            ? nextState
+            : currentState;
+        });
         void actions.persistViewedAt().catch((err) => {
           logger.error(
             'Failed to mark session viewed during initialization',

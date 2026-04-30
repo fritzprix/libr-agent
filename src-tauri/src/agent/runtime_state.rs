@@ -74,6 +74,8 @@ pub struct SessionRuntimeServerState {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRuntimeState {
+    #[serde(default)]
+    pub sequence: u64,
     pub phase: SessionRuntimePhase,
     pub proxy: SessionRuntimeProxyState,
     pub initialization: SessionRuntimeInitializationState,
@@ -84,6 +86,7 @@ pub struct SessionRuntimeState {
 impl Default for SessionRuntimeState {
     fn default() -> Self {
         Self {
+            sequence: 0,
             phase: SessionRuntimePhase::NotStarted,
             proxy: SessionRuntimeProxyState {
                 exists: false,
@@ -118,6 +121,7 @@ impl SessionRuntimeState {
 
     pub fn builtin_ready() -> Self {
         Self {
+            sequence: 0,
             phase: SessionRuntimePhase::Ready,
             proxy: SessionRuntimeProxyState {
                 exists: true,
@@ -135,6 +139,7 @@ impl SessionRuntimeState {
 
     pub fn configured_initializing(servers: Vec<SessionRuntimeServerState>) -> Self {
         Self {
+            sequence: 0,
             phase: SessionRuntimePhase::Initializing,
             proxy: SessionRuntimeProxyState {
                 exists: false,

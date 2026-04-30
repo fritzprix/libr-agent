@@ -9,7 +9,7 @@ use super::proxy_config::{
 use super::runtime_updates::{
     apply_config_load_failed, apply_http_connecting, apply_loading_tool_config,
     apply_proxy_created, apply_server_discovering, apply_server_failed,
-    build_bootstrap_runtime_state, emit_runtime_state, mutate_runtime_state_store,
+    build_bootstrap_runtime_state, update_runtime_state_store,
 };
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::{SessionRuntimeState, SessionRuntimeTransport};
@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinSet;
@@ -26,6 +27,37 @@ use tokio::task::JoinSet;
 struct HttpStartupResult {
     server_name: String,
     outcome: Result<(), String>,
+}
+
+struct CreateProxyMetrics<'a> {
+    session_id: &'a str,
+    outcome: &'a str,
+    stdio_servers: usize,
+    http_servers: usize,
+    runtime_state_emits: u32,
+    total_ms: u128,
+    config_load_ms: u128,
+    cleanup_ms: u128,
+    settings_ms: u128,
+    http_startup_ms: u128,
+    proxy_build_ms: u128,
+}
+
+fn log_create_proxy_metrics(metrics: &CreateProxyMetrics<'_>) {
+    log::info!(
+        "proxy_init_metrics session_id={} outcome={} stdio_servers={} http_servers={} runtime_state_emits={} total_ms={} config_load_ms={} cleanup_ms={} settings_ms={} http_startup_ms={} proxy_build_ms={}",
+        metrics.session_id,
+        metrics.outcome,
+        metrics.stdio_servers,
+        metrics.http_servers,
+        metrics.runtime_state_emits,
+        metrics.total_ms,
+        metrics.config_load_ms,
+        metrics.cleanup_ms,
+        metrics.settings_ms,
+        metrics.http_startup_ms,
+        metrics.proxy_build_ms
+    );
 }
 
 async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id: &str) {
@@ -46,21 +78,6 @@ async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id:
         .write()
         .await
         .remove(session_id);
-}
-
-async fn commit_runtime_state_update<F>(
-    manager: &MCPServiceProxyManager,
-    session_id: &str,
-    app_handle: Option<&AppHandle>,
-    update: F,
-) -> SessionRuntimeState
-where
-    F: FnOnce(&mut SessionRuntimeState),
-{
-    let runtime_state =
-        mutate_runtime_state_store(&manager.runtime_states, session_id, update).await;
-    emit_runtime_state(session_id, &runtime_state, app_handle);
-    runtime_state
 }
 
 async fn start_http_servers_in_parallel(
@@ -170,6 +187,7 @@ impl MCPServiceProxyManager {
         mcp_server_ids: Vec<String>,
         app_handle: Option<AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
+        let total_start = Instant::now();
         let session_guard = {
             let mut guards = self.creation_guards.lock().await;
             guards
@@ -179,7 +197,16 @@ impl MCPServiceProxyManager {
         };
         let _session_lock = session_guard.lock().await;
 
+        let config_load_start = Instant::now();
         let loaded = load_requested_server_configs(&mcp_server_ids, &tool_ids, &session_id).await;
+        let config_load_ms = config_load_start.elapsed().as_millis();
+        let stdio_server_count = loaded.stdio_configs.len();
+        let http_server_count = loaded.http_configs.len();
+        let mut runtime_state_emits = 0u32;
+        let mut cleanup_ms = 0u128;
+        let mut settings_ms = 0u128;
+        let mut http_startup_ms = 0u128;
+        let mut proxy_build_ms = 0u128;
 
         if let Some(existing) = self.get_proxy(&session_id).await {
             let mut existing_builtin_ids = existing.builtin_tool_ids();
@@ -205,8 +232,25 @@ impl MCPServiceProxyManager {
                         log::debug!("Proxy already exists for session: {}", session_id);
                     }
                     let runtime_state = self.get_runtime_state(&session_id).await;
-                    self.set_runtime_state(&session_id, runtime_state, app_handle.as_ref())
+                    let update_result = self
+                        .set_runtime_state(&session_id, runtime_state, app_handle.as_ref())
                         .await;
+                    if update_result.emitted {
+                        runtime_state_emits += 1;
+                    }
+                    log_create_proxy_metrics(&CreateProxyMetrics {
+                        session_id: &session_id,
+                        outcome: "reused",
+                        stdio_servers: stdio_server_count,
+                        http_servers: http_server_count,
+                        runtime_state_emits,
+                        total_ms: total_start.elapsed().as_millis(),
+                        config_load_ms,
+                        cleanup_ms,
+                        settings_ms,
+                        http_startup_ms,
+                        proxy_build_ms,
+                    });
                     return Ok(existing);
                 }
                 ExistingProxyDisposition::Fail => {
@@ -214,6 +258,19 @@ impl MCPServiceProxyManager {
                         .config_load_error
                         .as_deref()
                         .unwrap_or("unknown error");
+                    log_create_proxy_metrics(&CreateProxyMetrics {
+                        session_id: &session_id,
+                        outcome: "config_load_failed_builtin_mismatch",
+                        stdio_servers: stdio_server_count,
+                        http_servers: http_server_count,
+                        runtime_state_emits,
+                        total_ms: total_start.elapsed().as_millis(),
+                        config_load_ms,
+                        cleanup_ms,
+                        settings_ms,
+                        http_startup_ms,
+                        proxy_build_ms,
+                    });
                     return Err(format!(
                         "Failed to load MCP server configs for session {} while updating builtin tools: {}",
                         session_id, load_error
@@ -234,29 +291,50 @@ impl MCPServiceProxyManager {
             }
         }
 
+        let cleanup_start = Instant::now();
         cleanup_session_resources(self, &session_id).await;
+        cleanup_ms += cleanup_start.elapsed().as_millis();
 
         let runtime_servers = loaded.runtime_servers.clone();
         if let Some(load_error) = loaded.config_load_error.clone() {
-            self.update_runtime_state(&session_id, app_handle.as_ref(), |state| {
-                apply_config_load_failed(
-                    state,
-                    loaded.use_external_servers,
-                    runtime_servers.clone(),
-                    load_error.clone(),
-                );
-            })
-            .await;
+            let update_result = self
+                .update_runtime_state(&session_id, app_handle.as_ref(), |state| {
+                    apply_config_load_failed(
+                        state,
+                        loaded.use_external_servers,
+                        runtime_servers.clone(),
+                        load_error.clone(),
+                    );
+                })
+                .await;
+            if update_result.emitted {
+                runtime_state_emits += 1;
+            }
+            log_create_proxy_metrics(&CreateProxyMetrics {
+                session_id: &session_id,
+                outcome: "config_load_failed",
+                stdio_servers: stdio_server_count,
+                http_servers: http_server_count,
+                runtime_state_emits,
+                total_ms: total_start.elapsed().as_millis(),
+                config_load_ms,
+                cleanup_ms,
+                settings_ms,
+                http_startup_ms,
+                proxy_build_ms,
+            });
             return Err(format!(
                 "Failed to load MCP server configs for session {}: {}",
                 session_id, load_error
             ));
         }
 
+        let settings_start = Instant::now();
         let config = apply_startup_timeout_settings(self.config.clone()).await;
         let workspace_dir =
             crate::session::resolve_session_workspace_dir(&self.session_manager, &session_id)
                 .await?;
+        settings_ms = settings_start.elapsed().as_millis();
         let tool_discovery_timeout = Duration::from_secs(config.process_startup_timeout_seconds);
 
         let stdio_manager = SessionMCPManager::new(
@@ -274,34 +352,48 @@ impl MCPServiceProxyManager {
         if !http_server_names.is_empty() {
             apply_http_connecting(&mut initial_runtime_state, &http_server_names);
         }
-        self.set_runtime_state(&session_id, initial_runtime_state, app_handle.as_ref())
+        let update_result = self
+            .set_runtime_state(&session_id, initial_runtime_state, app_handle.as_ref())
             .await;
+        if update_result.emitted {
+            runtime_state_emits += 1;
+        }
 
         if !loaded.http_configs.is_empty() {
+            let http_startup_start = Instant::now();
             let http_startup_results =
                 start_http_servers_in_parallel(&http_manager, &loaded.http_configs).await;
-            commit_runtime_state_update(self, &session_id, app_handle.as_ref(), |state| {
-                for startup_result in &http_startup_results {
-                    match &startup_result.outcome {
-                        Ok(()) => {
-                            apply_server_discovering(
-                                state,
-                                &startup_result.server_name,
-                                SessionRuntimeTransport::Http,
-                            );
-                        }
-                        Err(error_message) => {
-                            apply_server_failed(
-                                state,
-                                &startup_result.server_name,
-                                SessionRuntimeTransport::Http,
-                                error_message.clone(),
-                            );
+            http_startup_ms = http_startup_start.elapsed().as_millis();
+            let update_result = update_runtime_state_store(
+                &self.runtime_states,
+                &session_id,
+                app_handle.as_ref(),
+                |state| {
+                    for startup_result in &http_startup_results {
+                        match &startup_result.outcome {
+                            Ok(()) => {
+                                apply_server_discovering(
+                                    state,
+                                    &startup_result.server_name,
+                                    SessionRuntimeTransport::Http,
+                                );
+                            }
+                            Err(error_message) => {
+                                apply_server_failed(
+                                    state,
+                                    &startup_result.server_name,
+                                    SessionRuntimeTransport::Http,
+                                    error_message.clone(),
+                                );
+                            }
                         }
                     }
-                }
-            })
+                },
+            )
             .await;
+            if update_result.emitted {
+                runtime_state_emits += 1;
+            }
 
             for startup_result in http_startup_results {
                 if let Err(error_message) = startup_result.outcome {
@@ -315,6 +407,7 @@ impl MCPServiceProxyManager {
             }
         }
 
+        let proxy_build_start = Instant::now();
         let proxy = MCPServiceProxy::builder(
             session_id.clone(),
             self.db.clone(),
@@ -326,6 +419,7 @@ impl MCPServiceProxyManager {
         .with_app_handle(app_handle.clone())
         .build()
         .await?;
+        proxy_build_ms = proxy_build_start.elapsed().as_millis();
 
         let proxy_arc = Arc::new(proxy);
         self.proxies
@@ -341,10 +435,18 @@ impl MCPServiceProxyManager {
             .await
             .insert(session_id.clone(), http_manager.clone());
 
-        commit_runtime_state_update(self, &session_id, app_handle.as_ref(), |state| {
-            apply_proxy_created(state, loaded.has_external_servers());
-        })
+        let update_result = update_runtime_state_store(
+            &self.runtime_states,
+            &session_id,
+            app_handle.as_ref(),
+            |state| {
+                apply_proxy_created(state, loaded.has_external_servers());
+            },
+        )
         .await;
+        if update_result.emitted {
+            runtime_state_emits += 1;
+        }
 
         if loaded.has_external_servers() {
             spawn_background_tool_loading(
@@ -363,14 +465,31 @@ impl MCPServiceProxyManager {
             )
             .await;
         } else {
-            self.set_runtime_state(
-                &session_id,
-                SessionRuntimeState::builtin_ready(),
-                app_handle.as_ref(),
-            )
-            .await;
+            let update_result = self
+                .set_runtime_state(
+                    &session_id,
+                    SessionRuntimeState::builtin_ready(),
+                    app_handle.as_ref(),
+                )
+                .await;
+            if update_result.emitted {
+                runtime_state_emits += 1;
+            }
         }
 
+        log_create_proxy_metrics(&CreateProxyMetrics {
+            session_id: &session_id,
+            outcome: "created",
+            stdio_servers: stdio_server_count,
+            http_servers: http_server_count,
+            runtime_state_emits,
+            total_ms: total_start.elapsed().as_millis(),
+            config_load_ms,
+            cleanup_ms,
+            settings_ms,
+            http_startup_ms,
+            proxy_build_ms,
+        });
         log::info!("Created MCP service proxy for session: {}", session_id);
         Ok(proxy_arc)
     }
