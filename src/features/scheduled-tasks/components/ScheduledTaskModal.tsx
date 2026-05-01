@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -67,6 +68,11 @@ export function ScheduledTaskModal({
               ? t('scheduledTasks.modal.titleEdit')
               : t('scheduledTasks.modal.titleNew')}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {task
+              ? t('scheduledTasks.modal.descriptionEdit', 'Edit scheduled task details')
+              : t('scheduledTasks.modal.descriptionNew', 'Create a new scheduled task')}
+          </DialogDescription>
         </DialogHeader>
 
         {open && (

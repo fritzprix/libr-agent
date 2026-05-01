@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
   Button,
   Input,
@@ -82,6 +83,11 @@ function MCPServerDialogComponent({
                   defaultValue: 'Edit Extension: {{name}}',
                 })}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {isNewServer
+              ? t('mcpServer.dialog.descriptionNew', 'Configure a new MCP server extension')
+              : t('mcpServer.dialog.descriptionEdit', 'Edit settings for the MCP server extension')}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
