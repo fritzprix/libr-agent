@@ -215,21 +215,24 @@ pub async fn list(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let page = args.get("page").and_then(|v| v.as_i64()).unwrap_or(1);
-    let page_size = args.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(10);
+    // Legacy support: page/pageSize -> limit/offset
+    let page = args.get("page").and_then(|v| v.as_i64()).map(|v| v.max(1) as u64);
+    let page_size = args.get("pageSize").and_then(|v| v.as_i64()).map(|v| v.clamp(1, 100) as u64);
 
-    if page < 1 {
-        return Ok(invalid_input_error(
-            "page must be >= 1",
-            ToolGroup::Scratchpad,
-        ));
-    }
-    if page_size < 1 {
-        return Ok(invalid_input_error(
-            "pageSize must be >= 1",
-            ToolGroup::Scratchpad,
-        ));
-    }
+    // Modern API: limit/offset (takes precedence)
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.clamp(1, 100) as u64)
+        .or(page_size)
+        .unwrap_or(10);
+
+    let offset = args
+        .get("offset")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.max(0) as u64)
+        .or_else(|| page.map(|p| (p - 1) * limit))
+        .unwrap_or(0);
 
     let filter_tags = args.get("tags").and_then(|v| v.as_array()).map(|arr| {
         arr.iter()
@@ -274,44 +277,53 @@ pub async fn list(
         all_items.iter().collect()
     };
 
-    let total_items = filtered_items.len();
-    let skip = ((page - 1) * page_size) as usize;
-    let take = page_size as usize;
+    let total_items = filtered_items.len() as u64;
     let paged_items = filtered_items
         .into_iter()
-        .skip(skip)
-        .take(take)
+        .skip(offset as usize)
+        .take(limit as usize)
         .collect::<Vec<_>>();
 
     let mut text_output = String::new();
+    let has_more = offset + limit < total_items;
+
     if paged_items.is_empty() {
         if total_items > 0 {
             text_output.push_str(&format!(
-                "No items on page {} (Total: {}).",
-                page, total_items
+                "No items at offset {} (Total: {}).",
+                offset, total_items
             ));
         } else {
             text_output.push_str("No scratchpad notes found.");
         }
     } else {
         text_output.push_str(&format!(
-            "Scratchpad Notes (Page {}/{}):\n",
-            page,
-            (total_items as f64 / page_size as f64).ceil() as u64
+            "Scratchpad Notes (Showing {} to {} of {}):\n\n",
+            offset + 1,
+            offset + paged_items.len() as u64,
+            total_items
         ));
+
+        text_output.push_str("| ID | Title | Preview | Tags |\n");
+        text_output.push_str("|---|---|---|---|\n");
+
         for item in &paged_items {
             let id = item.id;
             let title = item.title.clone().unwrap_or_else(|| "Untitled".to_string());
-            let preview = if item.content.chars().count() > 200 {
-                let truncated: String = item.content.chars().take(200).collect();
-                format!("{}...", truncated.replace('\n', " "))
+            let title_safe = title.replace('|', "\\|").replace('\n', " ");
+
+            let preview = if item.content.chars().count() > 100 {
+                let truncated: String = item.content.chars().take(100).collect();
+                format!("{}...", truncated)
             } else {
-                item.content.replace('\n', " ")
+                item.content.clone()
             };
+            let preview_safe = preview.replace('|', "\\|").replace('\n', " ");
+
             let tags_str = if let Some(t) = &item.tags {
                 if let Ok(parsed) = serde_json::from_str::<Vec<String>>(t) {
                     if !parsed.is_empty() {
-                        format!(" [{}]", parsed.join(", "))
+                        parsed.join(", ")
                     } else {
                         String::new()
                     }
@@ -321,9 +333,11 @@ pub async fn list(
             } else {
                 String::new()
             };
+            let tags_safe = tags_str.replace('|', "\\|").replace('\n', " ");
+
             text_output.push_str(&format!(
-                "- **ID: {}** | {} | {}{}\n",
-                id, title, preview, tags_str
+                "| `[{}]` | {} | {} | {} |\n",
+                id, title_safe, preview_safe, tags_safe
             ));
         }
     }
@@ -332,21 +346,12 @@ pub async fn list(
         .into_iter()
         .map(|item| {
             json!({
-                "id": item.id,
-                "title": item.title,
-                "preview": if item.content.chars().count() > 200 {
-                    let truncated: String = item.content.chars().take(200).collect();
-                    format!("{}...", truncated)
-                } else {
-                    item.content.clone()
-                },
-                "tags": item.tags.clone().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()),
-                "created_at": item.created_at
+                "id": item.id
             })
         })
         .collect();
 
-    let guidance = if total_items == 0 {
+    let mut guidance = if total_items == 0 {
         vec!["Use scratchpad__add to create new notes".to_string()]
     } else {
         vec![
@@ -355,13 +360,18 @@ pub async fn list(
         ]
     };
 
+    if has_more {
+        guidance.insert(0, format!("Call this tool again with offset={} limit={} to see more notes", offset + limit, limit));
+    }
+
     let hint = SuccessHint::new(text_output, guidance);
     Ok(hint.to_mcp_result_with_data(Some(json!({
         "items": json_items,
         "pagination": {
-            "page": page,
-            "pageSize": page_size,
-            "total": total_items
+            "limit": limit,
+            "offset": offset,
+            "total": total_items,
+            "has_more": has_more
         }
     }))))
 }

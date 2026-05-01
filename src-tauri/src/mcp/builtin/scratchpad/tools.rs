@@ -102,12 +102,12 @@ fn list_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 (
-                    "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number (default: 1)")),
+                    "limit".to_string(),
+                    integer_prop(Some(10), None, Some("Maximum number of items to return (default: 10)")),
                 ),
                 (
-                    "pageSize".to_string(),
-                    integer_prop(Some(1), None, Some("Items per page (default: 10)")),
+                    "offset".to_string(),
+                    integer_prop(Some(0), None, Some("Number of items to skip for pagination (default: 0)")),
                 ),
                 (
                     "tags".to_string(),
