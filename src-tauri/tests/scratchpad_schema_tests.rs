@@ -25,25 +25,25 @@ fn scratchpad_list_schema_uses_open_ended_positive_pagination_bounds() {
     let list_tool = scratchpad_tool("list");
     let properties = object_properties(&list_tool);
 
-    let page_schema = properties.get("page").expect("list should expose page");
-    match &page_schema.schema_type {
+    let limit_schema = properties.get("limit").expect("list should expose limit");
+    match &limit_schema.schema_type {
         JSONSchemaType::Integer {
             minimum, maximum, ..
         } => {
-            assert_eq!(*minimum, Some(1));
+            assert_eq!(*minimum, Some(10));
             assert_eq!(*maximum, None);
         }
         other => panic!("expected integer schema, got {other:?}"),
     }
 
-    let page_size_schema = properties
-        .get("pageSize")
-        .expect("list should expose pageSize");
-    match &page_size_schema.schema_type {
+    let offset_schema = properties
+        .get("offset")
+        .expect("list should expose offset");
+    match &offset_schema.schema_type {
         JSONSchemaType::Integer {
             minimum, maximum, ..
         } => {
-            assert_eq!(*minimum, Some(1));
+            assert_eq!(*minimum, Some(0));
             assert_eq!(*maximum, None);
         }
         other => panic!("expected integer schema, got {other:?}"),
