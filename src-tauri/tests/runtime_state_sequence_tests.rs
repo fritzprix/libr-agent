@@ -1,3 +1,10 @@
+#![cfg(not(windows))]
+
+// This integration test exercises MCPServiceProxyManager end-to-end. On Windows
+// the resulting test binary can trip the known DLL loader issue
+// (STATUS_ENTRYPOINT_NOT_FOUND) before the harness starts, so we keep this
+// coverage on platforms where the binary is stable.
+
 mod common;
 
 use common::setup_test_db_with_migrations;
