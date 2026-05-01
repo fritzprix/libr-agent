@@ -110,7 +110,10 @@ function ChatInterfaceTabComponent({
             </label>
             <Input
               type="number"
-              placeholder={t('settings.messageWindowSizePlaceholder', 'e.g., 50')}
+              placeholder={t(
+                'settings.messageWindowSizePlaceholder',
+                'e.g., 50',
+              )}
               value={localWindowSize}
               onChange={(e) =>
                 onWindowSizeChange(parseInt(e.target.value, 10) || 0)

@@ -110,5 +110,5 @@
 
 ## 2026-05-15 - Redundant O(N) Array Reductions After Grouping
 
-**Learning:** `selectOrgSummaries` and `buildScheduledTaskGroups` were doing `Array.prototype.reduce` on grouped subsets *after* finishing an O(N) map building loop, re-traversing elements to compute simple metrics (`busyCount` and `enabledCount`).
+**Learning:** `selectOrgSummaries` and `buildScheduledTaskGroups` were doing `Array.prototype.reduce` on grouped subsets _after_ finishing an O(N) map building loop, re-traversing elements to compute simple metrics (`busyCount` and `enabledCount`).
 **Action:** When aggregating derived state across subsets (like counting status types), maintain variables tracking the metrics inline within the initial, primary `for` loop that iterates over the base array and performs grouping. This prevents subsequent redundant traversals.
