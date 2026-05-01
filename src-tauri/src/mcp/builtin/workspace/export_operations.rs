@@ -6,7 +6,7 @@ use tracing::error;
 use walkdir::WalkDir;
 use zip::write::FileOptions;
 
-use super::{ui_resources, WorkspaceServer};
+use super::{ui_resources, utils::is_internal_workspace_artifact_path, WorkspaceServer};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
@@ -98,6 +98,18 @@ impl WorkspaceServer {
         if is_single_file_mode {
             // === SINGLE FILE EXPORT ===
             let source_path = single_file_path.unwrap();
+            if is_internal_workspace_artifact_path(&workspace_dir_canon, &source_path) {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "Internal LibrAgent temp/export artifacts cannot be exported".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Select workspace files or directories outside .libragent/tmp and .libragent/exports".to_string(),
+                    "Use readProcessOutput or listProcesses instead of exporting raw temp outputs".to_string(),
+                ])
+                .to_mcp_result());
+            }
             let display_name = name_param.unwrap_or_else(|| single_file_rel_path_str.clone());
 
             let file_stem = source_path
@@ -125,7 +137,8 @@ impl WorkspaceServer {
                 .to_mcp_result());
             }
 
-            let relative_path = PathBuf::from("exports")
+            let relative_path = PathBuf::from(".libragent")
+                .join("exports")
                 .join("files")
                 .join(&export_filename);
 
@@ -185,7 +198,7 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Verify the exports/packages directory is writable".to_string(),
+                    "Verify the .libragent/exports/packages directory is writable".to_string(),
                     "Ensure sufficient disk space is available".to_string(),
                     format!("Underlying error: {}", e),
                 ])
@@ -214,6 +227,9 @@ impl WorkspaceServer {
                     WalkDir::new(&source_path)
                         .into_iter()
                         .filter_map(Result::ok)
+                        .filter(|e| {
+                            !is_internal_workspace_artifact_path(&workspace_dir_canon, e.path())
+                        })
                         .filter(|e| e.file_type().is_file())
                         .map(|e| e.into_path())
                         .collect()
@@ -227,6 +243,9 @@ impl WorkspaceServer {
                         Err(_) => continue,
                     };
                     if !abs_canon.starts_with(&workspace_dir_canon) {
+                        continue;
+                    }
+                    if is_internal_workspace_artifact_path(&workspace_dir_canon, &abs_canon) {
                         continue;
                     }
                     let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
@@ -289,7 +308,8 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let relative_path = PathBuf::from("exports")
+        let relative_path = PathBuf::from(".libragent")
+            .join("exports")
             .join("packages")
             .join(&zip_filename);
 
@@ -344,7 +364,9 @@ impl WorkspaceServer {
     }
 
     fn ensure_exports_directory(&self, session_id: &str) -> Result<std::path::PathBuf, String> {
-        let exports_dir = self.get_workspace_dir(session_id).join("exports");
+        let exports_dir = self
+            .get_workspace_dir(session_id)
+            .join(".libragent/exports");
 
         let files_dir = exports_dir.join("files");
         let packages_dir = exports_dir.join("packages");

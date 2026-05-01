@@ -3,6 +3,7 @@ use super::utils::{is_not_found_io_error, normalize_workspace_path_input};
 use crate::mcp::builtin::error_guidance::{
     guided_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use tokio::fs;
@@ -40,8 +41,12 @@ impl WorkspaceServer {
         let offset = usize::try_from(requested_offset)
             .unwrap_or(usize::MAX)
             .min(100_000);
+        let target_session_id = session_id
+            .clone()
+            .unwrap_or_else(|| self.session_id.clone());
+        let workspace_root = self.get_workspace_dir(&target_session_id);
 
-        let file_manager = self.get_file_manager(session_id.clone());
+        let file_manager = self.get_file_manager(Some(target_session_id));
         let safe_path = match file_manager
             .get_security_validator()
             .validate_path_for_read(&path_str)
@@ -91,6 +96,9 @@ impl WorkspaceServer {
                 let mut items = Vec::new();
 
                 while let Ok(Some(entry)) = entries.next_entry().await {
+                    if is_internal_workspace_artifact_path(&workspace_root, &entry.path()) {
+                        continue;
+                    }
                     if let Ok(metadata) = entry.metadata().await {
                         let file_type = if metadata.is_dir() {
                             "directory"

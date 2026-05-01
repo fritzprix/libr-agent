@@ -120,6 +120,55 @@ async fn search_skips_heavy_directories_during_recursive_content_search() {
 }
 
 #[tokio::test]
+async fn search_skips_internal_tmp_and_exports_when_searching_workspace_root() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-skip-internal-artifacts";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tmp/process_123")).expect("tmp dir");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/exports/files")).expect("exports dir");
+    std::fs::write(workspace_dir.join("src/main.ts"), "const needle = true;\n")
+        .expect("write source file");
+    std::fs::write(
+        workspace_dir.join(".libragent/tmp/process_123/stdout"),
+        "const needle = true;\n",
+    )
+    .expect("write temp artifact");
+    std::fs::write(
+        workspace_dir.join(".libragent/exports/files/exported.ts"),
+        "const needle = true;\n",
+    )
+    .expect("write export artifact");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("src/main.ts"),
+        "expected workspace file in output: {text}"
+    );
+    assert!(
+        !text.contains(".libragent/tmp/process_123/stdout"),
+        "internal tmp artifacts should be skipped: {text}"
+    );
+    assert!(
+        !text.contains(".libragent/exports/files/exported.ts"),
+        "internal export artifacts should be skipped: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_respects_gitignore_rules_during_recursive_content_search() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-gitignore";

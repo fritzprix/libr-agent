@@ -56,6 +56,7 @@ pub(super) async fn search_files_only(
                         match reason {
                             SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,
                             SearchEntrySkipReason::HeavyweightDirectory => skipped_heavy_dirs += 1,
+                            SearchEntrySkipReason::InternalArtifactDirectory => {}
                         }
                     }
                     return false;

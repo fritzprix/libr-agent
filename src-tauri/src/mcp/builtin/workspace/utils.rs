@@ -1,6 +1,12 @@
 use crate::session_isolation::IsolationLevel;
 use regex::Regex;
 use serde_json::Value;
+use std::ffi::OsStr;
+use std::path::{Component, Path};
+
+pub const INTERNAL_WORKSPACE_STATE_DIR: &str = ".libragent";
+pub const INTERNAL_WORKSPACE_TMP_DIR: &str = "tmp";
+pub const INTERNAL_WORKSPACE_EXPORTS_DIR: &str = "exports";
 
 /// Get configured shell isolation level from settings
 /// Returns the configured isolation level or Medium as default
@@ -93,9 +99,27 @@ pub fn sanitize_command_for_logging(command: &str) -> String {
     crate::utils::truncate_chars(&sanitized, 100)
 }
 
+pub fn is_internal_workspace_artifact_path(workspace_root: &Path, path: &Path) -> bool {
+    let Ok(relative_path) = path.strip_prefix(workspace_root) else {
+        return false;
+    };
+
+    let mut components = relative_path.components();
+    matches!(
+        (components.next(), components.next()),
+        (
+            Some(Component::Normal(first)),
+            Some(Component::Normal(second))
+        ) if first == OsStr::new(INTERNAL_WORKSPACE_STATE_DIR)
+            && (second == OsStr::new(INTERNAL_WORKSPACE_TMP_DIR)
+                || second == OsStr::new(INTERNAL_WORKSPACE_EXPORTS_DIR))
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_sanitize_sudo_s_flag() {
@@ -137,5 +161,31 @@ mod tests {
             sanitize_command_for_logging("sudo -S echo 'sudo -S test'"),
             "sudo echo 'sudo test'"
         );
+    }
+
+    #[test]
+    fn internal_workspace_artifact_detection_is_precise() {
+        let workspace_root = PathBuf::from("/workspace");
+
+        assert!(is_internal_workspace_artifact_path(
+            &workspace_root,
+            &workspace_root.join(".libragent/tmp/process_123/stdout"),
+        ));
+        assert!(is_internal_workspace_artifact_path(
+            &workspace_root,
+            &workspace_root.join(".libragent/exports/packages/export.zip"),
+        ));
+        assert!(!is_internal_workspace_artifact_path(
+            &workspace_root,
+            &workspace_root.join(".libragent/tool-results/output.txt"),
+        ));
+        assert!(!is_internal_workspace_artifact_path(
+            &workspace_root,
+            &workspace_root.join(".libragent/teamwork.json"),
+        ));
+        assert!(!is_internal_workspace_artifact_path(
+            &workspace_root,
+            &workspace_root.join("tmp/process_123/stdout"),
+        ));
     }
 }

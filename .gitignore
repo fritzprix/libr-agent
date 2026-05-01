@@ -79,3 +79,9 @@ test_results.txt
 test_results_*.txt
 .trace.json
 .idea.md
+
+# LibrAgent workspace-generated artifacts
+/.libragent/tmp/
+/.libragent/exports/
+/.libragent/tool-results/
+/tmp/

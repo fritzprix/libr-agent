@@ -1,3 +1,4 @@
+use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncReadExt;
@@ -16,6 +17,7 @@ pub(super) const SKIPPED_SEARCH_DIR_NAMES: &[&str] = &[
 pub(super) enum SearchEntrySkipReason {
     Gitignored,
     HeavyweightDirectory,
+    InternalArtifactDirectory,
 }
 
 pub(super) struct ScopedGitignoreMatcher {
@@ -88,6 +90,10 @@ pub(super) fn classify_search_entry_skip(
         return None;
     }
 
+    if entry.file_type().is_dir() && is_internal_workspace_artifact_path(root, entry.path()) {
+        return Some(SearchEntrySkipReason::InternalArtifactDirectory);
+    }
+
     if let Some(gitignore_matcher) = gitignore {
         if gitignore_matcher.is_ignored(entry.path(), entry.file_type().is_dir()) {
             return Some(SearchEntrySkipReason::Gitignored);
@@ -157,11 +163,12 @@ pub(super) fn build_gitignore_matcher(search_root: &Path) -> Option<ScopedGitign
             }
 
             entry.depth() == 0
-                || entry
-                    .file_name()
-                    .to_str()
-                    .map(|name| !SKIPPED_SEARCH_DIR_NAMES.contains(&name))
-                    .unwrap_or(true)
+                || (!is_internal_workspace_artifact_path(search_root, entry.path())
+                    && entry
+                        .file_name()
+                        .to_str()
+                        .map(|name| !SKIPPED_SEARCH_DIR_NAMES.contains(&name))
+                        .unwrap_or(true))
         })
         .filter_map(Result::ok);
 

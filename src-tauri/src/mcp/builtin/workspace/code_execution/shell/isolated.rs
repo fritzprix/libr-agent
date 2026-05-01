@@ -38,7 +38,7 @@ impl WorkspaceServer {
 
         // Create temporary directory for output files
         let process_tmp_dir = workspace_path
-            .join("tmp")
+            .join(".libragent/tmp")
             .join(format!("sync_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
@@ -52,7 +52,7 @@ impl WorkspaceServer {
                 "Ensure sufficient disk space is available".to_string(),
                 format!(
                     "Verify tmp directory is writable: {}",
-                    workspace_path.join("tmp").display()
+                    workspace_path.join(".libragent/tmp").display()
                 ),
                 format!("Error: {}", e),
             ])
