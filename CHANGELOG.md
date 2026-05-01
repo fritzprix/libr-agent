@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.17] - 2026-05-01
+
+### 🚀 Features
+
+- **Rosetta Localization Polish**: Localized settings placeholders and expanded Korean (KO) translation coverage for a more consistent international experience.
+- **Draft Input & Indexing Refinement**: Improved draft input reuse and refined file indexing logic to enhance the reliability of workspace-aware drafting.
+
+### 🐛 Fixes
+
+- **Runtime Stability & Hardening**: Hardened runtime state sequencing and implemented panic handling for proxy discovery tasks to ensure a steadier application lifecycle.
+- **Draft Chat UI Alignment**: Aligned the draft chat frame with the active chat UI for better visual consistency across session transitions.
+
+### 🔧 Internal
+
+- **Session State & Proxy Optimization**: Unified session runtime state management and optimized proxy initialization for faster and more reliable session startup.
+- **Bolt Performance Tweak**: Removed redundant array reductions in Bolt's internal logic to slightly improve data processing efficiency.
+
 ## [0.7.16] - 2026-04-29
 
 ### 🚀 Features
