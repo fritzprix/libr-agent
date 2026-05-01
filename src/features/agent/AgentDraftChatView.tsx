@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { useLayoutEffect, type CSSProperties } from 'react';
+import { type CSSProperties } from 'react';
 
 import {
   Button,
+  FileAttachment,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -11,12 +12,13 @@ import { AgentDraftWorkspacePreviewPanel } from './components/AgentDraftWorkspac
 import { AgentAttachedFilesBar } from './components/AgentAttachedFilesBar';
 import AgentSessionHeader from './components/AgentSessionHeader';
 import { DraftCapabilitiesSection } from './components/DraftCapabilitiesSection';
-import { Send, Loader2, Bot, Paperclip } from 'lucide-react';
+import { Send, Loader2, Bot } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
 import { useAgentDraftChat } from './hooks/useAgentDraftChat';
 import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
+import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 
 const textareaStyle = {
   msOverflowStyle: 'none',
@@ -45,7 +47,6 @@ function DraftChatInner() {
     dragState,
     profileDragState,
     isAttachmentLoading,
-    fileInputRef,
     formRef,
     profileAreaRef,
     textareaRef,
@@ -71,16 +72,11 @@ function DraftChatInner() {
     workspaceOverride,
   );
 
-  // Auto-resize textarea - Mirrored from AgentChatInput
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const maxHeightPx = 128; // max-h-32 (8rem)
-      const nextHeight = Math.min(textarea.scrollHeight, maxHeightPx);
-      textarea.style.height = `${nextHeight}px`;
-    }
-  }, [input]);
+  useTextareaAutosize({
+    textareaRef,
+    value: input,
+    maxHeight: 128,
+  });
 
   if (isLoadingAssistant) {
     return (
@@ -279,63 +275,18 @@ function DraftChatInner() {
                       'bg-destructive/5 border-destructive/50 shadow-destructive/10',
                   )}
                 >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    onChange={handleFileAdd}
-                    className="hidden"
+                  <FileAttachment
+                    files={pendingFiles.map((file) => ({
+                      name: file.name,
+                      content: '',
+                    }))}
+                    onAdd={handleFileAdd}
+                    compact={true}
+                    disabled={isSubmitting || isAttachmentLoading}
+                    showFileCount={false}
+                    allowedExtensions={[]}
+                    buttonClassName="mb-1 h-8 w-8 hover:text-primary hover:bg-primary/5 transition-colors"
                   />
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        tabIndex={
-                          isSubmitting || isAttachmentLoading ? 0 : undefined
-                        }
-                        className={cn(
-                          'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0 h-8 w-8',
-                          (isSubmitting || isAttachmentLoading) &&
-                            'cursor-not-allowed',
-                        )}
-                        aria-label={
-                          isSubmitting || isAttachmentLoading
-                            ? t('fileAttachment.attachFiles', 'Attach files')
-                            : undefined
-                        }
-                        aria-disabled={
-                          isSubmitting || isAttachmentLoading ? true : undefined
-                        }
-                        role={
-                          isSubmitting || isAttachmentLoading
-                            ? 'button'
-                            : undefined
-                        }
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={isSubmitting || isAttachmentLoading}
-                          className={cn(
-                            'h-full w-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors',
-                            (isSubmitting || isAttachmentLoading) &&
-                              'pointer-events-none',
-                          )}
-                          aria-label={t(
-                            'fileAttachment.attachFiles',
-                            'Attach files',
-                          )}
-                        >
-                          <Paperclip className="h-4 w-4" />
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t('fileAttachment.attachFiles', 'Attach files')}
-                    </TooltipContent>
-                  </Tooltip>
 
                   <textarea
                     ref={textareaRef}

@@ -80,7 +80,6 @@ export function useAgentDraftChat() {
   >('none');
   const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const profileAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -454,7 +453,6 @@ export function useAgentDraftChat() {
     dragState,
     profileDragState,
     isAttachmentLoading,
-    fileInputRef,
     formRef,
     profileAreaRef,
     textareaRef,
