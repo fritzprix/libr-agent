@@ -22,7 +22,8 @@ impl AttachmentsService {
         // 2) Remove attachments_search index directory in session workspace
         let session_manager =
             get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-        let workspace_dir = session_manager.get_session_workspace_dir_by_id(session_id);
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
         let search_index_dir = workspace_dir.join("attachments_search");
 
         if search_index_dir.exists() {

@@ -5,9 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AgentChatStartView from '../AgentChatStartView';
 import type { Assistant } from '@/models/chat';
+import type { AssistantSummary } from '@/lib/backend/assistants';
 
 const mocks = vi.hoisted(() => ({
-  assistants: [] as Assistant[],
+  assistants: [] as AssistantSummary[],
+  fullAssistantsById: {} as Record<string, Assistant>,
   navigate: vi.fn(),
   createSession: vi.fn(),
   getPlaybook: vi.fn(),
@@ -35,9 +37,11 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-vi.mock('@/context/AssistantContext', () => ({
-  useAssistantContext: () => ({
+vi.mock('../hooks/useAssistantSummaries', () => ({
+  useAssistantSummaries: () => ({
     assistants: mocks.assistants,
+    loading: false,
+    error: null,
   }),
 }));
 
@@ -49,6 +53,10 @@ vi.mock('@/context/AgentSessionListContext', () => ({
 
 vi.mock('@/lib/backend/playbooks', () => ({
   getPlaybook: (...args: unknown[]) => mocks.getPlaybook(...args),
+}));
+
+vi.mock('@/lib/backend/assistants', () => ({
+  getAssistant: (id: string) => Promise.resolve(mocks.fullAssistantsById[id]),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -84,7 +92,27 @@ describe('AgentChatStartView', () => {
         description: 'Second assistant',
         deletionProtected: false,
       },
-    ] as Assistant[];
+    ];
+    mocks.fullAssistantsById = {
+      'assistant-1': {
+        id: 'assistant-1',
+        name: 'Assistant One',
+        description: 'First assistant',
+        systemPrompt: 'Prompt one',
+        deletionProtected: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      'assistant-2': {
+        id: 'assistant-2',
+        name: 'Assistant Two',
+        description: 'Second assistant',
+        systemPrompt: 'Prompt two',
+        deletionProtected: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    };
 
     mocks.toastLoading.mockReturnValue('toast-1');
     mocks.createSession.mockResolvedValue({ id: 'session-123' });
@@ -137,7 +165,7 @@ describe('AgentChatStartView', () => {
 
     await waitFor(() => {
       expect(mocks.createSession).toHaveBeenCalledWith({
-        assistant: mocks.assistants[1],
+        assistant: mocks.fullAssistantsById['assistant-2'],
         name: 'Launch workflow',
       });
     });

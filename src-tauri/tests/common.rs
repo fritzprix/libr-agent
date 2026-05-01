@@ -1,7 +1,12 @@
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
-use std::sync::Once;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Once,
+};
 use tauri_mcp_agent_lib::migration::Migrator;
+
+static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn register_sqlite_vec() {
     static REGISTER_SQLITE_VEC: Once = Once::new();
@@ -20,10 +25,12 @@ pub fn register_sqlite_vec() {
     });
 }
 
-/// Setup an in-memory SQLite database for testing
+/// Setup an isolated shared-memory SQLite database for testing.
 pub async fn setup_test_db() -> DatabaseConnection {
     register_sqlite_vec();
-    let mut opt = sea_orm::ConnectOptions::new("sqlite::memory:");
+    let db_id = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let database_url = format!("sqlite::file:test_db_{db_id}?mode=memory&cache=shared");
+    let mut opt = sea_orm::ConnectOptions::new(database_url);
     opt.max_connections(1)
         .min_connections(1)
         .sqlx_logging(false);

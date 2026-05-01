@@ -43,6 +43,9 @@ export function buildScheduledTaskGroups(
     const existing = groups.get(key);
     if (existing) {
       existing.tasks.push(task);
+      if (task.enabled) {
+        existing.enabledCount++;
+      }
       continue;
     }
 
@@ -51,20 +54,17 @@ export function buildScheduledTaskGroups(
       groupId: task.groupId,
       groupName: task.groupName,
       tasks: [task],
-      enabledCount: 0,
+      enabledCount: task.enabled ? 1 : 0,
     });
   }
 
   return Array.from(groups.values())
     .map((group) => {
+      // ⚡ Bolt: Removed O(N) enabledCount reduce, already calculated during build loop
       const sortedTasks = [...group.tasks].sort(compareScheduledTasks);
       return {
         ...group,
         tasks: sortedTasks,
-        enabledCount: sortedTasks.reduce(
-          (count, task) => (task.enabled ? count + 1 : count),
-          0,
-        ),
       };
     })
     .sort((left, right) => left.groupName.localeCompare(right.groupName));

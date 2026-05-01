@@ -144,7 +144,8 @@ pub async fn download_media_file(
                 .to_file_path()
                 .map_err(|_| "URL cannot be converted to a local file path".to_string())?;
             let session_manager = get_session_manager()?;
-            let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
+            let workspace_dir =
+                crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
             let scoped_path =
                 resolve_workspace_scoped_file_path(&file_path, &workspace_dir).await?;
             tokio::fs::read(&scoped_path).await.map_err(|e| {

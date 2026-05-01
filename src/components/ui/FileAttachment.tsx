@@ -7,14 +7,18 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface FileAttachmentProps {
   files: { name: string; content: string; status?: string }[];
-  onRemove: (index: number) => void;
+  onRemove?: (index: number) => void;
   onAdd: (e: React.ChangeEvent<HTMLInputElement>) => void;
   maxFileSize?: number;
   allowedExtensions?: string[];
   compact?: boolean;
+  disabled?: boolean;
+  showFileCount?: boolean;
+  buttonClassName?: string;
 }
 
 export default function FileAttachment({
@@ -42,11 +46,19 @@ export default function FileAttachment({
     'csv',
   ],
   compact = false,
+  disabled = false,
+  showFileCount = true,
+  buttonClassName,
 }: FileAttachmentProps) {
   const { t } = useTranslation('common');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const accept =
+    allowedExtensions.length > 0
+      ? allowedExtensions.map((ext) => `.${ext}`).join(',')
+      : undefined;
 
   const handleFileSelect = () => {
+    if (disabled) return;
     fileInputRef.current?.click();
   };
 
@@ -58,24 +70,45 @@ export default function FileAttachment({
           ref={fileInputRef}
           type="file"
           multiple
-          accept={allowedExtensions.map((ext) => `.${ext}`).join(',')}
+          accept={accept}
           onChange={onAdd}
+          disabled={disabled}
           className="hidden"
         />
 
         {/* Attach Files Button */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              type="button"
-              onClick={handleFileSelect}
-              className="h-8 w-8 text-muted-foreground hover:text-success"
-              aria-label={t('fileAttachment.attachFiles', 'Attach files')}
+            <span
+              tabIndex={disabled ? 0 : undefined}
+              className={cn(
+                'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                disabled && 'cursor-not-allowed',
+              )}
+              aria-label={
+                disabled
+                  ? t('fileAttachment.attachFiles', 'Attach files')
+                  : undefined
+              }
+              aria-disabled={disabled ? true : undefined}
+              role={disabled ? 'button' : undefined}
             >
-              <Paperclip className="h-4 w-4" />
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                onClick={handleFileSelect}
+                disabled={disabled}
+                className={cn(
+                  'h-8 w-8 text-muted-foreground hover:text-success',
+                  disabled && 'pointer-events-none',
+                  buttonClassName,
+                )}
+                aria-label={t('fileAttachment.attachFiles', 'Attach files')}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            </span>
           </TooltipTrigger>
           <TooltipContent>
             {t('fileAttachment.attachFiles', 'Attach files')}
@@ -83,7 +116,7 @@ export default function FileAttachment({
         </Tooltip>
 
         {/* File Count Indicator */}
-        {files.length > 0 && (
+        {showFileCount && files.length > 0 && (
           <div className="flex items-center gap-1">
             {files.some((f) => f.status === 'processing') && (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -104,8 +137,9 @@ export default function FileAttachment({
         ref={fileInputRef}
         type="file"
         multiple
-        accept={allowedExtensions.map((ext) => `.${ext}`).join(',')}
+        accept={accept}
         onChange={onAdd}
+        disabled={disabled}
         className="hidden"
       />
 
@@ -117,7 +151,11 @@ export default function FileAttachment({
             size="sm"
             type="button"
             onClick={handleFileSelect}
-            className="text-muted-foreground hover:text-success border border-muted"
+            disabled={disabled}
+            className={cn(
+              'text-muted-foreground hover:text-success border border-muted',
+              buttonClassName,
+            )}
             aria-label={t('fileAttachment.attachFiles', 'Attach files')}
           >
             <Paperclip className="h-4 w-4" />
@@ -163,7 +201,7 @@ export default function FileAttachment({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        onClick={() => onRemove(index)}
+                        onClick={() => onRemove?.(index)}
                         className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
                         aria-label={removeLabel}
                       >

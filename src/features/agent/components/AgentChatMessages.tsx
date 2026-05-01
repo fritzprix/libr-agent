@@ -1,7 +1,11 @@
 import {
+  type ComponentPropsWithoutRef,
+  type ForwardedRef,
+  type MutableRefObject,
   forwardRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -25,11 +29,12 @@ import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
+import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
-const DEFAULT_BOTTOM_THRESHOLD = 80;
-const CHAT_INPUT_SPACER_GAP = 24;
+const DEFAULT_BOTTOM_THRESHOLD = 32;
+const CHAT_COMPOSER_CLEARANCE = 24;
 
 export function getPrependedFirstItemIndex(
   current: number,
@@ -45,16 +50,148 @@ export function getInitialTopMostItemIndex(
   return itemCount > 0 ? firstItemIndex + itemCount - 1 : firstItemIndex;
 }
 
-export function getVisualBottomThreshold(inputOverlayHeight: number): number {
-  return Math.max(
-    DEFAULT_BOTTOM_THRESHOLD,
-    inputOverlayHeight + CHAT_INPUT_SPACER_GAP,
+export function getVisualBottomThreshold(): number {
+  return DEFAULT_BOTTOM_THRESHOLD;
+}
+
+export function shouldAutoFollowOutput(
+  latestMessage: Message | undefined,
+  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'],
+): boolean {
+  if (!latestMessage) {
+    return false;
+  }
+
+  const assistantHasNoVisibleOutput =
+    latestMessage.role === 'assistant' &&
+    !latestMessage.content?.length &&
+    !latestMessage.thinking &&
+    !latestMessage.tool_calls?.length;
+
+  return (
+    workflowStatus === 'busy' &&
+    (latestMessage.role !== 'assistant' ||
+      latestMessage.isStreaming === true ||
+      assistantHasNoVisibleOutput)
   );
+}
+
+export function shouldShowAnalysisLoader(
+  latestMessage: Message | undefined,
+  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'],
+): boolean {
+  return (
+    workflowStatus === 'busy' &&
+    (latestMessage?.role !== 'assistant' ||
+      (latestMessage?.role === 'assistant' &&
+        !latestMessage.content?.length &&
+        !latestMessage.thinking &&
+        !latestMessage.tool_calls?.length))
+  );
+}
+
+export function getMessageOutputSignature(
+  message: Message | undefined,
+): string {
+  if (!message) {
+    return 'none';
+  }
+
+  const contentSignature = (message.content ?? [])
+    .map((item) => {
+      switch (item.type) {
+        case 'text':
+          return `text:${item.text.length}`;
+        case 'thinking':
+          return `thinking:${item.thinking.length}`;
+        case 'tool_call':
+          return `tool:${item.name}`;
+        default:
+          return item.type;
+      }
+    })
+    .join('|');
+
+  const toolCallSignature = (message.tool_calls ?? [])
+    .map((toolCall) => toolCall.function.name)
+    .join('|');
+
+  return [
+    message.id,
+    message.role,
+    message.isStreaming ? 'streaming' : 'static',
+    message.thinking?.length ?? 0,
+    contentSignature,
+    toolCallSignature,
+  ].join('::');
+}
+
+export function getTailAnchorKey(args: {
+  latestMessage: Message | undefined;
+  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'];
+  pendingApprovalsCount: number;
+  hasAgentError: boolean;
+  hasAgentLlmError: boolean;
+}): string {
+  return [
+    getMessageOutputSignature(args.latestMessage),
+    args.workflowStatus,
+    args.pendingApprovalsCount,
+    args.hasAgentError ? 'agent-error' : 'no-agent-error',
+    args.hasAgentLlmError ? 'llm-error' : 'no-llm-error',
+    shouldShowAnalysisLoader(args.latestMessage, args.workflowStatus)
+      ? 'analysis-loader'
+      : 'no-analysis-loader',
+  ].join('||');
+}
+
+export function shouldPreserveBottomAnchorOnTailChange(args: {
+  tailChanged: boolean;
+  wasAtBottomBeforeChange: boolean;
+  autoFollowOutput: boolean;
+  wasFollowingOutputBeforeChange: boolean;
+}): boolean {
+  return (
+    args.tailChanged &&
+    args.wasAtBottomBeforeChange &&
+    !args.autoFollowOutput &&
+    args.wasFollowingOutputBeforeChange
+  );
+}
+
+export function shouldSoftFollowOutputOnTailChange(args: {
+  tailChanged: boolean;
+  wasAtBottomBeforeChange: boolean;
+  autoFollowOutput: boolean;
+}): boolean {
+  return (
+    args.tailChanged && args.wasAtBottomBeforeChange && args.autoFollowOutput
+  );
+}
+
+function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
+  if (typeof ref === 'function') {
+    ref(value);
+    return;
+  }
+
+  if (ref) {
+    ref.current = value;
+  }
+}
+
+function scrollFooterSentinelIntoView(sentinel: HTMLDivElement | null) {
+  sentinel?.scrollIntoView({
+    block: 'end',
+    inline: 'nearest',
+    behavior: 'auto',
+  });
 }
 
 interface AgentChatVirtuosoContext {
   agentError: ReturnType<typeof useAgentChat>['error'];
   agentLlmError: ReturnType<typeof useAgentChat>['llmError'];
+  footerEndRef: MutableRefObject<HTMLDivElement | null>;
   hasOlderMessages: boolean;
   isLoadingOlderMessages: boolean;
   latestMessage: Message | undefined;
@@ -110,13 +247,10 @@ function AgentChatMessagesHeader({ context }: AgentChatVirtuosoContextProps) {
 
 function AgentChatMessagesFooter({ context }: AgentChatVirtuosoContextProps) {
   const latestMessage = context.latestMessage;
-  const showAnalysisLoader =
-    context.workflowStatus === 'busy' &&
-    (latestMessage?.role !== 'assistant' ||
-      (latestMessage?.role === 'assistant' &&
-        !latestMessage.content?.length &&
-        !latestMessage.thinking &&
-        !latestMessage.tool_calls?.length));
+  const showAnalysisLoader = shouldShowAnalysisLoader(
+    latestMessage,
+    context.workflowStatus,
+  );
 
   return (
     <div className="px-4">
@@ -168,8 +302,15 @@ function AgentChatMessagesFooter({ context }: AgentChatVirtuosoContextProps) {
       <div
         aria-hidden="true"
         style={{
-          height: 'calc(var(--agent-chat-input-offset, 176px) + 24px)',
+          height: `calc(var(--agent-chat-composer-overlap, 64px) + ${CHAT_COMPOSER_CLEARANCE}px)`,
         }}
+      />
+      <div
+        ref={(node) => {
+          context.footerEndRef.current = node;
+        }}
+        aria-hidden="true"
+        className="h-px w-full shrink-0"
       />
     </div>
   );
@@ -248,13 +389,7 @@ function groupedMessageContainsBoundary(
   return groupedMessage.messages.some((message) => message.id === boundaryId);
 }
 
-interface AgentChatMessagesProps {
-  inputOverlayHeight?: number;
-}
-
-export function AgentChatMessages({
-  inputOverlayHeight = 88,
-}: AgentChatMessagesProps = {}) {
+export function AgentChatMessages() {
   const { t } = useTranslation();
   const {
     messages,
@@ -306,12 +441,19 @@ export function AgentChatMessages({
 
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
   const assistantName = session?.assistant?.name || 'Agent';
+  const footerEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollerElementRef = useRef<HTMLDivElement | null>(null);
+  const wasAtBottomRef = useRef(true);
+  const settleLockRef = useRef(false);
+  const settleFrameRefs = useRef<number[]>([]);
+  const streamFollowFrameRef = useRef<number | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
-  const bottomThreshold = useMemo(
-    () => getVisualBottomThreshold(inputOverlayHeight),
-    [inputOverlayHeight],
+  const bottomThreshold = getVisualBottomThreshold();
+  const autoFollowOutput = useMemo(
+    () => shouldAutoFollowOutput(latestMessage, workflowStatus),
+    [latestMessage, workflowStatus],
   );
   const previousListStateRef = useRef<{
     firstId: string | undefined;
@@ -359,6 +501,26 @@ export function AgentChatMessages({
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
+  const tailAnchorKey = useMemo(
+    () =>
+      getTailAnchorKey({
+        latestMessage,
+        workflowStatus,
+        pendingApprovalsCount: pendingApprovals?.length ?? 0,
+        hasAgentError: !!agentError,
+        hasAgentLlmError: !!agentLlmError,
+      }),
+    [
+      latestMessage,
+      workflowStatus,
+      pendingApprovals,
+      agentError,
+      agentLlmError,
+    ],
+  );
+  const previousTailAnchorKeyRef = useRef<string | undefined>(undefined);
+  const previousWasAtBottomRef = useRef(true);
+  const previousAutoFollowOutputRef = useRef(false);
 
   const streamingToolMessageIds = useMemo(
     () =>
@@ -412,10 +574,143 @@ export function AgentChatMessages({
     };
   }, [groupedMessages, session?.id]);
 
+  useEffect(() => {
+    wasAtBottomRef.current = true;
+    previousWasAtBottomRef.current = true;
+    previousAutoFollowOutputRef.current = false;
+    previousTailAnchorKeyRef.current = undefined;
+    settleLockRef.current = false;
+    settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
+    settleFrameRefs.current = [];
+    if (streamFollowFrameRef.current !== null) {
+      cancelAnimationFrame(streamFollowFrameRef.current);
+      streamFollowFrameRef.current = null;
+    }
+  }, [session?.id]);
+
+  useEffect(() => {
+    return () => {
+      settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
+      settleFrameRefs.current = [];
+      settleLockRef.current = false;
+      if (streamFollowFrameRef.current !== null) {
+        cancelAnimationFrame(streamFollowFrameRef.current);
+        streamFollowFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const sentinel = footerEndRef.current;
+    const scroller = scrollerElementRef.current;
+
+    if (!sentinel || !scroller) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      wasAtBottomRef.current = true;
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        const atBottom = entry?.isIntersecting ?? false;
+
+        if (settleLockRef.current && !atBottom) {
+          return;
+        }
+
+        wasAtBottomRef.current = atBottom;
+      },
+      {
+        root: scroller,
+        threshold: 0,
+        rootMargin: `0px 0px ${bottomThreshold}px 0px`,
+      },
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [bottomThreshold, session?.id]);
+
+  useLayoutEffect(() => {
+    const previousTailAnchorKey = previousTailAnchorKeyRef.current;
+    const wasAtBottomBeforeChange = previousWasAtBottomRef.current;
+    const wasFollowingOutputBeforeChange = previousAutoFollowOutputRef.current;
+
+    previousTailAnchorKeyRef.current = tailAnchorKey;
+    previousWasAtBottomRef.current = wasAtBottomRef.current;
+    previousAutoFollowOutputRef.current = autoFollowOutput;
+
+    if (previousTailAnchorKey === undefined) {
+      return;
+    }
+
+    const tailChanged = previousTailAnchorKey !== tailAnchorKey;
+
+    if (
+      shouldSoftFollowOutputOnTailChange({
+        tailChanged,
+        wasAtBottomBeforeChange,
+        autoFollowOutput,
+      })
+    ) {
+      if (streamFollowFrameRef.current === null) {
+        streamFollowFrameRef.current = requestAnimationFrame(() => {
+          streamFollowFrameRef.current = null;
+          scrollFooterSentinelIntoView(footerEndRef.current);
+        });
+      }
+      return;
+    }
+
+    if (
+      shouldPreserveBottomAnchorOnTailChange({
+        tailChanged,
+        wasAtBottomBeforeChange,
+        autoFollowOutput,
+        wasFollowingOutputBeforeChange,
+      })
+    ) {
+      settleLockRef.current = true;
+      if (streamFollowFrameRef.current !== null) {
+        cancelAnimationFrame(streamFollowFrameRef.current);
+        streamFollowFrameRef.current = null;
+      }
+      settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
+      settleFrameRefs.current = [];
+
+      scrollFooterSentinelIntoView(footerEndRef.current);
+
+      const firstFrame = requestAnimationFrame(() => {
+        scrollFooterSentinelIntoView(footerEndRef.current);
+
+        const secondFrame = requestAnimationFrame(() => {
+          scrollFooterSentinelIntoView(footerEndRef.current);
+          settleLockRef.current = false;
+          wasAtBottomRef.current = true;
+        });
+
+        settleFrameRefs.current = settleFrameRefs.current.filter(
+          (frame) => frame !== firstFrame,
+        );
+        settleFrameRefs.current.push(secondFrame);
+      });
+
+      settleFrameRefs.current.push(firstFrame);
+    }
+  }, [autoFollowOutput, tailAnchorKey]);
+
   const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
     () => ({
       agentError,
       agentLlmError,
+      footerEndRef,
       hasOlderMessages,
       isLoadingOlderMessages,
       latestMessage,
@@ -436,6 +731,7 @@ export function AgentChatMessages({
     [
       agentError,
       agentLlmError,
+      footerEndRef,
       hasOlderMessages,
       isLoadingOlderMessages,
       latestMessage,
@@ -450,14 +746,30 @@ export function AgentChatMessages({
 
   const virtuosoComponents = useMemo<
     Components<GroupedMessage, AgentChatVirtuosoContext>
-  >(
-    () => ({
+  >(() => {
+    const AgentChatMessagesScroller = forwardRef<
+      HTMLDivElement,
+      ComponentPropsWithoutRef<'div'>
+    >(function AgentChatMessagesScroller({ className, ...props }, ref) {
+      return (
+        <div
+          {...props}
+          ref={(node) => {
+            scrollerElementRef.current = node;
+            setForwardedRef(ref, node);
+          }}
+          className={cn('agent-chat-scrollbar', className)}
+        />
+      );
+    });
+
+    return {
       Footer: AgentChatMessagesFooter,
       Header: AgentChatMessagesHeader,
       List: AgentChatMessagesList,
-    }),
-    [],
-  );
+      Scroller: AgentChatMessagesScroller,
+    };
+  }, []);
 
   const renderMessageGroup = useCallback(
     (_index: number, groupedMessage: GroupedMessage) => {
@@ -576,9 +888,8 @@ export function AgentChatMessages({
           firstItemIndex,
           groupedMessages.length,
         )}
-        alignToBottom={true}
         atBottomThreshold={bottomThreshold}
-        followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
+        followOutput={false}
         increaseViewportBy={{ top: 640, bottom: 960 }}
         startReached={handleReachTop}
         itemContent={renderMessageGroup}

@@ -72,6 +72,7 @@ export function AgentSessionProvider({
       llmError: stateProps.state.llmError,
       workflowStatus: stateProps.state.workflowStatus,
       workflowPhase: stateProps.state.workflowPhase,
+      runtimeState: stateProps.state.runtimeState,
       initializationStep: stateProps.state.initializationStep,
       pendingApprovals: stateProps.state.pendingApprovals,
       yoloModeEnabled: stateProps.state.yoloModeEnabled,
@@ -86,6 +87,7 @@ export function AgentSessionProvider({
       stateProps.state.llmError,
       stateProps.state.workflowStatus,
       stateProps.state.workflowPhase,
+      stateProps.state.runtimeState,
       stateProps.state.initializationStep,
       stateProps.state.pendingApprovals,
       stateProps.state.yoloModeEnabled,
@@ -118,6 +120,12 @@ export function useAgentSessionState(): AgentSessionStateContextValue {
     );
   }
   return context;
+}
+
+export function useOptionalAgentSessionState():
+  | AgentSessionStateContextValue
+  | undefined {
+  return useContext(AgentSessionStateContext);
 }
 
 export function useAgentSessionActions(): AgentSessionActionsContextValue {

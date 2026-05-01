@@ -2,24 +2,24 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { useAssistantContext } from '@/context/AssistantContext';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
 import { AssistantSelectionCard } from './components/AssistantSelectionCard';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
-import type { Assistant } from '@/models/chat';
 import { getPlaybook } from '@/lib/backend/playbooks';
+import { getAssistant, type AssistantSummary } from '@/lib/backend/assistants';
+import { useAssistantSummaries } from './hooks/useAssistantSummaries';
 
 const logger = getLogger('AgentChatStartView');
 
 type PlaybookMatch = {
-  assistant: Assistant;
+  assistant: AssistantSummary;
   playbook: NonNullable<Awaited<ReturnType<typeof getPlaybook>>>;
 };
 
 async function findPlaybookMatch(
   playbookId: string,
-  assistants: Assistant[],
+  assistants: AssistantSummary[],
 ): Promise<PlaybookMatch | null> {
   const playbookChecks = assistants.map(async (assistant) => {
     try {
@@ -49,7 +49,7 @@ async function findPlaybookMatch(
 export default function AgentChatStartView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { assistants } = useAssistantContext();
+  const { assistants, loading, error } = useAssistantSummaries();
   const { createSession } = useAgentSessionListActions();
   const [isCreating, setIsCreating] = useState(false);
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
@@ -88,6 +88,13 @@ export default function AgentChatStartView() {
         }
 
         const { assistant: targetAssistant, playbook } = match;
+        const fullAssistant = await getAssistant(targetAssistant.id);
+
+        if (!fullAssistant) {
+          if (toastId) toast.dismiss(toastId);
+          toast.error('Assistant not found');
+          return;
+        }
 
         if (toastId)
           toast.loading(`Starting playbook: ${playbook.goal}`, {
@@ -95,7 +102,7 @@ export default function AgentChatStartView() {
           });
 
         const session = await createSession({
-          assistant: targetAssistant,
+          assistant: fullAssistant,
           name: playbook.goal,
         });
         if (toastId) toast.dismiss(toastId);
@@ -115,7 +122,7 @@ export default function AgentChatStartView() {
   }, [assistants, createSession, navigate, playbookId]);
 
   const handleAssistantSelect = useCallback(
-    (assistant: Assistant) => {
+    (assistant: AssistantSummary) => {
       setStartingAssistantId(assistant.id);
       navigate(`/agent/draft?assistantId=${assistant.id}`);
     },
@@ -123,7 +130,7 @@ export default function AgentChatStartView() {
   );
 
   const handleStartSelection = useCallback(
-    (assistant: Assistant) => {
+    (assistant: AssistantSummary) => {
       setIsCreating(true);
       handleAssistantSelect(assistant);
     },
@@ -131,8 +138,8 @@ export default function AgentChatStartView() {
   );
 
   const { builtinAssistants, customAssistants } = useMemo(() => {
-    const builtin: Assistant[] = [];
-    const custom: Assistant[] = [];
+    const builtin: AssistantSummary[] = [];
+    const custom: AssistantSummary[] = [];
 
     for (const assistant of assistants) {
       if (assistant.deletionProtected) {
@@ -148,7 +155,7 @@ export default function AgentChatStartView() {
     };
   }, [assistants]);
 
-  const renderGrid = (list: Assistant[]) => (
+  const renderGrid = (list: AssistantSummary[]) => (
     <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 list-none">
       {list.map((assistant) => {
         const isThisStarting = startingAssistantId === assistant.id;
@@ -215,7 +222,24 @@ export default function AgentChatStartView() {
         )}
 
         {/* Empty state */}
-        {assistants.length === 0 && (
+        {loading && (
+          <div className="text-center text-muted-foreground py-16">
+            <p className="text-sm">{t('common.loading')}</p>
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="text-center text-muted-foreground py-16">
+            <p className="text-sm">
+              {t(
+                'agent.start.assistantsLoadFailed',
+                'Failed to load assistants.',
+              )}
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && assistants.length === 0 && (
           <div className="text-center text-muted-foreground py-16">
             <p className="text-sm">No assistants available yet.</p>
             <Link to="/assistants">
@@ -225,7 +249,7 @@ export default function AgentChatStartView() {
         )}
 
         {/* Footer action */}
-        {assistants.length > 0 && (
+        {!loading && !error && assistants.length > 0 && (
           <div className="flex justify-center pt-2">
             <Link to="/assistants">
               <Button

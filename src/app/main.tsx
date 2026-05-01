@@ -7,8 +7,11 @@ import '@/lib/i18n';
 import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from 'next-themes';
 import { logUtils } from '@/lib/logger';
+import { markStartupMilestone } from '@/lib/performance/startup-metrics';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { SettingsProvider } from '@/context/SettingsContext';
+
+markStartupMilestone('bootstrap-script-start');
 
 // Initialize Tauri logger
 attachConsole().catch(console.error);
@@ -16,6 +19,8 @@ attachConsole().catch(console.error);
 // Initialize global logger with default settings
 // 설정은 localStorage에서 자동으로 로드되고, 없으면 기본값 사용
 logUtils.initialize().catch(console.error);
+
+markStartupMilestone('root-render-start');
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

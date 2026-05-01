@@ -57,7 +57,10 @@ function AdvancedTabComponent({
           </label>
           <Input
             type="number"
-            placeholder="e.g., 3"
+            placeholder={t(
+              'settings.advanced.defaultSessionMaxDepthPlaceholder',
+              'e.g., 3',
+            )}
             min={2}
             max={20}
             step={1}
@@ -88,7 +91,10 @@ function AdvancedTabComponent({
           </label>
           <Input
             type="number"
-            placeholder="0 = unlimited"
+            placeholder={t(
+              'settings.advanced.defaultSessionMaxFanoutPlaceholder',
+              '0 = unlimited',
+            )}
             min={0}
             max={64}
             step={1}
@@ -162,7 +168,10 @@ function AdvancedTabComponent({
           </label>
           <Input
             type="number"
-            placeholder="e.g., 4"
+            placeholder={t(
+              'settings.advanced.maxConcurrentActiveSessionsPlaceholder',
+              'e.g., 4',
+            )}
             min={1}
             max={32}
             step={1}
@@ -192,7 +201,10 @@ function AdvancedTabComponent({
           </label>
           <Input
             type="number"
-            placeholder="e.g., 8"
+            placeholder={t(
+              'settings.advanced.maxSuspendedSessionsPlaceholder',
+              'e.g., 8',
+            )}
             min={1}
             max={64}
             step={1}
@@ -222,7 +234,10 @@ function AdvancedTabComponent({
           </label>
           <Input
             type="number"
-            placeholder="e.g., 10"
+            placeholder={t(
+              'settings.advanced.maxConcurrentActiveProcessesPlaceholder',
+              'e.g., 10',
+            )}
             min={1}
             max={64}
             step={1}
@@ -252,7 +267,10 @@ function AdvancedTabComponent({
           </label>
           <Input
             type="number"
-            placeholder="e.g., 20"
+            placeholder={t(
+              'settings.advanced.maxSuspendedProcessesPlaceholder',
+              'e.g., 20',
+            )}
             min={1}
             max={128}
             step={1}
@@ -282,7 +300,10 @@ function AdvancedTabComponent({
           </label>
           <Input
             type="number"
-            placeholder="e.g., 16"
+            placeholder={t(
+              'settings.advanced.toolResultInlineLimitPlaceholder',
+              'e.g., 16',
+            )}
             min={4}
             max={256}
             step={1}

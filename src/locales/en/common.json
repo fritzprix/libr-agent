@@ -329,7 +329,8 @@
       "fallbackModelDescription": "Used as a last resort when the primary model returns malformed or empty responses after all retries.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "Agent Hub URL",
-      "agentHubUrlDescription": "URL of the remote Agent Hub server. If set, assistants will be synced with this server."
+      "agentHubUrlDescription": "URL of the remote Agent Hub server. If set, assistants will be synced with this server.",
+      "agentHubUrlPlaceholder": "https://api.agenthub.com"
     },
     "provider": {
       "apiKey": "API Key",
@@ -387,17 +388,24 @@
       "maxOutputTokensDescription": "Default maximum output tokens for new sessions if not specified by assistant.",
       "defaultSessionMaxDepth": "Session Branching Limit (Advanced)",
       "defaultSessionMaxDepthDescription": "Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.",
+      "defaultSessionMaxDepthPlaceholder": "e.g., 3",
       "defaultSessionMaxFanout": "Session Child Limit (Advanced)",
       "defaultSessionMaxFanoutDescription": "Controls how many direct child sessions each parent can create by default. Set 0 for unlimited. Most users can leave this as-is.",
+      "defaultSessionMaxFanoutPlaceholder": "0 = unlimited",
       "maxConcurrentActiveSessions": "Max Concurrent Agent Sessions",
       "maxConcurrentActiveSessionsDescription": "Maximum number of agent sessions running their LLM loop simultaneously. Higher values use more API quota and memory.",
+      "maxConcurrentActiveSessionsPlaceholder": "e.g., 4",
       "maxSuspendedSessions": "Max Suspended Agent Sessions",
       "maxSuspendedSessionsDescription": "Maximum number of agent sessions that can be paused waiting for a child agent to complete. Should be ≥ active sessions.",
+      "maxSuspendedSessionsPlaceholder": "e.g., 8",
       "maxConcurrentActiveProcesses": "Max Concurrent Shell Processes",
       "maxConcurrentActiveProcessesDescription": "Maximum number of shell/code processes running simultaneously across all agent sessions.",
+      "maxConcurrentActiveProcessesPlaceholder": "e.g., 10",
       "maxSuspendedProcesses": "Max Suspended Shell Processes",
       "maxSuspendedProcessesDescription": "Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.",
+      "maxSuspendedProcessesPlaceholder": "e.g., 20",
       "toolResultInlineLimit": "Tool Result Inline Limit (KB)",
+      "toolResultInlineLimitPlaceholder": "e.g., 16",
       "toolResultInlineLimitDescription": "Controls how much tool output stays inline before LibrAgent spills the full result to a workspace file. Lower values keep the agent context leaner.",
       "shellIsolation": "Shell Isolation Level",
       "shellIsolationModes": {
@@ -468,7 +476,8 @@
       "checkForUpdates": "Check for Updates"
     },
     "dangerZone": {
-      "title": "⚠️ Danger Zone"
+      "title": "⚠️ Danger Zone",
+      "description": "These actions permanently delete local data. Double-check the scope before continuing."
     },
     "factoryReset": {
       "title": "Factory Reset",
@@ -476,6 +485,8 @@
       "button": "Reset All Data & Settings",
       "confirmTitle": "Factory Reset Confirmation",
       "confirmDescription": "This will permanently delete ALL data including sessions, assistants, MCP servers, and playbooks. Are you sure?",
+      "typeReset": "Type RESET to enable factory reset.",
+      "typeResetPlaceholder": "Type RESET",
       "confirmButton": "Reset Everything",
       "resetting": "Resetting...",
       "success": "Factory reset complete. Restart required to fully apply changes.",

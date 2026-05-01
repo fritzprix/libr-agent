@@ -1,11 +1,18 @@
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
+import { forwardRef } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
+  getMessageOutputSignature,
+  getTailAnchorKey,
   getInitialTopMostItemIndex,
   getPrependedFirstItemIndex,
   getVisualBottomThreshold,
+  shouldPreserveBottomAnchorOnTailChange,
+  shouldSoftFollowOutputOnTailChange,
+  shouldShowAnalysisLoader,
+  shouldAutoFollowOutput,
 } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
@@ -130,7 +137,10 @@ vi.mock('@/components/shared/ErrorBubble', () => ({
 }));
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: virtuosoMock,
+  Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
+    void ref;
+    return virtuosoMock(props);
+  }),
 }));
 
 describe('AgentChatMessages compaction rendering', () => {
@@ -191,17 +201,186 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(getPrependedFirstItemIndex(2, 3)).toBe(0);
   });
 
-  it('uses the input overlay height to define the visual bottom threshold', () => {
-    render(<AgentChatMessages inputOverlayHeight={144} />);
+  it('uses a fixed bottom threshold after moving input into layout flow', () => {
+    render(<AgentChatMessages />);
 
     const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
       atBottomThreshold: number;
     };
 
-    expect(virtuosoProps.atBottomThreshold).toBe(
-      getVisualBottomThreshold(144),
+    expect(virtuosoProps.atBottomThreshold).toBe(getVisualBottomThreshold());
+    expect(getVisualBottomThreshold()).toBe(32);
+  });
+
+  it('only auto-follows while the workflow is actively producing output', () => {
+    expect(
+      shouldAutoFollowOutput(
+        {
+          ...baseMessage,
+          isStreaming: true,
+        },
+        'busy',
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoFollowOutput(
+        {
+          ...baseMessage,
+          isStreaming: false,
+        },
+        'idle',
+      ),
+    ).toBe(false);
+    expect(
+      shouldAutoFollowOutput(
+        {
+          ...baseMessage,
+          content: [],
+          isStreaming: false,
+        },
+        'busy',
+      ),
+    ).toBe(true);
+  });
+
+  it('derives a stable tail signature from the latest message output', () => {
+    expect(
+      getMessageOutputSignature({
+        ...baseMessage,
+        content: [{ type: 'text', text: 'abc' }],
+        isStreaming: true,
+      }),
+    ).toContain('streaming');
+    expect(
+      getMessageOutputSignature({
+        ...baseMessage,
+        content: [{ type: 'text', text: 'abcd' }],
+      }),
+    ).not.toBe(
+      getMessageOutputSignature({
+        ...baseMessage,
+        content: [{ type: 'text', text: 'abc' }],
+      }),
     );
-    expect(getVisualBottomThreshold(20)).toBe(80);
-    expect(getVisualBottomThreshold(144)).toBe(168);
+  });
+
+  it('includes footer-affecting state in the tail anchor key', () => {
+    const baseKey = getTailAnchorKey({
+      latestMessage: baseMessage,
+      workflowStatus: 'idle',
+      pendingApprovalsCount: 0,
+      hasAgentError: false,
+      hasAgentLlmError: false,
+    });
+
+    expect(
+      getTailAnchorKey({
+        latestMessage: baseMessage,
+        workflowStatus: 'idle',
+        pendingApprovalsCount: 1,
+        hasAgentError: false,
+        hasAgentLlmError: false,
+      }),
+    ).not.toBe(baseKey);
+    expect(
+      getTailAnchorKey({
+        latestMessage: { ...baseMessage, content: [] },
+        workflowStatus: 'busy',
+        pendingApprovalsCount: 0,
+        hasAgentError: false,
+        hasAgentLlmError: false,
+      }),
+    ).not.toBe(baseKey);
+  });
+
+  it('shows the analysis loader only for busy empty assistant output states', () => {
+    expect(shouldShowAnalysisLoader(undefined, 'idle')).toBe(false);
+    expect(
+      shouldShowAnalysisLoader(
+        { ...baseMessage, content: [], isStreaming: false },
+        'busy',
+      ),
+    ).toBe(true);
+    expect(
+      shouldShowAnalysisLoader(
+        { ...baseMessage, content: [{ type: 'text', text: 'done' }] },
+        'busy',
+      ),
+    ).toBe(false);
+  });
+
+  it('preserves bottom anchoring through completion settle transitions', () => {
+    expect(
+      shouldPreserveBottomAnchorOnTailChange({
+        tailChanged: true,
+        wasAtBottomBeforeChange: true,
+        autoFollowOutput: false,
+        wasFollowingOutputBeforeChange: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldPreserveBottomAnchorOnTailChange({
+        tailChanged: true,
+        wasAtBottomBeforeChange: false,
+        autoFollowOutput: false,
+        wasFollowingOutputBeforeChange: true,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldPreserveBottomAnchorOnTailChange({
+        tailChanged: false,
+        wasAtBottomBeforeChange: true,
+        autoFollowOutput: true,
+        wasFollowingOutputBeforeChange: true,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldPreserveBottomAnchorOnTailChange({
+        tailChanged: true,
+        wasAtBottomBeforeChange: true,
+        autoFollowOutput: true,
+        wasFollowingOutputBeforeChange: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('allows completion settle even after auto follow has just turned off', () => {
+    expect(
+      shouldPreserveBottomAnchorOnTailChange({
+        tailChanged: true,
+        wasAtBottomBeforeChange: true,
+        autoFollowOutput: false,
+        wasFollowingOutputBeforeChange: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('uses lightweight follow while output is still streaming', () => {
+    expect(
+      shouldSoftFollowOutputOnTailChange({
+        tailChanged: true,
+        wasAtBottomBeforeChange: true,
+        autoFollowOutput: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldSoftFollowOutputOnTailChange({
+        tailChanged: true,
+        wasAtBottomBeforeChange: true,
+        autoFollowOutput: false,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldSoftFollowOutputOnTailChange({
+        tailChanged: false,
+        wasAtBottomBeforeChange: true,
+        autoFollowOutput: true,
+      }),
+    ).toBe(false);
   });
 });

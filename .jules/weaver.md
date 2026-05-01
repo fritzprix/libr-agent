@@ -159,3 +159,9 @@
 
 **Learning:** Refactoring an imperative `useEffect` fetch chain with manual loading, error, and list states into a declarative `useSWR` setup eliminates redundant state variables and significantly simplifies lifecycle handling, making revalidation deterministic.
 **Action:** When finding complex data fetching loops in features, immediately assess if `useSWR` or `react-query` can replace the `useEffect`/`useState` combinations.
+
+## 2026-05-18 - [ToolCallCompactItem] **Eradicated:** [useEffect State Synchronization] **Woven:** [Adjusting State During Render]
+
+- Removed passive `useEffect` observation loop that tracked `hasError` and `hasResource` props to conditionally toggle `isExpanded`.
+- Used `useState` to store previous prop values (`prevHasError`, `prevHasResource`) and conditionally updated the state directly in the component body during render.
+- **Benefits:** Prevents double-render cycles that occur when pushing visual updates to the DOM followed immediately by an effect-driven state change, conforming purely to React 18+ render-phase data flow constraints.

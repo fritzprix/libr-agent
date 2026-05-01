@@ -1,9 +1,18 @@
 use super::ReferenceResolver;
 use crate::session::get_session_manager;
 use async_trait::async_trait;
+use ignore::{DirEntry, WalkBuilder};
 use std::path::Path;
 use tracing::warn;
-use walkdir::WalkDir;
+
+const SKIPPED_INDEX_DIR_NAMES: &[&str] = &[
+    ".git",
+    "node_modules",
+    "dist",
+    "target",
+    ".next",
+    "coverage",
+];
 
 /// Resolves `@file:relative/path` references by pointing the agent at a workspace file
 /// without inlining the full file contents into prompt context.
@@ -81,12 +90,24 @@ impl ReferenceResolver for FileReferenceResolver {
 }
 
 fn collect_relative_file_paths(root: &Path, max_depth: usize) -> Vec<String> {
-    let walker = WalkDir::new(root)
-        .max_depth(max_depth)
+    let walker = WalkBuilder::new(root)
+        .max_depth(Some(max_depth))
         .follow_links(false)
-        .into_iter()
+        .hidden(false)
+        .parents(false)
+        .ignore(false)
+        .git_ignore(true)
+        .git_global(false)
+        .git_exclude(false)
+        .require_git(false)
+        .filter_entry(|entry| !should_skip_index_directory(entry))
+        .build()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file());
+        .filter(|e| {
+            e.file_type()
+                .map(|file_type| file_type.is_file())
+                .unwrap_or(false)
+        });
 
     let mut paths: Vec<String> = Vec::new();
     for entry in walker {
@@ -102,6 +123,23 @@ fn collect_relative_file_paths(root: &Path, max_depth: usize) -> Vec<String> {
 
     paths.sort();
     paths
+}
+
+fn should_skip_index_directory(entry: &DirEntry) -> bool {
+    if entry.depth() == 0
+        || !entry
+            .file_type()
+            .map(|file_type| file_type.is_dir())
+            .unwrap_or(false)
+    {
+        return false;
+    }
+
+    entry
+        .file_name()
+        .to_str()
+        .map(|name| SKIPPED_INDEX_DIR_NAMES.contains(&name))
+        .unwrap_or(false)
 }
 
 /// Returns a flat list of relative file paths for an arbitrary workspace root.

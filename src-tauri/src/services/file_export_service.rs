@@ -22,7 +22,8 @@ impl FileExportService {
         // Get workspace directory via SessionManager
         let session_manager =
             get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-        let workspace_dir = session_manager.get_session_workspace_dir_by_id(session_id);
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
 
         // Resolve and validate path securely
         let full_path = crate::utils::security::resolve_secure_path(&workspace_dir, file_path)
@@ -57,7 +58,8 @@ impl FileExportService {
     ) -> Result<ExportedFile, String> {
         let session_manager =
             get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-        let workspace_dir = session_manager.get_session_workspace_dir_by_id(session_id);
+        let workspace_dir =
+            crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
 
         // Canonicalize base for stripping prefixes later
         let workspace_dir_canon = tokio::fs::canonicalize(&workspace_dir)

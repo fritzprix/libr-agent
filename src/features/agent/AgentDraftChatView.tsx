@@ -1,21 +1,24 @@
 import { useTranslation } from 'react-i18next';
-import { useLayoutEffect } from 'react';
+import { type CSSProperties } from 'react';
 
 import {
   Button,
+  FileAttachment,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui';
 import { AgentDraftWorkspacePreviewPanel } from './components/AgentDraftWorkspacePreviewPanel';
+import { AgentAttachedFilesBar } from './components/AgentAttachedFilesBar';
+import AgentSessionHeader from './components/AgentSessionHeader';
 import { DraftCapabilitiesSection } from './components/DraftCapabilitiesSection';
-import { DraftPendingFilesBar } from './components/DraftPendingFilesBar';
-import { Send, Loader2, Bot, Paperclip } from 'lucide-react';
+import { Send, Loader2, Bot } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
 import { useAgentDraftChat } from './hooks/useAgentDraftChat';
 import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
+import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 
 const textareaStyle = {
   msOverflowStyle: 'none',
@@ -44,7 +47,6 @@ function DraftChatInner() {
     dragState,
     profileDragState,
     isAttachmentLoading,
-    fileInputRef,
     formRef,
     profileAreaRef,
     textareaRef,
@@ -70,16 +72,11 @@ function DraftChatInner() {
     workspaceOverride,
   );
 
-  // Auto-resize textarea - Mirrored from AgentChatInput
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const maxHeightPx = 128; // max-h-32 (8rem)
-      const nextHeight = Math.min(textarea.scrollHeight, maxHeightPx);
-      textarea.style.height = `${nextHeight}px`;
-    }
-  }, [input]);
+  useTextareaAutosize({
+    textareaRef,
+    value: input,
+    maxHeight: 128,
+  });
 
   if (isLoadingAssistant) {
     return (
@@ -115,26 +112,20 @@ function DraftChatInner() {
       )}
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 relative bg-background">
-        {/* Session header - aligned with the shared agent session header style */}
-        <div className="px-4 py-3 flex items-center justify-between border-b flex-shrink-0 bg-background/95 backdrop-blur z-20">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground uppercase font-sans font-bold tracking-widest">
-              Assistant:
-            </span>
-            <span className="text-xs font-semibold text-primary">
-              [{assistant.name}]
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground uppercase font-sans font-bold tracking-widest">
-              Session:
-            </span>
-            <span className="text-xs truncate max-w-xs italic text-muted-foreground/80">
-              {t('agent.draft.newSession', 'New Session')} (Agent)
-            </span>
-          </div>
-        </div>
+      <div
+        className="flex min-h-0 min-w-0 flex-1 flex-col"
+        style={
+          {
+            '--agent-chat-composer-overlap': '64px',
+          } as CSSProperties
+        }
+      >
+        <AgentSessionHeader
+          assistantName={`[${assistant.name}]`}
+          assistantNameClassName="text-xs font-semibold text-primary"
+          sessionName={t('agent.draft.newSession', 'New Session')}
+          sessionNameClassName="max-w-xs truncate text-xs italic text-muted-foreground/80"
+        />
 
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto no-scrollbar relative">
@@ -202,16 +193,28 @@ function DraftChatInner() {
           </div>
         </div>
 
-        {/* Floating Input Area - Precision Aligned with AgentChatInput */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
-          <div className="h-32 bg-gradient-to-t from-background via-background/60 to-transparent w-full" />
-          <div className="p-4 pt-0">
-            <div className="w-full max-w-5xl mx-auto pointer-events-auto">
+        <div className="relative shrink-0 px-4 pb-4">
+          <div
+            aria-hidden="true"
+            style={{ height: 'var(--agent-chat-composer-overlap, 64px)' }}
+          />
+          <div
+            className="relative z-10"
+            style={{
+              marginTop: 'calc(var(--agent-chat-composer-overlap, 64px) * -1)',
+            }}
+          >
+            <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
+            <div className="pointer-events-auto mx-auto w-full max-w-5xl">
               {/* Attached Files List - Mirrored from AgentChatAttachedFiles */}
               {hasAttachedFiles && (
-                <DraftPendingFilesBar
-                  pendingFiles={pendingFiles}
-                  onRemoveFile={handleFileRemove}
+                <AgentAttachedFilesBar
+                  files={pendingFiles.map((file, index) => ({
+                    id: `${file.name}-${index}`,
+                    name: file.name,
+                    onRemove: () => handleFileRemove(index),
+                  }))}
+                  title={t('agent.draft.attachedFiles', 'Attached Files:')}
                 />
               )}
 
@@ -272,63 +275,18 @@ function DraftChatInner() {
                       'bg-destructive/5 border-destructive/50 shadow-destructive/10',
                   )}
                 >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    onChange={handleFileAdd}
-                    className="hidden"
+                  <FileAttachment
+                    files={pendingFiles.map((file) => ({
+                      name: file.name,
+                      content: '',
+                    }))}
+                    onAdd={handleFileAdd}
+                    compact={true}
+                    disabled={isSubmitting || isAttachmentLoading}
+                    showFileCount={false}
+                    allowedExtensions={[]}
+                    buttonClassName="mb-1 h-8 w-8 hover:text-primary hover:bg-primary/5 transition-colors"
                   />
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        tabIndex={
-                          isSubmitting || isAttachmentLoading ? 0 : undefined
-                        }
-                        className={cn(
-                          'inline-block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none mb-1 shrink-0 h-8 w-8',
-                          (isSubmitting || isAttachmentLoading) &&
-                            'cursor-not-allowed',
-                        )}
-                        aria-label={
-                          isSubmitting || isAttachmentLoading
-                            ? t('fileAttachment.attachFiles', 'Attach files')
-                            : undefined
-                        }
-                        aria-disabled={
-                          isSubmitting || isAttachmentLoading ? true : undefined
-                        }
-                        role={
-                          isSubmitting || isAttachmentLoading
-                            ? 'button'
-                            : undefined
-                        }
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={isSubmitting || isAttachmentLoading}
-                          className={cn(
-                            'h-full w-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors',
-                            (isSubmitting || isAttachmentLoading) &&
-                              'pointer-events-none',
-                          )}
-                          aria-label={t(
-                            'fileAttachment.attachFiles',
-                            'Attach files',
-                          )}
-                        >
-                          <Paperclip className="h-4 w-4" />
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t('fileAttachment.attachFiles', 'Attach files')}
-                    </TooltipContent>
-                  </Tooltip>
 
                   <textarea
                     ref={textareaRef}

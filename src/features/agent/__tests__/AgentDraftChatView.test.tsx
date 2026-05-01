@@ -36,7 +36,6 @@ const createDraftChatState = () => ({
   dragState: 'none',
   profileDragState: 'none',
   isAttachmentLoading: false,
-  fileInputRef: createRef<HTMLInputElement>(),
   formRef: createRef<HTMLFormElement>(),
   profileAreaRef: createRef<HTMLDivElement>(),
   textareaRef: createRef<HTMLTextAreaElement>(),

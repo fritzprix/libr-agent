@@ -8,20 +8,25 @@ use tokio::task::JoinHandle;
 use super::service_proxy::MCPServiceProxy;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
+use crate::agent::runtime_state::SessionRuntimeState;
 use crate::session::SessionManager;
 
+mod background_discovery;
 mod caching;
 mod cleanup;
 mod creation;
+mod lazy_proxy;
 mod management;
+mod proxy_config;
+mod runtime_updates;
 #[cfg(test)]
 mod test_helpers;
 #[cfg(test)]
 mod tests;
 
 pub use caching::{persist_tool_cache_for_server, spawn_tool_cache_update};
-pub use creation::{decide_existing_proxy_disposition, ExistingProxyDisposition};
 pub use management::{decide_proxy_readiness_state, ProxyReadinessState};
+pub use proxy_config::{decide_existing_proxy_disposition, ExistingProxyDisposition};
 
 /// Manages per-session MCP service proxies for isolated tool execution
 ///
@@ -65,6 +70,9 @@ pub struct MCPServiceProxyManager {
     /// Two concurrent `create_proxy` calls for the same session_id will serialize here;
     /// the second caller blocks until the first finishes and then hits the idempotency re-check.
     creation_guards: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+
+    /// Structured runtime state snapshots owned by Rust and pushed to the frontend.
+    runtime_states: Arc<RwLock<HashMap<String, SessionRuntimeState>>>,
 }
 
 impl std::fmt::Debug for MCPServiceProxyManager {
@@ -82,6 +90,7 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             )
             .field("config", &self.config)
             .field("proxy_readiness", &"<RwLock<HashMap>>")
+            .field("runtime_states", &"<RwLock<HashMap>>")
             .finish()
     }
 }

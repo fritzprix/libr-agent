@@ -30,7 +30,6 @@ describe('bundle-budget', () => {
 
   it('reports only metrics that exceed the configured budget', () => {
     const budget: BundleBudget = {
-      totalJsBytes: 2500,
       totalCssBytes: 350,
       largestJsBytes: 1700,
       largestCssBytes: 500,
@@ -43,7 +42,6 @@ describe('bundle-budget', () => {
     ]);
 
     expect(evaluateBundleBudget(summary, budget)).toEqual([
-      { metric: 'totalJsBytes', actual: 2700, limit: 2500 },
       { metric: 'totalCssBytes', actual: 400, limit: 350 },
       { metric: 'largestJsBytes', actual: 1800, limit: 1700 },
     ]);

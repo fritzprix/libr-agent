@@ -117,7 +117,8 @@ pub async fn open_workspace_file_with_default_app(
 #[tauri::command]
 pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-    let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+    let workspace_path =
+        crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
 
     crate::utils::fs::open_in_file_manager(&workspace_path)
 }
@@ -125,7 +126,8 @@ pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String
 #[tauri::command]
 pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-    let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+    let workspace_path =
+        crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
 
     crate::utils::terminal::open_in_terminal(&workspace_path)
 }
@@ -153,7 +155,8 @@ pub async fn cancel_workspace_override(session_id: String) -> Result<(), String>
 #[tauri::command]
 pub async fn get_workspace_dir(session_id: String) -> Result<String, String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-    let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+    let workspace_path =
+        crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
     Ok(workspace_path.to_string_lossy().to_string())
 }
 
@@ -180,7 +183,8 @@ pub async fn read_local_file_as_base64(
         .map_err(|_| "URL cannot be converted to a local file path".to_string())?;
 
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-    let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
+    let workspace_dir =
+        crate::session::resolve_session_workspace_dir(session_manager, &session_id).await?;
     let file_path = resolve_workspace_scoped_file_path(&file_path, &workspace_dir).await?;
 
     let bytes = tokio::fs::read(&file_path)

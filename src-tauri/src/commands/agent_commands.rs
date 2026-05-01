@@ -129,6 +129,8 @@ pub struct AgentOpenSessionResponse {
     pub messages: MessageSlice,
     #[serde(default)]
     pub pending_approvals: Vec<PendingApprovalSnapshot>,
+    #[serde(default)]
+    pub runtime_state: crate::agent::runtime_state::SessionRuntimeState,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -296,6 +298,10 @@ pub async fn agent_open_session(
 ) -> Result<AgentOpenSessionResponse, String> {
     const DEFAULT_INITIAL_MESSAGE_LIMIT: u64 = 40;
 
+    let session_manager = crate::session::get_session_manager()?;
+    crate::session::hydrate_persisted_workspace_override_from_global(session_manager, &session_id)
+        .await?;
+
     let session = manager
         .get_session(&session_id)
         .await?
@@ -325,11 +331,13 @@ pub async fn agent_open_session(
             Vec::new()
         }
     };
+    let runtime_state = manager.get_runtime_state(&session_id).await;
 
     Ok(AgentOpenSessionResponse {
         session,
         messages: message_slice.into(),
         pending_approvals,
+        runtime_state,
     })
 }
 

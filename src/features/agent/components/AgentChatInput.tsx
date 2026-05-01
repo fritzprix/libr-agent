@@ -1,11 +1,4 @@
-import {
-  useState,
-  useRef,
-  useCallback,
-  useMemo,
-  useEffect,
-  useLayoutEffect,
-} from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useLLMService } from '@/context/LLMServiceContext';
@@ -34,6 +27,7 @@ import {
 import { useScopedSkills } from '../hooks/useScopedSkills';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
+import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 
 const logger = getLogger('AgentChatInput');
 
@@ -168,16 +162,11 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     return t('agent.input.placeholderDefault');
   }, [dragState, isBusy, isAttachmentLoading, t]);
 
-  // Auto-resize textarea
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const maxHeightPx = 96; // 6rem, matching Tailwind max-h-24
-      const nextHeight = Math.min(textarea.scrollHeight, maxHeightPx);
-      textarea.style.height = `${nextHeight}px`;
-    }
-  }, [input]);
+  useTextareaAutosize({
+    textareaRef,
+    value: input,
+    maxHeight: 96,
+  });
 
   useEffect(() => {
     const previousWorkflowStatus = previousWorkflowStatusRef.current;
@@ -336,7 +325,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const hasAttachedFiles = attachedFiles.length > 0;
 
   const formClassName = cn(
-    'flex items-end gap-2 bg-background/60 backdrop-blur-md p-3 border border-border/50 shadow-2xl focus-within:ring-1 focus-within:ring-primary/20 transition-all',
+    'flex items-end gap-2 border border-border/40 bg-background/45 p-3 shadow-[0_20px_48px_-28px_rgba(0,0,0,0.55)] transition-all supports-[backdrop-filter]:bg-background/30 backdrop-blur-xl focus-within:ring-1 focus-within:ring-primary/20',
     hasAttachedFiles ? 'rounded-b-xl border-t-0' : 'rounded-xl',
     dragState === 'valid' && 'bg-success/5 border-success/50 shadow-success/10',
     dragState === 'invalid' &&

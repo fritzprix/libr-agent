@@ -102,3 +102,13 @@
 
 **Learning:** `ScheduledTaskRow` was rendering unnecessarily on every toggling or deletion. The parent component (`ScheduledTasksPage`) was passing `togglingIds` and `deletingIds` (which are `Set`s) as props to the row components. Since these sets were frequently recreated or mutated by the `useScheduledTasks` hook, `React.memo`'s shallow comparison failed, causing an O(N) re-render of all task rows whenever a single task was modified.
 **Action:** When using `React.memo` to optimize child list components, avoid passing complex collection objects (like Sets or Maps) as props. Compute and pass primitive values (e.g., `isToggling={togglingIds.has(task.id)}`) directly within the parent's mapping loop. Also ensure all passed callbacks (`onEdit`, `onToggle`, `onDelete`) are referentially stable using `useCallback`.
+
+## 2026-04-28 - Memoize Expensive Array Reductions
+
+**Learning:** Found instances where `Array.prototype.reduce` was used directly in the render body for derived metrics (like calculating completed todos). In components that re-render frequently (like `AgentPlanningUpdates` and `AgentPlanningPanel`), this causes unnecessary O(N) recalculations on every render.
+**Action:** Use `useMemo` to cache derived values (especially array reductions and filter loops) where the underlying dependencies change infrequently.
+
+## 2026-05-15 - Redundant O(N) Array Reductions After Grouping
+
+**Learning:** `selectOrgSummaries` and `buildScheduledTaskGroups` were doing `Array.prototype.reduce` on grouped subsets _after_ finishing an O(N) map building loop, re-traversing elements to compute simple metrics (`busyCount` and `enabledCount`).
+**Action:** When aggregating derived state across subsets (like counting status types), maintain variables tracking the metrics inline within the initial, primary `for` loop that iterates over the base array and performs grouping. This prevents subsequent redundant traversals.

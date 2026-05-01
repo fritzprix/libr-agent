@@ -34,6 +34,7 @@ export interface MCPServerRegistryContextType {
   saveServer: (server: MCPServerEntity) => Promise<MCPServerEntity>;
   deleteServer: (id: string) => Promise<void>;
   toggleActive: (id: string, active: boolean) => Promise<void>;
+  ensureLoaded: () => Promise<void>;
   refreshAll: () => Promise<void>;
 }
 
@@ -69,6 +70,8 @@ export const MCPServerRegistryProvider = ({
 
   // Use ref to avoid stale closures in event handlers
   const allServersRef = useRef<MCPServerEntity[]>([]);
+  const hasLoadedRef = useRef(false);
+  const refreshRequestRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     allServersRef.current = allServers;
@@ -79,20 +82,40 @@ export const MCPServerRegistryProvider = ({
    * This provides the full list for filtering and reference
    */
   const refreshAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const servers = await mcpServerService.getAll();
-      setAllServers(servers);
-      setError(undefined);
-      logger.debug(`Loaded ${servers.length} MCP servers from service`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      logger.error('Failed to load all MCP servers', err);
-      setError(message);
-    } finally {
-      setLoading(false);
+    if (refreshRequestRef.current) {
+      await refreshRequestRef.current;
+      return;
     }
+
+    const request = (async () => {
+      setLoading(true);
+      try {
+        const servers = await mcpServerService.getAll();
+        setAllServers(servers);
+        hasLoadedRef.current = true;
+        setError(undefined);
+        logger.debug(`Loaded ${servers.length} MCP servers from service`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        logger.error('Failed to load all MCP servers', err);
+        setError(message);
+      } finally {
+        setLoading(false);
+        refreshRequestRef.current = null;
+      }
+    })();
+
+    refreshRequestRef.current = request;
+    await request;
   }, [mcpServerService]);
+
+  const ensureLoaded = useCallback(async () => {
+    if (hasLoadedRef.current) {
+      return;
+    }
+
+    await refreshAll();
+  }, [refreshAll]);
 
   /**
    * Saves or updates an MCP server
@@ -163,24 +186,25 @@ export const MCPServerRegistryProvider = ({
   // Subscribe to local service events (Main Thread changes)
   useEffect(() => {
     const unsubscribe = mcpServerService.onRevalidate((event) => {
+      if (!hasLoadedRef.current) {
+        return;
+      }
       logger.debug('Local service changed, refreshing...', event);
-      refreshAll();
+      void refreshAll();
     });
     return unsubscribe;
   }, [mcpServerService, refreshAll]);
 
   // Subscribe to agent:event for AI agent resource updates via centralized hook
   useBackendResource('mcpServer', () => {
+    if (!hasLoadedRef.current) {
+      return;
+    }
     logger.debug(
       'Agent updated MCP server resource, refreshing MCP servers...',
     );
-    refreshAll();
+    void refreshAll();
   });
-
-  // Initial load on mount
-  useEffect(() => {
-    refreshAll();
-  }, [refreshAll]);
 
   const value: MCPServerRegistryContextType = useMemo(
     () => ({
@@ -191,6 +215,7 @@ export const MCPServerRegistryProvider = ({
       saveServer,
       deleteServer,
       toggleActive,
+      ensureLoaded,
       refreshAll,
     }),
     [
@@ -201,6 +226,7 @@ export const MCPServerRegistryProvider = ({
       saveServer,
       deleteServer,
       toggleActive,
+      ensureLoaded,
       refreshAll,
     ],
   );

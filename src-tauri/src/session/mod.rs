@@ -1,8 +1,10 @@
 pub mod manager;
 pub mod types;
+pub mod workspace_override;
 
 pub use manager::*;
 pub use types::*;
+pub use workspace_override::*;
 
 use log::error;
 use std::sync::OnceLock;

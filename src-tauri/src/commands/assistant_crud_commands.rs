@@ -1,4 +1,4 @@
-use crate::models::assistant::AssistantDto;
+use crate::models::assistant::{AssistantDto, AssistantSummaryDto};
 use crate::services::AssistantService;
 use crate::state::get_assistant_repository;
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,15 @@ pub async fn delete_assistant(id: String) -> Result<(), String> {
 pub async fn list_assistants() -> Result<Vec<AssistantDto>, String> {
     let assistants = AssistantService::list_assistants(get_assistant_repository()).await?;
     Ok(assistants.into_iter().map(|a| a.into()).collect())
+}
+
+#[command]
+pub async fn list_assistant_summaries() -> Result<Vec<AssistantSummaryDto>, String> {
+    let assistants = AssistantService::list_assistants(get_assistant_repository()).await?;
+    Ok(assistants
+        .into_iter()
+        .map(|assistant| assistant.into())
+        .collect())
 }
 
 #[command]
