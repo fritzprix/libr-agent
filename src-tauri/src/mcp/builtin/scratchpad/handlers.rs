@@ -216,8 +216,14 @@ pub async fn list(
     args: Value,
 ) -> Result<MCPResult, String> {
     // Legacy support: page/pageSize -> limit/offset
-    let page = args.get("page").and_then(|v| v.as_i64()).map(|v| v.max(1) as u64);
-    let page_size = args.get("pageSize").and_then(|v| v.as_i64()).map(|v| v.clamp(1, 100) as u64);
+    let page = args
+        .get("page")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.max(1) as u64);
+    let page_size = args
+        .get("pageSize")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.clamp(1, 100) as u64);
 
     // Modern API: limit/offset (takes precedence)
     let limit = args
@@ -361,7 +367,14 @@ pub async fn list(
     };
 
     if has_more {
-        guidance.insert(0, format!("Call this tool again with offset={} limit={} to see more notes", offset + limit, limit));
+        guidance.insert(
+            0,
+            format!(
+                "Call this tool again with offset={} limit={} to see more notes",
+                offset + limit,
+                limit
+            ),
+        );
     }
 
     let hint = SuccessHint::new(text_output, guidance);

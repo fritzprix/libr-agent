@@ -36,9 +36,7 @@ fn scratchpad_list_schema_uses_open_ended_positive_pagination_bounds() {
         other => panic!("expected integer schema, got {other:?}"),
     }
 
-    let offset_schema = properties
-        .get("offset")
-        .expect("list should expose offset");
+    let offset_schema = properties.get("offset").expect("list should expose offset");
     match &offset_schema.schema_type {
         JSONSchemaType::Integer {
             minimum, maximum, ..
