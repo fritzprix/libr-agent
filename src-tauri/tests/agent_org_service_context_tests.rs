@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use tauri_mcp_agent_lib::repositories::{
     build_explicit_org_layer_context, SessionMetadata, SessionRepository, SessionStatus,

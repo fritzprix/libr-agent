@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use sea_orm::{ConnectOptions, Database};
 use sea_orm_migration::MigratorTrait;

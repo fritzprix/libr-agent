@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use migration::MigratorTrait;
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};

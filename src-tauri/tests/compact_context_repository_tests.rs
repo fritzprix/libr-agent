@@ -2,7 +2,7 @@
 ///
 /// Runs via `cargo test --tests` in CI. Requires a parent session row due to the
 /// FK constraint on compact_contexts.session_id.
-mod common;
+pub mod common;
 
 use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use tauri_mcp_agent_lib::entity::session;

@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use common::setup_test_db_with_migrations;
 use std::sync::Arc;

@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 /// SeaORM Migration Verification Test
 ///

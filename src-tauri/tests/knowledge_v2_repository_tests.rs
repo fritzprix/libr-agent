@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use sea_orm::{ConnectionTrait, EntityTrait, Statement};
 use tauri_mcp_agent_lib::entity::knowledge_chunk_entity;

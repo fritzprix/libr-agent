@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{

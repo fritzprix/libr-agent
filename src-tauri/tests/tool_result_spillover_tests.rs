@@ -1,6 +1,6 @@
 use std::fs;
 
-mod common;
+pub mod common;
 
 use tauri_mcp_agent_lib::agent::tools::{
     spill_oversized_tool_result_messages, tool_result_preview_content_limit_bytes,

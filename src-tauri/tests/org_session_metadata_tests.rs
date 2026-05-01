@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,

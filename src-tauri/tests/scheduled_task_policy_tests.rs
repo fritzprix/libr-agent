@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use tauri_mcp_agent_lib::repositories::SqliteScheduledTaskRepository;
 use tauri_mcp_agent_lib::services::scheduled_task_service::{

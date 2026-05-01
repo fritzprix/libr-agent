@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::persist_tool_cache_for_server;
 use tauri_mcp_agent_lib::mcp::types::MCPTool;

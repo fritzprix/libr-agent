@@ -2,7 +2,7 @@
 ///
 /// These tests replace #[cfg(test)] unit tests that cannot run via `cargo test --lib`
 /// on Windows (STATUS_ENTRYPOINT_NOT_FOUND DLL issue). CI uses `cargo test --tests`.
-mod common;
+pub mod common;
 
 use tauri_mcp_agent_lib::repositories::{MCPServerRepository, SqliteMCPServerRepository};
 
