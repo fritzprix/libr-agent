@@ -103,7 +103,7 @@ fn list_tool() -> MCPTool {
             vec![
                 (
                     "limit".to_string(),
-                    integer_prop(Some(10), None, Some("Maximum number of items to return (default: 10)")),
+                    integer_prop(Some(1), Some(100), Some("Maximum number of items to return (default: 10)")),
                 ),
                 (
                     "offset".to_string(),
