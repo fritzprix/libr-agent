@@ -28,45 +28,61 @@ function hasExplicitOrgIdentity(
   );
 }
 
+// ⚡ Bolt: Using a structured tracking object to avoid multiple O(N) reduce passes later
+interface OrgTrackingData {
+  members: AgentSession[];
+  busyCount: number;
+  latestUpdate: Date;
+}
+
 export function selectOrgSummaries(sessions: AgentSession[]): OrgSummary[] {
-  const grouped = new Map<string, AgentSession[]>();
+  const grouped = new Map<string, OrgTrackingData>();
 
   for (const session of sessions) {
     if (!hasExplicitOrgIdentity(session)) {
       continue;
     }
 
-    const members = grouped.get(session.orgId) ?? [];
-    members.push(session);
-    grouped.set(session.orgId, members);
+    const isBusy = session.status === 'busy';
+    const candidateDate = session.updatedAt ?? session.createdAt;
+
+    const data = grouped.get(session.orgId);
+    if (data) {
+      data.members.push(session);
+      if (isBusy) data.busyCount++;
+      if (candidateDate.getTime() > data.latestUpdate.getTime()) {
+        data.latestUpdate = candidateDate;
+      }
+    } else {
+      grouped.set(session.orgId, {
+        members: [session],
+        busyCount: isBusy ? 1 : 0,
+        latestUpdate: candidateDate,
+      });
+    }
   }
 
   const summaries: OrgSummary[] = [];
 
-  for (const [orgId, members] of grouped.entries()) {
-    const orgRootSessionId = members[0]?.orgRootSessionId;
+  for (const [orgId, data] of grouped.entries()) {
+    const orgRootSessionId = data.members[0]?.orgRootSessionId;
     if (!orgRootSessionId) {
       continue;
     }
 
-    const rootSession = members.find(
+    const rootSession = data.members.find(
       (session) => session.id === orgRootSessionId,
     );
     if (!rootSession || !hasExplicitOrgIdentity(rootSession)) {
       continue;
     }
 
-    const updatedAt = members.reduce((latest, session) => {
-      const candidate = session.updatedAt ?? session.createdAt;
-      return candidate.getTime() > latest.getTime() ? candidate : latest;
-    }, rootSession.updatedAt ?? rootSession.createdAt);
-
     summaries.push({
       orgId,
       orgName: rootSession.orgName,
       orgRootSessionId: rootSession.orgRootSessionId,
       rootSession,
-      members: [...members].sort((left, right) => {
+      members: [...data.members].sort((left, right) => {
         const leftDepth = left.depth ?? 0;
         const rightDepth = right.depth ?? 0;
         if (leftDepth !== rightDepth) {
@@ -74,12 +90,9 @@ export function selectOrgSummaries(sessions: AgentSession[]): OrgSummary[] {
         }
         return left.createdAt.getTime() - right.createdAt.getTime();
       }),
-      memberCount: members.length,
-      busyCount: members.reduce(
-        (acc, session) => (session.status === 'busy' ? acc + 1 : acc),
-        0,
-      ),
-      updatedAt,
+      memberCount: data.members.length,
+      busyCount: data.busyCount,
+      updatedAt: data.latestUpdate,
     });
   }
 
