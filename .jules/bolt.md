@@ -112,3 +112,8 @@
 
 **Learning:** `selectOrgSummaries` and `buildScheduledTaskGroups` were doing `Array.prototype.reduce` on grouped subsets _after_ finishing an O(N) map building loop, re-traversing elements to compute simple metrics (`busyCount` and `enabledCount`).
 **Action:** When aggregating derived state across subsets (like counting status types), maintain variables tracking the metrics inline within the initial, primary `for` loop that iterates over the base array and performs grouping. This prevents subsequent redundant traversals.
+
+## 2026-05-16 - Eliminating Redundant Array Reductions in Helper Functions
+
+**Learning:** `summarizeIpcCalls` and `summarizeLongTasks` in `src/lib/performance/startup-metrics.ts` were utilizing `Array.prototype.reduce` multiple times to calculate distinct metrics (`failedCount`, `totalDurationMs`, `maxDurationMs`) from the same underlying array, resulting in multiple redundant O(N) passes. Returning a new object on every iteration of `reduce` also caused unnecessary object allocations.
+**Action:** When calculating multiple aggregate metrics from a single array, use a single `for...of` loop with mutable primitive variables. This avoids creating intermediate objects and prevents secondary O(N) passes over the array.

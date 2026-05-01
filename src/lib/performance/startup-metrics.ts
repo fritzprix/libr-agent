@@ -99,26 +99,40 @@ function nowMs(): number {
 function summarizeLongTasks(
   longTasks: readonly StartupLongTaskEntry[],
 ): StartupLongTaskSummary {
-  return longTasks.reduce<StartupLongTaskSummary>(
-    (summary, task) => ({
-      count: summary.count + 1,
-      totalDurationMs: summary.totalDurationMs + task.durationMs,
-      maxDurationMs: Math.max(summary.maxDurationMs, task.durationMs),
-    }),
-    {
-      count: 0,
-      totalDurationMs: 0,
-      maxDurationMs: 0,
-    },
-  );
+  let count = 0;
+  let totalDurationMs = 0;
+  let maxDurationMs = 0;
+
+  for (const task of longTasks) {
+    count += 1;
+    totalDurationMs += task.durationMs;
+    maxDurationMs = Math.max(maxDurationMs, task.durationMs);
+  }
+
+  return {
+    count,
+    totalDurationMs,
+    maxDurationMs,
+  };
 }
 
 function summarizeIpcCalls(
   ipcCalls: readonly StartupIpcCallEntry[],
 ): StartupIpcSummary {
   const byCommand = new Map<string, StartupIpcCommandSummary>();
+  let totalFailedCount = 0;
+  let totalIpcDurationMs = 0;
+  let maxIpcDurationMs = 0;
 
   for (const ipcCall of ipcCalls) {
+    // Update global metrics
+    if (!ipcCall.ok) {
+      totalFailedCount += 1;
+    }
+    totalIpcDurationMs += ipcCall.durationMs;
+    maxIpcDurationMs = Math.max(maxIpcDurationMs, ipcCall.durationMs);
+
+    // Update command specific metrics
     const existing = byCommand.get(ipcCall.cmd);
     if (existing) {
       existing.count += 1;
@@ -140,22 +154,11 @@ function summarizeIpcCalls(
     });
   }
 
-  const failedCount = ipcCalls.reduce(
-    (count, ipcCall) => count + (ipcCall.ok ? 0 : 1),
-    0,
-  );
-
   return {
     count: ipcCalls.length,
-    failedCount,
-    totalDurationMs: ipcCalls.reduce(
-      (total, ipcCall) => total + ipcCall.durationMs,
-      0,
-    ),
-    maxDurationMs: ipcCalls.reduce(
-      (maxDuration, ipcCall) => Math.max(maxDuration, ipcCall.durationMs),
-      0,
-    ),
+    failedCount: totalFailedCount,
+    totalDurationMs: totalIpcDurationMs,
+    maxDurationMs: maxIpcDurationMs,
     commands: Array.from(byCommand.values()).sort(
       (left, right) => right.totalDurationMs - left.totalDurationMs,
     ),
