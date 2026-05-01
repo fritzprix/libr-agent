@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, type CSSProperties } from 'react';
 
 import {
   Button,
@@ -8,8 +8,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui';
 import { AgentDraftWorkspacePreviewPanel } from './components/AgentDraftWorkspacePreviewPanel';
+import { AgentAttachedFilesBar } from './components/AgentAttachedFilesBar';
+import AgentSessionHeader from './components/AgentSessionHeader';
 import { DraftCapabilitiesSection } from './components/DraftCapabilitiesSection';
-import { DraftPendingFilesBar } from './components/DraftPendingFilesBar';
 import { Send, Loader2, Bot, Paperclip } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils';
@@ -115,26 +116,20 @@ function DraftChatInner() {
       )}
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 relative bg-background">
-        {/* Session header - aligned with the shared agent session header style */}
-        <div className="px-4 py-3 flex items-center justify-between border-b flex-shrink-0 bg-background/95 backdrop-blur z-20">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground uppercase font-sans font-bold tracking-widest">
-              Assistant:
-            </span>
-            <span className="text-xs font-semibold text-primary">
-              [{assistant.name}]
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground uppercase font-sans font-bold tracking-widest">
-              Session:
-            </span>
-            <span className="text-xs truncate max-w-xs italic text-muted-foreground/80">
-              {t('agent.draft.newSession', 'New Session')} (Agent)
-            </span>
-          </div>
-        </div>
+      <div
+        className="flex min-h-0 min-w-0 flex-1 flex-col"
+        style={
+          {
+            '--agent-chat-composer-overlap': '64px',
+          } as CSSProperties
+        }
+      >
+        <AgentSessionHeader
+          assistantName={`[${assistant.name}]`}
+          assistantNameClassName="text-xs font-semibold text-primary"
+          sessionName={t('agent.draft.newSession', 'New Session')}
+          sessionNameClassName="max-w-xs truncate text-xs italic text-muted-foreground/80"
+        />
 
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto no-scrollbar relative">
@@ -202,16 +197,28 @@ function DraftChatInner() {
           </div>
         </div>
 
-        {/* Floating Input Area - Precision Aligned with AgentChatInput */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
-          <div className="h-32 bg-gradient-to-t from-background via-background/60 to-transparent w-full" />
-          <div className="p-4 pt-0">
-            <div className="w-full max-w-5xl mx-auto pointer-events-auto">
+        <div className="relative shrink-0 px-4 pb-4">
+          <div
+            aria-hidden="true"
+            style={{ height: 'var(--agent-chat-composer-overlap, 64px)' }}
+          />
+          <div
+            className="relative z-10"
+            style={{
+              marginTop: 'calc(var(--agent-chat-composer-overlap, 64px) * -1)',
+            }}
+          >
+            <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
+            <div className="pointer-events-auto mx-auto w-full max-w-5xl">
               {/* Attached Files List - Mirrored from AgentChatAttachedFiles */}
               {hasAttachedFiles && (
-                <DraftPendingFilesBar
-                  pendingFiles={pendingFiles}
-                  onRemoveFile={handleFileRemove}
+                <AgentAttachedFilesBar
+                  files={pendingFiles.map((file, index) => ({
+                    id: `${file.name}-${index}`,
+                    name: file.name,
+                    onRemove: () => handleFileRemove(index),
+                  }))}
+                  title={t('agent.draft.attachedFiles', 'Attached Files:')}
                 />
               )}
 

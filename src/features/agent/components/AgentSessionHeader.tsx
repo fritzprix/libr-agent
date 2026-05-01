@@ -1,19 +1,32 @@
 import React from 'react';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
+import { cn } from '@/lib/utils';
 
 interface AgentSessionHeaderProps {
   children?: React.ReactNode;
+  assistantName?: string;
+  sessionName?: string;
+  sessionType?: string;
+  assistantNameClassName?: string;
+  sessionNameClassName?: string;
 }
 
 export default function AgentSessionHeader({
   children,
+  assistantName,
+  sessionName,
+  sessionType = 'Agent',
+  assistantNameClassName,
+  sessionNameClassName,
 }: AgentSessionHeaderProps) {
-  const { session } = useAgentSessionState();
+  const optionalSessionState = useOptionalAgentSessionState();
+  const session = optionalSessionState?.session;
 
   // Fallback display if session is not yet loaded
-  const sessionName = session?.name || 'Untitled Session';
-  const sessionType = 'Agent'; // Fixed type for Agent V2 sessions
-  const assistantName = session?.assistant?.name || 'Agent';
+  const resolvedSessionName =
+    sessionName ?? session?.name ?? 'Untitled Session';
+  const resolvedAssistantName =
+    assistantName ?? session?.assistant?.name ?? 'Agent';
 
   return (
     <div>
@@ -22,8 +35,13 @@ export default function AgentSessionHeader({
           <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             Assistant
           </span>
-          <span className="truncate text-xs font-medium text-foreground">
-            {assistantName}
+          <span
+            className={cn(
+              'truncate text-xs font-medium text-foreground',
+              assistantNameClassName,
+            )}
+          >
+            {resolvedAssistantName}
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2">
@@ -31,10 +49,13 @@ export default function AgentSessionHeader({
             Session
           </span>
           <span
-            className="max-w-xs truncate text-sm font-medium text-foreground/90"
-            title={sessionName}
+            className={cn(
+              'max-w-xs truncate text-sm font-medium text-foreground/90',
+              sessionNameClassName,
+            )}
+            title={resolvedSessionName}
           >
-            {sessionName} ({sessionType})
+            {resolvedSessionName} ({sessionType})
           </span>
         </div>
       </div>
