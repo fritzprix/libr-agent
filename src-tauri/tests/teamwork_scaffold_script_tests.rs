@@ -124,18 +124,14 @@ fn scaffold_script_writes_expected_teamwork_manifest_contract() {
     assert_eq!(manifest["executionSubstrate"]["specialistSkill"], "org");
     assert_eq!(
         manifest["executionSubstrate"]["workspacePolicy"]["explicitOrgLineage"],
-        "share-governing-teamwork-workspace-by-default"
+        "inherit-governing-session-workspace-by-default"
     );
     assert_eq!(
         manifest["executionSubstrate"]["orgLineage"]["childArgs"]["includeCurrentOrg"],
         true
     );
     assert_eq!(
-        manifest["constitutionAdoption"]["coordinatorMustShareScaffoldRoot"],
-        true
-    );
-    assert_eq!(
-        manifest["constitutionAdoption"]["rule"],
-        "Continue coordination in the dedicated teamwork workspace where the constitution was created."
+        manifest["executionSubstrate"]["orgLineage"]["workspaceSharing"],
+        "inherit-parent-workspace-by-default"
     );
 }

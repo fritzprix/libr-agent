@@ -146,7 +146,7 @@ impl WorkspaceServer {
                 &format!("File Export: {display_name}"),
                 &[single_file_rel_path_str],
                 "Single File",
-                &relative_path.to_string_lossy(),
+                &relative_path.to_string_lossy().replace('\\', "/"),
                 &display_name,
                 "export",
                 &format!(
@@ -317,7 +317,7 @@ impl WorkspaceServer {
             &format!("ZIP Package: {package_name}"),
             &processed_files,
             "ZIP Package",
-            &relative_path.to_string_lossy(),
+            &relative_path.to_string_lossy().replace('\\', "/"),
             &zip_filename,
             "export",
             &format!("✓ ZIP package '{}' created successfully\n\nContains {} files\nDownload link available below", package_name, processed_files.len()),

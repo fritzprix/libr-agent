@@ -51,7 +51,7 @@ You are a specialist inside the current task force. Work only within your role b
 - If blocked, update `coordination/KANBAN.md` and `coordination/RISKS.md`.
 - Stop when your owned artifact and handoff are complete.
 - If the teamwork contract says this role is part of explicit org lineage, use the org-aware child-session path instead of inventing a new delegation pattern.
-- If the teamwork contract says this role is part of explicit org lineage, assume the dedicated teamwork workspace is the shared SSOT unless the contract explicitly says otherwise.
+- If the teamwork contract says this role is part of explicit org lineage, assume teamwork artifacts live in the app-local artifact directory while the session workspace still follows the normal parent/override inheritance rules.
 ```
 
 ## Role design checklist

@@ -242,40 +242,23 @@ impl WorkspaceService {
         Ok(())
     }
 
-    /// Provision and adopt the dedicated teamwork workspace for a governing/root session.
+    /// Prepare the app-local teamwork artifact directory for a governing/root session.
     pub async fn provision_teamwork_workspace(session_id: &str) -> Result<String, String> {
         let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-        crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
+        let teamwork_artifact_dir =
+            crate::session::prepare_teamwork_artifact_dir_for_session(session_manager, session_id)
+                .await?;
 
-        let teamwork_workspace = crate::session::provision_teamwork_workspace_for_session(
-            crate::state::get_session_repository(),
-            session_manager,
-            session_id,
-        )
-        .await?;
-
-        let teamwork_workspace_str = teamwork_workspace
+        let teamwork_artifact_dir_str = teamwork_artifact_dir
             .to_str()
             .ok_or_else(|| {
                 format!(
-                    "Invalid teamwork workspace path encoding: {}",
-                    teamwork_workspace.display()
+                    "Invalid teamwork artifact path encoding: {}",
+                    teamwork_artifact_dir.display()
                 )
             })?
             .to_string();
-
-        Self::sync_active_session_workspace_override(
-            session_id,
-            Some(teamwork_workspace_str.clone()),
-        )
-        .await;
-        crate::agent::tauri_events::emit_resource_updated(
-            "session",
-            "update",
-            Some(session_id.to_string()),
-        );
-
-        Ok(teamwork_workspace_str)
+        Ok(teamwork_artifact_dir_str)
     }
 
     /// Cancels the workspace override for a session.

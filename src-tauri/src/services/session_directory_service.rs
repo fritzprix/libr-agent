@@ -14,8 +14,8 @@ impl SessionDirectoryService {
         fs::create_dir_all(base_data_dir.join("workspaces"))
             .map_err(|e| format!("Failed to create workspaces directory: {e}"))?;
 
-        fs::create_dir_all(base_data_dir.join("teamwork-workspaces"))
-            .map_err(|e| format!("Failed to create teamwork workspaces directory: {e}"))?;
+        fs::create_dir_all(base_data_dir.join("teamwork-artifacts"))
+            .map_err(|e| format!("Failed to create teamwork artifacts directory: {e}"))?;
 
         fs::create_dir_all(base_data_dir.join("workspaces").join("templates"))
             .map_err(|e| format!("Failed to create templates directory: {e}"))?;
@@ -182,28 +182,28 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
         self.base_data_dir.join("workspaces").join(session_id)
     }
 
-    /// Get the dedicated teamwork workspace directory for a governing/root session.
-    pub fn get_teamwork_workspace_dir_unverified(&self, root_session_id: &str) -> PathBuf {
+    /// Get the app-local teamwork artifact directory for a governing/root session.
+    pub fn get_teamwork_artifact_dir_unverified(&self, root_session_id: &str) -> PathBuf {
         self.base_data_dir
-            .join("teamwork-workspaces")
+            .join("teamwork-artifacts")
             .join(root_session_id)
     }
 
-    /// Ensure a dedicated teamwork workspace exists for the given governing/root session.
-    pub async fn create_teamwork_workspace(
+    /// Ensure an app-local teamwork artifact directory exists for the given governing/root session.
+    pub async fn create_teamwork_artifact_dir(
         &self,
         root_session_id: &str,
     ) -> Result<PathBuf, String> {
-        let workspace_dir = self.get_teamwork_workspace_dir_unverified(root_session_id);
-        tokio::fs::create_dir_all(&workspace_dir)
+        let artifact_dir = self.get_teamwork_artifact_dir_unverified(root_session_id);
+        tokio::fs::create_dir_all(&artifact_dir)
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to create teamwork workspace directory '{}': {e}",
-                    workspace_dir.display()
+                    "Failed to create teamwork artifact directory '{}': {e}",
+                    artifact_dir.display()
                 )
             })?;
-        Ok(workspace_dir)
+        Ok(artifact_dir)
     }
 
     /// Remove workspace directory
