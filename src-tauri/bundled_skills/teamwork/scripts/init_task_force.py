@@ -315,13 +315,13 @@ def main() -> None:
     args = parser.parse_args()
 
     workspace = Path(args.output).expanduser().resolve()
-    workspace.mkdir(parents=True, exist_ok=True)
     if is_inside_git_worktree(workspace) and not args.allow_git_worktree:
         raise SystemExit(
             "Refusing to scaffold inside a Git worktree. "
             "Use prepareTeamworkWorkspace() and pass its workspacePath to --output, "
             "or add --allow-git-worktree if repo scaffolding is truly intentional."
         )
+    workspace.mkdir(parents=True, exist_ok=True)
     original_request = args.request.strip() if args.request else args.objective
     team_name = args.team_name.strip() if args.team_name else workspace.name
     role_definitions = args.role or [

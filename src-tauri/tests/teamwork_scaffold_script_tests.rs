@@ -56,7 +56,6 @@ fn scaffold_script_refuses_nested_git_worktree_path_without_opt_in() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     std::fs::create_dir_all(temp_dir.path().join(".git")).expect(".git dir should be created");
     let nested = temp_dir.path().join("teamwork");
-    std::fs::create_dir_all(&nested).expect("nested dir should be created");
 
     let output = base_command(&nested).output().expect("script should run");
 
@@ -68,6 +67,10 @@ fn scaffold_script_refuses_nested_git_worktree_path_without_opt_in() {
     assert!(
         stderr.contains("Refusing to scaffold inside a Git worktree"),
         "expected git-worktree refusal message, got: {stderr}"
+    );
+    assert!(
+        !nested.exists(),
+        "script should not create nested output paths before refusing"
     );
 }
 
