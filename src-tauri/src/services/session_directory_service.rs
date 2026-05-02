@@ -14,6 +14,9 @@ impl SessionDirectoryService {
         fs::create_dir_all(base_data_dir.join("workspaces"))
             .map_err(|e| format!("Failed to create workspaces directory: {e}"))?;
 
+        fs::create_dir_all(base_data_dir.join("teamwork-workspaces"))
+            .map_err(|e| format!("Failed to create teamwork workspaces directory: {e}"))?;
+
         fs::create_dir_all(base_data_dir.join("workspaces").join("templates"))
             .map_err(|e| format!("Failed to create templates directory: {e}"))?;
 
@@ -177,6 +180,30 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     /// Get session workspace directory path without ensuring it exists or performing any I/O.
     pub fn get_workspace_dir_unverified(&self, session_id: &str) -> PathBuf {
         self.base_data_dir.join("workspaces").join(session_id)
+    }
+
+    /// Get the dedicated teamwork workspace directory for a governing/root session.
+    pub fn get_teamwork_workspace_dir_unverified(&self, root_session_id: &str) -> PathBuf {
+        self.base_data_dir
+            .join("teamwork-workspaces")
+            .join(root_session_id)
+    }
+
+    /// Ensure a dedicated teamwork workspace exists for the given governing/root session.
+    pub async fn create_teamwork_workspace(
+        &self,
+        root_session_id: &str,
+    ) -> Result<PathBuf, String> {
+        let workspace_dir = self.get_teamwork_workspace_dir_unverified(root_session_id);
+        tokio::fs::create_dir_all(&workspace_dir)
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to create teamwork workspace directory '{}': {e}",
+                    workspace_dir.display()
+                )
+            })?;
+        Ok(workspace_dir)
     }
 
     /// Remove workspace directory

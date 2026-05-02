@@ -1,6 +1,6 @@
 ---
 name: org
-description: Run explicit org-based teamwork in LibrAgent. Use when collaboration needs durable org identity, org-visible child sessions, org-root resume behavior, or clear parent/sibling org context under one coordinator workspace.
+description: Run explicit org-based teamwork in LibrAgent. Use when collaboration needs durable org identity, org-visible child sessions, org-root resume behavior, or clear parent/sibling org context under one dedicated teamwork workspace.
 ---
 
 # Org
@@ -14,18 +14,19 @@ Use `teamwork` first when the workspace constitution is not ready.
 1. Confirm org is the right substrate.
    - Use org when the user wants org visibility, durable org identity, coordinator/specialist lineage, or root-session resume behavior.
    - If the real need is recurring or cron-like automation, stop and use `schedule`.
+   - If the governing root session has not adopted the dedicated teamwork workspace yet, stop and use `teamwork` to call `prepareTeamworkWorkspace()` first.
 2. Read `.libragent/teamwork.json` before acting.
    - Confirm `executionSubstrate.mode` is `"org"` and `orgLineage.intended` is `true`.
    - If the manifest says a different substrate, reconcile before proceeding.
 3. Keep one shared workspace.
-   - Treat the coordinator's current workspace as the SSOT.
-   - Org-visible children should normally work in that same workspace.
+   - Treat the dedicated teamwork workspace as the SSOT for orchestration files.
+   - The governing root session and org-visible children should normally share that same teamwork workspace.
 4. Create the org once from the root session.
    - Use `createOrg(orgName, description)` from the governing root session.
    - Record the returned `orgId` and `orgName` in `.libragent/teamwork.json` and `coordination/DECISIONS.md`.
    - The session that calls `createOrg` becomes the org root. Do not call `createOrg` again.
 5. Spawn org-visible members explicitly.
-   - Use `startSession(agentId, task, workspaceOverride=<coordinator-workspace>)` for org-visible children. If the current session already belongs to the org, inheritance is automatic.
+   - Use `startSession(agentId, task, workspaceOverride=<teamwork-workspace>)` for org-visible children when you need to be explicit. If the current session already belongs to the org, inheritance is automatic.
    - One-off delegated children that should stay out of Org view must set `includeCurrentOrg=false`.
 6. Resume through the org root.
    - The org root session is the canonical entry point. Org view should resume the root, not whichever child was last active.
@@ -36,7 +37,7 @@ Use `teamwork` first when the workspace constitution is not ready.
 
 ## Guardrails
 
-- Do not split org members into separate workspaces unless the task truly needs it.
+- Do not split org members away from the dedicated teamwork workspace unless the task truly needs a separate implementation target.
 - Do not use org identity for scheduled task groups or recurring automation.
 - Do not treat arbitrary child-session resume as org resume. The org root is the entry point.
 - Do not infer org membership from parent/child lineage alone — membership requires explicit org inheritance at session creation. Under an explicit org root that inheritance is automatic unless `includeCurrentOrg=false`.

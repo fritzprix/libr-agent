@@ -100,7 +100,20 @@ pub fn sanitize_command_for_logging(command: &str) -> String {
 }
 
 pub fn is_internal_workspace_artifact_path(workspace_root: &Path, path: &Path) -> bool {
-    let Ok(relative_path) = path.strip_prefix(workspace_root) else {
+    let relative_path = path
+        .strip_prefix(workspace_root)
+        .ok()
+        .map(Path::to_path_buf)
+        .or_else(|| {
+            let canonical_workspace_root = workspace_root.canonicalize().ok()?;
+            let canonical_path = path.canonicalize().ok()?;
+            canonical_path
+                .strip_prefix(&canonical_workspace_root)
+                .ok()
+                .map(Path::to_path_buf)
+        });
+
+    let Some(relative_path) = relative_path else {
         return false;
     };
 
@@ -120,6 +133,7 @@ pub fn is_internal_workspace_artifact_path(workspace_root: &Path, path: &Path) -
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[test]
     fn test_sanitize_sudo_s_flag() {
@@ -186,6 +200,28 @@ mod tests {
         assert!(!is_internal_workspace_artifact_path(
             &workspace_root,
             &workspace_root.join("tmp/process_123/stdout"),
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn internal_workspace_artifact_detection_handles_canonical_workspace_paths() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempdir().expect("temp dir");
+        let real_workspace_root = temp_dir.path().join("real-workspace");
+        fs::create_dir_all(real_workspace_root.join(".libragent/tmp/process_123"))
+            .expect("internal tmp dir");
+        let stdout_path = real_workspace_root.join(".libragent/tmp/process_123/stdout");
+        fs::write(&stdout_path, "test output").expect("stdout artifact");
+
+        let symlinked_workspace_root = temp_dir.path().join("workspace-link");
+        symlink(&real_workspace_root, &symlinked_workspace_root).expect("workspace symlink");
+
+        assert!(is_internal_workspace_artifact_path(
+            &symlinked_workspace_root,
+            &stdout_path,
         ));
     }
 }

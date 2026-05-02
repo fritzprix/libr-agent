@@ -9,9 +9,9 @@ Build a task force only when the work is genuinely multi-track. If one capable a
 
 ## Non-Negotiable Rules
 
-1. **One team, one workspace.** The coordinator and shared files stay in the same workspace.
-2. **Scaffold in the current workspace.** Create `./agents.md`, `./MISSION.md`, `./ROLES.md`, and `./coordination/` there.
-3. **Keep coordination in that same workspace.**
+1. **One team, one workspace.** The governing coordinator and shared files stay in the same dedicated teamwork workspace.
+2. **Provision the teamwork workspace first.** From the governing root session, call `prepareTeamworkWorkspace()` before scaffolding any teamwork files.
+3. **Scaffold only in that teamwork workspace.** Do not write `agents.md`, `MISSION.md`, `ROLES.md`, `coordination/`, or role `skills/` into a repo root unless you intentionally want repo pollution.
 4. **Use deterministic scaffolding first.** `scripts/init_task_force.py` is the default path.
 5. **Refresh happens later.** Changes to `agents.md` or workspace skills do not take effect in the current turn.
 6. **Route execution explicitly.** Keep framework-specific operating rules in the specialist skill that matches the chosen substrate.
@@ -56,13 +56,13 @@ Coordination model and execution substrate are not the same thing.
 Pick the execution substrate that matches the job:
 
 - **Plain child sessions** - use `startSession(...)` for one-off delegation that does not need org visibility.
-- **Explicit org lineage** - use `createOrg(...)` once from the root session, then use `startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic unless you set `includeCurrentOrg=false`. Org-visible children should normally share the coordinator's workspace.
+- **Explicit org lineage** - call `prepareTeamworkWorkspace()` first, then use `createOrg(...)` once from the root session, then use `startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic unless you set `includeCurrentOrg=false`. Org-visible children should normally share the dedicated teamwork workspace.
 - **Scheduled task groups** - use `createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 
 Keep these separate:
 
 - **Org** is for explicit lineage-based teamwork and org UX.
-- **Org** should normally share the coordinator's workspace so every member sees the same SSOT files.
+- **Org** should normally share the dedicated teamwork workspace so every member sees the same SSOT files.
 - **Scheduled task groups** are for recurring automation and policy-governed background collaboration.
 - A recurring task group may wake a coordinator session, but that does not make the scheduled group an org.
 
@@ -78,7 +78,7 @@ After choosing the execution substrate, route to the matching specialist skill:
 
 ### 3. Create the workspace contract
 
-Create the shared files in the current workspace first. At minimum create:
+Create the shared files in the dedicated teamwork workspace first. At minimum create:
 
 ```text
 ./
@@ -105,7 +105,7 @@ The scaffold must preserve:
 - the chosen collaboration framework
 - the canonical file ownership and operating rules
 
-The coordinator continues in that same workspace after scaffolding.
+The governing coordinator continues in that same teamwork workspace after scaffolding.
 
 Use the file contracts in [coordination-contract.md](references/coordination-contract.md).
 
@@ -142,6 +142,7 @@ Refresh behavior:
 
 - `agents.md` changes do **not** instantly rewrite the current session prompt
 - new workspace skills apply in a later execution step, not retroactively in the same turn
+- `.libragent/teamwork.json` should keep `constitutionAdoption.coordinatorMustShareScaffoldRoot=true` so downstream agents know the governing/root session must rebind to the dedicated teamwork workspace before continuing orchestration there
 
 After scaffolding or constitution edits, state when the updated rules become effective.
 
@@ -149,7 +150,7 @@ After scaffolding or constitution edits, state when the updated rules become eff
 
 When you execute the scaffold:
 
-1. Bootstrap in the current workspace.
+1. Bootstrap in the dedicated teamwork workspace returned by `prepareTeamworkWorkspace()`.
 2. Use portable commands and the available tools.
 3. Match the editing primitive to the change size.
 4. Use `workspaceOverride` only when a child must work in a different workspace.
@@ -188,8 +189,11 @@ If the task force cannot surface blocked state, it is not robust.
 Prefer deterministic scaffolding:
 
 ```bash
+prepareTeamworkWorkspace()
+# -> returns workspacePath
+
 python scripts/init_task_force.py \
-  --output . \
+  --output "/absolute/path/from/prepareTeamworkWorkspace" \
   --team-name "Research Strike Team" \
   --objective "Build a reusable research and implementation team" \
   --request "Research the space, structure findings, and hand implementation-ready guidance to coding specialists." \
@@ -199,7 +203,7 @@ python scripts/init_task_force.py \
   --role "Implementer:Turn approved plans into code and tests"
 ```
 
-Use `.` for `--output` when you are scaffolding the current teamwork run.
+Use the dedicated teamwork workspace path returned by `prepareTeamworkWorkspace()` for `--output`. Do not default to `.` from a repo root.
 
 Then review and tighten:
 
@@ -222,7 +226,7 @@ Before announcing success, verify:
 6. the handoff path between roles is obvious
 7. the execution substrate and follow-up specialist skill are explicit: plain child sessions, `org`, or `schedule`
 8. refresh semantics are written down so agents know that updated rules apply only in a later execution step
-9. the governing session is still working in the workspace where it created the constitution
+9. the governing session is still working in the dedicated teamwork workspace where it created the constitution
 
 ## References
 
