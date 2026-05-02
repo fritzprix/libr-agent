@@ -53,8 +53,9 @@ Assume these rules:
 
 If the parent is running inside a task-force workspace, check `.libragent/teamwork.json` before delegating:
 
-- If `executionSubstrate.mode` is `"org"`, prefer `startSession(..., includeCurrentOrg=true)` and `workspaceOverride` so the child joins the org and shares the workspace. Switch to `org` for org-specific operating rules.
+- If `executionSubstrate.mode` is `"org"`, prefer `startSession(..., includeCurrentOrg=true)` so the child joins the org and inherits the parent effective workspace by default. Switch to `org` for org-specific operating rules.
 - If `executionSubstrate.mode` is `"scheduled"`, the delegation is likely a scheduled wake-up. Follow `schedule` for group management instead of ad-hoc delegation.
+- Treat the app-local teamwork artifact directory as the orchestration/constitution storage. If the child also needs to edit code in a repo, keep the session workspace semantics separate from the teamwork artifact path.
 
 Important limitations:
 
@@ -62,7 +63,7 @@ Important limitations:
 - Persona / tone instructions are loaded separately from the first non-empty file among `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, and `soul.md`.
 - Both persona and workspace instruction content are cached for the session lifetime until the stable prompt cache is invalidated.
 - `startSession` can override the child workspace with `workspaceOverride`; files and prompt state still follow the child session.
-- Default to each session's own workspace. Use `workspaceOverride` when the child should work in the same workspace as the parent or another already-existing workspace.
+- Default to each session's own workspace. Use `workspaceOverride` only when the child should work in the same effective workspace as the parent or another already-existing workspace.
 
 ## 3. Prepare the Handoff
 

@@ -27,6 +27,9 @@ fn inspect_teamwork_scaffold_reports_missing_constitution_and_recommends_teamwor
             "ROLES.md".to_string(),
             "coordination/KANBAN.md".to_string(),
             "coordination/HANDOFF.md".to_string(),
+            "coordination/DECISIONS.md".to_string(),
+            "coordination/RISKS.md".to_string(),
+            "coordination/DISCUSSION.md".to_string(),
         ]
     );
     assert!(!status.manifest_present);
@@ -53,6 +56,15 @@ fn inspect_teamwork_scaffold_accepts_complete_org_workspace() {
     write_file(
         &workspace.join("coordination").join("HANDOFF.md"),
         "# handoff",
+    );
+    write_file(
+        &workspace.join("coordination").join("DECISIONS.md"),
+        "# decisions",
+    );
+    write_file(&workspace.join("coordination").join("RISKS.md"), "# risks");
+    write_file(
+        &workspace.join("coordination").join("DISCUSSION.md"),
+        "# discussion",
     );
     write_file(
         &workspace.join(".libragent").join("teamwork.json"),
@@ -94,6 +106,15 @@ fn inspect_teamwork_scaffold_flags_manifest_substrate_mismatch() {
     write_file(
         &workspace.join("coordination").join("HANDOFF.md"),
         "# handoff",
+    );
+    write_file(
+        &workspace.join("coordination").join("DECISIONS.md"),
+        "# decisions",
+    );
+    write_file(&workspace.join("coordination").join("RISKS.md"), "# risks");
+    write_file(
+        &workspace.join("coordination").join("DISCUSSION.md"),
+        "# discussion",
     );
     write_file(
         &workspace.join(".libragent").join("teamwork.json"),

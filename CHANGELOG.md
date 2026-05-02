@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.18] - 2026-05-02
+
+### 🚀 Features
+
+- **Teamwork Contract Hardening**: Significantly hardened the agent teamwork workspace contract and artifact filtering logic for more reliable multi-agent collaboration.
+- **Artifact Isolation**: Isolated internal artifacts to prevent workspace pollution and improved the canonical filtering of agent-generated files.
+
+### 🐛 Fixes
+
+- **Path Normalization**: Fixed path normalization for workspace export and download operations to ensure cross-platform path consistency.
+- **Git Worktree Safeguard**: Added safeguards to refuse git worktrees before scaffold directory creation, preventing potential state corruption.
+
+### 🔧 Internal
+
+- **Test & Service Optimization**: Synchronized builtin services output and skipped runtime state sequence tests on Windows to improve CI stability.
+
 ## [0.7.17] - 2026-05-01
 
 ### 🚀 Features

@@ -258,6 +258,68 @@ pub async fn load_accessible_delegated_session(
     .to_mcp_result())
 }
 
+pub async fn prepare_teamwork_workspace(
+    server: &super::AgentServer,
+    _args: Value,
+    caller_session_id: &str,
+) -> Result<MCPResult, String> {
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
+    let session = match manager.get_session(caller_session_id).await? {
+        Some(session) => session,
+        None => return Ok(caller_session_not_found_result(caller_session_id)),
+    };
+
+    if session.parent_session_id.is_some() {
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            "prepareTeamworkWorkspace must be called from a top-level governing/root session."
+                .to_string(),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            "Resume the governing/root session first.".to_string(),
+            "Then call prepareTeamworkWorkspace() before creating teamwork scaffold artifacts."
+                .to_string(),
+        ])
+        .to_mcp_result());
+    }
+
+    let artifact_path =
+        crate::services::WorkspaceService::provision_teamwork_workspace(caller_session_id).await?;
+    let message = format!(
+        "Teamwork artifact directory is ready for session {}: {}",
+        caller_session_id, artifact_path
+    );
+    let hint = SuccessHint::new(
+        message.clone(),
+        vec![
+            "Scaffold teamwork coordination artifacts in this app-local directory, not in the repo root."
+                .to_string(),
+            "The current session workspace does not change; parent/child workspace inheritance stays intact."
+                .to_string(),
+        ],
+    );
+
+    let mut response_data = build_agent_tool_data(
+        "prepareTeamworkWorkspace",
+        "workspace",
+        Some(caller_session_id),
+        &message,
+        "success",
+        vec![],
+    );
+    response_data.insert(
+        "sessionId".to_string(),
+        Value::String(caller_session_id.to_string()),
+    );
+    response_data.insert("artifactPath".to_string(), Value::String(artifact_path));
+    response_data.insert("mode".to_string(), Value::String("teamwork".to_string()));
+
+    Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
+}
+
 fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> Value {
     json!({
         "toolName": "messageToSession",
@@ -463,5 +525,8 @@ mod sessions;
 
 pub use check_session::check_session;
 pub use configs::{create_agent, list_agents_or_sessions, update_agent};
-pub use orgs::{create_org, get_org, inspect_teamwork_scaffold, TeamworkScaffoldStatus};
+pub use orgs::{
+    create_org, create_org_scaffold_preflight, existing_explicit_org_identity, get_org,
+    inspect_teamwork_scaffold, TeamworkScaffoldStatus,
+};
 pub use sessions::{compact_session_context, message_to_session, start_session, stop_session};

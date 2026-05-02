@@ -361,6 +361,7 @@ impl WorkspaceServer {
             prefix: &str,
             depth: usize,
             max_depth: usize,
+            workspace_root: &std::path::Path,
         ) -> String {
             if depth >= max_depth {
                 return String::new();
@@ -369,6 +370,9 @@ impl WorkspaceServer {
             let mut result = String::new();
             if let Ok(entries) = fs::read_dir(dir) {
                 let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+                entries.retain(|entry| {
+                    !utils::is_internal_workspace_artifact_path(workspace_root, &entry.path())
+                });
                 entries.sort_by_key(|e| e.file_name());
 
                 let mut limited_entries = entries.iter().take(10).peekable();
@@ -389,6 +393,7 @@ impl WorkspaceServer {
                                 &new_prefix,
                                 depth + 1,
                                 max_depth,
+                                workspace_root,
                             ));
                         }
                     }
@@ -397,7 +402,8 @@ impl WorkspaceServer {
             result
         }
 
-        build_tree(std::path::Path::new(path), "", 0, max_depth)
+        let workspace_root = std::path::Path::new(path);
+        build_tree(workspace_root, "", 0, max_depth, workspace_root)
     }
     pub fn tools_static() -> Vec<MCPTool> {
         let mut tools = Vec::new();
@@ -436,7 +442,9 @@ impl BuiltinMCPServer for WorkspaceServer {
     }
 
     fn description(&self) -> &str {
-        "Integrated workspace for file operations and code execution"
+        "Integrated workspace for file operations and code execution
+
+Internal paths: .libragent/tmp/ (process outputs), .libragent/exports/ (exported files). These are hidden from listDir/search/export operations to keep user workspace clean. Do not reference them as inputs."
     }
 
     fn display_name(&self) -> String {
@@ -567,6 +575,7 @@ impl BuiltinMCPServer for WorkspaceServer {
 - Workspace Root: {}
 - Persistent Shell CWD: {}
 - Running Processes: {}{}
+- Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.
 - Total Processes: {}",
             workspace_dir, shell_cwd, running_count, running_processes_text, total_count
         );

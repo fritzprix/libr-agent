@@ -7,6 +7,7 @@ pub use types::*;
 pub use workspace_override::*;
 
 use log::error;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 static SESSION_MANAGER: OnceLock<SessionManager> = OnceLock::new();
@@ -30,6 +31,30 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
         })
     });
     Ok(SESSION_MANAGER.get().unwrap())
+}
+
+pub fn teamwork_artifact_dir_for_session(
+    session_manager: &SessionManager,
+    session_id: &str,
+) -> PathBuf {
+    session_manager
+        .get_directory_service()
+        .get_teamwork_artifact_dir_unverified(session_id)
+}
+
+/// Prepare the app-local teamwork artifact directory for a governing/root session.
+///
+/// This path is for durable teamwork scaffolding and coordination metadata only.
+/// It is intentionally separate from the session's effective workspace so org roots
+/// and children keep sharing the normal parent/override workspace semantics.
+pub async fn prepare_teamwork_artifact_dir_for_session(
+    session_manager: &SessionManager,
+    session_id: &str,
+) -> Result<PathBuf, String> {
+    session_manager
+        .get_directory_service()
+        .create_teamwork_artifact_dir(session_id)
+        .await
 }
 
 #[cfg(test)]

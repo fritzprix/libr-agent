@@ -45,8 +45,8 @@ pub async fn create_basic_isolated_command(
     }
 
     // Keep host home directories so CLI tools can discover their config, but isolate temp files.
-    cmd.env("TEMP", config.workspace_path.join("tmp"));
-    cmd.env("TMP", config.workspace_path.join("tmp"));
+    cmd.env("TEMP", config.workspace_path.join(".libragent/tmp"));
+    cmd.env("TMP", config.workspace_path.join(".libragent/tmp"));
 
     // Add user-specified environment variables
     for (key, value) in &config.env_vars {
@@ -106,7 +106,7 @@ pub async fn create_basic_isolated_command(
 
     // Write the command to a temp .ps1 file so AV can inspect it in plaintext.
     // Base64+Invoke-Expression was flagged as malware obfuscation; plain .ps1 is not.
-    let tmp_dir = config.workspace_path.join("tmp");
+    let tmp_dir = config.workspace_path.join(".libragent/tmp");
     tokio::fs::create_dir_all(&tmp_dir)
         .await
         .map_err(|e| format!("Failed to create tmp dir: {}", e))?;

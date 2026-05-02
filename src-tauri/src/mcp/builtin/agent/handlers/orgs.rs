@@ -1,11 +1,11 @@
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::utils::{build_agent_tool_data, read_required_string};
 use crate::mcp::types::MCPResult;
-use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::{session_repository::SessionRepository, SessionMetadata};
 
 use super::super::AgentServer;
 use super::{
@@ -15,7 +15,7 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TeamworkScaffoldStatus {
-    pub workspace_path: String,
+    pub artifact_path: String,
     pub missing_files: Vec<String>,
     pub manifest_present: bool,
     pub manifest_parse_error: Option<String>,
@@ -32,26 +32,46 @@ impl TeamworkScaffoldStatus {
             && self.org_lineage_intended == Some(true)
     }
 
+    fn missing_paths(&self) -> Vec<String> {
+        self.missing_files
+            .iter()
+            .map(|relative| {
+                Path::new(&self.artifact_path)
+                    .join(relative)
+                    .display()
+                    .to_string()
+            })
+            .collect()
+    }
+
     fn guidance_lines(&self) -> Vec<String> {
         let mut guidance = Vec::new();
 
         if !self.missing_files.is_empty() {
             guidance.push(format!(
-                "Missing teamwork scaffold files: {}.",
-                self.missing_files.join(", ")
+                "Missing teamwork scaffold files under {}: {}.",
+                self.artifact_path,
+                self.missing_paths().join(", ")
             ));
         }
 
         if let Some(error) = self.manifest_parse_error.as_deref() {
             guidance.push(format!(
-                ".libragent/teamwork.json exists but could not be parsed: {}.",
+                "{} exists but could not be parsed: {}.",
+                Path::new(&self.artifact_path)
+                    .join(".libragent")
+                    .join("teamwork.json")
+                    .display(),
                 error
             ));
         } else if !self.manifest_present {
-            guidance.push(
-                ".libragent/teamwork.json is missing, so this org has no machine-readable teamwork manifest yet."
-                    .to_string(),
-            );
+            guidance.push(format!(
+                "Missing machine-readable teamwork manifest: {}.",
+                Path::new(&self.artifact_path)
+                    .join(".libragent")
+                    .join("teamwork.json")
+                    .display()
+            ));
         } else {
             if self.execution_substrate_mode.as_deref() != Some("org") {
                 let mode = self
@@ -87,6 +107,9 @@ pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatu
         "ROLES.md",
         "coordination/KANBAN.md",
         "coordination/HANDOFF.md",
+        "coordination/DECISIONS.md",
+        "coordination/RISKS.md",
+        "coordination/DISCUSSION.md",
     ];
 
     let missing_files = REQUIRED_FILES
@@ -129,7 +152,7 @@ pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatu
     }
 
     let mut status = TeamworkScaffoldStatus {
-        workspace_path: workspace_path.display().to_string(),
+        artifact_path: workspace_path.display().to_string(),
         missing_files,
         manifest_present,
         manifest_parse_error,
@@ -148,9 +171,41 @@ pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatu
 fn teamwork_scaffold_status_for_session(
     session_id: &str,
 ) -> Result<TeamworkScaffoldStatus, String> {
-    let workspace_path: PathBuf =
-        crate::session::get_session_manager()?.get_session_workspace_dir_by_id(session_id);
-    Ok(inspect_teamwork_scaffold(&workspace_path))
+    let session_manager = crate::session::get_session_manager()?;
+    let artifact_path =
+        crate::session::teamwork_artifact_dir_for_session(session_manager, session_id);
+    Ok(inspect_teamwork_scaffold(&artifact_path))
+}
+
+pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Result<(), MCPResult> {
+    if scaffold.is_ready_for_explicit_org() {
+        return Ok(());
+    }
+
+    let mut guidance = scaffold.guidance_lines();
+    guidance.push(
+        "If the app-local artifact directory has not been prepared yet, call prepareTeamworkWorkspace() from the root session first."
+            .to_string(),
+    );
+    guidance.push(
+        "Use the teamwork skill or init_task_force.py to create or repair the required scaffold artifacts in that artifact directory."
+            .to_string(),
+    );
+    guidance.push(
+        "After the scaffold exists and .libragent/teamwork.json declares executionSubstrate.mode=\"org\" plus executionSubstrate.orgLineage.intended=true, call createOrg(name=\"...\") again."
+            .to_string(),
+    );
+
+    Err(guided_error(
+        ErrorCategory::InvalidState,
+        format!(
+            "createOrg requires a complete org teamwork scaffold in the app-local artifact directory before explicit org identity can be created.\n\nChecked artifact directory: {}",
+            scaffold.artifact_path
+        ),
+        ToolGroup::Agent,
+    )
+    .with_guidance(guidance)
+    .to_mcp_result())
 }
 
 fn create_org_next_actions(org_id: &str, include_builder_guidance: bool) -> Vec<Value> {
@@ -170,7 +225,7 @@ fn create_org_next_actions(org_id: &str, include_builder_guidance: bool) -> Vec<
         next_actions.push(json!({
             "actionType": "skill",
             "toolName": "teamwork",
-            "reason": "Scaffold or repair the teamwork workspace constitution for this org."
+            "reason": "Scaffold or repair the teamwork artifact set for this org."
         }));
     }
 
@@ -183,12 +238,31 @@ fn create_org_hint_lines(scaffold: &TeamworkScaffoldStatus) -> Vec<String> {
     if !scaffold.is_ready_for_explicit_org() {
         lines.extend(scaffold.guidance_lines());
         lines.push(
-            "Use the teamwork skill next to scaffold or repair the teamwork workspace constitution in this workspace."
+            "Use the teamwork skill next to scaffold or repair the teamwork artifact set for this org."
                 .to_string(),
         );
     }
 
     lines
+}
+
+fn existing_org_hint_lines(scaffold: &TeamworkScaffoldStatus) -> Vec<String> {
+    create_org_hint_lines(scaffold)
+}
+
+pub fn existing_explicit_org_identity(
+    session: &SessionMetadata,
+) -> Option<(String, String, String)> {
+    match (
+        session.org_id.clone(),
+        session.org_name.clone(),
+        session.org_root_session_id.clone(),
+    ) {
+        (Some(org_id), Some(org_name), Some(root_session_id)) => {
+            Some((org_id, org_name, root_session_id))
+        }
+        _ => None,
+    }
 }
 
 pub async fn create_org(
@@ -218,12 +292,9 @@ pub async fn create_org(
         .to_mcp_result());
     }
 
-    let org_name = read_required_string(&args, "name")?;
-    if let (Some(existing_org_id), Some(existing_org_name), Some(existing_root_id)) = (
-        session.org_id.clone(),
-        session.org_name.clone(),
-        session.org_root_session_id.clone(),
-    ) {
+    if let Some((existing_org_id, existing_org_name, existing_root_id)) =
+        existing_explicit_org_identity(&session)
+    {
         let scaffold = teamwork_scaffold_status_for_session(caller_session_id)?;
         let message = format!(
             "Current session already owns explicit org '{}' (ID: {}, root session: {}).",
@@ -247,10 +318,18 @@ pub async fn create_org(
             "teamworkScaffold".to_string(),
             serde_json::to_value(&scaffold).unwrap_or(Value::Null),
         );
-        return Ok(SuccessHint::new(message, create_org_hint_lines(&scaffold))
-            .to_mcp_result_with_data(Some(Value::Object(response_data))));
+        return Ok(
+            SuccessHint::new(message, existing_org_hint_lines(&scaffold))
+                .to_mcp_result_with_data(Some(Value::Object(response_data))),
+        );
     }
 
+    let scaffold = teamwork_scaffold_status_for_session(caller_session_id)?;
+    if let Err(result) = create_org_scaffold_preflight(&scaffold) {
+        return Ok(result);
+    }
+
+    let org_name = read_required_string(&args, "name")?;
     let org_id = format!("org-{}", uuid::Uuid::new_v4().simple());
     let org_root_session_id = session.id.clone();
     let session_repo = crate::state::get_session_repository();
@@ -263,8 +342,6 @@ pub async fn create_org(
         )
         .await
         .map_err(|error| format!("Failed to persist org identity: {}", error))?;
-
-    let scaffold = teamwork_scaffold_status_for_session(caller_session_id)?;
 
     let message = format!(
         "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nChild sessions started from this org root now join Org view automatically. Use includeCurrentOrg=false only when you intentionally want a one-off child to stay out of Org view.",

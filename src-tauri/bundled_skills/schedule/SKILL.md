@@ -14,6 +14,7 @@ Use `teamwork` first when the workspace constitution is not ready.
 1. Confirm scheduled collaboration is the right substrate.
    - Use it for periodic wake-ups, background recurrence, heartbeat loops, or resumable async automation.
    - If the user wants org-visible lineage or org-root resume behavior, stop and use `org`.
+   - If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `prepareTeamworkWorkspace()` first.
 2. Read `.libragent/teamwork.json` before acting.
    - Confirm `executionSubstrate.mode` is `"scheduled"` and `scheduledTaskGroups.intended` is `true`.
    - If no manifest exists yet, run `teamwork` first to scaffold the workspace constitution.
@@ -21,8 +22,8 @@ Use `teamwork` first when the workspace constitution is not ready.
    - If `agents.md`, `MISSION.md`, or `coordination/KANBAN.md` are missing, repair the scaffold before creating scheduled tasks.
    - A master agent woken by a scheduled task must verify the scaffold is present and current before issuing directives.
 4. Reuse the existing workspace constitution.
-   - Treat the current workspace scaffold as the SSOT.
-   - Scheduled runs should operate against that shared scaffold.
+   - Treat the app-local teamwork artifact scaffold as the SSOT.
+   - Scheduled runs should keep the session's intended effective workspace unless a task explicitly targets a different implementation workspace.
 5. Create the task group explicitly.
    - Use `createScheduledTask(message, cronExpression, groupName, agentId)` for the first loop in a new group.
    - The `groupName` must be stable, readable, and unique within the team. Record it in `coordination/DECISIONS.md`.
@@ -43,7 +44,7 @@ Use `teamwork` first when the workspace constitution is not ready.
 
 ## Guardrails
 
-- Default to the current workspace scaffold; do not invent a separate workspace just because work is asynchronous.
+- Default to the app-local teamwork artifact scaffold; do not fall back to a repo root just because work is asynchronous.
 - Use `workspaceOverride` only when the scheduled run must target a specific existing shared workspace.
 - Keep group names stable and readable. Changing a `groupName` mid-run makes group tracking unreliable.
 - Always record `groupId` in `.libragent/teamwork.json` after the first task in a group is created.

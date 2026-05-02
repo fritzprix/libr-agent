@@ -120,6 +120,140 @@ async fn search_skips_heavy_directories_during_recursive_content_search() {
 }
 
 #[tokio::test]
+async fn search_skips_internal_tmp_and_exports_when_searching_workspace_root() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-skip-internal-artifacts";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tmp/process_123")).expect("tmp dir");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/exports/files")).expect("exports dir");
+    std::fs::write(workspace_dir.join("src/main.ts"), "const needle = true;\n")
+        .expect("write source file");
+    std::fs::write(
+        workspace_dir.join(".libragent/tmp/process_123/stdout"),
+        "const needle = true;\n",
+    )
+    .expect("write temp artifact");
+    std::fs::write(
+        workspace_dir.join(".libragent/exports/files/exported.ts"),
+        "const needle = true;\n",
+    )
+    .expect("write export artifact");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("src/main.ts"),
+        "expected workspace file in output: {text}"
+    );
+    assert!(
+        !text.contains(".libragent/tmp/process_123/stdout"),
+        "internal tmp artifacts should be skipped: {text}"
+    );
+    assert!(
+        !text.contains(".libragent/exports/files/exported.ts"),
+        "internal export artifacts should be skipped: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_skips_internal_tmp_and_exports_when_searching_inside_libragent() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-skip-internal-artifacts-from-libragent";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tmp/process_123")).expect("tmp dir");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/exports/files")).expect("exports dir");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tool-results"))
+        .expect("tool results dir");
+    std::fs::write(
+        workspace_dir.join(".libragent/tmp/process_123/stdout"),
+        "const needle = true;\n",
+    )
+    .expect("write temp artifact");
+    std::fs::write(
+        workspace_dir.join(".libragent/exports/files/exported.ts"),
+        "const needle = true;\n",
+    )
+    .expect("write export artifact");
+    std::fs::write(
+        workspace_dir.join(".libragent/tool-results/visible.txt"),
+        "const needle = true;\n",
+    )
+    .expect("write visible file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".libragent",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("tool-results/visible.txt"),
+        "non-internal .libragent files should remain searchable: {text}"
+    );
+    assert!(
+        !text.contains("tmp/process_123/stdout"),
+        "internal tmp artifacts should be skipped even when searching .libragent: {text}"
+    );
+    assert!(
+        !text.contains("exports/files/exported.ts"),
+        "internal export artifacts should be skipped even when searching .libragent: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_rejects_direct_internal_artifact_file_paths() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-reject-internal-artifact-file";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tmp/process_123")).expect("tmp dir");
+    std::fs::write(
+        workspace_dir.join(".libragent/tmp/process_123/stdout"),
+        "const needle = true;\n",
+    )
+    .expect("write temp artifact");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".libragent/tmp/process_123/stdout",
+                "query": "needle",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Internal LibrAgent temp/export artifacts are excluded from search"),
+        "direct internal artifact file searches should be rejected: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_respects_gitignore_rules_during_recursive_content_search() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-gitignore";

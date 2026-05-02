@@ -8,6 +8,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         create_tool(),
         list_tool(),
         update_tool(),
+        prepare_teamwork_workspace_tool(),
         create_org_tool(),
         get_org_tool(),
         start_session_tool(),
@@ -121,6 +122,17 @@ fn update_tool() -> MCPTool {
     }
 }
 
+fn prepare_teamwork_workspace_tool() -> MCPTool {
+    MCPTool {
+        name: "prepareTeamworkWorkspace".to_string(),
+        title: Some("Prepare Teamwork Artifact Directory".to_string()),
+        description: "Create or reuse an app-local teamwork artifact directory for the current governing/root session. This path is for coordination/scaffolding artifacts only and does not change the session workspace. Use it when you need to keep teamwork metadata out of a repo workspace.".to_string(),
+        input_schema: object_prop(vec![], vec![], None),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
 fn start_session_tool() -> MCPTool {
     MCPTool {
         name: "startSession".to_string(),
@@ -154,7 +166,7 @@ fn create_org_tool() -> MCPTool {
     MCPTool {
         name: "createOrg".to_string(),
         title: Some("Create Explicit Org".to_string()),
-        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session, not from arbitrary child sessions. If the teamwork scaffold is missing or inconsistent, the result will tell you to use teamwork next.".to_string(),
+        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session. If teamwork scaffold artifacts are missing or inconsistent, the result will tell you to use teamwork next.".to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),

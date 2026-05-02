@@ -242,6 +242,25 @@ impl WorkspaceService {
         Ok(())
     }
 
+    /// Prepare the app-local teamwork artifact directory for a governing/root session.
+    pub async fn provision_teamwork_workspace(session_id: &str) -> Result<String, String> {
+        let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+        let teamwork_artifact_dir =
+            crate::session::prepare_teamwork_artifact_dir_for_session(session_manager, session_id)
+                .await?;
+
+        let teamwork_artifact_dir_str = teamwork_artifact_dir
+            .to_str()
+            .ok_or_else(|| {
+                format!(
+                    "Invalid teamwork artifact path encoding: {}",
+                    teamwork_artifact_dir.display()
+                )
+            })?
+            .to_string();
+        Ok(teamwork_artifact_dir_str)
+    }
+
     /// Cancels the workspace override for a session.
     pub async fn cancel_override(session_id: &str) -> Result<(), String> {
         let session_manager = get_session_manager().map_err(|e| e.to_string())?;

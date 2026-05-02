@@ -97,6 +97,9 @@ impl BuiltinMCPServer for AgentServer {
             "create" => handlers::create_agent(self, args).await,
             "update" => handlers::update_agent(self, args, Some(session_id.clone())).await,
             "list" => handlers::list_agents_or_sessions(self, args, &session_id).await,
+            "prepareTeamworkWorkspace" => {
+                handlers::prepare_teamwork_workspace(self, args, &session_id).await
+            }
             "createOrg" => handlers::create_org(self, args, &session_id).await,
             "getOrg" => handlers::get_org(self, args, &session_id).await,
             "startSession" => handlers::start_session(self, args, &session_id).await,
@@ -172,6 +175,7 @@ impl BuiltinMCPServer for AgentServer {
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         let mut context_prompt = concat!(
             "# Agent Delegation\n\n",
+            "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
             "- `agent__startSession` starts delegated work.\n",
             "- `agent__messageToSession` resumes or retries an existing delegated session.\n",
             "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
