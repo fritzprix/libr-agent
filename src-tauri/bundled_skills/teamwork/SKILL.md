@@ -9,9 +9,9 @@ Build a task force only when the work is genuinely multi-track. If one capable a
 
 ## Non-Negotiable Rules
 
-1. **One team, one workspace.** The governing coordinator and shared files stay in the same dedicated teamwork workspace.
-2. **Provision the teamwork workspace first.** From the governing root session, call `prepareTeamworkWorkspace()` before scaffolding any teamwork files.
-3. **Scaffold only in that teamwork workspace.** Do not write `agents.md`, `MISSION.md`, `ROLES.md`, `coordination/`, or role `skills/` into a repo root unless you intentionally want repo pollution.
+1. **One team, one effective workspace.** The governing coordinator and org-visible children keep the normal parent/override workspace inheritance model.
+2. **Prepare artifact storage first.** From the governing root session, call `prepareTeamworkWorkspace()` to get an app-local artifact directory before scaffolding teamwork files.
+3. **Scaffold only in that artifact directory.** Do not write `agents.md`, `MISSION.md`, `ROLES.md`, `coordination/`, or role `skills/` into a repo root unless you intentionally want repo pollution.
 4. **Use deterministic scaffolding first.** `scripts/init_task_force.py` is the default path.
 5. **Refresh happens later.** Changes to `agents.md` or workspace skills do not take effect in the current turn.
 6. **Route execution explicitly.** Keep framework-specific operating rules in the specialist skill that matches the chosen substrate.
@@ -56,13 +56,13 @@ Coordination model and execution substrate are not the same thing.
 Pick the execution substrate that matches the job:
 
 - **Plain child sessions** - use `startSession(...)` for one-off delegation that does not need org visibility.
-- **Explicit org lineage** - call `prepareTeamworkWorkspace()` first, then use `createOrg(...)` once from the root session, then use `startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic unless you set `includeCurrentOrg=false`. Org-visible children should normally share the dedicated teamwork workspace.
+- **Explicit org lineage** - call `prepareTeamworkWorkspace()` first, then use `createOrg(...)` once from the root session, then use `startSession(...)` for org-visible children. Under the explicit org root, org inheritance is automatic unless you set `includeCurrentOrg=false`. Org-visible children inherit the governing session's effective workspace by default.
 - **Scheduled task groups** - use `createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 
 Keep these separate:
 
 - **Org** is for explicit lineage-based teamwork and org UX.
-- **Org** should normally share the dedicated teamwork workspace so every member sees the same SSOT files.
+- **Org** keeps the normal parent workspace semantics; only the teamwork artifacts move out of the repo/workspace.
 - **Scheduled task groups** are for recurring automation and policy-governed background collaboration.
 - A recurring task group may wake a coordinator session, but that does not make the scheduled group an org.
 
@@ -78,7 +78,7 @@ After choosing the execution substrate, route to the matching specialist skill:
 
 ### 3. Create the workspace contract
 
-Create the shared files in the dedicated teamwork workspace first. At minimum create:
+Create the shared files in the app-local teamwork artifact directory first. At minimum create:
 
 ```text
 ./
@@ -105,7 +105,7 @@ The scaffold must preserve:
 - the chosen collaboration framework
 - the canonical file ownership and operating rules
 
-The governing coordinator continues in that same teamwork workspace after scaffolding.
+The governing coordinator stays in its normal effective workspace after scaffolding. Only the teamwork artifacts live in the app-local artifact directory.
 
 Use the file contracts in [coordination-contract.md](references/coordination-contract.md).
 
@@ -142,15 +142,13 @@ Refresh behavior:
 
 - `agents.md` changes do **not** instantly rewrite the current session prompt
 - new workspace skills apply in a later execution step, not retroactively in the same turn
-- `.libragent/teamwork.json` should keep `constitutionAdoption.coordinatorMustShareScaffoldRoot=true` so downstream agents know the governing/root session must rebind to the dedicated teamwork workspace before continuing orchestration there
-
 After scaffolding or constitution edits, state when the updated rules become effective.
 
 ## Tool Hygiene Rules
 
 When you execute the scaffold:
 
-1. Bootstrap in the dedicated teamwork workspace returned by `prepareTeamworkWorkspace()`.
+1. Bootstrap in the app-local artifact directory returned by `prepareTeamworkWorkspace()`.
 2. Use portable commands and the available tools.
 3. Match the editing primitive to the change size.
 4. Use `workspaceOverride` only when a child must work in a different workspace.
@@ -190,7 +188,7 @@ Prefer deterministic scaffolding:
 
 ```bash
 prepareTeamworkWorkspace()
-# -> returns workspacePath
+# -> returns artifactPath
 
 python scripts/init_task_force.py \
   --output "/absolute/path/from/prepareTeamworkWorkspace" \
@@ -203,7 +201,7 @@ python scripts/init_task_force.py \
   --role "Implementer:Turn approved plans into code and tests"
 ```
 
-Use the dedicated teamwork workspace path returned by `prepareTeamworkWorkspace()` for `--output`. Do not default to `.` from a repo root.
+Use the app-local artifact path returned by `prepareTeamworkWorkspace()` for `--output`. Do not default to `.` from a repo root.
 
 Then review and tighten:
 
@@ -226,7 +224,7 @@ Before announcing success, verify:
 6. the handoff path between roles is obvious
 7. the execution substrate and follow-up specialist skill are explicit: plain child sessions, `org`, or `schedule`
 8. refresh semantics are written down so agents know that updated rules apply only in a later execution step
-9. the governing session is still working in the dedicated teamwork workspace where it created the constitution
+9. the governing session still uses the intended effective workspace, and only the teamwork artifacts live in app-local storage
 
 ## References
 

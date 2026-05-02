@@ -3,7 +3,9 @@ mod common;
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
-use tauri_mcp_agent_lib::session::{provision_teamwork_workspace_for_session, SessionManager};
+use tauri_mcp_agent_lib::session::{
+    prepare_teamwork_artifact_dir_for_session, teamwork_artifact_dir_for_session, SessionManager,
+};
 
 fn make_session(session_id: &str) -> SessionMetadata {
     SessionMetadata {
@@ -34,7 +36,7 @@ fn make_session(session_id: &str) -> SessionMetadata {
 }
 
 #[tokio::test]
-async fn provision_teamwork_workspace_uses_dedicated_directory_and_persists_override() {
+async fn prepare_teamwork_artifact_dir_uses_app_local_directory_without_persisting_override() {
     common::register_sqlite_vec();
     let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteSessionRepository::new(db);
@@ -47,19 +49,15 @@ async fn provision_teamwork_workspace_uses_dedicated_directory_and_persists_over
         .await
         .expect("session should persist");
 
-    let teamwork_workspace =
-        provision_teamwork_workspace_for_session(&repo, &session_manager, session_id)
-            .await
-            .expect("teamwork workspace should provision");
+    let artifact_dir = prepare_teamwork_artifact_dir_for_session(&session_manager, session_id)
+        .await
+        .expect("artifact dir should provision");
 
+    assert!(artifact_dir.exists(), "artifact dir should exist on disk");
     assert!(
-        teamwork_workspace.exists(),
-        "workspace should exist on disk"
-    );
-    assert!(
-        teamwork_workspace.ends_with(std::path::Path::new("teamwork-workspaces").join(session_id)),
-        "teamwork workspace should live under the dedicated teamwork-workspaces root: {}",
-        teamwork_workspace.display()
+        artifact_dir.ends_with(std::path::Path::new("teamwork-artifacts").join(session_id)),
+        "artifact dir should live under the app-local teamwork-artifacts root: {}",
+        artifact_dir.display()
     );
 
     let persisted = repo
@@ -68,53 +66,45 @@ async fn provision_teamwork_workspace_uses_dedicated_directory_and_persists_over
         .expect("session lookup should succeed")
         .expect("session should still exist");
     assert_eq!(
-        persisted.workspace_override.as_deref(),
-        teamwork_workspace.to_str(),
-        "workspace override should persist to the repository"
+        persisted.workspace_override, None,
+        "preparing teamwork artifacts must not persist a workspace override"
     );
 
     let effective_workspace = session_manager.get_session_workspace_dir_by_id(session_id);
-    assert_eq!(
-        effective_workspace, teamwork_workspace,
-        "session manager should resolve the teamwork workspace as the effective workspace"
+    assert!(
+        effective_workspace.ends_with(std::path::Path::new("workspaces").join(session_id)),
+        "effective workspace should stay on the normal session workspace path: {}",
+        effective_workspace.display()
     );
 }
 
 #[tokio::test]
-async fn provision_teamwork_workspace_is_idempotent_for_repeated_calls() {
-    common::register_sqlite_vec();
-    let db = common::setup_test_db_with_migrations().await;
-    let repo = SqliteSessionRepository::new(db);
+async fn prepare_teamwork_artifact_dir_is_idempotent_and_leaves_workspace_inheritance_unchanged() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let session_manager =
         SessionManager::new_with_base_dir(temp_dir.path().join("session-root")).unwrap();
     let session_id = "team-root-session-repeat";
 
-    repo.upsert_session(&make_session(session_id))
+    let first = prepare_teamwork_artifact_dir_for_session(&session_manager, session_id)
         .await
-        .expect("session should persist");
-
-    let first = provision_teamwork_workspace_for_session(&repo, &session_manager, session_id)
+        .expect("first artifact-dir preparation should succeed");
+    let second = prepare_teamwork_artifact_dir_for_session(&session_manager, session_id)
         .await
-        .expect("first teamwork workspace provisioning should succeed");
-    let second = provision_teamwork_workspace_for_session(&repo, &session_manager, session_id)
-        .await
-        .expect("second teamwork workspace provisioning should also succeed");
+        .expect("second artifact-dir preparation should also succeed");
 
     assert_eq!(
         first, second,
-        "repeated provisioning should reuse the same path"
+        "repeated preparation should reuse the same path"
     );
-
-    let persisted = repo
-        .get_session(session_id)
-        .await
-        .expect("session lookup should succeed")
-        .expect("session should exist");
-    assert_eq!(persisted.workspace_override.as_deref(), second.to_str());
     assert_eq!(
-        session_manager.get_session_workspace_dir_by_id(session_id),
+        teamwork_artifact_dir_for_session(&session_manager, session_id),
         second,
-        "session manager should still resolve the same teamwork workspace after repeated provisioning"
+        "helper should resolve the same deterministic artifact path"
+    );
+    assert!(
+        session_manager
+            .get_session_workspace_dir_by_id(session_id)
+            .ends_with(std::path::Path::new("workspaces").join(session_id)),
+        "preparing artifacts must not change the effective workspace"
     );
 }

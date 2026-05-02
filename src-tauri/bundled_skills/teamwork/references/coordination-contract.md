@@ -6,7 +6,7 @@ These files are the minimum shared operating system for a durable task force.
 
 This file is the workspace constitution.
 
-It lives in the dedicated teamwork workspace where the governing session is working. Keep coordination in that same workspace.
+It lives in the app-local teamwork artifact directory prepared for the governing session. Keep coordination artifacts there instead of polluting the repo/workspace.
 
 It should state:
 
@@ -30,7 +30,7 @@ For execution substrate, make the contract explicit:
 
 Make that choice explicit.
 
-For explicit org lineage, default to the dedicated teamwork workspace as the shared collaboration substrate.
+For explicit org lineage, keep the normal parent workspace inheritance model and store only the teamwork artifacts in app-local storage.
 
 Refresh rule: edits to `agents.md` apply in a later execution step, not in the current turn.
 
@@ -137,9 +137,4 @@ At minimum capture:
 - whether explicit org lineage is intended
 - whether scheduled task groups are intended
 - refresh semantics notes for downstream sessions
-- whether the coordinator must rebind or resume in the workspace where the constitution now lives before continuing
-
-Use explicit field names so agents do not have to guess:
-
-- `constitutionAdoption.coordinatorMustShareScaffoldRoot = true`
-- `constitutionAdoption.rule = "Continue coordination in the dedicated teamwork workspace where the constitution was created."`
+- the parent-workspace inheritance policy for org-visible children

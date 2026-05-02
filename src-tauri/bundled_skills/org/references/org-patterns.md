@@ -6,8 +6,8 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 
 | Need | Tool / action |
 | --- | --- |
-| Create the org (once, from root session) | `createOrg(orgName, description)` |
-| Spawn an org-visible child session | `startSession(agentId, task, workspaceOverride=<path>)` |
+| Create the org (once, from root session) | `createOrg(name="...")` |
+| Spawn an org-visible child session | `startSession(agentId, task)` |
 | Spawn a one-off child that stays out of Org view | `startSession(agentId, task, includeCurrentOrg=false)` |
 | Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
 | Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
@@ -18,12 +18,11 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 ```
 // Step 0 — from the governing root session
 prepareTeamworkWorkspace()
-// -> returns "/absolute/path/to/teamwork-workspace"
+// -> returns "/absolute/path/to/teamwork-artifacts"
 
 // Step 1 — from the root session
 createOrg(
-  orgName: "Research Strike Team",
-  description: "Coordinator + specialist org for the current research objective"
+  name: "Research Strike Team"
 )
 // -> returns {
 //      orgId: "abc-123",
@@ -40,8 +39,7 @@ createOrg(
 // Step 3 — spawn an org-visible researcher
 startSession(
   agentId: "<researcher-assistant-id>",
-  task: "...",
-  workspaceOverride: "<teamwork-workspace-path>"
+  task: "..."
 )
 ```
 
@@ -61,21 +59,17 @@ Do not resume a child session directly and treat it as the org coordinator. Chil
 
 ## Pattern: Keep Workspace Shared
 
-Org-visible children should work in the dedicated teamwork workspace unless there is a concrete reason to diverge.
+Org-visible children should inherit the parent effective workspace unless there is a concrete reason to diverge.
 
 ```
-startSession(
-  agentId: "...",
-  task: "...",
-  workspaceOverride: "/absolute/path/to/teamwork-workspace"
-)
+startSession(agentId: "...", task: "...")
 ```
 
-If a child starts without `workspaceOverride`, it gets its own workspace and will not automatically see the shared teamwork constitution unless org inheritance already points it at the root teamwork workspace.
+If a child starts outside the org inheritance path, it gets its own workspace and will not automatically see the same implementation context unless you explicitly pass `workspaceOverride`.
 
 ## Manifest Update After Org Creation
 
-After calling `createOrg`, update the scaffolded `.libragent/teamwork.json` instead of replacing it with a smaller hand-written object. Preserve the existing scaffold fields such as `workspacePolicy`, `specialistSkills`, `refreshSemantics`, and `constitutionAdoption`, then fill in the org identity fields returned by `createOrg`.
+After calling `createOrg`, update the scaffolded `.libragent/teamwork.json` instead of replacing it with a smaller hand-written object. Preserve the existing scaffold fields such as `workspacePolicy`, `specialistSkills`, and `refreshSemantics`, then fill in the org identity fields returned by `createOrg`.
 
 ```json
 {
@@ -89,7 +83,7 @@ After calling `createOrg`, update the scaffolded `.libragent/teamwork.json` inst
     "specialistSkill": "org",
     "workspacePolicy": {
       "plainChildSessions": "isolated-by-default",
-      "explicitOrgLineage": "share-governing-teamwork-workspace-by-default",
+      "explicitOrgLineage": "inherit-governing-session-workspace-by-default",
       "scheduledTaskGroups": "workspace-defined-per-group"
     },
     "specialistSkills": {
@@ -108,7 +102,7 @@ After calling `createOrg`, update the scaffolded `.libragent/teamwork.json` inst
         "includeCurrentOrg": true
       },
       "compatibilityAlias": "spawnOrgAgent",
-      "workspaceSharing": "inherit-root-teamwork-workspace-by-default"
+      "workspaceSharing": "inherit-parent-workspace-by-default"
     },
     "scheduledTaskGroups": {
       "intended": false,
@@ -118,10 +112,6 @@ After calling `createOrg`, update the scaffolded `.libragent/teamwork.json` inst
   "refreshSemantics": {
     "workspaceInstructions": "Changes to agents.md and related workspace constitution files apply in a later execution step, not in the current turn.",
     "workspaceSkills": "New workspace skills apply in a later execution step, not retroactively in the same turn."
-  },
-  "constitutionAdoption": {
-    "coordinatorMustShareScaffoldRoot": true,
-    "rule": "Continue coordination in the dedicated teamwork workspace where the constitution was created."
   }
 }
 ```
@@ -140,9 +130,9 @@ Also record the org creation decision in `coordination/DECISIONS.md`:
 
 ### Child session cannot see workspace constitution
 
-Likely cause: child started without `workspaceOverride`.
+Likely cause: child was started outside the org inheritance path or with the wrong `workspaceOverride`.
 
-Fix: restart child with `workspaceOverride` pointing to the dedicated teamwork workspace, or copy critical rules into the task text.
+Fix: restart the child under the org root so it inherits the parent effective workspace, or pass the correct `workspaceOverride`, or copy critical rules into the task text.
 
 ### Org view shows unexpected sessions
 
