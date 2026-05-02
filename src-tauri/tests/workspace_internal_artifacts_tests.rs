@@ -72,6 +72,56 @@ async fn list_directory_hides_internal_tmp_and_exports_inside_libragent() {
     assert!(!names.contains(&"exports"));
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn list_directory_hides_internal_artifacts_when_workspace_root_is_symlinked() {
+    use std::os::unix::fs::symlink;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let real_base_dir = temp_dir.path().join("real-base");
+    std::fs::create_dir_all(&real_base_dir).expect("real base dir");
+
+    let symlink_base_dir = temp_dir.path().join("symlink-base");
+    symlink(&real_base_dir, &symlink_base_dir).expect("base dir symlink");
+
+    let session_id = "workspace-internal-listing-symlinked";
+    let server = build_workspace_server(&symlink_base_dir, session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join(".libragent/tmp/process_123")).expect("tmp dir");
+    std::fs::create_dir_all(workspace_dir.join(".libragent/exports/files")).expect("exports dir");
+    std::fs::write(
+        workspace_dir.join(".libragent/tmp/process_123/stdout"),
+        "process output",
+    )
+    .expect("tmp artifact");
+
+    let result = server
+        .handle_list_directory(
+            json!({
+                "path": ".libragent"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("listDirectory should succeed");
+
+    let items = result
+        .structured_content
+        .as_ref()
+        .and_then(|value| value.get("items"))
+        .and_then(|value| value.as_array())
+        .expect("items array expected");
+
+    let names = items
+        .iter()
+        .filter_map(|item| item.get("name").and_then(|value| value.as_str()))
+        .collect::<Vec<_>>();
+
+    assert!(!names.contains(&"tmp"));
+    assert!(!names.contains(&"exports"));
+}
+
 #[tokio::test]
 async fn export_response_uses_libragent_download_path() {
     let temp_dir = tempdir().expect("temp dir");
