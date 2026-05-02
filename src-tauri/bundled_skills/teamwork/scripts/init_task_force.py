@@ -21,7 +21,7 @@ SUBSTRATE_DISPLAY = {
     SUBSTRATE_ORG: (
         "Explicit org lineage via createOrg(...) once from the root session, "
         "then startSession(...) for org-visible children. "
-        "Org-visible children share the coordinator's workspace by default. "
+        "Org-visible children share the dedicated teamwork workspace by default. "
         "Follow org for org-specific operating rules."
     ),
     SUBSTRATE_SCHEDULED: (
@@ -61,6 +61,10 @@ def parse_role(raw: str) -> tuple[str, str]:
 def write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content.rstrip() + "\n", encoding="utf-8")
+
+
+def is_inside_git_worktree(path: Path) -> bool:
+    return any(candidate.joinpath(".git").exists() for candidate in [path, *path.parents])
 
 
 def build_role_skill(
@@ -220,7 +224,7 @@ def build_teamwork_manifest(
             "specialistSkill": SUBSTRATE_SPECIALIST_SKILL[execution_substrate],
             "workspacePolicy": {
                 "plainChildSessions": "isolated-by-default",
-                "explicitOrgLineage": "share-coordinator-workspace-by-default",
+                "explicitOrgLineage": "share-governing-teamwork-workspace-by-default",
                 "scheduledTaskGroups": "workspace-defined-per-group",
             },
             "specialistSkills": {
@@ -234,7 +238,7 @@ def build_teamwork_manifest(
                 "childAction": "startSession",
                 "childArgs": {"includeCurrentOrg": True},
                 "compatibilityAlias": "spawnOrgAgent",
-                "workspaceSharing": "inherit-root-workspace-by-default",
+                "workspaceSharing": "inherit-root-teamwork-workspace-by-default",
             },
             "scheduledTaskGroups": {
                 "intended": is_scheduled,
@@ -247,7 +251,7 @@ def build_teamwork_manifest(
         },
         "constitutionAdoption": {
             "coordinatorMustShareScaffoldRoot": True,
-            "rule": "Continue coordination in the same workspace where the constitution was created.",
+            "rule": "Continue coordination in the dedicated teamwork workspace where the constitution was created.",
         },
         "roles": [
             {"name": role_name, "responsibility": responsibility}
@@ -263,7 +267,15 @@ def main() -> None:
         "--output",
         required=True,
         help=(
-            "Workspace to scaffold into. Use the current workspace for the current teamwork run."
+            "Dedicated teamwork workspace to scaffold into. Prefer the absolute path returned by prepareTeamworkWorkspace()."
+        ),
+    )
+    parser.add_argument(
+        "--allow-git-worktree",
+        action="store_true",
+        help=(
+            "Allow scaffolding inside a Git worktree. "
+            "Disabled by default to prevent polluting repo workspaces with orchestration files."
         ),
     )
     parser.add_argument("--objective", required=True, help="Overall task force objective")
@@ -304,6 +316,12 @@ def main() -> None:
 
     workspace = Path(args.output).expanduser().resolve()
     workspace.mkdir(parents=True, exist_ok=True)
+    if is_inside_git_worktree(workspace) and not args.allow_git_worktree:
+        raise SystemExit(
+            "Refusing to scaffold inside a Git worktree. "
+            "Use prepareTeamworkWorkspace() and pass its workspacePath to --output, "
+            "or add --allow-git-worktree if repo scaffolding is truly intentional."
+        )
     original_request = args.request.strip() if args.request else args.objective
     team_name = args.team_name.strip() if args.team_name else workspace.name
     role_definitions = args.role or [

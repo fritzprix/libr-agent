@@ -8,6 +8,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         create_tool(),
         list_tool(),
         update_tool(),
+        prepare_teamwork_workspace_tool(),
         create_org_tool(),
         get_org_tool(),
         start_session_tool(),
@@ -121,6 +122,17 @@ fn update_tool() -> MCPTool {
     }
 }
 
+fn prepare_teamwork_workspace_tool() -> MCPTool {
+    MCPTool {
+        name: "prepareTeamworkWorkspace".to_string(),
+        title: Some("Prepare Shared Teamwork Workspace".to_string()),
+        description: "Create or reuse a dedicated teamwork workspace under app data for the current governing/root session, then switch the current session to that shared orchestration workspace. Use this before scaffolding teamwork files so repo roots stay clean. Org-visible child sessions can then share the same teamwork workspace by default.".to_string(),
+        input_schema: object_prop(vec![], vec![], None),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
 fn start_session_tool() -> MCPTool {
     MCPTool {
         name: "startSession".to_string(),
@@ -154,7 +166,7 @@ fn create_org_tool() -> MCPTool {
     MCPTool {
         name: "createOrg".to_string(),
         title: Some("Create Explicit Org".to_string()),
-        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session, not from arbitrary child sessions. If the teamwork scaffold is missing or inconsistent, the result will tell you to use teamwork next.".to_string(),
+        description: "Mark the current root session as an explicit org root. This is the only path that makes a lineage appear in Org view. Use this from a top-level/root session that has already adopted its dedicated teamwork workspace via prepareTeamworkWorkspace(). If the teamwork scaffold is missing or inconsistent, the result will tell you to use teamwork next.".to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),

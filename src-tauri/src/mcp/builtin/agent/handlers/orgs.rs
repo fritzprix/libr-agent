@@ -5,13 +5,27 @@ use std::path::{Path, PathBuf};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::utils::{build_agent_tool_data, read_required_string};
 use crate::mcp::types::MCPResult;
-use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::{session_repository::SessionRepository, SessionMetadata};
 
 use super::super::AgentServer;
 use super::{
     caller_session_not_found_result, invalid_explicit_org_result, missing_explicit_org_result,
     read_optional_string,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreateOrgPreflight {
+    ExistingOrg {
+        org_id: String,
+        org_name: String,
+        root_session_id: String,
+    },
+    RequiresDedicatedWorkspace {
+        effective_workspace: PathBuf,
+        dedicated_workspace: PathBuf,
+    },
+    Proceed,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TeamworkScaffoldStatus {
@@ -191,6 +205,67 @@ fn create_org_hint_lines(scaffold: &TeamworkScaffoldStatus) -> Vec<String> {
     lines
 }
 
+fn existing_org_hint_lines(
+    scaffold: &TeamworkScaffoldStatus,
+    workspace_status: &crate::session::TeamworkWorkspaceStatus,
+) -> Vec<String> {
+    let mut lines = create_org_hint_lines(scaffold);
+
+    if !workspace_status.uses_dedicated_teamwork_workspace() {
+        lines.push(format!(
+            "Current effective workspace is still {}.",
+            workspace_status.effective_workspace.display()
+        ));
+        lines.push(format!(
+            "This org should be resumed from the dedicated teamwork workspace at {}.",
+            workspace_status.dedicated_workspace.display()
+        ));
+        lines.push(
+            "Call prepareTeamworkWorkspace() from the org root session to migrate the active workspace before continuing teamwork operations."
+                .to_string(),
+        );
+    }
+
+    lines
+}
+
+pub fn existing_explicit_org_identity(
+    session: &SessionMetadata,
+) -> Option<(String, String, String)> {
+    match (
+        session.org_id.clone(),
+        session.org_name.clone(),
+        session.org_root_session_id.clone(),
+    ) {
+        (Some(org_id), Some(org_name), Some(root_session_id)) => {
+            Some((org_id, org_name, root_session_id))
+        }
+        _ => None,
+    }
+}
+
+pub fn create_org_preflight(
+    session: &SessionMetadata,
+    workspace_status: &crate::session::TeamworkWorkspaceStatus,
+) -> CreateOrgPreflight {
+    if let Some((org_id, org_name, root_session_id)) = existing_explicit_org_identity(session) {
+        return CreateOrgPreflight::ExistingOrg {
+            org_id,
+            org_name,
+            root_session_id,
+        };
+    }
+
+    if !workspace_status.uses_dedicated_teamwork_workspace() {
+        return CreateOrgPreflight::RequiresDedicatedWorkspace {
+            effective_workspace: workspace_status.effective_workspace.clone(),
+            dedicated_workspace: workspace_status.dedicated_workspace.clone(),
+        };
+    }
+
+    CreateOrgPreflight::Proceed
+}
+
 pub async fn create_org(
     server: &AgentServer,
     args: Value,
@@ -218,39 +293,83 @@ pub async fn create_org(
         .to_mcp_result());
     }
 
-    let org_name = read_required_string(&args, "name")?;
-    if let (Some(existing_org_id), Some(existing_org_name), Some(existing_root_id)) = (
-        session.org_id.clone(),
-        session.org_name.clone(),
-        session.org_root_session_id.clone(),
-    ) {
-        let scaffold = teamwork_scaffold_status_for_session(caller_session_id)?;
-        let message = format!(
-            "Current session already owns explicit org '{}' (ID: {}, root session: {}).",
-            existing_org_name, existing_org_id, existing_root_id
-        );
-        let mut response_data = build_agent_tool_data(
-            "createOrg",
-            "org",
-            Some(&existing_org_id),
-            &message,
-            "success",
-            create_org_next_actions(&existing_org_id, !scaffold.is_ready_for_explicit_org()),
-        );
-        response_data.insert("orgId".to_string(), Value::String(existing_org_id));
-        response_data.insert("orgName".to_string(), Value::String(existing_org_name));
-        response_data.insert(
-            "orgRootSessionId".to_string(),
-            Value::String(existing_root_id),
-        );
-        response_data.insert(
-            "teamworkScaffold".to_string(),
-            serde_json::to_value(&scaffold).unwrap_or(Value::Null),
-        );
-        return Ok(SuccessHint::new(message, create_org_hint_lines(&scaffold))
+    let workspace_status = crate::session::teamwork_workspace_status(
+        crate::session::get_session_manager()?,
+        caller_session_id,
+    );
+    match create_org_preflight(&session, &workspace_status) {
+        CreateOrgPreflight::ExistingOrg {
+            org_id: existing_org_id,
+            org_name: existing_org_name,
+            root_session_id: existing_root_id,
+        } => {
+            let scaffold = teamwork_scaffold_status_for_session(caller_session_id)?;
+            let message = format!(
+                "Current session already owns explicit org '{}' (ID: {}, root session: {}).",
+                existing_org_name, existing_org_id, existing_root_id
+            );
+            let mut response_data = build_agent_tool_data(
+                "createOrg",
+                "org",
+                Some(&existing_org_id),
+                &message,
+                "success",
+                create_org_next_actions(&existing_org_id, !scaffold.is_ready_for_explicit_org()),
+            );
+            response_data.insert("orgId".to_string(), Value::String(existing_org_id));
+            response_data.insert("orgName".to_string(), Value::String(existing_org_name));
+            response_data.insert(
+                "orgRootSessionId".to_string(),
+                Value::String(existing_root_id),
+            );
+            response_data.insert(
+                "teamworkScaffold".to_string(),
+                serde_json::to_value(&scaffold).unwrap_or(Value::Null),
+            );
+            response_data.insert(
+                "workspaceMismatch".to_string(),
+                Value::Bool(!workspace_status.uses_dedicated_teamwork_workspace()),
+            );
+            response_data.insert(
+                "effectiveWorkspace".to_string(),
+                Value::String(workspace_status.effective_workspace.display().to_string()),
+            );
+            response_data.insert(
+                "dedicatedTeamworkWorkspace".to_string(),
+                Value::String(workspace_status.dedicated_workspace.display().to_string()),
+            );
+            return Ok(SuccessHint::new(
+                message,
+                existing_org_hint_lines(&scaffold, &workspace_status),
+            )
             .to_mcp_result_with_data(Some(Value::Object(response_data))));
+        }
+        CreateOrgPreflight::RequiresDedicatedWorkspace {
+            effective_workspace,
+            dedicated_workspace,
+        } => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "createOrg requires the governing/root session to already be using its dedicated teamwork workspace."
+                    .to_string(),
+                ToolGroup::Agent,
+            )
+            .with_guidance(vec![
+                format!("Current effective workspace: {}", effective_workspace.display()),
+                format!(
+                    "Dedicated teamwork workspace required: {}",
+                    dedicated_workspace.display()
+                ),
+                "Call prepareTeamworkWorkspace() from this root session first.".to_string(),
+                "Then create or repair the teamwork scaffold in that workspace and retry createOrg(name=\"...\")."
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+        CreateOrgPreflight::Proceed => {}
     }
 
+    let org_name = read_required_string(&args, "name")?;
     let org_id = format!("org-{}", uuid::Uuid::new_v4().simple());
     let org_root_session_id = session.id.clone();
     let session_repo = crate::state::get_session_repository();

@@ -84,4 +84,5 @@ test_results_*.txt
 /.libragent/tmp/
 /.libragent/exports/
 /.libragent/tool-results/
+/.libragent/teamwork.json
 /tmp/

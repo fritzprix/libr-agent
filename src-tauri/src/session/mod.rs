@@ -1,8 +1,10 @@
 pub mod manager;
+pub mod teamwork_workspace;
 pub mod types;
 pub mod workspace_override;
 
 pub use manager::*;
+pub use teamwork_workspace::*;
 pub use types::*;
 pub use workspace_override::*;
 
