@@ -105,14 +105,30 @@ pub fn is_internal_workspace_artifact_path(workspace_root: &Path, path: &Path) -
     };
 
     let mut components = relative_path.components();
-    matches!(
-        (components.next(), components.next()),
+    let first = components.next();
+    let second = components.next();
+
+    // Check if path is literally inside .libragent/tmp or .libragent/exports
+    if matches!(
+        (&first, &second),
         (
-            Some(Component::Normal(first)),
-            Some(Component::Normal(second))
-        ) if first == OsStr::new(INTERNAL_WORKSPACE_STATE_DIR)
-            && (second == OsStr::new(INTERNAL_WORKSPACE_TMP_DIR)
-                || second == OsStr::new(INTERNAL_WORKSPACE_EXPORTS_DIR))
+            Some(Component::Normal(f)),
+            Some(Component::Normal(s))
+        ) if *f == OsStr::new(INTERNAL_WORKSPACE_STATE_DIR)
+            && (*s == OsStr::new(INTERNAL_WORKSPACE_TMP_DIR)
+                || *s == OsStr::new(INTERNAL_WORKSPACE_EXPORTS_DIR))
+    ) {
+        return true;
+    }
+
+    matches!(
+        (&first, &second),
+        (
+            Some(Component::Normal(f)),
+            Some(Component::Normal(s))
+        ) if *f == OsStr::new(INTERNAL_WORKSPACE_STATE_DIR)
+            && (*s == OsStr::new(INTERNAL_WORKSPACE_TMP_DIR)
+                || *s == OsStr::new(INTERNAL_WORKSPACE_EXPORTS_DIR))
     )
 }
 
