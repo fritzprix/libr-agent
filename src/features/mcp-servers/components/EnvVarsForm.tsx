@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input, Label } from '@/components/ui';
+import { Button, Input, PasswordInput, Label } from '@/components/ui';
 import { Plus, Trash2 } from 'lucide-react';
 import { KeyValuePair, MCPServerMetadata } from '../hooks/useMCPServerForm';
 import { MCPServerEntity } from '@/models/chat';
@@ -78,27 +78,50 @@ export function EnvVarsForm({
                   {def.label || key}
                   {def.required && <span className="text-destructive">*</span>}
                 </Label>
-                <Input
-                  id={`env-${key}`}
-                  type={def.type === 'password' ? 'password' : 'text'}
-                  value={val}
-                  placeholder={def.label}
-                  onChange={(e) => {
-                    if (envVar) {
-                      handleUpdateEnvVar(envVar.id, 'value', e.target.value);
-                    } else {
-                      // If it doesn't exist, add it
-                      setEnvVars((prev) => [
-                        ...prev,
-                        {
-                          id: createId(),
-                          key,
-                          value: e.target.value,
-                        },
-                      ]);
-                    }
-                  }}
-                />
+                {def.type === 'password' ? (
+                  <PasswordInput
+                    id={`env-${key}`}
+                    value={val}
+                    placeholder={def.label}
+                    onChange={(e) => {
+                      if (envVar) {
+                        handleUpdateEnvVar(envVar.id, 'value', e.target.value);
+                      } else {
+                        // If it doesn't exist, add it
+                        setEnvVars((prev) => [
+                          ...prev,
+                          {
+                            id: createId(),
+                            key,
+                            value: e.target.value,
+                          },
+                        ]);
+                      }
+                    }}
+                  />
+                ) : (
+                  <Input
+                    id={`env-${key}`}
+                    type="text"
+                    value={val}
+                    placeholder={def.label}
+                    onChange={(e) => {
+                      if (envVar) {
+                        handleUpdateEnvVar(envVar.id, 'value', e.target.value);
+                      } else {
+                        // If it doesn't exist, add it
+                        setEnvVars((prev) => [
+                          ...prev,
+                          {
+                            id: createId(),
+                            key,
+                            value: e.target.value,
+                          },
+                        ]);
+                      }
+                    }}
+                  />
+                )}
                 {def.description && (
                   <p className="text-xs text-muted-foreground">
                     {def.description}
@@ -174,7 +197,7 @@ export function EnvVarsForm({
                     />
                   </div>
                   <div className="flex-1">
-                    <Input
+                    <PasswordInput
                       placeholder={t(
                         'mcpServer.dialog.envVarValuePlaceholder',
                         'Value',
@@ -183,7 +206,6 @@ export function EnvVarsForm({
                       onChange={(e) =>
                         handleUpdateEnvVar(item.id, 'value', e.target.value)
                       }
-                      type="password" // Mask values for security
                       className="h-8 text-sm font-mono"
                       aria-label="Environment variable value"
                     />

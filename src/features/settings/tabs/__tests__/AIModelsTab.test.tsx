@@ -25,6 +25,7 @@ vi.mock('@/components/ui', () => ({
     children: ReactNode;
     onClick?: () => void;
   }) => <button onClick={onClick}>{children}</button>,
+  PasswordInput: (props: Record<string, unknown>) => <input {...props} />,
   Input: ({
     value,
     onChange,

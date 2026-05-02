@@ -67,3 +67,6 @@
 
 **Learning:** When using generic symbol controls like "+" or "-" inside components like ChatInterfaceTab, they remain ambiguous for screen readers without explicit ARIA labels, creating accessibility barriers for users.
 **Action:** Always provide explicit, translated `aria-label` attributes on icon-only or symbol-only interactive elements (like increment/decrement buttons) using `useTranslation`.
+## 2024-05-02 - [Testing Mocks & ESLint]
+**Learning:** When adding new UI components and mocking them in Vitest, using `any` for props triggers `@typescript-eslint/no-explicit-any` errors, failing the build.
+**Action:** Always use `Record<string, unknown>` or explicit types instead of `any` when creating component mocks in tests.

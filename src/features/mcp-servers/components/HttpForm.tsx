@@ -2,7 +2,7 @@ import React, { useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
-import { Button, Input, Label } from '@/components/ui';
+import { Button, Input, PasswordInput, Label } from '@/components/ui';
 import { Switch } from '@/components/ui/switch';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { KeyValuePair, MCPServerMetadata } from '../hooks/useMCPServerForm';
@@ -125,40 +125,80 @@ export function HttpForm({
                   {def.label || key}
                   {def.required && <span className="text-destructive">*</span>}
                 </Label>
-                <Input
-                  id={`http-var-${key}`}
-                  type={def.type === 'password' ? 'password' : 'text'}
-                  value={currentValue}
-                  placeholder={def.label}
-                  onChange={(e) => {
-                    if (target === 'bearer-token') {
-                      setApiKey(e.target.value);
-                    } else if (target === 'header') {
-                      const existing = customHeaders.find((h) => h.key === key);
-                      if (existing) {
-                        handleUpdateHeader(
-                          existing.id,
-                          'value',
-                          e.target.value,
+                {def.type === 'password' ? (
+                  <PasswordInput
+                    id={`http-var-${key}`}
+                    value={currentValue}
+                    placeholder={def.label}
+                    onChange={(e) => {
+                      if (target === 'bearer-token') {
+                        setApiKey(e.target.value);
+                      } else if (target === 'header') {
+                        const existing = customHeaders.find(
+                          (h) => h.key === key,
                         );
-                      } else {
-                        setCustomHeaders((prev) => [
+                        if (existing) {
+                          handleUpdateHeader(
+                            existing.id,
+                            'value',
+                            e.target.value,
+                          );
+                        } else {
+                          setCustomHeaders((prev) => [
+                            ...prev,
+                            {
+                              id: createId(),
+                              key,
+                              value: e.target.value,
+                            },
+                          ]);
+                        }
+                      } else if (target === 'url-param') {
+                        setUrlParams((prev) => ({
                           ...prev,
-                          {
-                            id: createId(),
-                            key,
-                            value: e.target.value,
-                          },
-                        ]);
+                          [key]: e.target.value,
+                        }));
                       }
-                    } else if (target === 'url-param') {
-                      setUrlParams((prev) => ({
-                        ...prev,
-                        [key]: e.target.value,
-                      }));
-                    }
-                  }}
-                />
+                    }}
+                  />
+                ) : (
+                  <Input
+                    id={`http-var-${key}`}
+                    type="text"
+                    value={currentValue}
+                    placeholder={def.label}
+                    onChange={(e) => {
+                      if (target === 'bearer-token') {
+                        setApiKey(e.target.value);
+                      } else if (target === 'header') {
+                        const existing = customHeaders.find(
+                          (h) => h.key === key,
+                        );
+                        if (existing) {
+                          handleUpdateHeader(
+                            existing.id,
+                            'value',
+                            e.target.value,
+                          );
+                        } else {
+                          setCustomHeaders((prev) => [
+                            ...prev,
+                            {
+                              id: createId(),
+                              key,
+                              value: e.target.value,
+                            },
+                          ]);
+                        }
+                      } else if (target === 'url-param') {
+                        setUrlParams((prev) => ({
+                          ...prev,
+                          [key]: e.target.value,
+                        }));
+                      }
+                    }}
+                  />
+                )}
                 {def.description && (
                   <p className="text-xs text-muted-foreground">
                     {def.description}
@@ -181,9 +221,8 @@ export function HttpForm({
               {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
             </span>
           </Label>
-          <Input
+          <PasswordInput
             id="http-api-key"
-            type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={t(

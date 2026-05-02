@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { ServiceConfig } from '@/context/SettingsContext';
 import {
@@ -8,9 +8,8 @@ import {
   CardTitle,
   Input,
   Checkbox,
-  Button,
+  PasswordInput,
 } from '@/components/ui';
-import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export interface ProviderCardProps {
@@ -38,7 +37,6 @@ function ProviderCardBase({
   customModelId,
   onPendingChange,
 }: ProviderCardProps) {
-  const [showApiKey, setShowApiKey] = useState(false);
   const { t } = useTranslation('common');
 
   return (
@@ -56,42 +54,20 @@ function ProviderCardBase({
           <label className="block text-muted-foreground mb-2 text-sm font-medium">
             {t('settings.provider.apiKey', 'API Key')}
           </label>
-          <div className="relative">
-            <Input
-              type={showApiKey ? 'text' : 'password'}
-              placeholder={t('settings.provider.apiKeyPlaceholder', {
-                name: providerName,
-                defaultValue: 'Enter your {{name}} API key',
-              })}
-              value={apiKey}
-              // Keep provider settings controlled by the form state.
-              // A debounced/local mirror caused saves and downstream model refreshes
-              // to read stale URLs/keys before the latest keystroke reached the form.
-              onChange={(e) => {
-                onPendingChange(provider, { apiKey: e.target.value });
-              }}
-              className="bg-background border text-foreground w-full pr-10"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-              onClick={() => setShowApiKey((v) => !v)}
-              aria-label={
-                showApiKey
-                  ? t('settings.provider.hideApiKey', 'Hide API key')
-                  : t('settings.provider.showApiKey', 'Show API key')
-              }
-              aria-pressed={showApiKey}
-            >
-              {showApiKey ? (
-                <EyeOff className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <Eye className="h-4 w-4 text-muted-foreground" />
-              )}
-            </Button>
-          </div>
+          <PasswordInput
+            placeholder={t('settings.provider.apiKeyPlaceholder', {
+              name: providerName,
+              defaultValue: 'Enter your {{name}} API key',
+            })}
+            value={apiKey}
+            // Keep provider settings controlled by the form state.
+            // A debounced/local mirror caused saves and downstream model refreshes
+            // to read stale URLs/keys before the latest keystroke reached the form.
+            onChange={(e) => {
+              onPendingChange(provider, { apiKey: e.target.value });
+            }}
+            className="bg-background border text-foreground w-full"
+          />
         </div>
 
         {(provider === AIServiceProvider.Ollama ||

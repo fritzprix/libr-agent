@@ -61,3 +61,4 @@ export { default as StatusIndicator } from './StatusIndicator';
 export { default as TextareaWithLabel } from './TextareaWithLabel';
 
 // NOTE: Do not re-export ModelPicker here to avoid cycles.
+export * from './PasswordInput';
