@@ -82,15 +82,17 @@ pub(super) fn matches_glob(pattern: &glob::Pattern, path: &Path, file_name: Opti
 }
 
 pub(super) fn classify_search_entry_skip(
-    root: &Path,
+    workspace_root: &Path,
     entry: &walkdir::DirEntry,
     gitignore: Option<&ScopedGitignoreMatcher>,
 ) -> Option<SearchEntrySkipReason> {
-    if entry.depth() == 0 || entry.path() == root {
+    if entry.depth() == 0 {
         return None;
     }
 
-    if entry.file_type().is_dir() && is_internal_workspace_artifact_path(root, entry.path()) {
+    if entry.file_type().is_dir()
+        && is_internal_workspace_artifact_path(workspace_root, entry.path())
+    {
         return Some(SearchEntrySkipReason::InternalArtifactDirectory);
     }
 
@@ -142,7 +144,10 @@ fn add_gitignore_matcher(
     }
 }
 
-pub(super) fn build_gitignore_matcher(search_root: &Path) -> Option<ScopedGitignoreMatcher> {
+pub(super) fn build_gitignore_matcher(
+    search_root: &Path,
+    workspace_root: &Path,
+) -> Option<ScopedGitignoreMatcher> {
     use walkdir::WalkDir;
 
     if !search_root.is_dir() {
@@ -163,7 +168,7 @@ pub(super) fn build_gitignore_matcher(search_root: &Path) -> Option<ScopedGitign
             }
 
             entry.depth() == 0
-                || (!is_internal_workspace_artifact_path(search_root, entry.path())
+                || (!is_internal_workspace_artifact_path(workspace_root, entry.path())
                     && entry
                         .file_name()
                         .to_str()

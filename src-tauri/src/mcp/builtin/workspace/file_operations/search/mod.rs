@@ -6,6 +6,7 @@ use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
+use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
 
@@ -85,8 +86,13 @@ impl WorkspaceServer {
             }
         };
 
+        let target_session_id = session_id
+            .clone()
+            .unwrap_or_else(|| self.session_id.clone());
+        let workspace_root = self.get_workspace_dir(&target_session_id);
+
         // Security validation
-        let file_manager = self.get_file_manager(session_id.clone());
+        let file_manager = self.get_file_manager(Some(target_session_id));
         let safe_path = match file_manager
             .get_security_validator()
             .validate_path_for_read(search_path)
@@ -106,6 +112,20 @@ impl WorkspaceServer {
             }
         };
 
+        if safe_path.is_file() && is_internal_workspace_artifact_path(&workspace_root, &safe_path) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Internal LibrAgent temp/export artifacts are excluded from search".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Search workspace files outside .libragent/tmp and .libragent/exports".to_string(),
+                "Use readProcessOutput or listProcesses to inspect temp process output".to_string(),
+                "Use export on real workspace files instead of searching generated export artifacts".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         // Determine if we are doing file name search only or content search
         if query.is_none() {
             // File Name Search Only
@@ -121,7 +141,15 @@ impl WorkspaceServer {
                     .to_mcp_result());
                 }
             };
-            return files::search_files_only(&safe_path, search_path, pattern, limit, offset).await;
+            return files::search_files_only(
+                &workspace_root,
+                &safe_path,
+                search_path,
+                pattern,
+                limit,
+                offset,
+            )
+            .await;
         }
 
         // Text Content Search
@@ -162,6 +190,7 @@ impl WorkspaceServer {
 
         if safe_path.is_dir() {
             content::search_content_in_dir(
+                &workspace_root,
                 &safe_path,
                 search_path,
                 &regex,

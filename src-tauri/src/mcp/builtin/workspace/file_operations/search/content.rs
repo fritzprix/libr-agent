@@ -179,6 +179,7 @@ pub(super) async fn search_content_in_file(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn search_content_in_dir(
+    workspace_root: &Path,
     dir: &Path,
     display_path: &str,
     regex: &regex::Regex,
@@ -203,12 +204,14 @@ pub(super) async fn search_content_in_dir(
     let mut skipped_binary_files = 0usize;
     let mut skipped_large_files = 0usize;
     let max_size = effective_search_content_file_size_limit();
-    let gitignore = build_gitignore_matcher(dir);
+    let gitignore = build_gitignore_matcher(dir, workspace_root);
 
     let walker = WalkDir::new(dir)
         .into_iter()
         .filter_entry(|entry| {
-            if let Some(reason) = classify_search_entry_skip(dir, entry, gitignore.as_ref()) {
+            if let Some(reason) =
+                classify_search_entry_skip(workspace_root, entry, gitignore.as_ref())
+            {
                 if entry.file_type().is_dir() {
                     match reason {
                         SearchEntrySkipReason::Gitignored => skipped_gitignored_dirs += 1,

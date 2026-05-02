@@ -6,6 +6,7 @@ use serde_json::json;
 use std::path::Path;
 
 pub(super) async fn search_files_only(
+    workspace_root: &Path,
     root_path: &Path,
     display_path: &str,
     pattern: &str,
@@ -29,7 +30,7 @@ pub(super) async fn search_files_only(
     let mut results = Vec::new();
     let mut skipped_heavy_dirs = 0usize;
     let mut skipped_gitignored_dirs = 0usize;
-    let gitignore = build_gitignore_matcher(root_path);
+    let gitignore = build_gitignore_matcher(root_path, workspace_root);
 
     // Check if root_path itself is a file
     if root_path.is_file() {
@@ -50,7 +51,7 @@ pub(super) async fn search_files_only(
             .into_iter()
             .filter_entry(|entry| {
                 if let Some(reason) =
-                    classify_search_entry_skip(root_path, entry, gitignore.as_ref())
+                    classify_search_entry_skip(workspace_root, entry, gitignore.as_ref())
                 {
                     if entry.file_type().is_dir() {
                         match reason {
