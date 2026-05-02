@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -21,12 +21,14 @@ export function useKnowledgeDelete({
   const { t } = useTranslation('common');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [prevSelectedItem, setPrevSelectedItem] = useState<KnowledgeChunkListItem | null>(selectedItem);
 
-  useEffect(() => {
+  if (selectedItem !== prevSelectedItem) {
+    setPrevSelectedItem(selectedItem);
     if (!selectedItem) {
       setIsDeleteDialogOpen(false);
     }
-  }, [selectedItem]);
+  }
 
   const requestDelete = useCallback(() => {
     if (!selectedItem || isDeleting) {
