@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { LoadingIndicator } from './LoadingIndicator';
 
 interface ThinkingBubbleProps {
@@ -22,7 +22,6 @@ interface ThinkingBubbleProps {
  * - Shows loading animation when streaming
  * - Scrollable content area with max height
  * - Consistent styling across components
- * - Auto-scrolls to bottom during streaming
  */
 export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   thinking,
@@ -30,15 +29,6 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   isStreaming = false,
   className = '',
 }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to bottom while streaming
-  useEffect(() => {
-    if (isStreaming && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [thinking, isStreaming]);
-
   // Format time as (XXs)
   const formattedTime = thinkingTime ? `(${thinkingTime.toFixed(1)}s)` : '';
 
@@ -50,10 +40,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
         {isStreaming && <LoadingIndicator size="sm" />}
         <span>Thinking Process {formattedTime}</span>
       </div>
-      <div
-        ref={scrollRef}
-        className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto"
-      >
+      <div className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto">
         {thinking != null && thinking.length > 0 ? thinking : 'Thinking...'}
       </div>
     </div>

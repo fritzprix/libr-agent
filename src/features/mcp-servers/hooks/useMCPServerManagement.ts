@@ -20,7 +20,7 @@ const logger = getLogger('MCPServerManagement');
 
 export function useMCPServerManagement(service?: McpServerService) {
   const { t } = useTranslation('common');
-  const { saveServer, deleteServer, toggleActive, ensureLoaded } =
+  const { allServers, saveServer, deleteServer, toggleActive, ensureLoaded } =
     useMCPServerRegistry();
   const { value: settings } = useSettings();
 
@@ -220,6 +220,7 @@ export function useMCPServerManagement(service?: McpServerService) {
 
   return {
     servers,
+    allServers,
     presets,
     isLoading,
     isValidating,
