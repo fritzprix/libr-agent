@@ -137,6 +137,7 @@
 **Extracted:** 15
 **Languages updated:** [EN, KO]
 **Notes:** Localized `DevTab`. Added `settings.dev` namespace to `common.json`. Handled standard text, placeholders, and error/status indicators. Used English as placeholders for Korean.
+
 ## 2026-05-03 - [Settings/AdvancedTab & SystemTab]
 
 **Extracted:** 22
