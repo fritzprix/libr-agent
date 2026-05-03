@@ -20,8 +20,14 @@ const logger = getLogger('MCPServerManagement');
 
 export function useMCPServerManagement(service?: McpServerService) {
   const { t } = useTranslation('common');
-  const { allServers, saveServer, deleteServer, toggleActive, ensureLoaded } =
-    useMCPServerRegistry();
+  const {
+    allServers,
+    loaded: registryLoaded,
+    saveServer,
+    deleteServer,
+    toggleActive,
+    ensureLoaded,
+  } = useMCPServerRegistry();
   const { value: settings } = useSettings();
 
   useEffect(() => {
@@ -221,6 +227,7 @@ export function useMCPServerManagement(service?: McpServerService) {
   return {
     servers,
     allServers,
+    registryLoaded,
     presets,
     isLoading,
     isValidating,

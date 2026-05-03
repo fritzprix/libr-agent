@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RecommendedPresets } from '../RecommendedPresets';
 import type { MCPServerEntity } from '@/models/chat';
@@ -43,7 +43,9 @@ describe('RecommendedPresets', () => {
     render(
       <RecommendedPresets
         presets={[basePreset]}
+        servers={[]}
         allServers={[installedServer]}
+        registryLoaded={true}
         onSetupPreset={vi.fn()}
       />,
     );
@@ -52,5 +54,44 @@ describe('RecommendedPresets', () => {
     expect(
       screen.queryByText('Install filesystem extension'),
     ).not.toBeInTheDocument();
+  });
+
+  it('uses the visible installed grid as a temporary installed source before the full registry finishes loading', () => {
+    render(
+      <RecommendedPresets
+        presets={[basePreset]}
+        servers={[installedServer]}
+        allServers={[]}
+        registryLoaded={false}
+        onSetupPreset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Installed')).toBeInTheDocument();
+  });
+
+  it('blocks opening install flow until the full registry load completes', () => {
+    const onSetupPreset = vi.fn();
+
+    render(
+      <RecommendedPresets
+        presets={[basePreset]}
+        servers={[]}
+        allServers={[]}
+        registryLoaded={false}
+        onSetupPreset={onSetupPreset}
+      />,
+    );
+
+    const presetCard = screen.getByText('filesystem').closest('div[aria-disabled]');
+    expect(screen.getByText('Loading')).toBeInTheDocument();
+    expect(presetCard).toHaveAttribute('aria-disabled', 'true');
+
+    if (!presetCard) {
+      throw new Error('Expected preset card');
+    }
+
+    fireEvent.click(presetCard);
+    expect(onSetupPreset).not.toHaveBeenCalled();
   });
 });

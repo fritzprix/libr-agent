@@ -13,13 +13,17 @@ import { cn } from '@/lib/utils';
 
 interface RecommendedPresetsProps {
   presets: MCPServerPreset[] | undefined;
+  servers: MCPServerEntity[];
   allServers: MCPServerEntity[];
+  registryLoaded: boolean;
   onSetupPreset: (preset: MCPServerPreset) => void;
 }
 
 export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   presets,
+  servers,
   allServers,
+  registryLoaded,
   onSetupPreset,
 }) => {
   const { t } = useTranslation('common');
@@ -39,7 +43,10 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {presets.map((preset) => {
-          const isInstalled = allServers.some((s) => s.name === preset.name);
+          const isInstalled = [...servers, ...allServers].some(
+            (server) => server.name === preset.name,
+          );
+          const canInstall = !isInstalled && registryLoaded;
           return (
             <div
               key={preset.name}
@@ -47,22 +54,24 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                 'group relative flex flex-col justify-between rounded-[1.5rem] border bg-background/50 backdrop-blur-sm p-5 transition-all duration-300 focus-visible:ring-2 focus-visible:ring-primary/20 outline-none',
                 isInstalled
                   ? 'opacity-60 cursor-default bg-muted/20 border-border/50'
-                  : 'hover:shadow-2xl hover:bg-background hover:-translate-y-1 cursor-pointer border-border/50 hover:border-primary/40',
+                  : canInstall
+                    ? 'hover:shadow-2xl hover:bg-background hover:-translate-y-1 cursor-pointer border-border/50 hover:border-primary/40'
+                    : 'opacity-60 cursor-wait border-border/50',
               )}
-              role={isInstalled ? undefined : 'button'}
-              tabIndex={isInstalled ? -1 : 0}
-              aria-disabled={isInstalled}
+              role={canInstall ? 'button' : undefined}
+              tabIndex={canInstall ? 0 : -1}
+              aria-disabled={!canInstall}
               aria-label={
-                !isInstalled
+                canInstall
                   ? t('mcpServer.installExtension', {
                       name: preset.name,
                       defaultValue: 'Install {{name}} extension',
                     })
                   : undefined
               }
-              onClick={() => !isInstalled && onSetupPreset(preset)}
+              onClick={() => canInstall && onSetupPreset(preset)}
               onKeyDown={(event) => {
-                if (isInstalled) return;
+                if (!canInstall) return;
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   onSetupPreset(preset);
@@ -103,9 +112,13 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                     <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
                       {t('mcpServer.installed', 'Installed')}
                     </span>
-                  ) : (
+                  ) : canInstall ? (
                     <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
                       {t('assistant.mcp.transport.stdio', 'stdio')}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
+                      {t('common.loading', 'Loading')}
                     </span>
                   )}
                 </div>
@@ -114,7 +127,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                     t('mcpServer.noDescription', 'No description available')}
                 </p>
               </div>
-              {!isInstalled && (
+              {canInstall && (
                 <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 group-focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
                     {preset.command} {preset.args?.[0]}
