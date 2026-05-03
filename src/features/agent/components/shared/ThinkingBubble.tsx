@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { LoadingIndicator } from './LoadingIndicator';
 
 interface ThinkingBubbleProps {
@@ -29,6 +29,16 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   isStreaming = false,
   className = '',
 }) => {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isStreaming || !scrollRef.current) {
+      return;
+    }
+
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [thinking, isStreaming]);
+
   // Format time as (XXs)
   const formattedTime = thinkingTime ? `(${thinkingTime.toFixed(1)}s)` : '';
 
@@ -40,7 +50,10 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
         {isStreaming && <LoadingIndicator size="sm" />}
         <span>Thinking Process {formattedTime}</span>
       </div>
-      <div className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto"
+      >
         {thinking != null && thinking.length > 0 ? thinking : 'Thinking...'}
       </div>
     </div>
