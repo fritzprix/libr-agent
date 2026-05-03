@@ -5,6 +5,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -123,6 +124,21 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   // Pending messages queue for busy state
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
+  const previousSessionIdRef = useRef<string | null>(session?.id ?? null);
+  const activeSessionIdRef = useRef<string | null>(session?.id ?? null);
+
+  useEffect(() => {
+    const nextSessionId = session?.id ?? null;
+    activeSessionIdRef.current = nextSessionId;
+
+    if (previousSessionIdRef.current === nextSessionId) {
+      return;
+    }
+
+    previousSessionIdRef.current = nextSessionId;
+    setPendingMessages([]);
+    setServiceContexts({});
+  }, [session?.id]);
 
   const enqueuePendingMessage = useCallback((message: Message) => {
     setPendingMessages((prev) => {
@@ -149,6 +165,9 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         'agent_get_service_contexts',
         { sessionId },
       );
+      if (activeSessionIdRef.current !== sessionId) {
+        return;
+      }
       setServiceContexts(contexts);
       logger.info('Service contexts updated', {
         contexts,

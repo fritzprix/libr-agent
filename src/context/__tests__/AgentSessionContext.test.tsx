@@ -254,6 +254,102 @@ describe('AgentSessionContext (Local)', () => {
         );
     });
 
+    it('keeps the previous session state visible while the next session hydrates', async () => {
+        let resolveNextSession:
+            | ((
+                  value: Awaited<
+                      ReturnType<typeof agentCommandsBackend.openAgentSession>
+                  >,
+              ) => void)
+            | undefined;
+
+        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
+            (sessionId: string) => {
+                if (sessionId === 'session-2') {
+                    return new Promise((resolve) => {
+                        resolveNextSession = resolve;
+                    });
+                }
+
+                return Promise.resolve({
+                    session: {
+                        id: sessionId,
+                        name: `Session ${sessionId}`,
+                        status: 'idle',
+                        model: 'test-model',
+                        provider: 'test-provider',
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                        yoloMode: false,
+                    },
+                    messages: {
+                        items: [],
+                        hasMoreBefore: false,
+                        oldestCursor: null,
+                    },
+                    pendingApprovals: [],
+                    runtimeState: READY_RUNTIME_STATE,
+                });
+            }
+        );
+
+        let activeSessionId = 'session-1';
+        const Wrapper = ({ children }: { children: React.ReactNode }) => (
+            <DynamicSessionWrapper sessionId={activeSessionId}>
+                {children}
+            </DynamicSessionWrapper>
+        );
+
+        const { result, rerender } = renderHook(() => useAgentSessionState(), {
+            wrapper: Wrapper,
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+            expect(result.current.session?.id).toBe('session-1');
+        });
+
+        activeSessionId = 'session-2';
+        rerender();
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(true);
+        });
+
+        expect(result.current.session?.id).toBe('session-1');
+
+        await waitFor(() => {
+            expect(resolveNextSession).toBeDefined();
+        });
+
+        await act(async () => {
+            resolveNextSession?.({
+                session: {
+                    id: 'session-2',
+                    name: 'Session session-2',
+                    status: 'idle',
+                    model: 'test-model',
+                    provider: 'test-provider',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    yoloMode: false,
+                },
+                messages: {
+                    items: [],
+                    hasMoreBefore: false,
+                    oldestCursor: null,
+                },
+                pendingApprovals: [],
+                runtimeState: READY_RUNTIME_STATE,
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+            expect(result.current.session?.id).toBe('session-2');
+        });
+    });
+
     describe('Event Handling', () => {
         it('ignores stale runtime-state snapshots that arrive after a newer one', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
