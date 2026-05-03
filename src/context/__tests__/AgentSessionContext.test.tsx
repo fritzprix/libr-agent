@@ -350,6 +350,96 @@ describe('AgentSessionContext (Local)', () => {
         });
     });
 
+    it('clears stale session state when the next session fails to hydrate', async () => {
+        let rejectNextSession: ((reason?: unknown) => void) | undefined;
+
+        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
+            (sessionId: string) => {
+                if (sessionId === 'session-2') {
+                    return new Promise((_, reject) => {
+                        rejectNextSession = reject;
+                    });
+                }
+
+                return Promise.resolve({
+                    session: {
+                        id: sessionId,
+                        name: `Session ${sessionId}`,
+                        status: 'idle',
+                        model: 'test-model',
+                        provider: 'test-provider',
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                        yoloMode: true,
+                    },
+                    messages: {
+                        items: [
+                            {
+                                id: 'message-1',
+                                sessionId,
+                                threadId: sessionId,
+                                role: 'assistant',
+                                content: [{ type: 'text', text: 'Existing message' }],
+                                createdAt: new Date().toISOString(),
+                            },
+                        ],
+                        hasMoreBefore: false,
+                        oldestCursor: null,
+                    },
+                    pendingApprovals: [
+                        {
+                            toolCallId: 'tool-1',
+                            toolName: 'write_file',
+                            arguments: '{}',
+                        },
+                    ],
+                    runtimeState: READY_RUNTIME_STATE,
+                });
+            }
+        );
+
+        let activeSessionId = 'session-1';
+        const Wrapper = ({ children }: { children: React.ReactNode }) => (
+            <DynamicSessionWrapper sessionId={activeSessionId}>
+                {children}
+            </DynamicSessionWrapper>
+        );
+
+        const { result, rerender } = renderHook(() => useAgentSessionState(), {
+            wrapper: Wrapper,
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+            expect(result.current.session?.id).toBe('session-1');
+            expect(result.current.messages).toHaveLength(1);
+            expect(result.current.pendingApprovals).toHaveLength(1);
+        });
+
+        activeSessionId = 'session-2';
+        rerender();
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(true);
+        });
+
+        expect(result.current.session?.id).toBe('session-1');
+
+        await act(async () => {
+            rejectNextSession?.(new Error('Session open failed'));
+        });
+
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+            expect(result.current.session).toBeNull();
+        });
+
+        expect(result.current.messages).toEqual([]);
+        expect(result.current.pendingApprovals).toEqual([]);
+        expect(result.current.workflowStatus).toBe('error');
+        expect(result.current.error?.displayMessage).toContain('Session open failed');
+    });
+
     describe('Event Handling', () => {
         it('ignores stale runtime-state snapshots that arrive after a newer one', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;

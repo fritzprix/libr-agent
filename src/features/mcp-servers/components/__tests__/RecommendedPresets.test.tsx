@@ -55,7 +55,9 @@ describe('RecommendedPresets', () => {
         servers={[]}
         allServers={[installedServer]}
         registryLoaded={true}
+        registryError={undefined}
         onSetupPreset={vi.fn()}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
 
@@ -72,7 +74,9 @@ describe('RecommendedPresets', () => {
         servers={[installedServer]}
         allServers={[]}
         registryLoaded={false}
+        registryError={undefined}
         onSetupPreset={vi.fn()}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
 
@@ -88,7 +92,9 @@ describe('RecommendedPresets', () => {
         servers={[]}
         allServers={[]}
         registryLoaded={false}
+        registryError={undefined}
         onSetupPreset={onSetupPreset}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
       />,
     );
 
@@ -102,5 +108,24 @@ describe('RecommendedPresets', () => {
 
     fireEvent.click(presetCard);
     expect(onSetupPreset).not.toHaveBeenCalled();
+  });
+
+  it('offers a retry action when the full registry load failed', () => {
+    const onRetryRegistryLoad = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <RecommendedPresets
+        presets={[basePreset]}
+        servers={[]}
+        allServers={[]}
+        registryLoaded={false}
+        registryError="Registry fetch failed"
+        onSetupPreset={vi.fn()}
+        onRetryRegistryLoad={onRetryRegistryLoad}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetryRegistryLoad).toHaveBeenCalledTimes(1);
   });
 });

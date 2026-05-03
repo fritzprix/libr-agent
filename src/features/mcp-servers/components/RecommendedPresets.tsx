@@ -3,7 +3,7 @@ import { Download, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerPreset } from '@/lib/backend/mcp-server-config';
 import { MCPServerEntity } from '@/models/chat';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -16,7 +16,9 @@ interface RecommendedPresetsProps {
   servers: MCPServerEntity[];
   allServers: MCPServerEntity[];
   registryLoaded: boolean;
+  registryError?: string;
   onSetupPreset: (preset: MCPServerPreset) => void;
+  onRetryRegistryLoad: () => Promise<void>;
 }
 
 export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
@@ -24,7 +26,9 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   servers,
   allServers,
   registryLoaded,
+  registryError,
   onSetupPreset,
+  onRetryRegistryLoad,
 }) => {
   const { t } = useTranslation('common');
   const installedServerNames = useMemo(() => {
@@ -58,6 +62,8 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
         {presets.map((preset) => {
           const isInstalled = installedServerNames.has(preset.name);
           const canInstall = !isInstalled && registryLoaded;
+          const canRetryRegistryLoad =
+            !isInstalled && !registryLoaded && !!registryError;
           return (
             <div
               key={preset.name}
@@ -127,6 +133,10 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                     <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
                       {t('assistant.mcp.transport.stdio', 'stdio')}
                     </span>
+                  ) : canRetryRegistryLoad ? (
+                    <span className="text-[10px] bg-destructive/10 px-1.5 py-0.5 rounded text-destructive uppercase">
+                      {t('common.retry', 'Retry')}
+                    </span>
                   ) : (
                     <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
                       {t('common.loading', 'Loading')}
@@ -138,7 +148,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                     t('mcpServer.noDescription', 'No description available')}
                 </p>
               </div>
-              {canInstall && (
+              {canInstall ? (
                 <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 group-focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
                     {preset.command} {preset.args?.[0]}
@@ -163,7 +173,27 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-              )}
+              ) : canRetryRegistryLoad ? (
+                <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-muted-foreground">
+                    {t(
+                      'mcpServer.registryLoadFailed',
+                      'Could not verify installed extensions yet.',
+                    )}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void onRetryRegistryLoad();
+                    }}
+                  >
+                    {t('common.retry', 'Retry')}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           );
         })}

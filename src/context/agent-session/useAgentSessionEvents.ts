@@ -340,6 +340,15 @@ export function useAgentSessionEvents(
         if (!isMounted) return;
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error('Failed to initialize session', err);
+        setters.setSession(null);
+        setters.setMessages([]);
+        setters.setHasOlderMessages(false);
+        setters.setOldestMessageCursor(null);
+        setters.setPendingApprovals([]);
+        setters.setYoloModeEnabled(false);
+        setters.setWorkflowStatus('error');
+        setters.setWorkflowPhase('error');
+        setters.setLlmError(null);
         setters.setRuntimeState(createRuntimeFailureState(errorMessage));
         setters.setError(errorMessage);
       }

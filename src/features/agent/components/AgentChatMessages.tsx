@@ -358,7 +358,6 @@ export function AgentChatMessages() {
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
   const isPinnedToBottomRef = useRef(true);
   const autoScrollFrameRef = useRef<number | null>(null);
-  const streamFollowFrameRef = useRef<number | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
@@ -410,7 +409,6 @@ export function AgentChatMessages() {
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
-  const shouldContinuouslyFollowOutput = isPinned && workflowStatus === 'busy';
 
   const streamingToolMessageIds = useMemo(
     () =>
@@ -482,10 +480,6 @@ export function AgentChatMessages() {
       cancelAnimationFrame(autoScrollFrameRef.current);
       autoScrollFrameRef.current = null;
     }
-    if (streamFollowFrameRef.current !== null) {
-      cancelAnimationFrame(streamFollowFrameRef.current);
-      streamFollowFrameRef.current = null;
-    }
     scheduleScrollToBottom();
   }, [scheduleScrollToBottom, session?.id]);
 
@@ -494,10 +488,6 @@ export function AgentChatMessages() {
       if (autoScrollFrameRef.current !== null) {
         cancelAnimationFrame(autoScrollFrameRef.current);
         autoScrollFrameRef.current = null;
-      }
-      if (streamFollowFrameRef.current !== null) {
-        cancelAnimationFrame(streamFollowFrameRef.current);
-        streamFollowFrameRef.current = null;
       }
     };
   }, []);
@@ -556,37 +546,6 @@ export function AgentChatMessages() {
       observer.disconnect();
     };
   }, [scheduleScrollToBottom, session?.id]);
-
-  useEffect(() => {
-    if (!shouldContinuouslyFollowOutput) {
-      if (streamFollowFrameRef.current !== null) {
-        cancelAnimationFrame(streamFollowFrameRef.current);
-        streamFollowFrameRef.current = null;
-      }
-      return;
-    }
-
-    const followStreamingOutput = () => {
-      if (!isPinnedToBottomRef.current) {
-        streamFollowFrameRef.current = null;
-        return;
-      }
-
-      scrollFooterSentinelIntoView(footerEndRef.current);
-      streamFollowFrameRef.current = requestAnimationFrame(
-        followStreamingOutput,
-      );
-    };
-
-    streamFollowFrameRef.current = requestAnimationFrame(followStreamingOutput);
-
-    return () => {
-      if (streamFollowFrameRef.current !== null) {
-        cancelAnimationFrame(streamFollowFrameRef.current);
-        streamFollowFrameRef.current = null;
-      }
-    };
-  }, [shouldContinuouslyFollowOutput]);
 
   useEffect(() => {
     if (!isPinnedToBottomRef.current) {

@@ -30,6 +30,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     servers,
     allServers,
     registryLoaded,
+    registryError,
     presets,
     isLoading,
     isValidating,
@@ -43,6 +44,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     togglingStatus,
     handleCreateNew,
     handleSetupPreset,
+    retryRegistryLoad,
     handleSave,
     handleDelete,
     confirmDelete,
@@ -142,7 +144,9 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
           servers={servers}
           allServers={allServers}
           registryLoaded={registryLoaded}
+          registryError={registryError}
           onSetupPreset={handleSetupPreset}
+          onRetryRegistryLoad={retryRegistryLoad}
         />
       </div>
 

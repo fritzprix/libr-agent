@@ -75,10 +75,22 @@ export const MCPServerRegistryProvider = ({
   const allServersRef = useRef<MCPServerEntity[]>([]);
   const hasLoadedRef = useRef(false);
   const refreshRequestRef = useRef<Promise<void> | null>(null);
+  const serviceKeyRef = useRef(settings.agentHubUrl);
 
   useEffect(() => {
     allServersRef.current = allServers;
   }, [allServers]);
+
+  useEffect(() => {
+    serviceKeyRef.current = settings.agentHubUrl;
+    allServersRef.current = [];
+    hasLoadedRef.current = false;
+    refreshRequestRef.current = null;
+    setAllServers([]);
+    setLoaded(false);
+    setLoading(false);
+    setError(undefined);
+  }, [settings.agentHubUrl]);
 
   /**
    * Loads all MCP servers from the database
@@ -90,22 +102,34 @@ export const MCPServerRegistryProvider = ({
       return;
     }
 
-    const request = (async () => {
+    const requestServiceKey = serviceKeyRef.current;
+    let request: Promise<void> | undefined;
+    request = (async () => {
       setLoading(true);
       try {
         const servers = await mcpServerService.getAll();
+        if (serviceKeyRef.current !== requestServiceKey) {
+          return;
+        }
         setAllServers(servers);
         hasLoadedRef.current = true;
         setLoaded(true);
         setError(undefined);
         logger.debug(`Loaded ${servers.length} MCP servers from service`);
       } catch (err) {
+        if (serviceKeyRef.current !== requestServiceKey) {
+          return;
+        }
         const message = err instanceof Error ? err.message : 'Unknown error';
         logger.error('Failed to load all MCP servers', err);
         setError(message);
       } finally {
-        setLoading(false);
-        refreshRequestRef.current = null;
+        if (serviceKeyRef.current === requestServiceKey) {
+          setLoading(false);
+        }
+        if (refreshRequestRef.current === request) {
+          refreshRequestRef.current = null;
+        }
       }
     })();
 
