@@ -5,7 +5,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -54,28 +53,6 @@ export function getVisualBottomThreshold(): number {
   return DEFAULT_BOTTOM_THRESHOLD;
 }
 
-export function shouldAutoFollowOutput(
-  latestMessage: Message | undefined,
-  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'],
-): boolean {
-  if (!latestMessage) {
-    return false;
-  }
-
-  const assistantHasNoVisibleOutput =
-    latestMessage.role === 'assistant' &&
-    !latestMessage.content?.length &&
-    !latestMessage.thinking &&
-    !latestMessage.tool_calls?.length;
-
-  return (
-    workflowStatus === 'busy' &&
-    (latestMessage.role !== 'assistant' ||
-      latestMessage.isStreaming === true ||
-      assistantHasNoVisibleOutput)
-  );
-}
-
 export function shouldShowAnalysisLoader(
   latestMessage: Message | undefined,
   workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'],
@@ -90,83 +67,41 @@ export function shouldShowAnalysisLoader(
   );
 }
 
-export function getMessageOutputSignature(
-  message: Message | undefined,
-): string {
-  if (!message) {
+export type AutoScrollEvent = 'none' | 'stream-start' | 'message-complete';
+
+export function getAutoScrollEvent(args: {
+  previousLatestMessage: Message | undefined;
+  latestMessage: Message | undefined;
+}): AutoScrollEvent {
+  const { previousLatestMessage, latestMessage } = args;
+
+  if (!previousLatestMessage || !latestMessage) {
     return 'none';
   }
 
-  const contentSignature = (message.content ?? [])
-    .map((item) => {
-      switch (item.type) {
-        case 'text':
-          return `text:${item.text.length}`;
-        case 'thinking':
-          return `thinking:${item.thinking.length}`;
-        case 'tool_call':
-          return `tool:${item.name}`;
-        default:
-          return item.type;
-      }
-    })
-    .join('|');
+  const previousWasStreamingAssistant =
+    previousLatestMessage.role === 'assistant' &&
+    previousLatestMessage.isStreaming === true;
+  const currentIsStreamingAssistant =
+    latestMessage.role === 'assistant' && latestMessage.isStreaming === true;
 
-  const toolCallSignature = (message.tool_calls ?? [])
-    .map((toolCall) => toolCall.function.name)
-    .join('|');
+  if (
+    currentIsStreamingAssistant &&
+    (!previousWasStreamingAssistant ||
+      previousLatestMessage.id !== latestMessage.id)
+  ) {
+    return 'stream-start';
+  }
 
-  return [
-    message.id,
-    message.role,
-    message.isStreaming ? 'streaming' : 'static',
-    message.thinking?.length ?? 0,
-    contentSignature,
-    toolCallSignature,
-  ].join('::');
-}
+  if (
+    previousWasStreamingAssistant &&
+    (!currentIsStreamingAssistant ||
+      previousLatestMessage.id !== latestMessage.id)
+  ) {
+    return 'message-complete';
+  }
 
-export function getTailAnchorKey(args: {
-  latestMessage: Message | undefined;
-  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'];
-  pendingApprovalsCount: number;
-  hasAgentError: boolean;
-  hasAgentLlmError: boolean;
-}): string {
-  return [
-    getMessageOutputSignature(args.latestMessage),
-    args.workflowStatus,
-    args.pendingApprovalsCount,
-    args.hasAgentError ? 'agent-error' : 'no-agent-error',
-    args.hasAgentLlmError ? 'llm-error' : 'no-llm-error',
-    shouldShowAnalysisLoader(args.latestMessage, args.workflowStatus)
-      ? 'analysis-loader'
-      : 'no-analysis-loader',
-  ].join('||');
-}
-
-export function shouldPreserveBottomAnchorOnTailChange(args: {
-  tailChanged: boolean;
-  wasAtBottomBeforeChange: boolean;
-  autoFollowOutput: boolean;
-  wasFollowingOutputBeforeChange: boolean;
-}): boolean {
-  return (
-    args.tailChanged &&
-    args.wasAtBottomBeforeChange &&
-    !args.autoFollowOutput &&
-    args.wasFollowingOutputBeforeChange
-  );
-}
-
-export function shouldSoftFollowOutputOnTailChange(args: {
-  tailChanged: boolean;
-  wasAtBottomBeforeChange: boolean;
-  autoFollowOutput: boolean;
-}): boolean {
-  return (
-    args.tailChanged && args.wasAtBottomBeforeChange && args.autoFollowOutput
-  );
+  return 'none';
 }
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
@@ -444,17 +379,12 @@ export function AgentChatMessages() {
   const footerEndRef = useRef<HTMLDivElement | null>(null);
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
   const wasAtBottomRef = useRef(true);
-  const settleLockRef = useRef(false);
-  const settleFrameRefs = useRef<number[]>([]);
-  const streamFollowFrameRef = useRef<number | null>(null);
+  const previousLatestMessageRef = useRef<Message | undefined>(undefined);
+  const autoScrollFrameRef = useRef<number | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
   const bottomThreshold = getVisualBottomThreshold();
-  const autoFollowOutput = useMemo(
-    () => shouldAutoFollowOutput(latestMessage, workflowStatus),
-    [latestMessage, workflowStatus],
-  );
   const previousListStateRef = useRef<{
     firstId: string | undefined;
     lastId: string | undefined;
@@ -501,26 +431,6 @@ export function AgentChatMessages() {
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
-  const tailAnchorKey = useMemo(
-    () =>
-      getTailAnchorKey({
-        latestMessage,
-        workflowStatus,
-        pendingApprovalsCount: pendingApprovals?.length ?? 0,
-        hasAgentError: !!agentError,
-        hasAgentLlmError: !!agentLlmError,
-      }),
-    [
-      latestMessage,
-      workflowStatus,
-      pendingApprovals,
-      agentError,
-      agentLlmError,
-    ],
-  );
-  const previousTailAnchorKeyRef = useRef<string | undefined>(undefined);
-  const previousWasAtBottomRef = useRef(true);
-  const previousAutoFollowOutputRef = useRef(false);
 
   const streamingToolMessageIds = useMemo(
     () =>
@@ -576,26 +486,18 @@ export function AgentChatMessages() {
 
   useEffect(() => {
     wasAtBottomRef.current = true;
-    previousWasAtBottomRef.current = true;
-    previousAutoFollowOutputRef.current = false;
-    previousTailAnchorKeyRef.current = undefined;
-    settleLockRef.current = false;
-    settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
-    settleFrameRefs.current = [];
-    if (streamFollowFrameRef.current !== null) {
-      cancelAnimationFrame(streamFollowFrameRef.current);
-      streamFollowFrameRef.current = null;
+    previousLatestMessageRef.current = undefined;
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
     }
   }, [session?.id]);
 
   useEffect(() => {
     return () => {
-      settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
-      settleFrameRefs.current = [];
-      settleLockRef.current = false;
-      if (streamFollowFrameRef.current !== null) {
-        cancelAnimationFrame(streamFollowFrameRef.current);
-        streamFollowFrameRef.current = null;
+      if (autoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = null;
       }
     };
   }, []);
@@ -616,13 +518,7 @@ export function AgentChatMessages() {
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        const atBottom = entry?.isIntersecting ?? false;
-
-        if (settleLockRef.current && !atBottom) {
-          return;
-        }
-
-        wasAtBottomRef.current = atBottom;
+        wasAtBottomRef.current = entry?.isIntersecting ?? false;
       },
       {
         root: scroller,
@@ -638,73 +534,28 @@ export function AgentChatMessages() {
     };
   }, [bottomThreshold, session?.id]);
 
-  useLayoutEffect(() => {
-    const previousTailAnchorKey = previousTailAnchorKeyRef.current;
-    const wasAtBottomBeforeChange = previousWasAtBottomRef.current;
-    const wasFollowingOutputBeforeChange = previousAutoFollowOutputRef.current;
+  useEffect(() => {
+    const previousLatestMessage = previousLatestMessageRef.current;
+    const autoScrollEvent = getAutoScrollEvent({
+      previousLatestMessage,
+      latestMessage,
+    });
 
-    previousTailAnchorKeyRef.current = tailAnchorKey;
-    previousWasAtBottomRef.current = wasAtBottomRef.current;
-    previousAutoFollowOutputRef.current = autoFollowOutput;
+    previousLatestMessageRef.current = latestMessage;
 
-    if (previousTailAnchorKey === undefined) {
+    if (autoScrollEvent === 'none' || !wasAtBottomRef.current) {
       return;
     }
 
-    const tailChanged = previousTailAnchorKey !== tailAnchorKey;
-
-    if (
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged,
-        wasAtBottomBeforeChange,
-        autoFollowOutput,
-      })
-    ) {
-      if (streamFollowFrameRef.current === null) {
-        streamFollowFrameRef.current = requestAnimationFrame(() => {
-          streamFollowFrameRef.current = null;
-          scrollFooterSentinelIntoView(footerEndRef.current);
-        });
-      }
-      return;
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
     }
 
-    if (
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged,
-        wasAtBottomBeforeChange,
-        autoFollowOutput,
-        wasFollowingOutputBeforeChange,
-      })
-    ) {
-      settleLockRef.current = true;
-      if (streamFollowFrameRef.current !== null) {
-        cancelAnimationFrame(streamFollowFrameRef.current);
-        streamFollowFrameRef.current = null;
-      }
-      settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
-      settleFrameRefs.current = [];
-
+    autoScrollFrameRef.current = requestAnimationFrame(() => {
+      autoScrollFrameRef.current = null;
       scrollFooterSentinelIntoView(footerEndRef.current);
-
-      const firstFrame = requestAnimationFrame(() => {
-        scrollFooterSentinelIntoView(footerEndRef.current);
-
-        const secondFrame = requestAnimationFrame(() => {
-          scrollFooterSentinelIntoView(footerEndRef.current);
-          settleLockRef.current = false;
-          wasAtBottomRef.current = true;
-        });
-
-        settleFrameRefs.current = settleFrameRefs.current.filter(
-          (frame) => frame !== firstFrame,
-        );
-        settleFrameRefs.current.push(secondFrame);
-      });
-
-      settleFrameRefs.current.push(firstFrame);
-    }
-  }, [autoFollowOutput, tailAnchorKey]);
+    });
+  }, [latestMessage]);
 
   const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
     () => ({

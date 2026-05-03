@@ -28,6 +28,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
 
   const {
     servers,
+    allServers,
     presets,
     isLoading,
     isValidating,
@@ -137,7 +138,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
         <RecommendedPresets
           presets={presets}
-          servers={servers}
+          allServers={allServers}
           onSetupPreset={handleSetupPreset}
         />
       </div>

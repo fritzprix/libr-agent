@@ -4,15 +4,11 @@ import { forwardRef } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
-  getMessageOutputSignature,
-  getTailAnchorKey,
+  getAutoScrollEvent,
   getInitialTopMostItemIndex,
   getPrependedFirstItemIndex,
   getVisualBottomThreshold,
-  shouldPreserveBottomAnchorOnTailChange,
-  shouldSoftFollowOutputOnTailChange,
   shouldShowAnalysisLoader,
-  shouldAutoFollowOutput,
 } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
@@ -212,87 +208,6 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(getVisualBottomThreshold()).toBe(32);
   });
 
-  it('only auto-follows while the workflow is actively producing output', () => {
-    expect(
-      shouldAutoFollowOutput(
-        {
-          ...baseMessage,
-          isStreaming: true,
-        },
-        'busy',
-      ),
-    ).toBe(true);
-    expect(
-      shouldAutoFollowOutput(
-        {
-          ...baseMessage,
-          isStreaming: false,
-        },
-        'idle',
-      ),
-    ).toBe(false);
-    expect(
-      shouldAutoFollowOutput(
-        {
-          ...baseMessage,
-          content: [],
-          isStreaming: false,
-        },
-        'busy',
-      ),
-    ).toBe(true);
-  });
-
-  it('derives a stable tail signature from the latest message output', () => {
-    expect(
-      getMessageOutputSignature({
-        ...baseMessage,
-        content: [{ type: 'text', text: 'abc' }],
-        isStreaming: true,
-      }),
-    ).toContain('streaming');
-    expect(
-      getMessageOutputSignature({
-        ...baseMessage,
-        content: [{ type: 'text', text: 'abcd' }],
-      }),
-    ).not.toBe(
-      getMessageOutputSignature({
-        ...baseMessage,
-        content: [{ type: 'text', text: 'abc' }],
-      }),
-    );
-  });
-
-  it('includes footer-affecting state in the tail anchor key', () => {
-    const baseKey = getTailAnchorKey({
-      latestMessage: baseMessage,
-      workflowStatus: 'idle',
-      pendingApprovalsCount: 0,
-      hasAgentError: false,
-      hasAgentLlmError: false,
-    });
-
-    expect(
-      getTailAnchorKey({
-        latestMessage: baseMessage,
-        workflowStatus: 'idle',
-        pendingApprovalsCount: 1,
-        hasAgentError: false,
-        hasAgentLlmError: false,
-      }),
-    ).not.toBe(baseKey);
-    expect(
-      getTailAnchorKey({
-        latestMessage: { ...baseMessage, content: [] },
-        workflowStatus: 'busy',
-        pendingApprovalsCount: 0,
-        hasAgentError: false,
-        hasAgentLlmError: false,
-      }),
-    ).not.toBe(baseKey);
-  });
-
   it('shows the analysis loader only for busy empty assistant output states', () => {
     expect(shouldShowAnalysisLoader(undefined, 'idle')).toBe(false);
     expect(
@@ -309,78 +224,77 @@ describe('AgentChatMessages compaction rendering', () => {
     ).toBe(false);
   });
 
-  it('preserves bottom anchoring through completion settle transitions', () => {
+  it('auto-scrolls only on streaming lifecycle boundaries', () => {
     expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: false,
-        wasFollowingOutputBeforeChange: true,
+      getAutoScrollEvent({
+        previousLatestMessage: undefined,
+        latestMessage: { ...baseMessage, isStreaming: true },
       }),
-    ).toBe(true);
+    ).toBe('none');
 
     expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: false,
-        autoFollowOutput: false,
-        wasFollowingOutputBeforeChange: true,
+      getAutoScrollEvent({
+        previousLatestMessage: { ...baseMessage, isStreaming: false },
+        latestMessage: { ...baseMessage, isStreaming: true },
       }),
-    ).toBe(false);
+    ).toBe('stream-start');
 
     expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: false,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
-        wasFollowingOutputBeforeChange: true,
+      getAutoScrollEvent({
+        previousLatestMessage: {
+          ...baseMessage,
+          isStreaming: true,
+          content: [{ type: 'text', text: 'a' }],
+        },
+        latestMessage: {
+          ...baseMessage,
+          isStreaming: true,
+          content: [{ type: 'text', text: 'abcdef' }],
+        },
       }),
-    ).toBe(false);
+    ).toBe('none');
 
     expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
-        wasFollowingOutputBeforeChange: true,
+      getAutoScrollEvent({
+        previousLatestMessage: { ...baseMessage, isStreaming: true },
+        latestMessage: { ...baseMessage, isStreaming: false },
       }),
-    ).toBe(false);
+    ).toBe('message-complete');
   });
 
-  it('allows completion settle even after auto follow has just turned off', () => {
+  it('treats a new static assistant message after streaming as completion', () => {
     expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: false,
-        wasFollowingOutputBeforeChange: true,
+      getAutoScrollEvent({
+        previousLatestMessage: {
+          ...baseMessage,
+          id: 'assistant-1',
+          isStreaming: true,
+        },
+        latestMessage: {
+          ...baseMessage,
+          id: 'assistant-2',
+          isStreaming: false,
+          content: [{ type: 'text', text: 'Done' }],
+        },
       }),
-    ).toBe(true);
+    ).toBe('message-complete');
   });
 
-  it('uses lightweight follow while output is still streaming', () => {
+  it('ignores non-assistant updates for auto-scroll lifecycle events', () => {
     expect(
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
+      getAutoScrollEvent({
+        previousLatestMessage: {
+          ...baseMessage,
+          role: 'user',
+          isStreaming: false,
+        },
+        latestMessage: {
+          ...baseMessage,
+          role: 'user',
+          isStreaming: false,
+          content: [{ type: 'text', text: 'Still user content' }],
+        },
       }),
-    ).toBe(true);
-
-    expect(
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: false,
-      }),
-    ).toBe(false);
-
-    expect(
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged: false,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
-      }),
-    ).toBe(false);
+    ).toBe('none');
   });
 });

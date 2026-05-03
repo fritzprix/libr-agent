@@ -13,13 +13,13 @@ import { cn } from '@/lib/utils';
 
 interface RecommendedPresetsProps {
   presets: MCPServerPreset[] | undefined;
-  servers: MCPServerEntity[];
+  allServers: MCPServerEntity[];
   onSetupPreset: (preset: MCPServerPreset) => void;
 }
 
 export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   presets,
-  servers,
+  allServers,
   onSetupPreset,
 }) => {
   const { t } = useTranslation('common');
@@ -39,7 +39,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {presets.map((preset) => {
-          const isInstalled = servers.some((s) => s.name === preset.name);
+          const isInstalled = allServers.some((s) => s.name === preset.name);
           return (
             <div
               key={preset.name}
