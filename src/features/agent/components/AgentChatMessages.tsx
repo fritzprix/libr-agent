@@ -22,17 +22,18 @@ import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
 import { CompactEventDivider } from './shared/CompactEventDivider';
-import { Bot } from 'lucide-react';
+import { Bot, ChevronDown } from 'lucide-react';
 import { PendingApprovalWidget } from './PendingApprovalWidget';
 import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
-const DEFAULT_BOTTOM_THRESHOLD = 32;
+const DEFAULT_BOTTOM_THRESHOLD = 4;
 const CHAT_COMPOSER_CLEARANCE = 24;
 
 export function getPrependedFirstItemIndex(
@@ -67,81 +68,11 @@ export function shouldShowAnalysisLoader(
   );
 }
 
-export type AutoScrollEvent = 'none' | 'stream-start' | 'message-complete';
-
-function isStreamingAssistantMessage(
-  message: Message | undefined,
-): message is Message {
-  return message?.role === 'assistant' && message.isStreaming === true;
-}
-
-export function getAutoScrollEvent(args: {
-  previousLatestMessage: Message | undefined;
-  latestMessage: Message | undefined;
-}): AutoScrollEvent {
-  const { previousLatestMessage, latestMessage } = args;
-
-  if (!previousLatestMessage || !latestMessage) {
-    return 'none';
-  }
-
-  const previousWasStreamingAssistant =
-    previousLatestMessage.role === 'assistant' &&
-    previousLatestMessage.isStreaming === true;
-  const currentIsStreamingAssistant =
-    latestMessage.role === 'assistant' && latestMessage.isStreaming === true;
-
-  if (
-    currentIsStreamingAssistant &&
-    (!previousWasStreamingAssistant ||
-      previousLatestMessage.id !== latestMessage.id)
-  ) {
-    return 'stream-start';
-  }
-
-  if (
-    previousWasStreamingAssistant &&
-    (!currentIsStreamingAssistant ||
-      previousLatestMessage.id !== latestMessage.id)
-  ) {
-    return 'message-complete';
-  }
-
-  return 'none';
-}
-
-export function getStreamingScrollLockMessageId(args: {
-  currentLockMessageId: string | null;
-  autoScrollEvent: AutoScrollEvent;
-  latestMessage: Message | undefined;
-  shouldStickToBottom: boolean;
-}): string | null {
-  const {
-    currentLockMessageId,
-    autoScrollEvent,
-    latestMessage,
-    shouldStickToBottom,
-  } = args;
-
-  if (autoScrollEvent === 'message-complete') {
-    return null;
-  }
-
-  if (autoScrollEvent === 'stream-start') {
-    return shouldStickToBottom && isStreamingAssistantMessage(latestMessage)
-      ? latestMessage.id
-      : null;
-  }
-
-  if (
-    currentLockMessageId &&
-    isStreamingAssistantMessage(latestMessage) &&
-    latestMessage.id === currentLockMessageId
-  ) {
-    return currentLockMessageId;
-  }
-
-  return null;
+export function isPinnedToBottom(
+  distanceFromBottom: number,
+  threshold = DEFAULT_BOTTOM_THRESHOLD,
+): boolean {
+  return distanceFromBottom <= threshold;
 }
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
@@ -418,13 +349,12 @@ export function AgentChatMessages() {
   const assistantName = session?.assistant?.name || 'Agent';
   const footerEndRef = useRef<HTMLDivElement | null>(null);
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
-  const wasAtBottomRef = useRef(true);
-  const previousLatestMessageRef = useRef<Message | undefined>(undefined);
-  const streamingScrollLockMessageIdRef = useRef<string | null>(null);
+  const isPinnedToBottomRef = useRef(true);
   const autoScrollFrameRef = useRef<number | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
+  const [isPinned, setIsPinned] = useState(true);
   const bottomThreshold = getVisualBottomThreshold();
   const previousListStateRef = useRef<{
     firstId: string | undefined;
@@ -526,9 +456,8 @@ export function AgentChatMessages() {
   }, [groupedMessages, session?.id]);
 
   useEffect(() => {
-    wasAtBottomRef.current = true;
-    previousLatestMessageRef.current = undefined;
-    streamingScrollLockMessageIdRef.current = null;
+    isPinnedToBottomRef.current = true;
+    setIsPinned(true);
     if (autoScrollFrameRef.current !== null) {
       cancelAnimationFrame(autoScrollFrameRef.current);
       autoScrollFrameRef.current = null;
@@ -545,91 +474,34 @@ export function AgentChatMessages() {
   }, []);
 
   useEffect(() => {
-    const sentinel = footerEndRef.current;
-    const scroller = scrollerElementRef.current;
-
-    if (!sentinel || !scroller) {
-      return;
-    }
-
-    if (typeof IntersectionObserver === 'undefined') {
-      wasAtBottomRef.current = true;
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        wasAtBottomRef.current = entry?.isIntersecting ?? false;
-      },
-      {
-        root: scroller,
-        threshold: 0,
-        rootMargin: `0px 0px ${bottomThreshold}px 0px`,
-      },
-    );
-
-    observer.observe(sentinel);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [bottomThreshold, session?.id]);
-
-  useEffect(() => {
     const scroller = scrollerElementRef.current;
 
     if (!scroller) {
       return;
     }
 
-    const handleScroll = () => {
+    const updatePinnedState = () => {
       const distanceFromBottom =
         scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-      const isNearBottom = distanceFromBottom <= bottomThreshold;
-
-      wasAtBottomRef.current = isNearBottom;
-
-      if (!isNearBottom && streamingScrollLockMessageIdRef.current !== null) {
-        streamingScrollLockMessageIdRef.current = null;
-      }
+      const nextPinned = isPinnedToBottom(distanceFromBottom, bottomThreshold);
+      isPinnedToBottomRef.current = nextPinned;
+      setIsPinned((current) => (current === nextPinned ? current : nextPinned));
+    };
+    const handleScroll = () => {
+      updatePinnedState();
     };
 
     scroller.addEventListener('scroll', handleScroll, { passive: true });
+    updatePinnedState();
 
     return () => {
       scroller.removeEventListener('scroll', handleScroll);
     };
   }, [bottomThreshold, session?.id]);
 
-  useEffect(() => {
-    const previousLatestMessage = previousLatestMessageRef.current;
-    const autoScrollEvent = getAutoScrollEvent({
-      previousLatestMessage,
-      latestMessage,
-    });
-    const hadStreamingScrollLock =
-      streamingScrollLockMessageIdRef.current !== null;
-    const shouldStickToBottom =
-      wasAtBottomRef.current || hadStreamingScrollLock;
-    const nextStreamingScrollLockMessageId = getStreamingScrollLockMessageId({
-      currentLockMessageId: streamingScrollLockMessageIdRef.current,
-      autoScrollEvent,
-      latestMessage,
-      shouldStickToBottom,
-    });
-
-    streamingScrollLockMessageIdRef.current = nextStreamingScrollLockMessageId;
-
-    previousLatestMessageRef.current = latestMessage;
-
-    const shouldAutoScroll =
-      nextStreamingScrollLockMessageId !== null ||
-      (autoScrollEvent !== 'none' && shouldStickToBottom);
-
-    if (!shouldAutoScroll) {
-      return;
-    }
+  const scrollToBottom = useCallback(() => {
+    isPinnedToBottomRef.current = true;
+    setIsPinned(true);
 
     if (autoScrollFrameRef.current !== null) {
       cancelAnimationFrame(autoScrollFrameRef.current);
@@ -639,7 +511,22 @@ export function AgentChatMessages() {
       autoScrollFrameRef.current = null;
       scrollFooterSentinelIntoView(footerEndRef.current);
     });
-  }, [latestMessage]);
+  }, []);
+
+  useEffect(() => {
+    if (!isPinnedToBottomRef.current) {
+      return;
+    }
+
+    scrollToBottom();
+  }, [
+    latestMessage,
+    workflowStatus,
+    pendingApprovals?.length,
+    agentError,
+    agentLlmError,
+    scrollToBottom,
+  ]);
 
   const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
     () => ({
@@ -809,7 +696,7 @@ export function AgentChatMessages() {
   );
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+    <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
       <Virtuoso
         key={session?.id ?? 'agent-chat'}
         className="flex-1"
@@ -829,6 +716,24 @@ export function AgentChatMessages() {
         startReached={handleReachTop}
         itemContent={renderMessageGroup}
       />
+      {!isPinned && (
+        <div
+          className="pointer-events-none absolute right-6 z-10"
+          style={{
+            bottom: `calc(var(--agent-chat-composer-overlap, 64px) + ${CHAT_COMPOSER_CLEARANCE + 16}px)`,
+          }}
+        >
+          <Button
+            type="button"
+            size="icon"
+            className="pointer-events-auto size-10 rounded-full shadow-lg"
+            aria-label={t('agent.messages.scrollToLatest', 'Scroll to latest')}
+            onClick={scrollToBottom}
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

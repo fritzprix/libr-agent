@@ -4,10 +4,9 @@ import { forwardRef } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
-  getAutoScrollEvent,
   getInitialTopMostItemIndex,
   getPrependedFirstItemIndex,
-  getStreamingScrollLockMessageId,
+  isPinnedToBottom,
   getVisualBottomThreshold,
   shouldShowAnalysisLoader,
 } from '../AgentChatMessages';
@@ -198,7 +197,7 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(getPrependedFirstItemIndex(2, 3)).toBe(0);
   });
 
-  it('uses a fixed bottom threshold after moving input into layout flow', () => {
+  it('uses a tiny bottom threshold as scroll noise tolerance', () => {
     render(<AgentChatMessages />);
 
     const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
@@ -206,7 +205,7 @@ describe('AgentChatMessages compaction rendering', () => {
     };
 
     expect(virtuosoProps.atBottomThreshold).toBe(getVisualBottomThreshold());
-    expect(getVisualBottomThreshold()).toBe(32);
+    expect(getVisualBottomThreshold()).toBe(4);
   });
 
   it('shows the analysis loader only for busy empty assistant output states', () => {
@@ -225,121 +224,9 @@ describe('AgentChatMessages compaction rendering', () => {
     ).toBe(false);
   });
 
-  it('auto-scrolls only on streaming lifecycle boundaries', () => {
-    expect(
-      getAutoScrollEvent({
-        previousLatestMessage: undefined,
-        latestMessage: { ...baseMessage, isStreaming: true },
-      }),
-    ).toBe('none');
-
-    expect(
-      getAutoScrollEvent({
-        previousLatestMessage: { ...baseMessage, isStreaming: false },
-        latestMessage: { ...baseMessage, isStreaming: true },
-      }),
-    ).toBe('stream-start');
-
-    expect(
-      getAutoScrollEvent({
-        previousLatestMessage: {
-          ...baseMessage,
-          isStreaming: true,
-          content: [{ type: 'text', text: 'a' }],
-        },
-        latestMessage: {
-          ...baseMessage,
-          isStreaming: true,
-          content: [{ type: 'text', text: 'abcdef' }],
-        },
-      }),
-    ).toBe('none');
-
-    expect(
-      getAutoScrollEvent({
-        previousLatestMessage: { ...baseMessage, isStreaming: true },
-        latestMessage: { ...baseMessage, isStreaming: false },
-      }),
-    ).toBe('message-complete');
-  });
-
-  it('treats a new static assistant message after streaming as completion', () => {
-    expect(
-      getAutoScrollEvent({
-        previousLatestMessage: {
-          ...baseMessage,
-          id: 'assistant-1',
-          isStreaming: true,
-        },
-        latestMessage: {
-          ...baseMessage,
-          id: 'assistant-2',
-          isStreaming: false,
-          content: [{ type: 'text', text: 'Done' }],
-        },
-      }),
-    ).toBe('message-complete');
-  });
-
-  it('ignores non-assistant updates for auto-scroll lifecycle events', () => {
-    expect(
-      getAutoScrollEvent({
-        previousLatestMessage: {
-          ...baseMessage,
-          role: 'user',
-          isStreaming: false,
-        },
-        latestMessage: {
-          ...baseMessage,
-          role: 'user',
-          isStreaming: false,
-          content: [{ type: 'text', text: 'Still user content' }],
-        },
-      }),
-    ).toBe('none');
-  });
-
-  it('keeps a stream scroll lock alive for chunk updates after starting near the bottom', () => {
-    expect(
-      getStreamingScrollLockMessageId({
-        currentLockMessageId: null,
-        autoScrollEvent: 'stream-start',
-        latestMessage: { ...baseMessage, isStreaming: true },
-        shouldStickToBottom: true,
-      }),
-    ).toBe('assistant-1');
-
-    expect(
-      getStreamingScrollLockMessageId({
-        currentLockMessageId: 'assistant-1',
-        autoScrollEvent: 'none',
-        latestMessage: {
-          ...baseMessage,
-          isStreaming: true,
-          content: [{ type: 'text', text: 'abcdef' }],
-        },
-        shouldStickToBottom: false,
-      }),
-    ).toBe('assistant-1');
-  });
-
-  it('drops the stream scroll lock when the user was not near the bottom or the stream completes', () => {
-    expect(
-      getStreamingScrollLockMessageId({
-        currentLockMessageId: null,
-        autoScrollEvent: 'stream-start',
-        latestMessage: { ...baseMessage, isStreaming: true },
-        shouldStickToBottom: false,
-      }),
-    ).toBeNull();
-
-    expect(
-      getStreamingScrollLockMessageId({
-        currentLockMessageId: 'assistant-1',
-        autoScrollEvent: 'message-complete',
-        latestMessage: { ...baseMessage, isStreaming: false },
-        shouldStickToBottom: true,
-      }),
-    ).toBeNull();
+  it('treats only tiny distances as pinned to the bottom', () => {
+    expect(isPinnedToBottom(0)).toBe(true);
+    expect(isPinnedToBottom(4)).toBe(true);
+    expect(isPinnedToBottom(5)).toBe(false);
   });
 });
