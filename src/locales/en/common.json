@@ -424,9 +424,9 @@
       "performance": "Performance & Concurrency",
       "performanceDescription": "These runtime limits control how many agents and workspace processes can run at once.",
       "title": "Advanced Runtime Controls",
-      "summary": "Advanced",
+      "summary": "These settings change runtime safety rails, multi-agent limits, and shell isolation. Most users should leave them alone.",
       "loopPreventionThreshold": "Loop Prevention Threshold",
-      "loopPreventionThresholdDescription": "Maximum number of tool call loops allowed before aborting."
+      "loopPreventionThresholdDescription": "Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop."
     },
     "system": {
       "title": "System & Performance",
@@ -575,6 +575,7 @@
     "leaveDescription": "You have unsaved changes. Save them before leaving, or discard them and leave this page.",
     "discardAndLeave": "Discard and Leave",
     "saveAndLeave": "Save and Leave",
+    "contextStrategyLabel": "Context Management Strategy",
     "contextStrategy": {
       "window": "Sliding Window",
       "compact": "Compact",

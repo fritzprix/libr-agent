@@ -403,9 +403,9 @@
       "performance": "성능 & 동시성",
       "performanceDescription": "이러한 런타임 제한은 한 번에 실행할 수 있는 에이전트 및 워크스페이스 프로세스 수를 제어합니다.",
       "title": "고급 런타임 제어",
-      "summary": "고급",
+      "summary": "런타임 안전장치, 다중 에이전트 제한 및 셸 격리를 변경하는 설정입니다. 일반 사용자는 기본값을 유지하는 것이 좋습니다.",
       "loopPreventionThreshold": "루프 방지 임계값",
-      "loopPreventionThresholdDescription": "중단하기 전에 허용되는 최대 도구 호출 루프 수입니다."
+      "loopPreventionThresholdDescription": "에이전트가 자연적 복구를 시도하거나 강제 중단을 발생시키기 전까지 반복되는 동일한 도구 결과의 수입니다."
     },
     "system": {
       "title": "시스템 & 성능",
@@ -549,6 +549,7 @@
     "leaveDescription": "저장되지 않은 변경사항이 있습니다. 떠나기 전에 저장하거나, 변경사항을 취소하고 이 페이지를 떠나세요.",
     "discardAndLeave": "취소하고 떠나기",
     "saveAndLeave": "저장하고 떠나기",
+    "contextStrategyLabel": "컨텍스트 관리 전략",
     "contextStrategy": {
       "window": "슬라이딩 윈도우",
       "compact": "컴팩트",
