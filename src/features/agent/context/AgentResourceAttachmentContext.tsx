@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useCallback, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 import useSWR from 'swr';
 import { getLogger } from '@/lib/logger';
 import { createFileSizeErrorMessage } from '@/lib/workspace-sync-service';
@@ -65,6 +71,14 @@ export function AgentResourceAttachmentProvider({
 
   const [pendingFiles, setPendingFiles] = useState<AttachmentReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    setPendingFiles((previousFiles) => {
+      cleanupPendingAttachmentBlobs(previousFiles);
+      return [];
+    });
+    setIsLoading(false);
+  }, [sessionId]);
 
   // Use SWR to fetch session files via Agent V2 session-specific proxy
   const { data: sessionFiles = [], mutate: mutateSessionFiles } = useSWR(

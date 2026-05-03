@@ -275,7 +275,10 @@ export default function AgentChatView() {
                 />
 
                 <div className="flex flex-col items-center gap-1">
-                  <div className="text-muted-foreground font-medium">
+                  <div
+                    className="text-muted-foreground font-medium"
+                    aria-hidden="true"
+                  >
                     {sessionLoadingLabel}
                   </div>
 

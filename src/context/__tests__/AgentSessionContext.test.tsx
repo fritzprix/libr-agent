@@ -318,6 +318,10 @@ describe('AgentSessionContext (Local)', () => {
 
         expect(result.current.session?.id).toBe('session-1');
 
+        await waitFor(() => {
+            expect(resolveNextSession).toBeDefined();
+        });
+
         await act(async () => {
             resolveNextSession?.({
                 session: {
