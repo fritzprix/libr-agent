@@ -263,7 +263,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
   );
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} style={{ overflowAnchor: 'none' }}>
       <GroupHeader
         totalCalls={toolGroup.calls.length}
         statusSummary={statusSummary}

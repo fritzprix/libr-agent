@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Download, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerPreset } from '@/lib/backend/mcp-server-config';
@@ -27,6 +27,19 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   onSetupPreset,
 }) => {
   const { t } = useTranslation('common');
+  const installedServerNames = useMemo(() => {
+    const names = new Set<string>();
+
+    for (const server of servers) {
+      names.add(server.name);
+    }
+
+    for (const server of allServers) {
+      names.add(server.name);
+    }
+
+    return names;
+  }, [allServers, servers]);
 
   if (!presets || presets.length === 0) {
     return null;
@@ -43,9 +56,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {presets.map((preset) => {
-          const isInstalled = [...servers, ...allServers].some(
-            (server) => server.name === preset.name,
-          );
+          const isInstalled = installedServerNames.has(preset.name);
           const canInstall = !isInstalled && registryLoaded;
           return (
             <div

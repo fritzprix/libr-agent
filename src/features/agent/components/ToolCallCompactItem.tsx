@@ -121,7 +121,10 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   // they are never hidden from the user.
   if (isSimpleMode) {
     return (
-      <div className="rounded px-3 py-2 text-sm bg-background">
+      <div
+        className="rounded px-3 py-2 text-sm bg-background"
+        style={{ overflowAnchor: 'none' }}
+      >
         <div className="flex items-center gap-2">
           <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
           <span className="font-medium flex-shrink-0">{displayToolName}</span>
@@ -158,6 +161,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
           ? 'bg-destructive/10 hover:bg-destructive/20'
           : 'bg-background hover:bg-muted/50',
       )}
+      style={{ overflowAnchor: 'none' }}
     >
       {/* Collapsed header line */}
       <button

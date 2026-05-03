@@ -94,6 +94,13 @@ function scrollFooterSentinelIntoView(sentinel: HTMLDivElement | null) {
   });
 }
 
+function getScrollContentElement(
+  scroller: HTMLDivElement | null,
+): HTMLElement | null {
+  const firstChild = scroller?.firstElementChild;
+  return firstChild instanceof HTMLElement ? firstChild : null;
+}
+
 interface AgentChatVirtuosoContext {
   agentError: ReturnType<typeof useAgentChat>['error'];
   agentLlmError: ReturnType<typeof useAgentChat>['llmError'];
@@ -351,6 +358,7 @@ export function AgentChatMessages() {
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
   const isPinnedToBottomRef = useRef(true);
   const autoScrollFrameRef = useRef<number | null>(null);
+  const streamFollowFrameRef = useRef<number | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
@@ -402,6 +410,7 @@ export function AgentChatMessages() {
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
+  const shouldContinuouslyFollowOutput = isPinned && workflowStatus === 'busy';
 
   const streamingToolMessageIds = useMemo(
     () =>
@@ -455,6 +464,17 @@ export function AgentChatMessages() {
     };
   }, [groupedMessages, session?.id]);
 
+  const scheduleScrollToBottom = useCallback(() => {
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+    }
+
+    autoScrollFrameRef.current = requestAnimationFrame(() => {
+      autoScrollFrameRef.current = null;
+      scrollFooterSentinelIntoView(footerEndRef.current);
+    });
+  }, []);
+
   useEffect(() => {
     isPinnedToBottomRef.current = true;
     setIsPinned(true);
@@ -462,13 +482,22 @@ export function AgentChatMessages() {
       cancelAnimationFrame(autoScrollFrameRef.current);
       autoScrollFrameRef.current = null;
     }
-  }, [session?.id]);
+    if (streamFollowFrameRef.current !== null) {
+      cancelAnimationFrame(streamFollowFrameRef.current);
+      streamFollowFrameRef.current = null;
+    }
+    scheduleScrollToBottom();
+  }, [scheduleScrollToBottom, session?.id]);
 
   useEffect(() => {
     return () => {
       if (autoScrollFrameRef.current !== null) {
         cancelAnimationFrame(autoScrollFrameRef.current);
         autoScrollFrameRef.current = null;
+      }
+      if (streamFollowFrameRef.current !== null) {
+        cancelAnimationFrame(streamFollowFrameRef.current);
+        streamFollowFrameRef.current = null;
       }
     };
   }, []);
@@ -502,30 +531,76 @@ export function AgentChatMessages() {
   const scrollToBottom = useCallback(() => {
     isPinnedToBottomRef.current = true;
     setIsPinned(true);
+    scheduleScrollToBottom();
+  }, [scheduleScrollToBottom]);
 
-    if (autoScrollFrameRef.current !== null) {
-      cancelAnimationFrame(autoScrollFrameRef.current);
+  useEffect(() => {
+    const scroller = scrollerElementRef.current;
+    const content = getScrollContentElement(scroller);
+
+    if (!content || typeof ResizeObserver === 'undefined') {
+      return;
     }
 
-    autoScrollFrameRef.current = requestAnimationFrame(() => {
-      autoScrollFrameRef.current = null;
-      scrollFooterSentinelIntoView(footerEndRef.current);
+    const observer = new ResizeObserver(() => {
+      if (!isPinnedToBottomRef.current) {
+        return;
+      }
+
+      scheduleScrollToBottom();
     });
-  }, []);
+
+    observer.observe(content);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [scheduleScrollToBottom, session?.id]);
+
+  useEffect(() => {
+    if (!shouldContinuouslyFollowOutput) {
+      if (streamFollowFrameRef.current !== null) {
+        cancelAnimationFrame(streamFollowFrameRef.current);
+        streamFollowFrameRef.current = null;
+      }
+      return;
+    }
+
+    const followStreamingOutput = () => {
+      if (!isPinnedToBottomRef.current) {
+        streamFollowFrameRef.current = null;
+        return;
+      }
+
+      scrollFooterSentinelIntoView(footerEndRef.current);
+      streamFollowFrameRef.current = requestAnimationFrame(
+        followStreamingOutput,
+      );
+    };
+
+    streamFollowFrameRef.current = requestAnimationFrame(followStreamingOutput);
+
+    return () => {
+      if (streamFollowFrameRef.current !== null) {
+        cancelAnimationFrame(streamFollowFrameRef.current);
+        streamFollowFrameRef.current = null;
+      }
+    };
+  }, [shouldContinuouslyFollowOutput]);
 
   useEffect(() => {
     if (!isPinnedToBottomRef.current) {
       return;
     }
 
-    scrollToBottom();
+    scheduleScrollToBottom();
   }, [
     latestMessage,
     workflowStatus,
     pendingApprovals?.length,
     agentError,
     agentLlmError,
-    scrollToBottom,
+    scheduleScrollToBottom,
   ]);
 
   const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
@@ -572,7 +647,7 @@ export function AgentChatMessages() {
     const AgentChatMessagesScroller = forwardRef<
       HTMLDivElement,
       ComponentPropsWithoutRef<'div'>
-    >(function AgentChatMessagesScroller({ className, ...props }, ref) {
+    >(function AgentChatMessagesScroller({ className, style, ...props }, ref) {
       return (
         <div
           {...props}
@@ -581,6 +656,10 @@ export function AgentChatMessages() {
             setForwardedRef(ref, node);
           }}
           className={cn('agent-chat-scrollbar', className)}
+          style={{
+            ...style,
+            overflowAnchor: 'none',
+          }}
         />
       );
     });

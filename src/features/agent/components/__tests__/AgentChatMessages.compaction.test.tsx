@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
-import { forwardRef } from 'react';
+import { act, render, screen } from '@testing-library/react';
+import React, { forwardRef } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
@@ -62,24 +62,45 @@ const groupedMessagesMock: GroupedMessage[] = [
   },
 ];
 
-const { virtuosoMock } = vi.hoisted(() => ({
+const { virtuosoMock, sessionState, chatState } = vi.hoisted(() => ({
   virtuosoMock: vi.fn(),
+  sessionState: {
+    session: { id: 'session-1', assistant: { name: 'Agent' } },
+  },
+  chatState: {
+    messages: [] as Message[],
+    workflowStatus: 'idle' as 'idle' | 'busy',
+  },
 }));
+
+let resizeObserverCallback: ResizeObserverCallback | null = null;
+
+class MockResizeObserver implements ResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    resizeObserverCallback = callback;
+  }
+
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+global.ResizeObserver = MockResizeObserver;
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
-    messages: groupedToolMessages.slice(1),
+    messages: chatState.messages,
     pendingMessages: [],
     error: undefined,
     llmError: undefined,
     retryMessage: vi.fn(),
-    workflowStatus: 'idle',
+    workflowStatus: chatState.workflowStatus,
   }),
 }));
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSession: () => ({
-    session: { id: 'session-1', assistant: { name: 'Agent' } },
+    session: sessionState.session,
     pendingApprovals: [],
     respondToToolApproval: vi.fn(),
   }),
@@ -142,6 +163,10 @@ vi.mock('react-virtuoso', () => ({
 describe('AgentChatMessages compaction rendering', () => {
   beforeEach(() => {
     virtuosoMock.mockClear();
+    resizeObserverCallback = null;
+    sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
+    chatState.messages = groupedToolMessages.slice(1);
+    chatState.workflowStatus = 'idle';
     virtuosoMock.mockImplementation(
       ({
         components,
@@ -152,6 +177,14 @@ describe('AgentChatMessages compaction rendering', () => {
         components?: {
           Footer?: ({ context }: { context: unknown }) => JSX.Element | null;
           Header?: ({ context }: { context: unknown }) => JSX.Element | null;
+          List?: (props: {
+            children: React.ReactNode;
+            context: unknown;
+            style?: React.CSSProperties;
+          }) => JSX.Element | null;
+          Scroller?: React.ComponentType<
+            React.ComponentPropsWithoutRef<'div'>
+          > | null;
         };
         context: unknown;
         data: GroupedMessage[];
@@ -159,15 +192,31 @@ describe('AgentChatMessages compaction rendering', () => {
           index: number,
           item: GroupedMessage,
         ) => JSX.Element | null;
-      }) => (
-        <div>
-          {components?.Header ? <components.Header context={context} /> : null}
-          {data.map((item, index) => (
-            <div key={item.message.id}>{itemContent(index, item)}</div>
-          ))}
-          {components?.Footer ? <components.Footer context={context} /> : null}
-        </div>
-      ),
+      }) => {
+        const Scroller = components?.Scroller ?? 'div';
+        const List = components?.List;
+        const content = (
+          <>
+            {components?.Header ? <components.Header context={context} /> : null}
+            {data.map((item, index) => (
+              <div key={item.message.id}>{itemContent(index, item)}</div>
+            ))}
+            {components?.Footer ? <components.Footer context={context} /> : null}
+          </>
+        );
+
+        return (
+          <Scroller>
+            {List ? (
+              <List context={context} style={{}}>
+                {content}
+              </List>
+            ) : (
+              content
+            )}
+          </Scroller>
+        );
+      },
     );
   });
 
@@ -175,6 +224,14 @@ describe('AgentChatMessages compaction rendering', () => {
     render(<AgentChatMessages />);
 
     expect(screen.getByText('Compacted summary')).toBeInTheDocument();
+  });
+
+  it('opts the chat scroller out of browser scroll anchoring', () => {
+    const { container } = render(<AgentChatMessages />);
+
+    expect(container.querySelector('.agent-chat-scrollbar')).toHaveStyle({
+      overflowAnchor: 'none',
+    });
   });
 
   it('uses the absolute firstItemIndex offset for the initial bottom position', () => {
@@ -228,5 +285,162 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(isPinnedToBottom(0)).toBe(true);
     expect(isPinnedToBottom(4)).toBe(true);
     expect(isPinnedToBottom(5)).toBe(false);
+  });
+
+  it('keeps bottom alignment when the pinned content resizes after render', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      render(<AgentChatMessages />);
+
+      act(() => {
+        resizeObserverCallback?.([], {} as ResizeObserver);
+      });
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('scrolls to the bottom again when the resumed session changes', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      const { rerender } = render(<AgentChatMessages />);
+      scrollIntoView.mockClear();
+
+      sessionState.session = { id: 'session-2', assistant: { name: 'Agent' } };
+      rerender(<AgentChatMessages />);
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('keeps following bottom while assistant text content is actively streaming', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const frameQueue: FrameRequestCallback[] = [];
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-stream',
+        content: [{ type: 'text', text: 'streaming output' }],
+        isStreaming: true,
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      render(<AgentChatMessages />);
+      scrollIntoView.mockClear();
+
+      const nextFrame = frameQueue.shift();
+      expect(nextFrame).toBeDefined();
+
+      act(() => {
+        nextFrame?.(0);
+      });
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('keeps following bottom while busy tool results keep accumulating', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const frameQueue: FrameRequestCallback[] = [];
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-tool-call',
+        content: [],
+        tool_calls: [
+          {
+            id: 'call-1',
+            type: 'function',
+            function: {
+              name: 'agent__runTool',
+              arguments: '{}',
+            },
+          },
+        ],
+      },
+      {
+        id: 'tool-result-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call-1',
+        content: [{ type: 'text', text: 'First tool result chunk' }],
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      render(<AgentChatMessages />);
+      scrollIntoView.mockClear();
+
+      const nextFrame = frameQueue.shift();
+      expect(nextFrame).toBeDefined();
+
+      act(() => {
+        nextFrame?.(0);
+      });
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 });
