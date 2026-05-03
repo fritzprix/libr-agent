@@ -37,6 +37,10 @@ import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachm
 
 const logger = getLogger('AgentChatView');
 
+function getSessionLoadingLabel(isStartingSession: boolean): string {
+  return isStartingSession ? 'Starting session...' : 'Loading session...';
+}
+
 const InitializationStatusDisplay = () => {
   const { initializationStep } = useAgentSessionState();
   if (!initializationStep) return null;
@@ -198,7 +202,7 @@ export default function AgentChatView() {
 
   if (shouldProvideSession && routeSessionId) {
     return (
-      <AgentSessionProvider sessionId={routeSessionId} key={routeSessionId}>
+      <AgentSessionProvider sessionId={routeSessionId}>
         <AgentChatView />
       </AgentSessionProvider>
     );
@@ -214,20 +218,21 @@ export default function AgentChatView() {
 
   const { session, isSessionLoading } = optionalSessionState;
   const attachmentSessionId = session?.id ?? routeSessionId ?? '';
+  const isStartingSession =
+    session?.status === 'idle' && session?.id === routeSessionId;
+  const sessionLoadingLabel = getSessionLoadingLabel(isStartingSession);
+  const shouldShowBlockingLoader = isSessionLoading && !session;
+  const shouldShowOptimisticLoadingOverlay = isSessionLoading && !!session;
 
   return (
     <AgentResourceAttachmentProvider sessionId={attachmentSessionId}>
-      {isSessionLoading ? (
+      {shouldShowBlockingLoader ? (
         <div className="flex h-full items-center justify-center p-4">
           <div className="flex flex-col items-center gap-3">
             <LoadingSpinner
               size="lg"
               className="border-4"
-              label={
-                session?.status === 'idle'
-                  ? 'Starting session...'
-                  : 'Loading session...'
-              }
+              label={sessionLoadingLabel}
             />
 
             <div className="flex flex-col items-center gap-1">
@@ -235,9 +240,7 @@ export default function AgentChatView() {
                 className="text-muted-foreground font-medium animate-pulse"
                 aria-hidden="true"
               >
-                {session?.status === 'idle'
-                  ? 'Starting session...'
-                  : 'Loading session...'}
+                {sessionLoadingLabel}
               </div>
 
               <div className="text-xs text-muted-foreground/70 h-4">
@@ -253,13 +256,37 @@ export default function AgentChatView() {
           </div>
         </div>
       ) : (
-        <AgentChatProvider>
-          <AgentPlanningProvider>
-            <AgentWorkspaceProvider>
-              <AgentChatInner />
-            </AgentWorkspaceProvider>
-          </AgentPlanningProvider>
-        </AgentChatProvider>
+        <div className="relative h-full">
+          <AgentChatProvider>
+            <AgentPlanningProvider>
+              <AgentWorkspaceProvider>
+                <AgentChatInner />
+              </AgentWorkspaceProvider>
+            </AgentPlanningProvider>
+          </AgentChatProvider>
+
+          {shouldShowOptimisticLoadingOverlay && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+              <div className="flex flex-col items-center gap-3 rounded-xl border border-border/60 bg-background/90 px-6 py-5 shadow-lg">
+                <LoadingSpinner
+                  size="lg"
+                  className="border-4"
+                  label={sessionLoadingLabel}
+                />
+
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-muted-foreground font-medium">
+                    {sessionLoadingLabel}
+                  </div>
+
+                  <div className="text-xs text-muted-foreground/70 h-4">
+                    <InitializationStatusDisplay />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </AgentResourceAttachmentProvider>
   );
