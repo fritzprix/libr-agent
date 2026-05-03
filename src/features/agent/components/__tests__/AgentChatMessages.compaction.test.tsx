@@ -7,6 +7,7 @@ import {
   getAutoScrollEvent,
   getInitialTopMostItemIndex,
   getPrependedFirstItemIndex,
+  getStreamingScrollLockMessageId,
   getVisualBottomThreshold,
   shouldShowAnalysisLoader,
 } from '../AgentChatMessages';
@@ -296,5 +297,49 @@ describe('AgentChatMessages compaction rendering', () => {
         },
       }),
     ).toBe('none');
+  });
+
+  it('keeps a stream scroll lock alive for chunk updates after starting near the bottom', () => {
+    expect(
+      getStreamingScrollLockMessageId({
+        currentLockMessageId: null,
+        autoScrollEvent: 'stream-start',
+        latestMessage: { ...baseMessage, isStreaming: true },
+        shouldStickToBottom: true,
+      }),
+    ).toBe('assistant-1');
+
+    expect(
+      getStreamingScrollLockMessageId({
+        currentLockMessageId: 'assistant-1',
+        autoScrollEvent: 'none',
+        latestMessage: {
+          ...baseMessage,
+          isStreaming: true,
+          content: [{ type: 'text', text: 'abcdef' }],
+        },
+        shouldStickToBottom: false,
+      }),
+    ).toBe('assistant-1');
+  });
+
+  it('drops the stream scroll lock when the user was not near the bottom or the stream completes', () => {
+    expect(
+      getStreamingScrollLockMessageId({
+        currentLockMessageId: null,
+        autoScrollEvent: 'stream-start',
+        latestMessage: { ...baseMessage, isStreaming: true },
+        shouldStickToBottom: false,
+      }),
+    ).toBeNull();
+
+    expect(
+      getStreamingScrollLockMessageId({
+        currentLockMessageId: 'assistant-1',
+        autoScrollEvent: 'message-complete',
+        latestMessage: { ...baseMessage, isStreaming: false },
+        shouldStickToBottom: true,
+      }),
+    ).toBeNull();
   });
 });

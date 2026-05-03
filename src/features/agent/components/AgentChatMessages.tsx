@@ -69,6 +69,12 @@ export function shouldShowAnalysisLoader(
 
 export type AutoScrollEvent = 'none' | 'stream-start' | 'message-complete';
 
+function isStreamingAssistantMessage(
+  message: Message | undefined,
+): message is Message {
+  return message?.role === 'assistant' && message.isStreaming === true;
+}
+
 export function getAutoScrollEvent(args: {
   previousLatestMessage: Message | undefined;
   latestMessage: Message | undefined;
@@ -102,6 +108,40 @@ export function getAutoScrollEvent(args: {
   }
 
   return 'none';
+}
+
+export function getStreamingScrollLockMessageId(args: {
+  currentLockMessageId: string | null;
+  autoScrollEvent: AutoScrollEvent;
+  latestMessage: Message | undefined;
+  shouldStickToBottom: boolean;
+}): string | null {
+  const {
+    currentLockMessageId,
+    autoScrollEvent,
+    latestMessage,
+    shouldStickToBottom,
+  } = args;
+
+  if (autoScrollEvent === 'message-complete') {
+    return null;
+  }
+
+  if (autoScrollEvent === 'stream-start') {
+    return shouldStickToBottom && isStreamingAssistantMessage(latestMessage)
+      ? latestMessage.id
+      : null;
+  }
+
+  if (
+    currentLockMessageId &&
+    isStreamingAssistantMessage(latestMessage) &&
+    latestMessage.id === currentLockMessageId
+  ) {
+    return currentLockMessageId;
+  }
+
+  return null;
 }
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
@@ -380,6 +420,7 @@ export function AgentChatMessages() {
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
   const wasAtBottomRef = useRef(true);
   const previousLatestMessageRef = useRef<Message | undefined>(undefined);
+  const streamingScrollLockMessageIdRef = useRef<string | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
@@ -487,6 +528,7 @@ export function AgentChatMessages() {
   useEffect(() => {
     wasAtBottomRef.current = true;
     previousLatestMessageRef.current = undefined;
+    streamingScrollLockMessageIdRef.current = null;
     if (autoScrollFrameRef.current !== null) {
       cancelAnimationFrame(autoScrollFrameRef.current);
       autoScrollFrameRef.current = null;
@@ -535,15 +577,57 @@ export function AgentChatMessages() {
   }, [bottomThreshold, session?.id]);
 
   useEffect(() => {
+    const scroller = scrollerElementRef.current;
+
+    if (!scroller) {
+      return;
+    }
+
+    const handleScroll = () => {
+      const distanceFromBottom =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      const isNearBottom = distanceFromBottom <= bottomThreshold;
+
+      wasAtBottomRef.current = isNearBottom;
+
+      if (!isNearBottom && streamingScrollLockMessageIdRef.current !== null) {
+        streamingScrollLockMessageIdRef.current = null;
+      }
+    };
+
+    scroller.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      scroller.removeEventListener('scroll', handleScroll);
+    };
+  }, [bottomThreshold, session?.id]);
+
+  useEffect(() => {
     const previousLatestMessage = previousLatestMessageRef.current;
     const autoScrollEvent = getAutoScrollEvent({
       previousLatestMessage,
       latestMessage,
     });
+    const hadStreamingScrollLock =
+      streamingScrollLockMessageIdRef.current !== null;
+    const shouldStickToBottom =
+      wasAtBottomRef.current || hadStreamingScrollLock;
+    const nextStreamingScrollLockMessageId = getStreamingScrollLockMessageId({
+      currentLockMessageId: streamingScrollLockMessageIdRef.current,
+      autoScrollEvent,
+      latestMessage,
+      shouldStickToBottom,
+    });
+
+    streamingScrollLockMessageIdRef.current = nextStreamingScrollLockMessageId;
 
     previousLatestMessageRef.current = latestMessage;
 
-    if (autoScrollEvent === 'none' || !wasAtBottomRef.current) {
+    const shouldAutoScroll =
+      nextStreamingScrollLockMessageId !== null ||
+      (autoScrollEvent !== 'none' && shouldStickToBottom);
+
+    if (!shouldAutoScroll) {
       return;
     }
 
