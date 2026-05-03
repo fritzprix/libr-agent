@@ -295,7 +295,8 @@
       "mcpServers": "MCP Servers",
       "advanced": "Advanced",
       "extensions": "Extensions",
-      "dev": "Dev"
+      "dev": "Dev",
+      "system": "System"
     },
     "llmPreference": "Default LLM",
     "messageWindowSize": "Message Window Size",
@@ -330,7 +331,10 @@
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "Agent Hub URL",
       "agentHubUrlDescription": "URL of the remote Agent Hub server. If set, assistants will be synced with this server.",
-      "agentHubUrlPlaceholder": "https://api.agenthub.com"
+      "agentHubUrlPlaceholder": "https://api.agenthub.com",
+      "responseBehavior": "Response Behavior",
+      "decreaseRetries": "Decrease retry attempts",
+      "increaseRetries": "Increase retry attempts"
     },
     "provider": {
       "apiKey": "API Key",
@@ -375,7 +379,10 @@
       "toolDetailLevel": "Tool Detail Level",
       "toolDetailSimple": "Simple (tool name only)",
       "toolDetailDeveloper": "Developer (params, errors, timing)",
-      "toolDetailLevelDescription": "Simple mode shows only tool names and status icons. Developer mode shows full parameters, error details, and execution time."
+      "toolDetailLevelDescription": "Simple mode shows only tool names and status icons. Developer mode shows full parameters, error details, and execution time.",
+      "uiVisualsTitle": "UI Visuals",
+      "fontFamily": "Font Family",
+      "fontFamilyDescription": "Change the default font family for the UI."
     },
     "advanced": {
       "maxRetries": "Max Retry Attempts",
@@ -413,7 +420,13 @@
         "medium": "Medium - Restricted PATH (balanced)",
         "high": "High - Sandboxed (most secure)"
       },
-      "shellIsolationDescription": "Controls environment isolation for shell commands. Basic allows user-installed tools, High provides maximum security."
+      "shellIsolationDescription": "Controls environment isolation for shell commands. Basic allows user-installed tools, High provides maximum security.",
+      "performance": "Performance & Concurrency",
+      "performanceDescription": "These runtime limits control how many agents and workspace processes can run at once.",
+      "title": "Advanced Runtime Controls",
+      "summary": "Advanced",
+      "loopPreventionThreshold": "Loop Prevention Threshold",
+      "loopPreventionThresholdDescription": "Maximum number of tool call loops allowed before aborting."
     },
     "system": {
       "title": "System & Performance",
@@ -462,7 +475,10 @@
         "mcpToolTimeout": "0 (disabled)",
         "activeSessionRetention": "e.g., 24",
         "httpServerPort": "e.g., 3030"
-      }
+      },
+      "description": "Control app runtime, background workers, automation limits, and network behavior.",
+      "restartRequired": "Restart required after save",
+      "networkRestartPending": "You changed network settings. Save changes, then restart the app to apply them."
     },
     "about": {
       "title": "About",
@@ -549,6 +565,21 @@
       "model": "model: {{model}}",
       "tokensInfo": "tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total",
       "emptyResponse": "(empty response)"
+    },
+    "pendingChanges": "{{count}} sections changed",
+    "discardChanges": "Discard",
+    "saveChanges": "Save Changes",
+    "discardTitle": "Discard unsaved changes?",
+    "discardDescription": "This will revert every pending change on this page back to the last saved state.",
+    "leaveTitle": "Leave without saving?",
+    "leaveDescription": "You have unsaved changes. Save them before leaving, or discard them and leave this page.",
+    "discardAndLeave": "Discard and Leave",
+    "saveAndLeave": "Save and Leave",
+    "contextStrategy": {
+      "window": "Sliding Window",
+      "compact": "Compact",
+      "windowDescription": "Keep the N most recent messages. Simple and predictable.",
+      "compactDescription": "Summarize old turns and keep a recent window. Better for long sessions."
     }
   },
   "mcpServer": {

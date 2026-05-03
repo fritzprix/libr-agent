@@ -137,3 +137,8 @@
 **Extracted:** 15
 **Languages updated:** [EN, KO]
 **Notes:** Localized `DevTab`. Added `settings.dev` namespace to `common.json`. Handled standard text, placeholders, and error/status indicators. Used English as placeholders for Korean.
+## 2026-05-03 - [Settings/AdvancedTab & SystemTab]
+
+**Extracted:** 22
+**Languages updated:** [EN, KO]
+**Notes:** Extracted missing keys for Advanced and System tabs which had `t()` calls in code but no entries in `common.json` files. Added keys like `settings.advanced.performance`, `settings.advanced.shellIsolation`, `settings.chatInterface.diffContextLines`, `settings.system.description`, `settings.discardChanges`, etc.
