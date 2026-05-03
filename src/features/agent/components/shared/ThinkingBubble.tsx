@@ -21,6 +21,7 @@ interface ThinkingBubbleProps {
  * - Displays "Thinking Process" label with timer
  * - Shows loading animation when streaming
  * - Scrollable content area with max height
+ * - Keeps the internal scroll pinned to the latest streamed reasoning output
  * - Consistent styling across components
  */
 export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({

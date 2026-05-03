@@ -7,12 +7,21 @@ import type { MCPServerPreset } from '@/lib/backend/mcp-server-config';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, defaultValue: string | { defaultValue?: string }) => {
-      if (typeof defaultValue === 'string') {
-        return defaultValue;
+    t: (
+      key: string,
+      defaultValueOrOptions:
+        | string
+        | { defaultValue?: string; name?: string }
+        | undefined,
+    ) => {
+      if (typeof defaultValueOrOptions === 'string') {
+        return defaultValueOrOptions;
       }
 
-      return defaultValue?.defaultValue ?? _key;
+      const template = defaultValueOrOptions?.defaultValue ?? key;
+      const name = defaultValueOrOptions?.name;
+
+      return name ? template.replace('{{name}}', name) : template;
     },
   }),
 }));
@@ -52,7 +61,7 @@ describe('RecommendedPresets', () => {
 
     expect(screen.getByText('Installed')).toBeInTheDocument();
     expect(
-      screen.queryByText('Install filesystem extension'),
+      screen.queryByRole('button', { name: 'Install filesystem extension' }),
     ).not.toBeInTheDocument();
   });
 
