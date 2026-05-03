@@ -111,4 +111,20 @@ describe('AgentToolCallGroup Rendering', () => {
     expect(items[0]).toHaveTextContent('call-0');
     expect(items[0]).toHaveTextContent('result-0');
   });
+
+  it('opts the tool group container out of browser scroll anchoring', () => {
+    const calls = Array.from({ length: 2 }, (_, i) => makeToolCall(`call-${i}`));
+    const results = calls.map((c, i) => makeToolResult(`result-${i}`, c.id));
+
+    const { container } = render(
+      <AgentToolCallGroup
+        message={mockMessage}
+        toolGroup={{ calls }}
+        toolResults={results}
+        visibleCount={1}
+      />,
+    );
+
+    expect(container.firstElementChild).toHaveStyle({ overflowAnchor: 'none' });
+  });
 });

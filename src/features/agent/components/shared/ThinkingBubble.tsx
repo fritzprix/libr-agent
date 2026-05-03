@@ -21,8 +21,8 @@ interface ThinkingBubbleProps {
  * - Displays "Thinking Process" label with timer
  * - Shows loading animation when streaming
  * - Scrollable content area with max height
+ * - Keeps the internal scroll pinned to the latest streamed reasoning output
  * - Consistent styling across components
- * - Auto-scrolls to bottom during streaming
  */
 export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   thinking,
@@ -30,13 +30,14 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   isStreaming = false,
   className = '',
 }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll to bottom while streaming
   useEffect(() => {
-    if (isStreaming && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!isStreaming || !scrollRef.current) {
+      return;
     }
+
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [thinking, isStreaming]);
 
   // Format time as (XXs)

@@ -25,6 +25,8 @@ export interface MCPServerRegistryContextType {
   allServers: MCPServerEntity[];
   // Filtered active servers
   activeServers: MCPServerEntity[];
+  // Whether the initial registry load has completed at least once
+  loaded: boolean;
   // Loading state
   loading: boolean;
   // Error state
@@ -58,6 +60,7 @@ export const MCPServerRegistryProvider = ({
   children: React.ReactNode;
 }) => {
   const [allServers, setAllServers] = useState<MCPServerEntity[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -93,6 +96,7 @@ export const MCPServerRegistryProvider = ({
         const servers = await mcpServerService.getAll();
         setAllServers(servers);
         hasLoadedRef.current = true;
+        setLoaded(true);
         setError(undefined);
         logger.debug(`Loaded ${servers.length} MCP servers from service`);
       } catch (err) {
@@ -210,6 +214,7 @@ export const MCPServerRegistryProvider = ({
     () => ({
       allServers,
       activeServers,
+      loaded,
       loading,
       error,
       saveServer,
@@ -221,6 +226,7 @@ export const MCPServerRegistryProvider = ({
     [
       allServers,
       activeServers,
+      loaded,
       loading,
       error,
       saveServer,

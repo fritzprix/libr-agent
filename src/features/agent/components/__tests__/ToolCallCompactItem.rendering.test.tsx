@@ -141,4 +141,12 @@ describe('ToolCallCompactItem Rendering and Transitions', () => {
 
     expect(getByText('agent.toolDetails.preparingTool')).toBeInTheDocument();
   });
+
+  it('opts the expandable item container out of browser scroll anchoring', () => {
+    mockDetailLevel = 'developer';
+    const toolCall = makeToolCall('call-6');
+    const { container } = render(<ToolCallCompactItem toolCall={toolCall} />);
+
+    expect(container.firstElementChild).toHaveStyle({ overflowAnchor: 'none' });
+  });
 });

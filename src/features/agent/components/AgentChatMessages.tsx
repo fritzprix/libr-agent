@@ -5,7 +5,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -23,17 +22,18 @@ import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
 import { CompactEventDivider } from './shared/CompactEventDivider';
-import { Bot } from 'lucide-react';
+import { Bot, ChevronDown } from 'lucide-react';
 import { PendingApprovalWidget } from './PendingApprovalWidget';
 import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
-const DEFAULT_BOTTOM_THRESHOLD = 32;
+const DEFAULT_BOTTOM_THRESHOLD = 4;
 const CHAT_COMPOSER_CLEARANCE = 24;
 
 export function getPrependedFirstItemIndex(
@@ -54,28 +54,6 @@ export function getVisualBottomThreshold(): number {
   return DEFAULT_BOTTOM_THRESHOLD;
 }
 
-export function shouldAutoFollowOutput(
-  latestMessage: Message | undefined,
-  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'],
-): boolean {
-  if (!latestMessage) {
-    return false;
-  }
-
-  const assistantHasNoVisibleOutput =
-    latestMessage.role === 'assistant' &&
-    !latestMessage.content?.length &&
-    !latestMessage.thinking &&
-    !latestMessage.tool_calls?.length;
-
-  return (
-    workflowStatus === 'busy' &&
-    (latestMessage.role !== 'assistant' ||
-      latestMessage.isStreaming === true ||
-      assistantHasNoVisibleOutput)
-  );
-}
-
 export function shouldShowAnalysisLoader(
   latestMessage: Message | undefined,
   workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'],
@@ -90,83 +68,11 @@ export function shouldShowAnalysisLoader(
   );
 }
 
-export function getMessageOutputSignature(
-  message: Message | undefined,
-): string {
-  if (!message) {
-    return 'none';
-  }
-
-  const contentSignature = (message.content ?? [])
-    .map((item) => {
-      switch (item.type) {
-        case 'text':
-          return `text:${item.text.length}`;
-        case 'thinking':
-          return `thinking:${item.thinking.length}`;
-        case 'tool_call':
-          return `tool:${item.name}`;
-        default:
-          return item.type;
-      }
-    })
-    .join('|');
-
-  const toolCallSignature = (message.tool_calls ?? [])
-    .map((toolCall) => toolCall.function.name)
-    .join('|');
-
-  return [
-    message.id,
-    message.role,
-    message.isStreaming ? 'streaming' : 'static',
-    message.thinking?.length ?? 0,
-    contentSignature,
-    toolCallSignature,
-  ].join('::');
-}
-
-export function getTailAnchorKey(args: {
-  latestMessage: Message | undefined;
-  workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'];
-  pendingApprovalsCount: number;
-  hasAgentError: boolean;
-  hasAgentLlmError: boolean;
-}): string {
-  return [
-    getMessageOutputSignature(args.latestMessage),
-    args.workflowStatus,
-    args.pendingApprovalsCount,
-    args.hasAgentError ? 'agent-error' : 'no-agent-error',
-    args.hasAgentLlmError ? 'llm-error' : 'no-llm-error',
-    shouldShowAnalysisLoader(args.latestMessage, args.workflowStatus)
-      ? 'analysis-loader'
-      : 'no-analysis-loader',
-  ].join('||');
-}
-
-export function shouldPreserveBottomAnchorOnTailChange(args: {
-  tailChanged: boolean;
-  wasAtBottomBeforeChange: boolean;
-  autoFollowOutput: boolean;
-  wasFollowingOutputBeforeChange: boolean;
-}): boolean {
-  return (
-    args.tailChanged &&
-    args.wasAtBottomBeforeChange &&
-    !args.autoFollowOutput &&
-    args.wasFollowingOutputBeforeChange
-  );
-}
-
-export function shouldSoftFollowOutputOnTailChange(args: {
-  tailChanged: boolean;
-  wasAtBottomBeforeChange: boolean;
-  autoFollowOutput: boolean;
-}): boolean {
-  return (
-    args.tailChanged && args.wasAtBottomBeforeChange && args.autoFollowOutput
-  );
+export function isPinnedToBottom(
+  distanceFromBottom: number,
+  threshold = DEFAULT_BOTTOM_THRESHOLD,
+): boolean {
+  return distanceFromBottom <= threshold;
 }
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
@@ -186,6 +92,13 @@ function scrollFooterSentinelIntoView(sentinel: HTMLDivElement | null) {
     inline: 'nearest',
     behavior: 'auto',
   });
+}
+
+function getScrollContentElement(
+  scroller: HTMLDivElement | null,
+): HTMLElement | null {
+  const firstChild = scroller?.firstElementChild;
+  return firstChild instanceof HTMLElement ? firstChild : null;
 }
 
 interface AgentChatVirtuosoContext {
@@ -443,18 +356,14 @@ export function AgentChatMessages() {
   const assistantName = session?.assistant?.name || 'Agent';
   const footerEndRef = useRef<HTMLDivElement | null>(null);
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
-  const wasAtBottomRef = useRef(true);
-  const settleLockRef = useRef(false);
-  const settleFrameRefs = useRef<number[]>([]);
+  const isPinnedToBottomRef = useRef(true);
+  const autoScrollFrameRef = useRef<number | null>(null);
   const streamFollowFrameRef = useRef<number | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
+  const [isPinned, setIsPinned] = useState(true);
   const bottomThreshold = getVisualBottomThreshold();
-  const autoFollowOutput = useMemo(
-    () => shouldAutoFollowOutput(latestMessage, workflowStatus),
-    [latestMessage, workflowStatus],
-  );
   const previousListStateRef = useRef<{
     firstId: string | undefined;
     lastId: string | undefined;
@@ -501,26 +410,7 @@ export function AgentChatMessages() {
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
-  const tailAnchorKey = useMemo(
-    () =>
-      getTailAnchorKey({
-        latestMessage,
-        workflowStatus,
-        pendingApprovalsCount: pendingApprovals?.length ?? 0,
-        hasAgentError: !!agentError,
-        hasAgentLlmError: !!agentLlmError,
-      }),
-    [
-      latestMessage,
-      workflowStatus,
-      pendingApprovals,
-      agentError,
-      agentLlmError,
-    ],
-  );
-  const previousTailAnchorKeyRef = useRef<string | undefined>(undefined);
-  const previousWasAtBottomRef = useRef(true);
-  const previousAutoFollowOutputRef = useRef(false);
+  const shouldContinuouslyFollowOutput = isPinned && workflowStatus === 'busy';
 
   const streamingToolMessageIds = useMemo(
     () =>
@@ -574,25 +464,37 @@ export function AgentChatMessages() {
     };
   }, [groupedMessages, session?.id]);
 
+  const scheduleScrollToBottom = useCallback(() => {
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+    }
+
+    autoScrollFrameRef.current = requestAnimationFrame(() => {
+      autoScrollFrameRef.current = null;
+      scrollFooterSentinelIntoView(footerEndRef.current);
+    });
+  }, []);
+
   useEffect(() => {
-    wasAtBottomRef.current = true;
-    previousWasAtBottomRef.current = true;
-    previousAutoFollowOutputRef.current = false;
-    previousTailAnchorKeyRef.current = undefined;
-    settleLockRef.current = false;
-    settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
-    settleFrameRefs.current = [];
+    isPinnedToBottomRef.current = true;
+    setIsPinned(true);
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
     if (streamFollowFrameRef.current !== null) {
       cancelAnimationFrame(streamFollowFrameRef.current);
       streamFollowFrameRef.current = null;
     }
-  }, [session?.id]);
+    scheduleScrollToBottom();
+  }, [scheduleScrollToBottom, session?.id]);
 
   useEffect(() => {
     return () => {
-      settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
-      settleFrameRefs.current = [];
-      settleLockRef.current = false;
+      if (autoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = null;
+      }
       if (streamFollowFrameRef.current !== null) {
         cancelAnimationFrame(streamFollowFrameRef.current);
         streamFollowFrameRef.current = null;
@@ -601,110 +503,105 @@ export function AgentChatMessages() {
   }, []);
 
   useEffect(() => {
-    const sentinel = footerEndRef.current;
     const scroller = scrollerElementRef.current;
 
-    if (!sentinel || !scroller) {
+    if (!scroller) {
       return;
     }
 
-    if (typeof IntersectionObserver === 'undefined') {
-      wasAtBottomRef.current = true;
+    const updatePinnedState = () => {
+      const distanceFromBottom =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      const nextPinned = isPinnedToBottom(distanceFromBottom, bottomThreshold);
+      isPinnedToBottomRef.current = nextPinned;
+      setIsPinned((current) => (current === nextPinned ? current : nextPinned));
+    };
+    const handleScroll = () => {
+      updatePinnedState();
+    };
+
+    scroller.addEventListener('scroll', handleScroll, { passive: true });
+    updatePinnedState();
+
+    return () => {
+      scroller.removeEventListener('scroll', handleScroll);
+    };
+  }, [bottomThreshold, session?.id]);
+
+  const scrollToBottom = useCallback(() => {
+    isPinnedToBottomRef.current = true;
+    setIsPinned(true);
+    scheduleScrollToBottom();
+  }, [scheduleScrollToBottom]);
+
+  useEffect(() => {
+    const scroller = scrollerElementRef.current;
+    const content = getScrollContentElement(scroller);
+
+    if (!content || typeof ResizeObserver === 'undefined') {
       return;
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        const atBottom = entry?.isIntersecting ?? false;
+    const observer = new ResizeObserver(() => {
+      if (!isPinnedToBottomRef.current) {
+        return;
+      }
 
-        if (settleLockRef.current && !atBottom) {
-          return;
-        }
+      scheduleScrollToBottom();
+    });
 
-        wasAtBottomRef.current = atBottom;
-      },
-      {
-        root: scroller,
-        threshold: 0,
-        rootMargin: `0px 0px ${bottomThreshold}px 0px`,
-      },
-    );
-
-    observer.observe(sentinel);
+    observer.observe(content);
 
     return () => {
       observer.disconnect();
     };
-  }, [bottomThreshold, session?.id]);
+  }, [scheduleScrollToBottom, session?.id]);
 
-  useLayoutEffect(() => {
-    const previousTailAnchorKey = previousTailAnchorKeyRef.current;
-    const wasAtBottomBeforeChange = previousWasAtBottomRef.current;
-    const wasFollowingOutputBeforeChange = previousAutoFollowOutputRef.current;
-
-    previousTailAnchorKeyRef.current = tailAnchorKey;
-    previousWasAtBottomRef.current = wasAtBottomRef.current;
-    previousAutoFollowOutputRef.current = autoFollowOutput;
-
-    if (previousTailAnchorKey === undefined) {
-      return;
-    }
-
-    const tailChanged = previousTailAnchorKey !== tailAnchorKey;
-
-    if (
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged,
-        wasAtBottomBeforeChange,
-        autoFollowOutput,
-      })
-    ) {
-      if (streamFollowFrameRef.current === null) {
-        streamFollowFrameRef.current = requestAnimationFrame(() => {
-          streamFollowFrameRef.current = null;
-          scrollFooterSentinelIntoView(footerEndRef.current);
-        });
-      }
-      return;
-    }
-
-    if (
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged,
-        wasAtBottomBeforeChange,
-        autoFollowOutput,
-        wasFollowingOutputBeforeChange,
-      })
-    ) {
-      settleLockRef.current = true;
+  useEffect(() => {
+    if (!shouldContinuouslyFollowOutput) {
       if (streamFollowFrameRef.current !== null) {
         cancelAnimationFrame(streamFollowFrameRef.current);
         streamFollowFrameRef.current = null;
       }
-      settleFrameRefs.current.forEach((frame) => cancelAnimationFrame(frame));
-      settleFrameRefs.current = [];
+      return;
+    }
+
+    const followStreamingOutput = () => {
+      if (!isPinnedToBottomRef.current) {
+        streamFollowFrameRef.current = null;
+        return;
+      }
 
       scrollFooterSentinelIntoView(footerEndRef.current);
+      streamFollowFrameRef.current = requestAnimationFrame(
+        followStreamingOutput,
+      );
+    };
 
-      const firstFrame = requestAnimationFrame(() => {
-        scrollFooterSentinelIntoView(footerEndRef.current);
+    streamFollowFrameRef.current = requestAnimationFrame(followStreamingOutput);
 
-        const secondFrame = requestAnimationFrame(() => {
-          scrollFooterSentinelIntoView(footerEndRef.current);
-          settleLockRef.current = false;
-          wasAtBottomRef.current = true;
-        });
+    return () => {
+      if (streamFollowFrameRef.current !== null) {
+        cancelAnimationFrame(streamFollowFrameRef.current);
+        streamFollowFrameRef.current = null;
+      }
+    };
+  }, [shouldContinuouslyFollowOutput]);
 
-        settleFrameRefs.current = settleFrameRefs.current.filter(
-          (frame) => frame !== firstFrame,
-        );
-        settleFrameRefs.current.push(secondFrame);
-      });
-
-      settleFrameRefs.current.push(firstFrame);
+  useEffect(() => {
+    if (!isPinnedToBottomRef.current) {
+      return;
     }
-  }, [autoFollowOutput, tailAnchorKey]);
+
+    scheduleScrollToBottom();
+  }, [
+    latestMessage,
+    workflowStatus,
+    pendingApprovals?.length,
+    agentError,
+    agentLlmError,
+    scheduleScrollToBottom,
+  ]);
 
   const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
     () => ({
@@ -750,7 +647,7 @@ export function AgentChatMessages() {
     const AgentChatMessagesScroller = forwardRef<
       HTMLDivElement,
       ComponentPropsWithoutRef<'div'>
-    >(function AgentChatMessagesScroller({ className, ...props }, ref) {
+    >(function AgentChatMessagesScroller({ className, style, ...props }, ref) {
       return (
         <div
           {...props}
@@ -759,6 +656,10 @@ export function AgentChatMessages() {
             setForwardedRef(ref, node);
           }}
           className={cn('agent-chat-scrollbar', className)}
+          style={{
+            ...style,
+            overflowAnchor: 'none',
+          }}
         />
       );
     });
@@ -874,7 +775,7 @@ export function AgentChatMessages() {
   );
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+    <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
       <Virtuoso
         key={session?.id ?? 'agent-chat'}
         className="flex-1"
@@ -894,6 +795,24 @@ export function AgentChatMessages() {
         startReached={handleReachTop}
         itemContent={renderMessageGroup}
       />
+      {!isPinned && (
+        <div
+          className="pointer-events-none absolute right-6 z-10"
+          style={{
+            bottom: `calc(var(--agent-chat-composer-overlap, 64px) + ${CHAT_COMPOSER_CLEARANCE + 16}px)`,
+          }}
+        >
+          <Button
+            type="button"
+            size="icon"
+            className="pointer-events-auto size-10 rounded-full shadow-lg"
+            aria-label={t('agent.messages.scrollToLatest', 'Scroll to latest')}
+            onClick={scrollToBottom}
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

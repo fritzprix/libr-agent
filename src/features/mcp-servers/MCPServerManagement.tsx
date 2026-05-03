@@ -28,6 +28,8 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
 
   const {
     servers,
+    allServers,
+    registryLoaded,
     presets,
     isLoading,
     isValidating,
@@ -138,6 +140,8 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
         <RecommendedPresets
           presets={presets}
           servers={servers}
+          allServers={allServers}
+          registryLoaded={registryLoaded}
           onSetupPreset={handleSetupPreset}
         />
       </div>
