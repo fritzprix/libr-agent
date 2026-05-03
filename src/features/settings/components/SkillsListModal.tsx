@@ -163,19 +163,19 @@ export function SkillsListModal({
                             size="sm"
                             disabled={deletingSkillName === skill.name}
                             onClick={() => onDeleteUserSkill(skill.name)}
-                            aria-label={t(
-                              'settings.skills.deleteUserSkill',
-                              'Delete user skill',
-                            )}
+                            aria-label={t('settings.skills.deleteUserSkill', {
+                              name: skill.name,
+                              defaultValue: 'Delete {{name}}',
+                            })}
                           >
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          {t(
-                            'settings.skills.deleteUserSkill',
-                            'Delete user skill',
-                          )}
+                          {t('settings.skills.deleteUserSkill', {
+                            name: skill.name,
+                            defaultValue: 'Delete {{name}}',
+                          })}
                         </TooltipContent>
                       </Tooltip>
                     }

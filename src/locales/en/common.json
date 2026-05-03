@@ -520,6 +520,7 @@
       "revertFailed": "Failed to revert skill",
       "resetSuccess": "Assistant skills reset successfully",
       "resetFailed": "Failed to reset skills",
+      "deleteUserSkill": "Delete {{name}}",
       "userSkillDeleted": "User skill deleted.",
       "userSkillsReset": "User skills reset.",
       "dragDropDesc": "Drag and drop a .skill, .zip, or skill folder to override skills.",
