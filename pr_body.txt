@@ -1,5 +1,4 @@
-🚫 **Eradicated:** Removed 'The State Duplicator' anti-pattern involving manual \`useState\` and \`useEffect\` data fetching in \`useScheduledTasks\`.
-
-✨ **Woven:** Implemented declarative Component Composition/Data Fetching using \`useSWR\`. Used SWR's \`mutate\` for optimistic local state updates without duplicating state. Preserved \`loadTasks\` API contract for backwards compatibility.
-
-📉 **Impact:** Eliminated manual syncing boilerplate, removing complex effect chains and improving performance/robustness by relying on SWR caching and revalidation logic. Fixed UI loading state bug by avoiding \`fallbackData\` conflicts.
+🌐 Scope: src/locales/en/common.json, src/locales/ko/common.json
+🔑 Keys Added: 22
+🌍 Languages: en.json, ko.json
+⚠️ Visual QA: Verified that longer text strings do not break Flex/Grid layouts.
