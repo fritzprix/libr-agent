@@ -512,6 +512,7 @@
       "revertFailed": "스킬 되돌리기 실패",
       "resetSuccess": "어시스턴트 스킬 초기화 성공",
       "resetFailed": "스킬 초기화 실패",
+      "deleteUserSkill": "{{name}} 삭제",
       "dragDropDesc": "스킬을 재정의하려면 zip 파일이나 폴더를 드래그 앤 드롭하세요.",
       "resetTooltip": "모든 어시스턴트 전용 스킬 제거",
       "reset": "재정의 초기화",
