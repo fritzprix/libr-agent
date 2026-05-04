@@ -42,6 +42,17 @@ const MOCK_SKILLS: SkillMetadata[] = [
   },
 ];
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function wrapper({ children }: { children: ReactNode }) {
   return <SkillsProvider>{children}</SkillsProvider>;
 }
@@ -196,6 +207,72 @@ describe('SkillsContext', () => {
 
       await act(async () => {
         await result.current.refreshSkills();
+      });
+
+      expect(mockInvoke).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores stale in-flight startup results after a forced refresh', async () => {
+      mockUseSettings.mockReturnValue({
+        value: { system: {} },
+        isLoading: false,
+      } as ReturnType<typeof useSettings>);
+
+      const staleOverview = createDeferred<{ effectiveSkills: SkillMetadata[] }>();
+      const refreshedOverview = createDeferred<{
+        effectiveSkills: SkillMetadata[];
+      }>();
+      const refreshedSkills: SkillMetadata[] = [
+        {
+          name: 'Fresh Skill',
+          description: 'Updated skill',
+          path: '/skills/fresh/SKILL.md',
+        },
+      ];
+
+      mockInvoke.mockImplementation((command: unknown) => {
+        if (command !== 'get_managed_skills_overview') {
+          return Promise.resolve([]);
+        }
+
+        return mockInvoke.mock.calls.length === 1
+          ? staleOverview.promise
+          : refreshedOverview.promise;
+      });
+
+      const { result, unmount } = renderHook(() => useSkills(), { wrapper });
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => {
+        void result.current.refreshSkills();
+      });
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledTimes(2);
+      });
+
+      refreshedOverview.resolve({ effectiveSkills: refreshedSkills });
+
+      await waitFor(() => {
+        expect(result.current.skills).toEqual(refreshedSkills);
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      staleOverview.resolve({ effectiveSkills: MOCK_SKILLS });
+      await Promise.resolve();
+      await waitFor(() => {
+        expect(result.current.skills).toEqual(refreshedSkills);
+      });
+
+      unmount();
+
+      const cachedRender = renderHook(() => useSkills(), { wrapper });
+      await waitFor(() => {
+        expect(cachedRender.result.current.skills).toEqual(refreshedSkills);
+        expect(cachedRender.result.current.isLoading).toBe(false);
       });
 
       expect(mockInvoke).toHaveBeenCalledTimes(2);

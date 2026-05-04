@@ -133,7 +133,7 @@ fn sync_managed_system_skills_removes_extras_and_restores_missing_bundled_skills
 }
 
 #[test]
-fn sync_managed_system_skills_restores_tampered_skill_contents() {
+fn sync_managed_system_skills_restores_tampered_skill_contents_when_manifest_is_missing() {
     let bundled_root = TempDir::new().unwrap();
     let system_root = TempDir::new().unwrap();
 
@@ -147,6 +147,48 @@ fn sync_managed_system_skills_restores_tampered_skill_contents() {
 
     sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
 
+    fs::write(
+        system_root.path().join("teamwork").join("SKILL.md"),
+        "---\nname: teamwork\ndescription: Tampered\n---\nlocal drift\n",
+    )
+    .unwrap();
+    fs::remove_file(
+        system_root
+            .path()
+            .join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME),
+    )
+    .unwrap();
+
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
+
+    let teamwork_skill =
+        fs::read_to_string(system_root.path().join("teamwork").join("SKILL.md")).unwrap();
+    assert!(teamwork_skill.contains("Bundled teamwork"));
+    assert!(teamwork_skill.contains("expected bundled body"));
+}
+
+#[test]
+fn sync_managed_system_skills_rebuilds_invalid_manifest_before_comparing() {
+    let bundled_root = TempDir::new().unwrap();
+    let system_root = TempDir::new().unwrap();
+
+    let bundled_teamwork = bundled_root.path().join("teamwork");
+    write_skill(
+        &bundled_teamwork,
+        "teamwork",
+        "Bundled teamwork",
+        "expected bundled body",
+    );
+
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
+
+    fs::write(
+        system_root
+            .path()
+            .join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME),
+        b"{not-json",
+    )
+    .unwrap();
     fs::write(
         system_root.path().join("teamwork").join("SKILL.md"),
         "---\nname: teamwork\ndescription: Tampered\n---\nlocal drift\n",

@@ -87,6 +87,17 @@ export function TestWrapper({ children }: { children: React.ReactNode }) {
     );
 }
 
+function createDeferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+
+    return { promise, resolve, reject };
+}
+
 function DraftRouteWrapper({ children }: { children: React.ReactNode }) {
     return (
         <MemoryRouter initialEntries={['/agent/draft']}>
@@ -192,6 +203,85 @@ describe('AgentSessionListContext', () => {
             'agent_mark_session_viewed',
             expect.objectContaining({ sessionId: 'draft' }),
         );
+    });
+
+    it('keeps the loading flag and latest data when an older request resolves after refresh', async () => {
+        const staleSessions = createDeferred<
+            Array<{
+                id: string;
+                name: string;
+                status: 'idle';
+                createdAt: number;
+                updatedAt: number;
+            }>
+        >();
+        const refreshedSessions = createDeferred<
+            Array<{
+                id: string;
+                name: string;
+                status: 'idle';
+                createdAt: number;
+                updatedAt: number;
+            }>
+        >();
+
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd !== 'agent_get_all_sessions') {
+                return Promise.resolve();
+            }
+
+            return (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.length === 1
+                ? staleSessions.promise
+                : refreshedSessions.promise;
+        });
+
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapper }
+        );
+
+        await waitFor(() => {
+            expect((safeInvoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+            expect(result.current.state.isSessionsListLoading).toBe(true);
+        });
+
+        act(() => {
+            void result.current.actions.loadSessions(true);
+        });
+
+        await waitFor(() => {
+            expect((safeInvoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+        });
+
+        staleSessions.resolve([
+            {
+                id: 'session-1',
+                name: 'Stale Session',
+                status: 'idle',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            }
+        ]);
+        await Promise.resolve();
+
+        expect(result.current.state.isSessionsListLoading).toBe(true);
+        expect(result.current.state.sessions).toEqual([]);
+
+        refreshedSessions.resolve([
+            {
+                id: 'session-2',
+                name: 'Fresh Session',
+                status: 'idle',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            }
+        ]);
+
+        await waitFor(() => {
+            expect(result.current.state.isSessionsListLoading).toBe(false);
+            expect(result.current.state.sessions).toHaveLength(1);
+            expect(result.current.state.sessions[0].id).toBe('session-2');
+        });
     });
 
     it('should create a new session', async () => {

@@ -40,6 +40,7 @@ const RESERVED_AGENT_SUBROUTES = new Set(['draft']);
 
 let cachedSessionMetadataList: AgentSessionMetadata[] | null = null;
 let cachedSessionMetadataPromise: Promise<AgentSessionMetadata[]> | null = null;
+let sessionMetadataCacheGeneration = 0;
 
 type SessionMetadataLoadSource = 'cache' | 'inflight' | 'network';
 
@@ -49,6 +50,7 @@ interface SessionMetadataLoadHandle {
 }
 
 function invalidateSessionListStartupCache() {
+  sessionMetadataCacheGeneration += 1;
   cachedSessionMetadataList = null;
   cachedSessionMetadataPromise = null;
 }
@@ -56,6 +58,10 @@ function invalidateSessionListStartupCache() {
 function loadSessionMetadataList(
   forceRefresh = false,
 ): SessionMetadataLoadHandle {
+  if (forceRefresh) {
+    invalidateSessionListStartupCache();
+  }
+
   if (!forceRefresh && cachedSessionMetadataList !== null) {
     return {
       source: 'cache',
@@ -70,12 +76,18 @@ function loadSessionMetadataList(
     };
   }
 
+  const requestGeneration = sessionMetadataCacheGeneration;
   const request = Promise.resolve(
     safeInvoke<AgentSessionMetadata[]>('agent_get_all_sessions'),
   )
     .then((response) => {
       const sessionMetadataList = Array.isArray(response) ? response : [];
-      cachedSessionMetadataList = sessionMetadataList;
+      if (
+        requestGeneration === sessionMetadataCacheGeneration &&
+        cachedSessionMetadataPromise === request
+      ) {
+        cachedSessionMetadataList = sessionMetadataList;
+      }
       return sessionMetadataList;
     })
     .finally(() => {
@@ -172,6 +184,9 @@ export function AgentSessionListProvider({
   const pendingApprovalKeysRef = useRef(new Set<string>());
   const startupLoadRecordedRef = useRef(false);
   const sessionListMutationVersionRef = useRef(0);
+  const latestSessionListPromiseRef = useRef<Promise<
+    AgentSessionMetadata[]
+  > | null>(null);
   const activeSessionId = useMemo(() => {
     const sessionId = matchPath('/agent/:sessionId', location.pathname)?.params
       .sessionId;
@@ -207,6 +222,7 @@ export function AgentSessionListProvider({
    */
   const loadSessions = useCallback(async (forceRefresh = false) => {
     const { source, promise } = loadSessionMetadataList(forceRefresh);
+    latestSessionListPromiseRef.current = promise;
     const shouldLogLoad = forceRefresh || source === 'network';
 
     if (shouldLogLoad) {
@@ -219,7 +235,10 @@ export function AgentSessionListProvider({
     try {
       const sessionMetadataList = await promise;
 
-      if (mutationVersion !== sessionListMutationVersionRef.current) {
+      if (
+        mutationVersion !== sessionListMutationVersionRef.current ||
+        promise !== latestSessionListPromiseRef.current
+      ) {
         return;
       }
 
@@ -247,12 +266,20 @@ export function AgentSessionListProvider({
       if (shouldLogLoad) {
         logger.error('Failed to load sessions', err);
       }
-      if (mutationVersion === sessionListMutationVersionRef.current) {
+      if (
+        mutationVersion === sessionListMutationVersionRef.current &&
+        promise === latestSessionListPromiseRef.current
+      ) {
         setSessions([]);
       }
     } finally {
-      setIsSessionsListLoading(false);
-      if (!startupLoadRecordedRef.current) {
+      if (promise === latestSessionListPromiseRef.current) {
+        setIsSessionsListLoading(false);
+      }
+      if (
+        promise === latestSessionListPromiseRef.current &&
+        !startupLoadRecordedRef.current
+      ) {
         startupLoadRecordedRef.current = true;
         markStartupMilestone('session-list-settled');
       }

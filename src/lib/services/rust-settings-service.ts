@@ -35,6 +35,13 @@ interface SettingDto {
 
 let cachedSettingsValue: Settings | null = null;
 let cachedSettingsPromise: Promise<Settings> | null = null;
+let settingsCacheGeneration = 0;
+
+function invalidateCachedSettingsState() {
+  settingsCacheGeneration += 1;
+  cachedSettingsValue = null;
+  cachedSettingsPromise = null;
+}
 
 function mapDtosToSettings(dtos: SettingDto[]): Settings {
   const settingsMap = new Map<string, SettingValue>();
@@ -101,11 +108,14 @@ function mapDtosToSettings(dtos: SettingDto[]): Settings {
 }
 
 function invalidateSettingsCache() {
-  cachedSettingsValue = null;
-  cachedSettingsPromise = null;
+  invalidateCachedSettingsState();
 }
 
 async function loadSettings(forceRefresh = false): Promise<Settings> {
+  if (forceRefresh) {
+    invalidateCachedSettingsState();
+  }
+
   if (!forceRefresh && cachedSettingsValue) {
     return cachedSettingsValue;
   }
@@ -114,10 +124,16 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
     return cachedSettingsPromise;
   }
 
+  const requestGeneration = settingsCacheGeneration;
   const request = safeInvoke<SettingDto[]>('list_settings')
     .then((dtos) => {
       const settings = mapDtosToSettings(dtos);
-      cachedSettingsValue = settings;
+      if (
+        requestGeneration === settingsCacheGeneration &&
+        cachedSettingsPromise === request
+      ) {
+        cachedSettingsValue = settings;
+      }
       return settings;
     })
     .finally(() => {
@@ -211,7 +227,7 @@ export class RustSettingsService implements ISettingsService {
 
       // Perform a single batch update
       if (Object.keys(changes).length > 0) {
-        invalidateSettingsCache();
+        invalidateCachedSettingsState();
         await safeInvoke<SettingDto[]>('update_settings', {
           settings: changes,
         });

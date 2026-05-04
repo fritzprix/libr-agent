@@ -169,6 +169,27 @@ fn build_bundled_skills_manifest(skills_dir: &Path) -> Result<BundledSkillsManif
     Ok(manifest)
 }
 
+fn load_persisted_bundled_skills_manifest(
+    manifest_path: &Path,
+) -> Result<Option<BundledSkillsManifest>, String> {
+    if !manifest_path.exists() {
+        return Ok(None);
+    }
+
+    let payload = std::fs::read(manifest_path)
+        .map_err(|error| format!("Failed to read {}: {}", manifest_path.display(), error))?;
+    let manifest = match serde_json::from_slice::<BundledSkillsManifest>(&payload) {
+        Ok(manifest) => manifest,
+        Err(_) => return Ok(None),
+    };
+
+    if manifest.schema_version != MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION {
+        return Ok(None);
+    }
+
+    Ok(Some(manifest))
+}
+
 fn write_manifest_atomically(
     manifest_path: &Path,
     manifest: &BundledSkillsManifest,
@@ -176,24 +197,59 @@ fn write_manifest_atomically(
     let payload = serde_json::to_vec_pretty(manifest)
         .map_err(|error| format!("Failed to serialize manifest: {}", error))?;
     let temp_path = manifest_path.with_extension("json.tmp");
+    let backup_path = manifest_path.with_extension("json.bak");
 
     std::fs::write(&temp_path, payload)
         .map_err(|error| format!("Failed to write {}: {}", temp_path.display(), error))?;
 
-    if manifest_path.exists() {
-        std::fs::remove_file(manifest_path)
-            .map_err(|error| format!("Failed to replace {}: {}", manifest_path.display(), error))?;
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path).map_err(|error| {
+            format!(
+                "Failed to clear backup manifest {}: {}",
+                backup_path.display(),
+                error
+            )
+        })?;
     }
 
-    std::fs::rename(&temp_path, manifest_path).map_err(|error| {
-        format!(
-            "Failed to finalize manifest {}: {}",
-            manifest_path.display(),
-            error
-        )
-    })?;
+    let moved_existing_to_backup = if manifest_path.exists() {
+        std::fs::rename(manifest_path, &backup_path).map_err(|error| {
+            format!(
+                "Failed to move existing manifest {} aside: {}",
+                manifest_path.display(),
+                error
+            )
+        })?;
+        true
+    } else {
+        false
+    };
 
-    Ok(())
+    match std::fs::rename(&temp_path, manifest_path) {
+        Ok(()) => {
+            if moved_existing_to_backup {
+                std::fs::remove_file(&backup_path).map_err(|error| {
+                    format!(
+                        "Failed to remove backup manifest {}: {}",
+                        backup_path.display(),
+                        error
+                    )
+                })?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&temp_path);
+            if moved_existing_to_backup && !manifest_path.exists() {
+                let _ = std::fs::rename(&backup_path, manifest_path);
+            }
+            Err(format!(
+                "Failed to finalize manifest {}: {}",
+                manifest_path.display(),
+                error
+            ))
+        }
+    }
 }
 
 fn replace_skill_directory_atomically(source_dir: &Path, target_dir: &Path) -> Result<(), String> {
@@ -285,18 +341,22 @@ pub fn sync_managed_system_skills_snapshot(
 
     std::fs::create_dir_all(system_skills_dir).map_err(|e| e.to_string())?;
 
+    let manifest_path = system_skills_dir.join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME);
     let source_manifest = build_bundled_skills_manifest(bundled_skills_dir)?;
-    let installed_manifest = build_bundled_skills_manifest(system_skills_dir)?;
     let source_skill_names = source_manifest
         .skills
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
     let installed_skill_names = collect_skill_directory_names(system_skills_dir)?;
-    let manifest_path = system_skills_dir.join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME);
+    let persisted_manifest = load_persisted_bundled_skills_manifest(&manifest_path)?;
+    let installed_manifest = match persisted_manifest.as_ref() {
+        Some(manifest) => manifest.clone(),
+        None => build_bundled_skills_manifest(system_skills_dir)?,
+    };
 
     if installed_manifest == source_manifest && installed_skill_names == source_skill_names {
-        if !manifest_path.exists() {
+        if persisted_manifest.is_none() {
             write_manifest_atomically(&manifest_path, &source_manifest)?;
         }
         return Ok(());
