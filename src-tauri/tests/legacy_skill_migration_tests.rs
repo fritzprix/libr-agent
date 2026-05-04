@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 use tauri_mcp_agent_lib::lifecycle::app_setup::{
-    classify_legacy_skill_for_managed_storage, sync_managed_system_skills_snapshot,
-    LegacySkillMigrationAction,
+    classify_legacy_skill_for_managed_storage, remove_legacy_skills_dir_if_empty,
+    sync_managed_system_skills_snapshot, LegacySkillMigrationAction,
 };
 use tauri_mcp_agent_lib::services::skill_service::MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME;
 use tempfile::TempDir;
@@ -182,4 +182,27 @@ fn sync_managed_system_skills_ignores_empty_source_directories() {
 
     assert!(system_root.path().join("teamwork").exists());
     assert!(!system_root.path().join("dummy-test").exists());
+}
+
+#[test]
+fn remove_legacy_skills_dir_if_empty_removes_only_empty_roots() {
+    let legacy_root = TempDir::new().unwrap();
+    let empty_legacy_dir = legacy_root.path().join("skills");
+    fs::create_dir_all(&empty_legacy_dir).unwrap();
+
+    let removed = remove_legacy_skills_dir_if_empty(&empty_legacy_dir).unwrap();
+    assert!(removed);
+    assert!(!empty_legacy_dir.exists());
+
+    fs::create_dir_all(&empty_legacy_dir).unwrap();
+    write_skill(
+        &empty_legacy_dir.join("custom-skill"),
+        "custom-skill",
+        "Custom",
+        "user content",
+    );
+
+    let removed_non_empty = remove_legacy_skills_dir_if_empty(&empty_legacy_dir).unwrap();
+    assert!(!removed_non_empty);
+    assert!(empty_legacy_dir.exists());
 }

@@ -1,7 +1,11 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ReactNode } from 'react';
-import { SkillsProvider, useSkills } from '../SkillsContext';
+import React, { type ReactNode } from 'react';
+import {
+  __resetSkillsContextCacheForTests,
+  SkillsProvider,
+  useSkills,
+} from '../SkillsContext';
 
 // Mock Tauri APIs
 vi.mock('@/lib/backend/core', () => ({
@@ -45,6 +49,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe('SkillsContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetSkillsContextCacheForTests();
     mockInvoke.mockImplementation((cmd: unknown) => {
       if (cmd === 'get_managed_skills_overview') {
         return Promise.resolve({
@@ -66,6 +71,27 @@ describe('SkillsContext', () => {
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith('get_managed_skills_overview');
+      });
+    });
+
+    it('reuses the same startup fetch across StrictMode remounts', async () => {
+      mockUseSettings.mockReturnValue({
+        value: { system: {} },
+        isLoading: false,
+      } as ReturnType<typeof useSettings>);
+
+      function strictWrapper({ children }: { children: ReactNode }) {
+        return (
+          <React.StrictMode>
+            <SkillsProvider>{children}</SkillsProvider>
+          </React.StrictMode>
+        );
+      }
+
+      renderHook(() => useSkills(), { wrapper: strictWrapper });
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledTimes(1);
       });
     });
 
@@ -168,7 +194,9 @@ describe('SkillsContext', () => {
         expect(mockInvoke).toHaveBeenCalledTimes(1);
       });
 
-      await result.current.refreshSkills();
+      await act(async () => {
+        await result.current.refreshSkills();
+      });
 
       expect(mockInvoke).toHaveBeenCalledTimes(2);
     });

@@ -13,6 +13,43 @@ import { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('SkillsContext');
 
+let cachedManagedSkills: SkillMetadata[] | null = null;
+let cachedManagedSkillsPromise: Promise<SkillMetadata[]> | null = null;
+
+async function loadManagedSkills(
+  forceRefresh = false,
+): Promise<SkillMetadata[]> {
+  if (!forceRefresh && cachedManagedSkills !== null) {
+    return cachedManagedSkills;
+  }
+
+  if (!forceRefresh && cachedManagedSkillsPromise) {
+    return cachedManagedSkillsPromise;
+  }
+
+  const request = safeInvoke<{ effectiveSkills: SkillMetadata[] }>(
+    'get_managed_skills_overview',
+  )
+    .then((overview) => {
+      const result = overview.effectiveSkills ?? [];
+      cachedManagedSkills = result;
+      return result;
+    })
+    .finally(() => {
+      if (cachedManagedSkillsPromise === request) {
+        cachedManagedSkillsPromise = null;
+      }
+    });
+
+  cachedManagedSkillsPromise = request;
+  return request;
+}
+
+export function __resetSkillsContextCacheForTests() {
+  cachedManagedSkills = null;
+  cachedManagedSkillsPromise = null;
+}
+
 interface SkillsContextType {
   skills: SkillMetadata[];
   isLoading: boolean;
@@ -23,21 +60,20 @@ interface SkillsContextType {
 const SkillsContext = createContext<SkillsContextType | undefined>(undefined);
 
 export function SkillsProvider({ children }: { children: React.ReactNode }) {
-  const [skills, setSkills] = useState<SkillMetadata[]>([]);
+  const [skills, setSkills] = useState<SkillMetadata[]>(
+    cachedManagedSkills ?? [],
+  );
   // Start as true so toast never fires before the first fetch completes
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(cachedManagedSkills === null);
   const [error, setError] = useState<string | null>(null);
   const { isLoading: settingsLoading } = useSettings();
 
-  const fetchSkills = useCallback(async () => {
+  const fetchSkills = useCallback(async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const overview = await safeInvoke<{ effectiveSkills: SkillMetadata[] }>(
-        'get_managed_skills_overview',
-      );
-      const result = overview.effectiveSkills ?? [];
+      const result = await loadManagedSkills(forceRefresh);
       logger.info('Discovered skills:', {
         count: result.length,
         skills: result,
@@ -66,7 +102,7 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
         skills,
         isLoading,
         error,
-        refreshSkills: fetchSkills,
+        refreshSkills: () => fetchSkills(true),
       }}
     >
       {children}

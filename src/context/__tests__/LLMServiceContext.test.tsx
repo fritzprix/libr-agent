@@ -10,7 +10,15 @@ import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
 import { SettingsProvider } from '../SettingsContext';
-import type { ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
+import { __resetLLMListenerStartupLogStateForTests } from '../llm/useLLMListener';
+
+const { loggerInfo, loggerDebug, loggerWarn, loggerError } = vi.hoisted(() => ({
+  loggerInfo: vi.fn(),
+  loggerDebug: vi.fn(),
+  loggerWarn: vi.fn(),
+  loggerError: vi.fn(),
+}));
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -38,10 +46,10 @@ vi.mock('@/lib/ai-service/factory', () => ({
 // Mock logger
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
-    info: vi.fn(),
-    debug: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
+    info: loggerInfo,
+    debug: loggerDebug,
+    warn: loggerWarn,
+    error: loggerError,
   }),
 }));
 
@@ -75,6 +83,7 @@ describe('LLMServiceContext – Core', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetLLMListenerStartupLogStateForTests();
 
     // Setup listen mock
     (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
@@ -106,9 +115,9 @@ describe('LLMServiceContext – Core', () => {
     ]);
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+    afterEach(() => {
+      vi.clearAllMocks();
+    });
 
   describe('Provider Setup', () => {
     it('should provide context value', () => {
@@ -170,6 +179,43 @@ describe('LLMServiceContext – Core', () => {
           expect.any(Function),
         );
       });
+    });
+
+    it('dedupes startup listener lifecycle logs across StrictMode remounts', async () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <React.StrictMode>
+          <TestWrapper>{children}</TestWrapper>
+        </React.StrictMode>
+      );
+
+      renderHook(() => useLLMService(), {
+        wrapper,
+      });
+
+      await waitFor(() => {
+        expect(loggerInfo).toHaveBeenCalledWith(
+          'LLM completion request listener registered',
+        );
+      });
+
+      expect(
+        loggerInfo.mock.calls.filter(
+          ([message]) =>
+            message === '🎧 Initializing LLM completion request listener',
+        ),
+      ).toHaveLength(1);
+      expect(
+        loggerInfo.mock.calls.filter(
+          ([message]) =>
+            message === 'Setting up LLM completion request listener',
+        ),
+      ).toHaveLength(1);
+      expect(
+        loggerInfo.mock.calls.filter(
+          ([message]) =>
+            message === 'LLM completion request listener registered',
+        ),
+      ).toHaveLength(1);
     });
 
     it('should cleanup on unmount', async () => {

@@ -1,6 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+    __resetAgentSessionListStartupCacheForTests,
     AgentSessionListProvider,
     useAgentSessionListState,
     useAgentSessionListActions,
@@ -80,6 +81,7 @@ describe('AgentSessionListContext – toggleBookmark', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        __resetAgentSessionListStartupCacheForTests();
         (listen as ReturnType<typeof vi.fn>).mockResolvedValue(vi.fn());
     });
 

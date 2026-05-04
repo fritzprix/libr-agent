@@ -32,6 +32,23 @@ struct BundledSkillsManifest {
     skills: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct LegacySkillMigrationSummary {
+    removed_legacy_snapshot_entries: usize,
+    migrated_user_skills: usize,
+    skipped_existing_user_skills: usize,
+    removed_legacy_root_dir: bool,
+}
+
+impl LegacySkillMigrationSummary {
+    fn is_noop(&self) -> bool {
+        self.removed_legacy_snapshot_entries == 0
+            && self.migrated_user_skills == 0
+            && self.skipped_existing_user_skills == 0
+            && !self.removed_legacy_root_dir
+    }
+}
+
 /// Migration decision for a legacy skill directory from AppData/skills.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacySkillMigrationAction {
@@ -311,9 +328,25 @@ pub fn sync_managed_system_skills_snapshot(
 /// Move legacy user-managed skills from AppData/skills into AppData/user_skills.
 /// Old `.bundled_skill` snapshot entries are always discarded so the bundled
 /// system snapshot can be rebuilt as an exact copy of the current bundle.
+pub fn remove_legacy_skills_dir_if_empty(
+    legacy_skills_dir: &Path,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if !legacy_skills_dir.exists() {
+        return Ok(false);
+    }
+
+    let mut entries = std::fs::read_dir(legacy_skills_dir)?;
+    if entries.next().is_some() {
+        return Ok(false);
+    }
+
+    std::fs::remove_dir(legacy_skills_dir)?;
+    Ok(true)
+}
+
 async fn migrate_legacy_skills_to_managed_storage(
     _app: &App,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<LegacySkillMigrationSummary, Box<dyn std::error::Error>> {
     use std::fs;
 
     let base_data_dir = crate::session::get_session_manager()
@@ -324,10 +357,11 @@ async fn migrate_legacy_skills_to_managed_storage(
     let user_skills_dir = base_data_dir.join(USER_SKILLS_DIR_NAME);
 
     if !legacy_skills_dir.exists() {
-        return Ok(());
+        return Ok(LegacySkillMigrationSummary::default());
     }
 
     fs::create_dir_all(&user_skills_dir)?;
+    let mut summary = LegacySkillMigrationSummary::default();
 
     for entry in fs::read_dir(&legacy_skills_dir)? {
         let entry = entry?;
@@ -346,6 +380,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                 skill_name
             );
             fs::remove_dir_all(&legacy_skill_dir)?;
+            summary.removed_legacy_snapshot_entries += 1;
             continue;
         }
 
@@ -354,6 +389,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                 "⏭️  Managed user skill already exists, leaving legacy copy untouched: {:?}",
                 skill_name
             );
+            summary.skipped_existing_user_skills += 1;
             continue;
         }
 
@@ -363,6 +399,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                     "📦 Migrated legacy skill into managed storage: {:?}",
                     skill_name
                 );
+                summary.migrated_user_skills += 1;
             }
             Err(error) => {
                 log::warn!(
@@ -372,11 +409,14 @@ async fn migrate_legacy_skills_to_managed_storage(
                 );
                 copy_dir_recursive(&legacy_skill_dir, &target_skill_dir)?;
                 fs::remove_dir_all(&legacy_skill_dir)?;
+                summary.migrated_user_skills += 1;
             }
         }
     }
 
-    Ok(())
+    summary.removed_legacy_root_dir = remove_legacy_skills_dir_if_empty(&legacy_skills_dir)?;
+
+    Ok(summary)
 }
 
 /// Recursively copy directory contents
@@ -428,10 +468,22 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Migrate legacy AppData/skills user content into the managed user_skills directory.
     tauri::async_runtime::block_on(async {
-        if let Err(e) = migrate_legacy_skills_to_managed_storage(app).await {
-            log::warn!("⚠️  Failed to migrate legacy skills: {}", e);
-        } else {
-            info!("✅ Legacy skills migration completed");
+        match migrate_legacy_skills_to_managed_storage(app).await {
+            Ok(summary) if summary.is_noop() => {
+                log::debug!("No legacy skills migration work was needed");
+            }
+            Ok(summary) => {
+                info!(
+                    "✅ Legacy skills migration completed (removed snapshots: {}, migrated user skills: {}, skipped existing user skills: {}, removed legacy root: {})",
+                    summary.removed_legacy_snapshot_entries,
+                    summary.migrated_user_skills,
+                    summary.skipped_existing_user_skills,
+                    summary.removed_legacy_root_dir
+                );
+            }
+            Err(e) => {
+                log::warn!("⚠️  Failed to migrate legacy skills: {}", e);
+            }
         }
     });
 

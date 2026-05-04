@@ -1,6 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+    __resetAgentSessionListStartupCacheForTests,
     AgentSessionListProvider,
     useAgentSessionListState,
     useAgentSessionListActions,
@@ -75,6 +76,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        __resetAgentSessionListStartupCacheForTests();
         (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
     });
 

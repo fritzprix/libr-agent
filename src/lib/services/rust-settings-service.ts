@@ -33,82 +33,111 @@ interface SettingDto {
   updatedAt: number;
 }
 
+let cachedSettingsValue: Settings | null = null;
+let cachedSettingsPromise: Promise<Settings> | null = null;
+
+function mapDtosToSettings(dtos: SettingDto[]): Settings {
+  const settingsMap = new Map<string, SettingValue>();
+  dtos.forEach((dto) => {
+    settingsMap.set(dto.key, dto.value);
+  });
+
+  const getTypedValue = <T extends SettingValue>(
+    key: string,
+    defaultValue: T,
+    validator?: (val: unknown) => val is T,
+  ): T => {
+    const value = settingsMap.get(key);
+    if (value !== undefined) {
+      if (validator && !validator(value)) {
+        logger.warn(`Invalid value for setting key: ${key}, using default`, {
+          value,
+          defaultValue,
+        });
+        return defaultValue;
+      }
+      return value as T;
+    }
+    return defaultValue;
+  };
+
+  const storedSystem = getTypedValue('systemSettings', DEFAULT_SETTING.system);
+
+  return {
+    ...DEFAULT_SETTING,
+    serviceConfigs: {
+      ...DEFAULT_SETTING.serviceConfigs,
+      ...getTypedValue('serviceConfigs', DEFAULT_SETTING.serviceConfigs),
+    },
+    preferredModel: getTypedValue(
+      'preferredModel',
+      DEFAULT_SETTING.preferredModel,
+    ),
+    fallbackModel:
+      (settingsMap.get('fallbackModel') as ModelChoice | null | undefined) ??
+      DEFAULT_SETTING.fallbackModel,
+    contextStrategy: getTypedValue(
+      'contextStrategy',
+      DEFAULT_SETTING.contextStrategy,
+    ),
+    windowSize: getTypedValue('windowSize', DEFAULT_SETTING.windowSize),
+    maxInputContext: getTypedValue(
+      'maxInputContext',
+      DEFAULT_SETTING.maxInputContext,
+    ),
+    uiLanguage: getTypedValue('uiLanguage', DEFAULT_SETTING.uiLanguage),
+    toolCallGroupVisibleCount: getTypedValue(
+      'toolCallGroupVisibleCount',
+      DEFAULT_SETTING.toolCallGroupVisibleCount,
+    ),
+    agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
+    advanced: getTypedValue('advancedSettings', DEFAULT_SETTING.advanced),
+    display: getTypedValue('displaySettings', DEFAULT_SETTING.display),
+    system: {
+      ...DEFAULT_SETTING.system,
+      ...storedSystem,
+    },
+  };
+}
+
+function invalidateSettingsCache() {
+  cachedSettingsValue = null;
+  cachedSettingsPromise = null;
+}
+
+async function loadSettings(forceRefresh = false): Promise<Settings> {
+  if (!forceRefresh && cachedSettingsValue) {
+    return cachedSettingsValue;
+  }
+
+  if (!forceRefresh && cachedSettingsPromise) {
+    return cachedSettingsPromise;
+  }
+
+  const request = safeInvoke<SettingDto[]>('list_settings')
+    .then((dtos) => {
+      const settings = mapDtosToSettings(dtos);
+      cachedSettingsValue = settings;
+      return settings;
+    })
+    .finally(() => {
+      if (cachedSettingsPromise === request) {
+        cachedSettingsPromise = null;
+      }
+    });
+
+  cachedSettingsPromise = request;
+  return request;
+}
+
+export function __resetRustSettingsServiceCacheForTests() {
+  invalidateSettingsCache();
+}
+
 export class RustSettingsService implements ISettingsService {
   async getSettings(): Promise<Settings> {
     try {
-      const dtos = await safeInvoke<SettingDto[]>('list_settings');
-
-      // Convert list of settings to Settings object
-      const settingsMap = new Map<string, SettingValue>();
-      dtos.forEach((dto) => {
-        settingsMap.set(dto.key, dto.value);
-      });
-
-      // Helper function to safely get typed value with fallback
-      const getTypedValue = <T extends SettingValue>(
-        key: string,
-        defaultValue: T,
-        validator?: (val: unknown) => val is T,
-      ): T => {
-        const value = settingsMap.get(key);
-        if (value !== undefined) {
-          if (validator && !validator(value)) {
-            logger.warn(
-              `Invalid value for setting key: ${key}, using default`,
-              { value, defaultValue },
-            );
-            return defaultValue;
-          }
-          return value as T;
-        }
-        return defaultValue;
-      };
-
-      // Construct settings object with defaults
-      const storedSystem = getTypedValue(
-        'systemSettings',
-        DEFAULT_SETTING.system,
-      );
-
-      const settings: Settings = {
-        ...DEFAULT_SETTING,
-        serviceConfigs: {
-          ...DEFAULT_SETTING.serviceConfigs,
-          ...getTypedValue('serviceConfigs', DEFAULT_SETTING.serviceConfigs),
-        },
-        preferredModel: getTypedValue(
-          'preferredModel',
-          DEFAULT_SETTING.preferredModel,
-        ),
-        fallbackModel:
-          (settingsMap.get('fallbackModel') as
-            | ModelChoice
-            | null
-            | undefined) ?? DEFAULT_SETTING.fallbackModel,
-        contextStrategy: getTypedValue(
-          'contextStrategy',
-          DEFAULT_SETTING.contextStrategy,
-        ),
-        windowSize: getTypedValue('windowSize', DEFAULT_SETTING.windowSize),
-        maxInputContext: getTypedValue(
-          'maxInputContext',
-          DEFAULT_SETTING.maxInputContext,
-        ),
-        uiLanguage: getTypedValue('uiLanguage', DEFAULT_SETTING.uiLanguage),
-        toolCallGroupVisibleCount: getTypedValue(
-          'toolCallGroupVisibleCount',
-          DEFAULT_SETTING.toolCallGroupVisibleCount,
-        ),
-        agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
-        advanced: getTypedValue('advancedSettings', DEFAULT_SETTING.advanced),
-        display: getTypedValue('displaySettings', DEFAULT_SETTING.display),
-        system: {
-          ...DEFAULT_SETTING.system,
-          ...storedSystem,
-        },
-      };
-
-      return settings;
+      return await loadSettings();
     } catch (error) {
       logger.error('Failed to get settings', error);
       throw error;
@@ -182,13 +211,14 @@ export class RustSettingsService implements ISettingsService {
 
       // Perform a single batch update
       if (Object.keys(changes).length > 0) {
+        invalidateSettingsCache();
         await safeInvoke<SettingDto[]>('update_settings', {
           settings: changes,
         });
+        return await loadSettings(true);
       }
 
-      // Return updated settings
-      return this.getSettings();
+      return await this.getSettings();
     } catch (error) {
       logger.error('Failed to update settings', error);
       throw error;

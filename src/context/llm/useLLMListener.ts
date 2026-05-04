@@ -4,7 +4,7 @@ import {
   handleCompactResponse,
   handleCompactError,
 } from '@/lib/backend/agent-commands';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
@@ -41,6 +41,20 @@ import {
 } from './listener-utils';
 
 const logger = getLogger('useLLMListener');
+const startupLifecycleLogKeys = new Set<string>();
+
+function logStartupLifecycleOnce(key: string, message: string) {
+  if (startupLifecycleLogKeys.has(key)) {
+    return;
+  }
+
+  startupLifecycleLogKeys.add(key);
+  logger.info(message);
+}
+
+export function __resetLLMListenerStartupLogStateForTests() {
+  startupLifecycleLogKeys.clear();
+}
 
 interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;
@@ -83,26 +97,20 @@ export function useLLMListener({
   setCompactedRangeForSession,
   setAwaitingCompactForSession,
 }: UseLLMListenerProps) {
-  // Track listener setup to prevent duplicate registration in React Strict Mode
-  const listenerSetupRef = useRef(false);
-
   useEffect(() => {
-    // Prevent duplicate listener registration in React Strict Mode
-    if (listenerSetupRef.current) {
-      logger.info(
-        '⚠️ LLM listener already set up, skipping duplicate registration',
-      );
-      return;
-    }
-
-    listenerSetupRef.current = true;
-    logger.info('🎧 Initializing LLM completion request listener');
+    logStartupLifecycleOnce(
+      'completion-initializing',
+      '🎧 Initializing LLM completion request listener',
+    );
 
     let isMounted = true;
     let unlisten: (() => void) | undefined;
 
     const setupListener = async () => {
-      logger.info('Setting up LLM completion request listener');
+      logStartupLifecycleOnce(
+        'completion-setting-up',
+        'Setting up LLM completion request listener',
+      );
 
       const unlistenFn = await listen<CompletionRequest>(
         'llm:completion-request',
@@ -372,13 +380,13 @@ export function useLLMListener({
       );
 
       if (!isMounted) {
-        logger.info(
-          'LLM listener setup completed after unmount, cleaning up immediately',
-        );
         unlistenFn();
       } else {
         unlisten = unlistenFn;
-        logger.info('LLM completion request listener registered');
+        logStartupLifecycleOnce(
+          'completion-registered',
+          'LLM completion request listener registered',
+        );
       }
     };
 
@@ -460,7 +468,10 @@ export function useLLMListener({
         unlistenFn();
       } else {
         unlistenCompact = unlistenFn;
-        logger.info('LLM compact request listener registered');
+        logStartupLifecycleOnce(
+          'compact-request-registered',
+          'LLM compact request listener registered',
+        );
       }
     };
 
@@ -517,7 +528,10 @@ export function useLLMListener({
         unlistenFn();
       } else {
         unlistenCompactState = unlistenFn;
-        logger.info('LLM compact state listener registered');
+        logStartupLifecycleOnce(
+          'compact-state-registered',
+          'LLM compact state listener registered',
+        );
       }
     };
 
@@ -537,8 +551,6 @@ export function useLLMListener({
         unlistenCompactState();
         logger.info('LLM compact state listener cleaned up');
       }
-      // Reset listener setup ref on unmount
-      listenerSetupRef.current = false;
     };
   }, []); // ⚠️ CRITICAL: Empty dependency array to prevent re-registering listener
 }
