@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
@@ -52,6 +53,8 @@ function AgentMessageBubbleImpl({
   isPending = false,
   toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
+  const { t } = useTranslation();
+
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
@@ -106,12 +109,12 @@ function AgentMessageBubbleImpl({
           <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold opacity-80">
             {isChannelMessage ? (
               <>
-                <span>Notification</span>
+                <span>{t('agent.bubble.notification')}</span>
                 <Badge
                   variant="outline"
                   className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
                 >
-                  CHANNEL
+                  {t('agent.bubble.channel')}
                 </Badge>
                 {channelMetadata?.serverName ? (
                   <Badge variant="secondary" className="bg-background/70">
@@ -122,11 +125,11 @@ function AgentMessageBubbleImpl({
             ) : (
               <>
                 {msg.role === 'assistant'
-                  ? assistantName || 'ASSISTANT'
+                  ? assistantName || t('agent.bubble.assistant')
                   : msg.role === 'user'
                     ? isPending
-                      ? 'You (queued)'
-                      : 'You'
+                      ? t('agent.bubble.youQueued')
+                      : t('agent.bubble.you')
                     : msg.role.toUpperCase()}
               </>
             )}
@@ -138,11 +141,15 @@ function AgentMessageBubbleImpl({
                 <div className="text-sm mb-2 font-medium flex items-center gap-2 opacity-90">
                   <Paperclip className="w-4 h-4" />
                   <span>
-                    {msg.attachments.length} file
-                    {msg.attachments.length > 1 ? 's' : ''} attached
+                    {t('agent.bubble.filesAttached', {
+                      count: msg.attachments.length,
+                    })}
                   </span>
                 </div>
-                <ul className="space-y-2" aria-label="Attached files">
+                <ul
+                  className="space-y-2"
+                  aria-label={t('agent.bubble.attachedFilesAria')}
+                >
                   {msg.attachments.map((attachment) => (
                     <li
                       key={attachment.contentId}
@@ -158,7 +165,9 @@ function AgentMessageBubbleImpl({
                         </span>
                       </div>
                       <div className="text-xs opacity-50 whitespace-nowrap ml-2">
-                        {attachment.lineCount} lines
+                        {t('agent.bubble.lines', {
+                          count: attachment.lineCount,
+                        })}
                       </div>
                     </li>
                   ))}
@@ -179,7 +188,9 @@ function AgentMessageBubbleImpl({
                 />
               </>
             ) : (
-              <span className="text-muted-foreground italic">No content</span>
+              <span className="text-muted-foreground italic">
+                {t('agent.bubble.noContent')}
+              </span>
             )}
           </div>
         </div>

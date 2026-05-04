@@ -1,4 +1,4 @@
-🌐 Scope: src/locales/en/common.json, src/locales/ko/common.json
-🔑 Keys Added: 22
-🌍 Languages: en.json, ko.json
-⚠️ Visual QA: Verified that longer text strings do not break Flex/Grid layouts.
+🌐 Scope: src/features/agent/components/AgentMessageBubble.tsx, src/features/agent/components/shared/ThinkingBubble.tsx
+🔑 Keys Added: 12
+🌍 Languages: EN, KO
+⚠️ Visual QA: Verified layout with longer text

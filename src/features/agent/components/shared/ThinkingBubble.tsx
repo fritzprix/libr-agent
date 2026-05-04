@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from './LoadingIndicator';
 
 interface ThinkingBubbleProps {
@@ -30,6 +31,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   isStreaming = false,
   className = '',
 }) => {
+  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -49,13 +51,19 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
     >
       <div className="flex items-center gap-2 text-xs font-medium opacity-70">
         {isStreaming && <LoadingIndicator size="sm" />}
-        <span>Thinking Process {formattedTime}</span>
+        <span>
+          {formattedTime
+            ? t('agent.bubble.thinkingProcessWithTime', { time: formattedTime })
+            : t('agent.bubble.thinkingProcess')}
+        </span>
       </div>
       <div
         ref={scrollRef}
         className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto"
       >
-        {thinking != null && thinking.length > 0 ? thinking : 'Thinking...'}
+        {thinking != null && thinking.length > 0
+          ? thinking
+          : t('agent.bubble.thinking')}
       </div>
     </div>
   );
