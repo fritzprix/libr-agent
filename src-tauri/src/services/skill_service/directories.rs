@@ -55,10 +55,17 @@ fn merge_skill_layers(skill_layers: Vec<Vec<SkillMetadata>>) -> Vec<SkillMetadat
 }
 
 pub async fn get_managed_skills_overview() -> Result<ManagedSkillsOverview, String> {
-    wait_for_managed_skills_sync().await;
-
     let system_dir = get_system_skills_directory()?;
     let user_dir = get_user_skills_directory()?;
+
+    get_managed_skills_overview_for_directories(system_dir, user_dir).await
+}
+
+pub async fn get_managed_skills_overview_for_directories(
+    system_dir: PathBuf,
+    user_dir: PathBuf,
+) -> Result<ManagedSkillsOverview, String> {
+    wait_for_managed_skills_sync().await;
 
     let mut system_skills = scan_skills_internal_cached(
         &system_dir,

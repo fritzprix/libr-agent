@@ -66,3 +66,33 @@ fn mirror_bundled_skills_removes_stale_output_for_invalidated_skill_directory() 
 
     assert!(!deployed_root.path().join("dummy-test").exists());
 }
+
+#[test]
+fn mirror_bundled_skills_removes_stale_output_when_source_root_disappears() {
+    let parent_root = TempDir::new().unwrap();
+    let source_root = parent_root.path().join("bundled-skills-source");
+    let deployed_root = TempDir::new().unwrap();
+
+    write_skill(
+        &source_root.join("teamwork"),
+        "teamwork",
+        "Bundled teamwork",
+        "expected bundled body",
+    );
+
+    bundled_skills::mirror_bundled_skills(&source_root, deployed_root.path()).unwrap();
+    assert!(deployed_root
+        .path()
+        .join("teamwork")
+        .join("SKILL.md")
+        .exists());
+
+    fs::remove_dir_all(&source_root).unwrap();
+
+    bundled_skills::mirror_bundled_skills(&source_root, deployed_root.path()).unwrap();
+
+    assert!(
+        !deployed_root.path().exists(),
+        "missing source root should clear previously deployed bundled skills"
+    );
+}

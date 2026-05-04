@@ -28,6 +28,9 @@ fn is_valid_bundled_skill_dir(path: &Path) -> bool {
 
 pub fn mirror_bundled_skills(source_dir: &Path, deployed_dir: &Path) -> io::Result<()> {
     if !source_dir.exists() {
+        if deployed_dir.exists() {
+            fs::remove_dir_all(deployed_dir)?;
+        }
         return Ok(());
     }
 

@@ -1,9 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri_mcp_agent_lib::services::skill_service::{
-    get_managed_skills_overview, get_user_skills_directory, invalidate_skill_scan_cache,
+    get_managed_skills_overview_for_directories, invalidate_skill_scan_cache,
     skill_storage_directory_name, SKILL_FILE_NAME,
 };
+use tempfile::TempDir;
 use uuid::Uuid;
 
 fn unique_skill_name(prefix: &str) -> String {
@@ -33,13 +34,18 @@ fn remove_if_exists(path: &Path) {
 
 #[tokio::test]
 async fn managed_skills_overview_uses_cache_until_invalidated() {
-    let user_dir = get_user_skills_directory().expect("user dir");
+    let isolated_root = TempDir::new().expect("temp root");
+    let system_dir = isolated_root.path().join("system_skills");
+    let user_dir = isolated_root.path().join("user_skills");
+    fs::create_dir_all(&system_dir).expect("create system dir");
+    fs::create_dir_all(&user_dir).expect("create user dir");
+
     let skill_name = unique_skill_name("cache-regression");
     let skill_dir = create_skill_dir(&user_dir, &skill_name, "cached skill");
 
     invalidate_skill_scan_cache();
 
-    let initial = get_managed_skills_overview()
+    let initial = get_managed_skills_overview_for_directories(system_dir.clone(), user_dir.clone())
         .await
         .expect("initial overview");
     assert!(
@@ -52,7 +58,7 @@ async fn managed_skills_overview_uses_cache_until_invalidated() {
 
     remove_if_exists(&skill_dir);
 
-    let cached = get_managed_skills_overview()
+    let cached = get_managed_skills_overview_for_directories(system_dir.clone(), user_dir.clone())
         .await
         .expect("cached overview");
     assert!(
@@ -65,7 +71,7 @@ async fn managed_skills_overview_uses_cache_until_invalidated() {
 
     invalidate_skill_scan_cache();
 
-    let refreshed = get_managed_skills_overview()
+    let refreshed = get_managed_skills_overview_for_directories(system_dir, user_dir)
         .await
         .expect("refreshed overview");
     assert!(
