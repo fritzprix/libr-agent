@@ -108,12 +108,4 @@ function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
   );
 }
 
-export default React.memo(SystemTabComponent, (prev, next) => {
-  return (
-    prev.systemSettingsProps.networkSettingsChanged ===
-      next.systemSettingsProps.networkSettingsChanged &&
-    prev.systemSettingsProps.localSystemSettings ===
-      next.systemSettingsProps.localSystemSettings &&
-    prev.systemSettingsProps.onChange === next.systemSettingsProps.onChange
-  );
-});
+export default React.memo(SystemTabComponent);

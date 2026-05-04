@@ -381,29 +381,4 @@ function AdvancedTabComponent({
   );
 }
 
-export default React.memo(AdvancedTabComponent, (prev, next) => {
-  return (
-    prev.localAdvancedSettings.loopPreventionThreshold ===
-      next.localAdvancedSettings.loopPreventionThreshold &&
-    prev.localAdvancedSettings.defaultSessionMaxDepth ===
-      next.localAdvancedSettings.defaultSessionMaxDepth &&
-    prev.localAdvancedSettings.defaultSessionMaxFanout ===
-      next.localAdvancedSettings.defaultSessionMaxFanout &&
-    prev.localAdvancedSettings.maxConcurrentActiveSessions ===
-      next.localAdvancedSettings.maxConcurrentActiveSessions &&
-    prev.localAdvancedSettings.maxSuspendedSessions ===
-      next.localAdvancedSettings.maxSuspendedSessions &&
-    prev.localAdvancedSettings.maxConcurrentActiveProcesses ===
-      next.localAdvancedSettings.maxConcurrentActiveProcesses &&
-    prev.localAdvancedSettings.maxSuspendedProcesses ===
-      next.localAdvancedSettings.maxSuspendedProcesses &&
-    prev.localAdvancedSettings.toolResultInlineLimitBytes ===
-      next.localAdvancedSettings.toolResultInlineLimitBytes &&
-    prev.onChange === next.onChange &&
-    prev.systemSettingsProps.localSystemSettings ===
-      next.systemSettingsProps.localSystemSettings &&
-    prev.systemSettingsProps.onChange === next.systemSettingsProps.onChange &&
-    prev.dangerZoneProps.isDeleting === next.dangerZoneProps.isDeleting &&
-    prev.dangerZoneProps.isResetting === next.dangerZoneProps.isResetting
-  );
-});
+export default React.memo(AdvancedTabComponent);

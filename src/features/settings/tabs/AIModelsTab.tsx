@@ -329,26 +329,4 @@ function AIModelsTabComponent({
   );
 }
 
-export default React.memo(AIModelsTabComponent, (prev, next) => {
-  // Regression guard:
-  // Provider cards are controlled by serviceConfigs. If this comparator skips
-  // serviceConfigs changes, provider URL/key inputs become effectively read-only
-  // because the child cards never receive the updated value prop.
-  return (
-    prev.serviceConfigs === next.serviceConfigs &&
-    prev.providerEntries === next.providerEntries &&
-    prev.localPreferredModel.provider === next.localPreferredModel.provider &&
-    prev.localPreferredModel.model === next.localPreferredModel.model &&
-    prev.localFallbackModel?.provider === next.localFallbackModel?.provider &&
-    prev.localFallbackModel?.model === next.localFallbackModel?.model &&
-    prev.localMaxRetries === next.localMaxRetries &&
-    prev.localRetryDelay === next.localRetryDelay &&
-    prev.localDefaultMaxOutputTokens === next.localDefaultMaxOutputTokens &&
-    prev.onPendingChange === next.onPendingChange &&
-    prev.onPreferredModelChange === next.onPreferredModelChange &&
-    prev.onFallbackModelChange === next.onFallbackModelChange &&
-    prev.onMaxRetriesChange === next.onMaxRetriesChange &&
-    prev.onRetryDelayChange === next.onRetryDelayChange &&
-    prev.onDefaultMaxOutputTokensChange === next.onDefaultMaxOutputTokensChange
-  );
-});
+export default React.memo(AIModelsTabComponent);

@@ -247,20 +247,4 @@ function ChatInterfaceTabComponent({
   );
 }
 
-export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
-  return (
-    prev.localContextStrategy === next.localContextStrategy &&
-    prev.localWindowSize === next.localWindowSize &&
-    prev.localMaxInputContext === next.localMaxInputContext &&
-    prev.localToolCallGroupVisibleCount ===
-      next.localToolCallGroupVisibleCount &&
-    prev.localAdvancedSettings.diffContextLines ===
-      next.localAdvancedSettings.diffContextLines &&
-    prev.onWindowSizeChange === next.onWindowSizeChange &&
-    prev.onContextStrategyChange === next.onContextStrategyChange &&
-    prev.onMaxInputContextChange === next.onMaxInputContextChange &&
-    prev.onToolCallGroupVisibleCountChange ===
-      next.onToolCallGroupVisibleCountChange &&
-    prev.onAdvancedSettingsChange === next.onAdvancedSettingsChange
-  );
-});
+export default React.memo(ChatInterfaceTabComponent);

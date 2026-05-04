@@ -21,13 +21,13 @@ The AI industry's focus has shifted. Recent 2026 benchmark analyses showed that 
 
 Every current option still forces a tradeoff:
 
-| Platform | The Catch |
-|---|---|
-| **OpenClaw** | High-flexibility open ecosystem, but early-2026 analyses highlighted exposed instances, plaintext secret handling, and prompt-injection risk in community skills. |
-| **Claude Cowork** | Strong local UX, but still limited on complex autonomous tasks. Closed ecosystem. Not extensible. |
-| **Claude Code / Cursor** | Developer-only. Requires terminal fluency. Not general-purpose. |
-| **Google Mariner** | Your work runs on Google's cloud VMs. You don't control your data. |
-| **LangGraph / CrewAI** | Powerful frameworks, but you assemble everything yourself. No product experience. |
+| Platform                 | The Catch                                                                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **OpenClaw**             | High-flexibility open ecosystem, but early-2026 analyses highlighted exposed instances, plaintext secret handling, and prompt-injection risk in community skills. |
+| **Claude Cowork**        | Strong local UX, but still limited on complex autonomous tasks. Closed ecosystem. Not extensible.                                                                 |
+| **Claude Code / Cursor** | Developer-only. Requires terminal fluency. Not general-purpose.                                                                                                   |
+| **Google Mariner**       | Your work runs on Google's cloud VMs. You don't control your data.                                                                                                |
+| **LangGraph / CrewAI**   | Powerful frameworks, but you assemble everything yourself. No product experience.                                                                                 |
 
 **LibrAgent is built to collapse that tradeoff.** Local-first security. MCP-native extensibility. Swarm-to-Org multi-agent coordination. A polished GUI that works for non-developers. All in one open-source desktop app.
 
@@ -79,12 +79,12 @@ MCP (Model Context Protocol) became a Linux Foundation standard in 2026. LibrAge
 
 Most AI tools are impressive in demos and brittle in production. LibrAgent is obsessively engineered for long-running, real work:
 
-| Substrate | Capabilities |
-|---|---|
+| Substrate     | Capabilities                                                                                         |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
 | **Workspace** | Line-precise editing, multi-file ops, unified search, `@file`/`@skill`/`@playbook` context injection |
-| **Shell** | Isolated execution AND persistent shells — async process monitoring (`poll`, `read output`, `list`) |
-| **Browser** | Playwright-style tools (`goto`, `click`, `fill`, `screenshot`) with cache consistency guarantees |
-| **Knowledge** | Graph-based knowledge management with entity/relation extraction (v2), BM25 full-text search |
+| **Shell**     | Isolated execution AND persistent shells — async process monitoring (`poll`, `read output`, `list`)  |
+| **Browser**   | Playwright-style tools (`goto`, `click`, `fill`, `screenshot`) with cache consistency guarantees     |
+| **Knowledge** | Graph-based knowledge management with entity/relation extraction (v2), BM25 full-text search         |
 
 **Reliability engineering included**: Context compaction, loop prevention, circuit breakers, and stale-response guards keep agents productive in sessions that last hours — not minutes.
 
@@ -104,19 +104,19 @@ LibrAgent ships with a growing library of **Bundled Skills**. They are not rando
 
 The most important day-one skills are:
 
-| Skill | What it does |
-|---|---|
-| `system-setup` | Detects and installs missing runtimes (Python, Node.js, uv) across all platforms |
-| `mcp-installer` | Registers MCP servers from npm packages, GitHub URLs, or JSON config blocks |
-| `mcp-importer` | Imports existing MCP configs from Cursor, VS Code, Windsurf, and similar setups |
-| `specialist-creator` | Designs a full agent config (system prompt, model, tools) from a role description |
-| `crew-constructor` | Scans available tools and batch-creates a matched specialist team automatically |
-| `agent-tooling` | Audits agents, detects capability mismatches, and rebalances tool assignments dynamically |
-| `delegate` | Guides parent→child session handoff with explicit context transfer and lineage tracking |
-| `teamwork` | Scaffolds the shared workspace constitution for coordinated multi-agent work |
-| `org` | Formalizes durable org identity and org-visible member hierarchy |
-| `schedule` | Creates and manages recurring scheduled task groups for unattended automation |
-| `soul-awakening` | Anchors an agent to a `SOUL.md` persona — tone, stance, identity |
+| Skill                | What it does                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| `system-setup`       | Detects and installs missing runtimes (Python, Node.js, uv) across all platforms          |
+| `mcp-installer`      | Registers MCP servers from npm packages, GitHub URLs, or JSON config blocks               |
+| `mcp-importer`       | Imports existing MCP configs from Cursor, VS Code, Windsurf, and similar setups           |
+| `specialist-creator` | Designs a full agent config (system prompt, model, tools) from a role description         |
+| `crew-constructor`   | Scans available tools and batch-creates a matched specialist team automatically           |
+| `agent-tooling`      | Audits agents, detects capability mismatches, and rebalances tool assignments dynamically |
+| `delegate`           | Guides parent→child session handoff with explicit context transfer and lineage tracking   |
+| `teamwork`           | Scaffolds the shared workspace constitution for coordinated multi-agent work              |
+| `org`                | Formalizes durable org identity and org-visible member hierarchy                          |
+| `schedule`           | Creates and manages recurring scheduled task groups for unattended automation             |
+| `soul-awakening`     | Anchors an agent to a `SOUL.md` persona — tone, stance, identity                          |
 
 And that's just the operator layer. LibrAgent also ships domain skills for:
 
@@ -132,24 +132,28 @@ _Important: `bootstrap` is a builtin capability often used alongside these skill
 ## 🌍 Real-World Scenarios
 
 ### Solo Developer — Automated Code Review
+
 1. Connect your local repo via the Workspace tool
 2. Install the GitHub MCP preset (one click)
 3. Ask: _"Find security issues in PR #42 and produce a Markdown report"_
 4. Agent reads code, runs analysis, saves findings to the Knowledge server for future reference
 
 ### Marketer — Competitive Intelligence on Autopilot
+
 1. Configure 5 competitor blogs via the Browser tool
 2. Tell an agent: _"Create a scheduled competitor brief every morning at 7am"_ — the agent can use the `schedule` skill to wire up the recurring task group for you
 3. Agent browses, summarizes, and appends to Knowledge store
 4. Ask anytime: _"Summarize last week's competitor moves"_
 
 ### Engineering Team — Offline Agent Stack
+
 1. `ollama pull qwen3:14b` — no API keys, no cloud
 2. Connect Workspace + Shell tools to your codebase
 3. Sensitive IP never leaves the machine
 4. Agents read, modify, test, and commit — fully local
 
 ### Power User — Multi-Agent Research Pipeline
+
 1. Use `crew-constructor` to auto-generate: Researcher × 3, Analyst × 1, Writer × 1
 2. Orchestrator delegates in parallel via `delegate` skill
 3. Results merge into a single structured report in Content Store
@@ -187,24 +191,29 @@ pnpm tauri dev
 ### The 5-Minute Onboarding Path
 
 **Step 1 — Connect a model** (Settings → LLM Providers)
+
 - Cloud: paste an OpenAI / Anthropic / Gemini / Groq API key
 - Local: `ollama pull qwen3:14b` then select Ollama in Settings
 - Already use Cursor or VS Code? Tell any agent: _"Import my MCP servers from Cursor"_ → `mcp-importer` handles it
 
 **Step 2 — Add MCP tools** (Extensions sidebar)
+
 - Browse the preset catalog and click Install, or
 - Tell an agent: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` registers it automatically
 
 **Step 3 — Create your first agent**
+
 - _"Create a researcher agent for competitive intelligence"_ → `specialist-creator` designs the full config
 - _"Build a research team from my current tools"_ → `crew-constructor` batch-creates matched specialists
 - _"Optimize tool assignments across all my agents"_ → `agent-tooling` audits and rebalances automatically
 
 **Step 4 — Go parallel with `delegate`**
+
 - Ask any agent to delegate sub-tasks to child sessions
 - The `delegate` skill manages context handoff, lineage tracking, and result merging
 
 **Step 5 — Build a persistent team**
+
 - `teamwork` → scaffolds shared workspace with `agents.md`, `MISSION.md`, `KANBAN.md`
 - `org` → formalizes the team with durable identity and org-root session management
 - `schedule` → lets an agent create and manage CRON-based automation for you, unattended

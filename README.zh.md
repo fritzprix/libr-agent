@@ -21,13 +21,13 @@ AI 行业的焦点已经转移。最近的 2026 基准分析表明，**相同的
 
 每个当前选项仍然迫使人们做出妥协：
 
-| 平台 | 代价 |
-|---|---|
-| **OpenClaw** | 高灵活性的开放生态系统，但 2026 年初的分析指出实例暴露、明文密钥处理和社区技能的提示注入风险。 |
-| **Claude Cowork** | 强大的本地用户体验，但在复杂的自主任务上仍然有限。封闭生态系统。不可扩展。 |
-| **Claude Code / Cursor** | 仅限开发者。需要终端熟练度。不是通用型。 |
-| **Google Mariner** | 你的工作在 Google 的云端 VM 上运行。你无法控制你的数据。 |
-| **LangGraph / CrewAI** | 强大的框架，但你需要自己组装一切。没有产品体验。 |
+| 平台                     | 代价                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| **OpenClaw**             | 高灵活性的开放生态系统，但 2026 年初的分析指出实例暴露、明文密钥处理和社区技能的提示注入风险。 |
+| **Claude Cowork**        | 强大的本地用户体验，但在复杂的自主任务上仍然有限。封闭生态系统。不可扩展。                     |
+| **Claude Code / Cursor** | 仅限开发者。需要终端熟练度。不是通用型。                                                       |
+| **Google Mariner**       | 你的工作在 Google 的云端 VM 上运行。你无法控制你的数据。                                       |
+| **LangGraph / CrewAI**   | 强大的框架，但你需要自己组装一切。没有产品体验。                                               |
 
 **LibrAgent 旨在消除这种妥协。** 本地优先安全。MCP 原生可扩展性。群集→组织多代理协调。为非开发者打造的精致 GUI。全部在一个开源桌面应用中。
 
@@ -79,12 +79,12 @@ MCP（模型上下文协议）在 2026 年成为 Linux Foundation 标准。LibrA
 
 大多数 AI 工具在演示中令人印象深刻，在生产中却很脆弱。LibrAgent 为长时间运行的实际工作而精心设计：
 
-| 底层架构 | 功能 |
-|---|---|
-| **Workspace** | 行级精确编辑、多文件操作、统一搜索、`@file`/`@skill`/`@playbook` 上下文注入 |
-| **Shell** | 隔离执行 AND 持久 Shell——异步进程监控(`poll`、`read output`、`list`) |
-| **Browser** | 带缓存一致性保证的 Playwright 风格工具(`goto`、`click`、`fill`、`screenshot`) |
-| **Knowledge** | 带实体/关系提取(v2)、BM25 全文搜索的基于图的知识管理 |
+| 底层架构      | 功能                                                                          |
+| ------------- | ----------------------------------------------------------------------------- |
+| **Workspace** | 行级精确编辑、多文件操作、统一搜索、`@file`/`@skill`/`@playbook` 上下文注入   |
+| **Shell**     | 隔离执行 AND 持久 Shell——异步进程监控(`poll`、`read output`、`list`)          |
+| **Browser**   | 带缓存一致性保证的 Playwright 风格工具(`goto`、`click`、`fill`、`screenshot`) |
+| **Knowledge** | 带实体/关系提取(v2)、BM25 全文搜索的基于图的知识管理                          |
 
 **包含可靠性工程**：上下文压缩、循环预防、断路器、陈旧响应保护器在持续数小时的会话中保持代理的生产力。
 
@@ -104,19 +104,19 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 
 最重要的 day-one 技能：
 
-| 技能 | 功能 |
-|---|---|
-| `system-setup` | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv) |
-| `mcp-installer` | 从 npm 包、GitHub URL 或 JSON 配置块注册 MCP 服务器 |
-| `mcp-importer` | 从 Cursor、VS Code、Windsurf 等导入现有 MCP 配置 |
-| `specialist-creator` | 从角色描述设计完整的代理配置(系统提示、模型、工具) |
-| `crew-constructor` | 扫描可用工具并自动批量创建匹配的专家团队 |
-| `agent-tooling` | 审计代理、检测能力不匹配、动态重新平衡工具分配 |
-| `delegate` | 引导父→子会话移交，带显式上下文传递和谱系跟踪 |
-| `teamwork` | 为协调多代理工作构建共享工作空间宪法 |
-| `org` | 正式化持久组织身份和 org-visible 成员层次结构 |
-| `schedule` | 创建和管理无人值守自动化的定期计划任务组 |
-| `soul-awakening` | 将代理锚定到 `SOUL.md` 人格——语气、立场、身份 |
+| 技能                 | 功能                                                  |
+| -------------------- | ----------------------------------------------------- |
+| `system-setup`       | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv) |
+| `mcp-installer`      | 从 npm 包、GitHub URL 或 JSON 配置块注册 MCP 服务器   |
+| `mcp-importer`       | 从 Cursor、VS Code、Windsurf 等导入现有 MCP 配置      |
+| `specialist-creator` | 从角色描述设计完整的代理配置(系统提示、模型、工具)    |
+| `crew-constructor`   | 扫描可用工具并自动批量创建匹配的专家团队              |
+| `agent-tooling`      | 审计代理、检测能力不匹配、动态重新平衡工具分配        |
+| `delegate`           | 引导父→子会话移交，带显式上下文传递和谱系跟踪         |
+| `teamwork`           | 为协调多代理工作构建共享工作空间宪法                  |
+| `org`                | 正式化持久组织身份和 org-visible 成员层次结构         |
+| `schedule`           | 创建和管理无人值守自动化的定期计划任务组              |
+| `soul-awakening`     | 将代理锚定到 `SOUL.md` 人格——语气、立场、身份         |
 
 这只是运营层。LibrAgent 还提供领域技能：
 
@@ -132,24 +132,28 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 ## 🌍 现实世界场景
 
 ### 独立开发者——自动化代码审查
+
 1. 通过 Workspace 工具连接你的本地仓库
 2. 安装 GitHub MCP 预设（一键）
 3. 请求：_"查找 PR #42 中的安全问题并生成 Markdown 报告"_
 4. 代理读取代码、运行分析、将发现保存到 Knowledge 服务器以供将来参考
 
 ### 市场营销——竞争对手情报自动驾驶
+
 1. 通过 Browser 工具配置 5 个竞争对手博客
 2. 告诉代理：_"每天早上 7 点创建竞争对手简报"_——代理可以使用 `schedule` 技能为你连接定期任务组
 3. 代理浏览、摘要并追加到 Knowledge 存储
 4. 随时询问：_"总结上周竞争对手的动向"_
 
 ### 工程团队——离线代理堆栈
+
 1. `ollama pull qwen3:14b`——无需 API 密钥，无需云端
 2. 将 Workspace + Shell 工具连接到你的代码库
 3. 敏感 IP 永远不会离开机器
 4. 代理读取、修改、测试和提交——完全本地
 
 ### 高级用户——多代理研究管道
+
 1. 使用 `crew-constructor` 自动生成：Researcher × 3、Analyst × 1、Writer × 1
 2. 协调者通过 `delegate` 技能并行委派
 3. 结果合并到 Content Store 中的单个结构化报告中
@@ -187,24 +191,29 @@ pnpm tauri dev
 ### 5 分钟入门路径
 
 **第 1 步——连接模型**（Settings → LLM Providers）
+
 - 云端：粘贴 OpenAI / Anthropic / Gemini / Groq API 密钥
 - 本地：`ollama pull qwen3:14b` 然后在 Settings 中选择 Ollama
-- 正在使用 Cursor 或 VS Code？告诉任何代理：_"从 Cursor 导入我的 MCP 服务器"_→ `mcp-importer` 处理
+- 正在使用 Cursor 或 VS Code？告诉任何代理：*"从 Cursor 导入我的 MCP 服务器"*→ `mcp-importer` 处理
 
 **第 2 步——添加 MCP 工具**（Extensions 侧边栏）
+
 - 浏览预设目录并点击 Install，或
-- 告诉代理：_"Install @modelcontextprotocol/server-everything"_→ `mcp-installer` 自动注册
+- 告诉代理：*"Install @modelcontextprotocol/server-everything"*→ `mcp-installer` 自动注册
 
 **第 3 步——创建你的第一个代理**
-- _"为竞争情报创建研究者代理"_→ `specialist-creator` 设计完整配置
-- _"用我的当前工具构建研究团队"_→ `crew-constructor` 批量创建匹配专家
-- _"优化所有代理间的工具分配"_→ `agent-tooling` 自动审计和重新平衡
+
+- *"为竞争情报创建研究者代理"*→ `specialist-creator` 设计完整配置
+- *"用我的当前工具构建研究团队"*→ `crew-constructor` 批量创建匹配专家
+- *"优化所有代理间的工具分配"*→ `agent-tooling` 自动审计和重新平衡
 
 **第 4 步——使用 `delegate` 并行工作**
+
 - 请求任何代理将子任务委派给子会话
 - `delegate` 技能管理上下文移交、谱系跟踪和结果合并
 
 **第 5 步——构建持久团队**
+
 - `teamwork`→ 使用 `agents.md`、`MISSION.md`、`KANBAN.md` 构建共享工作空间
 - `org`→ 通过持久身份和 org-root 会话管理正式化团队
 - `schedule`→ 让代理为你创建和管理 CRON 基础自动化

@@ -21,13 +21,13 @@ O foco da indústria de IA mudou. Análises recentes de 2026 mostraram que **o m
 
 Cada opção atual ainda impõe um compromisso:
 
-| Plataforma | O problema |
-|---|---|
-| **OpenClaw** | Ecossistema aberto muito flexível, mas análises do início de 2026 destacaram instâncias expostas, segredos em texto simples e riscos de injeção de prompts nas competências da comunidade. |
-| **Claude Cowork** | UX local sólido, mas ainda limitado em tarefas autónomas complexas. Ecossistema fechado. Não extensível. |
-| **Claude Code / Cursor** | Apenas para programadores. Requer domínio do terminal. Não é de propósito geral. |
-| **Google Mariner** | O teu trabalho corre nas VMs cloud do Google. Não controlas os teus dados. |
-| **LangGraph / CrewAI** | Frameworks poderosos, mas tens de montar tudo tu mesmo. Sem experiência de produto. |
+| Plataforma               | O problema                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **OpenClaw**             | Ecossistema aberto muito flexível, mas análises do início de 2026 destacaram instâncias expostas, segredos em texto simples e riscos de injeção de prompts nas competências da comunidade. |
+| **Claude Cowork**        | UX local sólido, mas ainda limitado em tarefas autónomas complexas. Ecossistema fechado. Não extensível.                                                                                   |
+| **Claude Code / Cursor** | Apenas para programadores. Requer domínio do terminal. Não é de propósito geral.                                                                                                           |
+| **Google Mariner**       | O teu trabalho corre nas VMs cloud do Google. Não controlas os teus dados.                                                                                                                 |
+| **LangGraph / CrewAI**   | Frameworks poderosos, mas tens de montar tudo tu mesmo. Sem experiência de produto.                                                                                                        |
 
 **LibrAgent foi construído para eliminar esse compromisso.** Segurança local-first. Extensibilidade nativa MCP. Coordenação multi-agente enxame→organização. Uma interface gráfica refinada que funciona para não programadores. Tudo numa aplicação de desktop open source.
 
@@ -79,12 +79,12 @@ MCP (Model Context Protocol) tornou-se um padrão da Linux Foundation em 2026. O
 
 A maioria das ferramentas de IA é impressionante em demos e frágil em produção. O LibrAgent é obsessivamente desenhado para trabalho real e duradouro:
 
-| Substrato | Capacidades |
-|---|---|
+| Substrato     | Capacidades                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **Workspace** | Edição precisa à linha, operações multi-ficheiro, pesquisa unificada, injeção de contexto `@file`/`@skill`/`@playbook` |
-| **Shell** | Execução isolada E shells persistentes — monitorização de processos assíncrona (`poll`, `read output`, `list`) |
-| **Browser** | Ferramentas estilo Playwright (`goto`, `click`, `fill`, `screenshot`) com garantias de consistência de cache |
-| **Knowledge** | Gestão de conhecimento baseada em grafos com extração entidade/relação (v2), pesquisa de texto completo BM25 |
+| **Shell**     | Execução isolada E shells persistentes — monitorização de processos assíncrona (`poll`, `read output`, `list`)         |
+| **Browser**   | Ferramentas estilo Playwright (`goto`, `click`, `fill`, `screenshot`) com garantias de consistência de cache           |
+| **Knowledge** | Gestão de conhecimento baseada em grafos com extração entidade/relação (v2), pesquisa de texto completo BM25           |
 
 **Engenharia de fiabilidade incluída**: Compactação de contexto, prevenção de ciclos, disjuntores e proteções contra respostas obsoletas mantêm os agentes produtivos em sessões que duram horas.
 
@@ -104,19 +104,19 @@ O LibrAgent vem com uma biblioteca crescente de **Competências agrupadas**. Nã
 
 As competências mais importantes para o primeiro dia:
 
-| Competência | O que faz |
-|---|---|
-| `system-setup` | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas |
-| `mcp-installer` | Regista servidores MCP a partir de pacotes npm, URLs do GitHub ou blocos de config JSON |
-| `mcp-importer` | Importa configs MCP existentes do Cursor, VS Code, Windsurf e similares |
+| Competência          | O que faz                                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `system-setup`       | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas                                  |
+| `mcp-installer`      | Regista servidores MCP a partir de pacotes npm, URLs do GitHub ou blocos de config JSON                           |
+| `mcp-importer`       | Importa configs MCP existentes do Cursor, VS Code, Windsurf e similares                                           |
 | `specialist-creator` | Desenha uma config de agente completa (prompt de sistema, modelo, ferramentas) a partir de uma descrição de papel |
-| `crew-constructor` | Analisa ferramentas disponíveis e cria automaticamente uma equipa de especialistas adequada |
-| `agent-tooling` | Audita agentes, deteta desajustes de capacidades e reequilibra dinamicamente as atribuições de ferramentas |
-| `delegate` | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem |
-| `teamwork` | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado |
-| `org` | Formaliza identidade de organização duradoura e hierarquia de membros visível |
-| `schedule` | Cria e gere grupos de tarefas agendadas recorrentes para automatização sem supervisão |
-| `soul-awakening` | Ancora um agente a uma persona `SOUL.md` — tom, postura, identidade |
+| `crew-constructor`   | Analisa ferramentas disponíveis e cria automaticamente uma equipa de especialistas adequada                       |
+| `agent-tooling`      | Audita agentes, deteta desajustes de capacidades e reequilibra dinamicamente as atribuições de ferramentas        |
+| `delegate`           | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem       |
+| `teamwork`           | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado                    |
+| `org`                | Formaliza identidade de organização duradoura e hierarquia de membros visível                                     |
+| `schedule`           | Cria e gere grupos de tarefas agendadas recorrentes para automatização sem supervisão                             |
+| `soul-awakening`     | Ancora um agente a uma persona `SOUL.md` — tom, postura, identidade                                               |
 
 E isso é apenas a camada de operador. O LibrAgent também fornece competências de domínio para:
 
@@ -132,24 +132,28 @@ _Importante: `bootstrap` é uma capacidade integrada frequentemente usada com es
 ## 🌍 Cenários do mundo real
 
 ### Programador solo — Revisão de código automatizada
+
 1. Conecta o teu repositório local através da ferramenta Workspace
 2. Instala o preset GitHub MCP (um clique)
 3. Pede: _"Encontra problemas de segurança no PR #42 e produz um relatório em Markdown"_
 4. O agente lê o código, executa a análise, guarda os resultados no servidor Knowledge
 
 ### Profissional de marketing — Inteligência competitiva em piloto automático
+
 1. Configura 5 blogs de concorrentes através da ferramenta Browser
 2. Diz a um agente: _"Cria um briefing competitivo agendado todas as manhãs às 7h"_ — o agente pode usar a competência `schedule` para configurar o grupo de tarefas recorrente
 3. O agente navega, resume e adiciona ao Knowledge store
 4. Pergunta a qualquer momento: _"Resume os movimentos dos concorrentes da semana passada"_
 
 ### Equipa de engenharia — Stack de agentes offline
+
 1. `ollama pull qwen3:14b` — sem chaves de API, sem nuvem
 2. Conecta ferramentas Workspace + Shell à tua base de código
 3. Propriedade intelectual sensível nunca sai da máquina
 4. Agentes leem, modificam, testam e fazem commit — completamente local
 
 ### Utilizador avançado — Pipeline de investigação multi-agente
+
 1. Usa `crew-constructor` para gerar automaticamente: Researcher×3, Analyst×1, Writer×1
 2. O orquestrador delega em paralelo através da competência `delegate`
 3. Os resultados fundem-se num único relatório estruturado no Content Store
@@ -187,24 +191,29 @@ pnpm tauri dev
 ### O percurso de integração de 5 minutos
 
 **Passo 1 — Conecta um modelo** (Settings → LLM Providers)
+
 - Nuvem: cola uma chave de API OpenAI / Anthropic / Gemini / Groq
 - Local: `ollama pull qwen3:14b` e depois seleciona Ollama nas Settings
 - Já usas Cursor ou VS Code? Diz a qualquer agente: _"Importa os meus servidores MCP do Cursor"_ → `mcp-importer` trata disso
 
 **Passo 2 — Adiciona ferramentas MCP** (barra lateral Extensions)
+
 - Navega no catálogo de presets e clica em Instalar, ou
 - Diz a um agente: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` regista-o automaticamente
 
 **Passo 3 — Cria o teu primeiro agente**
+
 - _"Cria um agente investigador para inteligência competitiva"_ → `specialist-creator` desenha a config completa
 - _"Constrói uma equipa de investigação com as minhas ferramentas atuais"_ → `crew-constructor` cria os especialistas em lote
 - _"Otimiza as atribuições de ferramentas para todos os meus agentes"_ → `agent-tooling` audita e reequilibra automaticamente
 
 **Passo 4 — Vai em paralelo com `delegate`**
+
 - Pede a qualquer agente que delegue subtarefas a sessões filhas
 - A competência `delegate` gere a transferência de contexto, o rastreamento de linhagem e a fusão de resultados
 
 **Passo 5 — Constrói uma equipa persistente**
+
 - `teamwork` → constrói o espaço de trabalho partilhado com `agents.md`, `MISSION.md`, `KANBAN.md`
 - `org` → formaliza a equipa com identidade duradoura e gestão de sessão raiz
 - `schedule` → deixa um agente criar e gerir a automatização CRON para ti, sem supervisão
