@@ -939,9 +939,11 @@
       "filesAttached_one": "1 file attached",
       "filesAttached_other": "{{count}} files attached",
       "attachedFilesAria": "Attached files",
-      "lines": "{{count}} lines",
+      "lines_one": "1 line",
+      "lines_other": "{{count}} lines",
       "noContent": "No content",
       "thinkingProcess": "Thinking Process",
+      "thinkingProcessWithTime": "Thinking Process {{time}}",
       "thinking": "Thinking..."
     }
   },

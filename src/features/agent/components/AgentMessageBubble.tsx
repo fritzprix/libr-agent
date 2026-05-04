@@ -146,7 +146,10 @@ function AgentMessageBubbleImpl({
                     })}
                   </span>
                 </div>
-                <ul className="space-y-2" aria-label={t('agent.bubble.attachedFilesAria')}>
+                <ul
+                  className="space-y-2"
+                  aria-label={t('agent.bubble.attachedFilesAria')}
+                >
                   {msg.attachments.map((attachment) => (
                     <li
                       key={attachment.contentId}

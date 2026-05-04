@@ -909,9 +909,11 @@
       "filesAttached_one": "1개 파일 첨부됨",
       "filesAttached_other": "{{count}}개 파일 첨부됨",
       "attachedFilesAria": "첨부된 파일 목록",
-      "lines": "{{count}} 줄",
+      "lines_one": "1 줄",
+      "lines_other": "{{count}} 줄",
       "noContent": "내용 없음",
       "thinkingProcess": "생각 프로세스",
+      "thinkingProcessWithTime": "생각 프로세스 {{time}}",
       "thinking": "생각 중..."
     }
   },

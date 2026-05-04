@@ -51,13 +51,19 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
     >
       <div className="flex items-center gap-2 text-xs font-medium opacity-70">
         {isStreaming && <LoadingIndicator size="sm" />}
-        <span>{t('agent.bubble.thinkingProcess')} {formattedTime}</span>
+        <span>
+          {formattedTime
+            ? t('agent.bubble.thinkingProcessWithTime', { time: formattedTime })
+            : t('agent.bubble.thinkingProcess')}
+        </span>
       </div>
       <div
         ref={scrollRef}
         className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto"
       >
-        {thinking != null && thinking.length > 0 ? thinking : t('agent.bubble.thinking')}
+        {thinking != null && thinking.length > 0
+          ? thinking
+          : t('agent.bubble.thinking')}
       </div>
     </div>
   );
