@@ -54,6 +54,13 @@ vi.mock('@/components/ui', () => ({
   CardContent: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
+  Tooltip: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  TooltipContent: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
   Checkbox: ({
     checked,
     onCheckedChange,
