@@ -929,6 +929,20 @@
       "untitledNote": "Untitled note",
       "moreTasks": "more tasks",
       "updated": "updated"
+    },
+    "bubble": {
+      "notification": "Notification",
+      "channel": "CHANNEL",
+      "assistant": "ASSISTANT",
+      "youQueued": "You (queued)",
+      "you": "You",
+      "filesAttached_one": "1 file attached",
+      "filesAttached_other": "{{count}} files attached",
+      "attachedFilesAria": "Attached files",
+      "lines": "{{count}} lines",
+      "noContent": "No content",
+      "thinkingProcess": "Thinking Process",
+      "thinking": "Thinking..."
     }
   },
   "scheduledTasks": {

@@ -899,6 +899,20 @@
       "untitledNote": "제목 없는 메모",
       "moreTasks": "개 작업 더 있음",
       "updated": "업데이트됨"
+    },
+    "bubble": {
+      "notification": "알림",
+      "channel": "채널",
+      "assistant": "어시스턴트",
+      "youQueued": "나 (대기 중)",
+      "you": "나",
+      "filesAttached_one": "1개 파일 첨부됨",
+      "filesAttached_other": "{{count}}개 파일 첨부됨",
+      "attachedFilesAria": "첨부된 파일 목록",
+      "lines": "{{count}} 줄",
+      "noContent": "내용 없음",
+      "thinkingProcess": "생각 프로세스",
+      "thinking": "생각 중..."
     }
   },
   "scheduledTasks": {

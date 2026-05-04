@@ -143,3 +143,9 @@
 **Extracted:** 22
 **Languages updated:** [EN, KO]
 **Notes:** Extracted missing keys for Advanced and System tabs which had `t()` calls in code but no entries in `common.json` files. Added keys like `settings.advanced.performance`, `settings.advanced.shellIsolation`, `settings.chatInterface.diffContextLines`, `settings.system.description`, `settings.discardChanges`, etc.
+
+## 2026-05-18 - [AgentMessageBubble]
+
+**Extracted:** 12
+**Languages updated:** [EN, KO]
+**Notes:** Localized AgentMessageBubble strings for notifications, roles, attachments, lines, and thinking processes. Added new `agent.bubble` namespace to EN/KO.
