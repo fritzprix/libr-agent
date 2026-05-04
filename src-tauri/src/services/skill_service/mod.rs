@@ -1,9 +1,11 @@
+mod cache;
 mod contracts;
 mod directories;
 mod github;
 mod importing;
 mod scanning;
 
+pub use cache::{invalidate_skill_scan_cache, prewarm_managed_skill_scans};
 pub use contracts::{
     GitHubRepoSpec, ManagedSkillsOverview, SkillImportCandidate, SkillImportConflict,
     SkillImportPreview, SkillImportResult, SkillMetadata, LEGACY_SYSTEM_SKILLS_DIR_NAME,
@@ -29,4 +31,4 @@ pub use scanning::{
     scan_skills_directory,
 };
 
-pub(crate) use scanning::scan_skills_internal;
+pub(crate) use cache::scan_skills_internal_cached;

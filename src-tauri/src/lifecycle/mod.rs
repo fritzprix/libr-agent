@@ -10,9 +10,8 @@ pub mod retry_utils;
 pub mod schema_version; // Schema version tracking (matches migration #10 table layout)
 pub mod settings;
 
-use crate::search;
 use crate::session::get_session_manager;
-use crate::state::set_sqlite_db_url;
+use crate::state::{set_sqlite_db_url, start_startup_timer};
 use database_error::DatabaseError;
 use log::info;
 
@@ -27,6 +26,7 @@ pub fn should_quarantine_on_init_failure(error: &DatabaseError) -> bool {
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
 pub fn run_with_sqlite_sync(db_url: String) {
+    start_startup_timer();
     // Set the SQLite URL
     set_sqlite_db_url(db_url.clone());
     info!("🔄 Initializing LibrAgent with SQLite support: {db_url}");
@@ -93,40 +93,15 @@ pub fn run_with_sqlite_sync(db_url: String) {
             }
         };
 
-        // Initialize Repositories and get System Settings
-        let system_settings = repositories::init_repositories(&db).await;
-
-        let index_freq_mins = system_settings.search_index_frequency_minutes.unwrap_or(5);
-        let retention_hours = 24;
-
-        info!(
-            "⚙️ System Configuration: Index Frequency = {}m, Workspace Retention = {}h",
-            index_freq_mins, retention_hours
-        );
-
-        // Perform session cleanup
-        match session_manager
-            .cleanup_old_sessions(retention_hours, 5)
-            .await
-        {
-            Ok(count) => info!(
-                "🧹 Session cleanup completed: removed {} old sessions",
-                count
-            ),
-            Err(e) => log::error!("❌ Session cleanup failed: {}", e),
-        }
-
-        // Start background indexing worker
-        let _indexing_worker =
-            search::IndexingWorker::new(std::time::Duration::from_secs(index_freq_mins * 60));
-        info!("✅ Background message indexing worker started");
+        // Initialize repositories required by app setup and command handlers.
+        repositories::init_repositories(&db).await;
 
         // Global MCPServerManager initialization is intentionally skipped.
         // Session-isolated MCP architecture uses MCPServiceProxyManager initialized in repositories.
         let _ = db;
+        let _ = session_manager;
         info!("✅ Session-isolated MCP architecture initialized");
     });
-
     // Call the main run function
     crate::run();
 }

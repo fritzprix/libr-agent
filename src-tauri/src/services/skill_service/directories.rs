@@ -2,8 +2,9 @@ use super::contracts::{
     ManagedSkillsOverview, SkillMetadata, LEGACY_SYSTEM_SKILLS_DIR_NAME, SYSTEM_SKILLS_DIR_NAME,
     USER_SKILLS_DIR_NAME,
 };
-use super::scan_skills_internal;
+use super::scan_skills_internal_cached;
 use crate::session::get_session_manager;
+use crate::state::wait_for_managed_skills_sync;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -54,16 +55,18 @@ fn merge_skill_layers(skill_layers: Vec<Vec<SkillMetadata>>) -> Vec<SkillMetadat
 }
 
 pub async fn get_managed_skills_overview() -> Result<ManagedSkillsOverview, String> {
+    wait_for_managed_skills_sync().await;
+
     let system_dir = get_system_skills_directory()?;
     let user_dir = get_user_skills_directory()?;
 
-    let mut system_skills = scan_skills_internal(
+    let mut system_skills = scan_skills_internal_cached(
         &system_dir,
         Some("global".to_string()),
         Some("system".to_string()),
     )
     .await?;
-    let mut user_skills = scan_skills_internal(
+    let mut user_skills = scan_skills_internal_cached(
         &user_dir,
         Some("global".to_string()),
         Some("user".to_string()),
@@ -89,6 +92,8 @@ pub async fn resolve_skills(
     assistant_dir: Option<PathBuf>,
     workspace_dir: Option<PathBuf>,
 ) -> Result<Vec<SkillMetadata>, String> {
+    wait_for_managed_skills_sync().await;
+
     let mut skill_layers = Vec::new();
 
     let sources: Vec<(Option<PathBuf>, &str, &str)> = vec![
@@ -103,7 +108,7 @@ pub async fn resolve_skills(
             continue;
         };
 
-        let mut scanned = scan_skills_internal(
+        let mut scanned = scan_skills_internal_cached(
             &directory,
             Some(source.to_string()),
             Some(origin.to_string()),

@@ -1,3 +1,4 @@
+use super::cache::{invalidate_skill_scan_cache, scan_skills_internal_cached};
 use super::contracts::{
     DiscoveredSkillRoot, PreparedSkillImport, SkillImportCandidate, SkillImportConflict,
     SkillImportPreview, SkillImportResult, SkillMetadata, GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
@@ -8,8 +9,9 @@ use super::directories::{
     resolve_skills,
 };
 use super::github::parse_github_repo_url;
-use super::scanning::{copy_dir_recursive, parse_skill_metadata, scan_skills_internal};
+use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::session::get_session_manager;
+use crate::state::wait_for_managed_skills_sync;
 use log::warn;
 use reqwest::header::USER_AGENT;
 use sha2::{Digest, Sha256};
@@ -63,16 +65,25 @@ pub async fn install_github_skills(
     .await
 }
 
+fn invalidate_skill_cache_after_success<T>(result: Result<T, String>) -> Result<T, String> {
+    if result.is_ok() {
+        invalidate_skill_scan_cache();
+    }
+    result
+}
+
 pub async fn delete_user_skill(skill_name: String) -> Result<String, String> {
     let user_dir = get_user_skills_directory()?;
-    remove_skill_name_from_directory(&user_dir, &skill_name)?;
-    Ok(format!("Successfully deleted user skill '{}'", skill_name))
+    invalidate_skill_cache_after_success(remove_skill_name_from_directory(&user_dir, &skill_name))
+        .map(|_| format!("Successfully deleted user skill '{}'", skill_name))
 }
 
 pub async fn reset_user_skills() -> Result<String, String> {
     let user_dir = get_user_skills_directory()?;
     if user_dir.exists() {
-        fs::remove_dir_all(&user_dir).map_err(|error| error.to_string())?;
+        invalidate_skill_cache_after_success(
+            fs::remove_dir_all(&user_dir).map_err(|error| error.to_string()),
+        )?;
         Ok("Successfully reset user skills".to_string())
     } else {
         Ok("No user skills to reset".to_string())
@@ -106,7 +117,7 @@ pub async fn copy_global_to_assistant(
 
     let storage_name = skill_storage_directory_name(&source_skill.name)?;
     let target_path = assistant_skills_dir.join(storage_name);
-    copy_dir_recursive(&source_root, &target_path)?;
+    invalidate_skill_cache_after_success(copy_dir_recursive(&source_root, &target_path))?;
 
     Ok(format!(
         "Successfully copied skill '{}' to assistant '{}'",
@@ -119,7 +130,10 @@ pub async fn delete_assistant_skill(
     skill_name: String,
 ) -> Result<String, String> {
     let assistant_skills_dir = get_assistant_skills_directory(&assistant_id)?;
-    remove_skill_name_from_directory(&assistant_skills_dir, &skill_name)?;
+    invalidate_skill_cache_after_success(remove_skill_name_from_directory(
+        &assistant_skills_dir,
+        &skill_name,
+    ))?;
 
     Ok(format!(
         "Successfully deleted assistant skill '{}'",
@@ -131,7 +145,9 @@ pub async fn reset_assistant_skills(assistant_id: String) -> Result<String, Stri
     let assistant_skills_dir = get_assistant_skills_directory(&assistant_id)?;
 
     if assistant_skills_dir.exists() {
-        fs::remove_dir_all(&assistant_skills_dir).map_err(|error| error.to_string())?;
+        invalidate_skill_cache_after_success(
+            fs::remove_dir_all(&assistant_skills_dir).map_err(|error| error.to_string()),
+        )?;
         Ok(format!(
             "Successfully reset skills for assistant '{}'",
             assistant_id
@@ -147,7 +163,11 @@ pub async fn import_assistant_skills(
 ) -> Result<String, String> {
     let assistant_skills_dir = get_assistant_skills_directory(&assistant_id)?;
     let prepared = prepare_local_skill_import(file_path).await?;
-    let result = install_prepared_skills_to_directory(prepared, assistant_skills_dir, true)?;
+    let result = invalidate_skill_cache_after_success(install_prepared_skills_to_directory(
+        prepared,
+        assistant_skills_dir,
+        true,
+    ))?;
     Ok(format!(
         "Successfully imported {} skills",
         result.imported_names.len()
@@ -321,15 +341,17 @@ async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillIm
 async fn build_user_import_preview(
     discovered_skills: &[DiscoveredSkillRoot],
 ) -> Result<SkillImportPreview, String> {
+    wait_for_managed_skills_sync().await;
+
     let system_dir = get_system_skills_directory()?;
     let user_dir = get_user_skills_directory()?;
-    let system_skills = scan_skills_internal(
+    let system_skills = scan_skills_internal_cached(
         &system_dir,
         Some("global".to_string()),
         Some("system".to_string()),
     )
     .await?;
-    let user_skills = scan_skills_internal(
+    let user_skills = scan_skills_internal_cached(
         &user_dir,
         Some("global".to_string()),
         Some("user".to_string()),
@@ -476,7 +498,7 @@ async fn install_user_prepared_skills(
     }
 
     result.skipped_names = skipped_names;
-    Ok(result)
+    invalidate_skill_cache_after_success(Ok(result))
 }
 
 fn install_prepared_skills_to_directory(
