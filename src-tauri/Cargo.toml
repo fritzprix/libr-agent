@@ -63,7 +63,7 @@ warp = "0.3"
 dashmap = "5.5"
 regex = "1"
 cuid2 = "0.1.6"
-dirs = "5.0"
+dirs = "6.0"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
 ammonia = "4.0"
