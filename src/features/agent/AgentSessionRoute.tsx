@@ -16,7 +16,7 @@ export default function AgentSessionRoute() {
   }
 
   return (
-    <AgentSessionProvider sessionId={sessionId} key={sessionId}>
+    <AgentSessionProvider sessionId={sessionId}>
       <AgentChatView />
     </AgentSessionProvider>
   );

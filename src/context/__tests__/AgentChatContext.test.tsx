@@ -533,6 +533,67 @@ describe('AgentChatContext', () => {
       });
     });
 
+    it('clears pending messages when the active session changes', async () => {
+      const deferred = createDeferred<{ success: boolean }>();
+      let sessionState = {
+        session: { id: 'test-session', name: 'Test Session' },
+        messages: mockMessages,
+        isSessionLoading: false,
+        error: null,
+        llmError: null,
+        workflowStatus: 'idle' as const,
+      };
+
+      (useAgentSessionState as ReturnType<typeof vi.fn>).mockImplementation(
+        () => sessionState,
+      );
+      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
+        (command: string) => {
+          if (command === 'agent_inject_messages') {
+            return deferred.promise;
+          }
+          return Promise.resolve({ success: true });
+        },
+      );
+
+      const pendingMessage: Message = {
+        id: 'msg-pending-switch',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'user',
+        content: [{ type: 'text', text: 'Carry me only in this session' }],
+        createdAt: new Date(),
+      };
+
+      const { result, rerender } = renderHook(() => useAgentChat(), {
+        wrapper: TestWrapper,
+      });
+
+      await act(async () => {
+        void result.current.submit(pendingMessage);
+      });
+
+      await waitFor(() => {
+        expect(result.current.pendingMessages).toEqual([pendingMessage]);
+      });
+
+      sessionState = {
+        ...sessionState,
+        session: { id: 'next-session', name: 'Next Session' },
+        messages: [],
+      };
+      rerender();
+
+      await waitFor(() => {
+        expect(result.current.pendingMessages).toEqual([]);
+      });
+
+      deferred.resolve({ success: true });
+      await act(async () => {
+        await deferred.promise;
+      });
+    });
+
     it('should reject submit while session is loading', async () => {
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
         session: { id: 'test-session', name: 'Test Session' },

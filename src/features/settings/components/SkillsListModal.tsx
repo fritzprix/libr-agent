@@ -6,6 +6,9 @@ import {
   DialogDescription,
   Button,
   Badge,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -152,19 +155,29 @@ export function SkillsListModal({
                     key={skill.path}
                     skill={skill}
                     action={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={deletingSkillName === skill.name}
-                        onClick={() => onDeleteUserSkill(skill.name)}
-                        aria-label={t(
-                          'settings.skills.deleteUserSkill',
-                          'Delete user skill',
-                        )}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={deletingSkillName === skill.name}
+                            onClick={() => onDeleteUserSkill(skill.name)}
+                            aria-label={t('settings.skills.deleteUserSkill', {
+                              name: skill.name,
+                              defaultValue: 'Delete {{name}}',
+                            })}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t('settings.skills.deleteUserSkill', {
+                            name: skill.name,
+                            defaultValue: 'Delete {{name}}',
+                          })}
+                        </TooltipContent>
+                      </Tooltip>
                     }
                   />
                 ))

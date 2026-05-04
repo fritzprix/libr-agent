@@ -1,18 +1,14 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
-import { forwardRef } from 'react';
+import { act, render, screen } from '@testing-library/react';
+import React, { forwardRef } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
-  getMessageOutputSignature,
-  getTailAnchorKey,
   getInitialTopMostItemIndex,
   getPrependedFirstItemIndex,
+  isPinnedToBottom,
   getVisualBottomThreshold,
-  shouldPreserveBottomAnchorOnTailChange,
-  shouldSoftFollowOutputOnTailChange,
   shouldShowAnalysisLoader,
-  shouldAutoFollowOutput,
 } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
@@ -66,24 +62,45 @@ const groupedMessagesMock: GroupedMessage[] = [
   },
 ];
 
-const { virtuosoMock } = vi.hoisted(() => ({
+const { virtuosoMock, sessionState, chatState } = vi.hoisted(() => ({
   virtuosoMock: vi.fn(),
+  sessionState: {
+    session: { id: 'session-1', assistant: { name: 'Agent' } },
+  },
+  chatState: {
+    messages: [] as Message[],
+    workflowStatus: 'idle' as 'idle' | 'busy',
+  },
 }));
+
+let resizeObserverCallback: ResizeObserverCallback | null = null;
+
+class MockResizeObserver implements ResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    resizeObserverCallback = callback;
+  }
+
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+global.ResizeObserver = MockResizeObserver;
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
-    messages: groupedToolMessages.slice(1),
+    messages: chatState.messages,
     pendingMessages: [],
     error: undefined,
     llmError: undefined,
     retryMessage: vi.fn(),
-    workflowStatus: 'idle',
+    workflowStatus: chatState.workflowStatus,
   }),
 }));
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSession: () => ({
-    session: { id: 'session-1', assistant: { name: 'Agent' } },
+    session: sessionState.session,
     pendingApprovals: [],
     respondToToolApproval: vi.fn(),
   }),
@@ -146,6 +163,10 @@ vi.mock('react-virtuoso', () => ({
 describe('AgentChatMessages compaction rendering', () => {
   beforeEach(() => {
     virtuosoMock.mockClear();
+    resizeObserverCallback = null;
+    sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
+    chatState.messages = groupedToolMessages.slice(1);
+    chatState.workflowStatus = 'idle';
     virtuosoMock.mockImplementation(
       ({
         components,
@@ -156,6 +177,14 @@ describe('AgentChatMessages compaction rendering', () => {
         components?: {
           Footer?: ({ context }: { context: unknown }) => JSX.Element | null;
           Header?: ({ context }: { context: unknown }) => JSX.Element | null;
+          List?: (props: {
+            children: React.ReactNode;
+            context: unknown;
+            style?: React.CSSProperties;
+          }) => JSX.Element | null;
+          Scroller?: React.ComponentType<
+            React.ComponentPropsWithoutRef<'div'>
+          > | null;
         };
         context: unknown;
         data: GroupedMessage[];
@@ -163,15 +192,31 @@ describe('AgentChatMessages compaction rendering', () => {
           index: number,
           item: GroupedMessage,
         ) => JSX.Element | null;
-      }) => (
-        <div>
-          {components?.Header ? <components.Header context={context} /> : null}
-          {data.map((item, index) => (
-            <div key={item.message.id}>{itemContent(index, item)}</div>
-          ))}
-          {components?.Footer ? <components.Footer context={context} /> : null}
-        </div>
-      ),
+      }) => {
+        const Scroller = components?.Scroller ?? 'div';
+        const List = components?.List;
+        const content = (
+          <>
+            {components?.Header ? <components.Header context={context} /> : null}
+            {data.map((item, index) => (
+              <div key={item.message.id}>{itemContent(index, item)}</div>
+            ))}
+            {components?.Footer ? <components.Footer context={context} /> : null}
+          </>
+        );
+
+        return (
+          <Scroller>
+            {List ? (
+              <List context={context} style={{}}>
+                {content}
+              </List>
+            ) : (
+              content
+            )}
+          </Scroller>
+        );
+      },
     );
   });
 
@@ -179,6 +224,14 @@ describe('AgentChatMessages compaction rendering', () => {
     render(<AgentChatMessages />);
 
     expect(screen.getByText('Compacted summary')).toBeInTheDocument();
+  });
+
+  it('opts the chat scroller out of browser scroll anchoring', () => {
+    const { container } = render(<AgentChatMessages />);
+
+    expect(container.querySelector('.agent-chat-scrollbar')).toHaveStyle({
+      overflowAnchor: 'none',
+    });
   });
 
   it('uses the absolute firstItemIndex offset for the initial bottom position', () => {
@@ -201,7 +254,7 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(getPrependedFirstItemIndex(2, 3)).toBe(0);
   });
 
-  it('uses a fixed bottom threshold after moving input into layout flow', () => {
+  it('uses a tiny bottom threshold as scroll noise tolerance', () => {
     render(<AgentChatMessages />);
 
     const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
@@ -209,88 +262,7 @@ describe('AgentChatMessages compaction rendering', () => {
     };
 
     expect(virtuosoProps.atBottomThreshold).toBe(getVisualBottomThreshold());
-    expect(getVisualBottomThreshold()).toBe(32);
-  });
-
-  it('only auto-follows while the workflow is actively producing output', () => {
-    expect(
-      shouldAutoFollowOutput(
-        {
-          ...baseMessage,
-          isStreaming: true,
-        },
-        'busy',
-      ),
-    ).toBe(true);
-    expect(
-      shouldAutoFollowOutput(
-        {
-          ...baseMessage,
-          isStreaming: false,
-        },
-        'idle',
-      ),
-    ).toBe(false);
-    expect(
-      shouldAutoFollowOutput(
-        {
-          ...baseMessage,
-          content: [],
-          isStreaming: false,
-        },
-        'busy',
-      ),
-    ).toBe(true);
-  });
-
-  it('derives a stable tail signature from the latest message output', () => {
-    expect(
-      getMessageOutputSignature({
-        ...baseMessage,
-        content: [{ type: 'text', text: 'abc' }],
-        isStreaming: true,
-      }),
-    ).toContain('streaming');
-    expect(
-      getMessageOutputSignature({
-        ...baseMessage,
-        content: [{ type: 'text', text: 'abcd' }],
-      }),
-    ).not.toBe(
-      getMessageOutputSignature({
-        ...baseMessage,
-        content: [{ type: 'text', text: 'abc' }],
-      }),
-    );
-  });
-
-  it('includes footer-affecting state in the tail anchor key', () => {
-    const baseKey = getTailAnchorKey({
-      latestMessage: baseMessage,
-      workflowStatus: 'idle',
-      pendingApprovalsCount: 0,
-      hasAgentError: false,
-      hasAgentLlmError: false,
-    });
-
-    expect(
-      getTailAnchorKey({
-        latestMessage: baseMessage,
-        workflowStatus: 'idle',
-        pendingApprovalsCount: 1,
-        hasAgentError: false,
-        hasAgentLlmError: false,
-      }),
-    ).not.toBe(baseKey);
-    expect(
-      getTailAnchorKey({
-        latestMessage: { ...baseMessage, content: [] },
-        workflowStatus: 'busy',
-        pendingApprovalsCount: 0,
-        hasAgentError: false,
-        hasAgentLlmError: false,
-      }),
-    ).not.toBe(baseKey);
+    expect(getVisualBottomThreshold()).toBe(4);
   });
 
   it('shows the analysis loader only for busy empty assistant output states', () => {
@@ -309,78 +281,166 @@ describe('AgentChatMessages compaction rendering', () => {
     ).toBe(false);
   });
 
-  it('preserves bottom anchoring through completion settle transitions', () => {
-    expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: false,
-        wasFollowingOutputBeforeChange: true,
-      }),
-    ).toBe(true);
-
-    expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: false,
-        autoFollowOutput: false,
-        wasFollowingOutputBeforeChange: true,
-      }),
-    ).toBe(false);
-
-    expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: false,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
-        wasFollowingOutputBeforeChange: true,
-      }),
-    ).toBe(false);
-
-    expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
-        wasFollowingOutputBeforeChange: true,
-      }),
-    ).toBe(false);
+  it('treats only tiny distances as pinned to the bottom', () => {
+    expect(isPinnedToBottom(0)).toBe(true);
+    expect(isPinnedToBottom(4)).toBe(true);
+    expect(isPinnedToBottom(5)).toBe(false);
   });
 
-  it('allows completion settle even after auto follow has just turned off', () => {
-    expect(
-      shouldPreserveBottomAnchorOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: false,
-        wasFollowingOutputBeforeChange: true,
-      }),
-    ).toBe(true);
+  it('keeps bottom alignment when the pinned content resizes after render', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      render(<AgentChatMessages />);
+
+      act(() => {
+        resizeObserverCallback?.([], {} as ResizeObserver);
+      });
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
-  it('uses lightweight follow while output is still streaming', () => {
-    expect(
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
-      }),
-    ).toBe(true);
+  it('scrolls to the bottom again when the resumed session changes', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
-    expect(
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged: true,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: false,
-      }),
-    ).toBe(false);
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
 
-    expect(
-      shouldSoftFollowOutputOnTailChange({
-        tailChanged: false,
-        wasAtBottomBeforeChange: true,
-        autoFollowOutput: true,
-      }),
-    ).toBe(false);
+    try {
+      const { rerender } = render(<AgentChatMessages />);
+      scrollIntoView.mockClear();
+
+      sessionState.session = { id: 'session-2', assistant: { name: 'Agent' } };
+      rerender(<AgentChatMessages />);
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('keeps following bottom while assistant text content is actively streaming', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const frameQueue: FrameRequestCallback[] = [];
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-stream',
+        content: [{ type: 'text', text: 'streaming output' }],
+        isStreaming: true,
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      render(<AgentChatMessages />);
+      scrollIntoView.mockClear();
+
+      const nextFrame = frameQueue.shift();
+      expect(nextFrame).toBeDefined();
+
+      act(() => {
+        nextFrame?.(0);
+      });
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('keeps following bottom while busy tool results keep accumulating', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const frameQueue: FrameRequestCallback[] = [];
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-tool-call',
+        content: [],
+        tool_calls: [
+          {
+            id: 'call-1',
+            type: 'function',
+            function: {
+              name: 'agent__runTool',
+              arguments: '{}',
+            },
+          },
+        ],
+      },
+      {
+        id: 'tool-result-1',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'tool',
+        tool_call_id: 'call-1',
+        content: [{ type: 'text', text: 'First tool result chunk' }],
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      render(<AgentChatMessages />);
+      scrollIntoView.mockClear();
+
+      const nextFrame = frameQueue.shift();
+      expect(nextFrame).toBeDefined();
+
+      act(() => {
+        nextFrame?.(0);
+      });
+
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 });

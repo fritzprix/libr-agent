@@ -20,8 +20,16 @@ const logger = getLogger('MCPServerManagement');
 
 export function useMCPServerManagement(service?: McpServerService) {
   const { t } = useTranslation('common');
-  const { saveServer, deleteServer, toggleActive, ensureLoaded } =
-    useMCPServerRegistry();
+  const {
+    allServers,
+    loaded: registryLoaded,
+    error: registryError,
+    saveServer,
+    deleteServer,
+    toggleActive,
+    ensureLoaded,
+    refreshAll,
+  } = useMCPServerRegistry();
   const { value: settings } = useSettings();
 
   useEffect(() => {
@@ -46,8 +54,8 @@ export function useMCPServerManagement(service?: McpServerService) {
     setSize,
     mutate: mutateServers,
   } = useSWRInfinite(
-    (pageIndex) => ['mcpServers', pageIndex],
-    async ([, pageIndex]) => {
+    (pageIndex) => ['mcpServers', settings.agentHubUrl, pageIndex],
+    async ([, , pageIndex]) => {
       // getPage is 1-based; pass pageIndex + 1
       return mcpServerService.getPage(pageIndex + 1, 10);
     },
@@ -220,6 +228,9 @@ export function useMCPServerManagement(service?: McpServerService) {
 
   return {
     servers,
+    allServers,
+    registryLoaded,
+    registryError,
     presets,
     isLoading,
     isValidating,
@@ -233,6 +244,7 @@ export function useMCPServerManagement(service?: McpServerService) {
     togglingStatus,
     handleCreateNew,
     handleSetupPreset,
+    retryRegistryLoad: refreshAll,
     handleSave,
     handleDelete,
     confirmDelete,

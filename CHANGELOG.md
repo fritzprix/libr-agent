@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.19] - 2026-05-04
+
+### 🚀 Features
+
+- **Settings & Localization Expansion**: Expanded Rosetta coverage for settings and improved Korean (KO) translations for better consistency.
+- **Enhanced Agent UI Tooltips**: Added helpful tooltips to skill deletion actions and icons in the settings and palette views to improve discoverability.
+
+### 🐛 Fixes
+
+- **Agent Chat UX & Scroll Stability**: Fixed critical chat scroll anchoring and pinning issues, especially during streaming and session transitions, ensuring the view stays locked to the latest content.
+- **Flicker-Free Session Switching**: Reduced UI flickering and improved transition smoothness when switching between different agent sessions.
+- **Reliable MCP Preset Management**: Resolved gaps in MCP preset registry loading and install state tracking for more predictable extension management.
+- **Workspace Search Precision**: Fixed artifact filtering in workspace searches to prevent internal agent files from cluttering search results.
+
+### 🔧 Internal
+
+- **Refined Event Handling**: Improved session event handling and state synchronization across agent chat and session routes.
+- **Test Suite Hardening**: Expanded and stabilized test coverage for agent chat, session management, and workspace search logic.
+
 ## [0.7.18] - 2026-05-02
 
 ### 🚀 Features
