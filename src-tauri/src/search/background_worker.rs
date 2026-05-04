@@ -16,7 +16,7 @@ pub struct IndexingWorker {
     /// Flag to signal worker shutdown
     shutdown: Arc<AtomicBool>,
     /// Worker task handle
-    task_handle: Option<tokio::task::JoinHandle<()>>,
+    task_handle: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
 impl IndexingWorker {
@@ -28,7 +28,7 @@ impl IndexingWorker {
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_clone = shutdown.clone();
 
-        let task_handle = tokio::spawn(async move {
+        let task_handle = tauri::async_runtime::spawn(async move {
             worker_loop(shutdown_clone, check_interval).await;
         });
 

@@ -15,7 +15,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
 
@@ -47,6 +47,129 @@ impl LegacySkillMigrationSummary {
             && self.skipped_existing_user_skills == 0
             && !self.removed_legacy_root_dir
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StartupSettingsSnapshot {
+    web_action_timeout: std::time::Duration,
+    http_port: u16,
+    http_expose: bool,
+    search_index_frequency_minutes: u64,
+    active_agents: u32,
+    suspended_agents: u32,
+    active_processes: u32,
+    suspended_processes: u32,
+}
+
+async fn load_startup_settings() -> StartupSettingsSnapshot {
+    use crate::agent::concurrency::{
+        DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES, DEFAULT_MAX_SUSPENDED_AGENTS,
+        DEFAULT_MAX_SUSPENDED_PROCESSES,
+    };
+    use crate::state::get_settings_repository;
+
+    let settings_repo = get_settings_repository();
+    let system_settings = match settings_repo.get("systemSettings").await {
+        Ok(Some(model)) => serde_json::from_str::<SystemSettings>(&model.value).unwrap_or_default(),
+        _ => SystemSettings::default(),
+    };
+
+    let advanced_settings = match settings_repo.get("advancedSettings").await {
+        Ok(Some(model)) => {
+            serde_json::from_str::<serde_json::Value>(&model.value).unwrap_or_default()
+        }
+        _ => serde_json::Value::Null,
+    };
+
+    let get_u32 = |key: &str, default: u32| -> u32 {
+        advanced_settings
+            .get(key)
+            .and_then(|value| value.as_u64())
+            .map(|value| value.clamp(1, 256) as u32)
+            .unwrap_or(default)
+    };
+
+    StartupSettingsSnapshot {
+        web_action_timeout: std::time::Duration::from_secs(
+            system_settings.web_action_timeout_seconds.unwrap_or(30),
+        ),
+        http_port: system_settings.http_server_port.unwrap_or(3030),
+        http_expose: system_settings.http_server_expose.unwrap_or(false),
+        search_index_frequency_minutes: system_settings.search_index_frequency_minutes.unwrap_or(5),
+        active_agents: get_u32("maxConcurrentActiveSessions", DEFAULT_MAX_ACTIVE_AGENTS),
+        suspended_agents: get_u32("maxSuspendedSessions", DEFAULT_MAX_SUSPENDED_AGENTS),
+        active_processes: get_u32("maxConcurrentActiveProcesses", DEFAULT_MAX_ACTIVE_PROCESSES),
+        suspended_processes: get_u32("maxSuspendedProcesses", DEFAULT_MAX_SUSPENDED_PROCESSES),
+    }
+}
+
+fn spawn_managed_skills_startup_work(bundled_skills_dir: PathBuf, system_skills_dir: PathBuf) {
+    crate::state::begin_managed_skills_sync();
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = async {
+            match migrate_legacy_skills_to_managed_storage().await {
+                Ok(summary) if summary.is_noop() => {
+                    log::debug!("No legacy skills migration work was needed");
+                }
+                Ok(summary) => {
+                    info!(
+                        "✅ Legacy skills migration completed (removed snapshots: {}, migrated user skills: {}, skipped existing user skills: {}, removed legacy root: {})",
+                        summary.removed_legacy_snapshot_entries,
+                        summary.migrated_user_skills,
+                        summary.skipped_existing_user_skills,
+                        summary.removed_legacy_root_dir
+                    );
+                }
+                Err(error) => {
+                    log::warn!("⚠️  Failed to migrate legacy skills: {}", error);
+                }
+            }
+
+            if let Err(error) =
+                sync_managed_system_skills_snapshot(&bundled_skills_dir, &system_skills_dir)
+            {
+                log::warn!("⚠️  Failed to sync managed system skills snapshot: {}", error);
+            } else {
+                info!("✅ Managed system skills snapshot synchronized");
+            }
+
+            crate::services::skill_service::invalidate_skill_scan_cache();
+
+            if let Err(error) = crate::services::skill_service::prewarm_managed_skill_scans().await
+            {
+                log::warn!("⚠️  Failed to prewarm managed skill cache: {}", error);
+            }
+
+            Ok::<(), String>(())
+        }
+        .await
+        {
+            log::warn!("⚠️  Managed skills startup preparation finished with warnings: {}", e);
+        }
+
+        crate::state::complete_managed_skills_sync();
+    });
+}
+
+fn spawn_startup_maintenance_tasks(
+    session_manager: crate::session::SessionManager,
+    search_index_frequency_minutes: u64,
+) {
+    tauri::async_runtime::spawn(async move {
+        match session_manager.cleanup_old_sessions(24, 5).await {
+            Ok(count) => info!(
+                "🧹 Session cleanup completed: removed {} old sessions",
+                count
+            ),
+            Err(error) => log::error!("❌ Session cleanup failed: {}", error),
+        }
+    });
+
+    let _indexing_worker = crate::search::IndexingWorker::new(std::time::Duration::from_secs(
+        search_index_frequency_minutes * 60,
+    ));
+    info!("✅ Background message indexing worker started");
 }
 
 /// Migration decision for a legacy skill directory from AppData/skills.
@@ -405,7 +528,6 @@ pub fn remove_legacy_skills_dir_if_empty(
 }
 
 async fn migrate_legacy_skills_to_managed_storage(
-    _app: &App,
 ) -> Result<LegacySkillMigrationSummary, Box<dyn std::error::Error>> {
     use std::fs;
 
@@ -526,59 +648,17 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(dropped_file_service);
     info!("✅ DroppedFileService initialized");
 
-    // Migrate legacy AppData/skills user content into the managed user_skills directory.
-    tauri::async_runtime::block_on(async {
-        match migrate_legacy_skills_to_managed_storage(app).await {
-            Ok(summary) if summary.is_noop() => {
-                log::debug!("No legacy skills migration work was needed");
-            }
-            Ok(summary) => {
-                info!(
-                    "✅ Legacy skills migration completed (removed snapshots: {}, migrated user skills: {}, skipped existing user skills: {}, removed legacy root: {})",
-                    summary.removed_legacy_snapshot_entries,
-                    summary.migrated_user_skills,
-                    summary.skipped_existing_user_skills,
-                    summary.removed_legacy_root_dir
-                );
-            }
-            Err(e) => {
-                log::warn!("⚠️  Failed to migrate legacy skills: {}", e);
-            }
-        }
-    });
+    let session_manager = crate::session::get_session_manager()
+        .map_err(std::io::Error::other)?
+        .clone();
+    let resource_dir = app.path().resource_dir()?;
+    let bundled_skills_dir = resource_dir.join("bundled_skills");
+    let system_skills_dir = session_manager
+        .get_base_data_dir()
+        .join(SYSTEM_SKILLS_DIR_NAME);
+    spawn_managed_skills_startup_work(bundled_skills_dir, system_skills_dir);
 
-    // Keep the app-data managed system snapshot aligned with bundled_skills so the
-    // runtime system skills directory never depends on the packaged install path.
-    if let Err(e) = {
-        let resource_dir = app.path().resource_dir()?;
-        let bundled_skills_dir = resource_dir.join("bundled_skills");
-        let system_skills_dir = crate::session::get_session_manager()
-            .map_err(std::io::Error::other)?
-            .get_base_data_dir()
-            .join(SYSTEM_SKILLS_DIR_NAME);
-        sync_managed_system_skills_snapshot(&bundled_skills_dir, &system_skills_dir)
-    } {
-        log::warn!("⚠️  Failed to sync managed system skills snapshot: {}", e);
-    } else {
-        info!("✅ Managed system skills snapshot synchronized");
-    }
-
-    // Fetch System Settings
-    let (web_action_timeout, http_port, http_expose) = tauri::async_runtime::block_on(async {
-        use crate::state::get_settings_repository;
-        let settings_repo = get_settings_repository();
-        match settings_repo.get("systemSettings").await {
-            Ok(Some(model)) => {
-                let s: SystemSettings = serde_json::from_str(&model.value).unwrap_or_default();
-                (
-                    std::time::Duration::from_secs(s.web_action_timeout_seconds.unwrap_or(30)),
-                    s.http_server_port.unwrap_or(3030),
-                    s.http_server_expose.unwrap_or(false),
-                )
-            }
-            _ => (std::time::Duration::from_secs(30), 3030, false),
-        }
-    });
+    let startup_settings = tauri::async_runtime::block_on(load_startup_settings());
 
     // MCP HTTP endpoint is enabled via env var or --mcp CLI flag
     let mcp_enabled =
@@ -589,11 +669,12 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             app.handle().clone(),
         ),
     );
-    let browser_server = InteractiveBrowserServer::new(browser_env, web_action_timeout);
+    let browser_server =
+        InteractiveBrowserServer::new(browser_env, startup_settings.web_action_timeout);
     app.manage(browser_server);
     info!(
         "✅ Interactive Browser Server initialized with timeout: {:?}",
-        web_action_timeout
+        startup_settings.web_action_timeout
     );
 
     // Initialize Agent Session Manager with proxy manager
@@ -614,60 +695,36 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     app.manage(agent_session_manager);
 
-    // SP1 + SP2: Initialize SessionBus and ConcurrencyGate from advanced settings.
-    // Read values with fallback to hardcoded defaults when settings are absent.
-    tauri::async_runtime::block_on(async {
-        use crate::agent::concurrency::{
-            ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
-            DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
-        };
+    {
+        use crate::agent::concurrency::ConcurrencyGate;
         use crate::agent::session_bus::SessionBus;
-        use crate::state::get_settings_repository;
-
-        let (active_agents, suspended_agents, active_procs, suspended_procs) =
-            match get_settings_repository().get("advancedSettings").await {
-                Ok(Some(model)) => {
-                    let json: serde_json::Value =
-                        serde_json::from_str(&model.value).unwrap_or_default();
-                    let get_u32 = |key: &str, default: u32| -> u32 {
-                        json.get(key)
-                            .and_then(|v| v.as_u64())
-                            .map(|v| v.clamp(1, 256) as u32)
-                            .unwrap_or(default)
-                    };
-                    (
-                        get_u32("maxConcurrentActiveSessions", DEFAULT_MAX_ACTIVE_AGENTS),
-                        get_u32("maxSuspendedSessions", DEFAULT_MAX_SUSPENDED_AGENTS),
-                        get_u32("maxConcurrentActiveProcesses", DEFAULT_MAX_ACTIVE_PROCESSES),
-                        get_u32("maxSuspendedProcesses", DEFAULT_MAX_SUSPENDED_PROCESSES),
-                    )
-                }
-                _ => (
-                    DEFAULT_MAX_ACTIVE_AGENTS,
-                    DEFAULT_MAX_SUSPENDED_AGENTS,
-                    DEFAULT_MAX_ACTIVE_PROCESSES,
-                    DEFAULT_MAX_SUSPENDED_PROCESSES,
-                ),
-            };
 
         crate::state::init_session_bus(SessionBus::new());
         crate::state::init_concurrency_gate(ConcurrencyGate::new(
-            active_agents,
-            suspended_agents,
-            active_procs,
-            suspended_procs,
+            startup_settings.active_agents,
+            startup_settings.suspended_agents,
+            startup_settings.active_processes,
+            startup_settings.suspended_processes,
         ));
 
         info!(
             "✅ ConcurrencyGate initialized: active_agents={} suspended_agents={} \
              active_processes={} suspended_processes={}",
-            active_agents, suspended_agents, active_procs, suspended_procs,
+            startup_settings.active_agents,
+            startup_settings.suspended_agents,
+            startup_settings.active_processes,
+            startup_settings.suspended_processes,
         );
-    });
+    }
 
     // Initialize global AppHandle for event emission from builtin tools
     crate::state::init_app_handle(app.handle().clone());
     info!("✅ Global AppHandle initialized for event emission");
+
+    spawn_startup_maintenance_tasks(
+        session_manager,
+        startup_settings.search_index_frequency_minutes,
+    );
 
     // Spawn HTTP Server for External Features
     let server_manager = app
@@ -677,19 +734,27 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tauri::async_runtime::spawn(async move {
         if let Err(e) = crate::server::init(
             std::sync::Arc::new(server_manager),
-            http_port,
-            http_expose,
+            startup_settings.http_port,
+            startup_settings.http_expose,
             mcp_enabled,
         )
         .await
         {
-            log::error!("Failed to start HTTP server on port {}: {}", http_port, e);
+            log::error!(
+                "Failed to start HTTP server on port {}: {}",
+                startup_settings.http_port,
+                e
+            );
         }
     });
     info!(
         "✅ HTTP Server spawned on {}:{}",
-        if http_expose { "0.0.0.0" } else { "127.0.0.1" },
-        http_port
+        if startup_settings.http_expose {
+            "0.0.0.0"
+        } else {
+            "127.0.0.1"
+        },
+        startup_settings.http_port
     );
 
     // Spawn session recovery in background
@@ -735,6 +800,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.listen("frontend-ready", |_| {
         info!("🖥️  Frontend signaled readiness");
         crate::lifecycle::frontend_ready::mark_as_ready();
+        if let Some(elapsed_ms) = crate::state::startup_elapsed_ms() {
+            info!("⏱️ Startup metric: frontend ready after {}ms", elapsed_ms);
+        }
     });
     info!("✅ Frontend readiness listener registered");
 
