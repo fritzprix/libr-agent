@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { Route, Routes, Navigate } from 'react-router-dom';
 import { lazy, Suspense, useEffect } from 'react';
-import { emit } from '@tauri-apps/api/event';
 import { Toaster } from '../components/ui/sonner';
 import AppSidebar from '../components/layout/AppSidebar';
 import { ThemeToggle } from '../components/common/ThemeToggle';
@@ -19,6 +18,7 @@ import { GlobalEventProvider } from '@/context/GlobalEventContext';
 import { UpdateProvider } from '@/context/UpdateContext';
 import { useSettings } from '../context/SettingsContext';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
+import { emitFrontendReadyOnce } from './frontend-ready';
 import '../styles/globals.css';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
@@ -81,9 +81,7 @@ function App() {
     markStartupMilestone('app-mounted');
 
     // Signal to backend that frontend is ready to receive events
-    emit('frontend-ready').catch((e) => {
-      console.error('Failed to emit frontend-ready event', e);
-    });
+    void emitFrontendReadyOnce();
   }, []);
 
   useEffect(() => {

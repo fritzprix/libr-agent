@@ -3,11 +3,19 @@ use crate::lifecycle::settings::SystemSettings;
 use crate::logger;
 use crate::repositories;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::services::skill_service::{
+    LEGACY_SYSTEM_SKILLS_DIR_NAME, MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME,
+    SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_DIR_NAME,
+};
 use crate::services::{DroppedFileService, InteractiveBrowserServer, SecureFileManager};
 use crate::state;
 use log::info;
 #[cfg(target_os = "linux")]
 use log::warn;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
 
@@ -15,6 +23,31 @@ use tauri::{App, Emitter, Listener, Manager};
 /// Used to distinguish bundled skills from user-created ones so that skills
 /// removed from the bundle can be cleaned up automatically on the next launch.
 const BUNDLED_SKILL_MARKER: &str = ".bundled_skill";
+const MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BundledSkillsManifest {
+    schema_version: u32,
+    skills: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct LegacySkillMigrationSummary {
+    removed_legacy_snapshot_entries: usize,
+    migrated_user_skills: usize,
+    skipped_existing_user_skills: usize,
+    removed_legacy_root_dir: bool,
+}
+
+impl LegacySkillMigrationSummary {
+    fn is_noop(&self) -> bool {
+        self.removed_legacy_snapshot_entries == 0
+            && self.migrated_user_skills == 0
+            && self.skipped_existing_user_skills == 0
+            && !self.removed_legacy_root_dir
+    }
+}
 
 /// Migration decision for a legacy skill directory from AppData/skills.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,56 +75,353 @@ pub fn classify_legacy_skill_for_managed_storage(
     }
 }
 
-/// Replaces the AppData/skills bundled snapshot with an exact mirror of the
-/// currently bundled skills shipped in application resources.
-pub fn sync_legacy_global_skills_to_bundled_snapshot(
-    bundled_skills_dir: &std::path::Path,
-    legacy_skills_dir: &std::path::Path,
-) -> Result<(), String> {
-    if legacy_skills_dir.exists() {
-        std::fs::remove_dir_all(legacy_skills_dir).map_err(|e| e.to_string())?;
+fn collect_skill_directory_names(skills_dir: &Path) -> Result<BTreeSet<String>, String> {
+    if !skills_dir.exists() {
+        return Ok(BTreeSet::new());
     }
-    std::fs::create_dir_all(legacy_skills_dir).map_err(|e| e.to_string())?;
 
+    let mut names = BTreeSet::new();
+    for entry in std::fs::read_dir(skills_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !entry.path().is_dir() {
+            continue;
+        }
+
+        names.insert(entry.file_name().to_string_lossy().to_string());
+    }
+
+    Ok(names)
+}
+
+fn normalized_relative_path(root: &Path, path: &Path) -> Result<String, String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|error| format!("Failed to strip prefix for {}: {}", path.display(), error))?;
+    Ok(relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().replace('\\', "/"))
+        .collect::<Vec<_>>()
+        .join("/"))
+}
+
+fn hash_skill_directory(skill_dir: &Path) -> Result<String, String> {
+    let mut files = walkdir::WalkDir::new(skill_dir)
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to scan {}: {}", skill_dir.display(), error))?
+        .into_iter()
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| {
+            let path = entry.into_path();
+            let normalized = normalized_relative_path(skill_dir, &path)?;
+            Ok((normalized, path))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut hasher = Sha256::new();
+    for (relative_path, full_path) in files {
+        hasher.update(relative_path.as_bytes());
+        hasher.update([0]);
+        hasher.update(
+            std::fs::read(&full_path)
+                .map_err(|error| format!("Failed to read {}: {}", full_path.display(), error))?,
+        );
+        hasher.update([0]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn build_bundled_skills_manifest(skills_dir: &Path) -> Result<BundledSkillsManifest, String> {
+    let mut manifest = BundledSkillsManifest {
+        schema_version: MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION,
+        skills: BTreeMap::new(),
+    };
+
+    if !skills_dir.exists() {
+        return Ok(manifest);
+    }
+
+    let mut entries = std::fs::read_dir(skills_dir)
+        .map_err(|error| format!("Failed to read {}: {}", skills_dir.display(), error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read directory entry: {}", error))?;
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+    for entry in entries {
+        let skill_path = entry.path();
+        if !skill_path.is_dir() {
+            continue;
+        }
+
+        if !skill_path.join(SKILL_FILE_NAME).is_file() {
+            continue;
+        }
+
+        let skill_dir_name = entry.file_name().to_string_lossy().to_string();
+        manifest
+            .skills
+            .insert(skill_dir_name, hash_skill_directory(&skill_path)?);
+    }
+
+    Ok(manifest)
+}
+
+fn load_persisted_bundled_skills_manifest(
+    manifest_path: &Path,
+) -> Result<Option<BundledSkillsManifest>, String> {
+    if !manifest_path.exists() {
+        return Ok(None);
+    }
+
+    let payload = std::fs::read(manifest_path)
+        .map_err(|error| format!("Failed to read {}: {}", manifest_path.display(), error))?;
+    let manifest = match serde_json::from_slice::<BundledSkillsManifest>(&payload) {
+        Ok(manifest) => manifest,
+        Err(_) => return Ok(None),
+    };
+
+    if manifest.schema_version != MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION {
+        return Ok(None);
+    }
+
+    Ok(Some(manifest))
+}
+
+fn write_manifest_atomically(
+    manifest_path: &Path,
+    manifest: &BundledSkillsManifest,
+) -> Result<(), String> {
+    let payload = serde_json::to_vec_pretty(manifest)
+        .map_err(|error| format!("Failed to serialize manifest: {}", error))?;
+    let temp_path = manifest_path.with_extension("json.tmp");
+    let backup_path = manifest_path.with_extension("json.bak");
+
+    std::fs::write(&temp_path, payload)
+        .map_err(|error| format!("Failed to write {}: {}", temp_path.display(), error))?;
+
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path).map_err(|error| {
+            format!(
+                "Failed to clear backup manifest {}: {}",
+                backup_path.display(),
+                error
+            )
+        })?;
+    }
+
+    let moved_existing_to_backup = if manifest_path.exists() {
+        std::fs::rename(manifest_path, &backup_path).map_err(|error| {
+            format!(
+                "Failed to move existing manifest {} aside: {}",
+                manifest_path.display(),
+                error
+            )
+        })?;
+        true
+    } else {
+        false
+    };
+
+    match std::fs::rename(&temp_path, manifest_path) {
+        Ok(()) => {
+            if moved_existing_to_backup {
+                std::fs::remove_file(&backup_path).map_err(|error| {
+                    format!(
+                        "Failed to remove backup manifest {}: {}",
+                        backup_path.display(),
+                        error
+                    )
+                })?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&temp_path);
+            if moved_existing_to_backup && !manifest_path.exists() {
+                let _ = std::fs::rename(&backup_path, manifest_path);
+            }
+            Err(format!(
+                "Failed to finalize manifest {}: {}",
+                manifest_path.display(),
+                error
+            ))
+        }
+    }
+}
+
+fn replace_skill_directory_atomically(source_dir: &Path, target_dir: &Path) -> Result<(), String> {
+    let parent = target_dir
+        .parent()
+        .ok_or_else(|| format!("Invalid managed skill path: {}", target_dir.display()))?;
+    let skill_name = target_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            format!(
+                "Invalid managed skill directory name: {}",
+                target_dir.display()
+            )
+        })?;
+
+    let temp_dir = parent.join(format!(".sync-tmp-{}", skill_name));
+    let backup_dir = parent.join(format!(".sync-backup-{}", skill_name));
+
+    if temp_dir.exists() {
+        std::fs::remove_dir_all(&temp_dir).map_err(|error| {
+            format!("Failed to clear temp dir {}: {}", temp_dir.display(), error)
+        })?;
+    }
+    if backup_dir.exists() {
+        std::fs::remove_dir_all(&backup_dir).map_err(|error| {
+            format!(
+                "Failed to clear backup dir {}: {}",
+                backup_dir.display(),
+                error
+            )
+        })?;
+    }
+
+    copy_dir_recursive_path(source_dir, &temp_dir).map_err(|e| e.to_string())?;
+
+    let moved_existing_to_backup = if target_dir.exists() {
+        std::fs::rename(target_dir, &backup_dir).map_err(|error| {
+            format!(
+                "Failed to move existing managed skill {} aside: {}",
+                target_dir.display(),
+                error
+            )
+        })?;
+        true
+    } else {
+        false
+    };
+
+    match std::fs::rename(&temp_dir, target_dir) {
+        Ok(()) => {
+            if moved_existing_to_backup {
+                std::fs::remove_dir_all(&backup_dir).map_err(|error| {
+                    format!(
+                        "Failed to remove backup dir {}: {}",
+                        backup_dir.display(),
+                        error
+                    )
+                })?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            if moved_existing_to_backup && !target_dir.exists() {
+                let _ = std::fs::rename(&backup_dir, target_dir);
+            }
+            Err(format!(
+                "Failed to activate managed skill {}: {}",
+                target_dir.display(),
+                error
+            ))
+        }
+    }
+}
+
+/// Synchronize the managed system skills snapshot with the packaged bundled skills.
+///
+/// This keeps a runtime-owned app-data mirror instead of treating packaged resources
+/// as the live source of truth, while avoiding full delete-and-recopy work when only
+/// a subset of bundled skills changed.
+pub fn sync_managed_system_skills_snapshot(
+    bundled_skills_dir: &std::path::Path,
+    system_skills_dir: &std::path::Path,
+) -> Result<(), String> {
     if !bundled_skills_dir.exists() {
         return Ok(());
     }
 
-    for entry in std::fs::read_dir(bundled_skills_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let source_path = entry.path();
-        if !source_path.is_dir() {
-            continue;
-        }
+    std::fs::create_dir_all(system_skills_dir).map_err(|e| e.to_string())?;
 
-        let target_path = legacy_skills_dir.join(entry.file_name());
-        copy_dir_recursive_path(&source_path, &target_path).map_err(|e| e.to_string())?;
-        std::fs::write(target_path.join(BUNDLED_SKILL_MARKER), "").map_err(|e| e.to_string())?;
+    let manifest_path = system_skills_dir.join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME);
+    let source_manifest = build_bundled_skills_manifest(bundled_skills_dir)?;
+    let source_skill_names = source_manifest
+        .skills
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let installed_skill_names = collect_skill_directory_names(system_skills_dir)?;
+    let persisted_manifest = load_persisted_bundled_skills_manifest(&manifest_path)?;
+    let installed_manifest = match persisted_manifest.as_ref() {
+        Some(manifest) => manifest.clone(),
+        None => build_bundled_skills_manifest(system_skills_dir)?,
+    };
+
+    if installed_manifest == source_manifest && installed_skill_names == source_skill_names {
+        if persisted_manifest.is_none() {
+            write_manifest_atomically(&manifest_path, &source_manifest)?;
+        }
+        return Ok(());
     }
 
+    for obsolete_skill in installed_skill_names.difference(&source_skill_names) {
+        std::fs::remove_dir_all(system_skills_dir.join(obsolete_skill)).map_err(|error| {
+            format!(
+                "Failed to delete obsolete managed skill {}: {}",
+                obsolete_skill, error
+            )
+        })?;
+    }
+
+    for (skill_name, source_hash) in &source_manifest.skills {
+        let target_dir = system_skills_dir.join(skill_name);
+        let needs_update =
+            installed_manifest.skills.get(skill_name) != Some(source_hash) || !target_dir.exists();
+
+        if needs_update {
+            replace_skill_directory_atomically(&bundled_skills_dir.join(skill_name), &target_dir)?;
+        }
+    }
+
+    write_manifest_atomically(&manifest_path, &source_manifest)?;
     Ok(())
 }
 
 /// Move legacy user-managed skills from AppData/skills into AppData/user_skills.
 /// Old `.bundled_skill` snapshot entries are always discarded so the bundled
 /// system snapshot can be rebuilt as an exact copy of the current bundle.
+pub fn remove_legacy_skills_dir_if_empty(
+    legacy_skills_dir: &Path,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if !legacy_skills_dir.exists() {
+        return Ok(false);
+    }
+
+    let mut entries = std::fs::read_dir(legacy_skills_dir)?;
+    if entries.next().is_some() {
+        return Ok(false);
+    }
+
+    std::fs::remove_dir(legacy_skills_dir)?;
+    Ok(true)
+}
+
 async fn migrate_legacy_skills_to_managed_storage(
     _app: &App,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<LegacySkillMigrationSummary, Box<dyn std::error::Error>> {
     use std::fs;
 
     let base_data_dir = crate::session::get_session_manager()
         .map_err(std::io::Error::other)?
         .get_base_data_dir()
         .clone();
-    let legacy_skills_dir = base_data_dir.join("skills");
-    let user_skills_dir = base_data_dir.join("user_skills");
+    let legacy_skills_dir = base_data_dir.join(LEGACY_SYSTEM_SKILLS_DIR_NAME);
+    let user_skills_dir = base_data_dir.join(USER_SKILLS_DIR_NAME);
 
     if !legacy_skills_dir.exists() {
-        return Ok(());
+        return Ok(LegacySkillMigrationSummary::default());
     }
 
     fs::create_dir_all(&user_skills_dir)?;
+    let mut summary = LegacySkillMigrationSummary::default();
 
     for entry in fs::read_dir(&legacy_skills_dir)? {
         let entry = entry?;
@@ -110,6 +440,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                 skill_name
             );
             fs::remove_dir_all(&legacy_skill_dir)?;
+            summary.removed_legacy_snapshot_entries += 1;
             continue;
         }
 
@@ -118,6 +449,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                 "⏭️  Managed user skill already exists, leaving legacy copy untouched: {:?}",
                 skill_name
             );
+            summary.skipped_existing_user_skills += 1;
             continue;
         }
 
@@ -127,6 +459,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                     "📦 Migrated legacy skill into managed storage: {:?}",
                     skill_name
                 );
+                summary.migrated_user_skills += 1;
             }
             Err(error) => {
                 log::warn!(
@@ -136,11 +469,14 @@ async fn migrate_legacy_skills_to_managed_storage(
                 );
                 copy_dir_recursive(&legacy_skill_dir, &target_skill_dir)?;
                 fs::remove_dir_all(&legacy_skill_dir)?;
+                summary.migrated_user_skills += 1;
             }
         }
     }
 
-    Ok(())
+    summary.removed_legacy_root_dir = remove_legacy_skills_dir_if_empty(&legacy_skills_dir)?;
+
+    Ok(summary)
 }
 
 /// Recursively copy directory contents
@@ -192,27 +528,39 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Migrate legacy AppData/skills user content into the managed user_skills directory.
     tauri::async_runtime::block_on(async {
-        if let Err(e) = migrate_legacy_skills_to_managed_storage(app).await {
-            log::warn!("⚠️  Failed to migrate legacy skills: {}", e);
-        } else {
-            info!("✅ Legacy skills migration completed");
+        match migrate_legacy_skills_to_managed_storage(app).await {
+            Ok(summary) if summary.is_noop() => {
+                log::debug!("No legacy skills migration work was needed");
+            }
+            Ok(summary) => {
+                info!(
+                    "✅ Legacy skills migration completed (removed snapshots: {}, migrated user skills: {}, skipped existing user skills: {}, removed legacy root: {})",
+                    summary.removed_legacy_snapshot_entries,
+                    summary.migrated_user_skills,
+                    summary.skipped_existing_user_skills,
+                    summary.removed_legacy_root_dir
+                );
+            }
+            Err(e) => {
+                log::warn!("⚠️  Failed to migrate legacy skills: {}", e);
+            }
         }
     });
 
-    // Keep the AppData/skills bundled snapshot aligned with bundled_skills so the
+    // Keep the app-data managed system snapshot aligned with bundled_skills so the
     // runtime system skills directory never depends on the packaged install path.
     if let Err(e) = {
         let resource_dir = app.path().resource_dir()?;
         let bundled_skills_dir = resource_dir.join("bundled_skills");
-        let legacy_skills_dir = crate::session::get_session_manager()
+        let system_skills_dir = crate::session::get_session_manager()
             .map_err(std::io::Error::other)?
             .get_base_data_dir()
-            .join("skills");
-        sync_legacy_global_skills_to_bundled_snapshot(&bundled_skills_dir, &legacy_skills_dir)
+            .join(SYSTEM_SKILLS_DIR_NAME);
+        sync_managed_system_skills_snapshot(&bundled_skills_dir, &system_skills_dir)
     } {
-        log::warn!("⚠️  Failed to sync bundled skills snapshot: {}", e);
+        log::warn!("⚠️  Failed to sync managed system skills snapshot: {}", e);
     } else {
-        info!("✅ Bundled skills snapshot synchronized");
+        info!("✅ Managed system skills snapshot synchronized");
     }
 
     // Fetch System Settings

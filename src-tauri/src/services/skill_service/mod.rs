@@ -6,7 +6,9 @@ mod scanning;
 
 pub use contracts::{
     GitHubRepoSpec, ManagedSkillsOverview, SkillImportCandidate, SkillImportConflict,
-    SkillImportPreview, SkillImportResult, SkillMetadata, SKILL_FILE_NAME,
+    SkillImportPreview, SkillImportResult, SkillMetadata, LEGACY_SYSTEM_SKILLS_DIR_NAME,
+    MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME, SYSTEM_SKILLS_DIR_NAME,
+    USER_SKILLS_DIR_NAME,
 };
 pub use directories::{
     collect_allowed_skill_roots, get_assistant_skills_directory, get_configured_skills_directory,

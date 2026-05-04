@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 pub const SKILL_FILE_NAME: &str = "SKILL.md";
-pub(super) const USER_SKILLS_DIR_NAME: &str = "user_skills";
+pub const USER_SKILLS_DIR_NAME: &str = "user_skills";
+pub const SYSTEM_SKILLS_DIR_NAME: &str = "system_skills";
+pub const LEGACY_SYSTEM_SKILLS_DIR_NAME: &str = "skills";
+pub const MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME: &str = ".bundled_manifest.json";
 pub(super) const GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS: u64 = 10;
 pub(super) const GITHUB_DOWNLOAD_TIMEOUT_SECS: u64 = 30;
 pub(super) const MAX_GITHUB_ARCHIVE_BYTES: u64 = 100 * 1024 * 1024;
