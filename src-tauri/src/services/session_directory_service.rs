@@ -27,7 +27,11 @@ impl SessionDirectoryService {
             .map_err(|e| format!("Failed to create config directory: {e}"))?;
 
         fs::create_dir_all(base_data_dir.join("skills"))
-            .map_err(|e| format!("Failed to create skills directory: {e}"))?;
+            .map_err(|e| format!("Failed to create legacy skills directory: {e}"))?;
+        fs::create_dir_all(base_data_dir.join("system_skills"))
+            .map_err(|e| format!("Failed to create system skills directory: {e}"))?;
+        fs::create_dir_all(base_data_dir.join("user_skills"))
+            .map_err(|e| format!("Failed to create user skills directory: {e}"))?;
 
         // Create default workspace
         let default_workspace = base_data_dir.join("workspaces").join("default");

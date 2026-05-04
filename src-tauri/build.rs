@@ -1,25 +1,9 @@
 use std::env;
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
-    fs::create_dir_all(dst)?;
-
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-
-    Ok(())
-}
+#[path = "build_support/bundled_skills.rs"]
+mod bundled_skills;
 
 fn profile_output_dir(out_dir: &Path) -> Option<PathBuf> {
     out_dir
@@ -48,10 +32,7 @@ fn sync_bundled_skills_into_profile_output() -> io::Result<()> {
     };
 
     let deployed_dir = profile_dir.join("bundled_skills");
-    if deployed_dir.exists() {
-        fs::remove_dir_all(&deployed_dir)?;
-    }
-    copy_dir_recursive(&source_dir, &deployed_dir)
+    bundled_skills::mirror_bundled_skills(&source_dir, &deployed_dir)
 }
 
 fn main() {
