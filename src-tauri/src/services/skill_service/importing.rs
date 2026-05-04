@@ -72,6 +72,30 @@ fn invalidate_skill_cache_after_success<T>(result: Result<T, String>) -> Result<
     result
 }
 
+struct SkillCacheInvalidationGuard {
+    should_invalidate: bool,
+}
+
+impl SkillCacheInvalidationGuard {
+    fn new() -> Self {
+        Self {
+            should_invalidate: false,
+        }
+    }
+
+    fn mark_mutated(&mut self) {
+        self.should_invalidate = true;
+    }
+}
+
+impl Drop for SkillCacheInvalidationGuard {
+    fn drop(&mut self) {
+        if self.should_invalidate {
+            invalidate_skill_scan_cache();
+        }
+    }
+}
+
 pub async fn delete_user_skill(skill_name: String) -> Result<String, String> {
     let user_dir = get_user_skills_directory()?;
     invalidate_skill_cache_after_success(remove_skill_name_from_directory(&user_dir, &skill_name))
@@ -163,11 +187,7 @@ pub async fn import_assistant_skills(
 ) -> Result<String, String> {
     let assistant_skills_dir = get_assistant_skills_directory(&assistant_id)?;
     let prepared = prepare_local_skill_import(file_path).await?;
-    let result = invalidate_skill_cache_after_success(install_prepared_skills_to_directory(
-        prepared,
-        assistant_skills_dir,
-        true,
-    ))?;
+    let result = install_prepared_skills_to_directory(prepared, assistant_skills_dir, true)?;
     Ok(format!(
         "Successfully imported {} skills",
         result.imported_names.len()
@@ -482,8 +502,7 @@ async fn install_user_prepared_skills(
         _temp_dir,
         discovered_skills: selected_skills,
     };
-    let mut result =
-        install_prepared_skills_to_directory(prepared, user_dir.clone(), overwrite_existing)?;
+    let mut result = install_prepared_skills_to_directory(prepared, user_dir, overwrite_existing)?;
 
     if overwrite_existing {
         let conflict_names = retained_conflicts
@@ -498,7 +517,7 @@ async fn install_user_prepared_skills(
     }
 
     result.skipped_names = skipped_names;
-    invalidate_skill_cache_after_success(Ok(result))
+    Ok(result)
 }
 
 fn install_prepared_skills_to_directory(
@@ -508,6 +527,7 @@ fn install_prepared_skills_to_directory(
 ) -> Result<SkillImportResult, String> {
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
 
+    let mut cache_invalidation_guard = SkillCacheInvalidationGuard::new();
     let mut existing_skill_roots = discover_existing_skill_roots(&target_dir)?;
     let mut overwritten_names = Vec::new();
     let mut imported_names = Vec::new();
@@ -522,6 +542,7 @@ fn install_prepared_skills_to_directory(
                 ));
             }
             fs::remove_dir_all(existing_root).map_err(|error| error.to_string())?;
+            cache_invalidation_guard.mark_mutated();
             overwritten_names.push(skill.metadata.name.clone());
         }
 
@@ -534,9 +555,11 @@ fn install_prepared_skills_to_directory(
                 ));
             }
             fs::remove_dir_all(&target_path).map_err(|error| error.to_string())?;
+            cache_invalidation_guard.mark_mutated();
         }
 
         copy_dir_recursive(&skill.root_dir, &target_path)?;
+        cache_invalidation_guard.mark_mutated();
         imported_names.push(skill.metadata.name.clone());
     }
 

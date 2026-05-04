@@ -67,6 +67,11 @@ pub async fn scan_skills_internal_cached(
     }
 
     let scanned = scan_skills_internal(root_path, source_tag, origin_tag).await?;
+    let current_revision = get_skills_catalog_revision();
+
+    if key.revision != current_revision {
+        return Ok(scanned);
+    }
 
     match skill_scan_cache().entries.write() {
         Ok(mut entries) => {
