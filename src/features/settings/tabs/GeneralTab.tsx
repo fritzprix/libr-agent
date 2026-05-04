@@ -253,11 +253,4 @@ function GeneralTabComponent({
   );
 }
 
-export default React.memo(GeneralTabComponent, (prev, next) => {
-  return (
-    prev.localLanguage === next.localLanguage &&
-    prev.localDisplay.fontFamily === next.localDisplay.fontFamily &&
-    prev.onChange === next.onChange &&
-    prev.onDisplaySettingsChange === next.onDisplaySettingsChange
-  );
-});
+export default React.memo(GeneralTabComponent);

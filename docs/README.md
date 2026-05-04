@@ -11,12 +11,15 @@ This documentation is divided into the following sections:
 - **[Assistant System Prompt Guide](./guides/system-prompt-guide.md)**: Guidelines for writing robust and effective system prompts.
 - **[Architecture](./architecture/agent-workflow-architecture.md)**: An overview of the system architecture, data flow, and security considerations.
 - **[Gemini Request Caching Implementation](./architecture/gemini-caching-implementation.md)**: How Gemini request shaping, explicit cached-content reuse, and cache lifecycle management work.
+- **[Product Strengths](./analysis/product-strengths.md)**: Consolidated summary of LibrAgent's core product strengths based on the changelog and current platform shape.
+- **[Competitive Landscape 2026](./analysis/competitive-landscape-2026.md)**: Why the market shifted from model wars to harness wars, and where LibrAgent fits.
 - **[Session Lineage & Tree UI](./architecture/session-lineage-and-tree-ui.md)**: Design and implementation status for nested sessions, `session_api` MCP integration, and tree-based session UX.
 - **[Agent Vibe Charter](./architecture/agent-vibe-charter.md)**: The operating personality and decision rules for this workspace's agent behavior.
 - **[AI Soul Manifesto](./architecture/ai-soul-manifesto.md)**: Autonomy-first operating doctrine, mission rituals, and recovery principles for agent teams.
 - **[Soul Lounge Recovery Loop (Experimental)](./architecture/soul-lounge-recovery-loop.md)**: Server-driven loop detection, recovery pacing, re-entry anchors, and one-time override policy.
 - **[Open Source Launch Manifesto](./architecture/open-source-launch-manifesto.md)**: Public-facing engineering ethos, quality bar, and collaboration contract for contributors.
 - **[Contributing](./contributing/coding-standards.md)**: Guidelines for contributing to the project, including coding standards, testing, and the release process.
+- **[Product Messaging Guide](./contributing/product-messaging-guide.md)**: PR, launch, and positioning guidance for describing LibrAgent clearly and persuasively.
 - **[Launch Finale Playbook](./contributing/open-source-launch-finale.md)**: Final pre-release and launch-day execution runbook.
 - **[GitHub Release Notes Template](./contributing/github-release-notes-template.md)**: Copy-ready release note structure for public releases.
 

@@ -1,4 +1,0 @@
-🌐 Scope: src/features/agent/components/AgentMessageBubble.tsx, src/features/agent/components/shared/ThinkingBubble.tsx
-🔑 Keys Added: 12
-🌍 Languages: EN, KO
-⚠️ Visual QA: Verified layout with longer text
