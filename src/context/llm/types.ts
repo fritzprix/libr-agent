@@ -1,6 +1,7 @@
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { CompactionPressure } from '@/models/agent-ipc';
+import type { CompletionCancelRequest } from '@/models/agent-ipc';
 
 /**
  * Returns true if the error is an intentional abort (user cancel via AbortController).
@@ -71,6 +72,8 @@ export interface CompletionRequest {
   availableTools?: MCPTool[];
 }
 
+export type { CompletionCancelRequest };
+
 export interface CompactionParentRequest {
   model: string;
   provider: string;
@@ -136,7 +139,10 @@ export interface LLMServiceContextValue {
   /**
    * Cancel an ongoing completion request for a session
    */
-  cancelCompletionRequest: (sessionId: string) => void;
+  cancelCompletionRequest: (
+    sessionId: string,
+    responseMessageId?: string,
+  ) => void;
 
   /**
    * Release all in-memory compaction state for a deleted session.

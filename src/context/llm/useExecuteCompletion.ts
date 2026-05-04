@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import { reportLLMStreamingIssue } from '@/lib/backend/agent-commands';
 import type {
   AIServiceConfig,
   AICompletionExecutionService,
@@ -38,6 +39,7 @@ import {
   extractToolCalls,
   hasRenderableAssistantOutput,
 } from './streaming-message-utils';
+import { detectRepeatedThinkingLoop } from './repeatedThinkingDetector';
 
 const logger = getLogger('useExecuteCompletion');
 
@@ -233,6 +235,7 @@ export function useExecuteCompletion({
         let finalUsage: TokenUsage | undefined;
         let firstChunkTime: number | undefined;
         let thinkingSignature: string | undefined;
+        let repeatedThinkingIssueReported = false;
 
         const startTime = performance.now();
 
@@ -303,6 +306,38 @@ export function useExecuteCompletion({
               (lastItem as MCPThinkingContent).thinking += chunk.thinking;
             } else {
               content.push({ type: 'thinking', thinking: chunk.thinking });
+            }
+
+            if (!repeatedThinkingIssueReported) {
+              const currentThinkingText = extractThinkingText(content);
+              const detection = currentThinkingText
+                ? detectRepeatedThinkingLoop(currentThinkingText)
+                : null;
+              if (detection) {
+                repeatedThinkingIssueReported = true;
+                logger.warn(
+                  'Detected repeated thinking pattern during streaming',
+                  {
+                    sessionId,
+                    responseMessageId,
+                    ...detection,
+                  },
+                );
+                void reportLLMStreamingIssue({
+                  sessionId,
+                  responseMessageId,
+                  issueKind: 'REPEATED_THINKING_LOOP',
+                  observedTailChars: detection.observedTailChars,
+                  patternLength: detection.patternLength,
+                  repetitionCount: detection.repetitionCount,
+                }).catch((error: unknown) => {
+                  logger.warn('Failed to report repeated thinking pattern', {
+                    sessionId,
+                    responseMessageId,
+                    error,
+                  });
+                });
+              }
             }
           }
 
@@ -645,27 +680,44 @@ export function useExecuteCompletion({
     [isCurrentRequest, updateSessionStatus, settingsRef, setStreamingMessages],
   );
 
-  const cancelCompletionRequest = useCallback((sessionId: string) => {
-    logger.info('Manually cancelling completion request', { sessionId });
-    activeRequestIdsRef.current.delete(sessionId);
-    lastStreamingUpdateRef.current.delete(sessionId);
-    const timeoutId = timeoutsRef.current.get(sessionId);
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutsRef.current.delete(sessionId);
-    }
-    const service = activeServicesRef.current.get(sessionId);
-    if (service) {
-      activeServicesRef.current.delete(sessionId);
-      service.cancel();
-      service.dispose();
-    }
-    const abortController = abortControllersRef.current.get(sessionId);
-    if (abortController) {
-      abortControllersRef.current.delete(sessionId);
-      abortController.abort();
-    }
-  }, []);
+  const cancelCompletionRequest = useCallback(
+    (sessionId: string, responseMessageId?: string) => {
+      const activeResponseMessageId =
+        activeRequestIdsRef.current.get(sessionId);
+      if (
+        responseMessageId !== undefined &&
+        activeResponseMessageId !== responseMessageId
+      ) {
+        logger.info('Ignoring stale completion cancel request', {
+          sessionId,
+          responseMessageId,
+          activeResponseMessageId,
+        });
+        return;
+      }
+
+      logger.info('Manually cancelling completion request', { sessionId });
+      activeRequestIdsRef.current.delete(sessionId);
+      lastStreamingUpdateRef.current.delete(sessionId);
+      const timeoutId = timeoutsRef.current.get(sessionId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutsRef.current.delete(sessionId);
+      }
+      const service = activeServicesRef.current.get(sessionId);
+      if (service) {
+        activeServicesRef.current.delete(sessionId);
+        service.cancel();
+        service.dispose();
+      }
+      const abortController = abortControllersRef.current.get(sessionId);
+      if (abortController) {
+        abortControllersRef.current.delete(sessionId);
+        abortController.abort();
+      }
+    },
+    [],
+  );
 
   return { executeCompletionRequest, cancelCompletionRequest };
 }

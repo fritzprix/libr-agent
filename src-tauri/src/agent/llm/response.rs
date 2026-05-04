@@ -528,6 +528,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
                     let active = active_sessions.write().await;
                     if let Some(session) = active.get(&session_id) {
                         *session.thinking_only_count.write().await = 0;
+                        *session.repeated_thinking_retry_count.write().await = 0;
                     }
                 }
 
@@ -623,6 +624,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
                 *session.thinking_only_count.write().await = 0;
+                *session.repeated_thinking_retry_count.write().await = 0;
             }
         }
 
@@ -743,6 +745,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
                 *session.thinking_only_count.write().await = 0;
+                *session.repeated_thinking_retry_count.write().await = 0;
             }
         }
 

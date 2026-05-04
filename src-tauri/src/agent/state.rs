@@ -203,6 +203,11 @@ pub struct AgentSession {
     /// Max allowed: 3 (prevents infinite thinking loops)
     pub thinking_only_count: Arc<RwLock<u32>>,
 
+    /// Counts Rust-owned recovery retries after repeated thinking-loop detection
+    /// during a single workflow turn. Reset when a new workflow starts or the
+    /// assistant produces meaningful progress.
+    pub repeated_thinking_retry_count: Arc<RwLock<u32>>,
+
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 

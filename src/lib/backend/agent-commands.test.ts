@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   handleLLMResponse,
   handleLLMError,
+  reportLLMStreamingIssue,
   handleUserToolCall,
   executeUiTauriAction,
   getAgentAvailableTools,
@@ -57,6 +58,23 @@ describe('backend/agent-commands', () => {
     expect(safeInvoke).toHaveBeenCalledWith('agent_handle_llm_response', {
       sessionId: 'session-1',
       assistantMessage: mockMessage,
+    });
+  });
+
+  it('should reportLLMStreamingIssue', async () => {
+    const report = {
+      sessionId: 'session-1',
+      responseMessageId: 'response-1',
+      issueKind: 'REPEATED_THINKING_LOOP' as const,
+      observedTailChars: 256,
+      patternLength: 64,
+      repetitionCount: 3,
+    };
+
+    await reportLLMStreamingIssue(report);
+
+    expect(safeInvoke).toHaveBeenCalledWith('agent_report_llm_streaming_issue', {
+      report,
     });
   });
 

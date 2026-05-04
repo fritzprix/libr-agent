@@ -340,4 +340,50 @@ describe('cancelCompletionRequest coordinates provider and local aborts', () => 
 
     expect(isCurrentRequest(sessionId, responseMessageId)).toBe(false);
   });
+
+  it('ignores a stale Rust-driven cancel for an older response id', () => {
+    const sessionId = 'session-abc';
+    const activeResponseId = 'response-new';
+    const staleResponseId = 'response-old';
+    const controller = new AbortController();
+    const controllers = new Map<string, AbortController>([[sessionId, controller]]);
+    const service = { cancel: vi.fn(), dispose: vi.fn() };
+    const services = new Map<string, { cancel: () => void; dispose: () => void }>([
+      [sessionId, service],
+    ]);
+    const requestIds = new Map<string, string>([[sessionId, activeResponseId]]);
+
+    const cancelCompletionRequest = (
+      targetSessionId: string,
+      responseMessageId?: string,
+    ) => {
+      const currentResponseId = requestIds.get(targetSessionId);
+      if (
+        responseMessageId !== undefined &&
+        currentResponseId !== responseMessageId
+      ) {
+        return;
+      }
+
+      requestIds.delete(targetSessionId);
+      const activeService = services.get(targetSessionId);
+      if (activeService) {
+        services.delete(targetSessionId);
+        activeService.cancel();
+        activeService.dispose();
+      }
+      const activeController = controllers.get(targetSessionId);
+      if (activeController) {
+        controllers.delete(targetSessionId);
+        activeController.abort();
+      }
+    };
+
+    cancelCompletionRequest(sessionId, staleResponseId);
+
+    expect(service.cancel).not.toHaveBeenCalled();
+    expect(service.dispose).not.toHaveBeenCalled();
+    expect(controller.signal.aborted).toBe(false);
+    expect(requestIds.get(sessionId)).toBe(activeResponseId);
+  });
 });

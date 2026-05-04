@@ -1,5 +1,7 @@
 use crate::agent::events::{summarize_agent_event, AgentEvent, AgentEventDispatcher};
-use crate::agent::llm::types::{CompactRequest, CompactStateEvent, CompactStatePhase};
+use crate::agent::llm::types::{
+    CompactRequest, CompactStateEvent, CompactStatePhase, CompletionCancelRequest,
+};
 use log::info;
 use tauri::{AppHandle, Emitter};
 
@@ -83,6 +85,15 @@ pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Re
     app_handle
         .emit("llm:compact-request", event)
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))
+}
+
+pub fn emit_completion_cancel(
+    app_handle: &AppHandle,
+    event: CompletionCancelRequest,
+) -> Result<(), String> {
+    app_handle
+        .emit("llm:completion-cancel", event)
+        .map_err(|e| format!("Failed to emit llm:completion-cancel: {}", e))
 }
 
 /// Emit a resource update event (convenience wrapper)

@@ -168,6 +168,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   useLLMListener({
     settingsRef,
     executeCompletionRequest,
+    cancelCompletionRequest,
     setStreamingMessages,
     setCompactionPressureForSession: (sessionId, pressure) => {
       setCompactionPressureMap((prev) => {

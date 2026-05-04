@@ -21,6 +21,7 @@ import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
 import type {
+  CompletionCancelRequest,
   CompactRequest,
   CompactedRange,
   CompletionRequest,
@@ -71,6 +72,10 @@ interface UseLLMListenerProps {
     maxTokens?: number,
     availableTools?: MCPTool[],
   ) => Promise<Message>;
+  cancelCompletionRequest: (
+    sessionId: string,
+    responseMessageId?: string,
+  ) => void;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
@@ -90,6 +95,7 @@ interface UseLLMListenerProps {
 export function useLLMListener({
   settingsRef,
   executeCompletionRequest,
+  cancelCompletionRequest,
   setStreamingMessages,
   setCompactionPressureForSession,
   clearCompactionPressureForSession,
@@ -105,6 +111,7 @@ export function useLLMListener({
 
     let isMounted = true;
     let unlisten: (() => void) | undefined;
+    let unlistenCancel: (() => void) | undefined;
 
     const setupListener = async () => {
       logStartupLifecycleOnce(
@@ -392,6 +399,29 @@ export function useLLMListener({
 
     setupListener();
 
+    const setupCancelListener = async () => {
+      const unlistenFn = await listen<CompletionCancelRequest>(
+        'llm:completion-cancel',
+        (event) => {
+          const { sessionId, responseMessageId, reason } = event.payload;
+          logger.info('Received Rust-driven completion cancel request', {
+            sessionId,
+            responseMessageId,
+            reason,
+          });
+          cancelCompletionRequest(sessionId, responseMessageId);
+        },
+      );
+
+      if (!isMounted) {
+        unlistenFn();
+      } else {
+        unlistenCancel = unlistenFn;
+      }
+    };
+
+    setupCancelListener();
+
     // --- Compact request listener ---
     let unlistenCompact: (() => void) | undefined;
 
@@ -543,6 +573,10 @@ export function useLLMListener({
         unlisten();
         logger.info('LLM completion request listener cleaned up');
       }
+      if (unlistenCancel) {
+        unlistenCancel();
+        logger.info('LLM completion cancel listener cleaned up');
+      }
       if (unlistenCompact) {
         unlistenCompact();
         logger.info('LLM compact request listener cleaned up');
@@ -552,5 +586,5 @@ export function useLLMListener({
         logger.info('LLM compact state listener cleaned up');
       }
     };
-  }, []); // ⚠️ CRITICAL: Empty dependency array to prevent re-registering listener
+  }, [cancelCompletionRequest]); // cancel handler identity must stay in sync
 }

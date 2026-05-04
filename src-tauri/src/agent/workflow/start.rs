@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 pub async fn reset_session_execution_state(session: &mut AgentSession) {
     session.cancel_pending.store(false, Ordering::SeqCst);
     session.cancellation_token = CancellationToken::new();
+    *session.repeated_thinking_retry_count.write().await = 0;
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
     session.compaction.in_flight.store(false, Ordering::SeqCst);
