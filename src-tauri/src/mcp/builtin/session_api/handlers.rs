@@ -507,24 +507,16 @@ pub async fn handle_tool_call(
                 .get_child_session_ids(&parent_session_id)
                 .await
                 .map_err(|e| format!("Failed to fetch child sessions: {}", e))?;
-            let data = json!({
-                "parentSessionId": parent_session_id,
-                "count": child_ids.len(),
-                "children": child_ids,
-            });
 
-            let child_ids = data
-                .get("children")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|value| value.as_str().map(str::to_string))
-                .collect::<Vec<_>>();
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+            let total = child_ids.len();
+            let paged_child_ids: Vec<_> = child_ids.into_iter().skip(offset).take(limit).collect();
 
             let mut session_responses: Vec<AgentSessionResponse> = Vec::new();
 
-            for child_id in &child_ids {
+            for child_id in &paged_child_ids {
                 // Fetch each child session data to map it properly
                 if let Ok(Some(session)) = session_repo.get_session(child_id).await {
                     let child_data = match session_metadata_to_value(&session) {
@@ -542,29 +534,66 @@ pub async fn handle_tool_call(
             }
 
             let mut message = format!(
-                "Fetched {} direct sub-agents for commander session {}",
-                session_responses.len(),
+                "Fetched {} direct sub-agents for commander session {}.\n\n",
+                total,
                 parent_session_id
             );
 
             if session_responses.is_empty() {
-                message.push_str(
-                    "\n\nNo direct sub-agents online. Next step: spawnAgent to deploy a worker.",
-                );
-            } else {
-                message.push_str("\n\nDirect unit roster:\n");
-                for resp in &session_responses {
+                if total > 0 {
                     message.push_str(&format!(
-                        "- {} (ID: {}) status={}\n",
-                        resp.name, resp.id, resp.status
+                        "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+                        offset, limit
                     ));
-                    if let Some(summary) = &resp.latest_result {
-                        message.push_str(&format!("  latest assistant: {}\n", summary));
-                    }
+                } else {
+                    message.push_str(
+                        "No direct sub-agents online. Next step: spawnAgent to deploy a worker.",
+                    );
+                }
+            } else {
+                message.push_str("| Name | Session ID | Status | Latest Result |\n");
+                message.push_str("|---|---|---|---|\n");
+                for resp in &session_responses {
+                    let name_clean = resp.name.replace('|', "\\|").replace('\n', " ");
+                    let id_clean = resp.id.replace('|', "\\|").replace('\n', " ");
+                    let status_clean = resp.status.replace('|', "\\|").replace('\n', " ");
+                    let latest_clean = resp
+                        .latest_result
+                        .as_deref()
+                        .unwrap_or("-")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
+
+                    let latest_trunc = if latest_clean.chars().count() > 80 {
+                        format!("{}...", latest_clean.chars().take(77).collect::<String>())
+                    } else {
+                        latest_clean
+                    };
+
+                    message.push_str(&format!(
+                        "| {} | `{}` | {} | {} |\n",
+                        name_clean, id_clean, status_clean, latest_trunc
+                    ));
+                }
+
+                if offset.saturating_add(limit) < total {
+                    message.push_str(&format!(
+                        "\n*(Showing {} to {} of {} total results. Call this tool again with offset: {} to see more)*",
+                        offset + 1,
+                        offset + session_responses.len(),
+                        total,
+                        offset.saturating_add(limit)
+                    ));
                 }
             }
 
-            Ok(success_result(message, session_responses))
+            Ok(success_result(message, json!({
+                "parentSessionId": parent_session_id,
+                "count": total,
+                "offset": offset,
+                "limit": limit,
+                "children": session_responses,
+            })))
         }
         "listAgentTypes" => {
             let assistant_repo = crate::state::get_assistant_repository();
