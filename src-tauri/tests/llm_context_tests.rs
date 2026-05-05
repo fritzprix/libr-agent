@@ -240,6 +240,40 @@ fn test_find_background_compaction_split_index_preserves_latest_external_request
 }
 
 #[test]
+fn test_find_background_compaction_split_index_preserves_channel_request_block() {
+    let mut request = make_message("m0", "user", "Request from channel");
+    request.source = Some(MessageSource::Channel);
+    let assistant = make_message("m1", "assistant", "Working on channel request");
+
+    let preview = preview_background_compaction_selection(&[request, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_preserves_scheduled_task_request_block() {
+    let mut request = make_message("m0", "user", "Run scheduled sync");
+    request.source = Some(MessageSource::ScheduledTask);
+    let assistant = make_message("m1", "assistant", "Working on scheduled task");
+
+    let preview = preview_background_compaction_selection(&[request, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_does_not_treat_ui_messages_as_external_requests() {
+    let mut request = make_message("m0", "user", "UI-triggered helper event");
+    request.source = Some(MessageSource::Ui);
+
+    assert!(!request.is_external_request_message());
+
+    let preview = preview_background_compaction_selection(&[request]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert!(preview.preserved_ids.is_empty());
+}
+
+#[test]
 fn test_build_post_response_compaction_snapshot_appends_pending_message_once() {
     let request = make_message("m0", "user", "Latest real request");
     let pending = make_message("m1", "assistant", "Pending assistant turn");
