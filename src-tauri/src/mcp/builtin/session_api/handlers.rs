@@ -5,6 +5,7 @@ use tokio::time::sleep;
 use crate::agent::AgentSessionManager;
 use crate::mcp::builtin::error_guidance::ErrorCategory;
 use crate::mcp::types::MCPResult;
+use crate::models::chat::MessageSource;
 use crate::repositories::assistant_repository::AssistantRepository;
 use crate::repositories::session_repository::SessionRepository;
 
@@ -109,7 +110,7 @@ pub async fn handle_tool_call(
             let response = crate::services::AgentService::spawn_agent_with_source(
                 manager,
                 request,
-                Some("swarm_legacy".to_string()),
+                Some(MessageSource::SwarmLegacy),
             )
             .await
             .map_err(|e| {
@@ -390,7 +391,7 @@ pub async fn handle_tool_call(
                 manager,
                 &session_id,
                 content,
-                Some("swarm_legacy".to_string()),
+                Some(MessageSource::SwarmLegacy),
             )
             .await
             {

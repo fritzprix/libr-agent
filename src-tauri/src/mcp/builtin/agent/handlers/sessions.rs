@@ -9,6 +9,7 @@ use crate::mcp::builtin::session_api::utils::{
     build_agent_tool_data, check_session_next_actions, read_required_string,
 };
 use crate::mcp::types::MCPResult;
+use crate::models::chat::MessageSource;
 use crate::repositories::SessionStatus;
 
 use super::super::AgentServer;
@@ -233,7 +234,7 @@ pub async fn message_to_session(
         manager,
         &session_id,
         message_text,
-        Some("agent_tool".to_string()),
+        Some(MessageSource::AgentTool),
     )
     .await
     {

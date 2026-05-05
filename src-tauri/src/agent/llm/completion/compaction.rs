@@ -1,8 +1,10 @@
 use crate::agent::state::AgentSession;
 use crate::agent::state::DeferredWorkflowStep;
 use crate::mcp::types::MCPContent;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MessageSource};
 use crate::repositories::CompactContextRecord;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -60,6 +62,29 @@ pub(crate) struct BackgroundCompactionHandles {
     pub(crate) last_compacted_tail_id_arc: Arc<RwLock<Option<String>>>,
 }
 
+struct InFlightResetGuard {
+    flag: Arc<AtomicBool>,
+    armed: bool,
+}
+
+impl InFlightResetGuard {
+    fn new(flag: Arc<AtomicBool>) -> Self {
+        Self { flag, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for InFlightResetGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            self.flag.store(false, Ordering::SeqCst);
+        }
+    }
+}
+
 fn build_incremental_compact_summary_message(
     session_id: &str,
     summary: &str,
@@ -74,41 +99,406 @@ fn build_incremental_compact_summary_message(
     )
 }
 
-fn build_compaction_instruction(messages: &[Message]) -> String {
-    let mut instruction =
-        "Summarise the previous conversation history using strict compact Markdown.\n\n\
-Use EXACTLY these sections in this order:\n\
+const COMPACTION_SECTION_SCHEMA: &str = "Use EXACTLY these sections in this order:\n\
 1. Stable Context\n\
 2. Key Decisions & Constraints\n\
-3. Current State\n\
-4. Recent Tool Results\n\
-5. Next Actions\n\n\
-Compression rules:\n\
-- Use terse bullet points, not prose paragraphs.\n\
-- Prefer noun phrases and short action statements.\n\
-- Minimize adjectives, adverbs, filler, and repetition.\n\
-- Do not restate obvious chronology or narration.\n\
-- Preserve durable facts, decisions, constraints, user preferences, and unresolved work.\n\
-- Keep volatile/recent details in Current State, Recent Tool Results, or Next Actions.\n\
-- If a detail is recoverable from recent tool results, do not duplicate it in stable sections.\n\n\
-Section limits:\n\
-- Stable Context: at most 6 bullets\n\
-- Key Decisions & Constraints: at most 6 bullets\n\
-- Current State: at most 6 bullets\n\
-- Recent Tool Results: at most 5 bullets\n\
-- Next Actions: at most 5 bullets\n\
-- Each bullet should be one short sentence or fragment.\n\n\
-IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text."
-            .to_string();
+3. Active Request\n\
+4. Required References\n\
+5. Current State\n\
+6. Recent Tool Results\n\
+7. Next Actions";
 
-    if messages.first().map(|message| message.is_compact_summary()) == Some(true) {
-        instruction = format!(
-            "The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n\
+const COMPACTION_RULES: &[&str] = &[
+    "Use terse bullet points, not prose paragraphs.",
+    "Prefer noun phrases and short action statements.",
+    "Minimize adjectives, adverbs, filler, and repetition.",
+    "Do not restate obvious chronology or narration.",
+    "Preserve durable facts, decisions, constraints, user preferences, and unresolved work.",
+    "If the messages include an unresolved external request, you MUST record it in Active Request.",
+    "If the unresolved request depends on earlier discovered context, you MUST record the minimum file paths, symbol names, entities, or identifiers needed to execute it in Required References.",
+    "Keep volatile/recent details in Current State, Recent Tool Results, or Next Actions.",
+    "Do not paraphrase away concrete requirements such as technology choices, limits, file targets, or requested deliverables when they are still relevant to pending work.",
+    "Do not replace exact file paths, symbol names, or user-named targets with vague descriptions when they are still operationally relevant.",
+    "If a detail is recoverable from recent tool results, do not duplicate it in stable sections.",
+];
+
+const COMPACTION_SECTION_LIMITS: &[&str] = &[
+    "Stable Context: at most 6 bullets",
+    "Key Decisions & Constraints: at most 6 bullets",
+    "Active Request: at most 4 bullets",
+    "Required References: at most 5 bullets",
+    "Current State: at most 6 bullets",
+    "Recent Tool Results: at most 5 bullets",
+    "Next Actions: at most 5 bullets",
+    "Each bullet should be one short sentence or fragment.",
+];
+
+const COMPACTION_OUTPUT_CONSTRAINT: &str =
+    "IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.";
+
+const INCREMENTAL_COMPACTION_RESIDUAL_PREFIX: &str = "The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n\
 CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. \
 Do NOT drop durable information from the prior summary. \
 You may tighten wording, remove duplication, and relocate items into the required sections, but you must preserve the same meaning and operational usefulness. \
-Your new summary = (prior summary, preserved faithfully and reorganized if needed) + (new messages, summarised under the same schema).\n\n{}",
-            instruction
+Your new summary = (prior summary, preserved faithfully and reorganized if needed) + (new messages, summarised under the same schema).";
+
+const ACTIVE_REQUEST_BULLET_LIMIT: usize = 4;
+const REQUIRED_REFERENCE_BULLET_LIMIT: usize = 5;
+const REFERENCE_CONTEXT_WINDOW_MESSAGES: usize = 8;
+const INSTRUCTION_HINT_TEXT_LIMIT: usize = 320;
+
+static BACKTICK_REFERENCE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"`([^`\r\n]+)`").expect("valid backtick regex"));
+static PATH_REFERENCE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)\b(?:[a-z]:[\\/]|\.{1,2}[\\/]|[^\\/\s]+[\\/])[\w./\\-]*\.[a-z0-9]{1,12}\b"#)
+        .expect("valid path regex")
+});
+static SYMBOL_REFERENCE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"\b(?:interface|type|class|enum|trait|struct|function|fn|const|let)\s+([A-Za-z_][A-Za-z0-9_]*)",
+    )
+    .expect("valid symbol regex")
+});
+static IDENTIFIER_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[A-Za-z_][A-Za-z0-9_]{1,79}$").expect("valid identifier regex"));
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionPreservationHints {
+    pub active_request: Vec<String>,
+    pub required_references: Vec<String>,
+}
+
+fn render_bulleted_lines(lines: &[&str]) -> String {
+    lines
+        .iter()
+        .map(|line| format!("- {}", line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn build_base_compaction_instruction() -> String {
+    format!(
+        "Summarise the previous conversation history using strict compact Markdown.\n\n{}\n\nCompression rules:\n{}\n\nSection limits:\n{}\n\n{}",
+        COMPACTION_SECTION_SCHEMA,
+        render_bulleted_lines(COMPACTION_RULES),
+        render_bulleted_lines(COMPACTION_SECTION_LIMITS),
+        COMPACTION_OUTPUT_CONSTRAINT
+    )
+}
+
+fn normalize_instruction_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn truncate_instruction_text(text: &str, limit: usize) -> String {
+    let normalized = normalize_instruction_text(text);
+    if normalized.chars().count() <= limit {
+        return normalized;
+    }
+
+    let truncated = normalized
+        .chars()
+        .take(limit.saturating_sub(1))
+        .collect::<String>();
+    format!("{}…", truncated.trim_end())
+}
+
+fn extract_message_text_fragments(message: &Message) -> Vec<String> {
+    message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn push_unique_limited(values: &mut Vec<String>, candidate: String, limit: usize) {
+    if candidate.is_empty() || values.iter().any(|existing| existing == &candidate) {
+        return;
+    }
+
+    if values.len() < limit {
+        values.push(candidate);
+    }
+}
+
+fn format_reference_candidate(candidate: &str) -> String {
+    if PATH_REFERENCE_RE.is_match(candidate) {
+        format!("Preserve file path `{}`", candidate)
+    } else {
+        format!("Preserve identifier `{}`", candidate)
+    }
+}
+
+fn is_reference_candidate(text: &str) -> bool {
+    PATH_REFERENCE_RE.is_match(text) || IDENTIFIER_RE.is_match(text)
+}
+
+fn extract_reference_candidates_from_text(text: &str) -> Vec<String> {
+    let mut references = Vec::new();
+
+    for captures in BACKTICK_REFERENCE_RE.captures_iter(text) {
+        if let Some(candidate) = captures.get(1).map(|capture| capture.as_str().trim()) {
+            if is_reference_candidate(candidate) {
+                push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+            }
+        }
+    }
+
+    for candidate in PATH_REFERENCE_RE
+        .find_iter(text)
+        .map(|capture| capture.as_str())
+    {
+        push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+    }
+
+    for captures in SYMBOL_REFERENCE_RE.captures_iter(text) {
+        if let Some(candidate) = captures.get(1).map(|capture| capture.as_str()) {
+            push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+        }
+    }
+
+    references
+}
+
+fn extract_compact_summary_body(message: &Message) -> Option<String> {
+    if !message.is_compact_summary() {
+        return None;
+    }
+
+    let text = extract_message_text_fragments(message).join("\n");
+    let body = text.strip_prefix("### Previous Conversation Summary\n\n")?;
+    let summary_only = body
+        .split("\n\n### Recent Tool Call Snapshot (latest 5)\n")
+        .next()
+        .unwrap_or(body)
+        .trim();
+
+    if summary_only.is_empty() {
+        None
+    } else {
+        Some(summary_only.to_string())
+    }
+}
+
+fn extract_summary_section_bullets(summary: &str, section_heading: &str) -> Vec<String> {
+    let mut bullets = Vec::new();
+    let mut in_section = false;
+    let markdown_heading = format!("### {}", section_heading);
+
+    for line in summary.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == markdown_heading || trimmed == section_heading {
+            in_section = true;
+            continue;
+        }
+
+        if trimmed.starts_with("### ") || trimmed.ends_with(':') {
+            in_section = false;
+        }
+
+        if in_section {
+            if let Some(bullet) = trimmed.strip_prefix("- ") {
+                let normalized = bullet.trim();
+                if !normalized.is_empty() {
+                    bullets.push(normalized.to_string());
+                }
+            }
+        }
+    }
+
+    bullets
+}
+
+fn collect_prior_summary_hints(
+    message: &Message,
+    active_request: &mut Vec<String>,
+    required_references: &mut Vec<String>,
+) {
+    let Some(summary_body) = extract_compact_summary_body(message) else {
+        return;
+    };
+
+    for bullet in extract_summary_section_bullets(&summary_body, "Active Request") {
+        push_unique_limited(
+            active_request,
+            truncate_instruction_text(&bullet, INSTRUCTION_HINT_TEXT_LIMIT),
+            ACTIVE_REQUEST_BULLET_LIMIT,
+        );
+    }
+
+    for bullet in extract_summary_section_bullets(&summary_body, "Required References") {
+        push_unique_limited(required_references, bullet, REQUIRED_REFERENCE_BULLET_LIMIT);
+    }
+}
+
+fn collect_reference_candidates_from_json_value(
+    value: &serde_json::Value,
+    references: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::String(text) => {
+            let extracted = extract_reference_candidates_from_text(text);
+            if extracted.is_empty() && IDENTIFIER_RE.is_match(text) {
+                push_unique_limited(references, text.clone(), usize::MAX);
+            } else {
+                for candidate in extracted {
+                    push_unique_limited(references, candidate, usize::MAX);
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_reference_candidates_from_json_value(item, references);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for value in map.values() {
+                collect_reference_candidates_from_json_value(value, references);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_reference_candidates_from_message(message: &Message, references: &mut Vec<String>) {
+    for text in extract_message_text_fragments(message) {
+        for candidate in extract_reference_candidates_from_text(&text) {
+            push_unique_limited(references, candidate, usize::MAX);
+        }
+    }
+
+    if let Some(tool_calls) = &message.tool_calls {
+        for tool_call in tool_calls {
+            if let Ok(arguments) =
+                serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments)
+            {
+                collect_reference_candidates_from_json_value(&arguments, references);
+            }
+        }
+    }
+}
+
+pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPreservationHints {
+    let mut active_request = Vec::new();
+    let mut required_references = Vec::new();
+
+    if let Some(previous_summary) = messages.iter().find(|message| message.is_compact_summary()) {
+        collect_prior_summary_hints(
+            previous_summary,
+            &mut active_request,
+            &mut required_references,
+        );
+    }
+
+    let Some(active_request_start) = find_latest_external_request_block_start(messages) else {
+        return CompactionPreservationHints {
+            active_request,
+            required_references,
+        };
+    };
+
+    let request_block_end = messages[active_request_start..]
+        .iter()
+        .take_while(|message| message.is_external_request_message())
+        .count()
+        + active_request_start;
+
+    for message in &messages[active_request_start..request_block_end] {
+        for fragment in extract_message_text_fragments(message) {
+            push_unique_limited(
+                &mut active_request,
+                truncate_instruction_text(&fragment, INSTRUCTION_HINT_TEXT_LIMIT),
+                ACTIVE_REQUEST_BULLET_LIMIT,
+            );
+            for candidate in extract_reference_candidates_from_text(&fragment) {
+                push_unique_limited(
+                    &mut required_references,
+                    format_reference_candidate(&candidate),
+                    REQUIRED_REFERENCE_BULLET_LIMIT,
+                );
+            }
+        }
+    }
+
+    let reference_window_start =
+        active_request_start.saturating_sub(REFERENCE_CONTEXT_WINDOW_MESSAGES);
+    let mut raw_reference_candidates = Vec::new();
+    for message in &messages[reference_window_start..request_block_end] {
+        collect_reference_candidates_from_message(message, &mut raw_reference_candidates);
+    }
+
+    for candidate in raw_reference_candidates {
+        push_unique_limited(
+            &mut required_references,
+            format_reference_candidate(&candidate),
+            REQUIRED_REFERENCE_BULLET_LIMIT,
+        );
+    }
+
+    CompactionPreservationHints {
+        active_request,
+        required_references,
+    }
+}
+
+fn build_compaction_hint_block(messages: &[Message]) -> Option<String> {
+    let hints = build_compaction_preservation_hints(messages);
+    if hints.active_request.is_empty() && hints.required_references.is_empty() {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    if !hints.active_request.is_empty() {
+        parts.push(format!(
+            "Active Request candidates:\n{}",
+            hints
+                .active_request
+                .iter()
+                .map(|line| format!("- {}", line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    if !hints.required_references.is_empty() {
+        parts.push(format!(
+            "Required References candidates:\n{}",
+            hints
+                .required_references
+                .iter()
+                .map(|line| format!("- {}", line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    Some(format!(
+        "Preservation hints for this compaction input:\n{}",
+        parts.join("\n\n")
+    ))
+}
+
+fn build_compaction_instruction(messages: &[Message]) -> String {
+    let mut instruction = build_base_compaction_instruction();
+    if let Some(hint_block) = build_compaction_hint_block(messages) {
+        instruction = format!("{}\n\n{}", instruction, hint_block);
+    }
+
+    if messages.first().map(Message::is_compact_summary) == Some(true) {
+        return format!(
+            "{}\n\n{}",
+            INCREMENTAL_COMPACTION_RESIDUAL_PREFIX, instruction
         );
     }
 
@@ -139,7 +529,7 @@ fn build_compaction_instruction_message(
         usage: None,
         created_at,
         updated_at: created_at,
-        source: Some("compaction-instruction".to_string()),
+        source: Some(MessageSource::CompactionInstruction),
         error: None,
         metadata: None,
     }
@@ -335,6 +725,38 @@ fn estimate_compaction_non_message_tokens(
     (system_prompt_tokens, tools_tokens)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionSelectionPreview {
+    pub compacted_ids: Vec<String>,
+    pub preserved_ids: Vec<String>,
+}
+
+fn build_compaction_selection_preview(
+    messages: &[Message],
+    split_idx: usize,
+) -> CompactionSelectionPreview {
+    let split_idx = split_idx.min(messages.len());
+
+    CompactionSelectionPreview {
+        compacted_ids: messages[..split_idx]
+            .iter()
+            .map(|message| message.id.clone())
+            .collect(),
+        preserved_ids: messages[split_idx..]
+            .iter()
+            .map(|message| message.id.clone())
+            .collect(),
+    }
+}
+
+pub fn preview_preflight_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
+    build_compaction_selection_preview(messages, find_preflight_compaction_split_index(messages))
+}
+
+pub fn preview_background_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
+    build_compaction_selection_preview(messages, find_background_compaction_split_index(messages))
+}
+
 /// Determines the compactable prefix for preflight compaction.
 ///
 /// Unlike background compaction, preflight compaction must preserve the newest
@@ -346,7 +768,7 @@ fn estimate_compaction_non_message_tokens(
 /// - latest `user`/non-tool tail: preserve the last message
 /// - latest `tool` tail: compact as much as `find_compaction_split_index()` allows
 /// - unresolved tool chain: preserve the full unresolved tail
-pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
+fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
     if messages.is_empty() {
         return 0;
     }
@@ -359,6 +781,33 @@ pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
         Some(_) => std::cmp::min(messages.len().saturating_sub(1), unresolved_boundary),
         None => 0,
     }
+}
+
+fn find_latest_external_request_block_start(messages: &[Message]) -> Option<usize> {
+    let latest_request_idx = messages
+        .iter()
+        .rposition(Message::is_external_request_message)?;
+
+    let mut block_start = latest_request_idx;
+    while block_start > 0 && messages[block_start - 1].is_external_request_message() {
+        block_start -= 1;
+    }
+
+    Some(block_start)
+}
+
+fn find_background_compaction_split_index(messages: &[Message]) -> usize {
+    let unresolved_boundary =
+        crate::agent::llm::context_selector::find_compaction_split_index(messages);
+
+    // Post-response compaction must keep the currently active external request in
+    // raw tail, but unresolved tool chains still take precedence so we never
+    // compact an assistant tool-call owner away from its pending tool results.
+    let Some(active_request_start) = find_latest_external_request_block_start(messages) else {
+        return unresolved_boundary;
+    };
+
+    std::cmp::min(unresolved_boundary, active_request_start)
 }
 
 pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
@@ -398,7 +847,7 @@ async fn load_merged_compaction_messages(
             .read()
             .await
             .iter()
-            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .filter(|m| !m.is_recovery_message())
             .cloned()
             .collect::<Vec<_>>();
 
@@ -411,7 +860,166 @@ async fn load_merged_compaction_messages(
     ))
 }
 
-pub(crate) async fn trigger_background_compaction(
+struct BackgroundCompactionTrigger<'a> {
+    session_id: &'a str,
+    session_name: &'a str,
+    messages: &'a [Message],
+    split_idx: usize,
+    parent_request: Option<CompactionParentRequest>,
+}
+
+impl<'a> BackgroundCompactionTrigger<'a> {
+    async fn execute(
+        self,
+        active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        app_handle: &AppHandle,
+        handles: &BackgroundCompactionHandles,
+    ) -> Result<bool, String> {
+        let Self {
+            session_id,
+            session_name,
+            messages,
+            split_idx,
+            parent_request,
+        } = self;
+
+        if split_idx == 0 {
+            return Ok(false);
+        }
+
+        let claimed_in_flight = handles
+            .compact_in_flight_arc
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok();
+
+        if !claimed_in_flight {
+            log::debug!("⏭️ Compaction skipped (in_flight): session={}", session_id);
+            return Ok(false);
+        }
+
+        let mut in_flight_guard = InFlightResetGuard::new(handles.compact_in_flight_arc.clone());
+        let current_tail_id = messages.last().map(|m| m.id.clone());
+        let last_compacted_tail = handles.last_compacted_tail_id_arc.read().await.clone();
+        let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
+
+        if same_tail && should_skip_same_tail_compaction(messages, split_idx) {
+            log::debug!(
+                "⏭️ Compaction skipped (same tail): session={}, tail={}",
+                session_id,
+                current_tail_id.as_deref().unwrap_or("?")
+            );
+            return Ok(false);
+        }
+        let started_at_ms = chrono::Utc::now().timestamp_millis();
+        let compact_context_record = {
+            let active = active_sessions.read().await;
+            active
+                .get(session_id)
+                .map(|session| session.compact_context.clone())
+        };
+        let compact_context_record = if let Some(compact_context_handle) = compact_context_record {
+            compact_context_handle.read().await.clone()
+        } else {
+            None
+        };
+        let Some((compact_msgs, from_id, to_id, compacted_delta_count, reused_prior_summary)) =
+            build_compaction_request_payload(
+                session_id,
+                messages,
+                split_idx,
+                compact_context_record.as_ref(),
+                started_at_ms,
+            )
+        else {
+            log::debug!(
+                "⏭️ Compaction skipped (no new delta beyond previous summary): session={}, tail={}",
+                session_id,
+                current_tail_id.as_deref().unwrap_or("?")
+            );
+            return Ok(false);
+        };
+
+        let compact_started_at_ms_handle = {
+            let active = active_sessions.read().await;
+            active
+                .get(session_id)
+                .map(|session| session.compaction.started_at_ms.clone())
+        };
+
+        let settings = load_context_management_settings().await;
+        let safe_input_token_limit =
+            std::cmp::min(settings.max_input_context, settings.model_max_limit);
+        let resolved_parent_request =
+            resolve_parent_request(active_sessions, session_id, parent_request).await;
+        let (system_prompt_tokens, tools_tokens) =
+            estimate_compaction_non_message_tokens(resolved_parent_request.as_ref());
+        let compact_msgs = fit_compaction_request_messages_to_limit(
+            &compact_msgs,
+            resolved_parent_request
+                .as_ref()
+                .map(|request| request.provider.as_str())
+                .unwrap_or("openai"),
+            safe_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+        )?;
+
+        let compact_event = CompactRequest {
+            session_id: session_id.to_string(),
+            session_name: session_name.to_string(),
+            messages: compact_msgs,
+            from_id,
+            to_id,
+            parent_request: resolved_parent_request,
+            resume_completion_after_compact: false,
+        };
+        let log_from_id = compact_event.from_id.clone();
+        let log_to_id = compact_event.to_id.clone();
+        let app = app_handle.clone();
+        let state_session_id = session_id.to_string();
+        let state_session_name = session_name.to_string();
+        let in_flight_flag = handles.compact_in_flight_arc.clone();
+        let last_compacted_tail_id_arc = handles.last_compacted_tail_id_arc.clone();
+        let tail_id_for_task = current_tail_id.clone();
+        tokio::spawn(async move {
+            if let Err(e) = emit_compact_started(
+                &app,
+                state_session_id.clone(),
+                Some(state_session_name),
+                false,
+            ) {
+                log::error!("Failed to emit llm:compact-state: {}", e);
+                in_flight_flag.store(false, Ordering::SeqCst);
+                return;
+            }
+            if let Err(e) = emit_compact_request(&app, compact_event) {
+                log::error!("Failed to emit llm:compact-request: {}", e);
+                in_flight_flag.store(false, Ordering::SeqCst);
+                return;
+            }
+            *last_compacted_tail_id_arc.write().await = tail_id_for_task;
+            if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+                *compact_started_at_ms_handle.write().await = Some(started_at_ms);
+            }
+        });
+        in_flight_guard.disarm();
+        log::info!(
+            "🔧 Background compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            session_id,
+            log_from_id,
+            log_to_id,
+            split_idx,
+            compacted_delta_count,
+            reused_prior_summary,
+            current_tail_id.as_deref().unwrap_or("?"),
+            started_at_ms
+        );
+
+        Ok(true)
+    }
+}
+
+pub(crate) async fn trigger_post_response_background_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
@@ -420,133 +1028,15 @@ pub(crate) async fn trigger_background_compaction(
     parent_request: Option<CompactionParentRequest>,
     handles: &BackgroundCompactionHandles,
 ) -> Result<bool, String> {
-    let split_idx = crate::agent::llm::context_selector::find_compaction_split_index(messages);
-    if split_idx == 0 {
-        return Ok(false);
-    }
-
-    let claimed_in_flight = handles
-        .compact_in_flight_arc
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_ok();
-
-    if !claimed_in_flight {
-        log::debug!("⏭️ Compaction skipped (in_flight): session={}", session_id);
-        return Ok(false);
-    }
-
-    let current_tail_id = messages.last().map(|m| m.id.clone());
-    let last_compacted_tail = handles.last_compacted_tail_id_arc.read().await.clone();
-    let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
-
-    if same_tail && should_skip_same_tail_compaction(messages, split_idx) {
-        handles.compact_in_flight_arc.store(false, Ordering::SeqCst);
-        log::debug!(
-            "⏭️ Compaction skipped (same tail): session={}, tail={}",
-            session_id,
-            current_tail_id.as_deref().unwrap_or("?")
-        );
-        return Ok(false);
-    }
-    let started_at_ms = chrono::Utc::now().timestamp_millis();
-    let compact_context_record = {
-        let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| session.compact_context.clone())
-    };
-    let compact_context_record = if let Some(compact_context_handle) = compact_context_record {
-        compact_context_handle.read().await.clone()
-    } else {
-        None
-    };
-    let Some((compact_msgs, from_id, to_id, compacted_delta_count, reused_prior_summary)) =
-        build_compaction_request_payload(
-            session_id,
-            messages,
-            split_idx,
-            compact_context_record.as_ref(),
-            started_at_ms,
-        )
-    else {
-        handles.compact_in_flight_arc.store(false, Ordering::SeqCst);
-        log::debug!(
-            "⏭️ Compaction skipped (no new delta beyond previous summary): session={}, tail={}",
-            session_id,
-            current_tail_id.as_deref().unwrap_or("?")
-        );
-        return Ok(false);
-    };
-
-    *handles.last_compacted_tail_id_arc.write().await = current_tail_id.clone();
-    let compact_started_at_ms_handle = {
-        let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| session.compaction.started_at_ms.clone())
-    };
-    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        *compact_started_at_ms_handle.write().await = Some(started_at_ms);
-    }
-
-    let settings = load_context_management_settings().await;
-    let safe_input_token_limit =
-        std::cmp::min(settings.max_input_context, settings.model_max_limit);
-    let resolved_parent_request =
-        resolve_parent_request(active_sessions, session_id, parent_request).await;
-    let (system_prompt_tokens, tools_tokens) =
-        estimate_compaction_non_message_tokens(resolved_parent_request.as_ref());
-    let compact_msgs = fit_compaction_request_messages_to_limit(
-        &compact_msgs,
-        resolved_parent_request
-            .as_ref()
-            .map(|request| request.provider.as_str())
-            .unwrap_or("openai"),
-        safe_input_token_limit,
-        system_prompt_tokens,
-        tools_tokens,
-    )?;
-
-    let compact_event = CompactRequest {
-        session_id: session_id.to_string(),
-        session_name: session_name.to_string(),
-        messages: compact_msgs,
-        from_id,
-        to_id,
-        parent_request: resolved_parent_request,
-        resume_completion_after_compact: false,
-    };
-    let log_from_id = compact_event.from_id.clone();
-    let log_to_id = compact_event.to_id.clone();
-    let app = app_handle.clone();
-    let state_session_id = session_id.to_string();
-    let state_session_name = session_name.to_string();
-    tokio::spawn(async move {
-        if let Err(e) = emit_compact_started(
-            &app,
-            state_session_id.clone(),
-            Some(state_session_name),
-            false,
-        ) {
-            log::error!("Failed to emit llm:compact-state: {}", e);
-        }
-        if let Err(e) = emit_compact_request(&app, compact_event) {
-            log::error!("Failed to emit llm:compact-request: {}", e);
-        }
-    });
-    log::info!(
-        "🔧 Background compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+    BackgroundCompactionTrigger {
         session_id,
-        log_from_id,
-        log_to_id,
-        split_idx,
-        compacted_delta_count,
-        reused_prior_summary,
-        current_tail_id.as_deref().unwrap_or("?"),
-        started_at_ms
-    );
-
-    Ok(true)
+        session_name,
+        messages,
+        parent_request,
+        split_idx: find_background_compaction_split_index(messages),
+    }
+    .execute(active_sessions, app_handle, handles)
+    .await
 }
 
 pub async fn trigger_post_response_compaction_if_needed(
@@ -602,7 +1092,7 @@ pub async fn trigger_post_response_compaction_if_needed(
 
     finalize_workflow_after_compact.store(true, Ordering::SeqCst);
     *deferred_workflow_step_handle.write().await = Some(deferred_step);
-    let triggered = trigger_background_compaction(
+    let triggered = trigger_post_response_background_compaction(
         active_sessions,
         app_handle,
         session_id,
@@ -699,12 +1189,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(true);
     }
 
+    let mut in_flight_guard = InFlightResetGuard::new(compact_in_flight_arc.clone());
     let current_tail_id = messages.last().map(|m| m.id.clone());
     let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
     if current_tail_id.as_deref() == last_compacted_tail.as_deref()
         && should_skip_same_tail_compaction(messages, split_idx)
     {
-        compact_in_flight_arc.store(false, Ordering::SeqCst);
         log::debug!(
             "⏭️ Preflight compaction skipped (same tail): session={}, tail={}, split_idx={}",
             session_id,
@@ -725,7 +1215,6 @@ pub(crate) async fn try_trigger_preflight_compaction(
             started_at_ms,
         )
     else {
-        compact_in_flight_arc.store(false, Ordering::SeqCst);
         log::debug!(
             "⏭️ Preflight compaction skipped (no new delta beyond previous summary): session={}, tail={}, split_idx={}",
             session_id,
@@ -735,19 +1224,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(false);
     };
 
-    if resume_completion_after_compact {
-        awaiting_compact_arc.store(true, Ordering::SeqCst);
-    }
-    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
     let compact_started_at_ms_handle = {
         let active = active_sessions.read().await;
         active
             .get(session_id)
             .map(|session| session.compaction.started_at_ms.clone())
     };
-    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        *compact_started_at_ms_handle.write().await = Some(started_at_ms);
-    }
 
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
@@ -785,6 +1267,14 @@ pub(crate) async fn try_trigger_preflight_compaction(
         resume_completion_after_compact,
     )?;
     emit_compact_request(app_handle, compact_event)?;
+    if resume_completion_after_compact {
+        awaiting_compact_arc.store(true, Ordering::SeqCst);
+    }
+    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
+        *compact_started_at_ms_handle.write().await = Some(started_at_ms);
+    }
+    in_flight_guard.disarm();
 
     if resume_completion_after_compact {
         log::info!(

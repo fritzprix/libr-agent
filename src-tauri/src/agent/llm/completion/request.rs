@@ -2,7 +2,7 @@ use crate::agent::references::build_default_registry;
 use crate::agent::state::AgentSession;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MessageSource};
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::CompactContextRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
@@ -95,7 +95,7 @@ pub fn build_compact_summary_message(session_id: &str, text: String, created_at:
             text,
             is_error: None,
         }],
-        source: Some("compact-summary".to_string()),
+        source: Some(MessageSource::CompactSummary),
         created_at,
         updated_at: created_at,
         tool_calls: None,
@@ -443,7 +443,7 @@ pub async fn request_llm_completion(
         let messages_lock = session.messages.read().await;
         messages_lock
             .iter()
-            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .filter(|m| !m.is_recovery_message())
             .cloned()
             .collect::<Vec<_>>()
     };
