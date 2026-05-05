@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.20] - 2026-05-05
+
+### 🚀 Features
+
+- **Enhanced Thinking Process UI**: Added formatted duration timers to the thinking process display and updated translation keys for better internationalization.
+- **Improved Startup Experience**: Optimized the startup initialization path for faster launches and improved skill synchronization reliability during application boot.
+- **UI & Palette Refinements**: Added visibility toggles for API keys with tooltip hints and improved AgentMessageBubble localization for better consistency in English and Korean.
+
+### 🐛 Fixes
+
+- **Message Compaction & Stability**: Fixed critical issues in message compaction, including in-flight reset paths, active request preservation, and reference preservation hints.
+- **Recovery & Resilience**: Added automated recovery for non-productive completions and stream recovery for repeated thinking patterns, preventing stale response races.
+- **Startup Race Conditions**: Resolved cache races and improved manifest synchronization safety to prevent intermittent startup failures.
+- **Documentation & UI Polish**: Refined README files across the project for improved clarity and product positioning, and fixed minor UI blockers in skill caching.
+
+### 🔧 Internal
+
+- **Dependency Updates**: Bumped core backend dependencies including `tauri`, `rmcp`, `sea-orm`, and `dirs` to their latest versions.
+- **Message Source Unification**: Unified message source creation and centralized source semantics across the Rust-TypeScript boundary for more robust tracking.
+- **Cleanup & Maintenance**: Standardized compaction summary wrappers and cleaned up stale assistant artifacts and temp files.
+
 ## [0.7.19] - 2026-05-04
 
 ### 🚀 Features
