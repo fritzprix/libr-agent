@@ -1,7 +1,7 @@
 use super::AgentSessionManager;
 use crate::agent::channel_routing::{resolve_auto_routed_channel_target, ChannelRouteCandidate};
 use crate::mcp::types::ChannelNotification;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MESSAGE_SOURCE_CHANNEL};
 use std::collections::HashMap;
 
 pub async fn inject_channel_notification(
@@ -90,7 +90,7 @@ fn build_channel_message(
         usage: None,
         created_at: now,
         updated_at: now,
-        source: Some("channel".to_string()),
+        source: Some(MESSAGE_SOURCE_CHANNEL.to_string()),
         error: None,
         metadata: Some(serde_json::json!({
             "channel": {
