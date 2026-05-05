@@ -1,4 +1,5 @@
 use crate::agent::AgentSessionManager;
+use crate::models::chat::MessageSource;
 use std::sync::Arc;
 use warp::{http::StatusCode, Rejection, Reply};
 
@@ -59,7 +60,7 @@ pub async fn send_message(
         &manager,
         &id,
         body.content,
-        body.source.or_else(|| Some("api".to_string())),
+        body.source.or(Some(MessageSource::Api)),
     )
     .await
     {

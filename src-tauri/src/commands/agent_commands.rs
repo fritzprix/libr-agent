@@ -3,19 +3,19 @@ use crate::commands::messages_commands::MessageSlice;
 use crate::mcp::types::ChannelNotification;
 use crate::mcp::types::ChannelPermissionVerdict;
 use crate::mcp::types::ServiceContext;
+use crate::models::chat::Message;
+use crate::models::chat::MessageSource;
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{CompactContextRecord, SessionMetadata, SessionRepository};
-use crate::state::get_session_repository;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tauri::{command, AppHandle, State};
-
-use crate::models::chat::Message;
 use crate::services::AgentService;
+use crate::state::get_session_repository;
 use crate::{
     agent::tools::{create_error_tool_result, create_tool_result_message},
     agent::types::{ToolCall, ToolCallFunction},
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tauri::{command, AppHandle, State};
 
 /// Request to create a new agent session
 #[derive(Debug, Serialize, Deserialize)]
@@ -219,7 +219,7 @@ fn create_ui_tool_call_message(
             usage: None,
             created_at: now,
             updated_at: now,
-            source: Some("ui".to_string()),
+            source: Some(MessageSource::Ui),
             error: None,
             metadata: None,
         },

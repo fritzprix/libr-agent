@@ -1,7 +1,7 @@
 use crate::agent::state::AgentSession;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MessageSource};
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::services::WorkspaceService;
 use base64::engine::general_purpose;
@@ -198,7 +198,7 @@ pub fn create_tool_result_message(
         tool_use: None,
         created_at: now,
         updated_at: now,
-        source: Some("tool".to_string()),
+        source: Some(MessageSource::Tool),
         error: None,
         metadata: structured_content.map(|value| {
             serde_json::json!({
@@ -247,7 +247,7 @@ pub fn create_error_tool_result(
         tool_use: None,
         created_at: now,
         updated_at: now,
-        source: Some("tool".to_string()),
+        source: Some(MessageSource::Tool),
         error: None,
         metadata,
     }
@@ -614,7 +614,7 @@ pub fn create_tool_result_message_with_content(
         tool_use: None,
         created_at: now,
         updated_at: now,
-        source: Some("tool".to_string()),
+        source: Some(MessageSource::Tool),
         error: None,
         metadata: build_tool_message_metadata(tool_error, structured_content),
     }

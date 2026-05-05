@@ -1,4 +1,5 @@
 use crate::agent::AgentSessionManager;
+use crate::models::chat::MessageSource;
 use std::sync::Arc;
 use warp::{http::StatusCode, Rejection, Reply};
 
@@ -12,7 +13,7 @@ pub async fn create_session(
     match crate::services::AgentService::spawn_agent_with_source(
         &manager,
         body,
-        Some("api".to_string()),
+        Some(MessageSource::Api),
     )
     .await
     {
