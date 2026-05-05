@@ -2,9 +2,9 @@ use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_context_selection_options, build_compact_summary_message_for_messages,
-    build_compact_summary_text, find_background_compaction_split_index,
-    find_preflight_compaction_split_index, fit_compaction_request_messages_to_limit,
+    build_compact_summary_text, fit_compaction_request_messages_to_limit,
     merge_consecutive_user_messages, normalize_request_messages,
+    preview_background_compaction_selection, preview_preflight_compaction_selection,
     resolve_context_management_settings, resolve_preserved_calibration_ratio,
     should_skip_same_tail_compaction, should_trigger_background_compaction,
     should_trigger_post_response_compaction, uses_compaction_strategy,
@@ -114,8 +114,9 @@ fn test_find_preflight_compaction_split_index_preserves_latest_user_turn() {
     let earlier = make_message("m0", "assistant", "Earlier context");
     let latest_user = make_message("m1", "user", &"latest request ".repeat(200));
 
-    let idx = find_preflight_compaction_split_index(&[earlier, latest_user]);
-    assert_eq!(idx, 1);
+    let preview = preview_preflight_compaction_selection(&[earlier, latest_user]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert_eq!(preview.preserved_ids, vec!["m1"]);
 }
 
 #[test]
@@ -123,8 +124,9 @@ fn test_find_preflight_compaction_split_index_preserves_latest_non_tool_turn() {
     let earlier = make_message("m0", "user", "Earlier user context");
     let latest_assistant = make_message("m1", "assistant", "Latest non-tool turn");
 
-    let idx = find_preflight_compaction_split_index(&[earlier, latest_assistant]);
-    assert_eq!(idx, 1);
+    let preview = preview_preflight_compaction_selection(&[earlier, latest_assistant]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert_eq!(preview.preserved_ids, vec!["m1"]);
 }
 
 #[test]
@@ -144,8 +146,9 @@ fn test_find_preflight_compaction_split_index_allows_compacting_latest_tool_resu
     let mut tool_result = make_message("m2", "tool", &"very large tool result ".repeat(200));
     tool_result.tool_call_id = Some("call_A".to_string());
 
-    let idx = find_preflight_compaction_split_index(&[intro, assistant, tool_result]);
-    assert_eq!(idx, 3);
+    let preview = preview_preflight_compaction_selection(&[intro, assistant, tool_result]);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1", "m2"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
@@ -175,8 +178,9 @@ fn test_find_preflight_compaction_split_index_keeps_unresolved_tool_chain_tail()
     let mut tool_result = make_message("m2", "tool", "result A");
     tool_result.tool_call_id = Some("call_A".to_string());
 
-    let idx = find_preflight_compaction_split_index(&[intro, assistant, tool_result]);
-    assert_eq!(idx, 1);
+    let preview = preview_preflight_compaction_selection(&[intro, assistant, tool_result]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert_eq!(preview.preserved_ids, vec!["m1", "m2"]);
 }
 
 #[test]
@@ -194,8 +198,9 @@ fn test_find_background_compaction_split_index_preserves_active_request_before_d
         },
     }]);
 
-    let idx = find_background_compaction_split_index(&[request, assistant]);
-    assert_eq!(idx, 0);
+    let preview = preview_background_compaction_selection(&[request, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
 }
 
 #[test]
@@ -205,8 +210,9 @@ fn test_find_background_compaction_split_index_ignores_internal_synthetic_user_m
 
     assert!(!synthetic.is_external_request_message());
 
-    let idx = find_background_compaction_split_index(&[synthetic]);
-    assert_eq!(idx, 1);
+    let preview = preview_background_compaction_selection(&[synthetic]);
+    assert_eq!(preview.compacted_ids, vec!["m1"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
@@ -228,8 +234,9 @@ fn test_find_background_compaction_split_index_preserves_latest_external_request
     let newer = make_message("m1", "user", "Latest real request");
     let assistant = make_message("m2", "assistant", "Working on latest request");
 
-    let idx = find_background_compaction_split_index(&[older, newer, assistant]);
-    assert_eq!(idx, 0);
+    let preview = preview_background_compaction_selection(&[older, newer, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1", "m2"]);
 }
 
 #[test]
@@ -277,8 +284,9 @@ fn test_preflight_compaction_split_after_removing_incomplete_tool_chains() {
         current_tool,
     ]);
 
-    let idx = find_preflight_compaction_split_index(&cleaned);
-    assert_eq!(idx, cleaned.len());
+    let preview = preview_preflight_compaction_selection(&cleaned);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1", "m2", "m3"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
@@ -321,10 +329,9 @@ fn test_normalize_request_messages_removes_stale_incomplete_tool_chains_before_c
     assert!(normalized[1].tool_calls.is_none());
     assert_eq!(normalized[2].id, "m2");
     assert_eq!(normalized[3].id, "m3");
-    assert_eq!(
-        find_preflight_compaction_split_index(&normalized),
-        normalized.len()
-    );
+    let preview = preview_preflight_compaction_selection(&normalized);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1", "m2", "m3"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
