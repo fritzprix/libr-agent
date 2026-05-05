@@ -85,3 +85,18 @@ fn external_request_message_semantics_match_source_policy() {
     assert!(!make_message(Some(MessageSource::Tool)).is_external_request_message());
     assert!(!make_message(Some(MessageSource::AgentTool)).is_external_request_message());
 }
+
+#[test]
+fn unknown_source_still_uses_legacy_id_fallback_for_classification_helpers() {
+    let mut compact_summary =
+        make_message(Some(MessageSource::Unknown("future-source".to_string())));
+    compact_summary.id = "compact-summary-legacy".to_string();
+    assert!(compact_summary.is_compact_summary());
+
+    let mut compaction_instruction =
+        make_message(Some(MessageSource::Unknown("future-source".to_string())));
+    compaction_instruction.id = "compaction-instruction-legacy".to_string();
+    assert!(compaction_instruction.is_compaction_instruction());
+    assert!(compaction_instruction.is_internal_synthetic_user_message());
+    assert!(!compaction_instruction.is_external_request_message());
+}

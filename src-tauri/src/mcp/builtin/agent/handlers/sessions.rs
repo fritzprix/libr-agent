@@ -9,6 +9,7 @@ use crate::mcp::builtin::session_api::utils::{
     build_agent_tool_data, check_session_next_actions, read_required_string,
 };
 use crate::mcp::types::MCPResult;
+use crate::models::chat::MessageSource;
 use crate::repositories::SessionStatus;
 
 use super::super::AgentServer;
@@ -524,4 +525,3 @@ pub async fn compact_session_context(
     Ok(SuccessHint::new(message, vec![])
         .to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
-use crate::models::chat::MessageSource;

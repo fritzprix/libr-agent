@@ -5,6 +5,7 @@ use tokio::time::sleep;
 use crate::agent::AgentSessionManager;
 use crate::mcp::builtin::error_guidance::ErrorCategory;
 use crate::mcp::types::MCPResult;
+use crate::models::chat::MessageSource;
 use crate::repositories::assistant_repository::AssistantRepository;
 use crate::repositories::session_repository::SessionRepository;
 
@@ -662,4 +663,3 @@ pub async fn handle_tool_call(
         _ => Err(format!("Unknown tool: {}", tool_name)),
     }
 }
-use crate::models::chat::MessageSource;

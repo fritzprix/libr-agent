@@ -146,9 +146,10 @@ pub struct Message {
 
 impl Message {
     fn source_with_legacy_fallback(&self) -> Option<MessageSource> {
-        self.source
-            .clone()
-            .or_else(|| MessageSource::from_id(&self.id))
+        match self.source.as_ref() {
+            Some(MessageSource::Unknown(_)) | None => MessageSource::from_id(&self.id),
+            Some(source) => Some(source.clone()),
+        }
     }
 
     pub fn is_compact_summary(&self) -> bool {
