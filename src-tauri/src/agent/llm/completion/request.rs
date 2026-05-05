@@ -112,6 +112,19 @@ pub fn build_compact_summary_message(session_id: &str, text: String, created_at:
     }
 }
 
+pub fn build_compact_summary_message_for_messages(
+    session_id: &str,
+    summary: &str,
+    compacted_messages: &[Message],
+    created_at: i64,
+) -> Message {
+    build_compact_summary_message(
+        session_id,
+        build_compact_summary_text(summary, compacted_messages),
+        created_at,
+    )
+}
+
 const COMPACT_TOOL_SNAPSHOT_LIMIT: usize = 5;
 const COMPACT_ARGUMENT_PREVIEW_LIMIT: usize = 96;
 const COMPACT_RESULT_PREVIEW_LIMIT: usize = 140;
@@ -573,9 +586,10 @@ pub async fn request_llm_completion(
                 (messages, false)
             } else if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
                 let now_ms = chrono::Utc::now().timestamp_millis();
-                let summary_msg = build_compact_summary_message(
+                let summary_msg = build_compact_summary_message_for_messages(
                     &session_id,
-                    build_compact_summary_text(&record.summary, &messages[..=to_idx]),
+                    &record.summary,
+                    &messages[..=to_idx],
                     now_ms,
                 );
                 let summary_tokens =

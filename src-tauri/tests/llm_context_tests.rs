@@ -1,12 +1,13 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    build_compact_context_selection_options, build_compact_summary_text,
-    find_preflight_compaction_split_index, fit_compaction_request_messages_to_limit,
-    merge_consecutive_user_messages, normalize_request_messages,
-    resolve_context_management_settings, resolve_preserved_calibration_ratio,
-    should_skip_same_tail_compaction, should_trigger_background_compaction,
-    should_trigger_post_response_compaction, uses_compaction_strategy,
+    build_compact_context_selection_options, build_compact_summary_message_for_messages,
+    build_compact_summary_text, find_preflight_compaction_split_index,
+    fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
+    normalize_request_messages, resolve_context_management_settings,
+    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
+    should_trigger_background_compaction, should_trigger_post_response_compaction,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -1366,4 +1367,40 @@ fn test_build_compact_summary_text_caps_long_argument_preview() {
     assert!(summary.contains("workspace__writeFile("));
     assert!(summary.contains("path=src/huge.ts"));
     assert!(!summary.contains(&"a".repeat(150)));
+}
+
+#[test]
+fn test_build_compact_summary_message_for_messages_reuses_normal_request_wrapper() {
+    let mut assistant = make_message("assistant-shared", "assistant", "Running command");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_shared".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__runCommand".to_string(),
+            arguments: "{\"command\":\"git status\"}".to_string(),
+        },
+    }]);
+
+    let mut tool = make_message("tool-shared", "tool", "On branch dev/0.7.x");
+    tool.tool_call_id = Some("call_shared".to_string());
+
+    let summary_message = build_compact_summary_message_for_messages(
+        "test-session",
+        "Earlier work was summarized.",
+        &[assistant, tool],
+        42,
+    );
+
+    assert_eq!(summary_message.id, "compact-summary-test-session");
+    assert_eq!(summary_message.role, "assistant");
+    assert_eq!(summary_message.source.as_deref(), Some("compact-summary"));
+
+    let MCPContent::Text { text, .. } = &summary_message.content[0] else {
+        panic!("expected compact summary text");
+    };
+    assert!(text.contains("### Previous Conversation Summary"));
+    assert!(text.contains("### Recent Tool Call Snapshot (latest 5)"));
+    assert!(
+        text.contains("workspace__runCommand(command=git status) -> success: On branch dev/0.7.x")
+    );
 }

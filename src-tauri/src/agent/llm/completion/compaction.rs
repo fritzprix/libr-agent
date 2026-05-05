@@ -63,11 +63,13 @@ pub(crate) struct BackgroundCompactionHandles {
 fn build_incremental_compact_summary_message(
     session_id: &str,
     summary: &str,
+    compacted_messages: &[Message],
     created_at: i64,
 ) -> Message {
-    super::request::build_compact_summary_message(
+    super::request::build_compact_summary_message_for_messages(
         session_id,
-        super::request::build_compact_summary_text(summary, &[]),
+        summary,
+        compacted_messages,
         created_at,
     )
 }
@@ -171,6 +173,7 @@ fn build_compaction_request_payload(
             compact_messages.push(build_incremental_compact_summary_message(
                 session_id,
                 &record.summary,
+                &messages[..=compacted_to_idx],
                 created_at,
             ));
             compact_messages.extend(messages[first_delta_message_idx..split_idx].iter().cloned());
