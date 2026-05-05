@@ -19,7 +19,6 @@ import {
   TabsTrigger,
   TabsContent,
 } from '../../components/ui';
-import LocalServicesEditor from './LocalServicesEditor';
 import SkillsEditor from './SkillsEditor';
 import BuiltInToolsEditor from './BuiltInToolsEditor';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
@@ -93,7 +92,6 @@ export default function AssistantEditor() {
 
         <TabsContent value="skills" className="space-y-4 p-4">
           <SkillsEditor />
-          <LocalServicesEditor />
         </TabsContent>
       </Tabs>
     </div>

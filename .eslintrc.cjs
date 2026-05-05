@@ -10,6 +10,7 @@ module.exports = {
   ],
   ignorePatterns: [
     'dist',
+    '.worktrees/',
     '.eslintrc.cjs',
     'src-tauri/',
     'src-tauri/target/',

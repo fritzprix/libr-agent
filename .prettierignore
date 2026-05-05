@@ -11,6 +11,7 @@ src-tauri/
 public/
 .venv/
 .gemini/
+.worktrees/
 .cargo/
 .agent/
 .editorconfig

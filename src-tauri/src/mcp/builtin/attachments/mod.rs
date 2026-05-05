@@ -79,6 +79,3 @@ mod test_functional;
 mod test_migration;
 #[cfg(test)]
 mod test_recent_uploads;
-// V1 switch_context test - obsolete in V2 session-per-proxy architecture
-// #[cfg(test)]
-// mod test_session_isolation;
