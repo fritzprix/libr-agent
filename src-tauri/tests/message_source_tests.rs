@@ -74,6 +74,19 @@ fn message_source_serializes_to_wire_strings() {
 }
 
 #[test]
+fn external_request_message_semantics_match_source_policy() {
+    assert!(make_message(None).is_external_request_message());
+    assert!(make_message(Some(MessageSource::Api)).is_external_request_message());
+    assert!(make_message(Some(MessageSource::SwarmLegacy)).is_external_request_message());
+    assert!(make_message(Some(MessageSource::Channel)).is_external_request_message());
+    assert!(make_message(Some(MessageSource::ScheduledTask)).is_external_request_message());
+
+    assert!(!make_message(Some(MessageSource::Ui)).is_external_request_message());
+    assert!(!make_message(Some(MessageSource::Tool)).is_external_request_message());
+    assert!(!make_message(Some(MessageSource::AgentTool)).is_external_request_message());
+}
+
+#[test]
 fn unknown_source_still_uses_legacy_id_fallback_for_classification_helpers() {
     let mut compact_summary =
         make_message(Some(MessageSource::Unknown("future-source".to_string())));

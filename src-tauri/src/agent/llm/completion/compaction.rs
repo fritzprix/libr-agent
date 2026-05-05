@@ -362,6 +362,38 @@ fn estimate_compaction_non_message_tokens(
     (system_prompt_tokens, tools_tokens)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionSelectionPreview {
+    pub compacted_ids: Vec<String>,
+    pub preserved_ids: Vec<String>,
+}
+
+fn build_compaction_selection_preview(
+    messages: &[Message],
+    split_idx: usize,
+) -> CompactionSelectionPreview {
+    let split_idx = split_idx.min(messages.len());
+
+    CompactionSelectionPreview {
+        compacted_ids: messages[..split_idx]
+            .iter()
+            .map(|message| message.id.clone())
+            .collect(),
+        preserved_ids: messages[split_idx..]
+            .iter()
+            .map(|message| message.id.clone())
+            .collect(),
+    }
+}
+
+pub fn preview_preflight_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
+    build_compaction_selection_preview(messages, find_preflight_compaction_split_index(messages))
+}
+
+pub fn preview_background_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
+    build_compaction_selection_preview(messages, find_background_compaction_split_index(messages))
+}
+
 /// Determines the compactable prefix for preflight compaction.
 ///
 /// Unlike background compaction, preflight compaction must preserve the newest
@@ -373,7 +405,7 @@ fn estimate_compaction_non_message_tokens(
 /// - latest `user`/non-tool tail: preserve the last message
 /// - latest `tool` tail: compact as much as `find_compaction_split_index()` allows
 /// - unresolved tool chain: preserve the full unresolved tail
-pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
+fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
     if messages.is_empty() {
         return 0;
     }
@@ -401,7 +433,7 @@ fn find_latest_external_request_block_start(messages: &[Message]) -> Option<usiz
     Some(block_start)
 }
 
-pub fn find_background_compaction_split_index(messages: &[Message]) -> usize {
+fn find_background_compaction_split_index(messages: &[Message]) -> usize {
     let unresolved_boundary =
         crate::agent::llm::context_selector::find_compaction_split_index(messages);
 

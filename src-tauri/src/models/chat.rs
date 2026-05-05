@@ -81,6 +81,13 @@ impl MessageSource {
     fn is_internal_synthetic_user_source(&self) -> bool {
         matches!(self, Self::CompactionInstruction | Self::Recovery)
     }
+
+    fn is_external_request_source(&self) -> bool {
+        matches!(
+            self,
+            Self::Api | Self::SwarmLegacy | Self::Channel | Self::ScheduledTask
+        )
+    }
 }
 
 impl Serialize for MessageSource {
@@ -174,6 +181,10 @@ impl Message {
     }
 
     pub fn is_external_request_message(&self) -> bool {
-        self.role == "user" && !self.is_internal_synthetic_user_message()
+        self.role == "user"
+            && !self.is_internal_synthetic_user_message()
+            && self
+                .source_with_legacy_fallback()
+                .is_none_or(|source| source.is_external_request_source())
     }
 }
