@@ -33,6 +33,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@/lib/backend/agent-commands', () => ({
   handleLLMError: vi.fn(),
   handleLLMResponse: vi.fn(),
+  reportLLMStreamingIssue: vi.fn(),
   getAgentCompactContext: vi.fn(),
 }));
 
@@ -79,6 +80,7 @@ describe('LLMServiceContext – Core', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
   const mockListModels = vi.fn();
+  const mockCancel = vi.fn();
   const mockDispose = vi.fn();
 
   beforeEach(() => {
@@ -92,6 +94,7 @@ describe('LLMServiceContext – Core', () => {
     (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
       streamChat: mockStreamChat,
       listModels: mockListModels,
+      cancel: mockCancel,
       dispose: mockDispose,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
       // Default implementation: pass-through (mirrors BaseAIService default)
@@ -730,6 +733,66 @@ describe('LLMServiceContext – Core', () => {
 
       // Streaming message should be cleared
       expect(result.current.streamingMessages.has('test-session')).toBe(false);
+    });
+
+    it('clears stale streaming UI immediately on cancellation', async () => {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
+        wrapper: TestWrapper,
+      });
+
+      let cancelled = false;
+      mockCancel.mockImplementation(() => {
+        cancelled = true;
+      });
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({ thinking: 'looping...' });
+
+        while (!cancelled) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let requestPromise!: Promise<Message>;
+      await act(async () => {
+        requestPromise = result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-cancel',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      await waitFor(() => {
+        expect(result.current.streamingMessages.has('test-session')).toBe(true);
+      });
+
+      act(() => {
+        result.current.cancelCompletionRequest(
+          'test-session',
+          'response-msg-cancel',
+        );
+      });
+
+      await waitFor(() => {
+        expect(result.current.streamingMessages.has('test-session')).toBe(false);
+      });
+
+      await act(async () => {
+        await requestPromise;
+      });
     });
   });
 });

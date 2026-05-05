@@ -120,7 +120,7 @@ fn build_agent_session(
         messages: Arc::new(RwLock::new(Vec::new())),
         cache_initialized: Arc::new(AtomicBool::new(true)),
         last_synced_at: Arc::new(RwLock::new(Some(SystemTime::now()))),
-        thinking_only_count: Arc::new(RwLock::new(0)),
+        repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         context_registry: Arc::new(ContextRegistry::new()),

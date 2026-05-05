@@ -580,6 +580,47 @@ pub async fn agent_handle_llm_response(
     })
 }
 
+#[command]
+pub async fn agent_report_llm_streaming_issue(
+    manager: State<'_, AgentSessionManager>,
+    report: crate::agent::llm::types::StreamingIssueReport,
+) -> Result<AgentResponse, String> {
+    let outcome = manager.report_llm_streaming_issue(report.clone()).await?;
+    let (message, action) = match outcome {
+        crate::agent::llm::StreamingIssueOutcome::Ignored => (
+            format!(
+                "Ignored stale streaming issue for session {}",
+                report.session_id
+            ),
+            "ignored",
+        ),
+        crate::agent::llm::StreamingIssueOutcome::Retried { retry_count } => (
+            format!(
+                "Retried completion after repeated thinking loop for session {} (retry {}/{})",
+                report.session_id,
+                retry_count,
+                crate::agent::llm::REPEATED_THINKING_MAX_RETRIES
+            ),
+            "retried",
+        ),
+        crate::agent::llm::StreamingIssueOutcome::Failed => (
+            format!(
+                "Stopped workflow after repeated thinking loop for session {}",
+                report.session_id
+            ),
+            "failed",
+        ),
+    };
+
+    Ok(AgentResponse {
+        success: true,
+        message,
+        data: Some(serde_json::json!({
+            "action": action,
+        })),
+    })
+}
+
 /// Get session metadata
 #[command]
 pub async fn agent_get_session(

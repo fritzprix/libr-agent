@@ -3,7 +3,6 @@ use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
-use crate::repositories::session_repository::SessionAttentionReason;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -61,6 +60,7 @@ async fn defer_for_post_response_compaction_if_needed(
     app_handle: &AppHandle,
     session_id: &str,
     post_response_compaction_pressure: Option<&PostResponseCompactionPressure>,
+    pending_message: Option<&Message>,
     deferred_step: DeferredWorkflowStep,
 ) -> Result<bool, String> {
     let Some(post_response_compaction_pressure) = post_response_compaction_pressure else {
@@ -75,11 +75,14 @@ async fn defer_for_post_response_compaction_if_needed(
                 .name
                 .clone()
                 .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
-            let message_snapshot = session.messages.read().await.clone();
+            let cached_messages = session.messages.read().await.clone();
+            let message_snapshot =
+                build_post_response_compaction_snapshot(&cached_messages, pending_message);
             (message_snapshot, session_name)
         } else {
+            let message_snapshot = build_post_response_compaction_snapshot(&[], pending_message);
             (
-                Vec::new(),
+                message_snapshot,
                 session_id[..8.min(session_id.len())].to_string(),
             )
         }
@@ -99,6 +102,22 @@ async fn defer_for_post_response_compaction_if_needed(
         deferred_step,
     )
     .await
+}
+
+pub fn build_post_response_compaction_snapshot(
+    cached_messages: &[Message],
+    pending_message: Option<&Message>,
+) -> Vec<Message> {
+    let mut snapshot = cached_messages.to_vec();
+
+    if let Some(message) = pending_message {
+        let already_present = snapshot.iter().any(|existing| existing.id == message.id);
+        if !already_present {
+            snapshot.push(message.clone());
+        }
+    }
+
+    snapshot
 }
 
 pub fn validate_expected_response_id(
@@ -411,6 +430,99 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
     let post_response_compaction_pressure =
         calculate_post_response_compaction_pressure(&assistant_message).await;
 
+    // Check if content is also empty (abnormal empty response).
+    // Note: A message with tool calls but no content is VALID and normal.
+    // We check that at least one content item has meaningful text (matching
+    // the frontend's hasContent logic), so that Gemini-style empty-text
+    // responses like [{type:"text", text:""}] are not treated as valid content.
+    let has_content = assistant_message.content.iter().any(|c| match c {
+        crate::mcp::types::MCPContent::Text { text, .. } => !text.trim().is_empty(),
+        _ => true, // Non-text content (Image, Audio, Resource, etc.) is always meaningful
+    });
+    let has_thinking = assistant_message
+        .thinking
+        .as_ref()
+        .map(|t| !t.is_empty())
+        .unwrap_or(false);
+    let has_tool_calls = assistant_message
+        .tool_calls
+        .as_ref()
+        .map(|tool_calls| !tool_calls.is_empty())
+        .unwrap_or(false);
+
+    if !has_tool_calls {
+        if !has_content && !has_thinking {
+            // content, tool_calls, AND thinking are all empty - this is an error
+            log::warn!(
+                "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
+                session_id
+            );
+            // Set status to error
+            crate::agent::lifecycle::update_session_status(
+                session_repo,
+                active_sessions,
+                app_handle,
+                &session_id,
+                SessionStatus::Error,
+            )
+            .await?;
+            // Emit workflow error event with specific message
+            let error_event = crate::agent::events::AgentEvent::WorkflowError {
+                session_id: session_id.clone(),
+                error: AgentRuntimeError::new(
+                    AgentRuntimeErrorType::AiServiceError,
+                    "The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.",
+                )
+                .with_code("EMPTY_LLM_RESPONSE"),
+            };
+            crate::agent::tauri_events::emit_agent_event(app_handle, error_event)
+                .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
+            return Ok(post_response_compaction_pressure.clone());
+        }
+
+        if has_thinking && !has_content {
+            match defer_for_post_response_compaction_if_needed(
+                active_sessions,
+                app_handle,
+                &session_id,
+                post_response_compaction_pressure.as_ref(),
+                Some(&assistant_message),
+                DeferredWorkflowStep::RequestCompletion,
+            )
+            .await
+            {
+                Ok(true) => {
+                    log::info!(
+                        "⏸️ Delaying thinking-only recovery until post-response compaction finishes: session={}, assistant_message={}",
+                        session_id,
+                        assistant_message.id
+                    );
+                    return Ok(post_response_compaction_pressure.clone());
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    log::warn!(
+                        "⚠️ Failed to evaluate post-response compaction for thinking-only completion in session {} after assistant message {}: {}",
+                        session_id,
+                        assistant_message.id,
+                        error
+                    );
+                }
+            }
+
+            return crate::agent::llm::stream_recovery::handle_thinking_only_completion(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id.clone(),
+                assistant_message.id.clone(),
+            )
+            .await
+            .map(|_| post_response_compaction_pressure.clone());
+        }
+    }
+
     // 1. Add assistant message to cache
     {
         let sessions = active_sessions.read().await;
@@ -459,170 +571,10 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
     let tool_calls: Vec<ToolCall> = assistant_message.tool_calls.take().unwrap_or_default();
 
     if tool_calls.is_empty() {
-        // Check if content is also empty (abnormal empty response).
-        // Note: A message with tool calls but no content is VALID and normal.
-        // We check that at least one content item has meaningful text (matching
-        // the frontend's hasContent logic), so that Gemini-style empty-text
-        // responses like [{type:"text", text:""}] are not treated as valid content.
-        let has_content = assistant_message.content.iter().any(|c| match c {
-            crate::mcp::types::MCPContent::Text { text, .. } => !text.trim().is_empty(),
-            _ => true, // Non-text content (Image, Audio, Resource, etc.) is always meaningful
-        });
-        // ✅ FIX: Also check thinking field to allow thinking-only messages (Spec requirement)
-        let has_thinking = assistant_message
-            .thinking
-            .as_ref()
-            .map(|t| !t.is_empty())
-            .unwrap_or(false);
-
-        if !has_content && !has_thinking {
-            // content, tool_calls, AND thinking are all empty - this is an error
-            log::warn!(
-                "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
-                session_id
-            );
-            // Set status to error
-            crate::agent::lifecycle::update_session_status(
-                session_repo,
-                active_sessions,
-                app_handle,
-                &session_id,
-                SessionStatus::Error,
-            )
-            .await?;
-            // Emit workflow error event with specific message
-            let error_event = crate::agent::events::AgentEvent::WorkflowError {
-                session_id: session_id.clone(),
-                error: AgentRuntimeError::new(
-                    AgentRuntimeErrorType::AiServiceError,
-                    "The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.",
-                )
-                .with_code("EMPTY_LLM_RESPONSE"),
-            };
-            crate::agent::tauri_events::emit_agent_event(app_handle, error_event)
-                .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
-            return Ok(post_response_compaction_pressure.clone());
-        }
-
-        // ✅ NEW: Think-only message auto-recurring (Spec requirement 3)
-        if has_thinking && !has_content {
-            // Get current thinking_only_count
-            let current_count = {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&session_id) {
-                    *session.thinking_only_count.read().await
-                } else {
-                    0
-                }
-            };
-
-            // Circuit breaker: max 3 consecutive thinking-only responses
-            if current_count >= 3 {
-                log::warn!(
-                    "⚠️  Circuit breaker triggered for session {}: {} consecutive thinking-only responses. Forcing workflow completion.",
-                    session_id, current_count
-                );
-
-                // Reset counter and complete workflow
-                {
-                    let active = active_sessions.write().await;
-                    if let Some(session) = active.get(&session_id) {
-                        *session.thinking_only_count.write().await = 0;
-                    }
-                }
-
-                crate::agent::lifecycle::update_session_status(
-                    session_repo,
-                    active_sessions,
-                    app_handle,
-                    &session_id,
-                    SessionStatus::Idle,
-                )
-                .await?;
-
-                let attention_at = chrono::Utc::now().timestamp_millis();
-                session_repo
-                    .update_attention(
-                        &session_id,
-                        attention_at,
-                        SessionAttentionReason::RecurringStop,
-                    )
-                    .await
-                    .map_err(|e| format!("Failed to persist session attention: {}", e))?;
-
-                let event = crate::agent::events::AgentEvent::WorkflowCompleted {
-                    session_id: session_id.clone(),
-                    reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
-                };
-                crate::agent::tauri_events::emit_agent_event(app_handle, event)
-                    .map_err(|e| format!("Failed to emit event: {}", e))?;
-
-                log::info!(
-                    "Workflow completed with circuit breaker for session: {}",
-                    session_id
-                );
-                return Ok(post_response_compaction_pressure.clone());
-            }
-
-            // Increment thinking_only_count
-            {
-                let active = active_sessions.write().await;
-                if let Some(session) = active.get(&session_id) {
-                    let mut count = session.thinking_only_count.write().await;
-                    *count += 1;
-                    log::info!(
-                        "🧠 Think-only message detected for session {} (attempt {}/3). Triggering next LLM turn (auto-recurring).",
-                        session_id, *count
-                    );
-                }
-            }
-
-            match defer_for_post_response_compaction_if_needed(
-                active_sessions,
-                app_handle,
-                &session_id,
-                post_response_compaction_pressure.as_ref(),
-                DeferredWorkflowStep::RequestCompletion,
-            )
-            .await
-            {
-                Ok(true) => {
-                    log::info!(
-                        "⏸️ Delaying follow-up LLM turn until post-response compaction finishes: session={}, assistant_message={}",
-                        session_id,
-                        assistant_message.id
-                    );
-                    return Ok(post_response_compaction_pressure.clone());
-                }
-                Ok(false) => {}
-                Err(error) => {
-                    log::warn!(
-                        "⚠️ Failed to evaluate post-response compaction for session {} after assistant message {}: {}",
-                        session_id,
-                        assistant_message.id,
-                        error
-                    );
-                }
-            }
-
-            // Auto-recurring: trigger next LLM turn
-            return request_llm_completion(
-                session_repo,
-                active_sessions,
-                proxy_manager,
-                app_handle,
-                session_id,
-            )
-            .await
-            .map(|_| post_response_compaction_pressure.clone())
-            .map_err(String::from);
-        }
-
-        // ✅ Content present: reset thinking_only_count
         {
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
-                *session.thinking_only_count.write().await = 0;
+                *session.repeated_thinking_retry_count.write().await = 0;
             }
         }
 
@@ -642,6 +594,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
                 app_handle,
                 &session_id,
                 post_response_compaction_pressure.as_ref(),
+                None,
                 DeferredWorkflowStep::RequestCompletion,
             )
             .await
@@ -687,6 +640,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
             app_handle,
             &session_id,
             post_response_compaction_pressure.as_ref(),
+            None,
             DeferredWorkflowStep::FinalizeWorkflow {
                 reason: crate::agent::events::WorkflowCompletionReason::Natural,
             },
@@ -738,11 +692,10 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
             session_id
         );
 
-        // Reset thinking_only_count (tool calls = normal workflow progress)
         {
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
-                *session.thinking_only_count.write().await = 0;
+                *session.repeated_thinking_retry_count.write().await = 0;
             }
         }
 
@@ -751,6 +704,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
             app_handle,
             &session_id,
             post_response_compaction_pressure.as_ref(),
+            None,
             DeferredWorkflowStep::ExecuteToolCalls {
                 assistant_message_id: assistant_message.id.clone(),
                 tool_calls: tool_calls.clone(),

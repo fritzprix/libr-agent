@@ -286,6 +286,20 @@ impl AgentSessionManager {
         .await
     }
 
+    pub async fn report_llm_streaming_issue(
+        &self,
+        report: crate::agent::llm::types::StreamingIssueReport,
+    ) -> Result<crate::agent::llm::StreamingIssueOutcome, String> {
+        crate::agent::llm::handle_streaming_issue(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            report,
+        )
+        .await
+    }
+
     /// Get session metadata
     pub async fn get_session(&self, session_id: &str) -> Result<Option<SessionMetadata>, String> {
         crate::agent::lifecycle::get_session(&self.session_repo, session_id).await
