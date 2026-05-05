@@ -535,8 +535,7 @@ pub async fn handle_tool_call(
 
             let mut message = format!(
                 "Fetched {} direct sub-agents for commander session {}.\n\n",
-                total,
-                parent_session_id
+                total, parent_session_id
             );
 
             if session_responses.is_empty() {
@@ -587,13 +586,16 @@ pub async fn handle_tool_call(
                 }
             }
 
-            Ok(success_result(message, json!({
-                "parentSessionId": parent_session_id,
-                "count": total,
-                "offset": offset,
-                "limit": limit,
-                "children": session_responses,
-            })))
+            Ok(success_result(
+                message,
+                json!({
+                    "parentSessionId": parent_session_id,
+                    "count": total,
+                    "offset": offset,
+                    "limit": limit,
+                    "children": session_responses,
+                }),
+            ))
         }
         "listAgentTypes" => {
             let assistant_repo = crate::state::get_assistant_repository();
