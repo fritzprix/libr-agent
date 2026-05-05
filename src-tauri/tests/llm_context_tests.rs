@@ -2,14 +2,15 @@ use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_context_selection_options, build_compact_summary_message_for_messages,
-    build_compact_summary_text, find_preflight_compaction_split_index,
-    fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
-    normalize_request_messages, resolve_context_management_settings,
-    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
-    should_trigger_background_compaction, should_trigger_post_response_compaction,
-    uses_compaction_strategy,
+    build_compact_summary_text, find_background_compaction_split_index,
+    find_preflight_compaction_split_index, fit_compaction_request_messages_to_limit,
+    merge_consecutive_user_messages, normalize_request_messages,
+    resolve_context_management_settings, resolve_preserved_calibration_ratio,
+    should_skip_same_tail_compaction, should_trigger_background_compaction,
+    should_trigger_post_response_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
+use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_snapshot;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
@@ -176,6 +177,70 @@ fn test_find_preflight_compaction_split_index_keeps_unresolved_tool_chain_tail()
 
     let idx = find_preflight_compaction_split_index(&[intro, assistant, tool_result]);
     assert_eq!(idx, 1);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_preserves_active_request_before_deferred_tool_execution(
+) {
+    let request = make_message("m0", "user", "Refactor auth to JWT");
+
+    let mut assistant = make_message("m1", "assistant", "Calling tools");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let idx = find_background_compaction_split_index(&[request, assistant]);
+    assert_eq!(idx, 0);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_ignores_internal_synthetic_user_messages() {
+    let mut synthetic = make_message("m1", "user", "Synthetic compaction prompt");
+    synthetic.source = Some("compaction-instruction".to_string());
+
+    assert!(!synthetic.is_external_request_message());
+
+    let idx = find_background_compaction_split_index(&[synthetic]);
+    assert_eq!(idx, 1);
+}
+
+#[test]
+fn test_internal_synthetic_user_message_uses_compaction_instruction_id_fallback() {
+    let synthetic = make_message(
+        "compaction-instruction-legacy",
+        "user",
+        "Synthetic compaction prompt",
+    );
+
+    assert!(synthetic.is_internal_synthetic_user_message());
+    assert!(!synthetic.is_external_request_message());
+}
+
+#[test]
+fn test_find_background_compaction_split_index_preserves_latest_external_request_block() {
+    let older = make_message("m0", "user", "Older request");
+
+    let newer = make_message("m1", "user", "Latest real request");
+    let assistant = make_message("m2", "assistant", "Working on latest request");
+
+    let idx = find_background_compaction_split_index(&[older, newer, assistant]);
+    assert_eq!(idx, 0);
+}
+
+#[test]
+fn test_build_post_response_compaction_snapshot_appends_pending_message_once() {
+    let request = make_message("m0", "user", "Latest real request");
+    let pending = make_message("m1", "assistant", "Pending assistant turn");
+
+    let snapshot = build_post_response_compaction_snapshot(&[request], Some(&pending));
+    assert_eq!(snapshot.len(), 2);
+    assert_eq!(snapshot[0].id, "m0");
+    assert_eq!(snapshot[1].id, "m1");
 }
 
 #[test]
@@ -887,9 +952,8 @@ fn test_conservative_preflight_prompt_tokens_fallback_biases_full_estimate_upwar
 #[test]
 fn test_conservative_preflight_prompt_tokens_uses_latest_prompt_anchor() {
     let earlier_user = make_message("u1", "user", &"Earlier context ".repeat(1200));
-    let older_anchor_clone_for_bpe;
     let older_anchor = make_message("a1", "assistant", "Older grounded output");
-    older_anchor_clone_for_bpe = older_anchor.clone();
+    let older_anchor_clone_for_bpe = older_anchor.clone();
 
     let newer_user = make_message(
         "u2",
@@ -1182,7 +1246,7 @@ fn test_truncate_single_oversized_message_to_fit_conservative_limit_truncates_us
     let limit = 600;
 
     let truncated = truncate_single_oversized_message_to_fit_conservative_limit(
-        &[oversized.clone()],
+        std::slice::from_ref(&oversized),
         limit,
         10,
         5,
@@ -1274,9 +1338,14 @@ fn test_fit_compaction_request_messages_to_limit_rejects_summary_only_payload() 
 fn test_fit_compaction_request_messages_to_limit_truncates_single_raw_message() {
     let oversized = make_message("user-1", "user", &"very large compact input ".repeat(600));
 
-    let fitted =
-        fit_compaction_request_messages_to_limit(&[oversized.clone()], "openai", 600, 10, 5)
-            .expect("single raw message should be truncated to fit compaction request");
+    let fitted = fit_compaction_request_messages_to_limit(
+        std::slice::from_ref(&oversized),
+        "openai",
+        600,
+        10,
+        5,
+    )
+    .expect("single raw message should be truncated to fit compaction request");
 
     assert_eq!(fitted.len(), 1);
     assert_ne!(
