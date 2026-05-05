@@ -4,11 +4,12 @@ pub(crate) mod orchestration;
 pub(crate) mod request;
 
 pub use compaction::{
-    fit_compaction_request_messages_to_limit, preview_background_compaction_selection,
-    preview_preflight_compaction_selection, should_skip_same_tail_compaction,
-    should_trigger_background_compaction, should_trigger_post_response_compaction,
-    trigger_manual_compaction_for_session, trigger_post_response_compaction_if_needed,
-    trigger_preflight_compaction_for_session, CompactionSelectionPreview,
+    build_compaction_preservation_hints, fit_compaction_request_messages_to_limit,
+    preview_background_compaction_selection, preview_preflight_compaction_selection,
+    should_skip_same_tail_compaction, should_trigger_background_compaction,
+    should_trigger_post_response_compaction, trigger_manual_compaction_for_session,
+    trigger_post_response_compaction_if_needed, trigger_preflight_compaction_for_session,
+    CompactionPreservationHints, CompactionSelectionPreview,
 };
 pub use context::{
     resolve_context_management_settings, uses_compaction_strategy, ContextManagementSettings,

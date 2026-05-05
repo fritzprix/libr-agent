@@ -2,12 +2,13 @@ use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_context_selection_options, build_compact_summary_message_for_messages,
-    build_compact_summary_text, fit_compaction_request_messages_to_limit,
-    merge_consecutive_user_messages, normalize_request_messages,
-    preview_background_compaction_selection, preview_preflight_compaction_selection,
-    resolve_context_management_settings, resolve_preserved_calibration_ratio,
-    should_skip_same_tail_compaction, should_trigger_background_compaction,
-    should_trigger_post_response_compaction, uses_compaction_strategy,
+    build_compact_summary_text, build_compaction_preservation_hints,
+    fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
+    normalize_request_messages, preview_background_compaction_selection,
+    preview_preflight_compaction_selection, resolve_context_management_settings,
+    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
+    should_trigger_background_compaction, should_trigger_post_response_compaction,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_snapshot;
@@ -271,6 +272,71 @@ fn test_find_background_compaction_split_index_does_not_treat_ui_messages_as_ext
     let preview = preview_background_compaction_selection(&[request]);
     assert_eq!(preview.compacted_ids, vec!["m0"]);
     assert!(preview.preserved_ids.is_empty());
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_capture_active_request_and_references() {
+    let mut read_file = make_message("m0", "assistant", "Reading types file");
+    read_file.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "read_file".to_string(),
+            arguments: json!({
+                "path": "src/lib/types.ts"
+            })
+            .to_string(),
+        },
+    }]);
+
+    let mut tool_result = make_message(
+        "m1",
+        "tool",
+        "interface InterfaceA { id: string }\ninterface InterfaceB { name: string }",
+    );
+    tool_result.tool_call_id = Some("call_A".to_string());
+
+    let request = make_message(
+        "m2",
+        "user",
+        "Rename `InterfaceB` to `InterfaceC` after the `read_file` result.",
+    );
+
+    let hints = build_compaction_preservation_hints(&[read_file, tool_result, request]);
+    assert_eq!(hints.active_request.len(), 1);
+    assert!(hints.active_request[0].contains("InterfaceB"));
+    assert!(hints.active_request[0].contains("InterfaceC"));
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("src/lib/types.ts")),
+        "required references should keep the referenced file path"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("InterfaceB")),
+        "required references should keep the referenced existing symbol"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("InterfaceC")),
+        "required references should keep the requested target symbol"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_ignore_synthetic_user_messages() {
+    let mut synthetic = make_message("compaction-instruction-legacy", "user", "Synthetic message");
+    synthetic.source = Some(MessageSource::CompactionInstruction);
+
+    let hints = build_compaction_preservation_hints(&[synthetic]);
+    assert!(hints.active_request.is_empty());
+    assert!(hints.required_references.is_empty());
 }
 
 #[test]

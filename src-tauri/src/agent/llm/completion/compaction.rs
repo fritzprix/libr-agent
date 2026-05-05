@@ -3,6 +3,8 @@ use crate::agent::state::DeferredWorkflowStep;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
 use crate::repositories::CompactContextRecord;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -77,9 +79,11 @@ fn build_incremental_compact_summary_message(
 const COMPACTION_SECTION_SCHEMA: &str = "Use EXACTLY these sections in this order:\n\
 1. Stable Context\n\
 2. Key Decisions & Constraints\n\
-3. Current State\n\
-4. Recent Tool Results\n\
-5. Next Actions";
+3. Active Request\n\
+4. Required References\n\
+5. Current State\n\
+6. Recent Tool Results\n\
+7. Next Actions";
 
 const COMPACTION_RULES: &[&str] = &[
     "Use terse bullet points, not prose paragraphs.",
@@ -87,15 +91,19 @@ const COMPACTION_RULES: &[&str] = &[
     "Minimize adjectives, adverbs, filler, and repetition.",
     "Do not restate obvious chronology or narration.",
     "Preserve durable facts, decisions, constraints, user preferences, and unresolved work.",
-    "If the messages include an active external request, preserve the requested outcome, named technologies, explicit user choices, and blocking constraints with enough fidelity to continue the workflow safely.",
+    "If the messages include an unresolved external request, you MUST record it in Active Request.",
+    "If the unresolved request depends on earlier discovered context, you MUST record the minimum file paths, symbol names, entities, or identifiers needed to execute it in Required References.",
     "Keep volatile/recent details in Current State, Recent Tool Results, or Next Actions.",
     "Do not paraphrase away concrete requirements such as technology choices, limits, file targets, or requested deliverables when they are still relevant to pending work.",
+    "Do not replace exact file paths, symbol names, or user-named targets with vague descriptions when they are still operationally relevant.",
     "If a detail is recoverable from recent tool results, do not duplicate it in stable sections.",
 ];
 
 const COMPACTION_SECTION_LIMITS: &[&str] = &[
     "Stable Context: at most 6 bullets",
     "Key Decisions & Constraints: at most 6 bullets",
+    "Active Request: at most 4 bullets",
+    "Required References: at most 5 bullets",
     "Current State: at most 6 bullets",
     "Recent Tool Results: at most 5 bullets",
     "Next Actions: at most 5 bullets",
@@ -110,6 +118,31 @@ CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded 
 Do NOT drop durable information from the prior summary. \
 You may tighten wording, remove duplication, and relocate items into the required sections, but you must preserve the same meaning and operational usefulness. \
 Your new summary = (prior summary, preserved faithfully and reorganized if needed) + (new messages, summarised under the same schema).";
+
+const ACTIVE_REQUEST_BULLET_LIMIT: usize = 4;
+const REQUIRED_REFERENCE_BULLET_LIMIT: usize = 5;
+const REFERENCE_CONTEXT_WINDOW_MESSAGES: usize = 8;
+const INSTRUCTION_HINT_TEXT_LIMIT: usize = 320;
+
+static BACKTICK_REFERENCE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"`([^`\r\n]+)`").expect("valid backtick regex"));
+static PATH_REFERENCE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)\b(?:[a-z]:[\\/])?[\w./\\-]+\.[a-z0-9]{1,12}\b"#).expect("valid path regex")
+});
+static SYMBOL_REFERENCE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"\b(?:interface|type|class|enum|trait|struct|function|fn|const|let)\s+([A-Za-z_][A-Za-z0-9_]*)",
+    )
+    .expect("valid symbol regex")
+});
+static IDENTIFIER_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[A-Za-z_][A-Za-z0-9_]{1,79}$").expect("valid identifier regex"));
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionPreservationHints {
+    pub active_request: Vec<String>,
+    pub required_references: Vec<String>,
+}
 
 fn render_bulleted_lines(lines: &[&str]) -> String {
     lines
@@ -129,8 +162,227 @@ fn build_base_compaction_instruction() -> String {
     )
 }
 
+fn normalize_instruction_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn truncate_instruction_text(text: &str, limit: usize) -> String {
+    let normalized = normalize_instruction_text(text);
+    if normalized.chars().count() <= limit {
+        return normalized;
+    }
+
+    let truncated = normalized
+        .chars()
+        .take(limit.saturating_sub(1))
+        .collect::<String>();
+    format!("{}…", truncated.trim_end())
+}
+
+fn extract_message_text_fragments(message: &Message) -> Vec<String> {
+    message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn push_unique_limited(values: &mut Vec<String>, candidate: String, limit: usize) {
+    if candidate.is_empty() || values.iter().any(|existing| existing == &candidate) {
+        return;
+    }
+
+    if values.len() < limit {
+        values.push(candidate);
+    }
+}
+
+fn format_reference_candidate(candidate: &str) -> String {
+    if PATH_REFERENCE_RE.is_match(candidate) {
+        format!("Preserve file path `{}`", candidate)
+    } else {
+        format!("Preserve identifier `{}`", candidate)
+    }
+}
+
+fn extract_reference_candidates_from_text(text: &str) -> Vec<String> {
+    let mut references = Vec::new();
+
+    for captures in BACKTICK_REFERENCE_RE.captures_iter(text) {
+        if let Some(candidate) = captures.get(1).map(|capture| capture.as_str().trim()) {
+            push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+        }
+    }
+
+    for candidate in PATH_REFERENCE_RE
+        .find_iter(text)
+        .map(|capture| capture.as_str())
+    {
+        push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+    }
+
+    for captures in SYMBOL_REFERENCE_RE.captures_iter(text) {
+        if let Some(candidate) = captures.get(1).map(|capture| capture.as_str()) {
+            push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+        }
+    }
+
+    references
+}
+
+fn collect_reference_candidates_from_json_value(
+    value: &serde_json::Value,
+    references: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::String(text) => {
+            let extracted = extract_reference_candidates_from_text(text);
+            if extracted.is_empty() && IDENTIFIER_RE.is_match(text) {
+                push_unique_limited(references, text.clone(), usize::MAX);
+            } else {
+                for candidate in extracted {
+                    push_unique_limited(references, candidate, usize::MAX);
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_reference_candidates_from_json_value(item, references);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for value in map.values() {
+                collect_reference_candidates_from_json_value(value, references);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_reference_candidates_from_message(message: &Message, references: &mut Vec<String>) {
+    for text in extract_message_text_fragments(message) {
+        for candidate in extract_reference_candidates_from_text(&text) {
+            push_unique_limited(references, candidate, usize::MAX);
+        }
+    }
+
+    if let Some(tool_calls) = &message.tool_calls {
+        for tool_call in tool_calls {
+            if let Ok(arguments) =
+                serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments)
+            {
+                collect_reference_candidates_from_json_value(&arguments, references);
+            }
+        }
+    }
+}
+
+pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPreservationHints {
+    let Some(active_request_start) = find_latest_external_request_block_start(messages) else {
+        return CompactionPreservationHints {
+            active_request: Vec::new(),
+            required_references: Vec::new(),
+        };
+    };
+
+    let mut active_request = Vec::new();
+    let mut required_references = Vec::new();
+    let request_block_end = messages[active_request_start..]
+        .iter()
+        .take_while(|message| message.is_external_request_message())
+        .count()
+        + active_request_start;
+
+    for message in &messages[active_request_start..request_block_end] {
+        for fragment in extract_message_text_fragments(message) {
+            push_unique_limited(
+                &mut active_request,
+                truncate_instruction_text(&fragment, INSTRUCTION_HINT_TEXT_LIMIT),
+                ACTIVE_REQUEST_BULLET_LIMIT,
+            );
+            for candidate in extract_reference_candidates_from_text(&fragment) {
+                push_unique_limited(
+                    &mut required_references,
+                    format_reference_candidate(&candidate),
+                    REQUIRED_REFERENCE_BULLET_LIMIT,
+                );
+            }
+        }
+    }
+
+    let reference_window_start =
+        active_request_start.saturating_sub(REFERENCE_CONTEXT_WINDOW_MESSAGES);
+    let mut raw_reference_candidates = Vec::new();
+    for message in &messages[reference_window_start..request_block_end] {
+        collect_reference_candidates_from_message(message, &mut raw_reference_candidates);
+    }
+
+    for candidate in raw_reference_candidates {
+        push_unique_limited(
+            &mut required_references,
+            format_reference_candidate(&candidate),
+            REQUIRED_REFERENCE_BULLET_LIMIT,
+        );
+    }
+
+    CompactionPreservationHints {
+        active_request,
+        required_references,
+    }
+}
+
+fn build_compaction_hint_block(messages: &[Message]) -> Option<String> {
+    let hints = build_compaction_preservation_hints(messages);
+    if hints.active_request.is_empty() && hints.required_references.is_empty() {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    if !hints.active_request.is_empty() {
+        parts.push(format!(
+            "Active Request candidates:\n{}",
+            hints
+                .active_request
+                .iter()
+                .map(|line| format!("- {}", line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    if !hints.required_references.is_empty() {
+        parts.push(format!(
+            "Required References candidates:\n{}",
+            hints
+                .required_references
+                .iter()
+                .map(|line| format!("- {}", line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    Some(format!(
+        "Preservation hints for this compaction input:\n{}",
+        parts.join("\n\n")
+    ))
+}
+
 fn build_compaction_instruction(messages: &[Message]) -> String {
-    let instruction = build_base_compaction_instruction();
+    let mut instruction = build_base_compaction_instruction();
+    if let Some(hint_block) = build_compaction_hint_block(messages) {
+        instruction = format!("{}\n\n{}", instruction, hint_block);
+    }
 
     if messages.first().map(Message::is_compact_summary) == Some(true) {
         return format!(
