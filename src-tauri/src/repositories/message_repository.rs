@@ -1,5 +1,5 @@
 use super::error::DbError;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MessageSource};
 use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
@@ -290,7 +290,7 @@ impl SqliteMessageRepository {
             tool_use,
             created_at: model.created_at,
             updated_at: model.updated_at,
-            source: model.source,
+            source: model.source.map(MessageSource::from_raw),
             error,
             usage,
             metadata: None,
@@ -339,7 +339,10 @@ impl SqliteMessageRepository {
             tool_use: Set(tool_use_json),
             created_at: Set(message.created_at),
             updated_at: Set(message.updated_at),
-            source: Set(message.source.clone()),
+            source: Set(message
+                .source
+                .as_ref()
+                .map(|source| source.as_str().to_string())),
             error: Set(error_json),
             usage: Set(usage_json),
         })

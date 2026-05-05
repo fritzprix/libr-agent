@@ -4,7 +4,7 @@ use crate::mcp::types::ChannelNotification;
 use crate::mcp::types::ChannelPermissionVerdict;
 use crate::mcp::types::ServiceContext;
 use crate::models::chat::Message;
-use crate::models::chat::MESSAGE_SOURCE_UI;
+use crate::models::chat::MessageSource;
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{CompactContextRecord, SessionMetadata, SessionRepository};
 use crate::services::AgentService;
@@ -219,7 +219,7 @@ fn create_ui_tool_call_message(
             usage: None,
             created_at: now,
             updated_at: now,
-            source: Some(MESSAGE_SOURCE_UI.to_string()),
+            source: Some(MessageSource::Ui),
             error: None,
             metadata: None,
         },

@@ -1,4 +1,5 @@
 pub use crate::agent::types::CreateSessionRequest;
+use crate::models::chat::MessageSource;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -10,7 +11,7 @@ pub struct HealthResponse {
 #[derive(Debug, Deserialize)]
 pub struct SendMessageRequest {
     pub content: String,
-    pub source: Option<String>,
+    pub source: Option<MessageSource>,
 }
 
 #[derive(Debug, Deserialize)]

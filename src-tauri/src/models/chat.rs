@@ -1,15 +1,7 @@
 use crate::agent::types::ToolCall;
 use crate::mcp::types::MCPContent;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-pub(crate) const MESSAGE_SOURCE_CHANNEL: &str = "channel";
-pub(crate) const MESSAGE_SOURCE_COMPACT_SUMMARY: &str = "compact-summary";
-pub(crate) const MESSAGE_SOURCE_COMPACTION_INSTRUCTION: &str = "compaction-instruction";
-pub(crate) const MESSAGE_SOURCE_RECOVERY: &str = "recovery";
-pub(crate) const MESSAGE_SOURCE_SCHEDULED_TASK: &str = "scheduled_task";
-pub(crate) const MESSAGE_SOURCE_TOOL: &str = "tool";
-pub(crate) const MESSAGE_SOURCE_UI: &str = "ui";
 
 const COMPACT_SUMMARY_ID_PREFIX: &str = "compact-summary-";
 const COMPACTION_INSTRUCTION_ID_PREFIX: &str = "compaction-instruction-";
@@ -22,8 +14,12 @@ fn default_timestamp() -> i64 {
         .as_millis() as i64
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KnownMessageSource {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MessageSource {
+    Assistant,
+    Api,
+    AgentTool,
+    SwarmLegacy,
     Channel,
     CompactSummary,
     CompactionInstruction,
@@ -31,19 +27,42 @@ enum KnownMessageSource {
     ScheduledTask,
     Tool,
     Ui,
+    Unknown(String),
 }
 
-impl KnownMessageSource {
-    fn from_source(source: &str) -> Option<Self> {
-        match source {
-            MESSAGE_SOURCE_CHANNEL => Some(Self::Channel),
-            MESSAGE_SOURCE_COMPACT_SUMMARY => Some(Self::CompactSummary),
-            MESSAGE_SOURCE_COMPACTION_INSTRUCTION => Some(Self::CompactionInstruction),
-            MESSAGE_SOURCE_RECOVERY => Some(Self::Recovery),
-            MESSAGE_SOURCE_SCHEDULED_TASK => Some(Self::ScheduledTask),
-            MESSAGE_SOURCE_TOOL => Some(Self::Tool),
-            MESSAGE_SOURCE_UI => Some(Self::Ui),
-            _ => None,
+impl MessageSource {
+    pub fn from_raw(source: impl Into<String>) -> Self {
+        let source = source.into();
+        match source.as_str() {
+            "assistant" => Self::Assistant,
+            "api" => Self::Api,
+            "agent_tool" => Self::AgentTool,
+            "swarm_legacy" => Self::SwarmLegacy,
+            "channel" => Self::Channel,
+            "compact-summary" => Self::CompactSummary,
+            "compaction-instruction" => Self::CompactionInstruction,
+            "recovery" => Self::Recovery,
+            "scheduled_task" => Self::ScheduledTask,
+            "tool" => Self::Tool,
+            "ui" => Self::Ui,
+            _ => Self::Unknown(source),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Assistant => "assistant",
+            Self::Api => "api",
+            Self::AgentTool => "agent_tool",
+            Self::SwarmLegacy => "swarm_legacy",
+            Self::Channel => "channel",
+            Self::CompactSummary => "compact-summary",
+            Self::CompactionInstruction => "compaction-instruction",
+            Self::Recovery => "recovery",
+            Self::ScheduledTask => "scheduled_task",
+            Self::Tool => "tool",
+            Self::Ui => "ui",
+            Self::Unknown(source) => source.as_str(),
         }
     }
 
@@ -57,6 +76,36 @@ impl KnownMessageSource {
         }
 
         None
+    }
+
+    fn is_internal_synthetic_user_source(&self) -> bool {
+        matches!(self, Self::CompactionInstruction | Self::Recovery)
+    }
+
+    fn is_external_request_source(&self) -> bool {
+        matches!(
+            self,
+            Self::Api | Self::SwarmLegacy | Self::Channel | Self::ScheduledTask
+        )
+    }
+}
+
+impl Serialize for MessageSource {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for MessageSource {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let source = String::deserialize(deserializer)?;
+        Ok(Self::from_raw(source))
     }
 }
 
@@ -88,7 +137,7 @@ pub struct Message {
     pub created_at: i64, // Unix timestamp in milliseconds
     #[serde(default = "default_timestamp")]
     pub updated_at: i64, // Unix timestamp in milliseconds
-    pub source: Option<String>,
+    pub source: Option<MessageSource>,
     /// Error information as structured value
     pub error: Option<serde_json::Value>,
     /// Optional metadata for tool execution tracking (mirrors frontend Message.metadata)
@@ -96,40 +145,46 @@ pub struct Message {
 }
 
 impl Message {
-    fn known_source(&self) -> Option<KnownMessageSource> {
-        self.source
-            .as_deref()
-            .and_then(KnownMessageSource::from_source)
-            .or_else(|| KnownMessageSource::from_id(&self.id))
+    fn source_with_legacy_fallback(&self) -> Option<MessageSource> {
+        match self.source.as_ref() {
+            Some(MessageSource::Unknown(_)) | None => MessageSource::from_id(&self.id),
+            Some(source) => Some(source.clone()),
+        }
     }
 
     pub fn is_compact_summary(&self) -> bool {
         matches!(
-            self.known_source(),
-            Some(KnownMessageSource::CompactSummary)
+            self.source_with_legacy_fallback(),
+            Some(MessageSource::CompactSummary)
         )
     }
 
     pub fn is_compaction_instruction(&self) -> bool {
         matches!(
-            self.known_source(),
-            Some(KnownMessageSource::CompactionInstruction)
+            self.source_with_legacy_fallback(),
+            Some(MessageSource::CompactionInstruction)
         )
     }
 
     pub fn is_recovery_message(&self) -> bool {
-        matches!(self.known_source(), Some(KnownMessageSource::Recovery))
+        matches!(
+            self.source_with_legacy_fallback(),
+            Some(MessageSource::Recovery)
+        )
     }
 
     pub fn is_internal_synthetic_user_message(&self) -> bool {
         self.role == "user"
-            && matches!(
-                self.known_source(),
-                Some(KnownMessageSource::CompactionInstruction | KnownMessageSource::Recovery)
-            )
+            && self
+                .source_with_legacy_fallback()
+                .is_some_and(|source| source.is_internal_synthetic_user_source())
     }
 
     pub fn is_external_request_message(&self) -> bool {
-        self.role == "user" && !self.is_internal_synthetic_user_message()
+        self.role == "user"
+            && !self.is_internal_synthetic_user_message()
+            && self
+                .source_with_legacy_fallback()
+                .is_none_or(|source| source.is_external_request_source())
     }
 }
