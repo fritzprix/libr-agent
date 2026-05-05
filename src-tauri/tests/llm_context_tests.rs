@@ -14,7 +14,7 @@ use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_sn
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
-use tauri_mcp_agent_lib::models::chat::Message;
+use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 
 fn make_message(id: &str, role: &str, text: &str) -> Message {
     Message {
@@ -48,7 +48,7 @@ fn make_message_simple(role: &str, text: &str) -> Message {
 
 fn make_compact_summary_message(id: &str, role: &str, text: &str) -> Message {
     let mut message = make_message(id, role, text);
-    message.source = Some("compact-summary".to_string());
+    message.source = Some(MessageSource::CompactSummary);
     message
 }
 
@@ -201,7 +201,7 @@ fn test_find_background_compaction_split_index_preserves_active_request_before_d
 #[test]
 fn test_find_background_compaction_split_index_ignores_internal_synthetic_user_messages() {
     let mut synthetic = make_message("m1", "user", "Synthetic compaction prompt");
-    synthetic.source = Some("compaction-instruction".to_string());
+    synthetic.source = Some(MessageSource::CompactionInstruction);
 
     assert!(!synthetic.is_external_request_message());
 
@@ -1462,7 +1462,7 @@ fn test_build_compact_summary_message_for_messages_reuses_normal_request_wrapper
 
     assert_eq!(summary_message.id, "compact-summary-test-session");
     assert_eq!(summary_message.role, "assistant");
-    assert_eq!(summary_message.source.as_deref(), Some("compact-summary"));
+    assert_eq!(summary_message.source, Some(MessageSource::CompactSummary));
 
     let MCPContent::Text { text, .. } = &summary_message.content[0] else {
         panic!("expected compact summary text");

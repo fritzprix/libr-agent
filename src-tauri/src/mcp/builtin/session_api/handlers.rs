@@ -109,7 +109,7 @@ pub async fn handle_tool_call(
             let response = crate::services::AgentService::spawn_agent_with_source(
                 manager,
                 request,
-                Some("swarm_legacy".to_string()),
+                Some(MessageSource::SwarmLegacy),
             )
             .await
             .map_err(|e| {
@@ -390,7 +390,7 @@ pub async fn handle_tool_call(
                 manager,
                 &session_id,
                 content,
-                Some("swarm_legacy".to_string()),
+                Some(MessageSource::SwarmLegacy),
             )
             .await
             {
@@ -662,3 +662,4 @@ pub async fn handle_tool_call(
         _ => Err(format!("Unknown tool: {}", tool_name)),
     }
 }
+use crate::models::chat::MessageSource;

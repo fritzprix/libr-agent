@@ -1,7 +1,7 @@
 use crate::agent::state::AgentSession;
 use crate::agent::state::DeferredWorkflowStep;
 use crate::mcp::types::MCPContent;
-use crate::models::chat::{Message, MESSAGE_SOURCE_COMPACTION_INSTRUCTION};
+use crate::models::chat::{Message, MessageSource};
 use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -166,7 +166,7 @@ fn build_compaction_instruction_message(
         usage: None,
         created_at,
         updated_at: created_at,
-        source: Some(MESSAGE_SOURCE_COMPACTION_INSTRUCTION.to_string()),
+        source: Some(MessageSource::CompactionInstruction),
         error: None,
         metadata: None,
     }

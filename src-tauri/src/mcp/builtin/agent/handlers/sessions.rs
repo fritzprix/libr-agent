@@ -233,7 +233,7 @@ pub async fn message_to_session(
         manager,
         &session_id,
         message_text,
-        Some("agent_tool".to_string()),
+        Some(MessageSource::AgentTool),
     )
     .await
     {
@@ -524,3 +524,4 @@ pub async fn compact_session_context(
     Ok(SuccessHint::new(message, vec![])
         .to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
+use crate::models::chat::MessageSource;
