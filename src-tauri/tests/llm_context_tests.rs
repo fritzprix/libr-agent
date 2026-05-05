@@ -340,6 +340,102 @@ fn test_build_compaction_preservation_hints_ignore_synthetic_user_messages() {
 }
 
 #[test]
+fn test_build_compaction_preservation_hints_carry_forward_prior_summary_open_requests() {
+    let prior_summary = "\
+### Stable Context
+- Existing work item
+
+### Key Decisions & Constraints
+- Keep refactor incremental
+
+### Active Request
+- Refactor `src/lib/file-b.ts`
+
+### Required References
+- Preserve file path `src/lib/file-b.ts`
+- Preserve identifier `InterfaceB`
+
+### Current State
+- Refactor still pending
+
+### Recent Tool Results
+- read_file(path=src/lib/file-b.ts) -> success
+
+### Next Actions
+- Update references";
+    let summary_message = make_compact_summary_message(
+        "m0",
+        "assistant",
+        &build_compact_summary_text(prior_summary, &[]),
+    );
+    let request = make_message("m1", "user", "Also update `src/lib/file-c.ts`.");
+
+    let hints = build_compaction_preservation_hints(&[summary_message, request]);
+
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("src/lib/file-b.ts")),
+        "prior unresolved request should be carried forward from the previous summary"
+    );
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("src/lib/file-c.ts")),
+        "new request should still be included"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("InterfaceB")),
+        "prior required references should be carried forward from the previous summary"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_filter_non_identifier_backticks_and_non_paths() {
+    let request = make_message(
+        "m0",
+        "user",
+        "Run `pnpm refactor:validate`, keep version 18.3 noted, and rename `ActualSymbol` in `src/lib/types.ts`.",
+    );
+
+    let hints = build_compaction_preservation_hints(&[request]);
+
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("ActualSymbol")),
+        "real identifier references should be preserved"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("src/lib/types.ts")),
+        "real file paths should be preserved"
+    );
+    assert!(
+        !hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("pnpm refactor:validate")),
+        "command-like backtick spans should not consume required reference slots"
+    );
+    assert!(
+        !hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("18.3")),
+        "bare dotted values should not be treated as file paths"
+    );
+}
+
+#[test]
 fn test_build_post_response_compaction_snapshot_appends_pending_message_once() {
     let request = make_message("m0", "user", "Latest real request");
     let pending = make_message("m1", "assistant", "Pending assistant turn");

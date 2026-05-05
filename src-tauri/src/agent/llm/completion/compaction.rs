@@ -127,7 +127,8 @@ const INSTRUCTION_HINT_TEXT_LIMIT: usize = 320;
 static BACKTICK_REFERENCE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"`([^`\r\n]+)`").expect("valid backtick regex"));
 static PATH_REFERENCE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)\b(?:[a-z]:[\\/])?[\w./\\-]+\.[a-z0-9]{1,12}\b"#).expect("valid path regex")
+    Regex::new(r#"(?i)\b(?:[a-z]:[\\/]|\.{1,2}[\\/]|[^\\/\s]+[\\/])[\w./\\-]*\.[a-z0-9]{1,12}\b"#)
+        .expect("valid path regex")
 });
 static SYMBOL_REFERENCE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
@@ -215,12 +216,18 @@ fn format_reference_candidate(candidate: &str) -> String {
     }
 }
 
+fn is_reference_candidate(text: &str) -> bool {
+    PATH_REFERENCE_RE.is_match(text) || IDENTIFIER_RE.is_match(text)
+}
+
 fn extract_reference_candidates_from_text(text: &str) -> Vec<String> {
     let mut references = Vec::new();
 
     for captures in BACKTICK_REFERENCE_RE.captures_iter(text) {
         if let Some(candidate) = captures.get(1).map(|capture| capture.as_str().trim()) {
-            push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+            if is_reference_candidate(candidate) {
+                push_unique_limited(&mut references, candidate.to_string(), usize::MAX);
+            }
         }
     }
 
@@ -238,6 +245,78 @@ fn extract_reference_candidates_from_text(text: &str) -> Vec<String> {
     }
 
     references
+}
+
+fn extract_compact_summary_body(message: &Message) -> Option<String> {
+    if !message.is_compact_summary() {
+        return None;
+    }
+
+    let text = extract_message_text_fragments(message).join("\n");
+    let body = text.strip_prefix("### Previous Conversation Summary\n\n")?;
+    let summary_only = body
+        .split("\n\n### Recent Tool Call Snapshot (latest 5)\n")
+        .next()
+        .unwrap_or(body)
+        .trim();
+
+    if summary_only.is_empty() {
+        None
+    } else {
+        Some(summary_only.to_string())
+    }
+}
+
+fn extract_summary_section_bullets(summary: &str, section_heading: &str) -> Vec<String> {
+    let mut bullets = Vec::new();
+    let mut in_section = false;
+    let markdown_heading = format!("### {}", section_heading);
+
+    for line in summary.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == markdown_heading || trimmed == section_heading {
+            in_section = true;
+            continue;
+        }
+
+        if trimmed.starts_with("### ") || trimmed.ends_with(':') {
+            in_section = false;
+        }
+
+        if in_section {
+            if let Some(bullet) = trimmed.strip_prefix("- ") {
+                let normalized = bullet.trim();
+                if !normalized.is_empty() {
+                    bullets.push(normalized.to_string());
+                }
+            }
+        }
+    }
+
+    bullets
+}
+
+fn collect_prior_summary_hints(
+    message: &Message,
+    active_request: &mut Vec<String>,
+    required_references: &mut Vec<String>,
+) {
+    let Some(summary_body) = extract_compact_summary_body(message) else {
+        return;
+    };
+
+    for bullet in extract_summary_section_bullets(&summary_body, "Active Request") {
+        push_unique_limited(
+            active_request,
+            truncate_instruction_text(&bullet, INSTRUCTION_HINT_TEXT_LIMIT),
+            ACTIVE_REQUEST_BULLET_LIMIT,
+        );
+    }
+
+    for bullet in extract_summary_section_bullets(&summary_body, "Required References") {
+        push_unique_limited(required_references, bullet, REQUIRED_REFERENCE_BULLET_LIMIT);
+    }
 }
 
 fn collect_reference_candidates_from_json_value(
@@ -288,15 +367,24 @@ fn collect_reference_candidates_from_message(message: &Message, references: &mut
 }
 
 pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPreservationHints {
+    let mut active_request = Vec::new();
+    let mut required_references = Vec::new();
+
+    if let Some(previous_summary) = messages.iter().find(|message| message.is_compact_summary()) {
+        collect_prior_summary_hints(
+            previous_summary,
+            &mut active_request,
+            &mut required_references,
+        );
+    }
+
     let Some(active_request_start) = find_latest_external_request_block_start(messages) else {
         return CompactionPreservationHints {
-            active_request: Vec::new(),
-            required_references: Vec::new(),
+            active_request,
+            required_references,
         };
     };
 
-    let mut active_request = Vec::new();
-    let mut required_references = Vec::new();
     let request_block_end = messages[active_request_start..]
         .iter()
         .take_while(|message| message.is_external_request_message())
