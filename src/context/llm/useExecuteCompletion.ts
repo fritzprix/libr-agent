@@ -699,6 +699,11 @@ export function useExecuteCompletion({
       logger.info('Manually cancelling completion request', { sessionId });
       activeRequestIdsRef.current.delete(sessionId);
       lastStreamingUpdateRef.current.delete(sessionId);
+      setStreamingMessages((prev) => {
+        const next = new Map(prev);
+        next.delete(sessionId);
+        return next;
+      });
       const timeoutId = timeoutsRef.current.get(sessionId);
       if (timeoutId) {
         clearTimeout(timeoutId);
@@ -716,7 +721,7 @@ export function useExecuteCompletion({
         abortController.abort();
       }
     },
-    [],
+    [setStreamingMessages],
   );
 
   return { executeCompletionRequest, cancelCompletionRequest };

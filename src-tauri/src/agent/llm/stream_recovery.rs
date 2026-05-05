@@ -91,6 +91,13 @@ pub async fn handle_streaming_issue(
         return Ok(StreamingIssueOutcome::Ignored);
     }
 
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&report.session_id) {
+            *session.expected_response_id.write().await = None;
+        }
+    }
+
     emit_completion_cancel(
         app_handle,
         CompletionCancelRequest {
@@ -138,7 +145,6 @@ pub async fn handle_streaming_issue(
             {
                 let active = active_sessions.read().await;
                 if let Some(session) = active.get(&report.session_id) {
-                    *session.expected_response_id.write().await = None;
                     *session.repeated_thinking_retry_count.write().await = 0;
                 }
             }
