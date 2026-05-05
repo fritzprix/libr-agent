@@ -198,12 +198,8 @@ pub struct AgentSession {
     /// Last DB sync timestamp (for debugging/monitoring)
     pub last_synced_at: Arc<RwLock<Option<SystemTime>>>,
 
-    /// Circuit breaker: consecutive thinking-only response count
-    /// Reset to 0 when content or tool_calls are generated
-    /// Max allowed: 3 (prevents infinite thinking loops)
-    pub thinking_only_count: Arc<RwLock<u32>>,
-
-    /// Counts Rust-owned recovery retries after repeated thinking-loop detection
+    /// Counts Rust-owned recovery retries after non-productive completions
+    /// (streaming repeated-thinking loops or completed thinking-only turns)
     /// during a single workflow turn. Reset when a new workflow starts or the
     /// assistant produces meaningful progress.
     pub repeated_thinking_retry_count: Arc<RwLock<u32>>,

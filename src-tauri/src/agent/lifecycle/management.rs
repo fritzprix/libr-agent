@@ -140,7 +140,6 @@ pub async fn resume_session(
                 messages: Arc::new(RwLock::new(Vec::new())),
                 cache_initialized: Arc::new(AtomicBool::new(false)),
                 last_synced_at: Arc::new(RwLock::new(None)),
-                thinking_only_count: Arc::new(RwLock::new(0)),
                 repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
                 pending_events: Arc::new(RwLock::new(
                     crate::agent::state::PendingEventManager::new(),

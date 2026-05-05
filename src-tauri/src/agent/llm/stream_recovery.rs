@@ -29,6 +29,44 @@ pub enum StreamingIssueOutcome {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NonProductiveCompletionAction {
+    Retry { next_retry_count: u32 },
+    Fail,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NonProductiveCompletionReason {
+    RepeatedThinkingLoop {
+        response_message_id: String,
+        observed_tail_chars: usize,
+        pattern_length: usize,
+        repetition_count: usize,
+    },
+    ThinkingOnlyCompletion {
+        assistant_message_id: String,
+    },
+}
+
+struct RecoveryContext<'a> {
+    session_repo: &'a Arc<dyn SessionRepository>,
+    active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &'a Arc<MCPServiceProxyManager>,
+    app_handle: &'a AppHandle,
+}
+
+pub fn evaluate_non_productive_completion_action(
+    retry_count: u32,
+) -> NonProductiveCompletionAction {
+    if retry_count < REPEATED_THINKING_MAX_RETRIES {
+        return NonProductiveCompletionAction::Retry {
+            next_retry_count: retry_count + 1,
+        };
+    }
+
+    NonProductiveCompletionAction::Fail
+}
+
 pub fn evaluate_streaming_issue_action(
     expected_response_id: Option<&str>,
     reported_response_id: &str,
@@ -38,13 +76,132 @@ pub fn evaluate_streaming_issue_action(
         return StreamingIssueAction::Ignore;
     }
 
-    if retry_count < REPEATED_THINKING_MAX_RETRIES {
-        return StreamingIssueAction::CancelAndRetry {
-            next_retry_count: retry_count + 1,
-        };
+    match evaluate_non_productive_completion_action(retry_count) {
+        NonProductiveCompletionAction::Retry { next_retry_count } => {
+            StreamingIssueAction::CancelAndRetry { next_retry_count }
+        }
+        NonProductiveCompletionAction::Fail => StreamingIssueAction::CancelAndFail,
     }
+}
 
-    StreamingIssueAction::CancelAndFail
+async fn handle_non_productive_completion(
+    context: RecoveryContext<'_>,
+    session_id: String,
+    session_name: String,
+    action: NonProductiveCompletionAction,
+    reason: NonProductiveCompletionReason,
+) -> Result<StreamingIssueOutcome, String> {
+    match action {
+        NonProductiveCompletionAction::Retry { next_retry_count } => {
+            {
+                let active = context.active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    *session.repeated_thinking_retry_count.write().await = next_retry_count;
+                }
+            }
+
+            match &reason {
+                NonProductiveCompletionReason::RepeatedThinkingLoop {
+                    response_message_id,
+                    observed_tail_chars,
+                    pattern_length,
+                    repetition_count,
+                } => {
+                    log::warn!(
+                        "Repeated thinking loop detected for session {} response {} (tail_chars={}, pattern_length={}, repetition_count={}). Retrying LLM turn ({}/{}).",
+                        session_id,
+                        response_message_id,
+                        observed_tail_chars,
+                        pattern_length,
+                        repetition_count,
+                        next_retry_count,
+                        REPEATED_THINKING_MAX_RETRIES
+                    );
+                }
+                NonProductiveCompletionReason::ThinkingOnlyCompletion {
+                    assistant_message_id,
+                } => {
+                    log::warn!(
+                        "Thinking-only completion detected for session {} message {}. Retrying LLM turn ({}/{}).",
+                        session_id,
+                        assistant_message_id,
+                        next_retry_count,
+                        REPEATED_THINKING_MAX_RETRIES
+                    );
+                }
+            }
+
+            request_llm_completion_with_recovery(
+                context.session_repo,
+                context.active_sessions,
+                context.proxy_manager,
+                context.app_handle,
+                session_id,
+            )
+            .await?;
+
+            Ok(StreamingIssueOutcome::Retried {
+                retry_count: next_retry_count,
+            })
+        }
+        NonProductiveCompletionAction::Fail => {
+            {
+                let active = context.active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    *session.repeated_thinking_retry_count.write().await = 0;
+                }
+            }
+
+            let (message, code, details) = match reason {
+                NonProductiveCompletionReason::RepeatedThinkingLoop {
+                    response_message_id,
+                    observed_tail_chars,
+                    pattern_length,
+                    repetition_count,
+                } => (
+                    format!(
+                        "The model got stuck repeating thinking content in session '{}' and exceeded the automatic recovery limit. Workflow stopped to prevent an infinite loop.",
+                        session_name
+                    ),
+                    "REPEATED_THINKING_LOOP",
+                    serde_json::json!({
+                        "responseMessageId": response_message_id,
+                        "observedTailChars": observed_tail_chars,
+                        "patternLength": pattern_length,
+                        "repetitionCount": repetition_count,
+                        "maxRetries": REPEATED_THINKING_MAX_RETRIES,
+                    }),
+                ),
+                NonProductiveCompletionReason::ThinkingOnlyCompletion {
+                    assistant_message_id,
+                } => (
+                    format!(
+                        "The model returned only thinking content in session '{}' and exceeded the automatic recovery limit. Workflow stopped because no usable assistant output was produced.",
+                        session_name
+                    ),
+                    "THINKING_ONLY_COMPLETION",
+                    serde_json::json!({
+                        "assistantMessageId": assistant_message_id,
+                        "maxRetries": REPEATED_THINKING_MAX_RETRIES,
+                    }),
+                ),
+            };
+
+            let dispatcher = TauriEventDispatcher::new(context.app_handle.clone());
+            finalize_workflow_error_with_dispatcher(
+                context.session_repo,
+                context.active_sessions,
+                &dispatcher,
+                session_id,
+                AgentRuntimeError::new(AgentRuntimeErrorType::AiServiceError, message)
+                    .with_code(code)
+                    .with_original_error(details),
+            )
+            .await?;
+
+            Ok(StreamingIssueOutcome::Failed)
+        }
+    }
 }
 
 pub async fn handle_streaming_issue(
@@ -91,89 +248,117 @@ pub async fn handle_streaming_issue(
         return Ok(StreamingIssueOutcome::Ignored);
     }
 
-    {
+    let previous_expected_response_id = {
         let active = active_sessions.read().await;
-        if let Some(session) = active.get(&report.session_id) {
-            *session.expected_response_id.write().await = None;
-        }
-    }
+        let Some(session) = active.get(&report.session_id) else {
+            return Ok(StreamingIssueOutcome::Ignored);
+        };
 
-    emit_completion_cancel(
+        let mut expected_response_id = session.expected_response_id.write().await;
+        expected_response_id.take()
+    };
+
+    if let Err(error) = emit_completion_cancel(
         app_handle,
         CompletionCancelRequest {
             session_id: report.session_id.clone(),
             response_message_id: report.response_message_id.clone(),
             reason: "repeated-thinking-loop".to_string(),
         },
-    )?;
+    ) {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&report.session_id) {
+            *session.expected_response_id.write().await = previous_expected_response_id;
+        }
+
+        return Err(error);
+    }
 
     match action {
         StreamingIssueAction::Ignore => Ok(StreamingIssueOutcome::Ignored),
         StreamingIssueAction::CancelAndRetry { next_retry_count } => {
-            {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&report.session_id) {
-                    *session.repeated_thinking_retry_count.write().await = next_retry_count;
-                }
-            }
-
-            log::warn!(
-                "Repeated thinking loop detected for session {} response {} (tail_chars={}, pattern_length={}, repetition_count={}). Retrying LLM turn ({}/{}).",
+            handle_non_productive_completion(
+                RecoveryContext {
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                },
                 report.session_id,
-                report.response_message_id,
-                report.observed_tail_chars,
-                report.pattern_length,
-                report.repetition_count,
-                next_retry_count,
-                REPEATED_THINKING_MAX_RETRIES
-            );
-
-            request_llm_completion_with_recovery(
-                session_repo,
-                active_sessions,
-                proxy_manager,
-                app_handle,
-                report.session_id.clone(),
+                session_name,
+                NonProductiveCompletionAction::Retry { next_retry_count },
+                NonProductiveCompletionReason::RepeatedThinkingLoop {
+                    response_message_id: report.response_message_id,
+                    observed_tail_chars: report.observed_tail_chars,
+                    pattern_length: report.pattern_length,
+                    repetition_count: report.repetition_count,
+                },
             )
-            .await?;
-
-            Ok(StreamingIssueOutcome::Retried {
-                retry_count: next_retry_count,
-            })
+            .await
         }
         StreamingIssueAction::CancelAndFail => {
-            {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&report.session_id) {
-                    *session.repeated_thinking_retry_count.write().await = 0;
-                }
-            }
-
-            let dispatcher = TauriEventDispatcher::new(app_handle.clone());
-            finalize_workflow_error_with_dispatcher(
-                session_repo,
-                active_sessions,
-                &dispatcher,
-                report.session_id.clone(),
-                AgentRuntimeError::new(
-                    AgentRuntimeErrorType::AiServiceError,
-                    format!(
-                        "The model got stuck repeating thinking content in session '{}' and exceeded the automatic recovery limit. Workflow stopped to prevent an infinite loop.",
-                        session_name
-                    ),
-                )
-                .with_code("REPEATED_THINKING_LOOP")
-                .with_original_error(serde_json::json!({
-                    "responseMessageId": report.response_message_id,
-                    "observedTailChars": report.observed_tail_chars,
-                    "patternLength": report.pattern_length,
-                    "repetitionCount": report.repetition_count,
-                    "maxRetries": REPEATED_THINKING_MAX_RETRIES,
-                })),
+            handle_non_productive_completion(
+                RecoveryContext {
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                },
+                report.session_id,
+                session_name,
+                NonProductiveCompletionAction::Fail,
+                NonProductiveCompletionReason::RepeatedThinkingLoop {
+                    response_message_id: report.response_message_id,
+                    observed_tail_chars: report.observed_tail_chars,
+                    pattern_length: report.pattern_length,
+                    repetition_count: report.repetition_count,
+                },
             )
-            .await?;
-
-            Ok(StreamingIssueOutcome::Failed)
+            .await
         }
     }
+}
+
+pub async fn handle_thinking_only_completion(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: String,
+    assistant_message_id: String,
+) -> Result<StreamingIssueOutcome, String> {
+    let (action, session_name) = {
+        let active = active_sessions.read().await;
+        let Some(session) = active.get(&session_id) else {
+            return Ok(StreamingIssueOutcome::Ignored);
+        };
+
+        let retry_count = *session.repeated_thinking_retry_count.read().await;
+        let session_name = session
+            .metadata
+            .name
+            .clone()
+            .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
+
+        (
+            evaluate_non_productive_completion_action(retry_count),
+            session_name,
+        )
+    };
+
+    handle_non_productive_completion(
+        RecoveryContext {
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+        },
+        session_id,
+        session_name,
+        action,
+        NonProductiveCompletionReason::ThinkingOnlyCompletion {
+            assistant_message_id,
+        },
+    )
+    .await
 }

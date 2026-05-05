@@ -15,7 +15,6 @@ use tauri_mcp_agent_lib::session::SessionManager;
 use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus};
 use tempfile::tempdir;
 use tokio::sync::OnceCell;
-use tokio::time::{sleep, Duration};
 
 fn extract_text_content(result: &MCPResult) -> String {
     result
@@ -66,32 +65,27 @@ fn dual_stream_command() -> &'static str {
 }
 
 async fn wait_for_terminal_state(server: &WorkspaceServer, process_id: &str, session_id: &str) {
-    for _ in 0..30 {
-        let wait_result = server
-            .call_tool(
-                "waitForProcess",
-                json!({ "processId": process_id, "timeout": 0 }),
-                Some(session_id.to_string()),
-            )
-            .await
-            .expect("waitForProcess should succeed");
+    let wait_result = server
+        .call_tool(
+            "waitForProcess",
+            json!({ "processId": process_id, "timeout": 10 }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("waitForProcess should succeed");
 
-        let structured = wait_result
-            .structured_content
-            .as_ref()
-            .expect("waitForProcess structured content expected");
-        let status = structured["status"]
-            .as_str()
-            .expect("waitForProcess should return status");
+    let structured = wait_result
+        .structured_content
+        .as_ref()
+        .expect("waitForProcess structured content expected");
+    let status = structured["status"]
+        .as_str()
+        .expect("waitForProcess should return status");
 
-        if matches!(status, "finished" | "failed" | "killed") {
-            return;
-        }
-
-        sleep(Duration::from_millis(200)).await;
-    }
-
-    panic!("process did not reach a terminal state in time");
+    assert!(
+        matches!(status, "finished" | "failed" | "killed"),
+        "process did not reach a terminal state: {status}"
+    );
 }
 
 #[tokio::test]
