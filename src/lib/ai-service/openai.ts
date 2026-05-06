@@ -300,16 +300,17 @@ export class OpenAIService extends BaseAIService<
         request,
       });
 
+      const abortSignal = this.getAbortSignal();
       const completion = await this.withRetry(() =>
         this.openai.chat.completions.create(request, {
-          signal: this.getAbortSignal(),
+          signal: abortSignal,
           headers: {
             'x-libragent-request-id': requestId,
           },
         }),
       );
 
-      if (this.getAbortSignal().aborted) {
+      if (abortSignal.aborted) {
         this.logger.debug('Stream aborted before iteration');
         return;
       }
@@ -318,7 +319,7 @@ export class OpenAIService extends BaseAIService<
       const startTime = performance.now();
       let firstChunkReceived = false;
       for await (const chunk of completion) {
-        if (this.getAbortSignal().aborted) {
+        if (abortSignal.aborted) {
           this.logger.info('Stream aborted during iteration');
           break;
         }
@@ -564,9 +565,10 @@ export class OpenAIService extends BaseAIService<
       request,
     });
 
+    const abortSignal = this.getAbortSignal();
     const response = await this.withRetry(() =>
       this.openai.chat.completions.create(request, {
-        signal: this.getAbortSignal(),
+        signal: abortSignal,
         headers: {
           'x-libragent-request-id': requestId,
         },
