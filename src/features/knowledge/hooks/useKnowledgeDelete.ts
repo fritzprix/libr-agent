@@ -20,11 +20,11 @@ export function useKnowledgeDelete({
 }: UseKnowledgeDeleteOptions) {
   const { t } = useTranslation('common');
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
 
   useEffect(() => {
     if (!selectedItem) {
-      setIsDeleteDialogOpen(false);
+      setIsDeleteConfirming(false);
     }
   }, [selectedItem]);
 
@@ -33,8 +33,16 @@ export function useKnowledgeDelete({
       return;
     }
 
-    setIsDeleteDialogOpen(true);
+    setIsDeleteConfirming(true);
   }, [isDeleting, selectedItem]);
+
+  const cancelDelete = useCallback(() => {
+    if (isDeleting) {
+      return;
+    }
+
+    setIsDeleteConfirming(false);
+  }, [isDeleting]);
 
   const deleteSelectedItem = useCallback(async () => {
     if (!selectedItem || isDeleting) {
@@ -54,7 +62,7 @@ export function useKnowledgeDelete({
           },
         ),
       });
-      setIsDeleteDialogOpen(false);
+      setIsDeleteConfirming(false);
       onDeleted();
     } catch (error) {
       logger.error('Failed to delete knowledge entry', {
@@ -70,10 +78,10 @@ export function useKnowledgeDelete({
   }, [isDeleting, onDeleted, selectedItem, t]);
 
   return {
+    cancelDelete,
     deleteSelectedItem,
-    isDeleteDialogOpen,
+    isDeleteConfirming,
     isDeleting,
     requestDelete,
-    setIsDeleteDialogOpen,
   };
 }

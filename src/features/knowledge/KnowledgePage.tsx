@@ -16,7 +16,6 @@ import {
 } from '@/components/ui';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DeleteKnowledgeDialog } from './components/DeleteKnowledgeDialog';
 import { KnowledgeDetailDialog } from './components/KnowledgeDetailDialog';
 import { KnowledgeListItemCard } from './components/KnowledgeListItemCard';
 import { useKnowledgeBrowser } from './hooks/useKnowledgeBrowser';
@@ -26,11 +25,12 @@ export default function KnowledgePage() {
   const {
     assistantFilter,
     assistants,
+    cancelDelete,
     closeDetail,
     deleteSelectedItem,
     detail,
     hasMoreItems,
-    isDeleteDialogOpen,
+    isDeleteConfirming,
     isDeleting,
     isDetailLoading,
     isDetailOpen,
@@ -45,7 +45,6 @@ export default function KnowledgePage() {
     selectedId,
     selectedItem,
     setAssistantFilter,
-    setIsDeleteDialogOpen,
     setQuery,
   } = useKnowledgeBrowser();
 
@@ -199,17 +198,17 @@ export default function KnowledgePage() {
       <KnowledgeDetailDialog
         open={isDetailOpen}
         detail={detail}
+        isDeleteConfirming={isDeleteConfirming}
         isDeleting={isDeleting}
         isDetailLoading={isDetailLoading}
+        onCancelDelete={cancelDelete}
         onClose={closeDetail}
-        onRequestDelete={requestDelete}
+        onRequestDelete={
+          isDeleteConfirming
+            ? () => void deleteSelectedItem()
+            : requestDelete
+        }
         selectedItem={selectedItem}
-      />
-      <DeleteKnowledgeDialog
-        open={isDeleteDialogOpen}
-        isDeleting={isDeleting}
-        onOpenChange={(open) => !isDeleting && setIsDeleteDialogOpen(open)}
-        onConfirm={() => void deleteSelectedItem()}
       />
     </div>
   );
