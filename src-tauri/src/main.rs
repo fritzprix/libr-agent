@@ -4,46 +4,17 @@
 /// The main entry point for the LibrAgent application.
 ///
 /// This function is responsible for:
-/// 1. Optionally enabling Linux-specific WebKit compatibility mode (if on Linux)
-/// 2. Loading environment variables from .env file (development mode only)
-/// 3. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
+/// 1. Loading environment variables from .env file (development mode only)
+/// 2. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
 ///    environment variable, falling back to a default location within the user's data directory.
-/// 4. Ensuring the directory for the database exists.
-/// 5. Constructing the final SQLite connection URL.
-/// 6. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
+/// 3. Ensuring the directory for the database exists.
+/// 4. Constructing the final SQLite connection URL.
+/// 5. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
 ///    crate, passing it the database URL to initialize the application with database support.
-#[cfg(target_os = "linux")]
-fn linux_compatibility_mode_enabled() -> bool {
-    matches!(
-        std::env::var("LIBRAGENT_LINUX_COMPATIBILITY_MODE"),
-        Ok(value)
-            if matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-    )
-}
-
 fn main() {
-    // Set Linux-specific WebKit compatibility environment variables FIRST when explicitly enabled.
-    // This must happen before any WebView initialization.
     #[cfg(target_os = "linux")]
     {
-        if linux_compatibility_mode_enabled() {
-            println!("🐧 Linux compatibility mode enabled - applying WebKit fallback flags...");
-
-            // Disable WebKit compositing and force software rendering for problematic Linux setups.
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            std::env::set_var("GDK_BACKEND", "x11");
-            std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
-
-            println!("✅ Linux compatibility mode active (software rendering + X11 fallback)");
-        } else {
-            println!("🐧 Linux detected - using default WebKit rendering path");
-            println!(
-                "ℹ️  Set LIBRAGENT_LINUX_COMPATIBILITY_MODE=1 only if you hit blank screens or driver issues"
-            );
-        }
+        println!("🐧 Linux detected - using default WebKit rendering path");
     }
 
     // Load environment variables from .env file

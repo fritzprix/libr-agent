@@ -19,12 +19,9 @@ This guide provides solutions to common problems you might encounter while devel
    sudo apt-get install -y libwebkit2gtk-4.1-dev
    ```
 
-2. **Set Environment Variables**: The application attempts to set these, but you can also set them manually before running `pnpm tauri dev`:
+2. **Use a Proper Desktop Session**: Run the app in a real Linux desktop session with a working display server and current graphics drivers. Containerized or headless environments often expose WebKit rendering failures that are not fixable from app code alone.
 
-   ```bash
-   export WEBKIT_DISABLE_COMPOSITING_MODE=1
-   export WEBKIT_DISABLE_DMABUF_RENDERER=1
-   ```
+3. **Avoid Forcing Software Rendering Flags**: Do not set WebKit or GL fallback flags unless you are debugging a driver bug. They frequently trade blank-screen issues for much worse rendering performance.
 
 **Source Reference**: [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) (Lines 188-250)
 

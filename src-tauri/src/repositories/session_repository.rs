@@ -1,7 +1,10 @@
 use super::error::DbError;
 use async_trait::async_trait;
 use sea_orm::sea_query::Expr;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set,
+};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -106,6 +109,20 @@ pub struct SessionMetadata {
     pub workspace_override: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListCursor {
+    pub updated_at: i64,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListPage {
+    pub items: Vec<SessionMetadata>,
+    pub next_cursor: Option<SessionListCursor>,
+}
+
 impl TryFrom<session::Model> for SessionMetadata {
     type Error = DbError;
 
@@ -165,6 +182,16 @@ pub trait SessionRepository: Send + Sync {
 
     /// Get all sessions
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError>;
+
+    /// List sessions ordered by most recent activity with cursor pagination.
+    async fn list_sessions(
+        &self,
+        cursor: Option<SessionListCursor>,
+        limit: u64,
+    ) -> Result<SessionListPage, DbError>;
+
+    /// List sessions that still have unread attention for notifications.
+    async fn list_attention_sessions(&self) -> Result<Vec<SessionMetadata>, DbError>;
 
     /// Get direct child session IDs for a parent session ID
     async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError>;
@@ -350,8 +377,6 @@ impl SessionRepository for SqliteSessionRepository {
     }
 
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
-        use sea_orm::QueryOrder;
-
         let models = Session::find()
             .order_by_desc(session::Column::UpdatedAt)
             .all(&self.db)
@@ -361,6 +386,72 @@ impl SessionRepository for SqliteSessionRepository {
             models.into_iter().map(SessionMetadata::try_from).collect();
 
         sessions
+    }
+
+    async fn list_sessions(
+        &self,
+        cursor: Option<SessionListCursor>,
+        limit: u64,
+    ) -> Result<SessionListPage, DbError> {
+        let normalized_limit = limit.clamp(1, 200);
+        let mut condition = Condition::all();
+
+        if let Some(cursor) = cursor {
+            condition = condition.add(
+                Condition::any()
+                    .add(session::Column::UpdatedAt.lt(cursor.updated_at))
+                    .add(
+                        Condition::all()
+                            .add(session::Column::UpdatedAt.eq(cursor.updated_at))
+                            .add(session::Column::Id.lt(cursor.id)),
+                    ),
+            );
+        }
+
+        let mut models = Session::find()
+            .filter(condition)
+            .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
+            .limit(normalized_limit + 1)
+            .all(&self.db)
+            .await?;
+
+        let next_cursor = if models.len() > normalized_limit as usize {
+            models.truncate(normalized_limit as usize);
+            models.last().map(|model| SessionListCursor {
+                updated_at: model.updated_at,
+                id: model.id.clone(),
+            })
+        } else {
+            None
+        };
+
+        let items = models
+            .into_iter()
+            .map(SessionMetadata::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(SessionListPage { items, next_cursor })
+    }
+
+    async fn list_attention_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
+        let models = Session::find()
+            .filter(session::Column::LastAttentionAt.is_not_null())
+            .filter(
+                Condition::any()
+                    .add(session::Column::LastViewedAt.is_null())
+                    .add(
+                        Expr::col(session::Column::LastAttentionAt)
+                            .gt(Expr::col(session::Column::LastViewedAt)),
+                    ),
+            )
+            .order_by_desc(session::Column::LastAttentionAt)
+            .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
+            .all(&self.db)
+            .await?;
+
+        models.into_iter().map(SessionMetadata::try_from).collect()
     }
 
     async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError> {

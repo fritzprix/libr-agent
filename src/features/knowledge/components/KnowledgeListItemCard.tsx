@@ -1,22 +1,24 @@
 import { memo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui';
 import type { KnowledgeChunkListItem } from '@/lib/backend/knowledge';
 import { formatTimestamp, getKnowledgeCardTitle } from '../knowledge-utils';
 
 interface KnowledgeListItemCardProps {
+  excerptLabel: string;
   item: KnowledgeChunkListItem;
   isActive: boolean;
   onSelect: (id: number) => void;
+  untitledLabel: string;
 }
 
 export const KnowledgeListItemCard = memo(function KnowledgeListItemCard({
+  excerptLabel,
   item,
   isActive,
   onSelect,
+  untitledLabel,
 }: KnowledgeListItemCardProps) {
-  const { t } = useTranslation('common');
-  const title = getKnowledgeCardTitle(item.preview, t);
+  const title = getKnowledgeCardTitle(item.preview, untitledLabel);
   const visibleTags = item.tags.slice(0, 2);
   const hiddenTagCount = Math.max(item.tags.length - visibleTags.length, 0);
 
@@ -24,12 +26,11 @@ export const KnowledgeListItemCard = memo(function KnowledgeListItemCard({
     <button
       type="button"
       onClick={() => onSelect(item.id)}
-      className={`w-full rounded-2xl border p-4 text-left shadow-sm transition-all [content-visibility:auto] ${
+      className={`min-h-[220px] w-full rounded-2xl border p-4 text-left shadow-sm transition-all ${
         isActive
           ? 'border-primary/70 bg-primary/5 shadow-primary/5'
           : 'border-border/60 bg-card/80 hover:border-border hover:bg-muted/30'
       }`}
-      style={{ containIntrinsicSize: '220px' }}
     >
       <div className="min-w-0 space-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -65,7 +66,7 @@ export const KnowledgeListItemCard = memo(function KnowledgeListItemCard({
 
       <div className="mt-4 rounded-xl border border-border/40 bg-muted/20 p-3">
         <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          {t('knowledge.excerpt', 'Excerpt')}
+          {excerptLabel}
         </div>
         <p className="line-clamp-4 text-sm leading-6 text-foreground/90">
           {item.preview}

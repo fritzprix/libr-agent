@@ -6,7 +6,9 @@ use crate::mcp::types::ServiceContext;
 use crate::models::chat::Message;
 use crate::models::chat::MessageSource;
 use crate::repositories::message_repository::MessageRepository;
-use crate::repositories::{CompactContextRecord, SessionMetadata, SessionRepository};
+use crate::repositories::{
+    CompactContextRecord, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
+};
 use crate::services::AgentService;
 use crate::state::get_session_repository;
 use crate::{
@@ -16,6 +18,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{command, AppHandle, State};
+
+const DEFAULT_SESSION_LIST_LIMIT: u64 = 100;
+const MAX_SESSION_LIST_LIMIT: u64 = 200;
 
 /// Request to create a new agent session
 #[derive(Debug, Serialize, Deserialize)]
@@ -636,6 +641,83 @@ pub async fn agent_get_all_sessions(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<Vec<SessionMetadata>, String> {
     manager.get_all_sessions().await
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListAgentSessionsRequest {
+    pub cursor: Option<SessionListCursorDto>,
+    pub limit: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListCursorDto {
+    pub updated_at: i64,
+    pub id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionListResponse {
+    pub items: Vec<SessionMetadata>,
+    pub next_cursor: Option<SessionListCursorDto>,
+}
+
+impl From<SessionListCursor> for SessionListCursorDto {
+    fn from(value: SessionListCursor) -> Self {
+        Self {
+            updated_at: value.updated_at,
+            id: value.id,
+        }
+    }
+}
+
+impl From<SessionListCursorDto> for SessionListCursor {
+    fn from(value: SessionListCursorDto) -> Self {
+        Self {
+            updated_at: value.updated_at,
+            id: value.id,
+        }
+    }
+}
+
+impl From<SessionListPage> for AgentSessionListResponse {
+    fn from(value: SessionListPage) -> Self {
+        Self {
+            items: value.items,
+            next_cursor: value.next_cursor.map(Into::into),
+        }
+    }
+}
+
+/// List sessions by latest activity using cursor pagination.
+#[command]
+pub async fn agent_list_sessions(
+    manager: State<'_, AgentSessionManager>,
+    request: Option<ListAgentSessionsRequest>,
+) -> Result<AgentSessionListResponse, String> {
+    let request = request.unwrap_or(ListAgentSessionsRequest {
+        cursor: None,
+        limit: None,
+    });
+    let limit = request
+        .limit
+        .unwrap_or(DEFAULT_SESSION_LIST_LIMIT)
+        .clamp(1, MAX_SESSION_LIST_LIMIT);
+
+    manager
+        .list_sessions(request.cursor.map(Into::into), limit)
+        .await
+        .map(Into::into)
+}
+
+/// List sessions with unread attention for the notifications UI.
+#[command]
+pub async fn agent_list_attention_sessions(
+    manager: State<'_, AgentSessionManager>,
+) -> Result<Vec<SessionMetadata>, String> {
+    manager.list_attention_sessions().await
 }
 
 /// Pause a running workflow

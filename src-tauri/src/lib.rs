@@ -37,11 +37,11 @@ use commands::agent_commands::{
     agent_handle_compact_error, agent_handle_compact_response, agent_handle_llm_error,
     agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
     agent_inject_channel_message, agent_inject_channel_message_auto, agent_inject_messages,
-    agent_mark_session_viewed, agent_open_session, agent_pause_workflow,
-    agent_report_llm_streaming_issue, agent_respond_channel_permission,
-    agent_respond_tool_approval, agent_resume_session, agent_resume_workflow,
-    agent_save_compact_context, agent_send_message, agent_set_yolo_mode, agent_terminate_workflow,
-    agent_toggle_session_bookmark, agent_update_session_config,
+    agent_list_attention_sessions, agent_list_sessions, agent_mark_session_viewed,
+    agent_open_session, agent_pause_workflow, agent_report_llm_streaming_issue,
+    agent_respond_channel_permission, agent_respond_tool_approval, agent_resume_session,
+    agent_resume_workflow, agent_save_compact_context, agent_send_message, agent_set_yolo_mode,
+    agent_terminate_workflow, agent_toggle_session_bookmark, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant,
@@ -247,6 +247,8 @@ pub fn run() {
                 agent_get_session,
                 agent_get_tools,
                 agent_get_all_sessions,
+                agent_list_sessions,
+                agent_list_attention_sessions,
                 agent_delete_session,
                 agent_delete_session_only,
                 agent_get_available_tools,
@@ -362,8 +364,7 @@ pub fn run() {
             warn!("💡 Troubleshooting suggestions:");
             warn!("   1. Check WebKit/GTK installation: sudo apt install libwebkit2gtk-4.1-dev");
             warn!("   2. Update graphics drivers");
-            warn!("   3. Retry with LIBRAGENT_LINUX_COMPATIBILITY_MODE=1");
-            warn!("   4. Run in a desktop environment with proper display");
+            warn!("   3. Run in a desktop environment with proper display");
 
             std::process::exit(1);
         }

@@ -8,8 +8,8 @@ use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
-    CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
-    SessionStatus,
+    CompactContextRecord, CompactContextRepository, SessionListCursor, SessionListPage,
+    SessionMetadata, SessionRepository, SessionStatus,
 };
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -308,6 +308,18 @@ impl AgentSessionManager {
     /// Get all sessions
     pub async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, String> {
         crate::agent::lifecycle::get_all_sessions(&self.session_repo).await
+    }
+
+    pub async fn list_sessions(
+        &self,
+        cursor: Option<SessionListCursor>,
+        limit: u64,
+    ) -> Result<SessionListPage, String> {
+        crate::agent::lifecycle::list_sessions(&self.session_repo, cursor, limit).await
+    }
+
+    pub async fn list_attention_sessions(&self) -> Result<Vec<SessionMetadata>, String> {
+        crate::agent::lifecycle::list_attention_sessions(&self.session_repo).await
     }
 
     /// Recover sessions stuck in BUSY state after app crash/restart

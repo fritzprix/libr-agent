@@ -87,7 +87,10 @@ describe('AgentSessionListContext – toggleBookmark', () => {
 
     function setupWithSessions(sessions: ReturnType<typeof makeSession>[]) {
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions') return Promise.resolve(sessions);
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({ items: sessions, nextCursor: undefined });
+            }
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_toggle_session_bookmark') return Promise.resolve(undefined);
             return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
         });
@@ -137,7 +140,13 @@ describe('AgentSessionListContext – toggleBookmark', () => {
 
     it('reverts optimistic update when IPC call fails', async () => {
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions') return Promise.resolve([makeSession('s1', false)]);
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({
+                    items: [makeSession('s1', false)],
+                    nextCursor: undefined,
+                });
+            }
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_toggle_session_bookmark') return Promise.reject(new Error('network error'));
             return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
         });
@@ -163,7 +172,13 @@ describe('AgentSessionListContext – toggleBookmark', () => {
         const invokeArgs: unknown[] = [];
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
             invokeArgs.push({ cmd, args });
-            if (cmd === 'agent_get_all_sessions') return Promise.resolve([makeSession('s1', false)]);
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({
+                    items: [makeSession('s1', false)],
+                    nextCursor: undefined,
+                });
+            }
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_toggle_session_bookmark') return Promise.resolve(undefined);
             return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
         });
