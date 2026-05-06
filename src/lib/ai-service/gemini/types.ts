@@ -11,6 +11,7 @@ import {
  */
 export interface GeminiServiceConfig {
   responseMimeType: string;
+  abortSignal?: AbortSignal;
   tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
   toolConfig?: {
     functionCallingConfig?: {

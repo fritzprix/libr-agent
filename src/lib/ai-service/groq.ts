@@ -97,6 +97,7 @@ export class GroqService extends BaseAIService<
       messages,
       options,
     );
+    const abortSignal = this.getAbortSignal();
 
     try {
       const groqMessages = this.convertMessages(
@@ -110,20 +111,27 @@ export class GroqService extends BaseAIService<
       );
 
       const chatCompletion = await this.withRetry(() =>
-        this.groq.chat.completions.create({
-          messages: groqMessages,
-          model:
-            options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
-          temperature: config.temperature,
-          max_tokens: config.maxTokens,
-          reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
-          stream: true,
-          tools: tools,
-          tool_choice: options.availableTools ? 'auto' : undefined,
-        }),
+        this.groq.chat.completions.create(
+          {
+            messages: groqMessages,
+            model:
+              options.modelName ||
+              config.defaultModel ||
+              'llama-3.1-8b-instant',
+            temperature: config.temperature,
+            max_tokens: config.maxTokens,
+            reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
+            stream: true,
+            tools: tools,
+            tool_choice: options.availableTools ? 'auto' : undefined,
+          },
+          {
+            signal: abortSignal,
+          },
+        ),
       );
 
-      if (this.getAbortSignal().aborted) {
+      if (abortSignal.aborted) {
         this.logger.info('Stream aborted before iteration');
         return;
       }
@@ -133,7 +141,7 @@ export class GroqService extends BaseAIService<
       let firstChunkReceived = false;
 
       for await (const chunk of chatCompletion) {
-        if (this.getAbortSignal().aborted) {
+        if (abortSignal.aborted) {
           this.logger.info('Stream aborted during iteration');
           break;
         }
@@ -386,19 +394,25 @@ export class GroqService extends BaseAIService<
     const config = this.mergeConfig(options);
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
+    const abortSignal = this.getAbortSignal();
 
     const response = await this.withRetry(() =>
-      this.groq.chat.completions.create({
-        model,
-        stream: false,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: s?.maxTokens ?? config.maxTokens,
-        temperature: s?.temperature ?? config.temperature,
-        top_p: s?.topP,
-        presence_penalty: s?.presencePenalty,
-        frequency_penalty: s?.frequencyPenalty,
-        stop: s?.stopSequences,
-      }),
+      this.groq.chat.completions.create(
+        {
+          model,
+          stream: false,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: s?.maxTokens ?? config.maxTokens,
+          temperature: s?.temperature ?? config.temperature,
+          top_p: s?.topP,
+          presence_penalty: s?.presencePenalty,
+          frequency_penalty: s?.frequencyPenalty,
+          stop: s?.stopSequences,
+        },
+        {
+          signal: abortSignal,
+        },
+      ),
     );
 
     const choice = response.choices[0];

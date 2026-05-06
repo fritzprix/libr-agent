@@ -566,6 +566,7 @@ export class OpenAIService extends BaseAIService<
 
     const response = await this.withRetry(() =>
       this.openai.chat.completions.create(request, {
+        signal: this.getAbortSignal(),
         headers: {
           'x-libragent-request-id': requestId,
         },
