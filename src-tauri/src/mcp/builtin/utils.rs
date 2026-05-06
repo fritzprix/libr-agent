@@ -46,19 +46,18 @@ impl SecurityValidator {
 
     /// Validate and clean a file path to prevent directory traversal
     pub fn validate_path(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
-        // 디버깅을 위한 로깅 추가
+        // Log the input and effective base directory to simplify security debugging.
         tracing::debug!(
             "Validating path: '{}' against base: '{:?}'",
             user_path,
             self.base_dir
         );
 
-        // 경로 구분자 정규화 및 정리
         // Normalize both Unix ('/') and Windows ('\\') style separators to '/' for consistent, cross-platform behavior.
         let normalized_path = user_path.replace(['\\', '/'], "/");
         let mut clean_path = PathBuf::from(normalized_path).clean();
 
-        // 절대경로 처리: base_dir 내부에 있으면 허용하고 상대경로로 변환
+        // Accept absolute paths only when they already resolve under base_dir, then convert them to a relative path.
         if clean_path.is_absolute() {
             if clean_path.starts_with(&self.base_dir) {
                 match clean_path.strip_prefix(&self.base_dir) {
@@ -79,7 +78,7 @@ impl SecurityValidator {
                 )));
             }
         } else {
-            // Windows 드라이브 경로 금지 (C:, D: 등) - 상대경로인 경우에만 체크
+            // Reject Windows drive-letter paths (C:, D:, ...) before joining them with the workspace base.
             if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
                 return Err(SecurityError::PathTraversal(format!(
                     "Absolute paths with drive letters are not allowed for destination paths: '{user_path}'. \
@@ -89,7 +88,7 @@ impl SecurityValidator {
             }
         }
 
-        // 상위 디렉터리 탐색 금지
+        // Block parent-directory traversal before any filesystem access.
         let traversal_check_path = user_path.replace(['\\', '/'], "/");
 
         if Path::new(&traversal_check_path)
@@ -118,28 +117,40 @@ impl SecurityValidator {
             }
         }
 
-        // base_dir 기준 상대경로로만 처리
+        // Treat the cleaned path as relative to base_dir from this point on.
         let absolute_path = self.base_dir.join(clean_path);
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
-        // 부모 디렉터리 생성 로직 제거 (SecurityValidator는 검증만 수행해야 함)
-        // 쓰기 작업 시에는 SecureFileManager가 명시적으로 디렉터리를 생성함
+        // SecurityValidator only validates paths. Directory creation is handled explicitly by callers.
 
-        // 정규화하여 심볼릭 링크 공격 방지
+        // Canonicalize whenever possible to catch symlink-based escapes.
         let canonical_path = match absolute_path.canonicalize() {
             Ok(path) => path,
             Err(_) => {
-                // 파일이 존재하지 않는 경우 (쓰기 작업에서 발생 가능)
-                // We must traverse up to check if any existing parent directory escapes via symlinks.
+                // The full path may not exist yet during create/write flows, so walk upward until we
+                // find an existing parent. Reject unresolved symlink parents instead of skipping them,
+                // because a dangling symlink can later resolve outside base_dir.
                 let mut current = absolute_path.as_path();
                 let mut existing_canonical = None;
                 while let Some(parent) = current.parent() {
-                    if let Ok(canon) = parent.canonicalize() {
-                        existing_canonical = Some(canon);
-                        break;
+                    match parent.canonicalize() {
+                        Ok(canon) => {
+                            existing_canonical = Some(canon);
+                            break;
+                        }
+                        Err(_) => {
+                            if let Ok(metadata) = std::fs::symlink_metadata(parent) {
+                                if metadata.file_type().is_symlink() {
+                                    return Err(SecurityError::PathTraversal(format!(
+                                        "Path '{}' contains an unresolved symlink parent: {:?}",
+                                        user_path, parent
+                                    )));
+                                }
+                            }
+                            current = parent;
+                        }
                     }
-                    current = parent;
                 }
 
                 if let Some(canon) = existing_canonical {
@@ -159,11 +170,7 @@ impl SecurityValidator {
             }
         };
 
-        // 최종 검증: base_dir 하위인지 확인
-        // FIX: The original check `!canonical_path... && !absolute_path...` was flawed because
-        // `absolute_path` (constructed by joining base_dir with a relative path) ALWAYS starts with base_dir.
-        // This effectively bypassed the check if a symlink (canonical_path) pointed outside.
-        // We must enforce that the CANONICAL path (resolved symlinks) is within the base_dir.
+        // Final check: the resolved path must stay under base_dir after symlink resolution.
         if !canonical_path.starts_with(&self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Path '{}' resolves outside allowed directory. Base: {:?}, Resolved: {:?}",
@@ -190,7 +197,7 @@ impl SecurityValidator {
         let path_for_check = PathBuf::from(user_path.replace(['\\', '/'], "/"));
         for component in path_for_check.components() {
             if let Component::Normal(name) = component {
-                // Strip extension (CON.txt → CON) before checking.
+                // Strip the extension (CON.txt -> CON) before checking.
                 let stem = Path::new(name)
                     .file_stem()
                     .and_then(|s| s.to_str())

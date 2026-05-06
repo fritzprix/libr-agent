@@ -37,7 +37,7 @@ fn test_path_validation() {
         .validate_path("./subdir/../../../etc/passwd")
         .is_err());
 
-    // Windows 스타일 경로도 상대경로로 처리되지만, ".." 포함으로 차단됨
+    // Windows-style separators are normalized, but parent traversal must still be blocked.
     assert!(validator.validate_path("subdir\\..\\..\\Windows").is_err());
 }
 
@@ -177,6 +177,33 @@ fn test_symlink_traversal_nonexistent_file() {
     );
     if let Err(SecurityError::PathTraversal(msg)) = result {
         assert!(msg.contains("resolves outside allowed directory"));
+    } else {
+        panic!("Expected PathTraversal error");
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn test_dangling_symlink_parent_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let temp_dir = tempdir().unwrap();
+    let validator = SecurityValidator::new_with_base_dir(temp_dir.path().to_path_buf());
+
+    let outside_dir = tempdir().unwrap();
+    let missing_target_dir = outside_dir.path().join("missing-target");
+
+    let link_path = temp_dir.path().join("dangling_link_dir");
+    symlink(&missing_target_dir, &link_path).unwrap();
+
+    let result = validator.validate_path("dangling_link_dir/new_file.txt");
+
+    assert!(
+        result.is_err(),
+        "Dangling symlink parents should be rejected during path validation"
+    );
+    if let Err(SecurityError::PathTraversal(msg)) = result {
+        assert!(msg.contains("unresolved symlink parent"));
     } else {
         panic!("Expected PathTraversal error");
     }
