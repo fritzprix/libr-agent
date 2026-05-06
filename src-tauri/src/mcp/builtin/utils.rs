@@ -131,6 +131,26 @@ impl SecurityValidator {
             Ok(path) => path,
             Err(_) => {
                 // 파일이 존재하지 않는 경우 (쓰기 작업에서 발생 가능)
+                // We must traverse up to check if any existing parent directory escapes via symlinks.
+                let mut current = absolute_path.as_path();
+                let mut existing_canonical = None;
+                while let Some(parent) = current.parent() {
+                    if let Ok(canon) = parent.canonicalize() {
+                        existing_canonical = Some(canon);
+                        break;
+                    }
+                    current = parent;
+                }
+
+                if let Some(canon) = existing_canonical {
+                    if !canon.starts_with(&self.base_dir) {
+                        return Err(SecurityError::PathTraversal(format!(
+                            "Path '{}' resolves outside allowed directory. Base: {:?}, Resolved parent: {:?}",
+                            user_path, self.base_dir, canon
+                        )));
+                    }
+                }
+
                 tracing::debug!(
                     "File doesn't exist yet, using non-canonical path: '{:?}'",
                     absolute_path
@@ -588,6 +608,48 @@ mod tests {
                 "Failed to remove secret test file {:?}: {}",
                 secret_file, err
             );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_traversal_nonexistent_file() {
+        use std::os::unix::fs::symlink;
+        let temp_dir = std::env::temp_dir().join("mcp_symlink_nonexist_test");
+        if temp_dir.exists() {
+            std::fs::remove_dir_all(&temp_dir).unwrap();
+        }
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let validator = SecurityValidator::new_with_base_dir(temp_dir.clone());
+
+        // Create an outside directory
+        let outside_dir = std::env::temp_dir().join("mcp_outside_dir");
+        if outside_dir.exists() {
+            std::fs::remove_dir_all(&outside_dir).unwrap();
+        }
+        std::fs::create_dir_all(&outside_dir).unwrap();
+
+        // Create a symlink inside base_dir pointing to outside directory
+        let link_path = temp_dir.join("bad_link_dir");
+        symlink(&outside_dir, &link_path).unwrap();
+
+        // Try to access a nonexistent file via the symlink
+        let result = validator.validate_path("bad_link_dir/nonexistent_file.txt");
+
+        assert!(result.is_err(), "Symlink traversal to nonexistent file should be blocked");
+        if let Err(SecurityError::PathTraversal(msg)) = result {
+            assert!(msg.contains("resolves outside allowed directory"));
+        } else {
+            panic!("Expected PathTraversal error");
+        }
+
+        // Cleanup
+        if let Err(err) = std::fs::remove_dir_all(&temp_dir) {
+            eprintln!("Failed to remove test directory {:?}: {}", temp_dir, err);
+        }
+        if let Err(err) = std::fs::remove_dir_all(&outside_dir) {
+            eprintln!("Failed to remove test outside directory {:?}: {}", outside_dir, err);
         }
     }
 }
