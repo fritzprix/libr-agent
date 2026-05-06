@@ -204,9 +204,7 @@ export default function KnowledgePage() {
         onCancelDelete={cancelDelete}
         onClose={closeDetail}
         onRequestDelete={
-          isDeleteConfirming
-            ? () => void deleteSelectedItem()
-            : requestDelete
+          isDeleteConfirming ? () => void deleteSelectedItem() : requestDelete
         }
         selectedItem={selectedItem}
       />

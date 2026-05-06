@@ -1,6 +1,12 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, FileText, Loader2, Network, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  FileText,
+  Loader2,
+  Network,
+  Trash2,
+} from 'lucide-react';
 import {
   Button,
   Dialog,
