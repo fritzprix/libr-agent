@@ -42,20 +42,20 @@ export function useKnowledgeBrowser() {
     setListRefreshToken((current) => current + 1);
   }, []);
   const {
+    cancelDelete,
     deleteSelectedItem,
-    isDeleteDialogOpen,
+    isDeleteConfirming,
     isDeleting,
     requestDelete,
-    setIsDeleteDialogOpen,
   } = useKnowledgeDelete({
     onDeleted: handleDeleted,
     selectedItem,
   });
 
   const closeDetail = useCallback(() => {
-    setIsDeleteDialogOpen(false);
+    cancelDelete();
     setSelectedId(null);
-  }, [setIsDeleteDialogOpen]);
+  }, [cancelDelete]);
 
   const selectItem = useCallback((id: number) => {
     setSelectedId(id);
@@ -64,11 +64,12 @@ export function useKnowledgeBrowser() {
   return {
     assistantFilter,
     assistants,
+    cancelDelete,
     closeDetail,
     deleteSelectedItem,
     detail,
     hasMoreItems,
-    isDeleteDialogOpen,
+    isDeleteConfirming,
     isDeleting,
     isDetailLoading,
     isDetailOpen: selectedItem !== null,
@@ -83,7 +84,6 @@ export function useKnowledgeBrowser() {
     selectedId,
     selectedItem,
     setAssistantFilter,
-    setIsDeleteDialogOpen,
     setQuery,
   };
 }
