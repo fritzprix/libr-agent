@@ -27,6 +27,19 @@ import { getLogger } from '../lib/logger';
 import { useLLMService, useStreamingMessage } from './LLMServiceContext';
 
 const logger = getLogger('AgentChatContext');
+
+/**
+ * ⚡ Bolt: Optimized helper to find the last persisted assistant message without O(N) array clone and reverse
+ */
+const findLastPersistedAssistantMessage = (messages: Message[]): Message | undefined => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && !messages[i].isStreaming) {
+      return messages[i];
+    }
+  }
+  return undefined;
+};
+
 export { isAssistantStreamingMessageSuperseded } from '@/lib/message-utils';
 
 /**
@@ -255,9 +268,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       return;
     }
 
-    const lastPersistedAssistantMessage = [...sessionMessages]
-      .reverse()
-      .find((message) => message.role === 'assistant' && !message.isStreaming);
+    const lastPersistedAssistantMessage = findLastPersistedAssistantMessage(sessionMessages);
 
     if (!lastPersistedAssistantMessage) {
       return;
@@ -291,9 +302,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     const displayed = [...sessionMessages];
     const displayedIds = new Set(displayed.map((message) => message.id));
-    const lastPersistedAssistantMessage = [...sessionMessages]
-      .reverse()
-      .find((message) => message.role === 'assistant' && !message.isStreaming);
+    const lastPersistedAssistantMessage = findLastPersistedAssistantMessage(sessionMessages);
 
     // Append pending messages (optimistic UI)
     if (pendingMessages.length > 0) {
