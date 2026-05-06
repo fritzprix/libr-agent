@@ -255,6 +255,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       options,
     );
     try {
+      const abortSignal = this.getAbortSignal();
       const normalizedContextInjection = this.prepareContextInjection(
         options.systemPrompt,
         options.sessionContext,
@@ -323,6 +324,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       const createGeminiConfig = (): GeminiServiceConfig => {
         const geminiConfig: GeminiServiceConfig = {
           responseMimeType: 'text/plain',
+          abortSignal,
         };
 
         if (geminiTools) {
@@ -389,13 +391,13 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         return createStream(geminiConfig);
       });
 
-      if (this.getAbortSignal().aborted) {
+      if (abortSignal.aborted) {
         this.logger.debug('Stream aborted before iteration');
         return;
       }
 
       // Use the stream processing logic from stream.ts
-      yield* processGeminiStream(result, this.getAbortSignal(), this.logger);
+      yield* processGeminiStream(result, abortSignal, this.logger);
     } catch (error) {
       if (
         error instanceof Error &&
@@ -544,11 +546,13 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     const model =
       options?.modelName || rawConfig.defaultModel || getDefaultModel();
     const s = options?.samplingOptions;
+    const abortSignal = this.getAbortSignal();
 
     const response = await this.withRetry(() =>
       this.genAI.models.generateContent({
         model,
         config: {
+          abortSignal,
           maxOutputTokens: s?.maxTokens ?? rawConfig.maxTokens,
           temperature: s?.temperature ?? rawConfig.temperature,
           topP: s?.topP,
