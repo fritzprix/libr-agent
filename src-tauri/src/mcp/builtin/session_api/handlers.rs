@@ -568,9 +568,14 @@ pub async fn handle_tool_call(
             Ok(success_result(message, session_responses))
         }
         "listAgentTypes" => {
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20);
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+
             let assistant_repo = crate::state::get_assistant_repository();
+            let total_count = assistant_repo.count_assistants().await.unwrap_or(0);
+
             let assistants = assistant_repo
-                .list_assistants()
+                .list_assistants_paginated(limit, offset)
                 .await
                 .map_err(|e| format!("Failed to list assistants: {}", e))?;
             let data = serde_json::to_value(&assistants)
@@ -583,9 +588,17 @@ pub async fn handle_tool_call(
                 .unwrap_or_default();
 
             let message = if assistants.is_empty() {
-                "No assistant types available.".to_string()
+                format!("No assistant types available at offset {}.", offset)
             } else {
-                let mut lines = vec![format!("Available assistant types ({}):", assistants.len())];
+                let mut lines = vec![
+                    format!(
+                        "Available assistant types (Showing {} of {}):",
+                        assistants.len(),
+                        total_count
+                    ),
+                    "| Name | ID | Model | Description |".to_string(),
+                    "|---|---|---|---|".to_string(),
+                ];
 
                 for assistant in &assistants {
                     let id = assistant
@@ -595,7 +608,9 @@ pub async fn handle_tool_call(
                     let name = assistant
                         .get("name")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Unnamed");
+                        .unwrap_or("Unnamed")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
 
                     let config = assistant.get("config").cloned().unwrap_or(json!({}));
                     let parsed_config = if let Some(s) = config.as_str() {
@@ -603,19 +618,28 @@ pub async fn handle_tool_call(
                     } else {
                         config
                     };
-                    let description = extract_assistant_description(&parsed_config);
+                    let description = extract_assistant_description(&parsed_config)
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
                     let model = parsed_config
                         .get("model")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Unknown");
+                        .unwrap_or("Unknown")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
 
                     lines.push(format!(
-                        "- {} [ID: {}]\n  model: {}\n  description: {}",
+                        "| {} | `{}` | {} | {} |",
                         name, id, model, description
                     ));
                 }
 
-                lines.join("\n")
+                let mut msg = lines.join("\n");
+
+                if offset + limit < total_count {
+                    msg.push_str(&format!("\n\n*(Showing {}/{} results. Call this tool again with offset: {} to see more)*", assistants.len(), total_count, offset + limit));
+                }
+                msg
             };
 
             Ok(success_result(message, data))
