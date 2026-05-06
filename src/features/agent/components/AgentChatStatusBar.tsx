@@ -64,13 +64,6 @@ export function AgentChatStatusBar() {
   });
 
   useEffect(() => {
-    setPersistedMetrics({
-      sessionId,
-      usage: null,
-    });
-  }, [sessionId]);
-
-  useEffect(() => {
     if (!sessionId || !metrics) {
       return;
     }
