@@ -637,7 +637,10 @@ mod tests {
         // Try to access a nonexistent file via the symlink
         let result = validator.validate_path("bad_link_dir/nonexistent_file.txt");
 
-        assert!(result.is_err(), "Symlink traversal to nonexistent file should be blocked");
+        assert!(
+            result.is_err(),
+            "Symlink traversal to nonexistent file should be blocked"
+        );
         if let Err(SecurityError::PathTraversal(msg)) = result {
             assert!(msg.contains("resolves outside allowed directory"));
         } else {
@@ -649,7 +652,10 @@ mod tests {
             eprintln!("Failed to remove test directory {:?}: {}", temp_dir, err);
         }
         if let Err(err) = std::fs::remove_dir_all(&outside_dir) {
-            eprintln!("Failed to remove test outside directory {:?}: {}", outside_dir, err);
+            eprintln!(
+                "Failed to remove test outside directory {:?}: {}",
+                outside_dir, err
+            );
         }
     }
 }
