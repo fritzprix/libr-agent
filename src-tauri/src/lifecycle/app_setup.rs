@@ -3,11 +3,19 @@ use crate::lifecycle::settings::SystemSettings;
 use crate::logger;
 use crate::repositories;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::services::skill_service::{
+    LEGACY_SYSTEM_SKILLS_DIR_NAME, MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME,
+    SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_DIR_NAME,
+};
 use crate::services::{DroppedFileService, InteractiveBrowserServer, SecureFileManager};
 use crate::state;
 use log::info;
 #[cfg(target_os = "linux")]
 use log::warn;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
 
@@ -15,6 +23,154 @@ use tauri::{App, Emitter, Listener, Manager};
 /// Used to distinguish bundled skills from user-created ones so that skills
 /// removed from the bundle can be cleaned up automatically on the next launch.
 const BUNDLED_SKILL_MARKER: &str = ".bundled_skill";
+const MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BundledSkillsManifest {
+    schema_version: u32,
+    skills: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct LegacySkillMigrationSummary {
+    removed_legacy_snapshot_entries: usize,
+    migrated_user_skills: usize,
+    skipped_existing_user_skills: usize,
+    removed_legacy_root_dir: bool,
+}
+
+impl LegacySkillMigrationSummary {
+    fn is_noop(&self) -> bool {
+        self.removed_legacy_snapshot_entries == 0
+            && self.migrated_user_skills == 0
+            && self.skipped_existing_user_skills == 0
+            && !self.removed_legacy_root_dir
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StartupSettingsSnapshot {
+    web_action_timeout: std::time::Duration,
+    http_port: u16,
+    http_expose: bool,
+    search_index_frequency_minutes: u64,
+    active_agents: u32,
+    suspended_agents: u32,
+    active_processes: u32,
+    suspended_processes: u32,
+}
+
+async fn load_startup_settings() -> StartupSettingsSnapshot {
+    use crate::agent::concurrency::{
+        DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES, DEFAULT_MAX_SUSPENDED_AGENTS,
+        DEFAULT_MAX_SUSPENDED_PROCESSES,
+    };
+    use crate::state::get_settings_repository;
+
+    let settings_repo = get_settings_repository();
+    let system_settings = match settings_repo.get("systemSettings").await {
+        Ok(Some(model)) => serde_json::from_str::<SystemSettings>(&model.value).unwrap_or_default(),
+        _ => SystemSettings::default(),
+    };
+
+    let advanced_settings = match settings_repo.get("advancedSettings").await {
+        Ok(Some(model)) => {
+            serde_json::from_str::<serde_json::Value>(&model.value).unwrap_or_default()
+        }
+        _ => serde_json::Value::Null,
+    };
+
+    let get_u32 = |key: &str, default: u32| -> u32 {
+        advanced_settings
+            .get(key)
+            .and_then(|value| value.as_u64())
+            .map(|value| value.clamp(1, 256) as u32)
+            .unwrap_or(default)
+    };
+
+    StartupSettingsSnapshot {
+        web_action_timeout: std::time::Duration::from_secs(
+            system_settings.web_action_timeout_seconds.unwrap_or(30),
+        ),
+        http_port: system_settings.http_server_port.unwrap_or(3030),
+        http_expose: system_settings.http_server_expose.unwrap_or(false),
+        search_index_frequency_minutes: system_settings.search_index_frequency_minutes.unwrap_or(5),
+        active_agents: get_u32("maxConcurrentActiveSessions", DEFAULT_MAX_ACTIVE_AGENTS),
+        suspended_agents: get_u32("maxSuspendedSessions", DEFAULT_MAX_SUSPENDED_AGENTS),
+        active_processes: get_u32("maxConcurrentActiveProcesses", DEFAULT_MAX_ACTIVE_PROCESSES),
+        suspended_processes: get_u32("maxSuspendedProcesses", DEFAULT_MAX_SUSPENDED_PROCESSES),
+    }
+}
+
+fn spawn_managed_skills_startup_work(bundled_skills_dir: PathBuf, system_skills_dir: PathBuf) {
+    crate::state::begin_managed_skills_sync();
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = async {
+            match migrate_legacy_skills_to_managed_storage().await {
+                Ok(summary) if summary.is_noop() => {
+                    log::debug!("No legacy skills migration work was needed");
+                }
+                Ok(summary) => {
+                    info!(
+                        "✅ Legacy skills migration completed (removed snapshots: {}, migrated user skills: {}, skipped existing user skills: {}, removed legacy root: {})",
+                        summary.removed_legacy_snapshot_entries,
+                        summary.migrated_user_skills,
+                        summary.skipped_existing_user_skills,
+                        summary.removed_legacy_root_dir
+                    );
+                }
+                Err(error) => {
+                    log::warn!("⚠️  Failed to migrate legacy skills: {}", error);
+                }
+            }
+
+            if let Err(error) =
+                sync_managed_system_skills_snapshot(&bundled_skills_dir, &system_skills_dir)
+            {
+                log::warn!("⚠️  Failed to sync managed system skills snapshot: {}", error);
+            } else {
+                info!("✅ Managed system skills snapshot synchronized");
+            }
+
+            crate::services::skill_service::invalidate_skill_scan_cache();
+
+            if let Err(error) = crate::services::skill_service::prewarm_managed_skill_scans().await
+            {
+                log::warn!("⚠️  Failed to prewarm managed skill cache: {}", error);
+            }
+
+            Ok::<(), String>(())
+        }
+        .await
+        {
+            log::warn!("⚠️  Managed skills startup preparation finished with warnings: {}", e);
+        }
+
+        crate::state::complete_managed_skills_sync();
+    });
+}
+
+fn spawn_startup_maintenance_tasks(
+    session_manager: crate::session::SessionManager,
+    search_index_frequency_minutes: u64,
+) {
+    tauri::async_runtime::spawn(async move {
+        match session_manager.cleanup_old_sessions(24, 5).await {
+            Ok(count) => info!(
+                "🧹 Session cleanup completed: removed {} old sessions",
+                count
+            ),
+            Err(error) => log::error!("❌ Session cleanup failed: {}", error),
+        }
+    });
+
+    let _indexing_worker = crate::search::IndexingWorker::new(std::time::Duration::from_secs(
+        search_index_frequency_minutes * 60,
+    ));
+    info!("✅ Background message indexing worker started");
+}
 
 /// Migration decision for a legacy skill directory from AppData/skills.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,56 +198,352 @@ pub fn classify_legacy_skill_for_managed_storage(
     }
 }
 
-/// Replaces the AppData/skills bundled snapshot with an exact mirror of the
-/// currently bundled skills shipped in application resources.
-pub fn sync_legacy_global_skills_to_bundled_snapshot(
-    bundled_skills_dir: &std::path::Path,
-    legacy_skills_dir: &std::path::Path,
-) -> Result<(), String> {
-    if legacy_skills_dir.exists() {
-        std::fs::remove_dir_all(legacy_skills_dir).map_err(|e| e.to_string())?;
+fn collect_skill_directory_names(skills_dir: &Path) -> Result<BTreeSet<String>, String> {
+    if !skills_dir.exists() {
+        return Ok(BTreeSet::new());
     }
-    std::fs::create_dir_all(legacy_skills_dir).map_err(|e| e.to_string())?;
 
+    let mut names = BTreeSet::new();
+    for entry in std::fs::read_dir(skills_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !entry.path().is_dir() {
+            continue;
+        }
+
+        names.insert(entry.file_name().to_string_lossy().to_string());
+    }
+
+    Ok(names)
+}
+
+fn normalized_relative_path(root: &Path, path: &Path) -> Result<String, String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|error| format!("Failed to strip prefix for {}: {}", path.display(), error))?;
+    Ok(relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().replace('\\', "/"))
+        .collect::<Vec<_>>()
+        .join("/"))
+}
+
+fn hash_skill_directory(skill_dir: &Path) -> Result<String, String> {
+    let mut files = walkdir::WalkDir::new(skill_dir)
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to scan {}: {}", skill_dir.display(), error))?
+        .into_iter()
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| {
+            let path = entry.into_path();
+            let normalized = normalized_relative_path(skill_dir, &path)?;
+            Ok((normalized, path))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut hasher = Sha256::new();
+    for (relative_path, full_path) in files {
+        hasher.update(relative_path.as_bytes());
+        hasher.update([0]);
+        hasher.update(
+            std::fs::read(&full_path)
+                .map_err(|error| format!("Failed to read {}: {}", full_path.display(), error))?,
+        );
+        hasher.update([0]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn build_bundled_skills_manifest(skills_dir: &Path) -> Result<BundledSkillsManifest, String> {
+    let mut manifest = BundledSkillsManifest {
+        schema_version: MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION,
+        skills: BTreeMap::new(),
+    };
+
+    if !skills_dir.exists() {
+        return Ok(manifest);
+    }
+
+    let mut entries = std::fs::read_dir(skills_dir)
+        .map_err(|error| format!("Failed to read {}: {}", skills_dir.display(), error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read directory entry: {}", error))?;
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+    for entry in entries {
+        let skill_path = entry.path();
+        if !skill_path.is_dir() {
+            continue;
+        }
+
+        if !skill_path.join(SKILL_FILE_NAME).is_file() {
+            continue;
+        }
+
+        let skill_dir_name = entry.file_name().to_string_lossy().to_string();
+        manifest
+            .skills
+            .insert(skill_dir_name, hash_skill_directory(&skill_path)?);
+    }
+
+    Ok(manifest)
+}
+
+fn load_persisted_bundled_skills_manifest(
+    manifest_path: &Path,
+) -> Result<Option<BundledSkillsManifest>, String> {
+    if !manifest_path.exists() {
+        return Ok(None);
+    }
+
+    let payload = std::fs::read(manifest_path)
+        .map_err(|error| format!("Failed to read {}: {}", manifest_path.display(), error))?;
+    let manifest = match serde_json::from_slice::<BundledSkillsManifest>(&payload) {
+        Ok(manifest) => manifest,
+        Err(_) => return Ok(None),
+    };
+
+    if manifest.schema_version != MANAGED_SYSTEM_SKILLS_MANIFEST_SCHEMA_VERSION {
+        return Ok(None);
+    }
+
+    Ok(Some(manifest))
+}
+
+fn write_manifest_atomically(
+    manifest_path: &Path,
+    manifest: &BundledSkillsManifest,
+) -> Result<(), String> {
+    let payload = serde_json::to_vec_pretty(manifest)
+        .map_err(|error| format!("Failed to serialize manifest: {}", error))?;
+    let temp_path = manifest_path.with_extension("json.tmp");
+    let backup_path = manifest_path.with_extension("json.bak");
+
+    std::fs::write(&temp_path, payload)
+        .map_err(|error| format!("Failed to write {}: {}", temp_path.display(), error))?;
+
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path).map_err(|error| {
+            format!(
+                "Failed to clear backup manifest {}: {}",
+                backup_path.display(),
+                error
+            )
+        })?;
+    }
+
+    let moved_existing_to_backup = if manifest_path.exists() {
+        std::fs::rename(manifest_path, &backup_path).map_err(|error| {
+            format!(
+                "Failed to move existing manifest {} aside: {}",
+                manifest_path.display(),
+                error
+            )
+        })?;
+        true
+    } else {
+        false
+    };
+
+    match std::fs::rename(&temp_path, manifest_path) {
+        Ok(()) => {
+            if moved_existing_to_backup {
+                std::fs::remove_file(&backup_path).map_err(|error| {
+                    format!(
+                        "Failed to remove backup manifest {}: {}",
+                        backup_path.display(),
+                        error
+                    )
+                })?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&temp_path);
+            if moved_existing_to_backup && !manifest_path.exists() {
+                let _ = std::fs::rename(&backup_path, manifest_path);
+            }
+            Err(format!(
+                "Failed to finalize manifest {}: {}",
+                manifest_path.display(),
+                error
+            ))
+        }
+    }
+}
+
+fn replace_skill_directory_atomically(source_dir: &Path, target_dir: &Path) -> Result<(), String> {
+    let parent = target_dir
+        .parent()
+        .ok_or_else(|| format!("Invalid managed skill path: {}", target_dir.display()))?;
+    let skill_name = target_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            format!(
+                "Invalid managed skill directory name: {}",
+                target_dir.display()
+            )
+        })?;
+
+    let temp_dir = parent.join(format!(".sync-tmp-{}", skill_name));
+    let backup_dir = parent.join(format!(".sync-backup-{}", skill_name));
+
+    if temp_dir.exists() {
+        std::fs::remove_dir_all(&temp_dir).map_err(|error| {
+            format!("Failed to clear temp dir {}: {}", temp_dir.display(), error)
+        })?;
+    }
+    if backup_dir.exists() {
+        std::fs::remove_dir_all(&backup_dir).map_err(|error| {
+            format!(
+                "Failed to clear backup dir {}: {}",
+                backup_dir.display(),
+                error
+            )
+        })?;
+    }
+
+    copy_dir_recursive_path(source_dir, &temp_dir).map_err(|e| e.to_string())?;
+
+    let moved_existing_to_backup = if target_dir.exists() {
+        std::fs::rename(target_dir, &backup_dir).map_err(|error| {
+            format!(
+                "Failed to move existing managed skill {} aside: {}",
+                target_dir.display(),
+                error
+            )
+        })?;
+        true
+    } else {
+        false
+    };
+
+    match std::fs::rename(&temp_dir, target_dir) {
+        Ok(()) => {
+            if moved_existing_to_backup {
+                std::fs::remove_dir_all(&backup_dir).map_err(|error| {
+                    format!(
+                        "Failed to remove backup dir {}: {}",
+                        backup_dir.display(),
+                        error
+                    )
+                })?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            if moved_existing_to_backup && !target_dir.exists() {
+                let _ = std::fs::rename(&backup_dir, target_dir);
+            }
+            Err(format!(
+                "Failed to activate managed skill {}: {}",
+                target_dir.display(),
+                error
+            ))
+        }
+    }
+}
+
+/// Synchronize the managed system skills snapshot with the packaged bundled skills.
+///
+/// This keeps a runtime-owned app-data mirror instead of treating packaged resources
+/// as the live source of truth, while avoiding full delete-and-recopy work when only
+/// a subset of bundled skills changed.
+pub fn sync_managed_system_skills_snapshot(
+    bundled_skills_dir: &std::path::Path,
+    system_skills_dir: &std::path::Path,
+) -> Result<(), String> {
     if !bundled_skills_dir.exists() {
         return Ok(());
     }
 
-    for entry in std::fs::read_dir(bundled_skills_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let source_path = entry.path();
-        if !source_path.is_dir() {
-            continue;
-        }
+    std::fs::create_dir_all(system_skills_dir).map_err(|e| e.to_string())?;
 
-        let target_path = legacy_skills_dir.join(entry.file_name());
-        copy_dir_recursive_path(&source_path, &target_path).map_err(|e| e.to_string())?;
-        std::fs::write(target_path.join(BUNDLED_SKILL_MARKER), "").map_err(|e| e.to_string())?;
+    let manifest_path = system_skills_dir.join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME);
+    let source_manifest = build_bundled_skills_manifest(bundled_skills_dir)?;
+    let source_skill_names = source_manifest
+        .skills
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let installed_skill_names = collect_skill_directory_names(system_skills_dir)?;
+    let persisted_manifest = load_persisted_bundled_skills_manifest(&manifest_path)?;
+    let installed_manifest = match persisted_manifest.as_ref() {
+        Some(manifest) => manifest.clone(),
+        None => build_bundled_skills_manifest(system_skills_dir)?,
+    };
+
+    if installed_manifest == source_manifest && installed_skill_names == source_skill_names {
+        if persisted_manifest.is_none() {
+            write_manifest_atomically(&manifest_path, &source_manifest)?;
+        }
+        return Ok(());
     }
 
+    for obsolete_skill in installed_skill_names.difference(&source_skill_names) {
+        std::fs::remove_dir_all(system_skills_dir.join(obsolete_skill)).map_err(|error| {
+            format!(
+                "Failed to delete obsolete managed skill {}: {}",
+                obsolete_skill, error
+            )
+        })?;
+    }
+
+    for (skill_name, source_hash) in &source_manifest.skills {
+        let target_dir = system_skills_dir.join(skill_name);
+        let needs_update =
+            installed_manifest.skills.get(skill_name) != Some(source_hash) || !target_dir.exists();
+
+        if needs_update {
+            replace_skill_directory_atomically(&bundled_skills_dir.join(skill_name), &target_dir)?;
+        }
+    }
+
+    write_manifest_atomically(&manifest_path, &source_manifest)?;
     Ok(())
 }
 
 /// Move legacy user-managed skills from AppData/skills into AppData/user_skills.
 /// Old `.bundled_skill` snapshot entries are always discarded so the bundled
 /// system snapshot can be rebuilt as an exact copy of the current bundle.
+pub fn remove_legacy_skills_dir_if_empty(
+    legacy_skills_dir: &Path,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if !legacy_skills_dir.exists() {
+        return Ok(false);
+    }
+
+    let mut entries = std::fs::read_dir(legacy_skills_dir)?;
+    if entries.next().is_some() {
+        return Ok(false);
+    }
+
+    std::fs::remove_dir(legacy_skills_dir)?;
+    Ok(true)
+}
+
 async fn migrate_legacy_skills_to_managed_storage(
-    _app: &App,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<LegacySkillMigrationSummary, Box<dyn std::error::Error>> {
     use std::fs;
 
     let base_data_dir = crate::session::get_session_manager()
         .map_err(std::io::Error::other)?
         .get_base_data_dir()
         .clone();
-    let legacy_skills_dir = base_data_dir.join("skills");
-    let user_skills_dir = base_data_dir.join("user_skills");
+    let legacy_skills_dir = base_data_dir.join(LEGACY_SYSTEM_SKILLS_DIR_NAME);
+    let user_skills_dir = base_data_dir.join(USER_SKILLS_DIR_NAME);
 
     if !legacy_skills_dir.exists() {
-        return Ok(());
+        return Ok(LegacySkillMigrationSummary::default());
     }
 
     fs::create_dir_all(&user_skills_dir)?;
+    let mut summary = LegacySkillMigrationSummary::default();
 
     for entry in fs::read_dir(&legacy_skills_dir)? {
         let entry = entry?;
@@ -110,6 +562,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                 skill_name
             );
             fs::remove_dir_all(&legacy_skill_dir)?;
+            summary.removed_legacy_snapshot_entries += 1;
             continue;
         }
 
@@ -118,6 +571,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                 "⏭️  Managed user skill already exists, leaving legacy copy untouched: {:?}",
                 skill_name
             );
+            summary.skipped_existing_user_skills += 1;
             continue;
         }
 
@@ -127,6 +581,7 @@ async fn migrate_legacy_skills_to_managed_storage(
                     "📦 Migrated legacy skill into managed storage: {:?}",
                     skill_name
                 );
+                summary.migrated_user_skills += 1;
             }
             Err(error) => {
                 log::warn!(
@@ -136,11 +591,14 @@ async fn migrate_legacy_skills_to_managed_storage(
                 );
                 copy_dir_recursive(&legacy_skill_dir, &target_skill_dir)?;
                 fs::remove_dir_all(&legacy_skill_dir)?;
+                summary.migrated_user_skills += 1;
             }
         }
     }
 
-    Ok(())
+    summary.removed_legacy_root_dir = remove_legacy_skills_dir_if_empty(&legacy_skills_dir)?;
+
+    Ok(summary)
 }
 
 /// Recursively copy directory contents
@@ -190,47 +648,17 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(dropped_file_service);
     info!("✅ DroppedFileService initialized");
 
-    // Migrate legacy AppData/skills user content into the managed user_skills directory.
-    tauri::async_runtime::block_on(async {
-        if let Err(e) = migrate_legacy_skills_to_managed_storage(app).await {
-            log::warn!("⚠️  Failed to migrate legacy skills: {}", e);
-        } else {
-            info!("✅ Legacy skills migration completed");
-        }
-    });
+    let session_manager = crate::session::get_session_manager()
+        .map_err(std::io::Error::other)?
+        .clone();
+    let resource_dir = app.path().resource_dir()?;
+    let bundled_skills_dir = resource_dir.join("bundled_skills");
+    let system_skills_dir = session_manager
+        .get_base_data_dir()
+        .join(SYSTEM_SKILLS_DIR_NAME);
+    spawn_managed_skills_startup_work(bundled_skills_dir, system_skills_dir);
 
-    // Keep the AppData/skills bundled snapshot aligned with bundled_skills so the
-    // runtime system skills directory never depends on the packaged install path.
-    if let Err(e) = {
-        let resource_dir = app.path().resource_dir()?;
-        let bundled_skills_dir = resource_dir.join("bundled_skills");
-        let legacy_skills_dir = crate::session::get_session_manager()
-            .map_err(std::io::Error::other)?
-            .get_base_data_dir()
-            .join("skills");
-        sync_legacy_global_skills_to_bundled_snapshot(&bundled_skills_dir, &legacy_skills_dir)
-    } {
-        log::warn!("⚠️  Failed to sync bundled skills snapshot: {}", e);
-    } else {
-        info!("✅ Bundled skills snapshot synchronized");
-    }
-
-    // Fetch System Settings
-    let (web_action_timeout, http_port, http_expose) = tauri::async_runtime::block_on(async {
-        use crate::state::get_settings_repository;
-        let settings_repo = get_settings_repository();
-        match settings_repo.get("systemSettings").await {
-            Ok(Some(model)) => {
-                let s: SystemSettings = serde_json::from_str(&model.value).unwrap_or_default();
-                (
-                    std::time::Duration::from_secs(s.web_action_timeout_seconds.unwrap_or(30)),
-                    s.http_server_port.unwrap_or(3030),
-                    s.http_server_expose.unwrap_or(false),
-                )
-            }
-            _ => (std::time::Duration::from_secs(30), 3030, false),
-        }
-    });
+    let startup_settings = tauri::async_runtime::block_on(load_startup_settings());
 
     // MCP HTTP endpoint is enabled via env var or --mcp CLI flag
     let mcp_enabled =
@@ -241,11 +669,12 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             app.handle().clone(),
         ),
     );
-    let browser_server = InteractiveBrowserServer::new(browser_env, web_action_timeout);
+    let browser_server =
+        InteractiveBrowserServer::new(browser_env, startup_settings.web_action_timeout);
     app.manage(browser_server);
     info!(
         "✅ Interactive Browser Server initialized with timeout: {:?}",
-        web_action_timeout
+        startup_settings.web_action_timeout
     );
 
     // Initialize Agent Session Manager with proxy manager
@@ -266,60 +695,36 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     app.manage(agent_session_manager);
 
-    // SP1 + SP2: Initialize SessionBus and ConcurrencyGate from advanced settings.
-    // Read values with fallback to hardcoded defaults when settings are absent.
-    tauri::async_runtime::block_on(async {
-        use crate::agent::concurrency::{
-            ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
-            DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
-        };
+    {
+        use crate::agent::concurrency::ConcurrencyGate;
         use crate::agent::session_bus::SessionBus;
-        use crate::state::get_settings_repository;
-
-        let (active_agents, suspended_agents, active_procs, suspended_procs) =
-            match get_settings_repository().get("advancedSettings").await {
-                Ok(Some(model)) => {
-                    let json: serde_json::Value =
-                        serde_json::from_str(&model.value).unwrap_or_default();
-                    let get_u32 = |key: &str, default: u32| -> u32 {
-                        json.get(key)
-                            .and_then(|v| v.as_u64())
-                            .map(|v| v.clamp(1, 256) as u32)
-                            .unwrap_or(default)
-                    };
-                    (
-                        get_u32("maxConcurrentActiveSessions", DEFAULT_MAX_ACTIVE_AGENTS),
-                        get_u32("maxSuspendedSessions", DEFAULT_MAX_SUSPENDED_AGENTS),
-                        get_u32("maxConcurrentActiveProcesses", DEFAULT_MAX_ACTIVE_PROCESSES),
-                        get_u32("maxSuspendedProcesses", DEFAULT_MAX_SUSPENDED_PROCESSES),
-                    )
-                }
-                _ => (
-                    DEFAULT_MAX_ACTIVE_AGENTS,
-                    DEFAULT_MAX_SUSPENDED_AGENTS,
-                    DEFAULT_MAX_ACTIVE_PROCESSES,
-                    DEFAULT_MAX_SUSPENDED_PROCESSES,
-                ),
-            };
 
         crate::state::init_session_bus(SessionBus::new());
         crate::state::init_concurrency_gate(ConcurrencyGate::new(
-            active_agents,
-            suspended_agents,
-            active_procs,
-            suspended_procs,
+            startup_settings.active_agents,
+            startup_settings.suspended_agents,
+            startup_settings.active_processes,
+            startup_settings.suspended_processes,
         ));
 
         info!(
             "✅ ConcurrencyGate initialized: active_agents={} suspended_agents={} \
              active_processes={} suspended_processes={}",
-            active_agents, suspended_agents, active_procs, suspended_procs,
+            startup_settings.active_agents,
+            startup_settings.suspended_agents,
+            startup_settings.active_processes,
+            startup_settings.suspended_processes,
         );
-    });
+    }
 
     // Initialize global AppHandle for event emission from builtin tools
     crate::state::init_app_handle(app.handle().clone());
     info!("✅ Global AppHandle initialized for event emission");
+
+    spawn_startup_maintenance_tasks(
+        session_manager,
+        startup_settings.search_index_frequency_minutes,
+    );
 
     // Spawn HTTP Server for External Features
     let server_manager = app
@@ -329,19 +734,27 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tauri::async_runtime::spawn(async move {
         if let Err(e) = crate::server::init(
             std::sync::Arc::new(server_manager),
-            http_port,
-            http_expose,
+            startup_settings.http_port,
+            startup_settings.http_expose,
             mcp_enabled,
         )
         .await
         {
-            log::error!("Failed to start HTTP server on port {}: {}", http_port, e);
+            log::error!(
+                "Failed to start HTTP server on port {}: {}",
+                startup_settings.http_port,
+                e
+            );
         }
     });
     info!(
         "✅ HTTP Server spawned on {}:{}",
-        if http_expose { "0.0.0.0" } else { "127.0.0.1" },
-        http_port
+        if startup_settings.http_expose {
+            "0.0.0.0"
+        } else {
+            "127.0.0.1"
+        },
+        startup_settings.http_port
     );
 
     // Spawn session recovery in background
@@ -387,6 +800,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.listen("frontend-ready", |_| {
         info!("🖥️  Frontend signaled readiness");
         crate::lifecycle::frontend_ready::mark_as_ready();
+        if let Some(elapsed_ms) = crate::state::startup_elapsed_ms() {
+            info!("⏱️ Startup metric: frontend ready after {}ms", elapsed_ms);
+        }
     });
     info!("✅ Frontend readiness listener registered");
 

@@ -1,7 +1,7 @@
 use crate::agent::types::{CreateSessionRequest, CreateSessionResponse, SessionLineageMeta};
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::MCPContent;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MessageSource};
 use crate::repositories::SessionMetadata;
 use crate::session::get_session_manager;
 use std::collections::HashMap;
@@ -179,7 +179,7 @@ impl AgentService {
         manager: &AgentSessionManager,
         body: CreateSessionRequest,
     ) -> Result<CreateSessionResponse, String> {
-        Self::spawn_agent_with_source(manager, body, Some("agent_tool".to_string())).await
+        Self::spawn_agent_with_source(manager, body, Some(MessageSource::AgentTool)).await
     }
 
     /// Create a new session with assistant ID and initial request, tagging the initial
@@ -187,7 +187,7 @@ impl AgentService {
     pub async fn spawn_agent_with_source(
         manager: &AgentSessionManager,
         body: CreateSessionRequest,
-        message_source: Option<String>,
+        message_source: Option<MessageSource>,
     ) -> Result<CreateSessionResponse, String> {
         use crate::repositories::assistant_repository::AssistantRepository;
         use crate::repositories::session_repository::SessionRepository;
@@ -539,7 +539,7 @@ impl AgentService {
         manager: &AgentSessionManager,
         session_id: &str,
         content: String,
-        source: Option<String>,
+        source: Option<MessageSource>,
     ) -> Result<SendSessionMessageResponse, String> {
         let persisted_session = manager
             .get_session(session_id)

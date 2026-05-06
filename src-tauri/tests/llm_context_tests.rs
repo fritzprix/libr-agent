@@ -1,18 +1,21 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    build_compact_context_selection_options, build_compact_summary_text,
-    find_preflight_compaction_split_index, fit_compaction_request_messages_to_limit,
-    merge_consecutive_user_messages, normalize_request_messages,
-    resolve_context_management_settings, resolve_preserved_calibration_ratio,
-    should_skip_same_tail_compaction, should_trigger_background_compaction,
-    should_trigger_post_response_compaction, uses_compaction_strategy,
+    build_compact_context_selection_options, build_compact_summary_message_for_messages,
+    build_compact_summary_text, build_compaction_preservation_hints,
+    fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
+    normalize_request_messages, preview_background_compaction_selection,
+    preview_preflight_compaction_selection, resolve_context_management_settings,
+    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
+    should_trigger_background_compaction, should_trigger_post_response_compaction,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
+use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_snapshot;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
-use tauri_mcp_agent_lib::models::chat::Message;
+use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 
 fn make_message(id: &str, role: &str, text: &str) -> Message {
     Message {
@@ -46,7 +49,7 @@ fn make_message_simple(role: &str, text: &str) -> Message {
 
 fn make_compact_summary_message(id: &str, role: &str, text: &str) -> Message {
     let mut message = make_message(id, role, text);
-    message.source = Some("compact-summary".to_string());
+    message.source = Some(MessageSource::CompactSummary);
     message
 }
 
@@ -112,8 +115,9 @@ fn test_find_preflight_compaction_split_index_preserves_latest_user_turn() {
     let earlier = make_message("m0", "assistant", "Earlier context");
     let latest_user = make_message("m1", "user", &"latest request ".repeat(200));
 
-    let idx = find_preflight_compaction_split_index(&[earlier, latest_user]);
-    assert_eq!(idx, 1);
+    let preview = preview_preflight_compaction_selection(&[earlier, latest_user]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert_eq!(preview.preserved_ids, vec!["m1"]);
 }
 
 #[test]
@@ -121,8 +125,9 @@ fn test_find_preflight_compaction_split_index_preserves_latest_non_tool_turn() {
     let earlier = make_message("m0", "user", "Earlier user context");
     let latest_assistant = make_message("m1", "assistant", "Latest non-tool turn");
 
-    let idx = find_preflight_compaction_split_index(&[earlier, latest_assistant]);
-    assert_eq!(idx, 1);
+    let preview = preview_preflight_compaction_selection(&[earlier, latest_assistant]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert_eq!(preview.preserved_ids, vec!["m1"]);
 }
 
 #[test]
@@ -142,8 +147,9 @@ fn test_find_preflight_compaction_split_index_allows_compacting_latest_tool_resu
     let mut tool_result = make_message("m2", "tool", &"very large tool result ".repeat(200));
     tool_result.tool_call_id = Some("call_A".to_string());
 
-    let idx = find_preflight_compaction_split_index(&[intro, assistant, tool_result]);
-    assert_eq!(idx, 3);
+    let preview = preview_preflight_compaction_selection(&[intro, assistant, tool_result]);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1", "m2"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
@@ -173,8 +179,271 @@ fn test_find_preflight_compaction_split_index_keeps_unresolved_tool_chain_tail()
     let mut tool_result = make_message("m2", "tool", "result A");
     tool_result.tool_call_id = Some("call_A".to_string());
 
-    let idx = find_preflight_compaction_split_index(&[intro, assistant, tool_result]);
-    assert_eq!(idx, 1);
+    let preview = preview_preflight_compaction_selection(&[intro, assistant, tool_result]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert_eq!(preview.preserved_ids, vec!["m1", "m2"]);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_preserves_active_request_before_deferred_tool_execution(
+) {
+    let request = make_message("m0", "user", "Refactor auth to JWT");
+
+    let mut assistant = make_message("m1", "assistant", "Calling tools");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let preview = preview_background_compaction_selection(&[request, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_ignores_internal_synthetic_user_messages() {
+    let mut synthetic = make_message("m1", "user", "Synthetic compaction prompt");
+    synthetic.source = Some(MessageSource::CompactionInstruction);
+
+    assert!(!synthetic.is_external_request_message());
+
+    let preview = preview_background_compaction_selection(&[synthetic]);
+    assert_eq!(preview.compacted_ids, vec!["m1"]);
+    assert!(preview.preserved_ids.is_empty());
+}
+
+#[test]
+fn test_internal_synthetic_user_message_uses_compaction_instruction_id_fallback() {
+    let synthetic = make_message(
+        "compaction-instruction-legacy",
+        "user",
+        "Synthetic compaction prompt",
+    );
+
+    assert!(synthetic.is_internal_synthetic_user_message());
+    assert!(!synthetic.is_external_request_message());
+}
+
+#[test]
+fn test_find_background_compaction_split_index_preserves_latest_external_request_block() {
+    let older = make_message("m0", "user", "Older request");
+
+    let newer = make_message("m1", "user", "Latest real request");
+    let assistant = make_message("m2", "assistant", "Working on latest request");
+
+    let preview = preview_background_compaction_selection(&[older, newer, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1", "m2"]);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_preserves_channel_request_block() {
+    let mut request = make_message("m0", "user", "Request from channel");
+    request.source = Some(MessageSource::Channel);
+    let assistant = make_message("m1", "assistant", "Working on channel request");
+
+    let preview = preview_background_compaction_selection(&[request, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_preserves_scheduled_task_request_block() {
+    let mut request = make_message("m0", "user", "Run scheduled sync");
+    request.source = Some(MessageSource::ScheduledTask);
+    let assistant = make_message("m1", "assistant", "Working on scheduled task");
+
+    let preview = preview_background_compaction_selection(&[request, assistant]);
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
+}
+
+#[test]
+fn test_find_background_compaction_split_index_does_not_treat_ui_messages_as_external_requests() {
+    let mut request = make_message("m0", "user", "UI-triggered helper event");
+    request.source = Some(MessageSource::Ui);
+
+    assert!(!request.is_external_request_message());
+
+    let preview = preview_background_compaction_selection(&[request]);
+    assert_eq!(preview.compacted_ids, vec!["m0"]);
+    assert!(preview.preserved_ids.is_empty());
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_capture_active_request_and_references() {
+    let mut read_file = make_message("m0", "assistant", "Reading types file");
+    read_file.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "read_file".to_string(),
+            arguments: json!({
+                "path": "src/lib/types.ts"
+            })
+            .to_string(),
+        },
+    }]);
+
+    let mut tool_result = make_message(
+        "m1",
+        "tool",
+        "interface InterfaceA { id: string }\ninterface InterfaceB { name: string }",
+    );
+    tool_result.tool_call_id = Some("call_A".to_string());
+
+    let request = make_message(
+        "m2",
+        "user",
+        "Rename `InterfaceB` to `InterfaceC` after the `read_file` result.",
+    );
+
+    let hints = build_compaction_preservation_hints(&[read_file, tool_result, request]);
+    assert_eq!(hints.active_request.len(), 1);
+    assert!(hints.active_request[0].contains("InterfaceB"));
+    assert!(hints.active_request[0].contains("InterfaceC"));
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("src/lib/types.ts")),
+        "required references should keep the referenced file path"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("InterfaceB")),
+        "required references should keep the referenced existing symbol"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("InterfaceC")),
+        "required references should keep the requested target symbol"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_ignore_synthetic_user_messages() {
+    let mut synthetic = make_message("compaction-instruction-legacy", "user", "Synthetic message");
+    synthetic.source = Some(MessageSource::CompactionInstruction);
+
+    let hints = build_compaction_preservation_hints(&[synthetic]);
+    assert!(hints.active_request.is_empty());
+    assert!(hints.required_references.is_empty());
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_carry_forward_prior_summary_open_requests() {
+    let prior_summary = "\
+### Stable Context
+- Existing work item
+
+### Key Decisions & Constraints
+- Keep refactor incremental
+
+### Active Request
+- Refactor `src/lib/file-b.ts`
+
+### Required References
+- Preserve file path `src/lib/file-b.ts`
+- Preserve identifier `InterfaceB`
+
+### Current State
+- Refactor still pending
+
+### Recent Tool Results
+- read_file(path=src/lib/file-b.ts) -> success
+
+### Next Actions
+- Update references";
+    let summary_message = make_compact_summary_message(
+        "m0",
+        "assistant",
+        &build_compact_summary_text(prior_summary, &[]),
+    );
+    let request = make_message("m1", "user", "Also update `src/lib/file-c.ts`.");
+
+    let hints = build_compaction_preservation_hints(&[summary_message, request]);
+
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("src/lib/file-b.ts")),
+        "prior unresolved request should be carried forward from the previous summary"
+    );
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("src/lib/file-c.ts")),
+        "new request should still be included"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("InterfaceB")),
+        "prior required references should be carried forward from the previous summary"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_filter_non_identifier_backticks_and_non_paths() {
+    let request = make_message(
+        "m0",
+        "user",
+        "Run `pnpm refactor:validate`, keep version 18.3 noted, and rename `ActualSymbol` in `src/lib/types.ts`.",
+    );
+
+    let hints = build_compaction_preservation_hints(&[request]);
+
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("ActualSymbol")),
+        "real identifier references should be preserved"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("src/lib/types.ts")),
+        "real file paths should be preserved"
+    );
+    assert!(
+        !hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("pnpm refactor:validate")),
+        "command-like backtick spans should not consume required reference slots"
+    );
+    assert!(
+        !hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("18.3")),
+        "bare dotted values should not be treated as file paths"
+    );
+}
+
+#[test]
+fn test_build_post_response_compaction_snapshot_appends_pending_message_once() {
+    let request = make_message("m0", "user", "Latest real request");
+    let pending = make_message("m1", "assistant", "Pending assistant turn");
+
+    let snapshot = build_post_response_compaction_snapshot(&[request], Some(&pending));
+    assert_eq!(snapshot.len(), 2);
+    assert_eq!(snapshot[0].id, "m0");
+    assert_eq!(snapshot[1].id, "m1");
 }
 
 #[test]
@@ -211,8 +480,9 @@ fn test_preflight_compaction_split_after_removing_incomplete_tool_chains() {
         current_tool,
     ]);
 
-    let idx = find_preflight_compaction_split_index(&cleaned);
-    assert_eq!(idx, cleaned.len());
+    let preview = preview_preflight_compaction_selection(&cleaned);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1", "m2", "m3"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
@@ -255,10 +525,9 @@ fn test_normalize_request_messages_removes_stale_incomplete_tool_chains_before_c
     assert!(normalized[1].tool_calls.is_none());
     assert_eq!(normalized[2].id, "m2");
     assert_eq!(normalized[3].id, "m3");
-    assert_eq!(
-        find_preflight_compaction_split_index(&normalized),
-        normalized.len()
-    );
+    let preview = preview_preflight_compaction_selection(&normalized);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1", "m2", "m3"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
@@ -886,9 +1155,8 @@ fn test_conservative_preflight_prompt_tokens_fallback_biases_full_estimate_upwar
 #[test]
 fn test_conservative_preflight_prompt_tokens_uses_latest_prompt_anchor() {
     let earlier_user = make_message("u1", "user", &"Earlier context ".repeat(1200));
-    let older_anchor_clone_for_bpe;
     let older_anchor = make_message("a1", "assistant", "Older grounded output");
-    older_anchor_clone_for_bpe = older_anchor.clone();
+    let older_anchor_clone_for_bpe = older_anchor.clone();
 
     let newer_user = make_message(
         "u2",
@@ -1181,7 +1449,7 @@ fn test_truncate_single_oversized_message_to_fit_conservative_limit_truncates_us
     let limit = 600;
 
     let truncated = truncate_single_oversized_message_to_fit_conservative_limit(
-        &[oversized.clone()],
+        std::slice::from_ref(&oversized),
         limit,
         10,
         5,
@@ -1273,9 +1541,14 @@ fn test_fit_compaction_request_messages_to_limit_rejects_summary_only_payload() 
 fn test_fit_compaction_request_messages_to_limit_truncates_single_raw_message() {
     let oversized = make_message("user-1", "user", &"very large compact input ".repeat(600));
 
-    let fitted =
-        fit_compaction_request_messages_to_limit(&[oversized.clone()], "openai", 600, 10, 5)
-            .expect("single raw message should be truncated to fit compaction request");
+    let fitted = fit_compaction_request_messages_to_limit(
+        std::slice::from_ref(&oversized),
+        "openai",
+        600,
+        10,
+        5,
+    )
+    .expect("single raw message should be truncated to fit compaction request");
 
     assert_eq!(fitted.len(), 1);
     assert_ne!(
@@ -1366,4 +1639,40 @@ fn test_build_compact_summary_text_caps_long_argument_preview() {
     assert!(summary.contains("workspace__writeFile("));
     assert!(summary.contains("path=src/huge.ts"));
     assert!(!summary.contains(&"a".repeat(150)));
+}
+
+#[test]
+fn test_build_compact_summary_message_for_messages_reuses_normal_request_wrapper() {
+    let mut assistant = make_message("assistant-shared", "assistant", "Running command");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_shared".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__runCommand".to_string(),
+            arguments: "{\"command\":\"git status\"}".to_string(),
+        },
+    }]);
+
+    let mut tool = make_message("tool-shared", "tool", "On branch dev/0.7.x");
+    tool.tool_call_id = Some("call_shared".to_string());
+
+    let summary_message = build_compact_summary_message_for_messages(
+        "test-session",
+        "Earlier work was summarized.",
+        &[assistant, tool],
+        42,
+    );
+
+    assert_eq!(summary_message.id, "compact-summary-test-session");
+    assert_eq!(summary_message.role, "assistant");
+    assert_eq!(summary_message.source, Some(MessageSource::CompactSummary));
+
+    let MCPContent::Text { text, .. } = &summary_message.content[0] else {
+        panic!("expected compact summary text");
+    };
+    assert!(text.contains("### Previous Conversation Summary"));
+    assert!(text.contains("### Recent Tool Call Snapshot (latest 5)"));
+    assert!(
+        text.contains("workspace__runCommand(command=git status) -> success: On branch dev/0.7.x")
+    );
 }

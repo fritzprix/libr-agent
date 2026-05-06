@@ -80,16 +80,15 @@ Full Model Context Protocol support — both built-in and external servers.
 
 ## 3. Assistant (Agent Config) Management
 
-| Component                 | File                                             | Description                                                      |
-| ------------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
-| **Entity**                | `src-tauri/src/entity/assistant.rs`              | Assistant config: name, system prompt, temperature, model, tools |
-| **Service**               | `src-tauri/src/services/assistant_service.rs`    | CRUD operations                                                  |
-| **Frontend**              | `src/features/assistant/`                        | List, Card, Editor pages                                         |
-| **Built-in Tools Editor** | `src/features/assistant/BuiltInToolsEditor.tsx`  | Select which builtin tools each assistant gets                   |
-| **Skills Editor**         | `src/features/assistant/SkillsEditor.tsx`        | Per-assistant skill assignment                                   |
-| **Local Services Editor** | `src/features/assistant/LocalServicesEditor.tsx` | External MCP server assignment per assistant                     |
-| **Batch Operations**      | `batch_upsert_assistants`                        | Bulk create/update assistants                                    |
-| **Search**                | `search_assistants`                              | Full-text search across assistant configs                        |
+| Component                 | File                                            | Description                                                      |
+| ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| **Entity**                | `src-tauri/src/entity/assistant.rs`             | Assistant config: name, system prompt, temperature, model, tools |
+| **Service**               | `src-tauri/src/services/assistant_service.rs`   | CRUD operations                                                  |
+| **Frontend**              | `src/features/assistant/`                       | List, Card, Editor pages                                         |
+| **Built-in Tools Editor** | `src/features/assistant/BuiltInToolsEditor.tsx` | Select which builtin tools each assistant gets                   |
+| **Skills Editor**         | `src/features/assistant/SkillsEditor.tsx`       | Per-assistant skill assignment                                   |
+| **Batch Operations**      | `batch_upsert_assistants`                       | Bulk create/update assistants                                    |
+| **Search**                | `search_assistants`                             | Full-text search across assistant configs                        |
 
 ---
 

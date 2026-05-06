@@ -128,6 +128,23 @@ export interface HandleLLMResponseData {
   compactionPressure?: CompactionPressure;
 }
 
+export type StreamingIssueKind = 'REPEATED_THINKING_LOOP';
+
+export interface StreamingIssueReport {
+  sessionId: string;
+  responseMessageId: string;
+  issueKind: StreamingIssueKind;
+  observedTailChars: number;
+  patternLength: number;
+  repetitionCount: number;
+}
+
+export interface CompletionCancelRequest {
+  sessionId: string;
+  responseMessageId: string;
+  reason: string;
+}
+
 export type AgentRuntimeError = MessageError;
 
 export type SessionAttentionReason = 'recurringStop' | 'pendingApproval';

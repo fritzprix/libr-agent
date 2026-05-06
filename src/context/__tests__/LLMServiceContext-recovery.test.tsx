@@ -22,6 +22,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@/lib/backend/agent-commands', () => ({
   handleLLMError: vi.fn(),
   handleLLMResponse: vi.fn(),
+  reportLLMStreamingIssue: vi.fn(),
 }));
 
 // Mock AIServiceFactory

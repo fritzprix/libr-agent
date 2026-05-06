@@ -15,10 +15,11 @@ use crate::repositories::{
 };
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 use tauri::AppHandle;
-use tokio::sync::RwLock as TokioRwLock;
+use tokio::sync::{Notify, RwLock as TokioRwLock};
 
 /// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
 static MCP_SERVICE_PROXY_MANAGER: OnceLock<Arc<MCPServiceProxyManager>> = OnceLock::new();
@@ -78,6 +79,27 @@ static CONCURRENCY_GATE: OnceLock<ConcurrencyGate> = OnceLock::new();
 /// Shared Arc from AgentSessionManager so external subsystems (e.g. builtin MCP tools)
 /// can read per-session cancellation tokens without going through Tauri managed state.
 static ACTIVE_SESSIONS: OnceLock<Arc<TokioRwLock<HashMap<String, AgentSession>>>> = OnceLock::new();
+/// A global revision for skill-directory derived caches.
+static SKILLS_CATALOG_REVISION: OnceLock<AtomicU64> = OnceLock::new();
+/// Coordinates background startup preparation of managed skills directories.
+static MANAGED_SKILLS_SYNC_STATE: OnceLock<ManagedSkillsSyncState> = OnceLock::new();
+static STARTUP_TIMER: OnceLock<Instant> = OnceLock::new();
+
+struct ManagedSkillsSyncState {
+    ready: AtomicBool,
+    notify: Notify,
+}
+
+fn skills_catalog_revision() -> &'static AtomicU64 {
+    SKILLS_CATALOG_REVISION.get_or_init(|| AtomicU64::new(0))
+}
+
+fn managed_skills_sync_state() -> &'static ManagedSkillsSyncState {
+    MANAGED_SKILLS_SYNC_STATE.get_or_init(|| ManagedSkillsSyncState {
+        ready: AtomicBool::new(true),
+        notify: Notify::new(),
+    })
+}
 
 /// Initialize the global AppHandle
 /// Should be called once during application setup
@@ -107,6 +129,48 @@ pub fn set_sqlite_db_url(url: String) {
 /// An `Option` containing a reference to the URL string, or `None` if not yet set.
 pub fn get_sqlite_db_url() -> Option<&'static String> {
     SQLITE_DB_URL.get()
+}
+
+pub fn start_startup_timer() {
+    let _ = STARTUP_TIMER.set(Instant::now());
+}
+
+pub fn startup_elapsed_ms() -> Option<u128> {
+    STARTUP_TIMER
+        .get()
+        .map(|started_at| started_at.elapsed().as_millis())
+}
+
+pub fn get_skills_catalog_revision() -> u64 {
+    skills_catalog_revision().load(Ordering::Relaxed)
+}
+
+pub fn invalidate_skills_catalog() -> u64 {
+    skills_catalog_revision().fetch_add(1, Ordering::Relaxed) + 1
+}
+
+pub fn begin_managed_skills_sync() {
+    managed_skills_sync_state()
+        .ready
+        .store(false, Ordering::Release);
+}
+
+pub fn complete_managed_skills_sync() {
+    let state = managed_skills_sync_state();
+    state.ready.store(true, Ordering::Release);
+    state.notify.notify_waiters();
+}
+
+pub async fn wait_for_managed_skills_sync() {
+    let state = managed_skills_sync_state();
+
+    loop {
+        let notified = state.notify.notified();
+        if state.ready.load(Ordering::Acquire) {
+            break;
+        }
+        notified.await;
+    }
 }
 
 /// Sets the global database connection.

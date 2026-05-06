@@ -1,4 +1,0 @@
-🌐 Scope: src/locales/en/common.json, src/locales/ko/common.json
-🔑 Keys Added: 22
-🌍 Languages: en.json, ko.json
-⚠️ Visual QA: Verified that longer text strings do not break Flex/Grid layouts.

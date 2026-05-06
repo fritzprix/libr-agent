@@ -1,75 +1,185 @@
 # 🤖 LibrAgent
 
-> **Uma plataforma de agentes de IA autónomos, leve e com estado.**
+> **O arnês de agentes para a era da inteligência autónoma.**
+> _Não é apenas uma aplicação de chat. É um substrato de execução onde os agentes trabalham, colaboram e escalam._
 
-[English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md)
+[English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-LibrAgent é um executor de agentes local-first projetado para manter o contexto entre interações. Ao contrário de clientes sem estado, ele mantém as abas do navegador e as sessões de terminal ativas entre os turnos, permitindo que os agentes trabalhem de forma mais fluida num espaço de trabalho persistente.
+LibrAgent é um **sistema operativo de agentes local-first** construído sobre Tauri + Rust + React. Vai muito além das interfaces de chat — fornecendo um substrato de execução seguro, um ecossistema de ferramentas nativo MCP e uma arquitetura de delegação recursiva que escala um único agente para um enxame coordenado.
 
-Implementa padrões abertos como **MCP (Model Context Protocol)** e **Skills** para permanecer modular e extensível.
+Conecta qualquer LLM (nuvem ou local via Ollama), expande com qualquer servidor MCP, e deixa os agentes fazer trabalho real: editar ficheiros, executar shells, navegar na web, gerir conhecimento — de forma autónoma, pelo tempo que for necessário.
 
 ---
 
 ## Porquê LibrAgent?
 
-O objetivo deste projeto é tornar os agentes autónomos acessíveis. Muitas ferramentas existentes permanecem presas atrás de comandos de terminal e configurações JSON manuais, criando uma lacuna que exclui muitos utilizadores potenciais. O LibrAgent visa colmatar essa lacuna, fornecendo um ambiente local-first onde qualquer pessoa pode implementar e gerir agentes sem precisar de ser um programador.
+O foco da indústria de IA mudou. Análises recentes de 2026 mostraram que **o mesmo modelo pode produzir diferenças de sucesso de dois dígitos dependendo do arnês que o rodeia**. O modelo é o motor — mas o arnês determina até onde ele chega.
+
+Cada opção atual ainda impõe um compromisso:
+
+| Plataforma               | O problema                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **OpenClaw**             | Ecossistema aberto muito flexível, mas análises do início de 2026 destacaram instâncias expostas, segredos em texto simples e riscos de injeção de prompts nas competências da comunidade. |
+| **Claude Cowork**        | UX local sólido, mas ainda limitado em tarefas autónomas complexas. Ecossistema fechado. Não extensível.                                                                                   |
+| **Claude Code / Cursor** | Apenas para programadores. Requer domínio do terminal. Não é de propósito geral.                                                                                                           |
+| **Google Mariner**       | O teu trabalho corre nas VMs cloud do Google. Não controlas os teus dados.                                                                                                                 |
+| **LangGraph / CrewAI**   | Frameworks poderosos, mas tens de montar tudo tu mesmo. Sem experiência de produto.                                                                                                        |
+
+**LibrAgent foi construído para eliminar esse compromisso.** Segurança local-first. Extensibilidade nativa MCP. Coordenação multi-agente enxame→organização. Uma interface gráfica refinada que funciona para não programadores. Tudo numa aplicação de desktop open source.
+
+### Para quem é o LibrAgent
+
+- **Programadores solo** que querem agentes capazes de realmente ler, editar, executar, navegar e persistir contexto localmente
+- **Utilizadores avançados e operadores** que querem compor o seu próprio stack a partir de modelos locais, fornecedores de API, servidores MCP e fluxos de trabalho agendados
+- **Investigadores e analistas** que precisam de automatização do navegador, captura de conhecimento, playbooks repetíveis e sessões de longa duração
+- **Equipas preocupadas com privacidade** que querem execução local, governança explícita e um caminho de um único agente para uma organização coordenada
 
 ---
 
-## 🎬 Demonstração
+## 🎬 A plataforma em ação
 
 ![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
 
-_Automatização do navegador e execução de shell num único fluxo de trabalho com estado._
+_De um único agente a um enxame coordenado — delegação recursiva, ferramentas MCP e espaço de trabalho persistente num substrato unificado._
 
 ---
 
-## Funcionalidades Principais
+## Pilares fundamentais
 
-### 1. Espaço de Trabalho Persistente
+### 1. 🔐 Segurança local-first — Os teus dados ficam na tua máquina
 
-Os agentes operam num ambiente de longa duração em vez de iniciar novos processos em cada turno.
+O LibrAgent trata a segurança como uma preocupação arquitetónica de primeira classe:
 
-- **Webview ao Vivo**: Automatização do navegador em tempo real usando Tauri webviews. As sessões e os cookies persistem entre turnos.
-- **Terminal Unificado**: Uma shell persistente e protegida (suporta Python/Node.js) que partilha o estado com o espaço de trabalho.
+- **Isolamento de sessão**: Cada sessão de agente recebe a sua própria instância dedicada `MCPServiceProxy` — zero fugas de dados entre sessões
+- **SecurityValidator integrado**: Ataques de traversal de caminhos e injeção de comandos bloqueados ao nível do sistema
+- **Nenhum substrato cloud necessário**: Toda a execução acontece localmente; apenas as chamadas de API LLM saem da tua máquina
+- **Suporte offline completo**: Combina com [Ollama](https://ollama.ai) para um stack de agentes completamente isolado
 
-### 2. Orquestração Multi-Agente
+#### O que fica local vs o que sai da tua máquina
 
-O LibrAgent permite que os agentes deleguem tarefas a sub-agentes especializados.
+- **Sempre local**: espaços de trabalho, ficheiros locais, competências agrupadas, estado de sessão, configs de servidores MCP, estado do navegador e execução de ferramentas locais
+- **Sai da tua máquina apenas quando escolhes**: pedidos a fornecedores LLM cloud ou serviços MCP/HTTP remotos que configuras explicitamente
+- **Modo offline completo**: usa Ollama ou outro runtime local com servidores MCP locais para um fluxo de trabalho isolado
 
-- **Assistentes**: Gerencie perfis de agentes com prompts de sistema e configurações de ferramentas exclusivos.
-- **Inteligência de Enxame (Swarm)**: Os agentes pai podem criar, enviar mensagens e aguardar resultados de sub-agentes para resolver tarefas complexas.
+### 2. 🧩 Ecossistema nativo MCP — Extensibilidade infinita por design
 
-### 3. Extensibilidade
+MCP (Model Context Protocol) tornou-se um padrão da Linux Foundation em 2026. O LibrAgent trata-o não como uma funcionalidade — mas como a espinha dorsal arquitetónica:
 
-A plataforma foi projetada para ser expandida através de padrões da comunidade.
+- **Suporte completo de transportes**: stdio, HTTP, SSE e OAuth 2.1 — a especificação completa
+- **12+ servidores integrados**: Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store, e mais
+- **Catálogo de presets**: Instala GitHub, Brave Search, Filesystem e outros servidores populares com um clique
+- **Instâncias isoladas por sessão**: Cada sessão de agente tem estado de servidor MCP independente — sem interferência entre agentes paralelos
+- **Importar de qualquer lugar**: Migra configs MCP automaticamente do Cursor, VS Code, Claude Code ou Windsurf
 
-- **Extensões (MCP)**: Suporte total para o protocolo MCP. Ligue-se a qualquer servidor MCP instantaneamente.
-- **Presets de um Clique**: Catálogo selecionado para GitHub, Brave Search, etc., disponível diretamente na interface.
-- **Skills & Playbooks**: Snippets de comportamento reutilizáveis e modelos de fluxo de trabalho estruturados.
+### 3. 🦾 Substrato de execução de nível produção
 
-### 4. Autonomia e Agendamento
+A maioria das ferramentas de IA é impressionante em demos e frágil em produção. O LibrAgent é obsessivamente desenhado para trabalho real e duradouro:
 
-- **Modo YOLO**: Execução autónoma opcional para ferramentas sensíveis sem aprovação manual.
-- **Tarefas Agendadas**: Automatização baseada em Cron com recuperação automática após reinícios e suporte para áreas de trabalho específicas.
+| Substrato     | Capacidades                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Workspace** | Edição precisa à linha, operações multi-ficheiro, pesquisa unificada, injeção de contexto `@file`/`@skill`/`@playbook` |
+| **Shell**     | Execução isolada E shells persistentes — monitorização de processos assíncrona (`poll`, `read output`, `list`)         |
+| **Browser**   | Ferramentas estilo Playwright (`goto`, `click`, `fill`, `screenshot`) com garantias de consistência de cache           |
+| **Knowledge** | Gestão de conhecimento baseada em grafos com extração entidade/relação (v2), pesquisa de texto completo BM25           |
 
-### 5. Contexto e Métricas
+**Engenharia de fiabilidade incluída**: Compactação de contexto, prevenção de ciclos, disjuntores e proteções contra respostas obsoletas mantêm os agentes produtivos em sessões que duram horas.
 
-- **@menções**: Injeção direta de ficheiros, competências ou playbooks no chat.
-- **Multimodal**: Lida com imagens e áudio para modelos OpenAI, Anthropic e Gemini.
-- **Observabilidade**: Métricas de TPS em tempo real e hits de cache de prompt (para Anthropic/Gemini).
+### 4. 🤝 Enxame → Equipa → Organização: Multi-agente em todas as escalas
+
+O LibrAgent tem uma história multi-agente coerente desde a execução solo até à coordenação organizacional explícita:
+
+- **`delegate`**: Agentes pai geram, informam e monitorizam sessões filhas com rastreamento de linhagem explícito
+- **`teamwork`**: Constrói um espaço de trabalho completo de task-force (agents.md, MISSION.md, KANBAN.md) com um único comando
+- **`org`**: Formaliza equipas com identidade de organização duradoura, retoma de sessão raiz e hierarquia de membros visível
+- **`schedule`**: Automatização baseada em CRON — agentes executam sem supervisão, segundo um calendário, com constituição de espaço de trabalho
+- **Concurrency Gate**: Limites rígidos em sessões paralelas e processos shell para prevenir deadlocks e custos descontrolados
+
+### 5. ⚡ Competências agrupadas — A forma mais rápida de ir de uma instalação vazia a um enxame operacional
+
+O LibrAgent vem com uma biblioteca crescente de **Competências agrupadas**. Não são prompts aleatórios — são procedimentos operativos reutilizáveis que qualquer agente pode invocar por nome.
+
+As competências mais importantes para o primeiro dia:
+
+| Competência          | O que faz                                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `system-setup`       | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas                                  |
+| `mcp-installer`      | Regista servidores MCP a partir de pacotes npm, URLs do GitHub ou blocos de config JSON                           |
+| `mcp-importer`       | Importa configs MCP existentes do Cursor, VS Code, Windsurf e similares                                           |
+| `specialist-creator` | Desenha uma config de agente completa (prompt de sistema, modelo, ferramentas) a partir de uma descrição de papel |
+| `crew-constructor`   | Analisa ferramentas disponíveis e cria automaticamente uma equipa de especialistas adequada                       |
+| `agent-tooling`      | Audita agentes, deteta desajustes de capacidades e reequilibra dinamicamente as atribuições de ferramentas        |
+| `delegate`           | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem       |
+| `teamwork`           | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado                    |
+| `org`                | Formaliza identidade de organização duradoura e hierarquia de membros visível                                     |
+| `schedule`           | Cria e gere grupos de tarefas agendadas recorrentes para automatização sem supervisão                             |
+| `soul-awakening`     | Ancora um agente a uma persona `SOUL.md` — tom, postura, identidade                                               |
+
+E isso é apenas a camada de operador. O LibrAgent também fornece competências de domínio para:
+
+- **Conhecimento e investigação**: `deep-research-report`, `knowledge-distiller`
+- **Fluxos de trabalho documentais**: `document-to-markdown`, `docx`, `pptx`
+- **Criação de competências e workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
+- **Operações especializadas**: `computer-diagnosis` e outros assistentes especializados
+
+_Importante: `bootstrap` é uma capacidade integrada frequentemente usada com estas competências. As Competências agrupadas são os procedimentos reutilizáveis; os integrados e as ferramentas MCP são o substrato de execução subjacente._
 
 ---
 
-## 📦 Instalação
+## 🌍 Cenários do mundo real
 
-Descarregue os binários mais recentes para Windows, macOS ou Linux a partir da [página de Lançamentos](https://github.com/fritzprix/libr-agent/releases/latest).
+### Programador solo — Revisão de código automatizada
 
-**Compilar a partir do código-fonte:**
+1. Conecta o teu repositório local através da ferramenta Workspace
+2. Instala o preset GitHub MCP (um clique)
+3. Pede: _"Encontra problemas de segurança no PR #42 e produz um relatório em Markdown"_
+4. O agente lê o código, executa a análise, guarda os resultados no servidor Knowledge
+
+### Profissional de marketing — Inteligência competitiva em piloto automático
+
+1. Configura 5 blogs de concorrentes através da ferramenta Browser
+2. Diz a um agente: _"Cria um briefing competitivo agendado todas as manhãs às 7h"_ — o agente pode usar a competência `schedule` para configurar o grupo de tarefas recorrente
+3. O agente navega, resume e adiciona ao Knowledge store
+4. Pergunta a qualquer momento: _"Resume os movimentos dos concorrentes da semana passada"_
+
+### Equipa de engenharia — Stack de agentes offline
+
+1. `ollama pull qwen3:14b` — sem chaves de API, sem nuvem
+2. Conecta ferramentas Workspace + Shell à tua base de código
+3. Propriedade intelectual sensível nunca sai da máquina
+4. Agentes leem, modificam, testam e fazem commit — completamente local
+
+### Utilizador avançado — Pipeline de investigação multi-agente
+
+1. Usa `crew-constructor` para gerar automaticamente: Researcher×3, Analyst×1, Writer×1
+2. O orquestrador delega em paralelo através da competência `delegate`
+3. Os resultados fundem-se num único relatório estruturado no Content Store
+4. Agenda todo o workflow semanalmente via `schedule`
+
+---
+
+## 📖 Documentação e guias
+
+- **[Guia de navegação](docs/guides/navigation-guide.md)**: O hub Command & Control — `/assistants` (Definições de papéis) e `/playbooks` (Blueprints de workflow).
+- **[Guia de arquitetura](docs/architecture/agent-workflow-architecture.md)**: Isolamento de sessão, motor de orquestração e o ciclo Think-Act-Observe orientado por Rust.
+- **[Guia de ferramentas integradas](docs/guides/builtin_tool_bp.md)**: Padrões de design de ferramentas e padrões de resposta MCP.
+
+---
+
+## 📦 Começar
+
+Descarrega o instalador mais recente para a tua plataforma na **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
+
+```
+Windows  →  LibrAgent_x.x.x_x64-setup.exe
+macOS    →  LibrAgent_x.x.x_aarch64.dmg
+Linux    →  libragent_x.x.x_amd64.AppImage
+```
+
+**Configuração para programadores:**
 
 ```bash
 git clone https://github.com/fritzprix/libr-agent
@@ -78,18 +188,77 @@ pnpm install
 pnpm tauri dev
 ```
 
+### O percurso de integração de 5 minutos
+
+**Passo 1 — Conecta um modelo** (Settings → LLM Providers)
+
+- Nuvem: cola uma chave de API OpenAI / Anthropic / Gemini / Groq
+- Local: `ollama pull qwen3:14b` e depois seleciona Ollama nas Settings
+- Já usas Cursor ou VS Code? Diz a qualquer agente: _"Importa os meus servidores MCP do Cursor"_ → `mcp-importer` trata disso
+
+**Passo 2 — Adiciona ferramentas MCP** (barra lateral Extensions)
+
+- Navega no catálogo de presets e clica em Instalar, ou
+- Diz a um agente: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` regista-o automaticamente
+
+**Passo 3 — Cria o teu primeiro agente**
+
+- _"Cria um agente investigador para inteligência competitiva"_ → `specialist-creator` desenha a config completa
+- _"Constrói uma equipa de investigação com as minhas ferramentas atuais"_ → `crew-constructor` cria os especialistas em lote
+- _"Otimiza as atribuições de ferramentas para todos os meus agentes"_ → `agent-tooling` audita e reequilibra automaticamente
+
+**Passo 4 — Vai em paralelo com `delegate`**
+
+- Pede a qualquer agente que delegue subtarefas a sessões filhas
+- A competência `delegate` gere a transferência de contexto, o rastreamento de linhagem e a fusão de resultados
+
+**Passo 5 — Constrói uma equipa persistente**
+
+- `teamwork` → constrói o espaço de trabalho partilhado com `agents.md`, `MISSION.md`, `KANBAN.md`
+- `org` → formaliza a equipa com identidade duradoura e gestão de sessão raiz
+- `schedule` → deixa um agente criar e gerir a automatização CRON para ti, sem supervisão
+
+### Primeiros prompts para copiar e colar
+
+- _"Importa os meus servidores MCP do Cursor e mostra-me o que foi adicionado."_
+- _"Cria um agente investigador para inteligência competitiva com as minhas ferramentas atuais."_
+- _"Instala o preset GitHub MCP e associa-o a um agente de codificação."_
+- _"Delega a análise do repositório a uma sessão filha e traz-me um resumo."_
+- _"Prepara um espaço de trabalho teamwork para este repositório e cria uma equipa de especialistas pronta para org."_
+- _"Configura um briefing diário de concorrentes agendado para as 7h e mantém tudo no espaço de trabalho teamwork partilhado."_
+
 ---
 
-## Escolhas de Design
+## Como o LibrAgent se compara
 
-- **Local First**: Os seus dados e chaves de API permanecem na sua máquina.
-- **Tauri + Rust**: Escolhido pela segurança (segurança de memória), desempenho e tamanho reduzido do binário.
-- **SQLite (SeaORM)**: Usado para uma persistência local robusta de sessões e configurações.
+```
+                    Privacy/Local  MCP Ecosystem  Non-Dev UX  Multi-Agent  Open Source
+LibrAgent              ★★★★★          ★★★★★         ★★★★☆       ★★★★★           ✅
+OpenClaw               ★★☆☆☆          ★★★★☆         ★★★☆☆       ★★★☆☆           ✅
+Claude Cowork          ★★★★☆          ★★☆☆☆         ★★★★★       ★★☆☆☆           ❌
+Claude Code            ★★★★☆          ★★★☆☆         ★☆☆☆☆       ★★★☆☆           ❌
+Google Mariner         ★★☆☆☆          ★★★☆☆         ★★★★☆       ★★★★☆           ❌
+LangGraph / CrewAI     ★★★☆☆          ★★★☆☆         ★★☆☆☆       ★★★☆☆           ✅
+```
+
+---
+
+## Filosofia de design
+
+- **Local First**: Os teus dados, chaves e "almas" de agentes ficam sob o teu controlo exclusivo. Nenhum substrato cloud necessário.
+- **Arnês sobre Modelo**: O ambiente de execução — ferramentas, estado de sessão, delegação, governança — importa mais do que qualquer modelo individual. O LibrAgent é desenhado para maximizar o que qualquer modelo pode fazer.
+- **Estabilidade sobre Funcionalidades**: O CHANGELOG reflete um foco obsessivo na correção do runtime — isolamento de sessão, compactação, prevenção de ciclos, proteções contra respostas obsoletas.
+- **MCP como Infraestrutura**: Não um sistema de plugins. Todo o ecossistema de ferramentas está organizado em torno do MCP como a camada de interoperabilidade principal.
+- **Padrões abertos**: Licença MIT. Totalmente comprometido com MCP, interoperabilidade open source e soberania dos dados dos utilizadores.
 
 ---
 
 ## Contribuição e Licença
 
-Contribuições são bem-vindas. Por favor, consulte `CONTRIBUTING.md`.
+O LibrAgent tem licença MIT e é desenvolvido em aberto. As contribuições são bem-vindas — sejam novas competências agrupadas, integrações MCP, correções de bugs ou melhorias arquitetónicas.
+
+- 📖 [Guia de contribuição](CONTRIBUTING.md)
+- 🐛 [Rastreador de problemas](https://github.com/fritzprix/libr-agent/issues)
+- 💬 [Discussões](https://github.com/fritzprix/libr-agent/discussions)
 
 **Licença**: MIT

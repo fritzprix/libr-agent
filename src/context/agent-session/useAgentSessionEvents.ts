@@ -163,32 +163,6 @@ export function useAgentSessionEvents(
                 setters.applyLocalViewedAt(new Date(rustMessage.createdAt));
               }
 
-              if (
-                newMessage.role === 'assistant' &&
-                !newMessage.isStreaming &&
-                newMessage.thinking &&
-                (!newMessage.content || newMessage.content.length === 0) &&
-                (!newMessage.tool_calls || newMessage.tool_calls.length === 0)
-              ) {
-                logger.info(
-                  'Detected Think-Only message, triggering recurring request',
-                  {
-                    messageId: newMessage.id,
-                  },
-                );
-
-                setTimeout(() => {
-                  safeInvoke<AgentResponse>('agent_resume_workflow', {
-                    sessionId,
-                  }).catch((err) => {
-                    logger.error(
-                      'Failed to trigger recurring request for thinking message',
-                      err,
-                    );
-                  });
-                }, 100);
-              }
-
               break;
             }
 

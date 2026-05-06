@@ -1,1 +1,0 @@
-## 2025-05-23 - [src-tauri/src/agent/session_manager.rs, src-tauri/src/commands/agent_commands.rs] **Safety Breach:** Excessive use of `#[allow(dead_code)]` masking actual usage and one truly unused method (`create_session`). **Fix:** Removed `#[allow(dead_code)]` attributes and deleted the unused method. Validated with `cargo check`.

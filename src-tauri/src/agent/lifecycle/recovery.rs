@@ -2,6 +2,7 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::agent::tauri_events::TauriEventDispatcher;
+use crate::models::chat::MessageSource;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
@@ -75,7 +76,7 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
                 tool_use: None,
                 created_at: now,
                 updated_at: now,
-                source: Some("recovery".to_string()),
+                source: Some(MessageSource::Recovery),
                 error: None,
                 metadata: None,
             });
@@ -117,7 +118,7 @@ fn build_recovered_session(
         messages: Arc::new(RwLock::new(Vec::new())),
         cache_initialized: Arc::new(AtomicBool::new(false)),
         last_synced_at: Arc::new(RwLock::new(None)),
-        thinking_only_count: Arc::new(RwLock::new(0)),
+        repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
         context_registry,

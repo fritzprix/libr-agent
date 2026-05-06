@@ -9,6 +9,9 @@ import {
   Input,
   Checkbox,
   Button,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
 } from '@/components/ui';
 import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -72,25 +75,34 @@ function ProviderCardBase({
               }}
               className="bg-background border text-foreground w-full pr-10"
             />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-              onClick={() => setShowApiKey((v) => !v)}
-              aria-label={
-                showApiKey
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowApiKey((v) => !v)}
+                  aria-label={
+                    showApiKey
+                      ? t('settings.provider.hideApiKey', 'Hide API key')
+                      : t('settings.provider.showApiKey', 'Show API key')
+                  }
+                  aria-pressed={showApiKey}
+                >
+                  {showApiKey ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {showApiKey
                   ? t('settings.provider.hideApiKey', 'Hide API key')
-                  : t('settings.provider.showApiKey', 'Show API key')
-              }
-              aria-pressed={showApiKey}
-            >
-              {showApiKey ? (
-                <EyeOff className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <Eye className="h-4 w-4 text-muted-foreground" />
-              )}
-            </Button>
+                  : t('settings.provider.showApiKey', 'Show API key')}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 

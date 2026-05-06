@@ -1,6 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+    __resetAgentSessionListStartupCacheForTests,
     AgentSessionListProvider,
     useAgentSessionListState,
     useAgentSessionListActions,
@@ -86,6 +87,7 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
 
     beforeEach(() => {
         vi.clearAllMocks();
+        __resetAgentSessionListStartupCacheForTests();
         agentEventHandler = undefined;
 
         (listen as ReturnType<typeof vi.fn>).mockImplementation(

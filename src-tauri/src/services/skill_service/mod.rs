@@ -1,19 +1,23 @@
+mod cache;
 mod contracts;
 mod directories;
 mod github;
 mod importing;
 mod scanning;
 
+pub use cache::{invalidate_skill_scan_cache, prewarm_managed_skill_scans};
 pub use contracts::{
     GitHubRepoSpec, ManagedSkillsOverview, SkillImportCandidate, SkillImportConflict,
-    SkillImportPreview, SkillImportResult, SkillMetadata, SKILL_FILE_NAME,
+    SkillImportPreview, SkillImportResult, SkillMetadata, LEGACY_SYSTEM_SKILLS_DIR_NAME,
+    MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME, SYSTEM_SKILLS_DIR_NAME,
+    USER_SKILLS_DIR_NAME,
 };
 pub use directories::{
     collect_allowed_skill_roots, get_assistant_skills_directory, get_configured_skills_directory,
     get_default_skills_directory, get_legacy_global_skills_directory, get_managed_skills_overview,
-    get_system_skills_directory, get_user_skills_directory,
-    get_workspace_skills_directory_for_session, get_workspace_skills_directory_from_path,
-    resolve_skill_directories, resolve_skills,
+    get_managed_skills_overview_for_directories, get_system_skills_directory,
+    get_user_skills_directory, get_workspace_skills_directory_for_session,
+    get_workspace_skills_directory_from_path, resolve_skill_directories, resolve_skills,
 };
 pub use github::parse_github_repo_url;
 pub use importing::{
@@ -27,4 +31,4 @@ pub use scanning::{
     scan_skills_directory,
 };
 
-pub(crate) use scanning::scan_skills_internal;
+pub(crate) use cache::scan_skills_internal_cached;

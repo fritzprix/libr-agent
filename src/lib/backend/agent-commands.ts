@@ -2,9 +2,11 @@ import { safeInvoke } from '@/lib/backend/core';
 import type {
   AgentResponse,
   AgentRuntimeError,
+  CompletionCancelRequest,
   HandleLLMResponseData,
   ExecuteUiTauriActionRequest,
   AgentOpenSessionResponse,
+  StreamingIssueReport,
 } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
@@ -47,6 +49,16 @@ export async function handleLLMError(
   await safeInvoke<AgentResponse>('agent_handle_llm_error', {
     sessionId,
     error,
+  });
+}
+
+export async function reportLLMStreamingIssue(
+  report: StreamingIssueReport,
+): Promise<AgentResponse<{ action: 'ignored' | 'retried' | 'failed' }>> {
+  return safeInvoke<
+    AgentResponse<{ action: 'ignored' | 'retried' | 'failed' }>
+  >('agent_report_llm_streaming_issue', {
+    report,
   });
 }
 
@@ -130,6 +142,8 @@ export async function openAgentSession(
     initialMessageLimit,
   });
 }
+
+export type { CompletionCancelRequest };
 
 /**
  * Notify Rust backend that frontend compaction LLM call succeeded.

@@ -27,6 +27,8 @@ prompt
 error.txt
 error_*.txt
 .claude
+.jules/
+.worktrees/
 .vscode
 .agent
 .serena

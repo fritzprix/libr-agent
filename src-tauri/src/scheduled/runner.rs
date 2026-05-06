@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::agent::{AgentConfig, AgentSessionManager};
 use crate::mcp::types::MCPContent;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MessageSource};
 use crate::repositories::{AssistantRepository, ScheduledTaskRepository, SessionRepository};
 use crate::scheduled::ScheduleTimezone;
 use crate::services::WorkspaceService;
@@ -242,7 +242,7 @@ async fn execute_task(
         tool_use: None,
         created_at: now_ts,
         updated_at: now_ts,
-        source: Some("scheduled_task".to_string()),
+        source: Some(MessageSource::ScheduledTask),
         error: None,
         metadata: None,
     };

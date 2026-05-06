@@ -38,6 +38,75 @@ import type {
 const logger = getLogger('AgentSessionListContext');
 const RESERVED_AGENT_SUBROUTES = new Set(['draft']);
 
+let cachedSessionMetadataList: AgentSessionMetadata[] | null = null;
+let cachedSessionMetadataPromise: Promise<AgentSessionMetadata[]> | null = null;
+let sessionMetadataCacheGeneration = 0;
+
+type SessionMetadataLoadSource = 'cache' | 'inflight' | 'network';
+
+interface SessionMetadataLoadHandle {
+  source: SessionMetadataLoadSource;
+  promise: Promise<AgentSessionMetadata[]>;
+}
+
+function invalidateSessionListStartupCache() {
+  sessionMetadataCacheGeneration += 1;
+  cachedSessionMetadataList = null;
+  cachedSessionMetadataPromise = null;
+}
+
+function loadSessionMetadataList(
+  forceRefresh = false,
+): SessionMetadataLoadHandle {
+  if (forceRefresh) {
+    invalidateSessionListStartupCache();
+  }
+
+  if (!forceRefresh && cachedSessionMetadataList !== null) {
+    return {
+      source: 'cache',
+      promise: Promise.resolve(cachedSessionMetadataList),
+    };
+  }
+
+  if (!forceRefresh && cachedSessionMetadataPromise) {
+    return {
+      source: 'inflight',
+      promise: cachedSessionMetadataPromise,
+    };
+  }
+
+  const requestGeneration = sessionMetadataCacheGeneration;
+  const request = Promise.resolve(
+    safeInvoke<AgentSessionMetadata[]>('agent_get_all_sessions'),
+  )
+    .then((response) => {
+      const sessionMetadataList = Array.isArray(response) ? response : [];
+      if (
+        requestGeneration === sessionMetadataCacheGeneration &&
+        cachedSessionMetadataPromise === request
+      ) {
+        cachedSessionMetadataList = sessionMetadataList;
+      }
+      return sessionMetadataList;
+    })
+    .finally(() => {
+      if (cachedSessionMetadataPromise === request) {
+        cachedSessionMetadataPromise = null;
+      }
+    });
+
+  cachedSessionMetadataPromise = request;
+  return {
+    source: 'network',
+    promise: request,
+  };
+}
+
+export function __resetAgentSessionListStartupCacheForTests() {
+  invalidateSessionListStartupCache();
+}
+
 // --- STATE CONTEXT ---
 interface AgentSessionListStateContextValue {
   sessions: AgentSession[];
@@ -60,7 +129,7 @@ interface AgentSessionListActionsContextValue {
   /**
    * Load all agent sessions
    */
-  loadSessions: () => Promise<void>;
+  loadSessions: (forceRefresh?: boolean) => Promise<void>;
 
   /**
    * Delete an agent session
@@ -114,6 +183,10 @@ export function AgentSessionListProvider({
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
   const pendingApprovalKeysRef = useRef(new Set<string>());
   const startupLoadRecordedRef = useRef(false);
+  const sessionListMutationVersionRef = useRef(0);
+  const latestSessionListPromiseRef = useRef<Promise<
+    AgentSessionMetadata[]
+  > | null>(null);
   const activeSessionId = useMemo(() => {
     const sessionId = matchPath('/agent/:sessionId', location.pathname)?.params
       .sessionId;
@@ -135,19 +208,39 @@ export function AgentSessionListProvider({
     return session.lastAttentionAt.getTime() > session.lastViewedAt.getTime();
   }, []);
 
+  const mutateSessions = useCallback(
+    (updater: (previousSessions: AgentSession[]) => AgentSession[]) => {
+      sessionListMutationVersionRef.current += 1;
+      invalidateSessionListStartupCache();
+      setSessions(updater);
+    },
+    [],
+  );
+
   /**
    * Load all agent sessions
    */
-  const loadSessions = useCallback(async () => {
-    logger.info('Loading all agent sessions');
+  const loadSessions = useCallback(async (forceRefresh = false) => {
+    const { source, promise } = loadSessionMetadataList(forceRefresh);
+    latestSessionListPromiseRef.current = promise;
+    const shouldLogLoad = forceRefresh || source === 'network';
+
+    if (shouldLogLoad) {
+      logger.info('Loading all agent sessions');
+    }
+
     setIsSessionsListLoading(true);
+    const mutationVersion = sessionListMutationVersionRef.current;
 
     try {
-      // Call Rust backend to get all sessions
-      const response = await safeInvoke<AgentSessionMetadata[]>(
-        'agent_get_all_sessions',
-      );
-      const sessionMetadataList = Array.isArray(response) ? response : [];
+      const sessionMetadataList = await promise;
+
+      if (
+        mutationVersion !== sessionListMutationVersionRef.current ||
+        promise !== latestSessionListPromiseRef.current
+      ) {
+        return;
+      }
 
       setSessions((prev) => {
         const pendingApprovalCounts = new Map(
@@ -166,13 +259,27 @@ export function AgentSessionListProvider({
           ),
         );
       });
-      logger.info('Loaded sessions', { count: sessionMetadataList.length });
+      if (shouldLogLoad) {
+        logger.info('Loaded sessions', { count: sessionMetadataList.length });
+      }
     } catch (err) {
-      logger.error('Failed to load sessions', err);
-      setSessions([]);
+      if (shouldLogLoad) {
+        logger.error('Failed to load sessions', err);
+      }
+      if (
+        mutationVersion === sessionListMutationVersionRef.current &&
+        promise === latestSessionListPromiseRef.current
+      ) {
+        setSessions([]);
+      }
     } finally {
-      setIsSessionsListLoading(false);
-      if (!startupLoadRecordedRef.current) {
+      if (promise === latestSessionListPromiseRef.current) {
+        setIsSessionsListLoading(false);
+      }
+      if (
+        promise === latestSessionListPromiseRef.current &&
+        !startupLoadRecordedRef.current
+      ) {
         startupLoadRecordedRef.current = true;
         markStartupMilestone('session-list-settled');
       }
@@ -286,7 +393,7 @@ export function AgentSessionListProvider({
         };
 
         // Add to list
-        setSessions((prev) => [session, ...prev]);
+        mutateSessions((prev) => [session, ...prev]);
 
         logger.info('Agent session created successfully', {
           sessionId: session.id,
@@ -302,6 +409,7 @@ export function AgentSessionListProvider({
       advanced.defaultSessionMaxDepth,
       advanced.defaultSessionMaxFanout,
       modelId,
+      mutateSessions,
       provider,
     ],
   );
@@ -340,7 +448,7 @@ export function AgentSessionListProvider({
         const idsToRemove = new Set(deletedIds);
 
         // Remove the session and ALL its descendants from the UI using the authoritative list from Rust
-        setSessions((prev) => prev.filter((s) => !idsToRemove.has(s.id)));
+        mutateSessions((prev) => prev.filter((s) => !idsToRemove.has(s.id)));
 
         // Clean up LLM state outside the updater to avoid double-invocation in StrictMode
         idsToRemove.forEach((id) => clearSessionState(id));
@@ -351,7 +459,7 @@ export function AgentSessionListProvider({
         throw err;
       }
     },
-    [clearSessionState],
+    [clearSessionState, mutateSessions],
   );
 
   /**
@@ -374,7 +482,7 @@ export function AgentSessionListProvider({
         const orphanedIds = new Set(response?.data?.orphanedIds || []);
 
         // Remove the session; update explicitly orphaned children to have no parent
-        setSessions((prev) =>
+        mutateSessions((prev) =>
           prev
             .filter((s) => s.id !== actualDeletedId)
             .map((s) =>
@@ -388,7 +496,7 @@ export function AgentSessionListProvider({
         throw err;
       }
     },
-    [clearSessionState],
+    [clearSessionState, mutateSessions],
   );
 
   /**
@@ -401,7 +509,7 @@ export function AgentSessionListProvider({
       const newValue = !(session?.isBookmarked ?? false);
 
       // Optimistic: set locally with the known new value
-      setSessions((prev) =>
+      mutateSessions((prev) =>
         prev.map((s) =>
           s.id === sessionId ? { ...s, isBookmarked: newValue } : s,
         ),
@@ -423,7 +531,7 @@ export function AgentSessionListProvider({
         throw err;
       }
     },
-    [sessions],
+    [mutateSessions, sessions],
   );
 
   const markSessionViewed = useCallback(
@@ -471,7 +579,7 @@ export function AgentSessionListProvider({
   // Subscribe to agent:event for session resource updates via centralized hook
   useBackendResource('session', () => {
     logger.debug('Agent updated session resource, refreshing session list...');
-    loadSessions();
+    loadSessions(true);
   });
 
   useEffect(() => {
@@ -649,7 +757,7 @@ export function AgentSessionListProvider({
     return () => {
       if (unlisten) unlisten();
     };
-  }, [activeSessionId, markSessionViewed]);
+  }, [activeSessionId, clearPendingApproval, markSessionViewed]);
 
   const notificationSessions = useMemo(
     () =>

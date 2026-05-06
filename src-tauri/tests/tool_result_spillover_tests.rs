@@ -7,7 +7,7 @@ use tauri_mcp_agent_lib::agent::tools::{
     TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
 };
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, ServiceInfo};
-use tauri_mcp_agent_lib::models::chat::Message;
+use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 use tauri_mcp_agent_lib::repositories::{
     MessageRepository, SessionMetadata, SessionRepository, SessionStatus, SqliteMessageRepository,
     SqliteSessionRepository,
@@ -90,7 +90,7 @@ fn make_tool_message(session_id: &str, tool_call_id: &str, text: &str) -> Messag
         usage: None,
         created_at: 0,
         updated_at: 0,
-        source: Some("tool".to_string()),
+        source: Some(MessageSource::Tool),
         error: None,
         metadata: None,
     }
@@ -153,7 +153,7 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
         usage: None,
         created_at: 0,
         updated_at: 0,
-        source: Some("tool".to_string()),
+        source: Some(MessageSource::Tool),
         error: None,
         metadata: None,
     };

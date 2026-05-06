@@ -123,6 +123,31 @@ pub struct CompletionRequest {
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum StreamingIssueKind {
+    RepeatedThinkingLoop,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamingIssueReport {
+    pub session_id: String,
+    pub response_message_id: String,
+    pub issue_kind: StreamingIssueKind,
+    pub observed_tail_chars: usize,
+    pub pattern_length: usize,
+    pub repetition_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionCancelRequest {
+    pub session_id: String,
+    pub response_message_id: String,
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostResponseCompactionPressure {

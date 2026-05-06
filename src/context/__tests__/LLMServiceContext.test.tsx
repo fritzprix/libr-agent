@@ -10,7 +10,15 @@ import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
 import { SettingsProvider } from '../SettingsContext';
-import type { ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
+import { __resetLLMListenerStartupLogStateForTests } from '../llm/useLLMListener';
+
+const { loggerInfo, loggerDebug, loggerWarn, loggerError } = vi.hoisted(() => ({
+  loggerInfo: vi.fn(),
+  loggerDebug: vi.fn(),
+  loggerWarn: vi.fn(),
+  loggerError: vi.fn(),
+}));
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -25,6 +33,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@/lib/backend/agent-commands', () => ({
   handleLLMError: vi.fn(),
   handleLLMResponse: vi.fn(),
+  reportLLMStreamingIssue: vi.fn(),
   getAgentCompactContext: vi.fn(),
 }));
 
@@ -38,10 +47,10 @@ vi.mock('@/lib/ai-service/factory', () => ({
 // Mock logger
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
-    info: vi.fn(),
-    debug: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
+    info: loggerInfo,
+    debug: loggerDebug,
+    warn: loggerWarn,
+    error: loggerError,
   }),
 }));
 
@@ -71,10 +80,12 @@ describe('LLMServiceContext – Core', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
   const mockListModels = vi.fn();
+  const mockCancel = vi.fn();
   const mockDispose = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetLLMListenerStartupLogStateForTests();
 
     // Setup listen mock
     (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
@@ -83,6 +94,7 @@ describe('LLMServiceContext – Core', () => {
     (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
       streamChat: mockStreamChat,
       listModels: mockListModels,
+      cancel: mockCancel,
       dispose: mockDispose,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
       // Default implementation: pass-through (mirrors BaseAIService default)
@@ -106,9 +118,9 @@ describe('LLMServiceContext – Core', () => {
     ]);
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+    afterEach(() => {
+      vi.clearAllMocks();
+    });
 
   describe('Provider Setup', () => {
     it('should provide context value', () => {
@@ -170,6 +182,43 @@ describe('LLMServiceContext – Core', () => {
           expect.any(Function),
         );
       });
+    });
+
+    it('dedupes startup listener lifecycle logs across StrictMode remounts', async () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <React.StrictMode>
+          <TestWrapper>{children}</TestWrapper>
+        </React.StrictMode>
+      );
+
+      renderHook(() => useLLMService(), {
+        wrapper,
+      });
+
+      await waitFor(() => {
+        expect(loggerInfo).toHaveBeenCalledWith(
+          'LLM completion request listener registered',
+        );
+      });
+
+      expect(
+        loggerInfo.mock.calls.filter(
+          ([message]) =>
+            message === '🎧 Initializing LLM completion request listener',
+        ),
+      ).toHaveLength(1);
+      expect(
+        loggerInfo.mock.calls.filter(
+          ([message]) =>
+            message === 'Setting up LLM completion request listener',
+        ),
+      ).toHaveLength(1);
+      expect(
+        loggerInfo.mock.calls.filter(
+          ([message]) =>
+            message === 'LLM completion request listener registered',
+        ),
+      ).toHaveLength(1);
     });
 
     it('should cleanup on unmount', async () => {
@@ -684,6 +733,66 @@ describe('LLMServiceContext – Core', () => {
 
       // Streaming message should be cleared
       expect(result.current.streamingMessages.has('test-session')).toBe(false);
+    });
+
+    it('clears stale streaming UI immediately on cancellation', async () => {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
+        wrapper: TestWrapper,
+      });
+
+      let cancelled = false;
+      mockCancel.mockImplementation(() => {
+        cancelled = true;
+      });
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({ thinking: 'looping...' });
+
+        while (!cancelled) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let requestPromise!: Promise<Message>;
+      await act(async () => {
+        requestPromise = result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-cancel',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      await waitFor(() => {
+        expect(result.current.streamingMessages.has('test-session')).toBe(true);
+      });
+
+      act(() => {
+        result.current.cancelCompletionRequest(
+          'test-session',
+          'response-msg-cancel',
+        );
+      });
+
+      await waitFor(() => {
+        expect(result.current.streamingMessages.has('test-session')).toBe(false);
+      });
+
+      await act(async () => {
+        await requestPromise;
+      });
     });
   });
 });

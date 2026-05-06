@@ -4,7 +4,7 @@ import {
   handleCompactResponse,
   handleCompactError,
 } from '@/lib/backend/agent-commands';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
@@ -21,6 +21,7 @@ import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
 import type {
+  CompletionCancelRequest,
   CompactRequest,
   CompactedRange,
   CompletionRequest,
@@ -41,6 +42,20 @@ import {
 } from './listener-utils';
 
 const logger = getLogger('useLLMListener');
+const startupLifecycleLogKeys = new Set<string>();
+
+function logStartupLifecycleOnce(key: string, message: string) {
+  if (startupLifecycleLogKeys.has(key)) {
+    return;
+  }
+
+  startupLifecycleLogKeys.add(key);
+  logger.info(message);
+}
+
+export function __resetLLMListenerStartupLogStateForTests() {
+  startupLifecycleLogKeys.clear();
+}
 
 interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;
@@ -57,6 +72,10 @@ interface UseLLMListenerProps {
     maxTokens?: number,
     availableTools?: MCPTool[],
   ) => Promise<Message>;
+  cancelCompletionRequest: (
+    sessionId: string,
+    responseMessageId?: string,
+  ) => void;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
@@ -76,6 +95,7 @@ interface UseLLMListenerProps {
 export function useLLMListener({
   settingsRef,
   executeCompletionRequest,
+  cancelCompletionRequest,
   setStreamingMessages,
   setCompactionPressureForSession,
   clearCompactionPressureForSession,
@@ -83,26 +103,21 @@ export function useLLMListener({
   setCompactedRangeForSession,
   setAwaitingCompactForSession,
 }: UseLLMListenerProps) {
-  // Track listener setup to prevent duplicate registration in React Strict Mode
-  const listenerSetupRef = useRef(false);
-
   useEffect(() => {
-    // Prevent duplicate listener registration in React Strict Mode
-    if (listenerSetupRef.current) {
-      logger.info(
-        '⚠️ LLM listener already set up, skipping duplicate registration',
-      );
-      return;
-    }
-
-    listenerSetupRef.current = true;
-    logger.info('🎧 Initializing LLM completion request listener');
+    logStartupLifecycleOnce(
+      'completion-initializing',
+      '🎧 Initializing LLM completion request listener',
+    );
 
     let isMounted = true;
     let unlisten: (() => void) | undefined;
+    let unlistenCancel: (() => void) | undefined;
 
     const setupListener = async () => {
-      logger.info('Setting up LLM completion request listener');
+      logStartupLifecycleOnce(
+        'completion-setting-up',
+        'Setting up LLM completion request listener',
+      );
 
       const unlistenFn = await listen<CompletionRequest>(
         'llm:completion-request',
@@ -372,17 +387,40 @@ export function useLLMListener({
       );
 
       if (!isMounted) {
-        logger.info(
-          'LLM listener setup completed after unmount, cleaning up immediately',
-        );
         unlistenFn();
       } else {
         unlisten = unlistenFn;
-        logger.info('LLM completion request listener registered');
+        logStartupLifecycleOnce(
+          'completion-registered',
+          'LLM completion request listener registered',
+        );
       }
     };
 
     setupListener();
+
+    const setupCancelListener = async () => {
+      const unlistenFn = await listen<CompletionCancelRequest>(
+        'llm:completion-cancel',
+        (event) => {
+          const { sessionId, responseMessageId, reason } = event.payload;
+          logger.info('Received Rust-driven completion cancel request', {
+            sessionId,
+            responseMessageId,
+            reason,
+          });
+          cancelCompletionRequest(sessionId, responseMessageId);
+        },
+      );
+
+      if (!isMounted) {
+        unlistenFn();
+      } else {
+        unlistenCancel = unlistenFn;
+      }
+    };
+
+    setupCancelListener();
 
     // --- Compact request listener ---
     let unlistenCompact: (() => void) | undefined;
@@ -460,7 +498,10 @@ export function useLLMListener({
         unlistenFn();
       } else {
         unlistenCompact = unlistenFn;
-        logger.info('LLM compact request listener registered');
+        logStartupLifecycleOnce(
+          'compact-request-registered',
+          'LLM compact request listener registered',
+        );
       }
     };
 
@@ -517,7 +558,10 @@ export function useLLMListener({
         unlistenFn();
       } else {
         unlistenCompactState = unlistenFn;
-        logger.info('LLM compact state listener registered');
+        logStartupLifecycleOnce(
+          'compact-state-registered',
+          'LLM compact state listener registered',
+        );
       }
     };
 
@@ -529,6 +573,10 @@ export function useLLMListener({
         unlisten();
         logger.info('LLM completion request listener cleaned up');
       }
+      if (unlistenCancel) {
+        unlistenCancel();
+        logger.info('LLM completion cancel listener cleaned up');
+      }
       if (unlistenCompact) {
         unlistenCompact();
         logger.info('LLM compact request listener cleaned up');
@@ -537,8 +585,6 @@ export function useLLMListener({
         unlistenCompactState();
         logger.info('LLM compact state listener cleaned up');
       }
-      // Reset listener setup ref on unmount
-      listenerSetupRef.current = false;
     };
-  }, []); // ⚠️ CRITICAL: Empty dependency array to prevent re-registering listener
+  }, [cancelCompletionRequest]); // cancel handler identity must stay in sync
 }

@@ -2,7 +2,7 @@ use crate::agent::references::build_default_registry;
 use crate::agent::state::AgentSession;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
-use crate::models::chat::Message;
+use crate::models::chat::{Message, MessageSource};
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::CompactContextRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
@@ -95,7 +95,7 @@ pub fn build_compact_summary_message(session_id: &str, text: String, created_at:
             text,
             is_error: None,
         }],
-        source: Some("compact-summary".to_string()),
+        source: Some(MessageSource::CompactSummary),
         created_at,
         updated_at: created_at,
         tool_calls: None,
@@ -110,6 +110,19 @@ pub fn build_compact_summary_message(session_id: &str, text: String, created_at:
         error: None,
         metadata: None,
     }
+}
+
+pub fn build_compact_summary_message_for_messages(
+    session_id: &str,
+    summary: &str,
+    compacted_messages: &[Message],
+    created_at: i64,
+) -> Message {
+    build_compact_summary_message(
+        session_id,
+        build_compact_summary_text(summary, compacted_messages),
+        created_at,
+    )
 }
 
 const COMPACT_TOOL_SNAPSHOT_LIMIT: usize = 5;
@@ -430,7 +443,7 @@ pub async fn request_llm_completion(
         let messages_lock = session.messages.read().await;
         messages_lock
             .iter()
-            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .filter(|m| !m.is_recovery_message())
             .cloned()
             .collect::<Vec<_>>()
     };
@@ -573,9 +586,10 @@ pub async fn request_llm_completion(
                 (messages, false)
             } else if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
                 let now_ms = chrono::Utc::now().timestamp_millis();
-                let summary_msg = build_compact_summary_message(
+                let summary_msg = build_compact_summary_message_for_messages(
                     &session_id,
-                    build_compact_summary_text(&record.summary, &messages[..=to_idx]),
+                    &record.summary,
+                    &messages[..=to_idx],
                     now_ms,
                 );
                 let summary_tokens =

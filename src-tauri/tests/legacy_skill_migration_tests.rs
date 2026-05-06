@@ -1,9 +1,10 @@
 use std::fs;
 use std::path::Path;
 use tauri_mcp_agent_lib::lifecycle::app_setup::{
-    classify_legacy_skill_for_managed_storage, sync_legacy_global_skills_to_bundled_snapshot,
-    LegacySkillMigrationAction,
+    classify_legacy_skill_for_managed_storage, remove_legacy_skills_dir_if_empty,
+    sync_managed_system_skills_snapshot, LegacySkillMigrationAction,
 };
+use tauri_mcp_agent_lib::services::skill_service::MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME;
 use tempfile::TempDir;
 
 fn write_skill(dir: &Path, name: &str, description: &str, body: &str) {
@@ -87,9 +88,9 @@ fn modified_legacy_bundled_skill_is_deleted_instead_of_migrated() {
 }
 
 #[test]
-fn sync_legacy_global_skills_removes_extras_and_restores_missing_bundled_skills() {
+fn sync_managed_system_skills_removes_extras_and_restores_missing_bundled_skills() {
     let bundled_root = TempDir::new().unwrap();
-    let legacy_root = TempDir::new().unwrap();
+    let system_root = TempDir::new().unwrap();
 
     let bundled_teamwork = bundled_root.path().join("teamwork");
     let bundled_delegate = bundled_root.path().join("delegate");
@@ -106,35 +107,144 @@ fn sync_legacy_global_skills_removes_extras_and_restores_missing_bundled_skills(
         "delegate body",
     );
 
-    let legacy_teamwork = legacy_root.path().join("teamwork");
-    let legacy_extra = legacy_root.path().join("custom-extra");
+    let system_teamwork = system_root.path().join("teamwork");
+    let system_extra = system_root.path().join("custom-extra");
     write_skill(
-        &legacy_teamwork,
+        &system_teamwork,
         "teamwork",
         "Old modified",
         "outdated body",
     );
-    write_skill(&legacy_extra, "custom-extra", "Extra", "extra body");
-    fs::write(legacy_teamwork.join(".bundled_skill"), "").unwrap();
-    fs::write(legacy_extra.join(".bundled_skill"), "").unwrap();
+    write_skill(&system_extra, "custom-extra", "Extra", "extra body");
 
-    sync_legacy_global_skills_to_bundled_snapshot(bundled_root.path(), legacy_root.path()).unwrap();
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
 
-    assert!(legacy_root.path().join("teamwork").exists());
-    assert!(legacy_root.path().join("delegate").exists());
-    assert!(!legacy_root.path().join("custom-extra").exists());
+    assert!(system_root.path().join("teamwork").exists());
+    assert!(system_root.path().join("delegate").exists());
+    assert!(!system_root.path().join("custom-extra").exists());
 
     let teamwork_skill =
-        fs::read_to_string(legacy_root.path().join("teamwork").join("SKILL.md")).unwrap();
+        fs::read_to_string(system_root.path().join("teamwork").join("SKILL.md")).unwrap();
     assert!(teamwork_skill.contains("Bundled teamwork"));
-    assert!(legacy_root
+    assert!(system_root
         .path()
-        .join("teamwork")
-        .join(".bundled_skill")
+        .join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME)
         .exists());
-    assert!(legacy_root
-        .path()
-        .join("delegate")
-        .join(".bundled_skill")
-        .exists());
+}
+
+#[test]
+fn sync_managed_system_skills_restores_tampered_skill_contents_when_manifest_is_missing() {
+    let bundled_root = TempDir::new().unwrap();
+    let system_root = TempDir::new().unwrap();
+
+    let bundled_teamwork = bundled_root.path().join("teamwork");
+    write_skill(
+        &bundled_teamwork,
+        "teamwork",
+        "Bundled teamwork",
+        "expected bundled body",
+    );
+
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
+
+    fs::write(
+        system_root.path().join("teamwork").join("SKILL.md"),
+        "---\nname: teamwork\ndescription: Tampered\n---\nlocal drift\n",
+    )
+    .unwrap();
+    fs::remove_file(
+        system_root
+            .path()
+            .join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME),
+    )
+    .unwrap();
+
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
+
+    let teamwork_skill =
+        fs::read_to_string(system_root.path().join("teamwork").join("SKILL.md")).unwrap();
+    assert!(teamwork_skill.contains("Bundled teamwork"));
+    assert!(teamwork_skill.contains("expected bundled body"));
+}
+
+#[test]
+fn sync_managed_system_skills_rebuilds_invalid_manifest_before_comparing() {
+    let bundled_root = TempDir::new().unwrap();
+    let system_root = TempDir::new().unwrap();
+
+    let bundled_teamwork = bundled_root.path().join("teamwork");
+    write_skill(
+        &bundled_teamwork,
+        "teamwork",
+        "Bundled teamwork",
+        "expected bundled body",
+    );
+
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
+
+    fs::write(
+        system_root
+            .path()
+            .join(MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME),
+        b"{not-json",
+    )
+    .unwrap();
+    fs::write(
+        system_root.path().join("teamwork").join("SKILL.md"),
+        "---\nname: teamwork\ndescription: Tampered\n---\nlocal drift\n",
+    )
+    .unwrap();
+
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
+
+    let teamwork_skill =
+        fs::read_to_string(system_root.path().join("teamwork").join("SKILL.md")).unwrap();
+    assert!(teamwork_skill.contains("Bundled teamwork"));
+    assert!(teamwork_skill.contains("expected bundled body"));
+}
+
+#[test]
+fn sync_managed_system_skills_ignores_empty_source_directories() {
+    let bundled_root = TempDir::new().unwrap();
+    let system_root = TempDir::new().unwrap();
+
+    let bundled_teamwork = bundled_root.path().join("teamwork");
+    write_skill(
+        &bundled_teamwork,
+        "teamwork",
+        "Bundled teamwork",
+        "expected bundled body",
+    );
+    fs::create_dir_all(bundled_root.path().join("dummy-test")).unwrap();
+
+    let stale_dummy = system_root.path().join("dummy-test");
+    write_skill(&stale_dummy, "dummy-test", "Old dummy", "stale content");
+
+    sync_managed_system_skills_snapshot(bundled_root.path(), system_root.path()).unwrap();
+
+    assert!(system_root.path().join("teamwork").exists());
+    assert!(!system_root.path().join("dummy-test").exists());
+}
+
+#[test]
+fn remove_legacy_skills_dir_if_empty_removes_only_empty_roots() {
+    let legacy_root = TempDir::new().unwrap();
+    let empty_legacy_dir = legacy_root.path().join("skills");
+    fs::create_dir_all(&empty_legacy_dir).unwrap();
+
+    let removed = remove_legacy_skills_dir_if_empty(&empty_legacy_dir).unwrap();
+    assert!(removed);
+    assert!(!empty_legacy_dir.exists());
+
+    fs::create_dir_all(&empty_legacy_dir).unwrap();
+    write_skill(
+        &empty_legacy_dir.join("custom-skill"),
+        "custom-skill",
+        "Custom",
+        "user content",
+    );
+
+    let removed_non_empty = remove_legacy_skills_dir_if_empty(&empty_legacy_dir).unwrap();
+    assert!(!removed_non_empty);
+    assert!(empty_legacy_dir.exists());
 }

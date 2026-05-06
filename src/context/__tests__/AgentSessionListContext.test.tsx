@@ -1,6 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+    __resetAgentSessionListStartupCacheForTests,
     AgentSessionListProvider,
     useAgentSessionListState,
     useAgentSessionListActions,
@@ -9,6 +10,14 @@ import { safeInvoke } from '@/lib/backend/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Assistant } from '@/models/chat';
 import { MemoryRouter } from 'react-router-dom';
+import React from 'react';
+
+const { loggerInfo, loggerDebug, loggerWarn, loggerError } = vi.hoisted(() => ({
+    loggerInfo: vi.fn(),
+    loggerDebug: vi.fn(),
+    loggerWarn: vi.fn(),
+    loggerError: vi.fn(),
+}));
 
 // Mock Assistant for creating sessions
 const mockAssistant: Assistant = {
@@ -32,10 +41,10 @@ vi.mock('@tauri-apps/api/event', () => ({
 // Mock logger
 vi.mock('@/lib/logger', () => ({
     getLogger: () => ({
-        info: vi.fn(),
-        debug: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
+        info: loggerInfo,
+        debug: loggerDebug,
+        warn: loggerWarn,
+        error: loggerError,
     }),
 }));
 
@@ -78,6 +87,17 @@ export function TestWrapper({ children }: { children: React.ReactNode }) {
     );
 }
 
+function createDeferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+
+    return { promise, resolve, reject };
+}
+
 function DraftRouteWrapper({ children }: { children: React.ReactNode }) {
     return (
         <MemoryRouter initialEntries={['/agent/draft']}>
@@ -91,6 +111,7 @@ describe('AgentSessionListContext', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        __resetAgentSessionListStartupCacheForTests();
         // Default: listen resolves to an unlisten function
         (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
     });
@@ -132,6 +153,41 @@ describe('AgentSessionListContext', () => {
         expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
     });
 
+    it('dedupes the initial session load across StrictMode remounts', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([
+            {
+                id: 'session-1',
+                name: 'Test Session',
+                status: 'idle',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            }
+        ]);
+
+        function StrictWrapper({ children }: { children: React.ReactNode }) {
+            return (
+                <React.StrictMode>
+                    <TestWrapper>{children}</TestWrapper>
+                </React.StrictMode>
+            );
+        }
+
+        renderHook(() => useAgentSessionListState(), {
+            wrapper: StrictWrapper,
+        });
+
+        await waitFor(() => {
+            expect(safeInvoke).toHaveBeenCalledTimes(1);
+        });
+
+        expect(
+            loggerInfo.mock.calls.filter(([message]) => message === 'Loading all agent sessions')
+        ).toHaveLength(1);
+        expect(
+            loggerInfo.mock.calls.filter(([message]) => message === 'Loaded sessions')
+        ).toHaveLength(1);
+    });
+
     it('does not mark the draft route as a viewed session', async () => {
         (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
@@ -147,6 +203,85 @@ describe('AgentSessionListContext', () => {
             'agent_mark_session_viewed',
             expect.objectContaining({ sessionId: 'draft' }),
         );
+    });
+
+    it('keeps the loading flag and latest data when an older request resolves after refresh', async () => {
+        const staleSessions = createDeferred<
+            Array<{
+                id: string;
+                name: string;
+                status: 'idle';
+                createdAt: number;
+                updatedAt: number;
+            }>
+        >();
+        const refreshedSessions = createDeferred<
+            Array<{
+                id: string;
+                name: string;
+                status: 'idle';
+                createdAt: number;
+                updatedAt: number;
+            }>
+        >();
+
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd !== 'agent_get_all_sessions') {
+                return Promise.resolve();
+            }
+
+            return (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.length === 1
+                ? staleSessions.promise
+                : refreshedSessions.promise;
+        });
+
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapper }
+        );
+
+        await waitFor(() => {
+            expect((safeInvoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+            expect(result.current.state.isSessionsListLoading).toBe(true);
+        });
+
+        act(() => {
+            void result.current.actions.loadSessions(true);
+        });
+
+        await waitFor(() => {
+            expect((safeInvoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+        });
+
+        staleSessions.resolve([
+            {
+                id: 'session-1',
+                name: 'Stale Session',
+                status: 'idle',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            }
+        ]);
+        await Promise.resolve();
+
+        expect(result.current.state.isSessionsListLoading).toBe(true);
+        expect(result.current.state.sessions).toEqual([]);
+
+        refreshedSessions.resolve([
+            {
+                id: 'session-2',
+                name: 'Fresh Session',
+                status: 'idle',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            }
+        ]);
+
+        await waitFor(() => {
+            expect(result.current.state.isSessionsListLoading).toBe(false);
+            expect(result.current.state.sessions).toHaveLength(1);
+            expect(result.current.state.sessions[0].id).toBe('session-2');
+        });
     });
 
     it('should create a new session', async () => {

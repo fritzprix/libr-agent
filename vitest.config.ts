@@ -13,7 +13,7 @@ export default mergeConfig(
       environment: 'jsdom',
       setupFiles: './src/test/setup.ts',
       css: true,
-      exclude: [...configDefaults.exclude, 'aur/**'],
+      exclude: [...configDefaults.exclude, 'aur/**', '.worktrees/**'],
     },
   }),
 );
