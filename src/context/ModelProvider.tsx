@@ -9,6 +9,7 @@ import {
 import useSWR from 'swr';
 import { withTimeout } from '../lib/retry-utils';
 import { AIServiceProvider, AIServiceFactory } from '../lib/ai-service';
+import { shouldFetchDynamicModels } from '../lib/ai-service/model-fetch-policy';
 import {
   llmConfigManager,
   ModelInfo,
@@ -75,6 +76,17 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   // Generate stable cache key including baseUrl
   const swrCacheKey = useMemo(() => {
     const config = serviceConfigs[provider] || {};
+    if (
+      !shouldFetchDynamicModels({
+        provider,
+        apiKey: config.apiKey,
+        use3rdParty: config.use3rdParty,
+        customModelId: config.customModelId,
+      })
+    ) {
+      return null;
+    }
+
     return [
       'models',
       provider,

@@ -330,36 +330,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         );
 
       if (
-        currentStreamingMessage.tool_calls &&
-        currentStreamingMessage.tool_calls.length > 0
-      ) {
-        logger.info('Evaluating streaming message for display', {
-          sessionId: session.id,
-          streaming: summarizeMessageForLog(currentStreamingMessage),
-          lastPersistedAssistant: summarizeMessageForLog(
-            lastPersistedAssistantMessage,
-          ),
-          isSupersededByPersistedAssistant,
-          displayedIds: [...displayedIds],
-        });
-      }
-
-      if (
         !displayedIds.has(currentStreamingMessage.id) &&
         !isSupersededByPersistedAssistant
       ) {
         // Show streaming message alongside persisted messages
         displayed.push(currentStreamingMessage);
-        if (
-          currentStreamingMessage.tool_calls &&
-          currentStreamingMessage.tool_calls.length > 0
-        ) {
-          logger.info('Streaming message appended to displayMessages', {
-            sessionId: session.id,
-            streamingMessageId: currentStreamingMessage.id,
-            displayCount: displayed.length,
-          });
-        }
       }
     }
 
