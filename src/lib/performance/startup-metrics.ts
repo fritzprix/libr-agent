@@ -117,8 +117,15 @@ function summarizeIpcCalls(
   ipcCalls: readonly StartupIpcCallEntry[],
 ): StartupIpcSummary {
   const byCommand = new Map<string, StartupIpcCommandSummary>();
+  let globalFailedCount = 0;
+  let globalTotalDurationMs = 0;
+  let globalMaxDurationMs = 0;
 
   for (const ipcCall of ipcCalls) {
+    globalFailedCount += ipcCall.ok ? 0 : 1;
+    globalTotalDurationMs += ipcCall.durationMs;
+    globalMaxDurationMs = Math.max(globalMaxDurationMs, ipcCall.durationMs);
+
     const existing = byCommand.get(ipcCall.cmd);
     if (existing) {
       existing.count += 1;
@@ -140,22 +147,11 @@ function summarizeIpcCalls(
     });
   }
 
-  const failedCount = ipcCalls.reduce(
-    (count, ipcCall) => count + (ipcCall.ok ? 0 : 1),
-    0,
-  );
-
   return {
     count: ipcCalls.length,
-    failedCount,
-    totalDurationMs: ipcCalls.reduce(
-      (total, ipcCall) => total + ipcCall.durationMs,
-      0,
-    ),
-    maxDurationMs: ipcCalls.reduce(
-      (maxDuration, ipcCall) => Math.max(maxDuration, ipcCall.durationMs),
-      0,
-    ),
+    failedCount: globalFailedCount,
+    totalDurationMs: globalTotalDurationMs,
+    maxDurationMs: globalMaxDurationMs,
     commands: Array.from(byCommand.values()).sort(
       (left, right) => right.totalDurationMs - left.totalDurationMs,
     ),
