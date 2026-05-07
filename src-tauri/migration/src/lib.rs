@@ -30,6 +30,7 @@ mod m20260327_000025_add_stores_session_index;
 mod m20260405_000026_add_group_fields_to_scheduled_tasks;
 mod m20260405_000027_add_org_fields_to_sessions;
 mod m20260406_000028_create_gemini_context_caches;
+mod m20260506_000029_add_session_list_indexes;
 
 pub struct Migrator;
 
@@ -65,6 +66,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260405_000026_add_group_fields_to_scheduled_tasks::Migration),
             Box::new(m20260405_000027_add_org_fields_to_sessions::Migration),
             Box::new(m20260406_000028_create_gemini_context_caches::Migration),
+            Box::new(m20260506_000029_add_session_list_indexes::Migration),
         ]
     }
 }

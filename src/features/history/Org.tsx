@@ -1,14 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Building2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import {
-  useAgentSessionListActions,
-  useAgentSessionListState,
-} from '@/context/AgentSessionListContext';
+import { safeInvoke } from '@/lib/backend/core';
+import type { AgentSession } from '@/models/agent';
+import type { AgentSessionMetadata } from '@/models/agent-ipc';
+import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
 import { selectOrgSummaries } from './org-sessions';
 import { OrgCard } from './OrgCard';
 
@@ -33,19 +33,38 @@ function OrgCardSkeleton() {
 
 export default function Org() {
   const { t } = useTranslation('common');
-  const { sessions, isSessionsListLoading } = useAgentSessionListState();
-  const { loadSessions } = useAgentSessionListActions();
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [isSessionsListLoading, setIsSessionsListLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const orgs = useMemo(() => selectOrgSummaries(sessions), [sessions]);
 
-  async function handleRefresh() {
-    setIsRefreshing(true);
+  async function loadOrgSessions(forceRefreshing = false) {
+    if (forceRefreshing) {
+      setIsRefreshing(true);
+    } else {
+      setIsSessionsListLoading(true);
+    }
     try {
-      await loadSessions();
+      const response = await safeInvoke<AgentSessionMetadata[]>(
+        'agent_get_all_sessions',
+      );
+      const items = Array.isArray(response) ? response : [];
+      setSessions(
+        items.map((session) => mapSessionMetadataToAgentSession(session)),
+      );
     } finally {
       setIsRefreshing(false);
+      setIsSessionsListLoading(false);
     }
+  }
+
+  useEffect(() => {
+    void loadOrgSessions();
+  }, []);
+
+  async function handleRefresh() {
+    await loadOrgSessions(true);
   }
 
   if (isSessionsListLoading) {

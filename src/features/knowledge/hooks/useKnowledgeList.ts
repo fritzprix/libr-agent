@@ -34,6 +34,7 @@ export function useKnowledgeList({
   const { t } = useTranslation('common');
   const [items, setItems] = useState<KnowledgeChunkListItem[]>([]);
   const [assistants, setAssistants] = useState<string[]>([]);
+  const [hasResolvedFirstPage, setHasResolvedFirstPage] = useState(false);
   const [isListLoading, setIsListLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<KnowledgeListCursor | null>(
@@ -68,9 +69,11 @@ export function useKnowledgeList({
         setItems(response.items);
         setAssistants(response.assistants);
         setNextCursor(response.nextCursor ?? null);
+        setHasResolvedFirstPage(true);
       } catch (error) {
         logger.error('Failed to load global knowledge list', error);
         if (!cancelled) {
+          setHasResolvedFirstPage(true);
           toast.error(
             t(
               'knowledge.loadListFailed',
@@ -139,8 +142,10 @@ export function useKnowledgeList({
   return {
     assistants,
     hasMoreItems: nextCursor !== null,
+    isInitialListLoading: isListLoading && !hasResolvedFirstPage,
     isListLoading,
     isLoadingMore,
+    isRefreshingList: isListLoading && hasResolvedFirstPage,
     items,
     loadMore,
   };

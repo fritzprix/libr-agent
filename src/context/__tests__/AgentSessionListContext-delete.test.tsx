@@ -74,6 +74,10 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 describe('AgentSessionListContext – SP7 session delete options', () => {
     const mockUnlisten = vi.fn();
 
+    function createSessionPage(sessions: Array<Record<string, unknown>>) {
+        return { items: sessions, nextCursor: undefined };
+    }
+
     beforeEach(() => {
         vi.clearAllMocks();
         __resetAgentSessionListStartupCacheForTests();
@@ -84,11 +88,12 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
 
     it('deleteSession: BFS removes parent AND direct child from UI', async () => {
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions')
-                return Promise.resolve([
+            if (cmd === 'agent_list_sessions')
+                return Promise.resolve(createSessionPage([
                     { id: 'parent', name: 'Parent', status: 'idle', createdAt: Date.now() },
                     { id: 'child', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'parent' },
-                ]);
+                ]));
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_delete_session') return Promise.resolve({ success: true, message: 'Deleted sessions', data: ['parent', 'child'] });
             return Promise.resolve();
         });
@@ -111,12 +116,13 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
 
     it('deleteSession: BFS removes entire 3-level tree (grandparent → parent → child)', async () => {
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions')
-                return Promise.resolve([
+            if (cmd === 'agent_list_sessions')
+                return Promise.resolve(createSessionPage([
                     { id: 'gp', name: 'Grandparent', status: 'idle', createdAt: Date.now() },
                     { id: 'p', name: 'Parent', status: 'idle', createdAt: Date.now(), parentSessionId: 'gp' },
                     { id: 'c', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'p' },
-                ]);
+                ]));
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_delete_session') return Promise.resolve({ success: true, message: 'ok', data: ['gp', 'p', 'c'] });
             return Promise.resolve();
         });
@@ -140,11 +146,12 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
 
     it('deleteSessionOnly: removes parent, direct child becomes top-level (parentSessionId cleared)', async () => {
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions')
-                return Promise.resolve([
+            if (cmd === 'agent_list_sessions')
+                return Promise.resolve(createSessionPage([
                     { id: 'parent', name: 'Parent', status: 'idle', createdAt: Date.now() },
                     { id: 'child', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'parent' },
-                ]);
+                ]));
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'parent', orphanedIds: ['child'] } });
             return Promise.resolve();
         });
@@ -171,12 +178,13 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
 
     it('deleteSessionOnly: uses deletedId from backend response when different from sessionId', async () => {
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions')
-                return Promise.resolve([
+            if (cmd === 'agent_list_sessions')
+                return Promise.resolve(createSessionPage([
                     { id: 'alias-id', name: 'Alias', status: 'idle', createdAt: Date.now() },
                     { id: 'canonical-id', name: 'Parent', status: 'idle', createdAt: Date.now() },
                     { id: 'child', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'canonical-id' },
-                ]);
+                ]));
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             // Mock backend resolving 'alias-id' to 'canonical-id'
             if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'canonical-id', orphanedIds: ['child'] } });
             return Promise.resolve();
@@ -207,12 +215,13 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
     it('deleteSessionOnly: grandchild still linked to its own parent after orphan', async () => {
         // Tree: gp → p → c. Delete p with deleteSessionOnly.
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions')
-                return Promise.resolve([
+            if (cmd === 'agent_list_sessions')
+                return Promise.resolve(createSessionPage([
                     { id: 'gp', name: 'Grandparent', status: 'idle', createdAt: Date.now() },
                     { id: 'p', name: 'Parent', status: 'idle', createdAt: Date.now(), parentSessionId: 'gp' },
                     { id: 'c', name: 'Child', status: 'idle', createdAt: Date.now(), parentSessionId: 'p' },
-                ]);
+                ]));
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_delete_session_only') return Promise.resolve({ data: { deletedId: 'p', orphanedIds: ['c'] } });
             return Promise.resolve();
         });

@@ -20,8 +20,8 @@ export function KnowledgeDetailOverviewTab({
   const { t } = useTranslation('common');
 
   return (
-    <div className="grid h-full gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <Card className="min-h-0 py-4">
+    <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <Card className="flex min-h-0 flex-col py-4">
         <CardHeader className="px-4">
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">{detail.assistantId}</Badge>
@@ -35,8 +35,8 @@ export function KnowledgeDetailOverviewTab({
             ))}
           </div>
         </CardHeader>
-        <CardContent className="min-h-0 px-4">
-          <ScrollArea className="h-[420px] pr-4">
+        <CardContent className="flex min-h-0 flex-1 px-4">
+          <ScrollArea className="min-h-0 flex-1 pr-4">
             <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
               {detail.content}
             </div>
@@ -73,14 +73,14 @@ export function KnowledgeDetailOverviewTab({
           </CardContent>
         </Card>
 
-        <Card className="min-h-0 flex-1 py-4">
+        <Card className="flex min-h-0 flex-1 flex-col py-4">
           <CardHeader className="px-4">
             <CardTitle className="text-sm">
               {t('knowledge.entitiesTitle', 'Entities')}
             </CardTitle>
           </CardHeader>
-          <CardContent className="min-h-0 px-4">
-            <ScrollArea className="h-[250px] pr-3">
+          <CardContent className="flex min-h-0 flex-1 px-4">
+            <ScrollArea className="min-h-0 flex-1 pr-3">
               <div className="space-y-2">
                 {detail.entities.length === 0 ? (
                   <p className="text-sm text-muted-foreground">

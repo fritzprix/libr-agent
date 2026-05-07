@@ -1,6 +1,7 @@
 use super::error::DbError;
 use super::session_repository::{
-    SessionAttentionReason, SessionMetadata, SessionRepository, SessionStatus,
+    SessionAttentionReason, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
+    SessionStatus,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -156,6 +157,74 @@ impl SessionRepository for InMemorySessionRepository {
         let sessions = self.sessions.read().await;
         let result: Vec<SessionMetadata> = sessions.values().cloned().collect();
         log::debug!("InMemory: Get all sessions -> {} sessions", result.len());
+        Ok(result)
+    }
+
+    async fn list_sessions(
+        &self,
+        cursor: Option<SessionListCursor>,
+        limit: u64,
+    ) -> Result<SessionListPage, DbError> {
+        let sessions = self.sessions.read().await;
+        let normalized_limit = limit.clamp(1, 200) as usize;
+        let mut result: Vec<SessionMetadata> = sessions.values().cloned().collect();
+
+        result.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+
+        if let Some(cursor) = cursor {
+            result.retain(|session| {
+                session.updated_at < cursor.updated_at
+                    || (session.updated_at == cursor.updated_at && session.id < cursor.id)
+            });
+        }
+
+        let next_cursor = if result.len() > normalized_limit {
+            let cursor_source = result[normalized_limit - 1].clone();
+            result.truncate(normalized_limit);
+            Some(SessionListCursor {
+                updated_at: cursor_source.updated_at,
+                id: cursor_source.id,
+            })
+        } else {
+            None
+        };
+
+        Ok(SessionListPage {
+            items: result,
+            next_cursor,
+        })
+    }
+
+    async fn list_attention_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
+        let sessions = self.sessions.read().await;
+        let mut result: Vec<SessionMetadata> = sessions
+            .values()
+            .filter(|session| {
+                let Some(last_attention_at) = session.last_attention_at else {
+                    return false;
+                };
+
+                match session.last_viewed_at {
+                    Some(last_viewed_at) => last_attention_at > last_viewed_at,
+                    None => true,
+                }
+            })
+            .cloned()
+            .collect();
+
+        result.sort_by(|left, right| {
+            right
+                .last_attention_at
+                .cmp(&left.last_attention_at)
+                .then_with(|| right.updated_at.cmp(&left.updated_at))
+                .then_with(|| right.id.cmp(&left.id))
+        });
+
         Ok(result)
     }
 

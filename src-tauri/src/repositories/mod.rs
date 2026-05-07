@@ -39,6 +39,7 @@ pub use scheduled_task_repository::{
 };
 pub use session_org_context::build_explicit_org_layer_context;
 pub use session_repository::{
-    SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
+    SessionListCursor, SessionListPage, SessionMetadata, SessionRepository, SessionStatus,
+    SqliteSessionRepository,
 };
 pub use settings_repository::{SettingsRepository, SqliteSettingsRepository};
