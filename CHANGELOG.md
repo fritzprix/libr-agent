@@ -14,11 +14,14 @@ All notable changes to this project will be documented in this file.
 - **[CRITICAL] Security: Path Traversal Protection**: Hardened `SecurityValidator` to prevent path traversal bypasses involving symlinks and absolute paths, ensuring safer file operations within the workspace.
 - **Improved UI Stability**: Resolved a session notification race condition and fixed a UI lock issue in knowledge deletion to ensure smoother background operations.
 - **LLM Reliability**: Fixed OpenAI abort signal preservation across retries, ensuring consistent cancellation behavior for streaming requests.
+- **Settings Form Reliability**: Fixed advanced and performance settings form synchronization so numeric controls and saved values stay aligned instead of drifting after updates.
+- **History View Resilience**: Hardened session and organization history loading, restored list semantics for assistive tech, and corrected broken troubleshooting guide links.
 
 ### 🔧 Internal
 
 - **Test Hardening**: Relocated and refactored tests for `SecurityValidator` and added validation test cases for absolute path rejection.
-- **Codebase Maintenance**: Cleaned up redundant state setters and improved internal history and knowledge performance tracking.
+- **Settings and Streaming Refactor**: Split large settings surfaces into focused sections, introduced shared numeric setting helpers, and reduced unnecessary streaming churn in agent chat internals.
+- **Codebase Maintenance**: Cleaned up redundant state setters, improved internal history and knowledge performance tracking, and added model fetch policy regression coverage.
 
 ## [0.7.20] - 2026-05-05
 
