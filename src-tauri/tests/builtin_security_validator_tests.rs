@@ -14,6 +14,11 @@ fn test_path_validation() {
         .validate_path("attachments/docker_조사....md")
         .is_ok());
 
+    // Absolute paths for read operations are now strictly rejected
+    assert!(validator
+        .validate_path_for_read("/tmp/some-file.txt")
+        .is_err());
+
     // Invalid paths (directory traversal)
     assert!(validator.validate_path("../test.txt").is_err());
     assert!(validator.validate_path("../../etc/passwd").is_err());
