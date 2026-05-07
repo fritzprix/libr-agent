@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.21] - 2026-05-07
+
+### 🚀 Features
+
+- **Performance Optimizations**: Optimized `summarizeIpcCalls` and `AgentChatContext` by removing redundant O(N) operations, improving UI responsiveness during high-volume interactions.
+- **Enhanced Chat Feedback**: Added missing LLM cancel wiring and refined `AgentChatStatusBar` with better state synchronization for more accurate progress reporting.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Security: Path Traversal Protection**: Hardened `SecurityValidator` to prevent path traversal bypasses involving symlinks and absolute paths, ensuring safer file operations within the workspace.
+- **Improved UI Stability**: Resolved a session notification race condition and fixed a UI lock issue in knowledge deletion to ensure smoother background operations.
+- **LLM Reliability**: Fixed OpenAI abort signal preservation across retries, ensuring consistent cancellation behavior for streaming requests.
+
+### 🔧 Internal
+
+- **Test Hardening**: Relocated and refactored tests for `SecurityValidator` and added validation test cases for absolute path rejection.
+- **Codebase Maintenance**: Cleaned up redundant state setters and improved internal history and knowledge performance tracking.
+
 ## [0.7.20] - 2026-05-05
 
 ### 🚀 Features
