@@ -214,23 +214,13 @@ impl SecurityValidator {
         self.validate_path(user_path)
     }
 
-    /// Validate a path for read-only operations. Absolute paths outside the base directory are
-    /// permitted, while relative paths continue to be constrained to the base directory.
+    /// Validate a path for read-only operations.
+    ///
+    /// Like all file operations, read paths must be strictly constrained to the base directory
+    /// to prevent path traversal vulnerabilities. Absolute paths are only permitted if they
+    /// resolve to a location inside the base directory.
     pub fn validate_path_for_read(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
-        let normalized = user_path.replace(['\\', '/'], "/");
-
-        // Detect Windows drive-letter absolute paths like C:\foo
-        let is_windows_absolute = normalized.len() >= 2 && normalized.as_bytes()[1] == b':';
-
-        // Also treat Unix-style absolute paths (starting with '/') as absolute
-        let is_unix_style_absolute = normalized.starts_with('/');
-
-        if Path::new(&normalized).is_absolute() || is_windows_absolute || is_unix_style_absolute {
-            let cleaned = PathBuf::from(&normalized).clean();
-            return Ok(cleaned);
-        }
-
-        self.validate_path(&normalized)
+        self.validate_path(user_path)
     }
 
     /// Check if file size is within limits
