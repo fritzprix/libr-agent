@@ -15,6 +15,10 @@ vi.mock('@/hooks/use-settings', () => ({
   }),
 }));
 
+function cloneSettings<T>(settings: T): T {
+  return structuredClone(settings);
+}
+
 describe('useSettingsForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,7 +82,11 @@ describe('useSettingsForm', () => {
   });
 
   it('should save changes', async () => {
-    const { result } = renderHook(() => useSettingsForm());
+    mockUpdateGlobal.mockImplementation(async (nextSettings) => {
+      currentGlobalSettings = cloneSettings(nextSettings);
+    });
+
+    const { result, rerender } = renderHook(() => useSettingsForm());
 
     act(() => {
       result.current.update('windowSize', 50);
@@ -88,9 +96,17 @@ describe('useSettingsForm', () => {
       await result.current.save();
     });
 
-    expect(mockUpdateGlobal).toHaveBeenCalledWith(expect.objectContaining({
-      windowSize: 50
-    }));
+    act(() => {
+      rerender();
+    });
+
+    expect(mockUpdateGlobal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        windowSize: 50,
+      }),
+    );
+    expect(result.current.formState.windowSize).toBe(50);
+    expect(result.current.isDirty).toBe(false);
   });
 
   it('should update display settings', () => {
@@ -112,6 +128,40 @@ describe('useSettingsForm', () => {
     });
 
     expect(result.current.formState.system.maxFileUploadSizeMB).toBe(100);
+    expect(result.current.isDirty).toBe(true);
+  });
+
+  it('should adopt external settings changes while pristine', () => {
+    const { result, rerender } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      currentGlobalSettings = {
+        ...cloneSettings(DEFAULT_SETTING),
+        windowSize: 64,
+      };
+      rerender();
+    });
+
+    expect(result.current.formState.windowSize).toBe(64);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it('should preserve local edits when global settings change externally', () => {
+    const { result, rerender } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.update('windowSize', 50);
+    });
+
+    act(() => {
+      currentGlobalSettings = {
+        ...cloneSettings(DEFAULT_SETTING),
+        windowSize: 64,
+      };
+      rerender();
+    });
+
+    expect(result.current.formState.windowSize).toBe(50);
     expect(result.current.isDirty).toBe(true);
   });
 });

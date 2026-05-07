@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -18,13 +18,27 @@ export function useSettingsForm() {
 
   // Initialize form state from global settings
   const [formState, setFormState] = useState<SettingsFormState>(globalSettings);
-  const [prevGlobalSettings, setPrevGlobalSettings] = useState(globalSettings);
+  const previousGlobalSettingsRef = useRef(globalSettings);
+  const shouldAcceptNextGlobalSyncRef = useRef(false);
 
-  // Sync form state if globalSettings changes externally
-  if (globalSettings !== prevGlobalSettings) {
-    setPrevGlobalSettings(globalSettings);
-    setFormState(globalSettings);
-  }
+  useEffect(() => {
+    const previousGlobalSettings = previousGlobalSettingsRef.current;
+
+    if (globalSettings === previousGlobalSettings) {
+      return;
+    }
+
+    const shouldSyncFormState =
+      shouldAcceptNextGlobalSyncRef.current ||
+      equal(formState, previousGlobalSettings);
+
+    previousGlobalSettingsRef.current = globalSettings;
+    shouldAcceptNextGlobalSyncRef.current = false;
+
+    if (shouldSyncFormState) {
+      setFormState(globalSettings);
+    }
+  }, [formState, globalSettings]);
 
   // Generic update for top-level keys
   const update = useCallback(
@@ -102,7 +116,14 @@ export function useSettingsForm() {
   }, [globalSettings]);
 
   const save = useCallback(async () => {
-    await updateGlobal(formState);
+    shouldAcceptNextGlobalSyncRef.current = true;
+
+    try {
+      await updateGlobal(formState);
+    } catch (error) {
+      shouldAcceptNextGlobalSyncRef.current = false;
+      throw error;
+    }
   }, [formState, updateGlobal]);
 
   const isDirty = useMemo(() => {
