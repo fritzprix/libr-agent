@@ -318,14 +318,20 @@ export function AgentSessionListProvider({
     ) => {
       sessionListMutationVersionRef.current += 1;
       invalidateSessionListStartupCache();
-      setSessions(updater);
+      setSessions((previousSessions) => {
+        const nextSessions = updater(previousSessions);
+        sessionsRef.current = nextSessions;
+        return nextSessions;
+      });
       if (options?.notificationUpdater) {
-        setNotificationSessions((previousNotifications) =>
-          pruneNotificationSessions(
+        setNotificationSessions((previousNotifications) => {
+          const nextNotifications = pruneNotificationSessions(
             options.notificationUpdater?.(previousNotifications) ??
               previousNotifications,
-          ),
-        );
+          );
+          notificationSessionsRef.current = nextNotifications;
+          return nextNotifications;
+        });
       }
     },
     [pruneNotificationSessions],
@@ -333,27 +339,42 @@ export function AgentSessionListProvider({
 
   const applySessionUpdate = useCallback(
     (sessionId: string, updater: (session: AgentSession) => AgentSession) => {
-      const sourceSession =
-        sessionsRef.current.find((session) => session.id === sessionId) ??
-        notificationSessionsRef.current.find(
+      let updatedSessionFromSessions: AgentSession | undefined;
+
+      setSessions((previousSessions) => {
+        const nextSessions = updateSessionInList(
+          previousSessions,
+          sessionId,
+          (session) => {
+            const nextSession = updater(session);
+            updatedSessionFromSessions = nextSession;
+            return nextSession;
+          },
+        );
+        sessionsRef.current = nextSessions;
+        return nextSessions;
+      });
+      setNotificationSessions((previousNotifications) => {
+        const existingNotification = previousNotifications.find(
           (session) => session.id === sessionId,
         );
-      const updatedSession = sourceSession ? updater(sourceSession) : undefined;
-
-      setSessions((previousSessions) =>
-        updateSessionInList(previousSessions, sessionId, updater),
-      );
-      setNotificationSessions((previousNotifications) =>
-        pruneNotificationSessions(
-          updatedSession &&
-            !previousNotifications.some(
-              (session) => session.id === sessionId,
-            ) &&
-            hasUnreadAttention(updatedSession)
-            ? [...previousNotifications, updatedSession]
-            : updateSessionInList(previousNotifications, sessionId, updater),
-        ),
-      );
+        const nextNotificationSession =
+          updatedSessionFromSessions ??
+          (existingNotification ? updater(existingNotification) : undefined);
+        const nextNotifications = pruneNotificationSessions(
+          nextNotificationSession
+            ? existingNotification
+              ? previousNotifications.map((session) =>
+                  session.id === sessionId ? nextNotificationSession : session,
+                )
+              : hasUnreadAttention(nextNotificationSession)
+                ? [...previousNotifications, nextNotificationSession]
+                : previousNotifications
+            : previousNotifications,
+        );
+        notificationSessionsRef.current = nextNotifications;
+        return nextNotifications;
+      });
     },
     [hasUnreadAttention, pruneNotificationSessions, updateSessionInList],
   );
