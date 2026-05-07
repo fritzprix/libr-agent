@@ -4,6 +4,8 @@ import { Building2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from 'sonner';
+import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 import { safeInvoke } from '@/lib/backend/core';
 import type { AgentSession } from '@/models/agent';
@@ -11,6 +13,8 @@ import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
 import { selectOrgSummaries } from './org-sessions';
 import { OrgCard } from './OrgCard';
+
+const logger = getLogger('OrgHistory');
 
 function OrgCardSkeleton() {
   return (
@@ -53,6 +57,9 @@ export default function Org() {
       setSessions(
         items.map((session) => mapSessionMetadataToAgentSession(session)),
       );
+    } catch (error) {
+      logger.error('Failed to load org sessions', error);
+      toast.error(t('orgHistory.loadFailed', 'Failed to load org lineages'));
     } finally {
       setIsRefreshing(false);
       setIsSessionsListLoading(false);

@@ -57,14 +57,35 @@ vi.mock('react-virtuoso', () => ({
   }: {
     data: unknown[];
     itemContent: (index: number, item: unknown) => ReactNode;
-    components?: { Footer?: () => ReactNode };
+    components?: {
+      List?: (props: { children: ReactNode }) => ReactNode;
+      Item?: (props: { children: ReactNode }) => ReactNode;
+      Footer?: () => ReactNode;
+    };
   }) => (
-    <div>
-      {data.map((item, index) => (
-        <div key={index}>{itemContent(index, item)}</div>
-      ))}
-      {components?.Footer ? <components.Footer /> : null}
-    </div>
+    (() => {
+      const items = data.map((item, index) => {
+        const content = itemContent(index, item);
+        return components?.Item ? (
+          <components.Item key={index}>{content}</components.Item>
+        ) : (
+          <div key={index}>{content}</div>
+        );
+      });
+
+      const listChildren = (
+        <>
+          {items}
+          {components?.Footer ? <components.Footer /> : null}
+        </>
+      );
+
+      return components?.List ? (
+        <components.List>{listChildren}</components.List>
+      ) : (
+        <div>{listChildren}</div>
+      );
+    })()
   ),
 }));
 
@@ -155,6 +176,23 @@ describe('SessionHistoryPanel', () => {
     expect(
       screen.queryByTestId('session-card-grandchild'),
     ).not.toBeInTheDocument();
+  });
+
+  it('renders the virtualized session list with list semantics', () => {
+    render(
+      <SessionHistoryPanel
+        sessions={[createSession('root', 'Root')]}
+        isLoading={false}
+        {...defaultProps}
+        activeTab="all"
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    const sessionList = screen.getByRole('list');
+    expect(sessionList).toHaveAttribute('aria-labelledby', 'session-heading');
+    expect(screen.getAllByRole('listitem')).not.toHaveLength(0);
   });
 
   it('expands child sessions when the root is toggled', () => {

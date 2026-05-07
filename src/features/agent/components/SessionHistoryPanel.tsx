@@ -1,4 +1,5 @@
 import {
+  forwardRef,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -11,7 +12,12 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { RefreshCw, Search, History, X, Bookmark } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Virtuoso } from 'react-virtuoso';
+import {
+  Virtuoso,
+  type Components,
+  type ItemProps,
+  type ListProps,
+} from 'react-virtuoso';
 import {
   buildChildrenMap,
   buildDescendantCounts,
@@ -46,6 +52,43 @@ interface SessionHistoryPanelProps {
   emptyStateTitle?: string;
   emptyStateSubtitle?: string;
 }
+
+interface SessionHistoryRow {
+  session: AgentSession;
+  nestingLevel: number;
+  lineageHint?: string;
+  hasExpandableChildren: boolean;
+  isExpanded: boolean;
+  descendantStatusCounts?: SessionStatusCounts;
+}
+
+const sessionHistoryVirtuosoComponents: Components<SessionHistoryRow> = {
+  List: forwardRef<HTMLDivElement, ListProps>(function SessionHistoryList(
+    { children, style, ...props },
+    ref,
+  ) {
+    return (
+      <div
+        {...props}
+        ref={ref}
+        role="list"
+        aria-labelledby="session-heading"
+        style={{ ...style, margin: 0, padding: 0 }}
+      >
+        {children}
+      </div>
+    );
+  }),
+  Item: forwardRef<HTMLDivElement, ItemProps<SessionHistoryRow>>(
+    function SessionHistoryItem({ children, style, ...props }, ref) {
+      return (
+        <div {...props} ref={ref} role="listitem" style={style}>
+          <div className="pb-4">{children}</div>
+        </div>
+      );
+    },
+  ),
+};
 
 const statusPriority: Record<string, number> = {
   busy: 1,
@@ -150,15 +193,6 @@ export function SessionHistoryPanel({
     matchedSessionCount,
     statusCounts,
   } = useMemo(() => {
-    type SessionRow = {
-      session: AgentSession;
-      nestingLevel: number;
-      lineageHint?: string;
-      hasExpandableChildren: boolean;
-      isExpanded: boolean;
-      descendantStatusCounts?: SessionStatusCounts;
-    };
-
     const lineageSessions = selectedLineageId
       ? deferredSessions.filter(
           (session) => session.lineageId === selectedLineageId,
@@ -293,7 +327,7 @@ export function SessionHistoryPanel({
       })
       .sort(sortByCurrentOrder);
 
-    const rows: SessionRow[] = [];
+    const rows: SessionHistoryRow[] = [];
 
     const walk = (session: AgentSession, nestingLevel: number) => {
       const visibleChildren = (childrenByParent.get(session.id) || []).filter(
@@ -625,6 +659,7 @@ export function SessionHistoryPanel({
               overscan={400}
               computeItemKey={(_index, row) => row.session.id}
               components={{
+                ...sessionHistoryVirtuosoComponents,
                 Footer: () =>
                   hasMoreSessions ? (
                     <div className="flex justify-center py-4">
@@ -657,28 +692,26 @@ export function SessionHistoryPanel({
                   descendantStatusCounts: rowDescendantStatusCounts,
                 },
               ) => (
-                <div key={session.id} className="pb-4">
-                  <SessionCard
-                    session={session}
-                    onResume={onResume}
-                    onDelete={onDelete}
-                    onDeleteOnly={onDeleteOnly}
-                    onToggleBookmark={onToggleBookmark}
-                    nestingLevel={nestingLevel}
-                    lineageHint={lineageHint}
-                    selectedLineageId={selectedLineageId}
-                    descendantCount={descendantCounts.get(session.id) ?? 0}
-                    descendantStatusCounts={rowDescendantStatusCounts}
-                    hasExpandableChildren={hasExpandableChildren}
-                    isExpanded={isExpanded}
-                    onToggleExpand={handleToggleExpand}
-                    onLineageSelect={(lineageId) =>
-                      setSelectedLineageId((prev) =>
-                        prev === lineageId ? null : lineageId,
-                      )
-                    }
-                  />
-                </div>
+                <SessionCard
+                  session={session}
+                  onResume={onResume}
+                  onDelete={onDelete}
+                  onDeleteOnly={onDeleteOnly}
+                  onToggleBookmark={onToggleBookmark}
+                  nestingLevel={nestingLevel}
+                  lineageHint={lineageHint}
+                  selectedLineageId={selectedLineageId}
+                  descendantCount={descendantCounts.get(session.id) ?? 0}
+                  descendantStatusCounts={rowDescendantStatusCounts}
+                  hasExpandableChildren={hasExpandableChildren}
+                  isExpanded={isExpanded}
+                  onToggleExpand={handleToggleExpand}
+                  onLineageSelect={(lineageId) =>
+                    setSelectedLineageId((prev) =>
+                      prev === lineageId ? null : lineageId,
+                    )
+                  }
+                />
               )}
             />
           )}
