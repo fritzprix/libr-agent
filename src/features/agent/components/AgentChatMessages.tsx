@@ -30,6 +30,11 @@ import { useTranslation } from 'react-i18next';
 import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
@@ -740,15 +745,25 @@ export function AgentChatMessages() {
             bottom: `calc(var(--agent-chat-composer-overlap, 64px) + ${CHAT_COMPOSER_CLEARANCE + 16}px)`,
           }}
         >
-          <Button
-            type="button"
-            size="icon"
-            className="pointer-events-auto size-10 rounded-full shadow-lg"
-            aria-label={t('agent.messages.scrollToLatest', 'Scroll to latest')}
-            onClick={scrollToBottom}
-          >
-            <ChevronDown className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                className="pointer-events-auto size-10 rounded-full shadow-lg"
+                aria-label={t(
+                  'agent.messages.scrollToLatest',
+                  'Scroll to latest',
+                )}
+                onClick={scrollToBottom}
+              >
+                <ChevronDown className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('agent.messages.scrollToLatest', 'Scroll to latest')}
+            </TooltipContent>
+          </Tooltip>
         </div>
       )}
     </div>
