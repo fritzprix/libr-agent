@@ -108,7 +108,7 @@ pub async fn terminate_session(
 ) -> Result<impl Reply, Rejection> {
     match manager.terminate_session(id.clone()).await {
         Ok(_) => {
-            lineage_store().write().await.remove(&id);
+            crate::services::agent_service::remove_lineage(&id).await;
             Ok(warp::reply::with_status(
                 warp::reply::json(&serde_json::json!({ "success": true })),
                 StatusCode::OK,

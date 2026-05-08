@@ -304,10 +304,7 @@ pub async fn stop_session(
         return Err(error);
     }
 
-    crate::services::agent_service::lineage_store()
-        .write()
-        .await
-        .remove(&session_id);
+    crate::services::agent_service::remove_lineage(&session_id).await;
 
     let hint = SuccessHint::new(format!("Session {} stopped.", session_id), vec![]);
     let message = hint.message.clone();
