@@ -17,7 +17,7 @@ Conecta qualquer LLM (nuvem ou local via Ollama), expande com qualquer servidor 
 
 ## Porquê LibrAgent?
 
-O foco da indústria de IA mudou. Análises recentes de 2026 mostraram que **o mesmo modelo pode produzir diferenças de sucesso de dois dígitos dependendo do arnês que o rodeia**. O modelo é o motor — mas o arnês determina até onde ele chega.
+O foco da indústria de IA mudou. Na prática, **o mesmo modelo pode mostrar diferenças grandes na taxa de sucesso consoante o arnês que o rodeia**. O modelo é o motor — mas o arnês determina até onde ele chega.
 
 Cada opção atual ainda impõe um compromisso:
 
@@ -56,18 +56,18 @@ O LibrAgent trata a segurança como uma preocupação arquitetónica de primeira
 
 - **Isolamento de sessão**: Cada sessão de agente recebe a sua própria instância dedicada `MCPServiceProxy` — zero fugas de dados entre sessões
 - **SecurityValidator integrado**: Ataques de traversal de caminhos e injeção de comandos bloqueados ao nível do sistema
-- **Nenhum substrato cloud necessário**: Toda a execução acontece localmente; apenas as chamadas de API LLM saem da tua máquina
+- **Nenhum substrato cloud necessário**: A execução principal acontece localmente; as ligações externas ficam sobretudo limitadas aos fornecedores LLM cloud e aos serviços remotos MCP/HTTP que escolhas usar, além das verificações de atualização em builds de produção
 - **Suporte offline completo**: Combina com [Ollama](https://ollama.ai) para um stack de agentes completamente isolado
 
 #### O que fica local vs o que sai da tua máquina
 
 - **Sempre local**: espaços de trabalho, ficheiros locais, competências agrupadas, estado de sessão, configs de servidores MCP, estado do navegador e execução de ferramentas locais
-- **Sai da tua máquina apenas quando escolhes**: pedidos a fornecedores LLM cloud ou serviços MCP/HTTP remotos que configuras explicitamente
+- **Sai da tua máquina quando necessário**: pedidos a fornecedores LLM cloud ou serviços MCP/HTTP remotos que configuras explicitamente, além das verificações de atualização em builds de produção
 - **Modo offline completo**: usa Ollama ou outro runtime local com servidores MCP locais para um fluxo de trabalho isolado
 
 ### 2. 🧩 Ecossistema nativo MCP — Extensibilidade infinita por design
 
-MCP (Model Context Protocol) tornou-se um padrão da Linux Foundation em 2026. O LibrAgent trata-o não como uma funcionalidade — mas como a espinha dorsal arquitetónica:
+MCP (Model Context Protocol) é o padrão aberto por trás do modelo de extensibilidade do LibrAgent. O LibrAgent trata-o não como uma funcionalidade — mas como a espinha dorsal arquitetónica:
 
 - **Suporte completo de transportes**: stdio, HTTP, SSE e OAuth 2.1 — a especificação completa
 - **12+ servidores integrados**: Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store, e mais
@@ -83,7 +83,7 @@ A maioria das ferramentas de IA é impressionante em demos e frágil em produç�
 | ------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **Workspace** | Edição precisa à linha, operações multi-ficheiro, pesquisa unificada, injeção de contexto `@file`/`@skill`/`@playbook` |
 | **Shell**     | Execução isolada E shells persistentes — monitorização de processos assíncrona (`poll`, `read output`, `list`)         |
-| **Browser**   | Ferramentas estilo Playwright (`goto`, `click`, `fill`, `screenshot`) com garantias de consistência de cache           |
+| **Browser**   | Automatização de navegador headless com um modelo de interação ao estilo do Playwright e garantias de consistência de cache |
 | **Knowledge** | Gestão de conhecimento baseada em grafos com extração entidade/relação (v2), pesquisa de texto completo BM25           |
 
 **Engenharia de fiabilidade incluída**: Compactação de contexto, prevenção de ciclos, disjuntores e proteções contra respostas obsoletas mantêm os agentes produtivos em sessões que duram horas.

@@ -17,7 +17,7 @@ Conecta cualquier LLM (nube o local vía Ollama), extiende con cualquier servido
 
 ## ¿Por qué LibrAgent?
 
-El enfoque de la industria de la IA ha cambiado. Los análisis recientes de 2026 mostraron que **el mismo modelo puede producir brechas de éxito de dos dígitos según el harnés que lo rodea**. El modelo es el motor — pero el harnés determina hasta dónde puede llegar.
+El enfoque de la industria de la IA ha cambiado. En la práctica, **el mismo modelo puede mostrar diferencias grandes de éxito según el harnés que lo rodea**. El modelo es el motor — pero el harnés determina hasta dónde puede llegar.
 
 Cada opción actual todavía impone un compromiso:
 
@@ -56,18 +56,18 @@ LibrAgent trata la seguridad como una preocupación arquitectónica de primer or
 
 - **Aislamiento de sesión**: Cada sesión de agente recibe su propia instancia dedicada `MCPServiceProxy` — cero filtraciones de datos entre sesiones
 - **SecurityValidator integrado**: Ataques de traversal de rutas e inyección de comandos bloqueados a nivel del sistema
-- **No se requiere substrato cloud**: Toda la ejecución ocurre localmente; solo las llamadas API LLM salen de tu máquina
+- **No se requiere substrato cloud**: La ejecución principal ocurre localmente; las conexiones externas se limitan sobre todo a los proveedores LLM cloud y servicios remotos MCP/HTTP que decidas usar, además de las comprobaciones de actualización en builds de producción
 - **Soporte offline completo**: Combina con [Ollama](https://ollama.ai) para un stack de agentes completamente aislado
 
 #### Lo que permanece local vs lo que sale de tu máquina
 
 - **Siempre local**: espacios de trabajo, archivos locales, habilidades agrupadas, estado de sesión, configs de servidores MCP, estado del navegador y ejecución de herramientas locales
-- **Sale de tu máquina solo cuando lo eliges**: solicitudes a proveedores LLM cloud o servicios MCP/HTTP remotos que configuras explícitamente
+- **Sale de tu máquina cuando hace falta**: solicitudes a proveedores LLM cloud o servicios MCP/HTTP remotos que configuras explícitamente, además de las comprobaciones de actualización en builds de producción
 - **Modo offline completo**: usa Ollama u otro runtime local con servidores MCP locales para un flujo de trabajo aislado
 
 ### 2. 🧩 Ecosistema nativo MCP — Extensibilidad infinita por diseño
 
-MCP (Model Context Protocol) se convirtió en un estándar de la Linux Foundation en 2026. LibrAgent lo trata no como una característica — sino como la columna vertebral arquitectónica:
+MCP (Model Context Protocol) es el estándar abierto detrás del modelo de extensibilidad de LibrAgent. LibrAgent lo trata no como una característica — sino como la columna vertebral arquitectónica:
 
 - **Soporte completo de transportes**: stdio, HTTP, SSE y OAuth 2.1 — la especificación completa
 - **12+ servidores integrados**: Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store, y más
@@ -83,7 +83,7 @@ La mayoría de las herramientas de IA son impresionantes en demos y frágiles en
 | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | **Workspace** | Edición precisa a línea, operaciones multi-archivo, búsqueda unificada, inyección de contexto `@file`/`@skill`/`@playbook` |
 | **Shell**     | Ejecución aislada Y shells persistentes — monitoreo de procesos asíncrono (`poll`, `read output`, `list`)                  |
-| **Browser**   | Herramientas estilo Playwright (`goto`, `click`, `fill`, `screenshot`) con garantías de coherencia del caché               |
+| **Browser**   | Automatización de navegador headless con un modelo de interacción similar a Playwright y garantías de coherencia del caché |
 | **Knowledge** | Gestión de conocimiento basada en grafos con extracción entidad/relación (v2), búsqueda de texto completo BM25             |
 
 **Ingeniería de confiabilidad incluida**: Compactación de contexto, prevención de bucles, disyuntores y guardas contra respuestas obsoletas mantienen a los agentes productivos en sesiones que duran horas.
