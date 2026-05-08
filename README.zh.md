@@ -17,7 +17,7 @@ LibrAgent 是基于 Tauri + Rust + React 构建的**本地优先代理操作系�
 
 ## 为什么选择 LibrAgent？
 
-AI 行业的焦点已经转移。最近的 2026 基准分析表明，**相同的模型根据其所处的编排系统可以产生两位数的任务成功差距**。模型是引擎——但编排系统决定它能走多远。
+AI 行业的焦点已经转移。实际情况是，**相同的模型在不同的 agent harness 之上运行时，任务成功率也会出现明显差距**。模型是引擎——但编排系统决定它能走多远。
 
 每个当前选项仍然迫使人们做出妥协：
 
@@ -56,7 +56,7 @@ LibrAgent 将安全作为首要架构关注点：
 
 - **会话隔离**：每个代理会话都有自己的专用 `MCPServiceProxy` 实例——零跨会话数据泄漏
 - **内置 SecurityValidator**：在系统级别阻止路径遍历攻击和命令注入
-- **无需云底层架构**：所有执行都在本地发生；只有 LLM API 调用离开你的机器
+- **无需云底层架构**：核心执行都在本地完成，外部网络通信仅限于你选择使用的 LLM 提供商和远程 MCP/HTTP 服务
 - **完全离线支持**：与 [Ollama](https://ollama.ai) 配对实现完全气隙隔离的代理堆栈
 
 #### 保留在本地 vs 离开你的机器
@@ -67,7 +67,7 @@ LibrAgent 将安全作为首要架构关注点：
 
 ### 2. 🧩 MCP 原生生态系统——设计即无限可扩展
 
-MCP（模型上下文协议）在 2026 年成为 Linux Foundation 标准。LibrAgent 将其视为架构骨干而非功能：
+MCP（模型上下文协议）是 LibrAgent 可扩展性模型背后的开放标准。LibrAgent 将其视为架构骨干而非功能：
 
 - **完整传输支持**：stdio、HTTP、SSE 和 OAuth 2.1——完整规范
 - **12+ 内置服务器**：Planning、Knowledge(RAG)、Browser Automation、Workspace、Shell Execution、Content Store 等
@@ -83,7 +83,7 @@ MCP（模型上下文协议）在 2026 年成为 Linux Foundation 标准。LibrA
 | ------------- | ----------------------------------------------------------------------------- |
 | **Workspace** | 行级精确编辑、多文件操作、统一搜索、`@file`/`@skill`/`@playbook` 上下文注入   |
 | **Shell**     | 隔离执行 AND 持久 Shell——异步进程监控(`poll`、`read output`、`list`)          |
-| **Browser**   | 带缓存一致性保证的 Playwright 风格工具(`goto`、`click`、`fill`、`screenshot`) |
+| **Browser**   | 采用类 Playwright 交互模型的无头浏览器自动化，并提供缓存一致性保证 |
 | **Knowledge** | 带实体/关系提取(v2)、BM25 全文搜索的基于图的知识管理                          |
 
 **包含可靠性工程**：上下文压缩、循环预防、断路器、陈旧响应保护器在持续数小时的会话中保持代理的生产力。

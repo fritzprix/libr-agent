@@ -17,7 +17,7 @@ Verbinde jeden LLM (Cloud oder lokal via Ollama), erweitere mit jedem MCP-Server
 
 ## Warum LibrAgent?
 
-Der Fokus der KI-Branche hat sich verschoben. Aktuelle Analysen aus 2026 haben gezeigt, dass **dasselbe Modell je nach dem es umgebenden Harness zweistellige Erfolgsunterschiede** produzieren kann. Das Modell ist der Motor — aber der Harness bestimmt, wie weit er kommt.
+Der Fokus der KI-Branche hat sich verschoben. In der Praxis kann **dasselbe Modell je nach Harness deutliche Unterschiede bei der Aufgabenerfolgsrate** zeigen. Das Modell ist der Motor — aber der Harness bestimmt, wie weit er kommt.
 
 Jede aktuelle Option erzwingt noch immer einen Kompromiss:
 
@@ -56,7 +56,7 @@ LibrAgent behandelt Sicherheit als erstklassiges architektonisches Anliegen:
 
 - **Sitzungsisolation**: Jede Agentensitzung erhält ihre eigene dedizierte `MCPServiceProxy`-Instanz — null sitzungsübergreifende Datenlecks
 - **Eingebauter SecurityValidator**: Pfadtraversal- und Befehlsinjektionsangriffe auf Systemebene blockiert
-- **Kein Cloud-Substrat erforderlich**: Gesamte Ausführung erfolgt lokal; nur LLM-API-Aufrufe verlassen deine Maschine
+- **Kein Cloud-Substrat erforderlich**: Die Kernausführung erfolgt lokal; externer Netzwerkverkehr beschränkt sich auf die LLM-Anbieter und entfernten MCP/HTTP-Dienste, die du bewusst nutzt
 - **Vollständiger Offline-Support**: Kombiniere mit [Ollama](https://ollama.ai) für einen vollständig isolierten Agenten-Stack
 
 #### Was lokal bleibt vs. was deine Maschine verlässt
@@ -67,7 +67,7 @@ LibrAgent behandelt Sicherheit als erstklassiges architektonisches Anliegen:
 
 ### 2. 🧩 Natives MCP-Ökosystem — Unendliche Erweiterbarkeit by Design
 
-MCP (Model Context Protocol) wurde 2026 zum Linux Foundation Standard. LibrAgent behandelt es nicht als Feature — sondern als architektonisches Rückgrat:
+MCP (Model Context Protocol) ist der offene Standard hinter dem Erweiterbarkeitsmodell von LibrAgent. LibrAgent behandelt es nicht als Feature — sondern als architektonisches Rückgrat:
 
 - **Vollständige Transport-Unterstützung**: stdio, HTTP, SSE und OAuth 2.1 — die vollständige Spezifikation
 - **12+ eingebaute Server**: Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store und mehr
@@ -83,7 +83,7 @@ Die meisten KI-Tools sind in Demos beeindruckend und in der Produktion fragil. L
 | ------------- | --------------------------------------------------------------------------------------------------------------------- |
 | **Workspace** | Zeilenpräzise Bearbeitung, Multi-Datei-Operationen, einheitliche Suche, `@file`/`@skill`/`@playbook`-Kontextinjektion |
 | **Shell**     | Isolierte Ausführung UND persistente Shells — asynchrones Prozess-Monitoring (`poll`, `read output`, `list`)          |
-| **Browser**   | Playwright-ähnliche Tools (`goto`, `click`, `fill`, `screenshot`) mit Cache-Konsistenzgarantien                       |
+| **Browser**   | Headless-Browser-Automatisierung mit Playwright-ähnlichem Interaktionsmodell und Cache-Konsistenzgarantien |
 | **Knowledge** | Graphbasiertes Wissensmanagement mit Entitäts-/Beziehungsextraktion (v2), BM25-Volltextsuche                          |
 
 **Zuverlässigkeitsingenieurwesen inklusive**: Kontextkomprimierung, Schleifenprävention, Schaltkreisunterbrecher und Schutz vor veralteten Antworten halten Agenten in stundenlangen Sitzungen produktiv.

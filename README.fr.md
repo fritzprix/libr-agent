@@ -17,7 +17,7 @@ Connectez n'importe quel LLM (cloud ou local via Ollama), étendez avec n'import
 
 ## Pourquoi LibrAgent ?
 
-L'industrie de l'IA a changé de focale. Les analyses récentes de 2026 ont montré que **le même modèle peut produire des écarts de succès à deux chiffres selon le harnais qui l'entoure**. Le modèle est le moteur — mais le harnais détermine jusqu'où il peut aller.
+L'industrie de l'IA a changé de focale. En pratique, **le même modèle peut montrer de gros écarts de réussite selon le harnais qui l'entoure**. Le modèle est le moteur — mais le harnais détermine jusqu'où il peut aller.
 
 Chaque option actuelle impose encore un compromis :
 
@@ -56,7 +56,7 @@ LibrAgent traite la sécurité comme une préoccupation architecturale de premie
 
 - **Isolation de session** : Chaque session d'agent reçoit sa propre instance dédiée `MCPServiceProxy` — zéro fuite de données inter-sessions
 - **SecurityValidator intégré** : Attaques par traversée de chemin et injection de commandes bloquées au niveau système
-- **Aucun substrat cloud requis** : Toute l'exécution se fait localement ; seuls les appels API LLM quittent votre machine
+- **Aucun substrat cloud requis** : L'exécution principale se fait localement ; le trafic réseau externe se limite aux fournisseurs LLM et aux services MCP/HTTP distants que vous choisissez d'utiliser
 - **Support hors ligne complet** : Associez avec [Ollama](https://ollama.ai) pour un stack d'agents entièrement isolé
 
 #### Ce qui reste local vs ce qui quitte votre machine
@@ -67,7 +67,7 @@ LibrAgent traite la sécurité comme une préoccupation architecturale de premie
 
 ### 2. 🧩 Écosystème natif MCP — Extensibilité infinie par conception
 
-MCP (Model Context Protocol) est devenu un standard de la Linux Foundation en 2026. LibrAgent le traite non pas comme une fonctionnalité — mais comme la colonne vertébrale architecturale :
+MCP (Model Context Protocol) est le standard ouvert derrière le modèle d'extensibilité de LibrAgent. LibrAgent le traite non pas comme une fonctionnalité — mais comme la colonne vertébrale architecturale :
 
 - **Support complet des transports** : stdio, HTTP, SSE et OAuth 2.1 — la spécification complète
 - **12+ serveurs intégrés** : Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store, et plus
@@ -83,7 +83,7 @@ La plupart des outils IA sont impressionnants en démo et fragiles en production
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | **Workspace** | Édition précise à la ligne, opérations multi-fichiers, recherche unifiée, injection de contexte `@file`/`@skill`/`@playbook` |
 | **Shell**     | Exécution isolée ET shells persistants — surveillance de processus asynchrone (`poll`, `read output`, `list`)                |
-| **Browser**   | Outils style Playwright (`goto`, `click`, `fill`, `screenshot`) avec garanties de cohérence du cache                         |
+| **Browser**   | Automatisation de navigateur headless avec un modèle d'interaction proche de Playwright et des garanties de cohérence du cache |
 | **Knowledge** | Gestion des connaissances basée sur les graphes avec extraction entité/relation (v2), recherche plein texte BM25             |
 
 **Ingénierie de fiabilité incluse** : Compaction du contexte, prévention des boucles, disjoncteurs et gardes contre les réponses périmées maintiennent les agents productifs dans des sessions qui durent des heures.
