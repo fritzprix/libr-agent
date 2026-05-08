@@ -129,7 +129,9 @@ fn extract_summary_section_bullets(summary: &str, section_heading: &str) -> Vec<
             continue;
         }
 
-        if trimmed.starts_with("### ") || trimmed.ends_with(':') {
+        if trimmed.starts_with("### ")
+            || (!trimmed.starts_with("- ") && !trimmed.starts_with("* ") && trimmed.ends_with(':'))
+        {
             in_section = false;
         }
 

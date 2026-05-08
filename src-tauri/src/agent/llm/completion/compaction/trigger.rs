@@ -163,7 +163,7 @@ async fn load_merged_compaction_messages(
             .read()
             .await
             .iter()
-            .filter(|m| !m.is_recovery_message())
+            .filter(|message| !message.is_internal_synthetic_user_message())
             .cloned()
             .collect::<Vec<_>>();
 
