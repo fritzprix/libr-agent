@@ -1,6 +1,90 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { DisplaySettings } from '@/context/SettingsContext';
+import {
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui';
+
+const LANGUAGE_OPTIONS = [
+  { value: 'en', labelKey: 'settings.language.en', fallback: 'English' },
+  { value: 'ko', labelKey: 'settings.language.ko', fallback: '한국어' },
+  { value: 'zh', labelKey: 'settings.language.zh', fallback: '简体中文' },
+  { value: 'ja', labelKey: 'settings.language.ja', fallback: '日本語' },
+  { value: 'fr', labelKey: 'settings.language.fr', fallback: 'Français' },
+  { value: 'es', labelKey: 'settings.language.es', fallback: 'Español' },
+  { value: 'de', labelKey: 'settings.language.de', fallback: 'Deutsch' },
+  { value: 'pt', labelKey: 'settings.language.pt', fallback: 'Português' },
+] as const;
+
+const TOOL_DETAIL_LEVEL_OPTIONS = [
+  {
+    value: 'simple',
+    labelKey: 'settings.display.toolDetailSimple',
+    fallback: 'Simple (tool name only)',
+  },
+  {
+    value: 'developer',
+    labelKey: 'settings.display.toolDetailDeveloper',
+    fallback: 'Developer (params, errors, timing)',
+  },
+] as const;
+
+const METRIC_DISPLAY_MODE_OPTIONS = [
+  {
+    value: 'inline',
+    labelKey: 'settings.display.inline',
+    fallback: 'Inline (show in message)',
+  },
+  {
+    value: 'tooltip',
+    labelKey: 'settings.display.tooltip',
+    fallback: 'Tooltip (hover to see)',
+  },
+] as const;
+
+const PREFILL_DISPLAY_FORMAT_OPTIONS = [
+  {
+    value: 'time',
+    labelKey: 'settings.display.time',
+    fallback: 'Time to First Token (e.g., 245ms)',
+  },
+  {
+    value: 'tokensPerSecond',
+    labelKey: 'settings.display.tokensPerSecond',
+    fallback: 'Tokens Per Second (e.g., 520 tok/s)',
+  },
+] as const;
+
+const LANGUAGE_SELECT_ID = 'settings-language';
+const FONT_FAMILY_SELECT_ID = 'settings-font-family';
+const TOOL_DETAIL_LEVEL_SELECT_ID = 'settings-tool-detail-level';
+const METRIC_DISPLAY_MODE_SELECT_ID = 'settings-metric-display-mode';
+const PREFILL_DISPLAY_FORMAT_SELECT_ID = 'settings-prefill-display-format';
+
+function isToolDetailLevel(
+  value: string,
+): value is DisplaySettings['toolDetailLevel'] {
+  return TOOL_DETAIL_LEVEL_OPTIONS.some((option) => option.value === value);
+}
+
+function isMetricDisplayMode(
+  value: string,
+): value is DisplaySettings['metricDisplayMode'] {
+  return METRIC_DISPLAY_MODE_OPTIONS.some((option) => option.value === value);
+}
+
+function isPrefillDisplayFormat(
+  value: string,
+): value is DisplaySettings['prefillDisplayFormat'] {
+  return PREFILL_DISPLAY_FORMAT_OPTIONS.some(
+    (option) => option.value === value,
+  );
+}
 
 interface GeneralTabProps {
   localLanguage: string;
@@ -23,23 +107,27 @@ function GeneralTabComponent({
   return (
     <div className="space-y-6">
       <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
-          {t('settings.language.label', 'Language')}
-        </label>
-        <select
-          className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
-          value={localLanguage}
-          onChange={(e) => onChange(e.target.value)}
+        <Label
+          htmlFor={LANGUAGE_SELECT_ID}
+          className="mb-2 block text-muted-foreground"
         >
-          <option value="en">{t('settings.language.en', 'English')}</option>
-          <option value="ko">{t('settings.language.ko', '한국어')}</option>
-          <option value="zh">{t('settings.language.zh', '简体中文')}</option>
-          <option value="ja">{t('settings.language.ja', '日本語')}</option>
-          <option value="fr">{t('settings.language.fr', 'Français')}</option>
-          <option value="es">{t('settings.language.es', 'Español')}</option>
-          <option value="de">{t('settings.language.de', 'Deutsch')}</option>
-          <option value="pt">{t('settings.language.pt', 'Português')}</option>
-        </select>
+          {t('settings.language.label', 'Language')}
+        </Label>
+        <Select value={localLanguage} onValueChange={onChange}>
+          <SelectTrigger
+            id={LANGUAGE_SELECT_ID}
+            className="w-full max-w-xs bg-background"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LANGUAGE_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {t(option.labelKey, option.fallback)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="border-t pt-6">
@@ -48,41 +136,51 @@ function GeneralTabComponent({
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
+            <Label
+              htmlFor={FONT_FAMILY_SELECT_ID}
+              className="mb-2 block text-muted-foreground"
+            >
               {t('settings.display.fontFamily', 'Font Family')}
-            </label>
-            <select
-              className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
+            </Label>
+            <Select
               value={localDisplay.fontFamily ?? 'Pretendard'}
-              onChange={(e) =>
-                onDisplaySettingsChange('fontFamily', e.target.value)
+              onValueChange={(value) =>
+                onDisplaySettingsChange('fontFamily', value)
               }
             >
-              <option value="Pretendard">
-                {t(
-                  'settings.display.fontFamilyOptions.pretendard',
-                  'Pretendard (Standard Sans)',
-                )}
-              </option>
-              <option value="Inter">
-                {t(
-                  'settings.display.fontFamilyOptions.inter',
-                  'Inter (Clean UI Sans)',
-                )}
-              </option>
-              <option value="NanumSquare Neo">
-                {t(
-                  'settings.display.fontFamilyOptions.nanumSquareNeo',
-                  'NanumSquare Neo (Modern Geometric)',
-                )}
-              </option>
-              <option value="D2Coding">
-                {t(
-                  'settings.display.fontFamilyOptions.d2coding',
-                  'D2Coding (Developer Mono)',
-                )}
-              </option>
-            </select>
+              <SelectTrigger
+                id={FONT_FAMILY_SELECT_ID}
+                className="w-full max-w-xs bg-background"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Pretendard">
+                  {t(
+                    'settings.display.fontFamilyOptions.pretendard',
+                    'Pretendard (Standard Sans)',
+                  )}
+                </SelectItem>
+                <SelectItem value="Inter">
+                  {t(
+                    'settings.display.fontFamilyOptions.inter',
+                    'Inter (Clean UI Sans)',
+                  )}
+                </SelectItem>
+                <SelectItem value="NanumSquare Neo">
+                  {t(
+                    'settings.display.fontFamilyOptions.nanumSquareNeo',
+                    'NanumSquare Neo (Modern Geometric)',
+                  )}
+                </SelectItem>
+                <SelectItem value="D2Coding">
+                  {t(
+                    'settings.display.fontFamilyOptions.d2coding',
+                    'D2Coding (Developer Mono)',
+                  )}
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground mt-1">
               {t(
                 'settings.display.fontFamilyDescription',
@@ -92,32 +190,34 @@ function GeneralTabComponent({
           </div>
 
           <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
-              {t('settings.display.toolDetailLevel', 'Tool Detail Level')}
-            </label>
-            <select
-              className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
-              value={localDisplay.toolDetailLevel ?? 'simple'}
-              onChange={(e) =>
-                onDisplaySettingsChange(
-                  'toolDetailLevel',
-                  e.target.value as 'simple' | 'developer',
-                )
-              }
+            <Label
+              htmlFor={TOOL_DETAIL_LEVEL_SELECT_ID}
+              className="mb-2 block text-muted-foreground"
             >
-              <option value="simple">
-                {t(
-                  'settings.display.toolDetailSimple',
-                  'Simple (tool name only)',
-                )}
-              </option>
-              <option value="developer">
-                {t(
-                  'settings.display.toolDetailDeveloper',
-                  'Developer (params, errors, timing)',
-                )}
-              </option>
-            </select>
+              {t('settings.display.toolDetailLevel', 'Tool Detail Level')}
+            </Label>
+            <Select
+              value={localDisplay.toolDetailLevel ?? 'simple'}
+              onValueChange={(value) => {
+                if (isToolDetailLevel(value)) {
+                  onDisplaySettingsChange('toolDetailLevel', value);
+                }
+              }}
+            >
+              <SelectTrigger
+                id={TOOL_DETAIL_LEVEL_SELECT_ID}
+                className="w-full max-w-xs bg-background"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TOOL_DETAIL_LEVEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {t(option.labelKey, option.fallback)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground mt-1">
               {t(
                 'settings.display.toolDetailLevelDescription',
@@ -135,26 +235,34 @@ function GeneralTabComponent({
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="min-w-0">
-              <label className="block text-muted-foreground mb-2 font-medium">
-                {t('settings.display.metricDisplayMode', 'Metric Display Mode')}
-              </label>
-              <select
-                className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
-                value={localDisplay.metricDisplayMode}
-                onChange={(e) =>
-                  onDisplaySettingsChange(
-                    'metricDisplayMode',
-                    e.target.value as 'tooltip' | 'inline',
-                  )
-                }
+              <Label
+                htmlFor={METRIC_DISPLAY_MODE_SELECT_ID}
+                className="mb-2 block text-muted-foreground"
               >
-                <option value="inline">
-                  {t('settings.display.inline', 'Inline (show in message)')}
-                </option>
-                <option value="tooltip">
-                  {t('settings.display.tooltip', 'Tooltip (hover to see)')}
-                </option>
-              </select>
+                {t('settings.display.metricDisplayMode', 'Metric Display Mode')}
+              </Label>
+              <Select
+                value={localDisplay.metricDisplayMode}
+                onValueChange={(value) => {
+                  if (isMetricDisplayMode(value)) {
+                    onDisplaySettingsChange('metricDisplayMode', value);
+                  }
+                }}
+              >
+                <SelectTrigger
+                  id={METRIC_DISPLAY_MODE_SELECT_ID}
+                  className="w-full max-w-xs bg-background"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {METRIC_DISPLAY_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.labelKey, option.fallback)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground mt-1">
                 {t(
                   'settings.display.metricDisplayModeDescription',
@@ -164,35 +272,37 @@ function GeneralTabComponent({
             </div>
 
             <div className="min-w-0">
-              <label className="block text-muted-foreground mb-2 font-medium">
+              <Label
+                htmlFor={PREFILL_DISPLAY_FORMAT_SELECT_ID}
+                className="mb-2 block text-muted-foreground"
+              >
                 {t(
                   'settings.display.prefillDisplayFormat',
                   'Prefill Performance Format',
                 )}
-              </label>
-              <select
-                className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
+              </Label>
+              <Select
                 value={localDisplay.prefillDisplayFormat}
-                onChange={(e) =>
-                  onDisplaySettingsChange(
-                    'prefillDisplayFormat',
-                    e.target.value as 'time' | 'tokensPerSecond',
-                  )
-                }
+                onValueChange={(value) => {
+                  if (isPrefillDisplayFormat(value)) {
+                    onDisplaySettingsChange('prefillDisplayFormat', value);
+                  }
+                }}
               >
-                <option value="time">
-                  {t(
-                    'settings.display.time',
-                    'Time to First Token (e.g., 245ms)',
-                  )}
-                </option>
-                <option value="tokensPerSecond">
-                  {t(
-                    'settings.display.tokensPerSecond',
-                    'Tokens Per Second (e.g., 520 tok/s)',
-                  )}
-                </option>
-              </select>
+                <SelectTrigger
+                  id={PREFILL_DISPLAY_FORMAT_SELECT_ID}
+                  className="w-full max-w-xs bg-background"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PREFILL_DISPLAY_FORMAT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.labelKey, option.fallback)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground mt-1">
                 {t(
                   'settings.display.prefillDisplayFormatDescription',
