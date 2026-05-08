@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.22] - 2026-05-08
+
+### 🚀 Features
+
+- **Enhanced Chat Navigation**: Added a tooltip to the scroll-to-latest button for better discoverability and user feedback.
+
+### 🐛 Fixes
+
+- **Improved Workspace & Settings Reliability**: Fixed spawn workspace cleanup and override validation, and optimized settings dirty tracking for a smoother configuration experience.
+- **Session & Compaction Stability**: Resolved compaction review blockers and addressed feedback for the General settings tab to ensure session integrity.
+
+### 🔧 Internal
+
+- **Session & Repository Refactor**: Refactored agent session surfaces, knowledge and session repositories, and transitioned Organization history to use SWR for improved data management.
+- **Performance & Modularization**: Optimized loops in message preparation and modularized the compaction logic by splitting it into focused components.
+- **Maintenance**: Synchronized generated files and maintained service type definitions.
+
 ## [0.7.21] - 2026-05-08
 
 ### 🚀 Features
