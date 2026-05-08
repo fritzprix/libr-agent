@@ -439,11 +439,11 @@ async fn history_read_session_and_message_are_paginated() {
     let structured = read_message
         .structured_content
         .expect("structured content expected");
-    assert_eq!(structured["message"]["chunkLength"], 3000);
-    assert_eq!(structured["message"]["hasMore"], true);
-    assert_eq!(structured["message"]["nextOffset"], 3000);
+    assert_eq!(structured["chunkLength"], 3000);
+    assert_eq!(structured["hasMore"], true);
+    assert_eq!(structured["nextOffset"], 3000);
     assert_eq!(
-        structured["message"]["contentChunk"]
+        structured["contentChunk"]
             .as_str()
             .expect("chunk text"),
         "L".repeat(3000)
