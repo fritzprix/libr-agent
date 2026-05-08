@@ -56,13 +56,13 @@ LibrAgent behandelt Sicherheit als erstklassiges architektonisches Anliegen:
 
 - **Sitzungsisolation**: Jede Agentensitzung erhält ihre eigene dedizierte `MCPServiceProxy`-Instanz — null sitzungsübergreifende Datenlecks
 - **Eingebauter SecurityValidator**: Pfadtraversal- und Befehlsinjektionsangriffe auf Systemebene blockiert
-- **Kein Cloud-Substrat erforderlich**: Die Kernausführung erfolgt lokal; externer Netzwerkverkehr beschränkt sich auf die LLM-Anbieter und entfernten MCP/HTTP-Dienste, die du bewusst nutzt
+- **Kein Cloud-Substrat erforderlich**: Die Kernausführung erfolgt lokal; externe Verbindungen beschränken sich im Wesentlichen auf die Cloud-LLM-Anbieter und entfernten MCP/HTTP-Dienste, die du bewusst nutzt, plus Update-Prüfungen in Produktions-Builds
 - **Vollständiger Offline-Support**: Kombiniere mit [Ollama](https://ollama.ai) für einen vollständig isolierten Agenten-Stack
 
 #### Was lokal bleibt vs. was deine Maschine verlässt
 
 - **Immer lokal**: Arbeitsbereiche, lokale Dateien, gebündelte Skills, Sitzungsstatus, MCP-Server-Configs, Browser-Status und lokale Tool-Ausführung
-- **Verlässt deine Maschine nur wenn du es wählst**: Anfragen an Cloud-LLM-Anbieter oder entfernte MCP/HTTP-Dienste, die du explizit konfigurierst
+- **Verlässt deine Maschine wenn es nötig ist**: Anfragen an Cloud-LLM-Anbieter oder entfernte MCP/HTTP-Dienste, die du explizit konfigurierst, plus Update-Prüfungen in Produktions-Builds
 - **Vollständiger Offline-Modus**: Nutze Ollama oder eine andere lokale Runtime mit lokalen MCP-Servern für einen isolierten Workflow
 
 ### 2. 🧩 Natives MCP-Ökosystem — Unendliche Erweiterbarkeit by Design
