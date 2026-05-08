@@ -13,13 +13,137 @@ import equal from 'fast-deep-equal';
 // Define the form state shape, identical to Settings for now
 export type SettingsFormState = Settings;
 
+export type SettingsDirtyState = {
+  general: boolean;
+  'ai-models': boolean;
+  'chat-interface': boolean;
+  system: boolean;
+  advanced: boolean;
+  dev: boolean;
+};
+
+type SettingsFormStore = {
+  formState: SettingsFormState;
+  dirtyState: SettingsDirtyState;
+};
+
+function getEmptyDirtyState(): SettingsDirtyState {
+  return {
+    general: false,
+    'ai-models': false,
+    'chat-interface': false,
+    system: false,
+    advanced: false,
+    dev: false,
+  };
+}
+
+function getAiModelsComparableState(settings: SettingsFormState) {
+  return {
+    serviceConfigs: settings.serviceConfigs,
+    preferredModel: settings.preferredModel,
+    fallbackModel: settings.fallbackModel,
+    agentHubUrl: settings.agentHubUrl,
+    maxRetries: settings.advanced.maxRetries,
+    retryDelay: settings.advanced.retryDelay,
+    defaultMaxOutputTokens: settings.advanced.defaultMaxOutputTokens,
+  };
+}
+
+function getChatInterfaceComparableState(settings: SettingsFormState) {
+  return {
+    contextStrategy: settings.contextStrategy,
+    windowSize: settings.windowSize,
+    maxInputContext: settings.maxInputContext,
+    toolCallGroupVisibleCount: settings.toolCallGroupVisibleCount,
+    diffContextLines: settings.advanced.diffContextLines,
+  };
+}
+
+function getSystemComparableState(settings: SettingsFormState) {
+  return {
+    skillsDirectory: settings.system.skillsDirectory,
+    maxFileUploadSizeMB: settings.system.maxFileUploadSizeMB,
+    searchIndexFrequencyMinutes: settings.system.searchIndexFrequencyMinutes,
+    webActionTimeoutSeconds: settings.system.webActionTimeoutSeconds,
+    mcpServerStartupTimeoutSeconds:
+      settings.system.mcpServerStartupTimeoutSeconds,
+    mcpToolTimeoutSeconds: settings.system.mcpToolTimeoutSeconds,
+    scheduledTaskMinimumIntervalMinutes:
+      settings.system.scheduledTaskMinimumIntervalMinutes,
+    maxScheduledTaskGroups: settings.system.maxScheduledTaskGroups,
+    httpServerPort: settings.system.httpServerPort,
+    httpServerExpose: settings.system.httpServerExpose,
+  };
+}
+
+function getAdvancedComparableState(settings: SettingsFormState) {
+  const { diffContextLines, ...advancedWithoutChatFields } = settings.advanced;
+  void diffContextLines;
+
+  return {
+    ...advancedWithoutChatFields,
+    maxRetries: undefined,
+    retryDelay: undefined,
+    defaultMaxOutputTokens: undefined,
+    shellIsolationLevel: settings.system.shellIsolationLevel,
+  };
+}
+
+export function getSettingsDirtyState(
+  formState: SettingsFormState,
+  globalSettings: SettingsFormState,
+): SettingsDirtyState {
+  return {
+    general:
+      formState.uiLanguage !== globalSettings.uiLanguage ||
+      !equal(formState.display, globalSettings.display),
+    'ai-models': !equal(
+      getAiModelsComparableState(formState),
+      getAiModelsComparableState(globalSettings),
+    ),
+    'chat-interface': !equal(
+      getChatInterfaceComparableState(formState),
+      getChatInterfaceComparableState(globalSettings),
+    ),
+    system: !equal(
+      getSystemComparableState(formState),
+      getSystemComparableState(globalSettings),
+    ),
+    advanced: !equal(
+      getAdvancedComparableState(formState),
+      getAdvancedComparableState(globalSettings),
+    ),
+    dev: false,
+  };
+}
+
 export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
-  // Initialize form state from global settings
-  const [formState, setFormState] = useState<SettingsFormState>(globalSettings);
+  const [state, setState] = useState<SettingsFormStore>(() => ({
+    formState: globalSettings,
+    dirtyState: getEmptyDirtyState(),
+  }));
   const previousGlobalSettingsRef = useRef(globalSettings);
   const shouldAcceptNextGlobalSyncRef = useRef(false);
+  const globalSettingsRef = useRef(globalSettings);
+
+  const updateFormStore = useCallback(
+    (updater: (previous: SettingsFormState) => SettingsFormState) => {
+      setState((previous) => {
+        const nextFormState = updater(previous.formState);
+        return {
+          formState: nextFormState,
+          dirtyState: getSettingsDirtyState(
+            nextFormState,
+            globalSettingsRef.current,
+          ),
+        };
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const previousGlobalSettings = previousGlobalSettingsRef.current;
@@ -30,15 +154,25 @@ export function useSettingsForm() {
 
     const shouldSyncFormState =
       shouldAcceptNextGlobalSyncRef.current ||
-      equal(formState, previousGlobalSettings);
+      equal(state.formState, previousGlobalSettings);
 
     previousGlobalSettingsRef.current = globalSettings;
+    globalSettingsRef.current = globalSettings;
     shouldAcceptNextGlobalSyncRef.current = false;
 
     if (shouldSyncFormState) {
-      setFormState(globalSettings);
+      setState({
+        formState: globalSettings,
+        dirtyState: getEmptyDirtyState(),
+      });
+      return;
     }
-  }, [formState, globalSettings]);
+
+    setState((previous) => ({
+      formState: previous.formState,
+      dirtyState: getSettingsDirtyState(previous.formState, globalSettings),
+    }));
+  }, [globalSettings, state.formState]);
 
   // Generic update for top-level keys
   const update = useCallback(
@@ -46,18 +180,18 @@ export function useSettingsForm() {
       key: K,
       value: SettingsFormState[K],
     ) => {
-      setFormState((prev) => ({
+      updateFormStore((prev) => ({
         ...prev,
         [key]: value,
       }));
     },
-    [],
+    [updateFormStore],
   );
 
   // Specialized updaters for nested objects to keep usage clean
   const updateServiceConfig = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
-      setFormState((prev) => {
+      updateFormStore((prev) => {
         const currentConfig = prev.serviceConfigs[provider] || {};
         const newConfig = { ...currentConfig, ...patch };
         return {
@@ -69,12 +203,12 @@ export function useSettingsForm() {
         };
       });
     },
-    [],
+    [updateFormStore],
   );
 
   const updateAdvanced = useCallback(
     <K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) => {
-      setFormState((prev) => ({
+      updateFormStore((prev) => ({
         ...prev,
         advanced: {
           ...prev.advanced,
@@ -82,12 +216,12 @@ export function useSettingsForm() {
         },
       }));
     },
-    [],
+    [updateFormStore],
   );
 
   const updateDisplay = useCallback(
     <K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]) => {
-      setFormState((prev) => ({
+      updateFormStore((prev) => ({
         ...prev,
         display: {
           ...prev.display,
@@ -95,12 +229,12 @@ export function useSettingsForm() {
         },
       }));
     },
-    [],
+    [updateFormStore],
   );
 
   const updateSystem = useCallback(
     <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => {
-      setFormState((prev) => ({
+      updateFormStore((prev) => ({
         ...prev,
         system: {
           ...prev.system,
@@ -108,30 +242,34 @@ export function useSettingsForm() {
         },
       }));
     },
-    [],
+    [updateFormStore],
   );
 
   const reset = useCallback(() => {
-    setFormState(globalSettings);
-  }, [globalSettings]);
+    setState({
+      formState: globalSettingsRef.current,
+      dirtyState: getEmptyDirtyState(),
+    });
+  }, []);
 
   const save = useCallback(async () => {
     shouldAcceptNextGlobalSyncRef.current = true;
 
     try {
-      await updateGlobal(formState);
+      await updateGlobal(state.formState);
     } catch (error) {
       shouldAcceptNextGlobalSyncRef.current = false;
       throw error;
     }
-  }, [formState, updateGlobal]);
+  }, [state.formState, updateGlobal]);
 
   const isDirty = useMemo(() => {
-    return !equal(formState, globalSettings);
-  }, [formState, globalSettings]);
+    return Object.values(state.dirtyState).some(Boolean);
+  }, [state.dirtyState]);
 
   return {
-    formState,
+    formState: state.formState,
+    dirtyState: state.dirtyState,
     update,
     updateServiceConfig,
     updateAdvanced,

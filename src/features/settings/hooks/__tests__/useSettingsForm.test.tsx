@@ -29,6 +29,14 @@ describe('useSettingsForm', () => {
     const { result } = renderHook(() => useSettingsForm());
     expect(result.current.formState).toEqual(DEFAULT_SETTING);
     expect(result.current.isDirty).toBe(false);
+    expect(result.current.dirtyState).toEqual({
+      general: false,
+      'ai-models': false,
+      'chat-interface': false,
+      system: false,
+      advanced: false,
+      dev: false,
+    });
   });
 
   it('should update top-level settings', () => {
@@ -40,6 +48,8 @@ describe('useSettingsForm', () => {
 
     expect(result.current.formState.windowSize).toBe(50);
     expect(result.current.isDirty).toBe(true);
+    expect(result.current.dirtyState['chat-interface']).toBe(true);
+    expect(result.current.dirtyState.general).toBe(false);
   });
 
   it('should update service config', () => {
@@ -63,6 +73,8 @@ describe('useSettingsForm', () => {
 
     expect(result.current.formState.advanced.maxRetries).toBe(5);
     expect(result.current.isDirty).toBe(true);
+    expect(result.current.dirtyState['ai-models']).toBe(true);
+    expect(result.current.dirtyState.advanced).toBe(false);
   });
 
   it('should reset changes', () => {
@@ -163,5 +175,6 @@ describe('useSettingsForm', () => {
 
     expect(result.current.formState.windowSize).toBe(50);
     expect(result.current.isDirty).toBe(true);
+    expect(result.current.dirtyState['chat-interface']).toBe(true);
   });
 });
