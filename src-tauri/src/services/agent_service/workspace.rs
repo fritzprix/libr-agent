@@ -1,5 +1,42 @@
 use super::AgentService;
 use crate::session::get_session_manager;
+use path_clean::PathClean;
+
+pub async fn resolve_workspace_override_path(path_str: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::path::PathBuf::from(path_str);
+    if !path.is_absolute() {
+        return Err("Workspace path must be absolute".to_string());
+    }
+
+    let normalized_path = path.clean();
+    if is_restricted_system_path(&normalized_path) {
+        return Err(format!(
+            "Workspace path '{}' is a restricted system directory and cannot be used as an agent workspace",
+            path_str
+        ));
+    }
+
+    let canonical_path = tokio::fs::canonicalize(&normalized_path)
+        .await
+        .map_err(|err| format!("Workspace path is not accessible: {}", err))?;
+
+    let metadata = tokio::fs::metadata(&canonical_path)
+        .await
+        .map_err(|err| format!("Workspace path is not accessible: {}", err))?;
+    if !metadata.is_dir() {
+        return Err("Workspace path must be a directory".to_string());
+    }
+
+    if is_restricted_system_path(&canonical_path) {
+        return Err(format!(
+            "Workspace path '{}' resolves to restricted system directory '{}' and cannot be used as an agent workspace",
+            path_str,
+            canonical_path.display()
+        ));
+    }
+
+    Ok(canonical_path)
+}
 
 /// Returns true if the path points to a restricted system directory that agents
 /// should not be allowed to use as a workspace.
@@ -81,6 +118,7 @@ pub fn is_restricted_system_path(path: &std::path::Path) -> bool {
 
         let restricted_prefixes = [
             "/etc",
+            "/private/etc",
             "/sys",
             "/proc",
             "/dev",
@@ -115,28 +153,7 @@ impl AgentService {
             log::warn!("Failed to get session manager for workspace override");
             return Ok(());
         };
-        let path = std::path::PathBuf::from(path_str);
-        if !path.is_absolute() {
-            return Err("Workspace path must be absolute".to_string());
-        }
-
-        if is_restricted_system_path(&path) {
-            return Err(format!(
-                "Workspace path '{}' is a restricted system directory and cannot be used as an agent workspace",
-                path_str
-            ));
-        }
-
-        match tokio::fs::metadata(&path).await {
-            Ok(metadata) => {
-                if !metadata.is_dir() {
-                    return Err("Workspace path must be a directory".to_string());
-                }
-            }
-            Err(err) => {
-                return Err(format!("Workspace path is not accessible: {}", err));
-            }
-        }
+        let path = resolve_workspace_override_path(path_str).await?;
         session_manager
             .register_session_override(session_id, path)
             .await

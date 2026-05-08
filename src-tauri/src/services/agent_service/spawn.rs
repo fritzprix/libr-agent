@@ -1,4 +1,6 @@
-use super::lineage::{lineage_store, remove_lineage, resolve_spawn_lineage};
+use super::lineage::{
+    acquire_parent_spawn_guard, lineage_store, remove_lineage, resolve_spawn_lineage,
+};
 use super::{normalize_explicit_org, resolve_child_session_model_provider, AgentService};
 use crate::agent::types::{CreateSessionRequest, CreateSessionResponse, SessionLineageMeta};
 use crate::agent::{AgentConfig, AgentSessionManager};
@@ -42,14 +44,28 @@ impl AgentService {
             parent_session.as_ref(),
         )?;
         let (mut agent_config, assistant_id) = build_agent_config(&assistant)?;
-        let lineage_meta = resolve_spawn_lineage(&session_id, &body, explicit_org.as_ref()).await?;
-        apply_lineage_to_config(&mut agent_config, &lineage_meta);
+        let has_workspace_override = body.workspace_path.is_some();
 
         if let Some(path_str) = body.workspace_path.as_deref() {
             Self::validate_and_register_workspace_override(path_str, &session_id).await?;
         }
 
-        let session = manager
+        let parent_spawn_guard =
+            acquire_parent_spawn_guard(body.parent_session_id.as_deref()).await;
+        let lineage_meta =
+            match resolve_spawn_lineage(&session_id, &body, explicit_org.as_ref()).await {
+                Ok(lineage_meta) => lineage_meta,
+                Err(error) => {
+                    drop(parent_spawn_guard);
+                    if has_workspace_override {
+                        cleanup_failed_spawn_workspace_registration(&session_id).await;
+                    }
+                    return Err(error);
+                }
+            };
+        apply_lineage_to_config(&mut agent_config, &lineage_meta);
+
+        let session = match manager
             .create_session(
                 session_id.clone(),
                 session_name,
@@ -57,12 +73,23 @@ impl AgentService {
                 resolved_provider,
                 agent_config,
             )
-            .await?;
+            .await
+        {
+            Ok(session) => session,
+            Err(error) => {
+                drop(parent_spawn_guard);
+                if has_workspace_override {
+                    cleanup_failed_spawn_workspace_registration(&session_id).await;
+                }
+                return Err(error);
+            }
+        };
 
         lineage_store()
             .write()
             .await
             .insert(session_id.clone(), lineage_meta.clone());
+        drop(parent_spawn_guard);
 
         if let Some(parent_id) = lineage_meta.parent_session_id.as_deref() {
             if manager.get_yolo_mode(parent_id).await {
@@ -101,7 +128,9 @@ impl AgentService {
         Ok(CreateSessionResponse {
             id: session.id,
             name: session.name,
-            status: format!("{:?}", crate::repositories::SessionStatus::Busy),
+            status: crate::repositories::SessionStatus::Busy
+                .as_str()
+                .to_string(),
             parent_session_id: lineage_meta.parent_session_id,
             lineage_id: lineage_meta.lineage_id,
             depth: lineage_meta.depth,
@@ -176,4 +205,22 @@ fn apply_lineage_to_config(agent_config: &mut AgentConfig, lineage_meta: &Sessio
     agent_config.org_id = lineage_meta.org_id.clone();
     agent_config.org_name = lineage_meta.org_name.clone();
     agent_config.org_root_session_id = lineage_meta.org_root_session_id.clone();
+}
+
+async fn cleanup_failed_spawn_workspace_registration(session_id: &str) {
+    let Ok(session_manager) = crate::session::get_session_manager() else {
+        log::warn!(
+            "Failed to get session manager while cleaning up workspace override for {}",
+            session_id
+        );
+        return;
+    };
+
+    if let Err(error) = session_manager.remove_session(session_id).await {
+        log::warn!(
+            "Failed to clean up pre-registered workspace override for failed spawned session {}: {}",
+            session_id,
+            error
+        );
+    }
 }

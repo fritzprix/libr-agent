@@ -2,18 +2,53 @@ use crate::agent::types::{CreateSessionRequest, SessionLineageMeta};
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::RwLock as TokioRwLock;
 
 pub static SESSION_LINEAGE: OnceLock<TokioRwLock<HashMap<String, SessionLineageMeta>>> =
+    OnceLock::new();
+static PARENT_SPAWN_LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     OnceLock::new();
 
 pub fn lineage_store() -> &'static TokioRwLock<HashMap<String, SessionLineageMeta>> {
     SESSION_LINEAGE.get_or_init(|| TokioRwLock::new(HashMap::new()))
 }
 
+fn parent_spawn_locks() -> &'static Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>> {
+    PARENT_SPAWN_LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub async fn acquire_parent_spawn_guard(
+    parent_session_id: Option<&str>,
+) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+    let parent_session_id = parent_session_id?;
+    let lock = {
+        let mut locks = parent_spawn_locks()
+            .lock()
+            .expect("parent spawn lock map should not be poisoned");
+        locks
+            .entry(parent_session_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+
+    Some(lock.lock_owned().await)
+}
+
 pub async fn remove_lineage(session_id: &str) {
     lineage_store().write().await.remove(session_id);
+    match parent_spawn_locks().lock() {
+        Ok(mut locks) => {
+            locks.remove(session_id);
+        }
+        Err(error) => {
+            log::warn!(
+                "Failed to clean parent spawn lock entry for {}: {}",
+                session_id,
+                error
+            );
+        }
+    }
 }
 
 pub fn normalize_explicit_org(

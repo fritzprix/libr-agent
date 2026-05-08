@@ -502,7 +502,7 @@ export async function prepareMessagesForLLM(
   // to understand what went wrong and how to recover.
   // The error field is metadata; the content field contains the actual error message
   // that should be sent to the LLM.
-  // ⚡ Bolt: Single O(N) backwards pass to compute all metadata while maintaining early exit
+  // ⚡ Bolt: Single O(N) backwards pass to compute all metadata in one scan
   let latestMediaMessageIndex = -1;
   let attachmentCount = 0;
   let errorMessageCount = 0;
