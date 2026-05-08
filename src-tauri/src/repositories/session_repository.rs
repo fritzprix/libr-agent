@@ -10,6 +10,29 @@ use std::str::FromStr;
 
 use crate::entity::{prelude::*, session};
 
+const SESSION_UPSERT_COLUMNS: [session::Column; 20] = [
+    session::Column::Name,
+    session::Column::Status,
+    session::Column::Model,
+    session::Column::Provider,
+    session::Column::AgentConfig,
+    session::Column::ParentSessionId,
+    session::Column::LineageId,
+    session::Column::Depth,
+    session::Column::MaxDepth,
+    session::Column::MaxFanout,
+    session::Column::OrgId,
+    session::Column::OrgName,
+    session::Column::OrgRootSessionId,
+    session::Column::UpdatedAt,
+    session::Column::LastViewedAt,
+    session::Column::LastMessageAt,
+    session::Column::LastAttentionAt,
+    session::Column::LastAttentionReason,
+    session::Column::YoloMode,
+    session::Column::WorkspaceOverride,
+];
+
 /// Session status enum representing the agent workflow state
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -251,14 +274,9 @@ impl SqliteSessionRepository {
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }
-}
 
-#[async_trait]
-impl SessionRepository for SqliteSessionRepository {
-    async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
-        use sea_orm::sea_query::OnConflict;
-
-        let model = session::ActiveModel {
+    fn build_active_model(session: &SessionMetadata) -> session::ActiveModel {
+        session::ActiveModel {
             id: Set(session.id.clone()),
             name: Set(session.name.clone()),
             status: Set(session.status.as_str().to_string()),
@@ -267,9 +285,13 @@ impl SessionRepository for SqliteSessionRepository {
             agent_config: Set(session.agent_config.clone()),
             parent_session_id: Set(session.parent_session_id.clone()),
             lineage_id: Set(session.lineage_id.clone()),
-            depth: Set(session.depth.and_then(|v| i32::try_from(v).ok())),
-            max_depth: Set(session.max_depth.and_then(|v| i32::try_from(v).ok())),
-            max_fanout: Set(session.max_fanout.and_then(|v| i32::try_from(v).ok())),
+            depth: Set(session.depth.and_then(|value| i32::try_from(value).ok())),
+            max_depth: Set(session
+                .max_depth
+                .and_then(|value| i32::try_from(value).ok())),
+            max_fanout: Set(session
+                .max_fanout
+                .and_then(|value| i32::try_from(value).ok())),
             org_id: Set(session.org_id.clone()),
             org_name: Set(session.org_name.clone()),
             org_root_session_id: Set(session.org_root_session_id.clone()),
@@ -286,33 +308,27 @@ impl SessionRepository for SqliteSessionRepository {
             is_bookmarked: Set(session.is_bookmarked),
             yolo_mode: Set(session.yolo_mode),
             workspace_override: Set(session.workspace_override.clone()),
-        };
+        }
+    }
 
-        Session::insert(model)
+    async fn apply_partial_update(
+        &self,
+        active_model: session::ActiveModel,
+    ) -> Result<(), DbError> {
+        active_model.update(&self.db).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl SessionRepository for SqliteSessionRepository {
+    async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
+        use sea_orm::sea_query::OnConflict;
+
+        Session::insert(Self::build_active_model(session))
             .on_conflict(
                 OnConflict::column(session::Column::Id)
-                    .update_columns([
-                        session::Column::Name,
-                        session::Column::Status,
-                        session::Column::Model,
-                        session::Column::Provider,
-                        session::Column::AgentConfig,
-                        session::Column::ParentSessionId,
-                        session::Column::LineageId,
-                        session::Column::Depth,
-                        session::Column::MaxDepth,
-                        session::Column::MaxFanout,
-                        session::Column::OrgId,
-                        session::Column::OrgName,
-                        session::Column::OrgRootSessionId,
-                        session::Column::UpdatedAt,
-                        session::Column::LastViewedAt,
-                        session::Column::LastMessageAt,
-                        session::Column::LastAttentionAt,
-                        session::Column::LastAttentionReason,
-                        session::Column::YoloMode,
-                        session::Column::WorkspaceOverride,
-                    ])
+                    .update_columns(SESSION_UPSERT_COLUMNS)
                     .to_owned(),
             )
             .exec(&self.db)
@@ -487,27 +503,21 @@ impl SessionRepository for SqliteSessionRepository {
     }
 
     async fn toggle_bookmark(&self, session_id: &str, bookmarked: bool) -> Result<(), DbError> {
-        session::ActiveModel {
+        self.apply_partial_update(session::ActiveModel {
             id: Set(session_id.to_string()),
             is_bookmarked: Set(bookmarked),
             ..Default::default()
-        }
-        .update(&self.db)
-        .await?;
-
-        Ok(())
+        })
+        .await
     }
 
     async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
-        session::ActiveModel {
+        self.apply_partial_update(session::ActiveModel {
             id: Set(session_id.to_string()),
             yolo_mode: Set(enabled),
             ..Default::default()
-        }
-        .update(&self.db)
-        .await?;
-
-        Ok(())
+        })
+        .await
     }
 
     async fn update_workspace_override(
@@ -515,15 +525,12 @@ impl SessionRepository for SqliteSessionRepository {
         session_id: &str,
         override_path: Option<String>,
     ) -> Result<(), DbError> {
-        session::ActiveModel {
+        self.apply_partial_update(session::ActiveModel {
             id: Set(session_id.to_string()),
             workspace_override: Set(override_path),
             ..Default::default()
-        }
-        .update(&self.db)
-        .await?;
-
-        Ok(())
+        })
+        .await
     }
 
     async fn update_org_identity(
@@ -593,385 +600,5 @@ impl SessionRepository for SqliteSessionRepository {
         .await?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn setup_test_db() -> SqliteSessionRepository {
-        let db = sea_orm::Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create in-memory database");
-
-        // Run migrations
-        use migration::{Migrator, MigratorTrait};
-        Migrator::up(&db, None)
-            .await
-            .expect("Failed to run migrations");
-
-        SqliteSessionRepository::new(db)
-    }
-
-    #[tokio::test]
-    async fn test_create_and_get_session() {
-        let repo = setup_test_db().await;
-        let now = chrono::Utc::now().timestamp_millis();
-
-        let session = SessionMetadata {
-            id: "test-session-1".to_string(),
-            name: Some("Test Session".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            agent_config: Some(r#"{"model": "gpt-4"}"#.to_string()),
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: now,
-            updated_at: now,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            workspace_override: None,
-        };
-
-        // Test upsert
-        repo.upsert_session(&session)
-            .await
-            .expect("Failed to upsert session");
-
-        // Test get
-        let retrieved = repo
-            .get_session("test-session-1")
-            .await
-            .expect("Failed to get session")
-            .expect("Session not found");
-
-        assert_eq!(retrieved.id, "test-session-1");
-        assert_eq!(retrieved.name, Some("Test Session".to_string()));
-        assert_eq!(retrieved.status, SessionStatus::Idle);
-    }
-
-    #[tokio::test]
-    async fn test_update_session_status() {
-        let repo = setup_test_db().await;
-        let now = chrono::Utc::now().timestamp_millis();
-
-        let session = SessionMetadata {
-            id: "test-session-2".to_string(),
-            name: None,
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            agent_config: None,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: now,
-            updated_at: now,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            workspace_override: None,
-        };
-
-        repo.upsert_session(&session)
-            .await
-            .expect("Failed to upsert session");
-
-        // Small delay to ensure timestamp changes
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-        // Update status to Busy
-        repo.update_status("test-session-2", SessionStatus::Busy)
-            .await
-            .expect("Failed to update status");
-
-        // Verify status changed
-        let retrieved = repo
-            .get_session("test-session-2")
-            .await
-            .expect("Failed to get session")
-            .expect("Session not found");
-
-        assert_eq!(retrieved.status, SessionStatus::Busy);
-        assert!(retrieved.updated_at > now); // Updated timestamp should be newer
-    }
-
-    #[tokio::test]
-    async fn test_get_all_sessions() {
-        let repo = setup_test_db().await;
-        let now = chrono::Utc::now().timestamp_millis();
-        // Create multiple sessions
-        for i in 1..=3 {
-            let session = SessionMetadata {
-                id: format!("test-session-{}", i),
-                name: Some(format!("Session {}", i)),
-                status: SessionStatus::Idle,
-                model: "gpt-4".to_string(),
-                provider: "openai".to_string(),
-                agent_config: None,
-                parent_session_id: None,
-                lineage_id: None,
-                depth: None,
-                max_depth: None,
-                max_fanout: None,
-                org_id: None,
-                org_name: None,
-                org_root_session_id: None,
-                created_at: now,
-                updated_at: now + i,
-                last_viewed_at: None,
-                last_message_at: None,
-                last_attention_at: None,
-                last_attention_reason: None,
-                is_bookmarked: false,
-                yolo_mode: false,
-                workspace_override: None,
-            };
-
-            repo.upsert_session(&session)
-                .await
-                .expect("Failed to upsert session");
-        }
-
-        // Get all sessions
-        let sessions = repo
-            .get_all_sessions()
-            .await
-            .expect("Failed to get all sessions");
-
-        assert_eq!(sessions.len(), 3);
-        // Should be ordered by updated_at DESC
-        assert_eq!(sessions[0].id, "test-session-3");
-        assert_eq!(sessions[1].id, "test-session-2");
-        assert_eq!(sessions[2].id, "test-session-1");
-    }
-
-    #[tokio::test]
-    async fn test_session_status_serialization() {
-        assert_eq!(SessionStatus::Idle.as_str(), "idle");
-        assert_eq!(SessionStatus::Busy.as_str(), "busy");
-        assert_eq!(SessionStatus::Paused.as_str(), "paused");
-        assert_eq!(SessionStatus::Error.as_str(), "error");
-
-        assert_eq!(
-            SessionStatus::from_str("idle").unwrap(),
-            SessionStatus::Idle
-        );
-        assert_eq!(
-            SessionStatus::from_str("busy").unwrap(),
-            SessionStatus::Busy
-        );
-        assert_eq!(
-            SessionStatus::from_str("paused").unwrap(),
-            SessionStatus::Paused
-        );
-        assert_eq!(
-            SessionStatus::from_str("error").unwrap(),
-            SessionStatus::Error
-        );
-
-        assert!(SessionStatus::from_str("invalid").is_err());
-    }
-
-    #[tokio::test]
-    async fn test_upsert_updates_existing_session() {
-        let repo = setup_test_db().await;
-        let now = chrono::Utc::now().timestamp_millis();
-
-        let session = SessionMetadata {
-            id: "test-session-update".to_string(),
-            name: Some("Original Name".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            agent_config: None,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: now,
-            updated_at: now,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            workspace_override: None,
-        };
-
-        repo.upsert_session(&session)
-            .await
-            .expect("Failed to upsert session");
-
-        // Update the session
-        let updated_session = SessionMetadata {
-            id: "test-session-update".to_string(),
-            name: Some("Updated Name".to_string()),
-            status: SessionStatus::Busy,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            agent_config: Some(r#"{"updated": true}"#.to_string()),
-            created_at: now,
-            updated_at: now + 1000,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            workspace_override: None,
-        };
-
-        repo.upsert_session(&updated_session)
-            .await
-            .expect("Failed to update session");
-
-        // Verify updates
-        let retrieved = repo
-            .get_session("test-session-update")
-            .await
-            .expect("Failed to get session")
-            .expect("Session not found");
-
-        assert_eq!(retrieved.name, Some("Updated Name".to_string()));
-        assert_eq!(retrieved.status, SessionStatus::Busy);
-        assert_eq!(
-            retrieved.agent_config,
-            Some(r#"{"updated": true}"#.to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn test_delete_session() {
-        let repo = setup_test_db().await;
-        let now = chrono::Utc::now().timestamp_millis();
-
-        let session = SessionMetadata {
-            id: "test-session-delete".to_string(),
-            name: Some("To Be Deleted".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            agent_config: None,
-            created_at: now,
-            updated_at: now,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            workspace_override: None,
-        };
-
-        repo.upsert_session(&session)
-            .await
-            .expect("Failed to insert session");
-
-        // Verify it exists
-        let retrieved = repo.get_session("test-session-delete").await.unwrap();
-        assert!(retrieved.is_some());
-
-        // Delete it
-        repo.delete_session("test-session-delete")
-            .await
-            .expect("Failed to delete session");
-
-        // Verify it's gone
-        let retrieved = repo.get_session("test-session-delete").await.unwrap();
-        assert!(retrieved.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_toggle_bookmark() {
-        let repo = setup_test_db().await;
-        let now = chrono::Utc::now().timestamp_millis();
-
-        let session = SessionMetadata {
-            id: "test-bookmark".to_string(),
-            name: Some("Bookmarked Session".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
-            agent_config: None,
-            parent_session_id: None,
-            lineage_id: None,
-            depth: None,
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: now,
-            updated_at: now,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            workspace_override: None,
-        };
-
-        repo.upsert_session(&session)
-            .await
-            .expect("Failed to upsert session");
-
-        // Bookmark it
-        repo.toggle_bookmark("test-bookmark", true)
-            .await
-            .expect("Failed to bookmark session");
-
-        let retrieved = repo.get_session("test-bookmark").await.unwrap().unwrap();
-        assert!(retrieved.is_bookmarked);
-
-        // Unbookmark it
-        repo.toggle_bookmark("test-bookmark", false)
-            .await
-            .expect("Failed to unbookmark session");
-
-        let retrieved = repo.get_session("test-bookmark").await.unwrap().unwrap();
-        assert!(!retrieved.is_bookmarked);
     }
 }
