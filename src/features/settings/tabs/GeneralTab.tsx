@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { DisplaySettings } from '@/context/SettingsContext';
 import {
+  Label,
   Select,
   SelectContent,
   SelectItem,
@@ -59,6 +60,12 @@ const PREFILL_DISPLAY_FORMAT_OPTIONS = [
   },
 ] as const;
 
+const LANGUAGE_SELECT_ID = 'settings-language';
+const FONT_FAMILY_SELECT_ID = 'settings-font-family';
+const TOOL_DETAIL_LEVEL_SELECT_ID = 'settings-tool-detail-level';
+const METRIC_DISPLAY_MODE_SELECT_ID = 'settings-metric-display-mode';
+const PREFILL_DISPLAY_FORMAT_SELECT_ID = 'settings-prefill-display-format';
+
 function isToolDetailLevel(
   value: string,
 ): value is DisplaySettings['toolDetailLevel'] {
@@ -100,11 +107,17 @@ function GeneralTabComponent({
   return (
     <div className="space-y-6">
       <div className="min-w-0">
-        <label className="block text-muted-foreground mb-2 font-medium">
+        <Label
+          htmlFor={LANGUAGE_SELECT_ID}
+          className="mb-2 block text-muted-foreground"
+        >
           {t('settings.language.label', 'Language')}
-        </label>
+        </Label>
         <Select value={localLanguage} onValueChange={onChange}>
-          <SelectTrigger className="w-full max-w-xs bg-background">
+          <SelectTrigger
+            id={LANGUAGE_SELECT_ID}
+            className="w-full max-w-xs bg-background"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -123,16 +136,22 @@ function GeneralTabComponent({
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
+            <Label
+              htmlFor={FONT_FAMILY_SELECT_ID}
+              className="mb-2 block text-muted-foreground"
+            >
               {t('settings.display.fontFamily', 'Font Family')}
-            </label>
+            </Label>
             <Select
               value={localDisplay.fontFamily ?? 'Pretendard'}
               onValueChange={(value) =>
                 onDisplaySettingsChange('fontFamily', value)
               }
             >
-              <SelectTrigger className="w-full max-w-xs bg-background">
+              <SelectTrigger
+                id={FONT_FAMILY_SELECT_ID}
+                className="w-full max-w-xs bg-background"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -171,9 +190,12 @@ function GeneralTabComponent({
           </div>
 
           <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
+            <Label
+              htmlFor={TOOL_DETAIL_LEVEL_SELECT_ID}
+              className="mb-2 block text-muted-foreground"
+            >
               {t('settings.display.toolDetailLevel', 'Tool Detail Level')}
-            </label>
+            </Label>
             <Select
               value={localDisplay.toolDetailLevel ?? 'simple'}
               onValueChange={(value) => {
@@ -182,7 +204,10 @@ function GeneralTabComponent({
                 }
               }}
             >
-              <SelectTrigger className="w-full max-w-xs bg-background">
+              <SelectTrigger
+                id={TOOL_DETAIL_LEVEL_SELECT_ID}
+                className="w-full max-w-xs bg-background"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -210,9 +235,12 @@ function GeneralTabComponent({
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="min-w-0">
-              <label className="block text-muted-foreground mb-2 font-medium">
+              <Label
+                htmlFor={METRIC_DISPLAY_MODE_SELECT_ID}
+                className="mb-2 block text-muted-foreground"
+              >
                 {t('settings.display.metricDisplayMode', 'Metric Display Mode')}
-              </label>
+              </Label>
               <Select
                 value={localDisplay.metricDisplayMode}
                 onValueChange={(value) => {
@@ -221,7 +249,10 @@ function GeneralTabComponent({
                   }
                 }}
               >
-                <SelectTrigger className="w-full max-w-xs bg-background">
+                <SelectTrigger
+                  id={METRIC_DISPLAY_MODE_SELECT_ID}
+                  className="w-full max-w-xs bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -241,12 +272,15 @@ function GeneralTabComponent({
             </div>
 
             <div className="min-w-0">
-              <label className="block text-muted-foreground mb-2 font-medium">
+              <Label
+                htmlFor={PREFILL_DISPLAY_FORMAT_SELECT_ID}
+                className="mb-2 block text-muted-foreground"
+              >
                 {t(
                   'settings.display.prefillDisplayFormat',
                   'Prefill Performance Format',
                 )}
-              </label>
+              </Label>
               <Select
                 value={localDisplay.prefillDisplayFormat}
                 onValueChange={(value) => {
@@ -255,7 +289,10 @@ function GeneralTabComponent({
                   }
                 }}
               >
-                <SelectTrigger className="w-full max-w-xs bg-background">
+                <SelectTrigger
+                  id={PREFILL_DISPLAY_FORMAT_SELECT_ID}
+                  className="w-full max-w-xs bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
