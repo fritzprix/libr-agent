@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import useSWR from 'swr';
 import { Building2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -8,7 +9,6 @@ import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 import { safeInvoke } from '@/lib/backend/core';
-import type { AgentSession } from '@/models/agent';
 import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
 import { selectOrgSummaries } from './org-sessions';
@@ -37,44 +37,35 @@ function OrgCardSkeleton() {
 
 export default function Org() {
   const { t } = useTranslation('common');
-  const [sessions, setSessions] = useState<AgentSession[]>([]);
-  const [isSessionsListLoading, setIsSessionsListLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetcher = async () => {
+    const response = await safeInvoke<AgentSessionMetadata[]>(
+      'agent_get_all_sessions',
+    );
+    const items = Array.isArray(response) ? response : [];
+    return items.map((session) => mapSessionMetadataToAgentSession(session));
+  };
+
+  const {
+    data: sessions = [],
+    isLoading,
+    isValidating,
+    mutate,
+  } = useSWR('orgSessions', fetcher, {
+    revalidateOnFocus: false,
+    onError: (error) => {
+      logger.error('Failed to load org sessions', error);
+      toast.error(t('orgHistory.loadFailed', 'Failed to load org lineages'));
+    },
+  });
 
   const orgs = useMemo(() => selectOrgSummaries(sessions), [sessions]);
 
-  async function loadOrgSessions(forceRefreshing = false) {
-    if (forceRefreshing) {
-      setIsRefreshing(true);
-    } else {
-      setIsSessionsListLoading(true);
-    }
-    try {
-      const response = await safeInvoke<AgentSessionMetadata[]>(
-        'agent_get_all_sessions',
-      );
-      const items = Array.isArray(response) ? response : [];
-      setSessions(
-        items.map((session) => mapSessionMetadataToAgentSession(session)),
-      );
-    } catch (error) {
-      logger.error('Failed to load org sessions', error);
-      toast.error(t('orgHistory.loadFailed', 'Failed to load org lineages'));
-    } finally {
-      setIsRefreshing(false);
-      setIsSessionsListLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadOrgSessions();
-  }, []);
-
   async function handleRefresh() {
-    await loadOrgSessions(true);
+    await mutate();
   }
 
-  if (isSessionsListLoading) {
+  if (isLoading) {
     return (
       <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
         <div className="flex items-center justify-between">
@@ -111,10 +102,10 @@ export default function Org() {
           variant="outline"
           size="sm"
           onClick={handleRefresh}
-          disabled={isRefreshing}
+          disabled={isValidating}
         >
           <RefreshCw
-            className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')}
+            className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
           />
           {t('history.refresh', 'Refresh')}
         </Button>
