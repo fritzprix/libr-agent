@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { act, render, screen } from '@testing-library/react';
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useImperativeHandle } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
@@ -62,8 +62,10 @@ const groupedMessagesMock: GroupedMessage[] = [
   },
 ];
 
-const { virtuosoMock, sessionState, chatState } = vi.hoisted(() => ({
+const { virtuosoMock, scrollToIndexMock, sessionState, chatState } = vi.hoisted(
+  () => ({
   virtuosoMock: vi.fn(),
+  scrollToIndexMock: vi.fn(),
   sessionState: {
     session: { id: 'session-1', assistant: { name: 'Agent' } },
   },
@@ -71,13 +73,14 @@ const { virtuosoMock, sessionState, chatState } = vi.hoisted(() => ({
     messages: [] as Message[],
     workflowStatus: 'idle' as 'idle' | 'busy',
   },
-}));
+}),
+);
 
-let resizeObserverCallback: ResizeObserverCallback | null = null;
+let resizeObserverCallbacks: ResizeObserverCallback[] = [];
 
 class MockResizeObserver implements ResizeObserver {
   constructor(callback: ResizeObserverCallback) {
-    resizeObserverCallback = callback;
+    resizeObserverCallbacks.push(callback);
   }
 
   observe(): void {}
@@ -170,7 +173,9 @@ vi.mock('@/components/ui/tooltip', () => ({
 
 vi.mock('react-virtuoso', () => ({
   Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
-    void ref;
+    useImperativeHandle(ref, () => ({
+      scrollToIndex: scrollToIndexMock,
+    }));
     return virtuosoMock(props);
   }),
 }));
@@ -178,7 +183,8 @@ vi.mock('react-virtuoso', () => ({
 describe('AgentChatMessages compaction rendering', () => {
   beforeEach(() => {
     virtuosoMock.mockClear();
-    resizeObserverCallback = null;
+    scrollToIndexMock.mockClear();
+    resizeObserverCallbacks = [];
     sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
     chatState.messages = groupedToolMessages.slice(1);
     chatState.workflowStatus = 'idle';
@@ -372,9 +378,16 @@ describe('AgentChatMessages compaction rendering', () => {
       render(<AgentChatMessages />);
 
       act(() => {
-        resizeObserverCallback?.([], {} as ResizeObserver);
+        resizeObserverCallbacks.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
       });
 
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
       expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
@@ -398,11 +411,17 @@ describe('AgentChatMessages compaction rendering', () => {
 
     try {
       const { rerender } = render(<AgentChatMessages />);
+      scrollToIndexMock.mockClear();
       scrollIntoView.mockClear();
 
       sessionState.session = { id: 'session-2', assistant: { name: 'Agent' } };
       rerender(<AgentChatMessages />);
 
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
       expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
@@ -436,6 +455,7 @@ describe('AgentChatMessages compaction rendering', () => {
 
     try {
       render(<AgentChatMessages />);
+      scrollToIndexMock.mockClear();
       scrollIntoView.mockClear();
 
       const nextFrame = frameQueue.shift();
@@ -445,6 +465,11 @@ describe('AgentChatMessages compaction rendering', () => {
         nextFrame?.(0);
       });
 
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
       expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
@@ -495,6 +520,7 @@ describe('AgentChatMessages compaction rendering', () => {
 
     try {
       render(<AgentChatMessages />);
+      scrollToIndexMock.mockClear();
       scrollIntoView.mockClear();
 
       const nextFrame = frameQueue.shift();
@@ -504,6 +530,71 @@ describe('AgentChatMessages compaction rendering', () => {
         nextFrame?.(0);
       });
 
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('re-aligns to the bottom when a session hydrates messages after mounting empty', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+    chatState.messages = [];
+    groupedMessagesMock.splice(0, groupedMessagesMock.length);
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+
+    try {
+      const { rerender } = render(<AgentChatMessages />);
+      scrollToIndexMock.mockClear();
+      scrollIntoView.mockClear();
+
+      chatState.messages = groupedToolMessages.slice(1);
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        {
+          type: 'tool_group',
+          message: baseMessage,
+          messages: [baseMessage],
+          coveredMessageIds: ['assistant-1', 'tool-1'],
+          toolGroup: {
+            calls: [
+              {
+                id: 'call-1',
+                type: 'function',
+                function: {
+                  name: 'agent__compactSessionContext',
+                  arguments: '{}',
+                },
+              },
+            ],
+            results: [],
+          },
+        },
+      );
+
+      rerender(<AgentChatMessages />);
+
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
       expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
