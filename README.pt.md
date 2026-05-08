@@ -79,12 +79,12 @@ MCP (Model Context Protocol) é o padrão aberto por trás do modelo de extensib
 
 A maioria das ferramentas de IA é impressionante em demos e frágil em produção. O LibrAgent é obsessivamente desenhado para trabalho real e duradouro:
 
-| Substrato     | Capacidades                                                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **Workspace** | Edição precisa à linha, operações multi-ficheiro, pesquisa unificada, injeção de contexto `@file`/`@skill`/`@playbook` |
-| **Shell**     | Execução isolada E shells persistentes — monitorização de processos assíncrona (`poll`, `read output`, `list`)         |
+| Substrato     | Capacidades                                                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace** | Edição precisa à linha, operações multi-ficheiro, pesquisa unificada, injeção de contexto `@file`/`@skill`/`@playbook`      |
+| **Shell**     | Execução isolada E shells persistentes — monitorização de processos assíncrona (`poll`, `read output`, `list`)              |
 | **Browser**   | Automatização de navegador headless com um modelo de interação ao estilo do Playwright e garantias de consistência de cache |
-| **Knowledge** | Gestão de conhecimento baseada em grafos com extração entidade/relação (v2), pesquisa de texto completo BM25           |
+| **Knowledge** | Gestão de conhecimento baseada em grafos com extração entidade/relação (v2), pesquisa de texto completo BM25                |
 
 **Engenharia de fiabilidade incluída**: Compactação de contexto, prevenção de ciclos, disjuntores e proteções contra respostas obsoletas mantêm os agentes produtivos em sessões que duram horas.
 

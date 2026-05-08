@@ -83,7 +83,7 @@ Die meisten KI-Tools sind in Demos beeindruckend und in der Produktion fragil. L
 | ------------- | --------------------------------------------------------------------------------------------------------------------- |
 | **Workspace** | Zeilenpräzise Bearbeitung, Multi-Datei-Operationen, einheitliche Suche, `@file`/`@skill`/`@playbook`-Kontextinjektion |
 | **Shell**     | Isolierte Ausführung UND persistente Shells — asynchrones Prozess-Monitoring (`poll`, `read output`, `list`)          |
-| **Browser**   | Headless-Browser-Automatisierung mit Playwright-ähnlichem Interaktionsmodell und Cache-Konsistenzgarantien |
+| **Browser**   | Headless-Browser-Automatisierung mit Playwright-ähnlichem Interaktionsmodell und Cache-Konsistenzgarantien            |
 | **Knowledge** | Graphbasiertes Wissensmanagement mit Entitäts-/Beziehungsextraktion (v2), BM25-Volltextsuche                          |
 
 **Zuverlässigkeitsingenieurwesen inklusive**: Kontextkomprimierung, Schleifenprävention, Schaltkreisunterbrecher und Schutz vor veralteten Antworten halten Agenten in stundenlangen Sitzungen produktiv.

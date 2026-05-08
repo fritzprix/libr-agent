@@ -83,7 +83,7 @@ MCP(Model Context Protocol)는 LibrAgent 확장성 모델의 기반이 되는 �
 | -------------- | ------------------------------------------------------------------------------------- |
 | **Workspace**  | 라인 정밀 편집, 멀티 파일 작업, 통합 검색, `@file`/`@skill`/`@playbook` 컨텍스트 주입 |
 | **Shell**      | 고립 실행 AND 지속적 셸 — 비동기 프로세스 모니터링(`poll`, `read output`, `list`)     |
-| **Browser**    | Playwright와 유사한 상호작용 모델을 갖춘 헤드리스 브라우저 자동화와 캐시 일관성 보장 |
+| **Browser**    | Playwright와 유사한 상호작용 모델을 갖춘 헤드리스 브라우저 자동화와 캐시 일관성 보장  |
 | **Knowledge**  | 엔티티/관계 추출(v2), BM25 전체 텍스트 검색과 함께 그래프 기반 지식 관리              |
 
 **신뢰성 엔지니어링 포함**: Context compaction, loop prevention, circuit breaker, stale-response guard 가 시간 단위 세션에서도 에이전트를 생산적으로 유지합니다.

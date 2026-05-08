@@ -79,12 +79,12 @@ MCP (Model Context Protocol) est le standard ouvert derrière le modèle d'exten
 
 La plupart des outils IA sont impressionnants en démo et fragiles en production. LibrAgent est obsessionnellement conçu pour un travail réel et durable :
 
-| Substrat      | Capacités                                                                                                                    |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Workspace** | Édition précise à la ligne, opérations multi-fichiers, recherche unifiée, injection de contexte `@file`/`@skill`/`@playbook` |
-| **Shell**     | Exécution isolée ET shells persistants — surveillance de processus asynchrone (`poll`, `read output`, `list`)                |
+| Substrat      | Capacités                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Workspace** | Édition précise à la ligne, opérations multi-fichiers, recherche unifiée, injection de contexte `@file`/`@skill`/`@playbook`   |
+| **Shell**     | Exécution isolée ET shells persistants — surveillance de processus asynchrone (`poll`, `read output`, `list`)                  |
 | **Browser**   | Automatisation de navigateur headless avec un modèle d'interaction proche de Playwright et des garanties de cohérence du cache |
-| **Knowledge** | Gestion des connaissances basée sur les graphes avec extraction entité/relation (v2), recherche plein texte BM25             |
+| **Knowledge** | Gestion des connaissances basée sur les graphes avec extraction entité/relation (v2), recherche plein texte BM25               |
 
 **Ingénierie de fiabilité incluse** : Compaction du contexte, prévention des boucles, disjoncteurs et gardes contre les réponses périmées maintiennent les agents productifs dans des sessions qui durent des heures.
 
