@@ -7,6 +7,11 @@ import type {
 } from '@/lib/mcp';
 import type { Message, ToolCall } from '@/models/chat';
 
+interface StreamingMessageBuildOptions {
+  toolCalls?: ToolCall[];
+  thinkingText?: string;
+}
+
 export function extractToolCalls(content: MCPContent[]): ToolCall[] {
   return content
     .filter((item) => item.type === 'tool_call')
@@ -38,14 +43,16 @@ export function buildStreamingMessage(
   thinkingSignature?: string,
   thinkingTime?: number,
   usage?: TokenUsage,
+  options?: StreamingMessageBuildOptions,
 ): Partial<Message> {
-  const toolCalls = extractToolCalls(content);
+  const toolCalls = options?.toolCalls ?? extractToolCalls(content);
+  const thinkingText = options?.thinkingText ?? extractThinkingText(content);
 
   return {
     ...baseMessage,
     content,
     tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-    thinking: extractThinkingText(content),
+    thinking: thinkingText,
     thinkingSignature,
     thinkingTime,
     usage,

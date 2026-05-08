@@ -94,6 +94,10 @@ function scrollFooterSentinelIntoView(sentinel: HTMLDivElement | null) {
   });
 }
 
+function renderVirtualPlaceholder() {
+  return <div aria-hidden="true" className="h-px" />;
+}
+
 function getScrollContentElement(
   scroller: HTMLDivElement | null,
 ): HTMLElement | null {
@@ -134,7 +138,8 @@ const AgentChatMessagesList = forwardRef<
       ref={ref}
       style={{
         ...style,
-        padding: '16px',
+        paddingLeft: '16px',
+        paddingRight: '16px',
       }}
     >
       {children}
@@ -410,32 +415,6 @@ export function AgentChatMessages() {
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
 
-  const streamingToolMessageIds = useMemo(
-    () =>
-      messages
-        .filter(
-          (message) =>
-            message.role === 'assistant' &&
-            message.isStreaming &&
-            !!message.tool_calls?.length,
-        )
-        .map((message) => ({
-          id: message.id,
-          contentTypes: message.content?.map((item) => item.type) ?? [],
-          toolCallCount: message.tool_calls?.length ?? 0,
-        })),
-    [messages],
-  );
-
-  if (streamingToolMessageIds.length > 0) {
-    logger.info('AgentChatMessages received streaming tool messages', {
-      sessionId: session?.id,
-      messageCount: messages.length,
-      groupedCount: groupedMessages.length,
-      streamingToolMessages: streamingToolMessageIds,
-    });
-  }
-
   useEffect(() => {
     const previous = previousListStateRef.current;
     const firstId = groupedMessages[0]?.message.id;
@@ -705,7 +684,7 @@ export function AgentChatMessages() {
           !hasToolCalls &&
           workflowStatus === 'busy')
       ) {
-        return null;
+        return renderVirtualPlaceholder();
       }
 
       return (

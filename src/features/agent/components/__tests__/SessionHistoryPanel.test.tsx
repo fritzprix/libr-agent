@@ -3,6 +3,7 @@ import { SessionHistoryPanel } from '../SessionHistoryPanel';
 import type { AgentSession } from '@/models/agent';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
+import type { ReactNode } from 'react';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -48,6 +49,46 @@ vi.mock('../SessionCard', () => ({
   ),
 }));
 
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+    components,
+  }: {
+    data: unknown[];
+    itemContent: (index: number, item: unknown) => ReactNode;
+    components?: {
+      List?: (props: { children: ReactNode }) => ReactNode;
+      Item?: (props: { children: ReactNode }) => ReactNode;
+      Footer?: () => ReactNode;
+    };
+  }) => (
+    (() => {
+      const items = data.map((item, index) => {
+        const content = itemContent(index, item);
+        return components?.Item ? (
+          <components.Item key={index}>{content}</components.Item>
+        ) : (
+          <div key={index}>{content}</div>
+        );
+      });
+
+      const listChildren = (
+        <>
+          {items}
+          {components?.Footer ? <components.Footer /> : null}
+        </>
+      );
+
+      return components?.List ? (
+        <components.List>{listChildren}</components.List>
+      ) : (
+        <div>{listChildren}</div>
+      );
+    })()
+  ),
+}));
+
 global.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
@@ -72,6 +113,19 @@ function createSession(
   };
 }
 
+const defaultProps = {
+  hasMoreSessions: false,
+  isLoadingMoreSessions: false,
+  onActiveTabChange: () => {},
+  onActiveStatusFilterChange: () => {},
+  onSearchQueryChange: () => {},
+  onRefresh: () => {},
+  onLoadMore: () => {},
+  onResume: () => {},
+  onDelete: () => {},
+  onDeleteOnly: () => {},
+};
+
 describe('SessionHistoryPanel', () => {
   it('correctly calculates descendant counts for a session tree', () => {
     const sessions: AgentSession[] = [
@@ -87,16 +141,10 @@ describe('SessionHistoryPanel', () => {
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
+        {...defaultProps}
         activeTab="all"
         activeStatusFilter="all"
         searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
       />,
     );
 
@@ -115,16 +163,10 @@ describe('SessionHistoryPanel', () => {
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
+        {...defaultProps}
         activeTab="all"
         activeStatusFilter="all"
         searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
       />,
     );
 
@@ -134,6 +176,23 @@ describe('SessionHistoryPanel', () => {
     expect(
       screen.queryByTestId('session-card-grandchild'),
     ).not.toBeInTheDocument();
+  });
+
+  it('renders the virtualized session list with list semantics', () => {
+    render(
+      <SessionHistoryPanel
+        sessions={[createSession('root', 'Root')]}
+        isLoading={false}
+        {...defaultProps}
+        activeTab="all"
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    const sessionList = screen.getByRole('list');
+    expect(sessionList).toHaveAttribute('aria-labelledby', 'session-heading');
+    expect(screen.getAllByRole('listitem')).not.toHaveLength(0);
   });
 
   it('expands child sessions when the root is toggled', () => {
@@ -147,16 +206,10 @@ describe('SessionHistoryPanel', () => {
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
+        {...defaultProps}
         activeTab="all"
         activeStatusFilter="all"
         searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
       />,
     );
 
@@ -181,16 +234,10 @@ describe('SessionHistoryPanel', () => {
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
+        {...defaultProps}
         activeTab="all"
         activeStatusFilter="error"
         searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
       />,
     );
 
@@ -211,16 +258,10 @@ describe('SessionHistoryPanel', () => {
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
+        {...defaultProps}
         activeTab="bookmarked"
         activeStatusFilter="all"
         searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
       />,
     );
 
@@ -241,16 +282,10 @@ describe('SessionHistoryPanel', () => {
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
+        {...defaultProps}
         activeTab="bookmarked"
         activeStatusFilter="all"
         searchQuery=""
-        onActiveTabChange={() => {}}
-        onActiveStatusFilterChange={() => {}}
-        onSearchQueryChange={() => {}}
-        onRefresh={() => {}}
-        onResume={() => {}}
-        onDelete={() => {}}
-        onDeleteOnly={() => {}}
       />,
     );
 
@@ -258,5 +293,48 @@ describe('SessionHistoryPanel', () => {
 
     expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
     expect(screen.queryByTestId('session-card-child')).not.toBeInTheDocument();
+  });
+
+  it('resets collapsed auto-expanded lineage state when the filter context changes', () => {
+    const sessions: AgentSession[] = [
+      createSession('root', 'Root'),
+      createSession('child-alpha', 'Alpha child', {
+        parentSessionId: 'root',
+      }),
+      createSession('child-beta', 'Beta child', {
+        parentSessionId: 'root',
+      }),
+    ];
+
+    const { rerender } = render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeTab="all"
+        activeStatusFilter="all"
+        searchQuery="alpha"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
+
+    expect(
+      screen.queryByTestId('session-card-child-alpha'),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeTab="all"
+        activeStatusFilter="all"
+        searchQuery="beta"
+      />,
+    );
+
+    expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
+    expect(screen.getByTestId('session-card-child-beta')).toBeInTheDocument();
   });
 });

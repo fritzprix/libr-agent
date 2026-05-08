@@ -19,14 +19,11 @@ This guide provides solutions to common problems you might encounter while devel
    sudo apt-get install -y libwebkit2gtk-4.1-dev
    ```
 
-2. **Set Environment Variables**: The application attempts to set these, but you can also set them manually before running `pnpm tauri dev`:
+2. **Use a Proper Desktop Session**: Run the app in a real Linux desktop session with a working display server and current graphics drivers. Containerized or headless environments often expose WebKit rendering failures that are not fixable from app code alone.
 
-   ```bash
-   export WEBKIT_DISABLE_COMPOSITING_MODE=1
-   export WEBKIT_DISABLE_DMABUF_RENDERER=1
-   ```
+3. **Avoid Forcing Software Rendering Flags**: Do not set WebKit or GL fallback flags unless you are debugging a driver bug. They frequently trade blank-screen issues for much worse rendering performance.
 
-**Source Reference**: [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) (Lines 188-250)
+**Source Reference**: [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs) (Lines 188-250)
 
 ---
 
@@ -44,7 +41,7 @@ This guide provides solutions to common problems you might encounter while devel
 2. **Check for Port Conflicts**: If using an HTTP or WebSocket server, ensure the specified port is not already in use by another application.
 3. **Inspect Logs**: Look at the application logs for error messages related to the server process.
 
-**Source Reference**: [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs) (Lines 200-250)
+**Source Reference**: [`src-tauri/src/mcp.rs`](../../src-tauri/src/mcp.rs) (Lines 200-250)
 
 ---
 
@@ -62,7 +59,7 @@ This guide provides solutions to common problems you might encounter while devel
 2. **Check AI-Generated Arguments**: Inspect the `tool_calls` object in the message to see what arguments the AI generated. This can help identify if the AI is consistently providing malformed input.
 3. **Examine Tool Output**: Look at the `ToolOutputBubble` for any error messages returned by the tool itself.
 
-**Source Reference**: [`src/features/chat/orchestrators/ToolCaller.tsx`](../src/features/chat/orchestrators/ToolCaller.tsx) (Lines 25-45)
+**Source Reference**: [`src/features/agent/components/AgentToolCallDetails.tsx`](../../src/features/agent/components/AgentToolCallDetails.tsx)
 
 ---
 
@@ -78,4 +75,4 @@ This guide provides solutions to common problems you might encounter while devel
 2. **Refer to `types.md`**: Our documentation at [`docs/api/types.md`](../api/types.md) provides a canonical reference for these data structures.
 3. **Ensure Serde Compatibility**: Check `serde` attributes in the Rust code (e.g., `#[serde(rename = "..."`)) as they can alter the serialized field names.
 
-**Source Reference**: [`src/lib/tauri-mcp-client.ts`](../src/lib/tauri-mcp-client.ts)
+**Source Reference**: [`src/lib/backend/messages.ts`](../../src/lib/backend/messages.ts)

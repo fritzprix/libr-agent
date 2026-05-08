@@ -1,10 +1,23 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { RefreshCw, Search, History, X, Bookmark } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Virtuoso,
+  type Components,
+  type ItemProps,
+  type ListProps,
+} from 'react-virtuoso';
 import {
   buildChildrenMap,
   buildDescendantCounts,
@@ -19,6 +32,8 @@ import { SessionCard } from './SessionCard';
 interface SessionHistoryPanelProps {
   sessions: AgentSession[];
   isLoading: boolean;
+  hasMoreSessions: boolean;
+  isLoadingMoreSessions: boolean;
   activeTab: string;
   activeStatusFilter: 'all' | SessionStatus;
   searchQuery: string;
@@ -26,6 +41,7 @@ interface SessionHistoryPanelProps {
   onActiveStatusFilterChange: (value: 'all' | SessionStatus) => void;
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
+  onLoadMore: () => void;
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onDeleteOnly?: (sessionId: string) => void;
@@ -37,6 +53,43 @@ interface SessionHistoryPanelProps {
   emptyStateSubtitle?: string;
 }
 
+interface SessionHistoryRow {
+  session: AgentSession;
+  nestingLevel: number;
+  lineageHint?: string;
+  hasExpandableChildren: boolean;
+  isExpanded: boolean;
+  descendantStatusCounts?: SessionStatusCounts;
+}
+
+const sessionHistoryVirtuosoComponents: Components<SessionHistoryRow> = {
+  List: forwardRef<HTMLDivElement, ListProps>(function SessionHistoryList(
+    { children, style, ...props },
+    ref,
+  ) {
+    return (
+      <div
+        {...props}
+        ref={ref}
+        role="list"
+        aria-labelledby="session-heading"
+        style={{ ...style, margin: 0, padding: 0 }}
+      >
+        {children}
+      </div>
+    );
+  }),
+  Item: forwardRef<HTMLDivElement, ItemProps<SessionHistoryRow>>(
+    function SessionHistoryItem({ children, style, ...props }, ref) {
+      return (
+        <div {...props} ref={ref} role="listitem" style={style}>
+          <div className="pb-4">{children}</div>
+        </div>
+      );
+    },
+  ),
+};
+
 const statusPriority: Record<string, number> = {
   busy: 1,
   idle: 2,
@@ -47,6 +100,8 @@ const statusPriority: Record<string, number> = {
 export function SessionHistoryPanel({
   sessions,
   isLoading,
+  hasMoreSessions,
+  isLoadingMoreSessions,
   activeTab,
   activeStatusFilter,
   searchQuery,
@@ -54,6 +109,7 @@ export function SessionHistoryPanel({
   onActiveStatusFilterChange,
   onSearchQueryChange,
   onRefresh,
+  onLoadMore,
   onResume,
   onDelete,
   onDeleteOnly,
@@ -68,9 +124,11 @@ export function SessionHistoryPanel({
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
-  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [manuallyExpandedSessionIds, setManuallyExpandedSessionIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [collapsedAutoExpandedSessionIds, setCollapsedAutoExpandedSessionIds] =
+    useState<Set<string>>(() => new Set());
 
   const defaultHeading =
     heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
@@ -95,42 +153,10 @@ export function SessionHistoryPanel({
   const isPending =
     searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
 
-  const baseSessions = useMemo(() => {
-    if (!selectedLineageId) {
-      return deferredSessions;
-    }
-
-    return deferredSessions.filter(
-      (session) => session.lineageId === selectedLineageId,
-    );
-  }, [deferredSessions, selectedLineageId]);
-
-  const segmentedSessions = useMemo(() => {
-    if (activeTab === 'bookmarked') {
-      return baseSessions.filter((session) => session.isBookmarked === true);
-    }
-
-    return baseSessions;
-  }, [activeTab, baseSessions]);
-
-  const matchedSessions = useMemo(() => {
-    let filtered = segmentedSessions;
-
-    if (activeStatusFilter !== 'all') {
-      filtered = filtered.filter(
-        (session) => session.status === activeStatusFilter,
-      );
-    }
-
-    filtered = filterSessions(filtered, deferredSearchQuery);
-
-    return [...filtered].sort((a, b) => {
-      const statusDiff =
-        (statusPriority[a.status] ?? 999) - (statusPriority[b.status] ?? 999);
-      if (statusDiff !== 0) return statusDiff;
-      return b.createdAt.getTime() - a.createdAt.getTime();
-    });
-  }, [activeStatusFilter, deferredSearchQuery, segmentedSessions]);
+  const filtersActive =
+    activeTab === 'bookmarked' ||
+    activeStatusFilter !== 'all' ||
+    deferredSearchQuery.trim().length > 0;
 
   useEffect(() => {
     if (!selectedLineageId) {
@@ -145,6 +171,10 @@ export function SessionHistoryPanel({
     }
   }, [selectedLineageId, sessions]);
 
+  useEffect(() => {
+    setCollapsedAutoExpandedSessionIds(new Set());
+  }, [activeStatusFilter, activeTab, deferredSearchQuery, selectedLineageId]);
+
   const descendantCounts = useMemo(
     () => buildDescendantCounts(sessions),
     [sessions],
@@ -155,71 +185,84 @@ export function SessionHistoryPanel({
     [sessions],
   );
 
-  const filtersActive =
-    activeTab === 'bookmarked' ||
-    activeStatusFilter !== 'all' ||
-    deferredSearchQuery.trim().length > 0;
+  const {
+    autoExpandedAncestorIds,
+    baseSessions,
+    bookmarkedCount,
+    displayRows,
+    matchedSessionCount,
+    statusCounts,
+  } = useMemo(() => {
+    const lineageSessions = selectedLineageId
+      ? deferredSessions.filter(
+          (session) => session.lineageId === selectedLineageId,
+        )
+      : deferredSessions;
+    const nextStatusCounts = {
+      all: lineageSessions.length,
+      busy: 0,
+      idle: 0,
+      paused: 0,
+      error: 0,
+    };
+    let nextBookmarkedCount = 0;
 
-  const autoExpandedAncestorIds = useMemo(() => {
-    if (!filtersActive) {
-      return new Set<string>();
-    }
-
-    const sessionById = new Map(
-      baseSessions.map((session) => [session.id, session]),
-    );
-    const expandedIds = new Set<string>();
-
-    matchedSessions.forEach((session) => {
-      let current = session.parentSessionId
-        ? sessionById.get(session.parentSessionId)
-        : undefined;
-      while (current) {
-        expandedIds.add(current.id);
-        current = current.parentSessionId
-          ? sessionById.get(current.parentSessionId)
-          : undefined;
+    lineageSessions.forEach((session) => {
+      if (
+        Object.prototype.hasOwnProperty.call(nextStatusCounts, session.status)
+      ) {
+        nextStatusCounts[session.status as keyof typeof nextStatusCounts]++;
+      }
+      if (session.isBookmarked) {
+        nextBookmarkedCount++;
       }
     });
 
-    return expandedIds;
-  }, [baseSessions, filtersActive, matchedSessions]);
+    let filteredSessions =
+      activeTab === 'bookmarked'
+        ? lineageSessions.filter((session) => session.isBookmarked === true)
+        : lineageSessions;
 
-  useEffect(() => {
-    if (autoExpandedAncestorIds.size === 0) {
-      return;
+    if (activeStatusFilter !== 'all') {
+      filteredSessions = filteredSessions.filter(
+        (session) => session.status === activeStatusFilter,
+      );
     }
 
-    setExpandedSessionIds((prev) => {
-      const next = new Set(prev);
-      autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
-      return next;
+    const matchedSessions = [
+      ...filterSessions(filteredSessions, deferredSearchQuery),
+    ].sort((a, b) => {
+      const statusDiff =
+        (statusPriority[a.status] ?? 999) - (statusPriority[b.status] ?? 999);
+      if (statusDiff !== 0) return statusDiff;
+      return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [autoExpandedAncestorIds]);
-
-  const displayRows = useMemo(() => {
-    type SessionRow = {
-      session: AgentSession;
-      nestingLevel: number;
-      lineageHint?: string;
-      hasExpandableChildren: boolean;
-      isExpanded: boolean;
-      descendantStatusCounts?: SessionStatusCounts;
-    };
 
     const sessionById = new Map(
-      baseSessions.map((session) => [session.id, session]),
+      lineageSessions.map((session) => [session.id, session]),
     );
-    const childrenByParent = buildChildrenMap(baseSessions);
+    const childrenByParent = buildChildrenMap(lineageSessions);
     const visibleIds = new Set<string>();
+    const nextAutoExpandedAncestorIds = new Set<string>();
 
     matchedSessions.forEach((session) => {
       let current: AgentSession | undefined = session;
       while (current) {
         visibleIds.add(current.id);
-        current = current.parentSessionId
+        const parent: AgentSession | undefined = current.parentSessionId
           ? sessionById.get(current.parentSessionId)
           : undefined;
+        if (parent && filtersActive) {
+          nextAutoExpandedAncestorIds.add(parent.id);
+        }
+        current = parent;
+      }
+    });
+
+    const effectiveExpandedSessionIds = new Set(manuallyExpandedSessionIds);
+    nextAutoExpandedAncestorIds.forEach((sessionId) => {
+      if (!collapsedAutoExpandedSessionIds.has(sessionId)) {
+        effectiveExpandedSessionIds.add(sessionId);
       }
     });
 
@@ -272,7 +315,7 @@ export function SessionHistoryPanel({
       children.sort(sortByCurrentOrder);
     }
 
-    const roots = baseSessions
+    const roots = lineageSessions
       .filter((session) => {
         if (!visibleIds.has(session.id)) {
           return false;
@@ -284,7 +327,7 @@ export function SessionHistoryPanel({
       })
       .sort(sortByCurrentOrder);
 
-    const rows: SessionRow[] = [];
+    const rows: SessionHistoryRow[] = [];
 
     const walk = (session: AgentSession, nestingLevel: number) => {
       const visibleChildren = (childrenByParent.get(session.id) || []).filter(
@@ -298,7 +341,7 @@ export function SessionHistoryPanel({
         : undefined;
       const hasExpandableChildren = visibleChildren.length > 0;
       const isExpanded = hasExpandableChildren
-        ? expandedSessionIds.has(session.id)
+        ? effectiveExpandedSessionIds.has(session.id)
         : false;
 
       rows.push({
@@ -327,43 +370,66 @@ export function SessionHistoryPanel({
       walk(root, 0);
     });
 
-    return rows;
+    return {
+      autoExpandedAncestorIds: nextAutoExpandedAncestorIds,
+      baseSessions: lineageSessions,
+      bookmarkedCount: nextBookmarkedCount,
+      displayRows: rows,
+      matchedSessionCount: matchedSessions.length,
+      statusCounts: nextStatusCounts,
+    };
   }, [
-    baseSessions,
+    activeStatusFilter,
+    activeTab,
+    collapsedAutoExpandedSessionIds,
     descendantStatusCounts,
-    expandedSessionIds,
-    matchedSessions,
+    deferredSearchQuery,
+    deferredSessions,
+    filtersActive,
+    manuallyExpandedSessionIds,
+    selectedLineageId,
     t,
   ]);
 
-  const bookmarkedCount = useMemo(() => {
-    return baseSessions.reduce(
-      (acc, session) => (session.isBookmarked ? acc + 1 : acc),
-      0,
-    );
-  }, [baseSessions]);
+  const handleToggleExpand = useCallback(
+    (sessionId: string) => {
+      const isAutoExpanded = autoExpandedAncestorIds.has(sessionId);
+      const isExpanded =
+        manuallyExpandedSessionIds.has(sessionId) ||
+        (isAutoExpanded && !collapsedAutoExpandedSessionIds.has(sessionId));
 
-  const statusCounts = useMemo(() => {
-    const counts = {
-      all: baseSessions.length,
-      busy: 0,
-      idle: 0,
-      paused: 0,
-      error: 0,
-    };
+      setManuallyExpandedSessionIds((prev) => {
+        const next = new Set(prev);
+        if (isExpanded) {
+          next.delete(sessionId);
+        } else if (!isAutoExpanded) {
+          next.add(sessionId);
+        }
+        return next;
+      });
 
-    segmentedSessions.forEach((session) => {
-      if (Object.prototype.hasOwnProperty.call(counts, session.status)) {
-        counts[session.status as keyof typeof counts]++;
+      if (isAutoExpanded) {
+        setCollapsedAutoExpandedSessionIds((prev) => {
+          const next = new Set(prev);
+          if (isExpanded) {
+            next.add(sessionId);
+          } else {
+            next.delete(sessionId);
+          }
+          return next;
+        });
       }
-    });
-
-    return counts;
-  }, [segmentedSessions]);
+    },
+    [
+      autoExpandedAncestorIds,
+      collapsedAutoExpandedSessionIds,
+      manuallyExpandedSessionIds,
+    ],
+  );
 
   return (
-    <div className="p-6 h-full flex flex-col bg-background">
-      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col bg-background p-6">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
@@ -378,7 +444,22 @@ export function SessionHistoryPanel({
                 {defaultHeading}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {defaultDescription} ({displayRows.length}/{baseSessions.length}
+                {defaultDescription} (
+                {t(
+                  'sessionHistory.loadedCountSummary',
+                  '{{count}} loaded sessions',
+                  { count: baseSessions.length },
+                )}
+                {hasMoreSessions
+                  ? `, ${t('sessionHistory.moreAvailable', 'more available')}`
+                  : ''}
+                {filtersActive
+                  ? `, ${t(
+                      'sessionHistory.matchCountSummary',
+                      '{{count}} matching filters',
+                      { count: matchedSessionCount },
+                    )}`
+                  : ''}
                 )
               </p>
             </div>
@@ -399,7 +480,7 @@ export function SessionHistoryPanel({
           defaultValue="all"
           value={activeTab}
           onValueChange={onActiveTabChange}
-          className="w-full mb-4"
+          className="mb-4 w-full shrink-0"
         >
           <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="all" className="flex-1">
@@ -413,7 +494,7 @@ export function SessionHistoryPanel({
           </TabsList>
         </Tabs>
 
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">
             {t('sessionHistory.statusFilter.label', 'Status')}
           </span>
@@ -459,7 +540,7 @@ export function SessionHistoryPanel({
           </Button>
         </div>
 
-        <div className="relative">
+        <div className="relative shrink-0">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="text"
@@ -501,7 +582,7 @@ export function SessionHistoryPanel({
         {/* Content */}
         <div
           className={cn(
-            'flex-1 min-h-0 overflow-y-auto pr-2 pb-4 mt-6 transition-opacity duration-200',
+            'mt-6 flex min-h-0 flex-1 flex-col transition-opacity duration-200',
             isPending ? 'opacity-50' : 'opacity-100',
           )}
           aria-busy={isPending}
@@ -571,54 +652,68 @@ export function SessionHistoryPanel({
               </div>
             </div>
           ) : (
-            <ul
-              className="grid grid-cols-1 gap-4 max-w-2xl list-none"
-              aria-labelledby="session-heading"
-            >
-              {displayRows.map(
-                ({
+            <Virtuoso
+              className="min-h-0 flex-1 max-w-2xl pr-2 pb-4"
+              style={{ height: '100%' }}
+              data={displayRows}
+              overscan={400}
+              computeItemKey={(_index, row) => row.session.id}
+              components={{
+                ...sessionHistoryVirtuosoComponents,
+                Footer: () =>
+                  hasMoreSessions ? (
+                    <div className="flex justify-center py-4">
+                      <Button
+                        variant="outline"
+                        onClick={onLoadMore}
+                        disabled={isLoadingMoreSessions}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'mr-2 h-4 w-4',
+                            isLoadingMoreSessions && 'animate-spin',
+                          )}
+                        />
+                        {isLoadingMoreSessions
+                          ? t('sessionHistory.loadingMore', 'Loading more...')
+                          : t('sessionHistory.loadMore', 'Load more')}
+                      </Button>
+                    </div>
+                  ) : null,
+              }}
+              itemContent={(
+                _index,
+                {
                   session,
                   nestingLevel,
                   lineageHint,
                   hasExpandableChildren,
                   isExpanded,
                   descendantStatusCounts: rowDescendantStatusCounts,
-                }) => (
-                  <li key={session.id}>
-                    <SessionCard
-                      session={session}
-                      onResume={onResume}
-                      onDelete={onDelete}
-                      onDeleteOnly={onDeleteOnly}
-                      onToggleBookmark={onToggleBookmark}
-                      nestingLevel={nestingLevel}
-                      lineageHint={lineageHint}
-                      selectedLineageId={selectedLineageId}
-                      descendantCount={descendantCounts.get(session.id) ?? 0}
-                      descendantStatusCounts={rowDescendantStatusCounts}
-                      hasExpandableChildren={hasExpandableChildren}
-                      isExpanded={isExpanded}
-                      onToggleExpand={(sessionId) =>
-                        setExpandedSessionIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(sessionId)) {
-                            next.delete(sessionId);
-                          } else {
-                            next.add(sessionId);
-                          }
-                          return next;
-                        })
-                      }
-                      onLineageSelect={(lineageId) =>
-                        setSelectedLineageId((prev) =>
-                          prev === lineageId ? null : lineageId,
-                        )
-                      }
-                    />
-                  </li>
-                ),
+                },
+              ) => (
+                <SessionCard
+                  session={session}
+                  onResume={onResume}
+                  onDelete={onDelete}
+                  onDeleteOnly={onDeleteOnly}
+                  onToggleBookmark={onToggleBookmark}
+                  nestingLevel={nestingLevel}
+                  lineageHint={lineageHint}
+                  selectedLineageId={selectedLineageId}
+                  descendantCount={descendantCounts.get(session.id) ?? 0}
+                  descendantStatusCounts={rowDescendantStatusCounts}
+                  hasExpandableChildren={hasExpandableChildren}
+                  isExpanded={isExpanded}
+                  onToggleExpand={handleToggleExpand}
+                  onLineageSelect={(lineageId) =>
+                    setSelectedLineageId((prev) =>
+                      prev === lineageId ? null : lineageId,
+                    )
+                  }
+                />
               )}
-            </ul>
+            />
           )}
         </div>
       </div>

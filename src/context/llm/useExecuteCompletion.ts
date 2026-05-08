@@ -42,6 +42,9 @@ import {
 import { detectRepeatedThinkingLoop } from './repeatedThinkingDetector';
 
 const logger = getLogger('useExecuteCompletion');
+const STREAMING_TEXT_THROTTLE_MS = 50;
+const STREAMING_TOOL_CALL_THROTTLE_MS = 100;
+const REPEATED_THINKING_CHECK_INTERVAL = 5;
 
 function createExecutionError(
   type: MessageError['type'],
@@ -229,13 +232,17 @@ export function useExecuteCompletion({
 
         const content: MCPContent[] = [];
         const activeToolCallIndices = new Map<number, number>();
+        const indexedToolCalls = new Map<number, ToolCall>();
+        const directToolCalls: ToolCall[] = [];
 
         let thinkingStartTime: number | undefined;
         let currentThinkingTime: number | undefined;
+        let currentThinkingText: string | undefined;
         let finalUsage: TokenUsage | undefined;
         let firstChunkTime: number | undefined;
         let thinkingSignature: string | undefined;
         let repeatedThinkingIssueReported = false;
+        let repeatedThinkingCheckCounter = 0;
 
         const startTime = performance.now();
 
@@ -302,17 +309,28 @@ export function useExecuteCompletion({
               thinkingStartTime = performance.now();
             }
             const lastItem = content[content.length - 1];
+            const appendedToExistingThinkingBlock =
+              !!lastItem && lastItem.type === 'thinking';
             if (lastItem && lastItem.type === 'thinking') {
               (lastItem as MCPThinkingContent).thinking += chunk.thinking;
             } else {
               content.push({ type: 'thinking', thinking: chunk.thinking });
             }
 
+            currentThinkingText = appendedToExistingThinkingBlock
+              ? `${currentThinkingText ?? ''}${chunk.thinking}` || undefined
+              : currentThinkingText
+                ? `${currentThinkingText}\n${chunk.thinking}`
+                : chunk.thinking;
+
             if (!repeatedThinkingIssueReported) {
-              const currentThinkingText = extractThinkingText(content);
-              const detection = currentThinkingText
-                ? detectRepeatedThinkingLoop(currentThinkingText)
-                : null;
+              repeatedThinkingCheckCounter += 1;
+              const detection =
+                repeatedThinkingCheckCounter %
+                  REPEATED_THINKING_CHECK_INTERVAL ===
+                  0 && currentThinkingText
+                  ? detectRepeatedThinkingLoop(currentThinkingText)
+                  : null;
               if (detection) {
                 repeatedThinkingIssueReported = true;
                 logger.warn(
@@ -354,6 +372,8 @@ export function useExecuteCompletion({
             ...toolCallDeltaChunks,
           ];
           const hasToolCallUpdate = toolCallChunks.length > 0;
+          const previousToolCallCount =
+            indexedToolCalls.size + directToolCalls.length;
 
           if (hasToolCallUpdate) {
             toolCallChunks.forEach((toolCallChunk) => {
@@ -365,6 +385,14 @@ export function useExecuteCompletion({
                   const targetBlock = content[
                     contentIndex
                   ] as MCPToolCallContent;
+                  const existingToolCall = indexedToolCalls.get(index) ?? {
+                    id: targetBlock.id,
+                    type: 'function' as const,
+                    function: {
+                      name: targetBlock.name,
+                      arguments: targetBlock.arguments,
+                    },
+                  };
                   if (toolCallChunk.id && !targetBlock.id) {
                     targetBlock.id = toolCallChunk.id;
                   }
@@ -381,6 +409,17 @@ export function useExecuteCompletion({
                   if (toolCallChunk.function?.arguments) {
                     targetBlock.arguments += toolCallChunk.function.arguments;
                   }
+
+                  indexedToolCalls.set(index, {
+                    id: targetBlock.id || existingToolCall.id,
+                    type: 'function',
+                    function: {
+                      name: targetBlock.name || existingToolCall.function.name,
+                      arguments:
+                        targetBlock.arguments ||
+                        existingToolCall.function.arguments,
+                    },
+                  });
                 } else {
                   const newBlock: MCPToolCallContent = {
                     type: 'tool_call',
@@ -390,20 +429,42 @@ export function useExecuteCompletion({
                   };
                   content.push(newBlock);
                   activeToolCallIndices.set(index, content.length - 1);
+                  indexedToolCalls.set(index, {
+                    id: newBlock.id,
+                    type: 'function',
+                    function: {
+                      name: newBlock.name,
+                      arguments: newBlock.arguments,
+                    },
+                  });
                 }
                 return;
               }
 
               if (isParsedDirectToolCall(toolCallChunk)) {
+                const directToolCall: ToolCall = {
+                  id: toolCallChunk.id,
+                  type: 'function',
+                  function: {
+                    name: toolCallChunk.function.name,
+                    arguments: toolCallChunk.function.arguments,
+                  },
+                };
                 content.push({
                   type: 'tool_call',
-                  id: toolCallChunk.id,
-                  name: toolCallChunk.function.name,
-                  arguments: toolCallChunk.function.arguments,
+                  id: directToolCall.id,
+                  name: directToolCall.function.name,
+                  arguments: directToolCall.function.arguments,
                 });
+                directToolCalls.push(directToolCall);
               }
             });
           }
+
+          const shouldFlushToolCallImmediately =
+            hasToolCallUpdate &&
+            indexedToolCalls.size + directToolCalls.length >
+              previousToolCallCount;
 
           if (thinkingStartTime !== undefined) {
             currentThinkingTime =
@@ -455,8 +516,20 @@ export function useExecuteCompletion({
           const nowMs = performance.now();
           const lastUpdateMs =
             lastStreamingUpdateRef.current.get(sessionId) ?? 0;
-          if (hasToolCallUpdate || nowMs - lastUpdateMs >= 50) {
+          const throttleMs = hasToolCallUpdate
+            ? STREAMING_TOOL_CALL_THROTTLE_MS
+            : STREAMING_TEXT_THROTTLE_MS;
+          if (
+            shouldFlushToolCallImmediately ||
+            nowMs - lastUpdateMs >= throttleMs
+          ) {
             lastStreamingUpdateRef.current.set(sessionId, nowMs);
+            const streamingToolCalls = [
+              ...[...indexedToolCalls.entries()]
+                .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+                .map(([, toolCall]) => toolCall),
+              ...directToolCalls,
+            ];
             setStreamingMessages((prev) => {
               if (!isCurrentRequest(sessionId, responseMessageId)) {
                 return prev;
@@ -470,6 +543,10 @@ export function useExecuteCompletion({
                   thinkingSignature,
                   currentThinkingTime,
                   finalUsage,
+                  {
+                    toolCalls: streamingToolCalls,
+                    thinkingText: currentThinkingText,
+                  },
                 ),
               );
               return next;
@@ -479,6 +556,12 @@ export function useExecuteCompletion({
 
         // Always flush final streaming state after loop ends
         lastStreamingUpdateRef.current.delete(sessionId);
+        const streamingToolCalls = [
+          ...[...indexedToolCalls.entries()]
+            .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+            .map(([, toolCall]) => toolCall),
+          ...directToolCalls,
+        ];
         setStreamingMessages((prev) => {
           if (!isCurrentRequest(sessionId, responseMessageId)) {
             return prev;
@@ -492,6 +575,10 @@ export function useExecuteCompletion({
               thinkingSignature,
               currentThinkingTime,
               finalUsage,
+              {
+                toolCalls: streamingToolCalls,
+                thinkingText: currentThinkingText,
+              },
             ),
           );
           return next;
@@ -518,8 +605,12 @@ export function useExecuteCompletion({
           }
         }
 
-        const finalToolCalls: ToolCall[] = extractToolCalls(content);
-        const finalThinking = extractThinkingText(content);
+        const finalToolCalls: ToolCall[] =
+          streamingToolCalls.length > 0
+            ? streamingToolCalls
+            : extractToolCalls(content);
+        const finalThinking =
+          currentThinkingText ?? extractThinkingText(content);
 
         const finalMessage: Message = {
           id: responseMessageId,

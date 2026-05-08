@@ -29,6 +29,8 @@ import {
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type {
   AgentSessionMetadata,
+  AgentSessionListCursor,
+  AgentSessionListResponse,
   CreateAgentSessionRequest,
   AgentResponse,
   AgentConfig,
@@ -37,66 +39,92 @@ import type {
 
 const logger = getLogger('AgentSessionListContext');
 const RESERVED_AGENT_SUBROUTES = new Set(['draft']);
+const SESSION_LIST_PAGE_SIZE = 100;
 
-let cachedSessionMetadataList: AgentSessionMetadata[] | null = null;
-let cachedSessionMetadataPromise: Promise<AgentSessionMetadata[]> | null = null;
-let sessionMetadataCacheGeneration = 0;
+interface InitialSessionListData {
+  page: AgentSessionListResponse;
+  attentionSessions: AgentSessionMetadata[];
+}
+
+let cachedInitialSessionListData: InitialSessionListData | null = null;
+let cachedInitialSessionListPromise: Promise<InitialSessionListData> | null =
+  null;
+let sessionListCacheGeneration = 0;
 
 type SessionMetadataLoadSource = 'cache' | 'inflight' | 'network';
 
 interface SessionMetadataLoadHandle {
   source: SessionMetadataLoadSource;
-  promise: Promise<AgentSessionMetadata[]>;
+  promise: Promise<InitialSessionListData>;
 }
 
 function invalidateSessionListStartupCache() {
-  sessionMetadataCacheGeneration += 1;
-  cachedSessionMetadataList = null;
-  cachedSessionMetadataPromise = null;
+  sessionListCacheGeneration += 1;
+  cachedInitialSessionListData = null;
+  cachedInitialSessionListPromise = null;
 }
 
-function loadSessionMetadataList(
+function loadInitialSessionList(
   forceRefresh = false,
 ): SessionMetadataLoadHandle {
   if (forceRefresh) {
     invalidateSessionListStartupCache();
   }
 
-  if (!forceRefresh && cachedSessionMetadataList !== null) {
+  if (!forceRefresh && cachedInitialSessionListData !== null) {
     return {
       source: 'cache',
-      promise: Promise.resolve(cachedSessionMetadataList),
+      promise: Promise.resolve(cachedInitialSessionListData),
     };
   }
 
-  if (!forceRefresh && cachedSessionMetadataPromise) {
+  if (!forceRefresh && cachedInitialSessionListPromise) {
     return {
       source: 'inflight',
-      promise: cachedSessionMetadataPromise,
+      promise: cachedInitialSessionListPromise,
     };
   }
 
-  const requestGeneration = sessionMetadataCacheGeneration;
-  const request = Promise.resolve(
-    safeInvoke<AgentSessionMetadata[]>('agent_get_all_sessions'),
-  )
-    .then((response) => {
-      const sessionMetadataList = Array.isArray(response) ? response : [];
+  const requestGeneration = sessionListCacheGeneration;
+  const request = Promise.all([
+    safeInvoke<AgentSessionListResponse>('agent_list_sessions', {
+      request: { limit: SESSION_LIST_PAGE_SIZE },
+    }),
+    safeInvoke<AgentSessionMetadata[]>('agent_list_attention_sessions'),
+  ])
+    .then(([page, attentionSessions]) => {
+      const normalizedPage = Array.isArray(page)
+        ? {
+            items: page,
+            nextCursor: undefined,
+          }
+        : page && Array.isArray(page.items)
+          ? page
+          : {
+              items: [],
+              nextCursor: undefined,
+            };
+      const initialData: InitialSessionListData = {
+        page: normalizedPage,
+        attentionSessions: Array.isArray(attentionSessions)
+          ? attentionSessions
+          : [],
+      };
       if (
-        requestGeneration === sessionMetadataCacheGeneration &&
-        cachedSessionMetadataPromise === request
+        requestGeneration === sessionListCacheGeneration &&
+        cachedInitialSessionListPromise === request
       ) {
-        cachedSessionMetadataList = sessionMetadataList;
+        cachedInitialSessionListData = initialData;
       }
-      return sessionMetadataList;
+      return initialData;
     })
     .finally(() => {
-      if (cachedSessionMetadataPromise === request) {
-        cachedSessionMetadataPromise = null;
+      if (cachedInitialSessionListPromise === request) {
+        cachedInitialSessionListPromise = null;
       }
     });
 
-  cachedSessionMetadataPromise = request;
+  cachedInitialSessionListPromise = request;
   return {
     source: 'network',
     promise: request,
@@ -107,12 +135,22 @@ export function __resetAgentSessionListStartupCacheForTests() {
   invalidateSessionListStartupCache();
 }
 
+function dedupeSessionsById(sessions: AgentSession[]): AgentSession[] {
+  const sessionById = new Map<string, AgentSession>();
+  sessions.forEach((session) => {
+    sessionById.set(session.id, session);
+  });
+  return Array.from(sessionById.values());
+}
+
 // --- STATE CONTEXT ---
 interface AgentSessionListStateContextValue {
   sessions: AgentSession[];
   notificationSessions: AgentSession[];
   unreadNotificationCount: number;
   isSessionsListLoading: boolean;
+  hasMoreSessions: boolean;
+  isLoadingMoreSessions: boolean;
 }
 
 const AgentSessionListStateContext = createContext<
@@ -127,9 +165,14 @@ interface AgentSessionListActionsContextValue {
   createSession: (params: CreateSessionParams) => Promise<AgentSession>;
 
   /**
-   * Load all agent sessions
+   * Load the first page of recent agent sessions.
    */
   loadSessions: (forceRefresh?: boolean) => Promise<void>;
+
+  /**
+   * Load the next page of session history.
+   */
+  loadMoreSessions: () => Promise<void>;
 
   /**
    * Delete an agent session
@@ -180,13 +223,20 @@ export function AgentSessionListProvider({
   } = useSettings();
   const { clearSessionState } = useLLMService();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [notificationSessions, setNotificationSessions] = useState<
+    AgentSession[]
+  >([]);
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
+  const [isLoadingMoreSessions, setIsLoadingMoreSessions] = useState(false);
+  const [hasMoreSessions, setHasMoreSessions] = useState(false);
+  const sessionsRef = useRef<AgentSession[]>([]);
+  const notificationSessionsRef = useRef<AgentSession[]>([]);
   const pendingApprovalKeysRef = useRef(new Set<string>());
   const startupLoadRecordedRef = useRef(false);
   const sessionListMutationVersionRef = useRef(0);
-  const latestSessionListPromiseRef = useRef<Promise<
-    AgentSessionMetadata[]
-  > | null>(null);
+  const latestSessionListPromiseRef =
+    useRef<Promise<InitialSessionListData> | null>(null);
+  const nextCursorRef = useRef<AgentSessionListCursor | undefined>(undefined);
   const activeSessionId = useMemo(() => {
     const sessionId = matchPath('/agent/:sessionId', location.pathname)?.params
       .sessionId;
@@ -195,6 +245,8 @@ export function AgentSessionListProvider({
     }
     return sessionId;
   }, [location.pathname]);
+  sessionsRef.current = sessions;
+  notificationSessionsRef.current = notificationSessions;
 
   const hasUnreadAttention = useCallback((session: AgentSession): boolean => {
     if (!session.lastAttentionAt || !session.lastAttentionReason) {
@@ -208,83 +260,277 @@ export function AgentSessionListProvider({
     return session.lastAttentionAt.getTime() > session.lastViewedAt.getTime();
   }, []);
 
+  const sortNotificationSessions = useCallback(
+    (items: AgentSession[]) =>
+      items.slice().sort((left, right) => {
+        const leftPending = left.pendingApprovalCount ?? 0;
+        const rightPending = right.pendingApprovalCount ?? 0;
+        if (leftPending !== rightPending) {
+          return rightPending - leftPending;
+        }
+
+        const leftTime =
+          left.lastAttentionAt?.getTime() ??
+          left.lastMessageAt?.getTime() ??
+          left.updatedAt?.getTime() ??
+          left.createdAt.getTime();
+        const rightTime =
+          right.lastAttentionAt?.getTime() ??
+          right.lastMessageAt?.getTime() ??
+          right.updatedAt?.getTime() ??
+          right.createdAt.getTime();
+
+        return rightTime - leftTime;
+      }),
+    [],
+  );
+
+  const pruneNotificationSessions = useCallback(
+    (items: AgentSession[]) =>
+      sortNotificationSessions(
+        dedupeSessionsById(items).filter((session) =>
+          hasUnreadAttention(session),
+        ),
+      ),
+    [hasUnreadAttention, sortNotificationSessions],
+  );
+
+  const updateSessionInList = useCallback(
+    (
+      items: AgentSession[],
+      sessionId: string,
+      updater: (session: AgentSession) => AgentSession,
+    ): AgentSession[] =>
+      items.map((session) =>
+        session.id === sessionId ? updater(session) : session,
+      ),
+    [],
+  );
+
   const mutateSessions = useCallback(
-    (updater: (previousSessions: AgentSession[]) => AgentSession[]) => {
+    (
+      updater: (previousSessions: AgentSession[]) => AgentSession[],
+      options?: {
+        notificationUpdater?: (
+          previousNotifications: AgentSession[],
+        ) => AgentSession[];
+      },
+    ) => {
       sessionListMutationVersionRef.current += 1;
       invalidateSessionListStartupCache();
-      setSessions(updater);
+      setSessions((previousSessions) => {
+        const nextSessions = updater(previousSessions);
+        sessionsRef.current = nextSessions;
+        return nextSessions;
+      });
+      if (options?.notificationUpdater) {
+        setNotificationSessions((previousNotifications) => {
+          const nextNotifications = pruneNotificationSessions(
+            options.notificationUpdater?.(previousNotifications) ??
+              previousNotifications,
+          );
+          notificationSessionsRef.current = nextNotifications;
+          return nextNotifications;
+        });
+      }
     },
+    [pruneNotificationSessions],
+  );
+
+  const applySessionUpdate = useCallback(
+    (sessionId: string, updater: (session: AgentSession) => AgentSession) => {
+      let updatedSessionFromSessions: AgentSession | undefined;
+
+      setSessions((previousSessions) => {
+        const nextSessions = updateSessionInList(
+          previousSessions,
+          sessionId,
+          (session) => {
+            const nextSession = updater(session);
+            updatedSessionFromSessions = nextSession;
+            return nextSession;
+          },
+        );
+        sessionsRef.current = nextSessions;
+        return nextSessions;
+      });
+      setNotificationSessions((previousNotifications) => {
+        const existingNotification = previousNotifications.find(
+          (session) => session.id === sessionId,
+        );
+        const nextNotificationSession =
+          updatedSessionFromSessions ??
+          (existingNotification ? updater(existingNotification) : undefined);
+        const nextNotifications = pruneNotificationSessions(
+          nextNotificationSession
+            ? existingNotification
+              ? previousNotifications.map((session) =>
+                  session.id === sessionId ? nextNotificationSession : session,
+                )
+              : hasUnreadAttention(nextNotificationSession)
+                ? [...previousNotifications, nextNotificationSession]
+                : previousNotifications
+            : previousNotifications,
+        );
+        notificationSessionsRef.current = nextNotifications;
+        return nextNotifications;
+      });
+    },
+    [hasUnreadAttention, pruneNotificationSessions, updateSessionInList],
+  );
+
+  const mapSessionMetadataList = useCallback(
+    (
+      sessionMetadataList: AgentSessionMetadata[],
+      pendingApprovalCounts: Map<string, number>,
+    ) =>
+      sortSessionsByLatestActivity(
+        sessionMetadataList.map((sessionMetadata) =>
+          mapSessionMetadataToAgentSession(
+            sessionMetadata,
+            pendingApprovalCounts.get(sessionMetadata.id) ?? 0,
+          ),
+        ),
+      ),
     [],
   );
 
   /**
-   * Load all agent sessions
+   * Load the first page of recent agent sessions plus notification sessions.
    */
-  const loadSessions = useCallback(async (forceRefresh = false) => {
-    const { source, promise } = loadSessionMetadataList(forceRefresh);
-    latestSessionListPromiseRef.current = promise;
-    const shouldLogLoad = forceRefresh || source === 'network';
+  const loadSessions = useCallback(
+    async (forceRefresh = false) => {
+      const { source, promise } = loadInitialSessionList(forceRefresh);
+      latestSessionListPromiseRef.current = promise;
+      const shouldLogLoad = forceRefresh || source === 'network';
 
-    if (shouldLogLoad) {
-      logger.info('Loading all agent sessions');
-    }
-
-    setIsSessionsListLoading(true);
-    const mutationVersion = sessionListMutationVersionRef.current;
-
-    try {
-      const sessionMetadataList = await promise;
-
-      if (
-        mutationVersion !== sessionListMutationVersionRef.current ||
-        promise !== latestSessionListPromiseRef.current
-      ) {
-        return;
+      if (shouldLogLoad) {
+        logger.info('Loading recent agent sessions');
       }
 
-      setSessions((prev) => {
+      setIsSessionsListLoading(true);
+      const mutationVersion = sessionListMutationVersionRef.current;
+
+      try {
+        const initialData = await promise;
+
+        if (
+          mutationVersion !== sessionListMutationVersionRef.current ||
+          promise !== latestSessionListPromiseRef.current
+        ) {
+          return;
+        }
+
+        const pendingApprovalCounts = new Map<string, number>();
+        [...sessionsRef.current, ...notificationSessionsRef.current].forEach(
+          (session) => {
+            pendingApprovalCounts.set(
+              session.id,
+              session.pendingApprovalCount ?? 0,
+            );
+          },
+        );
+
+        const recentSessions = mapSessionMetadataList(
+          initialData.page.items,
+          pendingApprovalCounts,
+        );
+        const unreadAttentionSessions = pruneNotificationSessions(
+          mapSessionMetadataList(
+            initialData.attentionSessions,
+            pendingApprovalCounts,
+          ),
+        );
+
+        setSessions(recentSessions);
+        setNotificationSessions(unreadAttentionSessions);
+        nextCursorRef.current = initialData.page.nextCursor;
+        setHasMoreSessions(Boolean(initialData.page.nextCursor));
+
+        if (shouldLogLoad) {
+          logger.info('Loaded recent sessions', {
+            count: recentSessions.length,
+            notificationCount: unreadAttentionSessions.length,
+            hasMore: Boolean(initialData.page.nextCursor),
+          });
+        }
+      } catch (err) {
+        if (shouldLogLoad) {
+          logger.error('Failed to load recent sessions', err);
+        }
+        if (
+          mutationVersion === sessionListMutationVersionRef.current &&
+          promise === latestSessionListPromiseRef.current
+        ) {
+          setSessions([]);
+          setNotificationSessions([]);
+          nextCursorRef.current = undefined;
+          setHasMoreSessions(false);
+        }
+      } finally {
+        if (promise === latestSessionListPromiseRef.current) {
+          setIsSessionsListLoading(false);
+        }
+        if (
+          promise === latestSessionListPromiseRef.current &&
+          !startupLoadRecordedRef.current
+        ) {
+          startupLoadRecordedRef.current = true;
+          markStartupMilestone('session-list-settled');
+        }
+      }
+    },
+    [mapSessionMetadataList, pruneNotificationSessions],
+  );
+
+  const loadMoreSessions = useCallback(async () => {
+    const cursor = nextCursorRef.current;
+    if (!cursor || isLoadingMoreSessions) {
+      return;
+    }
+
+    setIsLoadingMoreSessions(true);
+    try {
+      const response = await safeInvoke<AgentSessionListResponse>(
+        'agent_list_sessions',
+        {
+          request: {
+            cursor,
+            limit: SESSION_LIST_PAGE_SIZE,
+          },
+        },
+      );
+
+      const normalizedResponse =
+        response && Array.isArray(response.items)
+          ? response
+          : { items: [], nextCursor: undefined };
+
+      setSessions((previousSessions) => {
         const pendingApprovalCounts = new Map(
-          prev.map((session) => [
+          previousSessions.map((session) => [
             session.id,
             session.pendingApprovalCount ?? 0,
           ]),
         );
+        const incomingSessions = mapSessionMetadataList(
+          normalizedResponse.items,
+          pendingApprovalCounts,
+        );
 
         return sortSessionsByLatestActivity(
-          sessionMetadataList.map((sessionMetadata) =>
-            mapSessionMetadataToAgentSession(
-              sessionMetadata,
-              pendingApprovalCounts.get(sessionMetadata.id) ?? 0,
-            ),
-          ),
+          dedupeSessionsById([...previousSessions, ...incomingSessions]),
         );
       });
-      if (shouldLogLoad) {
-        logger.info('Loaded sessions', { count: sessionMetadataList.length });
-      }
+      nextCursorRef.current = normalizedResponse.nextCursor;
+      setHasMoreSessions(Boolean(normalizedResponse.nextCursor));
     } catch (err) {
-      if (shouldLogLoad) {
-        logger.error('Failed to load sessions', err);
-      }
-      if (
-        mutationVersion === sessionListMutationVersionRef.current &&
-        promise === latestSessionListPromiseRef.current
-      ) {
-        setSessions([]);
-      }
+      logger.error('Failed to load more sessions', err);
+      throw err;
     } finally {
-      if (promise === latestSessionListPromiseRef.current) {
-        setIsSessionsListLoading(false);
-      }
-      if (
-        promise === latestSessionListPromiseRef.current &&
-        !startupLoadRecordedRef.current
-      ) {
-        startupLoadRecordedRef.current = true;
-        markStartupMilestone('session-list-settled');
-      }
+      setIsLoadingMoreSessions(false);
     }
-  }, []);
+  }, [isLoadingMoreSessions, mapSessionMetadataList]);
 
   /**
    * Create a new agent session
@@ -448,7 +694,10 @@ export function AgentSessionListProvider({
         const idsToRemove = new Set(deletedIds);
 
         // Remove the session and ALL its descendants from the UI using the authoritative list from Rust
-        mutateSessions((prev) => prev.filter((s) => !idsToRemove.has(s.id)));
+        mutateSessions((prev) => prev.filter((s) => !idsToRemove.has(s.id)), {
+          notificationUpdater: (prev) =>
+            prev.filter((s) => !idsToRemove.has(s.id)),
+        });
 
         // Clean up LLM state outside the updater to avoid double-invocation in StrictMode
         idsToRemove.forEach((id) => clearSessionState(id));
@@ -482,12 +731,25 @@ export function AgentSessionListProvider({
         const orphanedIds = new Set(response?.data?.orphanedIds || []);
 
         // Remove the session; update explicitly orphaned children to have no parent
-        mutateSessions((prev) =>
-          prev
-            .filter((s) => s.id !== actualDeletedId)
-            .map((s) =>
-              orphanedIds.has(s.id) ? { ...s, parentSessionId: undefined } : s,
-            ),
+        mutateSessions(
+          (prev) =>
+            prev
+              .filter((s) => s.id !== actualDeletedId)
+              .map((s) =>
+                orphanedIds.has(s.id)
+                  ? { ...s, parentSessionId: undefined }
+                  : s,
+              ),
+          {
+            notificationUpdater: (prev) =>
+              prev
+                .filter((s) => s.id !== actualDeletedId)
+                .map((s) =>
+                  orphanedIds.has(s.id)
+                    ? { ...s, parentSessionId: undefined }
+                    : s,
+                ),
+          },
         );
 
         logger.info('Session deleted (children orphaned)', { sessionId });
@@ -509,10 +771,17 @@ export function AgentSessionListProvider({
       const newValue = !(session?.isBookmarked ?? false);
 
       // Optimistic: set locally with the known new value
-      mutateSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId ? { ...s, isBookmarked: newValue } : s,
-        ),
+      mutateSessions(
+        (prev) =>
+          prev.map((s) =>
+            s.id === sessionId ? { ...s, isBookmarked: newValue } : s,
+          ),
+        {
+          notificationUpdater: (prev) =>
+            prev.map((s) =>
+              s.id === sessionId ? { ...s, isBookmarked: newValue } : s,
+            ),
+        },
       );
 
       try {
@@ -523,15 +792,14 @@ export function AgentSessionListProvider({
       } catch (err) {
         logger.error('Failed to toggle bookmark', err);
         // Revert optimistic update on failure using the inverse of what we set
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === sessionId ? { ...s, isBookmarked: !newValue } : s,
-          ),
-        );
+        applySessionUpdate(sessionId, (session) => ({
+          ...session,
+          isBookmarked: !newValue,
+        }));
         throw err;
       }
     },
-    [mutateSessions, sessions],
+    [applySessionUpdate, mutateSessions, sessions],
   );
 
   const markSessionViewed = useCallback(
@@ -540,35 +808,25 @@ export function AgentSessionListProvider({
         sessionId,
         viewedAt: viewedAt.getTime(),
       });
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === sessionId
-            ? applyViewedAtToSession(session, viewedAt)
-            : session,
-        ),
+      applySessionUpdate(sessionId, (session) =>
+        applyViewedAtToSession(session, viewedAt),
       );
     },
-    [],
+    [applySessionUpdate],
   );
 
   const clearPendingApproval = useCallback(
     (sessionId: string, toolCallId: string) => {
       pendingApprovalKeysRef.current.delete(`${sessionId}:${toolCallId}`);
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                pendingApprovalCount: Math.max(
-                  0,
-                  (session.pendingApprovalCount ?? 0) - 1,
-                ),
-              }
-            : session,
+      applySessionUpdate(sessionId, (session) => ({
+        ...session,
+        pendingApprovalCount: Math.max(
+          0,
+          (session.pendingApprovalCount ?? 0) - 1,
         ),
-      );
+      }));
     },
-    [],
+    [applySessionUpdate],
   );
 
   // Initial load
@@ -616,13 +874,10 @@ export function AgentSessionListProvider({
           payload.sessionId &&
           payload.status
         ) {
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === payload.sessionId
-                ? { ...s, status: payload.status as AgentSession['status'] }
-                : s,
-            ),
-          );
+          applySessionUpdate(payload.sessionId, (session) => ({
+            ...session,
+            status: payload.status as AgentSession['status'],
+          }));
           return;
         }
 
@@ -634,19 +889,11 @@ export function AgentSessionListProvider({
           const messageAt = new Date(payload.message.createdAt);
           const shouldMarkViewed = payload.sessionId === activeSessionId;
 
-          setSessions((prev) =>
-            prev.map((session) =>
-              session.id === payload.sessionId
-                ? {
-                    ...session,
-                    lastMessageAt: messageAt,
-                    lastViewedAt: shouldMarkViewed
-                      ? messageAt
-                      : session.lastViewedAt,
-                  }
-                : session,
-            ),
-          );
+          applySessionUpdate(payload.sessionId, (session) => ({
+            ...session,
+            lastMessageAt: messageAt,
+            lastViewedAt: shouldMarkViewed ? messageAt : session.lastViewedAt,
+          }));
           return;
         }
 
@@ -658,25 +905,21 @@ export function AgentSessionListProvider({
           const attentionAt = new Date();
           const shouldMarkViewed = payload.sessionId === activeSessionId;
 
-          setSessions((prev) =>
-            prev.map((session) =>
-              session.id === payload.sessionId
-                ? shouldMarkViewed
-                  ? applyViewedAtToSession(
-                      {
-                        ...session,
-                        lastAttentionAt: attentionAt,
-                        lastAttentionReason: 'recurringStop',
-                      },
-                      attentionAt,
-                    )
-                  : {
-                      ...session,
-                      lastAttentionAt: attentionAt,
-                      lastAttentionReason: 'recurringStop',
-                    }
-                : session,
-            ),
+          applySessionUpdate(payload.sessionId, (session) =>
+            shouldMarkViewed
+              ? applyViewedAtToSession(
+                  {
+                    ...session,
+                    lastAttentionAt: attentionAt,
+                    lastAttentionReason: 'recurringStop',
+                  },
+                  attentionAt,
+                )
+              : {
+                  ...session,
+                  lastAttentionAt: attentionAt,
+                  lastAttentionReason: 'recurringStop',
+                },
           );
 
           if (shouldMarkViewed) {
@@ -705,29 +948,24 @@ export function AgentSessionListProvider({
           const attentionAt = new Date();
           const shouldMarkViewed = payload.sessionId === activeSessionId;
           pendingApprovalKeysRef.current.add(pendingApprovalKey);
-          setSessions((prev) =>
-            prev.map((session) =>
-              session.id === payload.sessionId
-                ? shouldMarkViewed
-                  ? applyViewedAtToSession(
-                      {
-                        ...session,
-                        lastAttentionAt: attentionAt,
-                        lastAttentionReason: 'pendingApproval',
-                        pendingApprovalCount:
-                          (session.pendingApprovalCount ?? 0) + 1,
-                      },
-                      attentionAt,
-                    )
-                  : {
-                      ...session,
-                      lastAttentionAt: attentionAt,
-                      lastAttentionReason: 'pendingApproval',
-                      pendingApprovalCount:
-                        (session.pendingApprovalCount ?? 0) + 1,
-                    }
-                : session,
-            ),
+          applySessionUpdate(payload.sessionId, (session) =>
+            shouldMarkViewed
+              ? applyViewedAtToSession(
+                  {
+                    ...session,
+                    lastAttentionAt: attentionAt,
+                    lastAttentionReason: 'pendingApproval',
+                    pendingApprovalCount:
+                      (session.pendingApprovalCount ?? 0) + 1,
+                  },
+                  attentionAt,
+                )
+              : {
+                  ...session,
+                  lastAttentionAt: attentionAt,
+                  lastAttentionReason: 'pendingApproval',
+                  pendingApprovalCount: (session.pendingApprovalCount ?? 0) + 1,
+                },
           );
 
           if (shouldMarkViewed) {
@@ -757,35 +995,12 @@ export function AgentSessionListProvider({
     return () => {
       if (unlisten) unlisten();
     };
-  }, [activeSessionId, clearPendingApproval, markSessionViewed]);
-
-  const notificationSessions = useMemo(
-    () =>
-      sessions
-        .filter((session) => hasUnreadAttention(session))
-        .slice()
-        .sort((left, right) => {
-          const leftPending = left.pendingApprovalCount ?? 0;
-          const rightPending = right.pendingApprovalCount ?? 0;
-          if (leftPending !== rightPending) {
-            return rightPending - leftPending;
-          }
-
-          const leftTime =
-            left.lastAttentionAt?.getTime() ??
-            left.lastMessageAt?.getTime() ??
-            left.updatedAt?.getTime() ??
-            left.createdAt.getTime();
-          const rightTime =
-            right.lastAttentionAt?.getTime() ??
-            right.lastMessageAt?.getTime() ??
-            right.updatedAt?.getTime() ??
-            right.createdAt.getTime();
-
-          return rightTime - leftTime;
-        }),
-    [hasUnreadAttention, sessions],
-  );
+  }, [
+    activeSessionId,
+    applySessionUpdate,
+    clearPendingApproval,
+    markSessionViewed,
+  ]);
 
   const stateValue = useMemo(
     () => ({
@@ -793,14 +1008,23 @@ export function AgentSessionListProvider({
       notificationSessions,
       unreadNotificationCount: notificationSessions.length,
       isSessionsListLoading,
+      hasMoreSessions,
+      isLoadingMoreSessions,
     }),
-    [sessions, notificationSessions, isSessionsListLoading],
+    [
+      hasMoreSessions,
+      isLoadingMoreSessions,
+      isSessionsListLoading,
+      notificationSessions,
+      sessions,
+    ],
   );
 
   const actionsValue = useMemo(
     () => ({
       createSession,
       loadSessions,
+      loadMoreSessions,
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,
@@ -810,6 +1034,7 @@ export function AgentSessionListProvider({
     [
       createSession,
       loadSessions,
+      loadMoreSessions,
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,

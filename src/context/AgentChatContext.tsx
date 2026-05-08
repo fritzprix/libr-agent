@@ -27,6 +27,21 @@ import { getLogger } from '../lib/logger';
 import { useLLMService, useStreamingMessage } from './LLMServiceContext';
 
 const logger = getLogger('AgentChatContext');
+
+/**
+ * ⚡ Bolt: Optimized helper to find the last persisted assistant message without O(N) array clone and reverse
+ */
+const findLastPersistedAssistantMessage = (
+  messages: Message[],
+): Message | undefined => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && !messages[i].isStreaming) {
+      return messages[i];
+    }
+  }
+  return undefined;
+};
+
 export { isAssistantStreamingMessageSuperseded } from '@/lib/message-utils';
 
 /**
@@ -255,9 +270,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       return;
     }
 
-    const lastPersistedAssistantMessage = [...sessionMessages]
-      .reverse()
-      .find((message) => message.role === 'assistant' && !message.isStreaming);
+    const lastPersistedAssistantMessage =
+      findLastPersistedAssistantMessage(sessionMessages);
 
     if (!lastPersistedAssistantMessage) {
       return;
@@ -291,9 +305,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     const displayed = [...sessionMessages];
     const displayedIds = new Set(displayed.map((message) => message.id));
-    const lastPersistedAssistantMessage = [...sessionMessages]
-      .reverse()
-      .find((message) => message.role === 'assistant' && !message.isStreaming);
+    const lastPersistedAssistantMessage =
+      findLastPersistedAssistantMessage(sessionMessages);
 
     // Append pending messages (optimistic UI)
     if (pendingMessages.length > 0) {
@@ -317,36 +330,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         );
 
       if (
-        currentStreamingMessage.tool_calls &&
-        currentStreamingMessage.tool_calls.length > 0
-      ) {
-        logger.info('Evaluating streaming message for display', {
-          sessionId: session.id,
-          streaming: summarizeMessageForLog(currentStreamingMessage),
-          lastPersistedAssistant: summarizeMessageForLog(
-            lastPersistedAssistantMessage,
-          ),
-          isSupersededByPersistedAssistant,
-          displayedIds: [...displayedIds],
-        });
-      }
-
-      if (
         !displayedIds.has(currentStreamingMessage.id) &&
         !isSupersededByPersistedAssistant
       ) {
         // Show streaming message alongside persisted messages
         displayed.push(currentStreamingMessage);
-        if (
-          currentStreamingMessage.tool_calls &&
-          currentStreamingMessage.tool_calls.length > 0
-        ) {
-          logger.info('Streaming message appended to displayMessages', {
-            sessionId: session.id,
-            streamingMessageId: currentStreamingMessage.id,
-            displayCount: displayed.length,
-          });
-        }
       }
     }
 

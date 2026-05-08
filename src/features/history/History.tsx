@@ -15,9 +15,19 @@ const logger = getLogger('History');
 export default function History() {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
-  const { sessions, isSessionsListLoading } = useAgentSessionListState();
-  const { loadSessions, deleteSession, deleteSessionOnly, toggleBookmark } =
-    useAgentSessionListActions();
+  const {
+    sessions,
+    isSessionsListLoading,
+    hasMoreSessions,
+    isLoadingMoreSessions,
+  } = useAgentSessionListState();
+  const {
+    loadSessions,
+    loadMoreSessions,
+    deleteSession,
+    deleteSessionOnly,
+    toggleBookmark,
+  } = useAgentSessionListActions();
   const [activeTab, setActiveTab] = useState('all');
   const [activeStatusFilter, setActiveStatusFilter] = useState<
     'all' | SessionStatus
@@ -62,14 +72,28 @@ export default function History() {
   );
 
   const handleRefreshSessions = useCallback(() => {
-    loadSessions();
+    loadSessions(true);
   }, [loadSessions]);
 
+  const handleLoadMoreSessions = useCallback(() => {
+    void loadMoreSessions().catch((error) => {
+      logger.error('Failed to load more sessions', error);
+      toast.error(
+        t(
+          'sessionHistory.toasts.loadMoreFailed',
+          'Failed to load more sessions',
+        ),
+      );
+    });
+  }, [loadMoreSessions, t]);
+
   return (
-    <div className="flex-1 flex flex-col text-foreground overflow-hidden">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden text-foreground">
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={isSessionsListLoading}
+        hasMoreSessions={hasMoreSessions}
+        isLoadingMoreSessions={isLoadingMoreSessions}
         activeTab={activeTab}
         activeStatusFilter={activeStatusFilter}
         searchQuery={searchQuery}
@@ -77,6 +101,7 @@ export default function History() {
         onActiveStatusFilterChange={setActiveStatusFilter}
         onSearchQueryChange={setSearchQuery}
         onRefresh={handleRefreshSessions}
+        onLoadMore={handleLoadMoreSessions}
         onResume={handleResumeSession}
         onDelete={handleDeleteSession}
         onDeleteOnly={handleDeleteSessionOnly}

@@ -150,7 +150,9 @@ describe('AgentSessionListContext', () => {
             expect(result.current.sessions[0].id).toBe('session-1');
         });
 
-        expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
+        expect(safeInvoke).toHaveBeenCalledWith('agent_list_sessions', {
+            request: { limit: 100 },
+        });
     });
 
     it('dedupes the initial session load across StrictMode remounts', async () => {
@@ -177,14 +179,27 @@ describe('AgentSessionListContext', () => {
         });
 
         await waitFor(() => {
-            expect(safeInvoke).toHaveBeenCalledTimes(1);
+            expect(
+                (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                    ([cmd]) => cmd === 'agent_list_sessions',
+                ),
+            ).toHaveLength(1);
+            expect(
+                (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                    ([cmd]) => cmd === 'agent_list_attention_sessions',
+                ),
+            ).toHaveLength(1);
         });
 
         expect(
-            loggerInfo.mock.calls.filter(([message]) => message === 'Loading all agent sessions')
+            loggerInfo.mock.calls.filter(
+                ([message]) => message === 'Loading recent agent sessions',
+            )
         ).toHaveLength(1);
         expect(
-            loggerInfo.mock.calls.filter(([message]) => message === 'Loaded sessions')
+            loggerInfo.mock.calls.filter(
+                ([message]) => message === 'Loaded recent sessions',
+            )
         ).toHaveLength(1);
     });
 
@@ -196,7 +211,9 @@ describe('AgentSessionListContext', () => {
         });
 
         await waitFor(() => {
-            expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
+            expect(safeInvoke).toHaveBeenCalledWith('agent_list_sessions', {
+                request: { limit: 100 },
+            });
         });
 
         expect(safeInvoke).not.toHaveBeenCalledWith(
@@ -226,11 +243,16 @@ describe('AgentSessionListContext', () => {
         >();
 
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd !== 'agent_get_all_sessions') {
+            if (cmd === 'agent_list_attention_sessions') {
+                return Promise.resolve([]);
+            }
+            if (cmd !== 'agent_list_sessions') {
                 return Promise.resolve();
             }
 
-            return (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.length === 1
+            return (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                ([callCmd]) => callCmd === 'agent_list_sessions',
+            ).length === 1
                 ? staleSessions.promise
                 : refreshedSessions.promise;
         });
@@ -241,7 +263,11 @@ describe('AgentSessionListContext', () => {
         );
 
         await waitFor(() => {
-            expect((safeInvoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+            expect(
+                (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                    ([cmd]) => cmd === 'agent_list_sessions',
+                ),
+            ).toHaveLength(1);
             expect(result.current.state.isSessionsListLoading).toBe(true);
         });
 
@@ -250,7 +276,11 @@ describe('AgentSessionListContext', () => {
         });
 
         await waitFor(() => {
-            expect((safeInvoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+            expect(
+                (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.filter(
+                    ([cmd]) => cmd === 'agent_list_sessions',
+                ),
+            ).toHaveLength(2);
         });
 
         staleSessions.resolve([
@@ -287,7 +317,10 @@ describe('AgentSessionListContext', () => {
     it('should create a new session', async () => {
         // Mock create response
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
-            if (cmd === 'agent_get_all_sessions') return Promise.resolve([]);
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({ items: [], nextCursor: undefined });
+            }
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'get_assistant') {
                 return Promise.resolve({
                     id: args.id,
@@ -335,14 +368,20 @@ describe('AgentSessionListContext', () => {
     it('should delete a session', async () => {
         // Setup: Load one session
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
-            if (cmd === 'agent_get_all_sessions') return Promise.resolve([
-                {
-                    id: 'session-1',
-                    name: 'Test Session',
-                    status: 'idle',
-                    createdAt: Date.now(),
-                }
-            ]);
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({
+                    items: [
+                        {
+                            id: 'session-1',
+                            name: 'Test Session',
+                            status: 'idle',
+                            createdAt: Date.now(),
+                        },
+                    ],
+                    nextCursor: undefined,
+                });
+            }
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
             if (cmd === 'agent_delete_session') return Promise.resolve({ success: true, message: 'Session deleted', data: ['session-1'] });
             return Promise.resolve();
         });

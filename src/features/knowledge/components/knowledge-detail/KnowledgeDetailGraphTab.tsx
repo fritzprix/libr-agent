@@ -19,17 +19,17 @@ export function KnowledgeDetailGraphTab({
   );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <KnowledgeGraphPreview detail={detail} />
 
-      <Card className="py-4">
+      <Card className="flex min-h-0 flex-col py-4">
         <CardHeader className="px-4">
           <CardTitle className="text-sm">
             {t('knowledge.relationshipListTitle', 'Relationships')}
           </CardTitle>
         </CardHeader>
-        <CardContent className="px-4">
-          <ScrollArea className="h-[320px] pr-3">
+        <CardContent className="flex min-h-0 flex-1 px-4">
+          <ScrollArea className="min-h-0 flex-1 pr-3">
             <div className="space-y-2 text-sm">
               {detail.relationships.length === 0 ? (
                 <p className="text-muted-foreground">

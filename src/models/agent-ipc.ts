@@ -249,6 +249,16 @@ export interface AgentSessionMetadata {
   yoloMode: boolean;
 }
 
+export interface AgentSessionListCursor {
+  updatedAt: number;
+  id: string;
+}
+
+export interface AgentSessionListResponse {
+  items: AgentSessionMetadata[];
+  nextCursor?: AgentSessionListCursor;
+}
+
 export interface MessageCursor {
   createdAt: number;
   rowId: number;

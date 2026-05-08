@@ -1,4 +1,3 @@
-import type { TFunction } from 'i18next';
 import type { KnowledgeGraphEntity } from '@/lib/backend/knowledge';
 
 const knowledgeDateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -10,10 +9,13 @@ export function formatTimestamp(timestamp: number): string {
   return knowledgeDateFormatter.format(new Date(timestamp));
 }
 
-export function getKnowledgeCardTitle(preview: string, t: TFunction): string {
+export function getKnowledgeCardTitle(
+  preview: string,
+  untitledLabel: string,
+): string {
   const normalizedPreview = preview.replace(/\s+/g, ' ').trim();
   if (!normalizedPreview) {
-    return t('knowledge.untitledEntry', 'Untitled knowledge entry');
+    return untitledLabel;
   }
 
   const sentenceMatch = normalizedPreview.match(/^(.{1,96}?[.!?])(?:\s|$)/);

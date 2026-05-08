@@ -167,6 +167,29 @@ describe('AgentChatMessages compaction rendering', () => {
     sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
     chatState.messages = groupedToolMessages.slice(1);
     chatState.workflowStatus = 'idle';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'tool_group',
+        message: baseMessage,
+        messages: [baseMessage],
+        coveredMessageIds: ['assistant-1', 'tool-1'],
+        toolGroup: {
+          calls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: {
+                name: 'agent__compactSessionContext',
+                arguments: '{}',
+              },
+            },
+          ],
+          results: [],
+        },
+      },
+    );
     virtuosoMock.mockImplementation(
       ({
         components,
@@ -265,6 +288,17 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(getVisualBottomThreshold()).toBe(4);
   });
 
+  it('uses horizontal list padding without a shorthand padding override', () => {
+    const { container } = render(<AgentChatMessages />);
+
+    const list = container.querySelector('[style*="padding-left: 16px"]');
+    expect(list).toHaveStyle({
+      paddingLeft: '16px',
+      paddingRight: '16px',
+    });
+    expect(list?.getAttribute('style')).not.toContain('padding: 16px');
+  });
+
   it('shows the analysis loader only for busy empty assistant output states', () => {
     expect(shouldShowAnalysisLoader(undefined, 'idle')).toBe(false);
     expect(
@@ -279,6 +313,25 @@ describe('AgentChatMessages compaction rendering', () => {
         'busy',
       ),
     ).toBe(false);
+  });
+
+  it('renders a minimal placeholder instead of null for empty busy messages', () => {
+    chatState.messages = [{ ...baseMessage, content: [] }];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'single',
+        message: { ...baseMessage, content: [] },
+        messages: [{ ...baseMessage, content: [] }],
+        coveredMessageIds: ['assistant-1'],
+      } as GroupedMessage,
+    );
+
+    const { container } = render(<AgentChatMessages />);
+
+    expect(container.querySelector('.h-px')).toBeInTheDocument();
   });
 
   it('treats only tiny distances as pinned to the bottom', () => {

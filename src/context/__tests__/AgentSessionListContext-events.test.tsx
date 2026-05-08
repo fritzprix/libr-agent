@@ -456,6 +456,39 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         });
     });
 
+    it('preserves the latest pending approval count when another attention event follows immediately', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-1',
+                },
+            });
+            agentEventHandler?.({
+                payload: {
+                    type: 'workflowCompleted',
+                    sessionId: 'session-child',
+                    reason: 'recurringStop',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.notificationSessions[0]?.id).toBe('session-child');
+            expect(result.current.notificationSessions[0]?.pendingApprovalCount).toBe(1);
+            expect(result.current.notificationSessions[0]?.lastAttentionReason).toBe('recurringStop');
+        });
+    });
+
     it('marks active-session approval requests as viewed immediately', async () => {
         const { result } = renderHook(() => useAgentSessionListState(), {
             wrapper: ActiveSessionWrapper,

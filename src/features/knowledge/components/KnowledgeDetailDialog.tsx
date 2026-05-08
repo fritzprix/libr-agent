@@ -1,6 +1,12 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, Loader2, Network, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  FileText,
+  Loader2,
+  Network,
+  Trash2,
+} from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -24,8 +30,10 @@ import { KnowledgeDetailOverviewTab } from './knowledge-detail/KnowledgeDetailOv
 interface KnowledgeDetailDialogProps {
   open: boolean;
   detail: KnowledgeChunkDetail | null;
+  isDeleteConfirming: boolean;
   isDeleting: boolean;
   isDetailLoading: boolean;
+  onCancelDelete: () => void;
   onClose: () => void;
   onRequestDelete: () => void;
   selectedItem: KnowledgeChunkListItem | null;
@@ -34,8 +42,10 @@ interface KnowledgeDetailDialogProps {
 export const KnowledgeDetailDialog = memo(function KnowledgeDetailDialog({
   open,
   detail,
+  isDeleteConfirming,
   isDeleting,
   isDetailLoading,
+  onCancelDelete,
   onClose,
   onRequestDelete,
   selectedItem,
@@ -67,25 +77,66 @@ export const KnowledgeDetailDialog = memo(function KnowledgeDetailDialog({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={onClose}>
-                {t('knowledge.close', 'Close')}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={onRequestDelete}
-                disabled={!selectedItem || isDeleting}
-                className="gap-2"
-              >
-                {isDeleting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-                {t('knowledge.delete', 'Delete')}
-              </Button>
+              {isDeleteConfirming ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onCancelDelete}
+                    disabled={isDeleting}
+                  >
+                    {t('knowledge.cancel', 'Cancel')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={onRequestDelete}
+                    disabled={!selectedItem || isDeleting}
+                    className="gap-2"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    {t('knowledge.confirmDeleteAction', 'Delete permanently')}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button type="button" variant="outline" onClick={onClose}>
+                    {t('knowledge.close', 'Close')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={onRequestDelete}
+                    disabled={!selectedItem || isDeleting}
+                    className="gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {t('knowledge.delete', 'Delete')}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
+          {isDeleteConfirming ? (
+            <div className="mt-4 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div className="space-y-1">
+                <p className="font-medium">
+                  {t('knowledge.confirmDeleteTitle', 'Delete knowledge entry')}
+                </p>
+                <p className="text-muted-foreground">
+                  {t(
+                    'knowledge.confirmDelete',
+                    'Delete this knowledge entry and clean up orphaned graph data?',
+                  )}
+                </p>
+              </div>
+            </div>
+          ) : null}
         </DialogHeader>
 
         <div className="min-h-0 overflow-hidden px-6 py-5">

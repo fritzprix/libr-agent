@@ -611,17 +611,23 @@ export class AnthropicService extends BaseAIService<
     const model =
       options?.modelName || config.defaultModel || this.getDefaultModel();
     const s = options?.samplingOptions;
+    const abortSignal = this.getAbortSignal();
 
     const response = await this.withRetry(() =>
-      this.anthropic.messages.create({
-        model,
-        max_tokens: s?.maxTokens ?? config.maxTokens ?? 4096,
-        temperature: s?.temperature ?? config.temperature,
-        top_p: s?.topP,
-        top_k: s?.topK,
-        stop_sequences: s?.stopSequences,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+      this.anthropic.messages.create(
+        {
+          model,
+          max_tokens: s?.maxTokens ?? config.maxTokens ?? 4096,
+          temperature: s?.temperature ?? config.temperature,
+          top_p: s?.topP,
+          top_k: s?.topK,
+          stop_sequences: s?.stopSequences,
+          messages: [{ role: 'user', content: prompt }],
+        },
+        {
+          signal: abortSignal,
+        },
+      ),
     );
 
     const textBlock = response.content.find((b) => b.type === 'text');

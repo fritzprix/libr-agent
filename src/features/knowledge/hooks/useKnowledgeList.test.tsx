@@ -123,4 +123,73 @@ describe('useKnowledgeList', () => {
       expect(result.current.isLoadingMore).toBe(false);
     });
   });
+
+  it('keeps prior results visible while a refetch is in flight', async () => {
+    let resolveRefresh: ((value: {
+      items: ReturnType<typeof createItem>[];
+      assistants: string[];
+      nextCursor: { createdAt: number; id: number } | null;
+    }) => void) | null = null;
+
+    vi.mocked(listGlobalKnowledge).mockImplementation(async () => {
+      if (resolveRefresh) {
+        return new Promise((resolve) => {
+          resolveRefresh = resolve;
+        });
+      }
+
+      resolveRefresh = null;
+      return {
+        items: [createItem(1)],
+        assistants: ['assistant-1'],
+        nextCursor: null,
+      };
+    });
+
+    const { result, rerender } = renderHook(
+      ({ refreshToken }) =>
+        useKnowledgeList({
+          assistantFilter: 'all',
+          query: '',
+          refreshToken,
+        }),
+      {
+        initialProps: {
+          refreshToken: 0,
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.items).toEqual([createItem(1)]);
+      expect(result.current.isInitialListLoading).toBe(false);
+    });
+
+    vi.mocked(listGlobalKnowledge).mockImplementationOnce(
+      async () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+
+    rerender({ refreshToken: 1 });
+
+    await waitFor(() => {
+      expect(result.current.items).toEqual([createItem(1)]);
+      expect(result.current.isInitialListLoading).toBe(false);
+      expect(result.current.isRefreshingList).toBe(true);
+    });
+
+    act(() => {
+      resolveRefresh?.({
+        items: [createItem(2)],
+        assistants: ['assistant-1'],
+        nextCursor: null,
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.items).toEqual([createItem(2)]);
+    });
+  });
 });

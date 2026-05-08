@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import { shouldFetchDynamicModels } from '@/lib/ai-service/model-fetch-policy';
 import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
@@ -75,7 +76,14 @@ export const useAgentModels = (provider?: string) => {
     mutate: refreshModels,
     isValidating: isRefreshing,
   } = useSWR(
-    provider ? ['local-models', provider, apiKey, baseUrl] : null,
+    shouldFetchDynamicModels({
+      provider,
+      apiKey,
+      use3rdParty: providerConfig.use3rdParty,
+      customModelId: providerConfig.customModelId,
+    })
+      ? ['local-models', provider, apiKey, baseUrl]
+      : null,
     fetchDynamicModels,
     {
       revalidateOnFocus: false,
