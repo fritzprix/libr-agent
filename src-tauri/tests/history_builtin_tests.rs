@@ -443,9 +443,7 @@ async fn history_read_session_and_message_are_paginated() {
     assert_eq!(structured["hasMore"], true);
     assert_eq!(structured["nextOffset"], 3000);
     assert_eq!(
-        structured["contentChunk"]
-            .as_str()
-            .expect("chunk text"),
+        structured["contentChunk"].as_str().expect("chunk text"),
         "L".repeat(3000)
     );
 }
