@@ -58,6 +58,8 @@ interface StreamChatOptions {
   sessionContext?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
+  forceToolUse?: boolean;
+  disableToolUse?: boolean;
 }
 
 /**
@@ -265,6 +267,7 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
       hasSystemPrompt: !!options.systemPrompt,
       model: options.modelName || config.defaultModel || DEFAULT_MODEL,
       availableToolsCount: options.availableTools?.length ?? 0,
+      disableToolUse: options.disableToolUse ?? false,
     });
 
     try {
@@ -273,12 +276,14 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
+      const shouldIncludeTools = !options.disableToolUse;
+      const requestTools = shouldIncludeTools ? ollamaTools : undefined;
 
       logger.info('📨 Converted messages for Ollama', {
         originalCount: sanitizedMessages.length,
         convertedCount: ollamaMessages.length,
         model,
-        toolCount: (ollamaTools ?? []).length,
+        toolCount: (requestTools ?? []).length,
         messageRoles: ollamaMessages.map((m) => m.role).join(','),
       });
 
@@ -314,7 +319,7 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         messages: ollamaMessages as OllamaMessage[],
         stream: true,
         ...(thinkParam !== undefined && { think: thinkParam }), // Conditional inclusion
-        tools: ollamaTools,
+        ...(requestTools ? { tools: requestTools } : {}),
         keep_alive: '5m',
         options: {
           temperature: config.temperature || 0.7,

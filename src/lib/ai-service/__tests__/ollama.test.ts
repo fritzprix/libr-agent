@@ -158,4 +158,31 @@ describe('OllamaService prompt layout', () => {
       'beta_tool',
     ]);
   });
+
+  it('omits tools from Ollama requests when tool use is disabled', async () => {
+    const { OllamaService } = await import('../ollama');
+    const service = new OllamaService('ollama-local');
+
+    const prepared = service.prepareContextInjection(
+      'Stable system prompt',
+      '# Current Context Information\nvolatile bits',
+      [createUserMessage('summarize this')],
+    );
+
+    await consumeStream(
+      service.streamChat(prepared.messages, {
+        modelName: 'llama3.1',
+        systemPrompt: prepared.systemPrompt,
+        sessionContext: prepared.sessionContext,
+        availableTools: [betaTool, alphaTool],
+        disableToolUse: true,
+      }),
+    );
+
+    const request = chatMock.mock.calls[0]?.[0] as {
+      tools?: Array<{ function?: { name?: string } }>;
+    };
+
+    expect(request.tools).toBeUndefined();
+  });
 });
