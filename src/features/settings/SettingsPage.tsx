@@ -65,7 +65,7 @@ const SettingsPage: FC = function SettingsPage() {
 
   return (
     <div className="p-6 h-full flex flex-col bg-background">
-      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
+      <div className="max-w-4xl mx-auto w-full flex flex-col h-full">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">

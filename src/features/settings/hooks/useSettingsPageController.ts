@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { mutate } from 'swr';
 import { useTranslation } from 'react-i18next';
@@ -67,6 +67,7 @@ export function useSettingsPageController() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDiscardDialogOpen, setIsDiscardDialogOpen] = useState(false);
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
+  const isDirtyRef = useRef(isDirty);
 
   const activeTab = useMemo<SettingsTabValue>(() => {
     const tabParam = searchParams.get('tab');
@@ -122,8 +123,12 @@ export function useSettingsPageController() {
   }, [t]);
 
   useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+
+  useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isDirty) {
+      if (!isDirtyRef.current) {
         return;
       }
 
@@ -135,7 +140,7 @@ export function useSettingsPageController() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [isDirty]);
+  }, []);
 
   const handleFactoryReset = useCallback(async () => {
     setIsResetting(true);
