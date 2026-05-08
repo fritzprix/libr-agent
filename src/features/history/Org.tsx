@@ -39,19 +39,24 @@ export default function Org() {
   const { t } = useTranslation('common');
 
   const fetcher = async () => {
-    try {
-      const response = await safeInvoke<AgentSessionMetadata[]>('agent_get_all_sessions');
-      const items = Array.isArray(response) ? response : [];
-      return items.map((session) => mapSessionMetadataToAgentSession(session));
-    } catch (error) {
-      logger.error('Failed to load org sessions', error);
-      toast.error(t('orgHistory.loadFailed', 'Failed to load org lineages'));
-      return [];
-    }
+    const response = await safeInvoke<AgentSessionMetadata[]>(
+      'agent_get_all_sessions',
+    );
+    const items = Array.isArray(response) ? response : [];
+    return items.map((session) => mapSessionMetadataToAgentSession(session));
   };
 
-  const { data: sessions = [], isLoading, isValidating, mutate } = useSWR('orgSessions', fetcher, {
+  const {
+    data: sessions = [],
+    isLoading,
+    isValidating,
+    mutate,
+  } = useSWR('orgSessions', fetcher, {
     revalidateOnFocus: false,
+    onError: (error) => {
+      logger.error('Failed to load org sessions', error);
+      toast.error(t('orgHistory.loadFailed', 'Failed to load org lineages'));
+    },
   });
 
   const orgs = useMemo(() => selectOrgSummaries(sessions), [sessions]);
