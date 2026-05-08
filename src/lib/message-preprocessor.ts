@@ -502,11 +502,22 @@ export async function prepareMessagesForLLM(
   // to understand what went wrong and how to recover.
   // The error field is metadata; the content field contains the actual error message
   // that should be sent to the LLM.
+  // ⚡ Bolt: Single O(N) backwards pass to compute all metadata in one scan
   let latestMediaMessageIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index--) {
-    if (messageHasMedia(messages[index])) {
-      latestMediaMessageIndex = index;
-      break;
+  let attachmentCount = 0;
+  let errorMessageCount = 0;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+
+    if (latestMediaMessageIndex === -1 && messageHasMedia(msg)) {
+      latestMediaMessageIndex = i;
+    }
+
+    attachmentCount += msg.attachments?.length || 0;
+
+    if (msg.error) {
+      errorMessageCount++;
     }
   }
 
@@ -516,16 +527,6 @@ export async function prepareMessagesForLLM(
         includeLatestMediaPayload: index === latestMediaMessageIndex,
       }),
     ),
-  );
-
-  const attachmentCount = messages.reduce(
-    (total, msg) => total + (msg.attachments?.length || 0),
-    0,
-  );
-
-  const errorMessageCount = messages.reduce(
-    (acc, msg) => (msg.error ? acc + 1 : acc),
-    0,
   );
 
   if (attachmentCount > 0 || errorMessageCount > 0) {

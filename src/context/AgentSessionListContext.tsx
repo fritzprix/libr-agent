@@ -16,131 +16,46 @@ import { useModelOptions } from './ModelProvider';
 import { useBackendResource } from './GlobalEventContext';
 import type { AgentSession, CreateSessionParams } from '@/models/agent';
 import { getAssistant } from '@/lib/backend/assistants';
-import type { Assistant } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useSettings } from '@/context/SettingsContext';
-import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 import { useLLMService } from '@/context/LLMServiceContext';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
-import {
-  mapSessionMetadataToAgentSession,
-  sortSessionsByLatestActivity,
-} from '@/lib/session-metadata';
+import { sortSessionsByLatestActivity } from '@/lib/session-metadata';
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type {
   AgentSessionMetadata,
   AgentSessionListCursor,
   AgentSessionListResponse,
-  CreateAgentSessionRequest,
   AgentResponse,
-  AgentConfig,
-  WorkflowCompletionReason,
 } from '@/models/agent-ipc';
+import {
+  applySessionUpdateToCollections,
+  dedupeSessionsById,
+  pruneNotificationSessions,
+} from './agent-session-list/collections';
+import {
+  type AgentEventPayload,
+  handleAgentEvent,
+} from './agent-session-list/events';
+import {
+  buildCreateAgentSessionRequest,
+  mapCreatedSession,
+  mapSessionMetadataList,
+  normalizeSessionListResponse,
+} from './agent-session-list/mappings';
+import {
+  type InitialSessionListData,
+  invalidateSessionListStartupCache,
+  loadInitialSessionList,
+  resetAgentSessionListStartupCacheForTests,
+  SESSION_LIST_PAGE_SIZE,
+} from './agent-session-list/startup-cache';
 
 const logger = getLogger('AgentSessionListContext');
 const RESERVED_AGENT_SUBROUTES = new Set(['draft']);
-const SESSION_LIST_PAGE_SIZE = 100;
-
-interface InitialSessionListData {
-  page: AgentSessionListResponse;
-  attentionSessions: AgentSessionMetadata[];
-}
-
-let cachedInitialSessionListData: InitialSessionListData | null = null;
-let cachedInitialSessionListPromise: Promise<InitialSessionListData> | null =
-  null;
-let sessionListCacheGeneration = 0;
-
-type SessionMetadataLoadSource = 'cache' | 'inflight' | 'network';
-
-interface SessionMetadataLoadHandle {
-  source: SessionMetadataLoadSource;
-  promise: Promise<InitialSessionListData>;
-}
-
-function invalidateSessionListStartupCache() {
-  sessionListCacheGeneration += 1;
-  cachedInitialSessionListData = null;
-  cachedInitialSessionListPromise = null;
-}
-
-function loadInitialSessionList(
-  forceRefresh = false,
-): SessionMetadataLoadHandle {
-  if (forceRefresh) {
-    invalidateSessionListStartupCache();
-  }
-
-  if (!forceRefresh && cachedInitialSessionListData !== null) {
-    return {
-      source: 'cache',
-      promise: Promise.resolve(cachedInitialSessionListData),
-    };
-  }
-
-  if (!forceRefresh && cachedInitialSessionListPromise) {
-    return {
-      source: 'inflight',
-      promise: cachedInitialSessionListPromise,
-    };
-  }
-
-  const requestGeneration = sessionListCacheGeneration;
-  const request = Promise.all([
-    safeInvoke<AgentSessionListResponse>('agent_list_sessions', {
-      request: { limit: SESSION_LIST_PAGE_SIZE },
-    }),
-    safeInvoke<AgentSessionMetadata[]>('agent_list_attention_sessions'),
-  ])
-    .then(([page, attentionSessions]) => {
-      const normalizedPage = Array.isArray(page)
-        ? {
-            items: page,
-            nextCursor: undefined,
-          }
-        : page && Array.isArray(page.items)
-          ? page
-          : {
-              items: [],
-              nextCursor: undefined,
-            };
-      const initialData: InitialSessionListData = {
-        page: normalizedPage,
-        attentionSessions: Array.isArray(attentionSessions)
-          ? attentionSessions
-          : [],
-      };
-      if (
-        requestGeneration === sessionListCacheGeneration &&
-        cachedInitialSessionListPromise === request
-      ) {
-        cachedInitialSessionListData = initialData;
-      }
-      return initialData;
-    })
-    .finally(() => {
-      if (cachedInitialSessionListPromise === request) {
-        cachedInitialSessionListPromise = null;
-      }
-    });
-
-  cachedInitialSessionListPromise = request;
-  return {
-    source: 'network',
-    promise: request,
-  };
-}
 
 export function __resetAgentSessionListStartupCacheForTests() {
-  invalidateSessionListStartupCache();
-}
-
-function dedupeSessionsById(sessions: AgentSession[]): AgentSession[] {
-  const sessionById = new Map<string, AgentSession>();
-  sessions.forEach((session) => {
-    sessionById.set(session.id, session);
-  });
-  return Array.from(sessionById.values());
+  resetAgentSessionListStartupCacheForTests();
 }
 
 // --- STATE CONTEXT ---
@@ -248,65 +163,6 @@ export function AgentSessionListProvider({
   sessionsRef.current = sessions;
   notificationSessionsRef.current = notificationSessions;
 
-  const hasUnreadAttention = useCallback((session: AgentSession): boolean => {
-    if (!session.lastAttentionAt || !session.lastAttentionReason) {
-      return false;
-    }
-
-    if (!session.lastViewedAt) {
-      return true;
-    }
-
-    return session.lastAttentionAt.getTime() > session.lastViewedAt.getTime();
-  }, []);
-
-  const sortNotificationSessions = useCallback(
-    (items: AgentSession[]) =>
-      items.slice().sort((left, right) => {
-        const leftPending = left.pendingApprovalCount ?? 0;
-        const rightPending = right.pendingApprovalCount ?? 0;
-        if (leftPending !== rightPending) {
-          return rightPending - leftPending;
-        }
-
-        const leftTime =
-          left.lastAttentionAt?.getTime() ??
-          left.lastMessageAt?.getTime() ??
-          left.updatedAt?.getTime() ??
-          left.createdAt.getTime();
-        const rightTime =
-          right.lastAttentionAt?.getTime() ??
-          right.lastMessageAt?.getTime() ??
-          right.updatedAt?.getTime() ??
-          right.createdAt.getTime();
-
-        return rightTime - leftTime;
-      }),
-    [],
-  );
-
-  const pruneNotificationSessions = useCallback(
-    (items: AgentSession[]) =>
-      sortNotificationSessions(
-        dedupeSessionsById(items).filter((session) =>
-          hasUnreadAttention(session),
-        ),
-      ),
-    [hasUnreadAttention, sortNotificationSessions],
-  );
-
-  const updateSessionInList = useCallback(
-    (
-      items: AgentSession[],
-      sessionId: string,
-      updater: (session: AgentSession) => AgentSession,
-    ): AgentSession[] =>
-      items.map((session) =>
-        session.id === sessionId ? updater(session) : session,
-      ),
-    [],
-  );
-
   const mutateSessions = useCallback(
     (
       updater: (previousSessions: AgentSession[]) => AgentSession[],
@@ -334,154 +190,111 @@ export function AgentSessionListProvider({
         });
       }
     },
-    [pruneNotificationSessions],
+    [],
   );
 
   const applySessionUpdate = useCallback(
     (sessionId: string, updater: (session: AgentSession) => AgentSession) => {
-      let updatedSessionFromSessions: AgentSession | undefined;
+      const nextCollections = applySessionUpdateToCollections({
+        sessions: sessionsRef.current,
+        notificationSessions: notificationSessionsRef.current,
+        sessionId,
+        updater,
+      });
 
-      setSessions((previousSessions) => {
-        const nextSessions = updateSessionInList(
-          previousSessions,
-          sessionId,
-          (session) => {
-            const nextSession = updater(session);
-            updatedSessionFromSessions = nextSession;
-            return nextSession;
-          },
-        );
-        sessionsRef.current = nextSessions;
-        return nextSessions;
-      });
-      setNotificationSessions((previousNotifications) => {
-        const existingNotification = previousNotifications.find(
-          (session) => session.id === sessionId,
-        );
-        const nextNotificationSession =
-          updatedSessionFromSessions ??
-          (existingNotification ? updater(existingNotification) : undefined);
-        const nextNotifications = pruneNotificationSessions(
-          nextNotificationSession
-            ? existingNotification
-              ? previousNotifications.map((session) =>
-                  session.id === sessionId ? nextNotificationSession : session,
-                )
-              : hasUnreadAttention(nextNotificationSession)
-                ? [...previousNotifications, nextNotificationSession]
-                : previousNotifications
-            : previousNotifications,
-        );
-        notificationSessionsRef.current = nextNotifications;
-        return nextNotifications;
-      });
+      sessionsRef.current = nextCollections.sessions;
+      notificationSessionsRef.current = nextCollections.notificationSessions;
+      setSessions(nextCollections.sessions);
+      setNotificationSessions(nextCollections.notificationSessions);
     },
-    [hasUnreadAttention, pruneNotificationSessions, updateSessionInList],
-  );
-
-  const mapSessionMetadataList = useCallback(
-    (
-      sessionMetadataList: AgentSessionMetadata[],
-      pendingApprovalCounts: Map<string, number>,
-    ) =>
-      sortSessionsByLatestActivity(
-        sessionMetadataList.map((sessionMetadata) =>
-          mapSessionMetadataToAgentSession(
-            sessionMetadata,
-            pendingApprovalCounts.get(sessionMetadata.id) ?? 0,
-          ),
-        ),
-      ),
     [],
   );
 
   /**
    * Load the first page of recent agent sessions plus notification sessions.
    */
-  const loadSessions = useCallback(
-    async (forceRefresh = false) => {
-      const { source, promise } = loadInitialSessionList(forceRefresh);
-      latestSessionListPromiseRef.current = promise;
-      const shouldLogLoad = forceRefresh || source === 'network';
+  const loadSessions = useCallback(async (forceRefresh = false) => {
+    const { source, promise } = loadInitialSessionList(forceRefresh);
+    latestSessionListPromiseRef.current = promise;
+    const shouldLogLoad = forceRefresh || source === 'network';
+
+    if (shouldLogLoad) {
+      logger.info('Loading recent agent sessions');
+    }
+
+    setIsSessionsListLoading(true);
+    const mutationVersion = sessionListMutationVersionRef.current;
+    const isCurrentLoad = () =>
+      mutationVersion === sessionListMutationVersionRef.current &&
+      promise === latestSessionListPromiseRef.current;
+
+    try {
+      const initialData = await promise;
+
+      if (!isCurrentLoad()) {
+        return;
+      }
+
+      const pendingApprovalCounts = new Map<string, number>();
+      [...sessionsRef.current, ...notificationSessionsRef.current].forEach(
+        (session) => {
+          pendingApprovalCounts.set(
+            session.id,
+            session.pendingApprovalCount ?? 0,
+          );
+        },
+      );
+
+      const recentSessions = mapSessionMetadataList(
+        initialData.page.items,
+        pendingApprovalCounts,
+      );
+      const unreadAttentionSessions = pruneNotificationSessions(
+        mapSessionMetadataList(
+          initialData.attentionSessions,
+          pendingApprovalCounts,
+        ),
+      );
+
+      sessionsRef.current = recentSessions;
+      notificationSessionsRef.current = unreadAttentionSessions;
+      setSessions(recentSessions);
+      setNotificationSessions(unreadAttentionSessions);
+      nextCursorRef.current = initialData.page.nextCursor;
+      setHasMoreSessions(Boolean(initialData.page.nextCursor));
 
       if (shouldLogLoad) {
-        logger.info('Loading recent agent sessions');
+        logger.info('Loaded recent sessions', {
+          count: recentSessions.length,
+          notificationCount: unreadAttentionSessions.length,
+          hasMore: Boolean(initialData.page.nextCursor),
+        });
       }
-
-      setIsSessionsListLoading(true);
-      const mutationVersion = sessionListMutationVersionRef.current;
-
-      try {
-        const initialData = await promise;
-
-        if (
-          mutationVersion !== sessionListMutationVersionRef.current ||
-          promise !== latestSessionListPromiseRef.current
-        ) {
-          return;
-        }
-
-        const pendingApprovalCounts = new Map<string, number>();
-        [...sessionsRef.current, ...notificationSessionsRef.current].forEach(
-          (session) => {
-            pendingApprovalCounts.set(
-              session.id,
-              session.pendingApprovalCount ?? 0,
-            );
-          },
-        );
-
-        const recentSessions = mapSessionMetadataList(
-          initialData.page.items,
-          pendingApprovalCounts,
-        );
-        const unreadAttentionSessions = pruneNotificationSessions(
-          mapSessionMetadataList(
-            initialData.attentionSessions,
-            pendingApprovalCounts,
-          ),
-        );
-
-        setSessions(recentSessions);
-        setNotificationSessions(unreadAttentionSessions);
-        nextCursorRef.current = initialData.page.nextCursor;
-        setHasMoreSessions(Boolean(initialData.page.nextCursor));
-
-        if (shouldLogLoad) {
-          logger.info('Loaded recent sessions', {
-            count: recentSessions.length,
-            notificationCount: unreadAttentionSessions.length,
-            hasMore: Boolean(initialData.page.nextCursor),
-          });
-        }
-      } catch (err) {
-        if (shouldLogLoad) {
-          logger.error('Failed to load recent sessions', err);
-        }
-        if (
-          mutationVersion === sessionListMutationVersionRef.current &&
-          promise === latestSessionListPromiseRef.current
-        ) {
-          setSessions([]);
-          setNotificationSessions([]);
-          nextCursorRef.current = undefined;
-          setHasMoreSessions(false);
-        }
-      } finally {
-        if (promise === latestSessionListPromiseRef.current) {
-          setIsSessionsListLoading(false);
-        }
-        if (
-          promise === latestSessionListPromiseRef.current &&
-          !startupLoadRecordedRef.current
-        ) {
-          startupLoadRecordedRef.current = true;
-          markStartupMilestone('session-list-settled');
-        }
+    } catch (err) {
+      if (shouldLogLoad) {
+        logger.error('Failed to load recent sessions', err);
       }
-    },
-    [mapSessionMetadataList, pruneNotificationSessions],
-  );
+      if (isCurrentLoad()) {
+        sessionsRef.current = [];
+        notificationSessionsRef.current = [];
+        setSessions([]);
+        setNotificationSessions([]);
+        nextCursorRef.current = undefined;
+        setHasMoreSessions(false);
+      }
+    } finally {
+      if (promise === latestSessionListPromiseRef.current) {
+        setIsSessionsListLoading(false);
+      }
+      if (
+        promise === latestSessionListPromiseRef.current &&
+        !startupLoadRecordedRef.current
+      ) {
+        startupLoadRecordedRef.current = true;
+        markStartupMilestone('session-list-settled');
+      }
+    }
+  }, []);
 
   const loadMoreSessions = useCallback(async () => {
     const cursor = nextCursorRef.current;
@@ -501,10 +314,7 @@ export function AgentSessionListProvider({
         },
       );
 
-      const normalizedResponse =
-        response && Array.isArray(response.items)
-          ? response
-          : { items: [], nextCursor: undefined };
+      const normalizedResponse = normalizeSessionListResponse(response);
 
       setSessions((previousSessions) => {
         const pendingApprovalCounts = new Map(
@@ -518,9 +328,11 @@ export function AgentSessionListProvider({
           pendingApprovalCounts,
         );
 
-        return sortSessionsByLatestActivity(
+        const nextSessions = sortSessionsByLatestActivity(
           dedupeSessionsById([...previousSessions, ...incomingSessions]),
         );
+        sessionsRef.current = nextSessions;
+        return nextSessions;
       });
       nextCursorRef.current = normalizedResponse.nextCursor;
       setHasMoreSessions(Boolean(normalizedResponse.nextCursor));
@@ -530,7 +342,7 @@ export function AgentSessionListProvider({
     } finally {
       setIsLoadingMoreSessions(false);
     }
-  }, [isLoadingMoreSessions, mapSessionMetadataList]);
+  }, [isLoadingMoreSessions]);
 
   /**
    * Create a new agent session
@@ -560,38 +372,17 @@ export function AgentSessionListProvider({
             freshAssistant.allowedBuiltInServiceAliases,
         });
 
-        // Build agent config from fresh assistant data
-        // Explicitly casting to AgentConfig (IPC) to ensure compatibility
-        const agentConfig: AgentConfig = {
-          // Map Assistant fields to AgentConfig fields
-          id: freshAssistant.id,
-          name: freshAssistant.name,
-          description: freshAssistant.description,
-          systemPrompt: freshAssistant.systemPrompt,
-          mcpServerIds: freshAssistant.mcpServerIds || [],
-          localServices: freshAssistant.localServices || [],
-          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
-            freshAssistant.allowedBuiltInServiceAliases,
-          ),
-          temperature: 1.0, // Default, not in Assistant model yet
-          ...(advanced.defaultSessionMaxDepth > 0
-            ? { maxDepth: advanced.defaultSessionMaxDepth }
-            : {}),
-          ...(advanced.defaultSessionMaxFanout > 0
-            ? { maxFanout: advanced.defaultSessionMaxFanout }
-            : {}),
-        };
-
-        // Generate session ID
-        const sessionId = createId();
-
-        const request: CreateAgentSessionRequest = {
-          sessionId,
-          name: name || `Conversation with ${assistant.name}`,
-          model: modelId,
-          provider: provider,
-          agentConfig,
-        };
+        const request = buildCreateAgentSessionRequest({
+          assistant: freshAssistant,
+          name,
+          modelId,
+          provider,
+          runtimeLimits: {
+            defaultSessionMaxDepth: advanced.defaultSessionMaxDepth,
+            defaultSessionMaxFanout: advanced.defaultSessionMaxFanout,
+          },
+          sessionId: createId(),
+        });
 
         // Call Rust backend to create session
         const response = await safeInvoke<AgentSessionMetadata>(
@@ -599,44 +390,7 @@ export function AgentSessionListProvider({
           { request },
         );
 
-        // Map back to internal AgentSession model (which uses Assistant type for config)
-        // We use the sent agentConfig as the assistant base since we just built it
-        const sessionAssistant: Assistant = {
-          ...freshAssistant,
-          // Re-apply runtime overrides if needed
-        };
-
-        const session: AgentSession = {
-          id: response.id,
-          name: response.name,
-          status: response.status,
-          model: response.model,
-          provider: response.provider,
-          assistant: sessionAssistant,
-          parentSessionId: response.parentSessionId,
-          lineageId:
-            response.lineageId || response.parentSessionId || response.id,
-          depth: response.depth ?? (response.parentSessionId ? 1 : 0),
-          orgId: response.orgId,
-          orgName: response.orgName,
-          orgRootSessionId: response.orgRootSessionId,
-          createdAt: new Date(response.createdAt),
-          updatedAt: response.updatedAt
-            ? new Date(response.updatedAt)
-            : undefined,
-          lastViewedAt: response.lastViewedAt
-            ? new Date(response.lastViewedAt)
-            : undefined,
-          lastMessageAt: response.lastMessageAt
-            ? new Date(response.lastMessageAt)
-            : undefined,
-          lastAttentionAt: response.lastAttentionAt
-            ? new Date(response.lastAttentionAt)
-            : undefined,
-          lastAttentionReason: response.lastAttentionReason,
-          yoloMode: response.yoloMode ?? false,
-          pendingApprovalCount: 0,
-        };
+        const session = mapCreatedSession(response, freshAssistant);
 
         // Add to list
         mutateSessions((prev) => [session, ...prev]);
@@ -856,138 +610,15 @@ export function AgentSessionListProvider({
     let unlisten: (() => void) | undefined;
 
     const setup = async () => {
-      unlisten = await listen<{
-        type: string;
-        sessionId?: string;
-        status?: 'idle' | 'busy' | 'paused' | 'error';
-        message?: {
-          role: 'user' | 'assistant' | 'system' | 'tool';
-          createdAt: number;
-        };
-        toolCallId?: string;
-        approved?: boolean;
-        reason?: WorkflowCompletionReason;
-      }>('agent:event', (event) => {
-        const payload = event.payload;
-        if (
-          payload.type === 'statusChanged' &&
-          payload.sessionId &&
-          payload.status
-        ) {
-          applySessionUpdate(payload.sessionId, (session) => ({
-            ...session,
-            status: payload.status as AgentSession['status'],
-          }));
-          return;
-        }
-
-        if (
-          payload.type === 'messageAdded' &&
-          payload.sessionId &&
-          payload.message
-        ) {
-          const messageAt = new Date(payload.message.createdAt);
-          const shouldMarkViewed = payload.sessionId === activeSessionId;
-
-          applySessionUpdate(payload.sessionId, (session) => ({
-            ...session,
-            lastMessageAt: messageAt,
-            lastViewedAt: shouldMarkViewed ? messageAt : session.lastViewedAt,
-          }));
-          return;
-        }
-
-        if (
-          payload.type === 'workflowCompleted' &&
-          payload.sessionId &&
-          payload.reason === 'recurringStop'
-        ) {
-          const attentionAt = new Date();
-          const shouldMarkViewed = payload.sessionId === activeSessionId;
-
-          applySessionUpdate(payload.sessionId, (session) =>
-            shouldMarkViewed
-              ? applyViewedAtToSession(
-                  {
-                    ...session,
-                    lastAttentionAt: attentionAt,
-                    lastAttentionReason: 'recurringStop',
-                  },
-                  attentionAt,
-                )
-              : {
-                  ...session,
-                  lastAttentionAt: attentionAt,
-                  lastAttentionReason: 'recurringStop',
-                },
-          );
-
-          if (shouldMarkViewed) {
-            void markSessionViewed(payload.sessionId, attentionAt).catch(
-              (err) => {
-                logger.error(
-                  'Failed to mark active session viewed after recurring stop',
-                  err,
-                );
-              },
-            );
-          }
-          return;
-        }
-
-        if (
-          payload.type === 'toolExecutionRequiresApproval' &&
-          payload.sessionId &&
-          payload.toolCallId
-        ) {
-          const pendingApprovalKey = `${payload.sessionId}:${payload.toolCallId}`;
-          if (pendingApprovalKeysRef.current.has(pendingApprovalKey)) {
-            return;
-          }
-
-          const attentionAt = new Date();
-          const shouldMarkViewed = payload.sessionId === activeSessionId;
-          pendingApprovalKeysRef.current.add(pendingApprovalKey);
-          applySessionUpdate(payload.sessionId, (session) =>
-            shouldMarkViewed
-              ? applyViewedAtToSession(
-                  {
-                    ...session,
-                    lastAttentionAt: attentionAt,
-                    lastAttentionReason: 'pendingApproval',
-                    pendingApprovalCount:
-                      (session.pendingApprovalCount ?? 0) + 1,
-                  },
-                  attentionAt,
-                )
-              : {
-                  ...session,
-                  lastAttentionAt: attentionAt,
-                  lastAttentionReason: 'pendingApproval',
-                  pendingApprovalCount: (session.pendingApprovalCount ?? 0) + 1,
-                },
-          );
-
-          if (shouldMarkViewed) {
-            void markSessionViewed(payload.sessionId, attentionAt).catch(
-              (err) => {
-                logger.error(
-                  'Failed to mark active session viewed after approval request',
-                  err,
-                );
-              },
-            );
-          }
-          return;
-        }
-
-        if (
-          payload.type === 'toolExecutionApprovalResolved' &&
-          payload.sessionId &&
-          payload.toolCallId
-        ) {
-          clearPendingApproval(payload.sessionId, payload.toolCallId);
-        }
+      unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
+        handleAgentEvent(event.payload, {
+          activeSessionId,
+          applySessionUpdate,
+          clearPendingApproval,
+          logger,
+          markSessionViewed,
+          pendingApprovalKeysRef,
+        });
       });
     };
 

@@ -396,6 +396,40 @@ fn test_build_compaction_preservation_hints_carry_forward_prior_summary_open_req
 }
 
 #[test]
+fn test_build_compaction_preservation_hints_keeps_bullets_that_end_with_colons() {
+    let prior_summary = "\
+### Stable Context
+- Existing work item
+
+### Active Request
+- Next step:
+- Refactor `src/lib/file-b.ts`
+
+### Required References
+- Preserve file path `src/lib/file-b.ts`
+";
+    let summary_message = make_compact_summary_message(
+        "m0",
+        "assistant",
+        &build_compact_summary_text(prior_summary, &[]),
+    );
+
+    let hints = build_compaction_preservation_hints(&[summary_message]);
+
+    assert!(
+        hints.active_request.iter().any(|hint| hint == "Next step:"),
+        "bullets ending with a colon should stay inside the section instead of terminating it"
+    );
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("src/lib/file-b.ts")),
+        "subsequent bullets in the same section should still be collected"
+    );
+}
+
+#[test]
 fn test_build_compaction_preservation_hints_filter_non_identifier_backticks_and_non_paths() {
     let request = make_message(
         "m0",

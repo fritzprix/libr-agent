@@ -1,5 +1,4 @@
-import equal from 'fast-deep-equal';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { mutate } from 'swr';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +51,7 @@ export function useSettingsPageController() {
   const { t } = useTranslation('common');
   const {
     formState,
+    dirtyState,
     update,
     updateServiceConfig,
     updateAdvanced,
@@ -67,6 +67,7 @@ export function useSettingsPageController() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDiscardDialogOpen, setIsDiscardDialogOpen] = useState(false);
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
+  const isDirtyRef = useRef(isDirty);
 
   const activeTab = useMemo<SettingsTabValue>(() => {
     const tabParam = searchParams.get('tab');
@@ -95,117 +96,13 @@ export function useSettingsPageController() {
     ],
   );
 
-  const tabDirtyState = useMemo(() => {
-    const {
-      diffContextLines: formDiffContextLines,
-      ...formAdvancedWithoutDiff
-    } = formState.advanced;
-    const {
-      diffContextLines: globalDiffContextLines,
-      ...globalAdvancedWithoutDiff
-    } = globalSettings.advanced;
-
-    return {
-      general:
-        formState.uiLanguage !== globalSettings.uiLanguage ||
-        !equal(formState.display, globalSettings.display),
-      'ai-models': !equal(
-        {
-          serviceConfigs: formState.serviceConfigs,
-          preferredModel: formState.preferredModel,
-          fallbackModel: formState.fallbackModel,
-          agentHubUrl: formState.agentHubUrl,
-          maxRetries: formState.advanced.maxRetries,
-          retryDelay: formState.advanced.retryDelay,
-          defaultMaxOutputTokens: formState.advanced.defaultMaxOutputTokens,
-        },
-        {
-          serviceConfigs: globalSettings.serviceConfigs,
-          preferredModel: globalSettings.preferredModel,
-          fallbackModel: globalSettings.fallbackModel,
-          agentHubUrl: globalSettings.agentHubUrl,
-          maxRetries: globalSettings.advanced.maxRetries,
-          retryDelay: globalSettings.advanced.retryDelay,
-          defaultMaxOutputTokens:
-            globalSettings.advanced.defaultMaxOutputTokens,
-        },
-      ),
-      'chat-interface': !equal(
-        {
-          contextStrategy: formState.contextStrategy,
-          windowSize: formState.windowSize,
-          maxInputContext: formState.maxInputContext,
-          toolCallGroupVisibleCount: formState.toolCallGroupVisibleCount,
-          diffContextLines: formDiffContextLines,
-        },
-        {
-          contextStrategy: globalSettings.contextStrategy,
-          windowSize: globalSettings.windowSize,
-          maxInputContext: globalSettings.maxInputContext,
-          toolCallGroupVisibleCount: globalSettings.toolCallGroupVisibleCount,
-          diffContextLines: globalDiffContextLines,
-        },
-      ),
-      system: !equal(
-        {
-          skillsDirectory: formState.system.skillsDirectory,
-          maxFileUploadSizeMB: formState.system.maxFileUploadSizeMB,
-          searchIndexFrequencyMinutes:
-            formState.system.searchIndexFrequencyMinutes,
-          webActionTimeoutSeconds: formState.system.webActionTimeoutSeconds,
-          mcpServerStartupTimeoutSeconds:
-            formState.system.mcpServerStartupTimeoutSeconds,
-          mcpToolTimeoutSeconds: formState.system.mcpToolTimeoutSeconds,
-          scheduledTaskMinimumIntervalMinutes:
-            formState.system.scheduledTaskMinimumIntervalMinutes,
-          maxScheduledTaskGroups: formState.system.maxScheduledTaskGroups,
-          httpServerPort: formState.system.httpServerPort,
-          httpServerExpose: formState.system.httpServerExpose,
-        },
-        {
-          skillsDirectory: globalSettings.system.skillsDirectory,
-          maxFileUploadSizeMB: globalSettings.system.maxFileUploadSizeMB,
-          searchIndexFrequencyMinutes:
-            globalSettings.system.searchIndexFrequencyMinutes,
-          webActionTimeoutSeconds:
-            globalSettings.system.webActionTimeoutSeconds,
-          mcpServerStartupTimeoutSeconds:
-            globalSettings.system.mcpServerStartupTimeoutSeconds,
-          mcpToolTimeoutSeconds: globalSettings.system.mcpToolTimeoutSeconds,
-          scheduledTaskMinimumIntervalMinutes:
-            globalSettings.system.scheduledTaskMinimumIntervalMinutes,
-          maxScheduledTaskGroups: globalSettings.system.maxScheduledTaskGroups,
-          httpServerPort: globalSettings.system.httpServerPort,
-          httpServerExpose: globalSettings.system.httpServerExpose,
-        },
-      ),
-      advanced: !equal(
-        {
-          ...formAdvancedWithoutDiff,
-          maxRetries: undefined,
-          retryDelay: undefined,
-          defaultMaxOutputTokens: undefined,
-          shellIsolationLevel: formState.system.shellIsolationLevel,
-        },
-        {
-          ...globalAdvancedWithoutDiff,
-          maxRetries: undefined,
-          retryDelay: undefined,
-          defaultMaxOutputTokens: undefined,
-          shellIsolationLevel: globalSettings.system.shellIsolationLevel,
-        },
-      ),
-      dev: false,
-    } satisfies Record<SettingsTabValue, boolean>;
-  }, [formState, globalSettings]);
-
   const changedSectionCount = useMemo(
     () =>
-      Object.entries(tabDirtyState).filter(
+      Object.entries(dirtyState).filter(
         ([tab, isChanged]) =>
           isChanged && (import.meta.env.DEV || tab !== 'dev'),
       ).length,
-    [tabDirtyState],
+    [dirtyState],
   );
 
   const triggerAppRestart = useCallback(() => {
@@ -226,8 +123,12 @@ export function useSettingsPageController() {
   }, [t]);
 
   useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+
+  useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isDirty) {
+      if (!isDirtyRef.current) {
         return;
       }
 
@@ -239,7 +140,7 @@ export function useSettingsPageController() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [isDirty]);
+  }, []);
 
   const handleFactoryReset = useCallback(async () => {
     setIsResetting(true);
@@ -493,27 +394,27 @@ export function useSettingsPageController() {
       {
         value: 'general',
         label: t('settings.tabs.general', 'General'),
-        isDirty: tabDirtyState.general,
+        isDirty: dirtyState.general,
       },
       {
         value: 'ai-models',
         label: t('settings.tabs.aiModels', 'AI & Models'),
-        isDirty: tabDirtyState['ai-models'],
+        isDirty: dirtyState['ai-models'],
       },
       {
         value: 'chat-interface',
         label: t('settings.tabs.chatInterface', 'Chat Interface'),
-        isDirty: tabDirtyState['chat-interface'],
+        isDirty: dirtyState['chat-interface'],
       },
       {
         value: 'system',
         label: t('settings.tabs.system', 'System'),
-        isDirty: tabDirtyState.system,
+        isDirty: dirtyState.system,
       },
       {
         value: 'advanced',
         label: t('settings.tabs.advanced', 'Advanced'),
-        isDirty: tabDirtyState.advanced,
+        isDirty: dirtyState.advanced,
       },
     ];
 
@@ -527,7 +428,7 @@ export function useSettingsPageController() {
     }
 
     return items;
-  }, [t, tabDirtyState]);
+  }, [dirtyState, t]);
 
   return {
     activeTab,

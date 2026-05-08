@@ -153,6 +153,21 @@ vi.mock('@/components/shared/ErrorBubble', () => ({
   ErrorBubble: () => <div>error bubble</div>,
 }));
 
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  TooltipContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+
 vi.mock('react-virtuoso', () => ({
   Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
     void ref;

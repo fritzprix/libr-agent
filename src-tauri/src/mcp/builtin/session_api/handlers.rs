@@ -427,10 +427,7 @@ pub async fn handle_tool_call(
 
             match manager.terminate_session(session_id.clone()).await {
                 Ok(_) => {
-                    crate::services::agent_service::lineage_store()
-                        .write()
-                        .await
-                        .remove(&session_id);
+                    crate::services::agent_service::remove_lineage(&session_id).await;
                     Ok(success_result(
                         format!("Terminated session: {}", session_id),
                         json!({ "sessionId": session_id, "terminated": true }),

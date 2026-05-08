@@ -26,8 +26,8 @@ describe('GeneralTab', () => {
     );
 
     expect(
-      screen.getByDisplayValue('Simple (tool name only)'),
-    ).toBeInTheDocument();
+      screen.getByLabelText('Tool Detail Level'),
+    ).toHaveTextContent('Simple (tool name only)');
 
     rerender(
       <GeneralTab
@@ -42,7 +42,7 @@ describe('GeneralTab', () => {
     );
 
     expect(
-      screen.getByDisplayValue('Developer (params, errors, timing)'),
-    ).toBeInTheDocument();
+      screen.getByLabelText('Tool Detail Level'),
+    ).toHaveTextContent('Developer (params, errors, timing)');
   });
 });

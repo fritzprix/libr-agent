@@ -103,56 +103,57 @@ function ChatInterfaceTabComponent({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {localContextStrategy === 'window' ? (
-          <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
-              {t('settings.messageWindowSize', 'Message Window Size')}
-            </label>
-            <Input
-              type="number"
-              placeholder={t(
-                'settings.messageWindowSizePlaceholder',
-                'e.g., 50',
-              )}
-              value={localWindowSize}
-              onChange={(e) =>
-                onWindowSizeChange(parseInt(e.target.value, 10) || 0)
-              }
-              className="bg-background border text-foreground w-full max-w-xs"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              {t(
-                'settings.messageWindowSizeDescription',
-                'Number of messages to keep in conversation history',
-              )}
-            </p>
-          </div>
-        ) : (
-          <div className="min-w-0">
-            <label className="block text-muted-foreground mb-4 font-medium">
-              {t('settings.maxInputContext', 'Max Input Context')}
-            </label>
-            <div className="flex items-center gap-4 max-w-xs">
-              <Slider
-                min={8192}
-                max={262144}
-                step={8192}
-                value={[localMaxInputContext]}
-                onValueChange={([val]) => onMaxInputContextChange(val)}
-                className="flex-1"
+        <div className="min-w-0">
+          <label className="mb-2 block font-medium text-muted-foreground">
+            {localContextStrategy === 'window'
+              ? t('settings.messageWindowSize', 'Message Window Size')
+              : t('settings.maxInputContext', 'Max Input Context')}
+          </label>
+          {localContextStrategy === 'window' ? (
+            <>
+              <Input
+                type="number"
+                placeholder={t(
+                  'settings.messageWindowSizePlaceholder',
+                  'e.g., 50',
+                )}
+                value={localWindowSize}
+                onChange={(e) =>
+                  onWindowSizeChange(parseInt(e.target.value, 10) || 0)
+                }
+                className="w-full max-w-xs border bg-background text-foreground"
               />
-              <span className="text-sm font-mono text-primary min-w-[3.5rem] text-right">
-                {Math.round(localMaxInputContext / 1024)}K
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              {t(
-                'settings.maxInputContextDescription',
-                'Maximum token count before summarizing old turns. Higher values keep more detail but increase cost.',
-              )}
-            </p>
-          </div>
-        )}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t(
+                  'settings.messageWindowSizeDescription',
+                  'Number of messages to keep in conversation history',
+                )}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex max-w-xs items-center gap-4">
+                <Slider
+                  min={8192}
+                  max={262144}
+                  step={8192}
+                  value={[localMaxInputContext]}
+                  onValueChange={([val]) => onMaxInputContextChange(val)}
+                  className="flex-1"
+                />
+                <span className="min-w-[3.5rem] text-right font-mono text-sm text-primary">
+                  {Math.round(localMaxInputContext / 1024)}K
+                </span>
+              </div>
+              <p className="mt-4 text-xs text-muted-foreground">
+                {t(
+                  'settings.maxInputContextDescription',
+                  'Maximum token count before summarizing old turns. Higher values keep more detail but increase cost.',
+                )}
+              </p>
+            </>
+          )}
+        </div>
 
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">

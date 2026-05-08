@@ -11,6 +11,45 @@ const OUTPUT_TOKEN_PRESETS = [
 ] as const;
 const RETRY_DELAY_PRESETS = [1000, 3000, 5000, 10000] as const;
 
+const PROVIDER_META: Record<
+  AIServiceProvider,
+  { name: string; description: string }
+> = {
+  [AIServiceProvider.OpenAI]: {
+    name: 'OpenAI',
+    description: 'GPT-4o, o3, o4-mini and more',
+  },
+  [AIServiceProvider.Anthropic]: {
+    name: 'Anthropic',
+    description: 'Claude 3.5 Sonnet, Haiku and more',
+  },
+  [AIServiceProvider.Gemini]: {
+    name: 'Google Gemini',
+    description: 'Gemini 2.5 Pro, Flash and more',
+  },
+  [AIServiceProvider.Ollama]: {
+    name: 'Ollama',
+    description: 'Run open models locally on your machine',
+  },
+  [AIServiceProvider.Groq]: {
+    name: 'Groq',
+    description: 'Ultra-fast inference via Groq LPU chips',
+  },
+  [AIServiceProvider.Fireworks]: {
+    name: 'Fireworks AI',
+    description: 'Fast hosting for open-source models',
+  },
+  [AIServiceProvider.Cerebras]: {
+    name: 'Cerebras',
+    description: "World's fastest AI inference chips",
+  },
+  [AIServiceProvider.OpenRouter]: {
+    name: 'OpenRouter',
+    description: 'Access 200+ models through one API key',
+  },
+  [AIServiceProvider.Empty]: { name: 'None', description: '' },
+};
+
 function findNearestPresetIndex(value: number): number {
   return OUTPUT_TOKEN_PRESETS.reduce((bestIndex, preset, index) => {
     const bestDistance = Math.abs(OUTPUT_TOKEN_PRESETS[bestIndex] - value);
@@ -61,46 +100,6 @@ function AIModelsTabComponent({
   const selectedOutputTokenIndex = findNearestPresetIndex(
     localDefaultMaxOutputTokens,
   );
-
-  // Static metadata for each provider — user-friendly name + short description
-  const PROVIDER_META: Record<
-    AIServiceProvider,
-    { name: string; description: string }
-  > = {
-    [AIServiceProvider.OpenAI]: {
-      name: 'OpenAI',
-      description: 'GPT-4o, o3, o4-mini and more',
-    },
-    [AIServiceProvider.Anthropic]: {
-      name: 'Anthropic',
-      description: 'Claude 3.5 Sonnet, Haiku and more',
-    },
-    [AIServiceProvider.Gemini]: {
-      name: 'Google Gemini',
-      description: 'Gemini 2.5 Pro, Flash and more',
-    },
-    [AIServiceProvider.Ollama]: {
-      name: 'Ollama',
-      description: 'Run open models locally on your machine',
-    },
-    [AIServiceProvider.Groq]: {
-      name: 'Groq',
-      description: 'Ultra-fast inference via Groq LPU chips',
-    },
-    [AIServiceProvider.Fireworks]: {
-      name: 'Fireworks AI',
-      description: 'Fast hosting for open-source models',
-    },
-    [AIServiceProvider.Cerebras]: {
-      name: 'Cerebras',
-      description: "World's fastest AI inference chips",
-    },
-    [AIServiceProvider.OpenRouter]: {
-      name: 'OpenRouter',
-      description: 'Access 200+ models through one API key',
-    },
-    [AIServiceProvider.Empty]: { name: 'None', description: '' },
-  };
 
   return (
     <div className="space-y-8">

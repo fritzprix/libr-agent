@@ -145,6 +145,39 @@ pub struct Message {
 }
 
 impl Message {
+    pub fn new_user_message(
+        session_id: String,
+        text: String,
+        source: Option<MessageSource>,
+        assistant_id: Option<String>,
+    ) -> Self {
+        let now = default_timestamp();
+
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id,
+            role: "user".to_string(),
+            content: vec![MCPContent::Text {
+                text,
+                is_error: None,
+            }],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id,
+            attachments: None,
+            tool_use: None,
+            usage: None,
+            created_at: now,
+            updated_at: now,
+            source,
+            error: None,
+            metadata: None,
+        }
+    }
+
     fn source_with_legacy_fallback(&self) -> Option<MessageSource> {
         match self.source.as_ref() {
             Some(MessageSource::Unknown(_)) | None => MessageSource::from_id(&self.id),
