@@ -123,6 +123,23 @@ describe('OrgCard', () => {
     });
   });
 
+  it('keeps the success path when the post-delete refresh fails', async () => {
+    mockDeleteSession.mockResolvedValueOnce(undefined);
+    mockOnDeleted.mockRejectedValueOnce(new Error('Refresh failed'));
+
+    render(<OrgCard org={mockOrg} onDeleted={mockOnDeleted} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Organization' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('Organization deleted');
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(mockOnDeleted).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Delete Organization?')).not.toBeInTheDocument();
+    });
+  });
+
   it('disables buttons while deleting', async () => {
     // Mock a slow deletion
     let resolveDelete: (value: void | PromiseLike<void>) => void;

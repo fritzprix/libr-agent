@@ -12,14 +12,18 @@ export function useAssistantSummaries() {
     data: assistants = [],
     isLoading: loading,
     error,
-  } = useSWR<AssistantSummary[]>('assistantSummaries', listAssistantSummaries, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    shouldRetryOnError: false,
-    onError: (err) => {
-      logger.warn('Failed to load assistant summaries', err);
+  } = useSWR<AssistantSummary[], Error>(
+    'assistantSummaries',
+    listAssistantSummaries,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      shouldRetryOnError: false,
+      onError: (err) => {
+        logger.warn('Failed to load assistant summaries', err);
+      },
     },
-  });
+  );
 
   return { assistants, loading, error };
 }

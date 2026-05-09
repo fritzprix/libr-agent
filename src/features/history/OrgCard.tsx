@@ -50,18 +50,23 @@ export function OrgCard({ org, onDeleted }: OrgCardProps) {
   const rootBadge = getStatusBadgeConfig(org.rootSession.status);
 
   async function handleDelete(e: React.MouseEvent) {
-    // Prevent the dialog from closing automatically if we were using a simple trigger,
-    // but since we are using AlertDialogAction which usually closes, we need to handle it.
-    // However, Shadcn AlertDialogAction calls onOpenChange(false) internally.
-    // To prevent this, we manage the 'open' state of the AlertDialog manually.
     e.preventDefault();
 
     setIsDeleting(true);
     try {
       await deleteSession(org.orgRootSessionId);
       toast.success(t('orgHistory.toasts.deleted', 'Organization deleted'));
-      await onDeleted();
-      setIsDialogOpen(false); // Only close on success
+
+      try {
+        await onDeleted();
+      } catch (refreshError) {
+        logger.warn(
+          'Organization deleted but failed to refresh org history',
+          refreshError,
+        );
+      }
+
+      setIsDialogOpen(false);
     } catch (error) {
       logger.error('Failed to delete organization', error);
       toast.error(

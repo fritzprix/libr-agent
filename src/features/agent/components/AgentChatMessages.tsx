@@ -456,7 +456,7 @@ export function AgentChatMessages() {
       groupedMessages.length,
     );
 
-    if (scrolledWithVirtuoso || groupedMessages.length === 0) {
+    if (!scrolledWithVirtuoso || groupedMessages.length === 0) {
       scrollFooterSentinelIntoView(footerEndRef.current);
     }
   }, [groupedMessages.length]);

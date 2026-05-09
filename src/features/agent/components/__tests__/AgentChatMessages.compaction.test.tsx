@@ -62,8 +62,13 @@ const groupedMessagesMock: GroupedMessage[] = [
   },
 ];
 
-const { virtuosoMock, scrollToIndexMock, sessionState, chatState } = vi.hoisted(
-  () => ({
+const {
+  virtuosoMock,
+  scrollToIndexMock,
+  sessionState,
+  chatState,
+  hasVirtuosoHandle,
+} = vi.hoisted(() => ({
   virtuosoMock: vi.fn(),
   scrollToIndexMock: vi.fn(),
   sessionState: {
@@ -73,8 +78,8 @@ const { virtuosoMock, scrollToIndexMock, sessionState, chatState } = vi.hoisted(
     messages: [] as Message[],
     workflowStatus: 'idle' as 'idle' | 'busy',
   },
-}),
-);
+  hasVirtuosoHandle: { current: true },
+}));
 
 let resizeObserverCallbacks: ResizeObserverCallback[] = [];
 
@@ -173,9 +178,16 @@ vi.mock('@/components/ui/tooltip', () => ({
 
 vi.mock('react-virtuoso', () => ({
   Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
-    useImperativeHandle(ref, () => ({
-      scrollToIndex: scrollToIndexMock,
-    }));
+    useImperativeHandle(
+      ref,
+      () =>
+        hasVirtuosoHandle.current
+          ? {
+              scrollToIndex: scrollToIndexMock,
+            }
+          : (null as unknown as { scrollToIndex: typeof scrollToIndexMock }),
+      [ref],
+    );
     return virtuosoMock(props);
   }),
 }));
@@ -185,6 +197,7 @@ describe('AgentChatMessages compaction rendering', () => {
     virtuosoMock.mockClear();
     scrollToIndexMock.mockClear();
     resizeObserverCallbacks = [];
+    hasVirtuosoHandle.current = true;
     sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
     chatState.messages = groupedToolMessages.slice(1);
     chatState.workflowStatus = 'idle';
@@ -388,6 +401,32 @@ describe('AgentChatMessages compaction rendering', () => {
         align: 'end',
         behavior: 'auto',
       });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('falls back to the footer sentinel when Virtuoso is not ready yet', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+    hasVirtuosoHandle.current = false;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      render(<AgentChatMessages />);
+
+      expect(scrollToIndexMock).not.toHaveBeenCalled();
       expect(scrollIntoView).toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
@@ -422,7 +461,7 @@ describe('AgentChatMessages compaction rendering', () => {
         align: 'end',
         behavior: 'auto',
       });
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -470,7 +509,7 @@ describe('AgentChatMessages compaction rendering', () => {
         align: 'end',
         behavior: 'auto',
       });
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -535,7 +574,7 @@ describe('AgentChatMessages compaction rendering', () => {
         align: 'end',
         behavior: 'auto',
       });
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -595,7 +634,7 @@ describe('AgentChatMessages compaction rendering', () => {
         align: 'end',
         behavior: 'auto',
       });
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
