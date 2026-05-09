@@ -229,13 +229,30 @@ pub fn calculate_similarity(text1: &str, text2: &str) -> f32 {
     matching_chars as f32 / len1.max(len2) as f32
 }
 
+fn lcs_table(old_lines: &[&str], new_lines: &[&str]) -> Vec<Vec<usize>> {
+    let mut table = vec![vec![0usize; new_lines.len() + 1]; old_lines.len() + 1];
+
+    for old_idx in (0..old_lines.len()).rev() {
+        for new_idx in (0..new_lines.len()).rev() {
+            table[old_idx][new_idx] = if old_lines[old_idx] == new_lines[new_idx] {
+                table[old_idx + 1][new_idx + 1] + 1
+            } else {
+                table[old_idx + 1][new_idx].max(table[old_idx][new_idx + 1])
+            };
+        }
+    }
+
+    table
+}
+
 /// Format full file diff output (Git-style unified diff)
 pub fn format_file_diff(old_content: &str, new_content: &str, _file_path: &str) -> String {
     let old_lines: Vec<&str> = old_content.lines().collect();
     let new_lines: Vec<&str> = new_content.lines().collect();
-
-    let added = new_lines.len().saturating_sub(old_lines.len());
-    let removed = old_lines.len().saturating_sub(new_lines.len());
+    let lcs = lcs_table(&old_lines, &new_lines);
+    let common_line_count = lcs[0][0];
+    let added = new_lines.len().saturating_sub(common_line_count);
+    let removed = old_lines.len().saturating_sub(common_line_count);
 
     let mut diff_lines = Vec::new();
 
@@ -253,34 +270,61 @@ pub fn format_file_diff(old_content: &str, new_content: &str, _file_path: &str) 
         new_lines.len()
     ));
 
-    // Show removed lines (limited to first 50 for display)
     let max_diff_lines = 50;
-    let mut shown_lines = 0;
+    let mut shown_lines = 0usize;
+    let mut omitted_change_lines = 0usize;
+    let mut old_idx = 0usize;
+    let mut new_idx = 0usize;
 
-    for (idx, line) in old_lines.iter().enumerate() {
-        if shown_lines >= max_diff_lines {
-            diff_lines.push(format!(
-                "... {} more removed lines omitted",
-                old_lines.len() - idx
-            ));
-            break;
+    while old_idx < old_lines.len() || new_idx < new_lines.len() {
+        if old_idx < old_lines.len()
+            && new_idx < new_lines.len()
+            && old_lines[old_idx] == new_lines[new_idx]
+        {
+            old_idx += 1;
+            new_idx += 1;
+            continue;
         }
-        diff_lines.push(format!("- {}", line));
-        shown_lines += 1;
+
+        let emit_line = |line: String,
+                         shown_lines: &mut usize,
+                         omitted_change_lines: &mut usize,
+                         diff_lines: &mut Vec<String>| {
+            if *shown_lines < max_diff_lines {
+                diff_lines.push(line);
+                *shown_lines += 1;
+            } else {
+                *omitted_change_lines += 1;
+            }
+        };
+
+        if old_idx < old_lines.len()
+            && (new_idx == new_lines.len()
+                || lcs[old_idx + 1][new_idx] >= lcs[old_idx][new_idx + 1])
+        {
+            emit_line(
+                format!("- {}", old_lines[old_idx]),
+                &mut shown_lines,
+                &mut omitted_change_lines,
+                &mut diff_lines,
+            );
+            old_idx += 1;
+        } else if new_idx < new_lines.len() {
+            emit_line(
+                format!("+ {}", new_lines[new_idx]),
+                &mut shown_lines,
+                &mut omitted_change_lines,
+                &mut diff_lines,
+            );
+            new_idx += 1;
+        }
     }
 
-    shown_lines = 0;
-    // Show added lines (limited to first 50 for display)
-    for (idx, line) in new_lines.iter().enumerate() {
-        if shown_lines >= max_diff_lines {
-            diff_lines.push(format!(
-                "... {} more added lines omitted",
-                new_lines.len() - idx
-            ));
-            break;
-        }
-        diff_lines.push(format!("+ {}", line));
-        shown_lines += 1;
+    if omitted_change_lines > 0 {
+        diff_lines.push(format!(
+            "... {} more changed line(s) omitted",
+            omitted_change_lines
+        ));
     }
 
     diff_lines.push("```".to_string());

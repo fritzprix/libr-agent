@@ -33,6 +33,7 @@ impl WorkspaceServer {
             .map(|e| {
                 serde_json::json!({
                     "process_id": e.id,
+                    "name": e.name,
                     "command": e.command,
                     "status": format!("{:?}", e.status).to_lowercase(),
                     "pid": e.pid,
@@ -93,6 +94,7 @@ impl WorkspaceServer {
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
                     let command = p.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                    let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let pid = p
                         .get("pid")
                         .and_then(|v| v.as_u64())
@@ -105,10 +107,17 @@ impl WorkspaceServer {
                         .unwrap_or_default();
 
                     // Full command visible to agent (no truncation)
-                    format!(
-                        "• {} [{}]{}{}\n  Command: {}",
-                        id, status, pid, exit_code, command
-                    )
+                    if name.is_empty() {
+                        format!(
+                            "• {} [{}]{}{}\n  Command: {}",
+                            id, status, pid, exit_code, command
+                        )
+                    } else {
+                        format!(
+                            "• {} [{}]{}{}\n  Name: {}\n  Command: {}",
+                            id, status, pid, exit_code, name, command
+                        )
+                    }
                 })
                 .collect::<Vec<_>>()
                 .join("\n\n")
@@ -126,26 +135,34 @@ impl WorkspaceServer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let mut actions = vec![format!(
-                "Use waitForProcess('{}', 0) to check status",
-                first_id
-            )];
+            let mut actions = Vec::new();
 
-            // Add appropriate readProcessOutput guidance based on status
             match first_status {
                 "failed" => {
                     actions.push(format!(
                         "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
+                    actions.push(
+                        "Use listProcesses() again if you need another processId from this session"
+                            .to_string(),
+                    );
                 }
                 "finished" => {
                     actions.push(format!(
                         "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
                     ));
+                    actions.push(
+                        "Use listProcesses() again if you need another processId from this session"
+                            .to_string(),
+                    );
                 }
                 "running" => {
+                    actions.push(format!(
+                        "Use waitForProcess('{}', 0) to check status",
+                        first_id
+                    ));
                     actions.push(format!(
                         "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id
@@ -156,6 +173,10 @@ impl WorkspaceServer {
                     ));
                 }
                 _ => {
+                    actions.push(format!(
+                        "Use waitForProcess('{}', 0) to check status",
+                        first_id
+                    ));
                     actions.push(format!(
                         "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
                         first_id

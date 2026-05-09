@@ -150,8 +150,9 @@ impl WorkspaceServer {
                 &display_name,
                 "export",
                 &format!(
-                    "✓ File '{}' exported successfully\n\nDownload link available below",
-                    display_name
+                    "✓ File '{}' exported successfully\n\nSaved export: `{}`\nDownload link available below",
+                    display_name,
+                    relative_path.to_string_lossy().replace('\\', "/")
                 ),
             ));
         }
@@ -320,7 +321,12 @@ impl WorkspaceServer {
             &relative_path.to_string_lossy().replace('\\', "/"),
             &zip_filename,
             "export",
-            &format!("✓ ZIP package '{}' created successfully\n\nContains {} files\nDownload link available below", package_name, processed_files.len()),
+            &format!(
+                "✓ ZIP package '{}' created successfully\n\nContains {} files\nSaved export: `{}`\nDownload link available below",
+                package_name,
+                processed_files.len(),
+                relative_path.to_string_lossy().replace('\\', "/")
+            ),
         ))
     }
 
@@ -353,13 +359,19 @@ impl WorkspaceServer {
             html_content,
         );
 
+        let resource_uri = ui_resource["uri"].as_str().unwrap_or_default();
+        let full_text = format!(
+            "{text_response}\nUI resource: `{}`\nUse the UI resource to trigger the download workflow.",
+            resource_uri
+        );
+
         crate::mcp::builtin::utils::create_resource_response(
-            ui_resource["uri"].as_str().unwrap(),
+            resource_uri,
             "text/html",
             ui_resource["text"].as_str().unwrap(),
             "workspace",
             tool_name,
-            Some(text_response),
+            Some(&full_text),
         )
     }
 

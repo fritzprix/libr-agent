@@ -486,6 +486,51 @@ async fn write_file_duplicate_resource_guidance_keeps_numbered_steps_clean() {
 }
 
 #[tokio::test]
+async fn write_file_append_returns_updated_anchors_without_forcing_followup_read() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-append-anchors";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    server
+        .handle_write_file(
+            json!({
+                "path": "notes.txt",
+                "content": "alpha\n",
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("initial write should succeed");
+
+    let append_result = server
+        .handle_write_file(
+            json!({
+                "path": "notes.txt",
+                "content": "beta\n",
+                "mode": "append",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("append write should succeed");
+
+    let text = extract_text_content(&append_result);
+    assert!(
+        text.contains("**✅ Content Appended Successfully**"),
+        "append response should keep the append-specific success header: {text}"
+    );
+    assert!(
+        text.contains("1:") && text.contains("2:"),
+        "append response should include current anchored lines for immediate follow-up edits: {text}"
+    );
+    assert!(
+        !text.contains("Use `readFile` to see the full content including the appended part."),
+        "append response should not force a follow-up read just to inspect the result: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_skips_binary_looking_files_even_without_binary_extension() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-binary-skip";

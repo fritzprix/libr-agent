@@ -289,15 +289,22 @@ impl WorkspaceServer {
                 "Background process started successfully
 
 • Process ID: {}
+{}\
 • Command: {}
 • Mode: Asynchronous (non-blocking)",
-                process_id, command
+                process_id,
+                process_name
+                    .as_ref()
+                    .map(|name| format!("• Name: {}\n", name))
+                    .unwrap_or_default(),
+                command
             ),
             vec![
                 format!(
                     "Use waitForProcess(\"{}\", 0) to check status and completion",
                     process_id
                 ),
+                "Use listProcesses to map optional names back to process IDs".to_string(),
                 "Use readProcessOutput with 'both' to inspect stdout and stderr".to_string(),
                 "Use listProcesses to see all running processes".to_string(),
             ],
@@ -305,6 +312,7 @@ impl WorkspaceServer {
 
         let response_data = serde_json::json!({
             "process_id": process_id,
+            "name": process_name,
             "command": command,
             "mode": "async",
             "note": "use waitForProcess or readProcessOutput to retrieve output"

@@ -141,7 +141,8 @@ mod tests {
                 println!("Poll Result text: {}", text);
                 assert!(text.contains("Tail line 1"));
                 assert!(text.contains("Tail line 2"));
-                assert!(text.contains("Output paths:"));
+                assert!(text
+                    .contains("Internal output files (absolute paths, not workspace-relative):"));
                 assert!(text.contains("[STDOUT]"));
             }
             _ => panic!("Expected text content"),

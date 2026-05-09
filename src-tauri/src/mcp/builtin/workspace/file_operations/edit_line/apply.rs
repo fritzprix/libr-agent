@@ -106,7 +106,9 @@ fn build_new_hash_sections(edits: &[LineEdit], new_content: &str) -> Vec<String>
 
         let end_in_new = (start_in_new + replacement_line_count).min(new_content_lines.len());
         let section: Vec<String> = full_hashlines[start_in_new..end_in_new].to_vec();
-        new_hash_sections.push(section.join("\n"));
+        if !section.is_empty() {
+            new_hash_sections.push(section.join("\n"));
+        }
 
         let original_line_count = if edit.action == EditAction::InsertAfter {
             0
@@ -173,7 +175,7 @@ fn validate_edit_anchors(
             .guidance(vec![
                 "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
                     .to_string(),
-                "Copy only the 6-character anchor from the returned N:anchor|content line (the part between ':' and '|')"
+                "Copy only the 6-character anchor from the returned line format N:anchor|content. Example: from '42:a31f2c|let x = 1;', pass only 'a31f2c'."
                     .to_string(),
             ])
             .to_mcp_result());
@@ -234,7 +236,7 @@ fn validate_edit_anchors(
                 .guidance(vec![
                     "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) again"
                         .to_string(),
-                    "Copy only the 6-character endAnchor from the returned N:anchor|content line (the part between ':' and '|')".to_string(),
+                    "Copy only the 6-character endAnchor from the returned line format N:anchor|content. Example: from '42:a31f2c|let x = 1;', pass only 'a31f2c'.".to_string(),
                 ])
                 .to_mcp_result());
             }

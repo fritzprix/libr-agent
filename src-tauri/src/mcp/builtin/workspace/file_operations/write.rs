@@ -153,8 +153,34 @@ impl WorkspaceServer {
                 // Invalidate service context cache
                 self.invalidate_context_cache().await;
 
-                let lines = content.lines().count();
-                let size_str = format_file_size(content.len() as u64);
+                let current_content = if mode == "append" {
+                    match tokio::fs::read_to_string(&safe_path).await {
+                        Ok(updated) => updated,
+                        Err(e) => {
+                            return Ok(guided_error(
+                                ErrorCategory::OperationFailed,
+                                format!("File was updated but could not be read back: {}", e),
+                                ToolGroup::Workspace,
+                            )
+                            .guidance(vec![
+                                format!(
+                                    "Use readFile(\"{}\") to inspect the current file state",
+                                    path_str
+                                ),
+                                "Check file permissions if the follow-up read unexpectedly failed"
+                                    .to_string(),
+                            ])
+                            .to_mcp_result());
+                        }
+                    }
+                } else {
+                    content.to_string()
+                };
+
+                let total_lines = current_content.lines().count();
+                let total_size_str = format_file_size(current_content.len() as u64);
+                let appended_lines = content.lines().count();
+                let appended_size_str = format_file_size(content.len() as u64);
 
                 let message_header = match (file_exists, mode) {
                     (true, "append") => "**✅ Content Appended Successfully**",
@@ -162,73 +188,70 @@ impl WorkspaceServer {
                     _ => "**✅ New File Created Successfully**",
                 };
 
-                let mut message = format!("{}\n\n**File:** `{}`\n", message_header, path_str);
+                let mut message = format!(
+                    "{}\n\n**File:** `{}`\n**Total Size:** {}\n**Total Lines:** {}\n\n",
+                    message_header, path_str, total_size_str, total_lines
+                );
 
                 if mode == "append" {
                     message.push_str(&format!(
-                        "**Appended:** {} bytes, {} line(s)\n\n",
-                        size_str, lines
+                        "**Appended:** {}, {} line(s)\n\n",
+                        appended_size_str, appended_lines
                     ));
-                    message.push_str(
-                        "Use `readFile` to see the full content including the appended part.",
-                    );
-                } else {
+                }
+
+                if file_exists && mode == "overwrite" {
+                    // Show diff then anchored lines of new content for immediate editing
+                    use super::utils::format_file_diff;
+                    let diff_output = format_file_diff(&old_content, content, path_str);
+                    message.push_str(&diff_output);
                     message.push_str(&format!(
-                        "**Total Size:** {}\n**Total Lines:** {}\n\n",
-                        size_str, lines
+                        "\nCurrent anchors:\n```\n{}\n```\n",
+                        format_as_hashlines(content)
                     ));
+                } else {
+                    // New file / append — show anchors so agent can immediately use targeted editing tools
+                    let max_display_lines = 100;
+                    let max_display_bytes = 51200; // 50KB
+                    let content_lines: Vec<&str> = current_content.lines().collect();
+                    let is_truncated = content_lines.len() > max_display_lines
+                        || current_content.len() > max_display_bytes;
 
-                    if file_exists && mode == "overwrite" {
-                        // Show diff then anchored lines of new content for immediate editing
-                        use super::utils::format_file_diff;
-                        let diff_output = format_file_diff(&old_content, content, path_str);
-                        message.push_str(&diff_output);
-                        message.push_str(&format!(
-                            "\nCurrent anchors:\n```\n{}\n```\n",
-                            format_as_hashlines(content)
-                        ));
-                    } else {
-                        // New file — show anchors so agent can immediately use targeted editing tools
-                        let max_display_lines = 100;
-                        let max_display_bytes = 51200; // 50KB
-                        let content_lines: Vec<&str> = content.lines().collect();
-                        let is_truncated = content_lines.len() > max_display_lines
-                            || content.len() > max_display_bytes;
-
-                        let display_hashlines = if is_truncated {
-                            let truncated: Vec<&str> = if content.len() > max_display_bytes {
-                                let truncated_bytes =
-                                    &content[..max_display_bytes.min(content.len())];
-                                truncated_bytes.lines().take(max_display_lines).collect()
-                            } else {
-                                content_lines
-                                    .iter()
-                                    .take(max_display_lines)
-                                    .copied()
-                                    .collect()
-                            };
-                            let partial = truncated.join("\n");
-                            format!(
-                                "{}\n\n... (truncated: showing first {} of {} lines)",
-                                format_as_hashlines(&partial),
-                                truncated.len(),
-                                content_lines.len(),
-                            )
+                    let display_hashlines = if is_truncated {
+                        let truncated: Vec<&str> = if current_content.len() > max_display_bytes {
+                            let truncated_bytes =
+                                &current_content[..max_display_bytes.min(current_content.len())];
+                            truncated_bytes.lines().take(max_display_lines).collect()
                         } else {
-                            format_as_hashlines(content)
+                            content_lines
+                                .iter()
+                                .take(max_display_lines)
+                                .copied()
+                                .collect()
                         };
+                        let partial = truncated.join("\n");
+                        format!(
+                            "{}\n\n... (truncated: showing first {} of {} lines)",
+                            format_as_hashlines(&partial),
+                            truncated.len(),
+                            content_lines.len(),
+                        )
+                    } else {
+                        format_as_hashlines(&current_content)
+                    };
 
-                        message.push_str(&format!("```\n{}\n```\n", display_hashlines));
-                    }
+                    message.push_str(&format!("```\n{}\n```\n", display_hashlines));
                 }
 
                 // Context-aware next steps
                 let mut next_steps = Vec::new();
+                let preview_was_truncated = (mode == "create" || mode == "append")
+                    && (current_content.lines().count() > 100 || current_content.len() > 51200);
 
-                if mode == "overwrite" || mode == "append" {
-                    next_steps.push("Verify changes with readFile if unsure".to_string());
-                } else {
-                    next_steps.push("Use readFile to see full content (if truncated)".to_string());
+                if preview_was_truncated {
+                    next_steps.push(
+                        "Use readFile to inspect lines omitted from this preview".to_string(),
+                    );
                 }
 
                 // File type specific suggestions
@@ -249,7 +272,7 @@ impl WorkspaceServer {
                     "path": path_str,
                     "mode": mode,
                     "bytes_written": content.len(),
-                    "lines": lines,
+                    "lines": total_lines,
                     "file_exists_before": file_exists
                 }))))
             }

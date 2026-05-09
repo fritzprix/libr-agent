@@ -159,6 +159,114 @@ async fn edit_file_allows_hashless_insert_at_top() {
 }
 
 #[tokio::test]
+async fn edit_file_missing_target_reports_file_not_found_before_anchor_guidance() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-missing-target";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_edit_file(
+            json!({
+                "path": "missing.txt",
+                "edits": [
+                    {
+                        "op": "replace",
+                        "startLine": 1,
+                        "content": "hello"
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit should return MCPResult");
+
+    let text = extract_text_content(&result);
+    assert_eq!(result.is_error, Some(true));
+    assert!(
+        text.contains("does not exist"),
+        "expected missing-file guidance, got: {text}"
+    );
+    assert!(
+        !text.contains("requires 'startAnchor'"),
+        "path errors should be reported before anchor guidance: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_file_directory_target_reports_directory_error_before_anchor_guidance() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-directory-target";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("sample-dir")).expect("create sample dir");
+
+    let result = server
+        .handle_edit_file(
+            json!({
+                "path": "sample-dir",
+                "edits": [
+                    {
+                        "op": "replace",
+                        "startLine": 1,
+                        "content": "hello"
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit should return MCPResult");
+
+    let text = extract_text_content(&result);
+    assert_eq!(result.is_error, Some(true));
+    assert!(
+        text.contains("is a directory, not a file"),
+        "expected directory-specific guidance, got: {text}"
+    );
+    assert!(
+        text.contains("Use listDirectory"),
+        "directory guidance should point at listDirectory: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_file_rejects_anchors_for_top_insert() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-file-top-insert-anchor";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+
+    let result = server
+        .handle_edit_file(
+            json!({
+                "path": "sample.txt",
+                "edits": [
+                    {
+                        "op": "insert_after",
+                        "startLine": 0,
+                        "startAnchor": "abcdef",
+                        "content": "header"
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit should return MCPResult");
+
+    let text = extract_text_content(&result);
+    assert_eq!(result.is_error, Some(true));
+    assert!(
+        text.contains("must omit 'startAnchor' and 'endAnchor'"),
+        "prepend edits should reject ignored anchors: {text}"
+    );
+}
+
+#[tokio::test]
 async fn edit_file_rejects_start_line_zero_for_replace_and_delete() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-file-rejects-zero-start-line";
@@ -291,6 +399,58 @@ async fn edit_files_allows_replace_without_explicit_op() {
     );
     let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
     assert_eq!(updated, "ALPHA\nbeta\n");
+}
+
+#[tokio::test]
+async fn edit_files_delete_only_response_does_not_claim_new_anchors_exist() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-delete-only-guidance";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\ngamma\n")
+        .expect("write sample file");
+
+    let anchors = format_as_hashlines("alpha\nbeta\ngamma\n");
+    let second_anchor = anchors
+        .lines()
+        .nth(1)
+        .and_then(|line| line.split('|').next())
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("second anchor");
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "delete",
+                        "startLine": 2,
+                        "startAnchor": second_anchor
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit batch should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains(
+            "no new anchors were generated because these edits only removed existing lines"
+        ),
+        "delete-only success should explain why there are no fresh anchors: {text}"
+    );
+    assert!(
+        !text.contains("New anchors:\n```\n\n```"),
+        "delete-only success should not render an empty new-anchors block: {text}"
+    );
+    assert!(
+        !text.contains("Anchors above are current for the edited ranges"),
+        "delete-only success must not claim that new anchors are available: {text}"
+    );
 }
 
 #[tokio::test]

@@ -49,6 +49,64 @@ fn normalize_insert_after_edit(edit: &Value) -> Value {
     item
 }
 
+fn validate_edit_target_path(
+    server: &WorkspaceServer,
+    path_str: &str,
+    session_id: Option<String>,
+) -> Result<(), MCPResult> {
+    let safe_path = match server.validate_path_with_error_for_write(path_str, session_id) {
+        Ok(path) => path,
+        Err(error) => {
+            return Err(guided_error(
+                ErrorCategory::PermissionDenied,
+                format!("Path validation failed for '{}': {}", path_str, error),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use workspace-relative paths only".to_string(),
+                "Use listDirectory('.') to inspect valid target paths".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
+
+    if !safe_path.exists() {
+        return Err(guided_error(
+            ErrorCategory::ResourceNotFound,
+            format!(
+                "File '{}' does not exist, so editFiles cannot modify it",
+                path_str
+            ),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            format!("Use writeFile(\"{}\") to create the file first", path_str),
+            "Use listDirectory('.') to verify the correct workspace-relative path".to_string(),
+            "Use search with filePattern if you need to find the existing file first".to_string(),
+        ])
+        .to_mcp_result());
+    }
+
+    if safe_path.is_dir() {
+        return Err(guided_error(
+            ErrorCategory::InvalidInput,
+            format!("'{}' is a directory, not a file", path_str),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Use listDirectory to inspect files inside that directory".to_string(),
+            format!(
+                "Select a file path inside '{}', not the directory itself",
+                path_str
+            ),
+            "editFiles only works on existing files".to_string(),
+        ])
+        .to_mcp_result());
+    }
+
+    Ok(())
+}
+
 async fn write_prepared_batches(
     server: &WorkspaceServer,
     prepared_batches: &[PreparedFileEdit],
@@ -288,6 +346,10 @@ impl WorkspaceServer {
                     .to_mcp_result());
                 }
             };
+
+            if let Err(result) = validate_edit_target_path(self, &path, session_id.clone()) {
+                return Ok(result);
+            }
 
             let edit = match parse_line_edit(edit_obj, idx) {
                 Ok(edit) => edit,
