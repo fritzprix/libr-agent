@@ -36,9 +36,10 @@ const logger = getLogger('OrgCard');
 
 interface OrgCardProps {
   org: OrgSummary;
+  onDeleted: () => Promise<void>;
 }
 
-export function OrgCard({ org }: OrgCardProps) {
+export function OrgCard({ org, onDeleted }: OrgCardProps) {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
   const { deleteSession } = useAgentSessionListActions();
@@ -59,6 +60,7 @@ export function OrgCard({ org }: OrgCardProps) {
     try {
       await deleteSession(org.orgRootSessionId);
       toast.success(t('orgHistory.toasts.deleted', 'Organization deleted'));
+      await onDeleted();
       setIsDialogOpen(false); // Only close on success
     } catch (error) {
       logger.error('Failed to delete organization', error);

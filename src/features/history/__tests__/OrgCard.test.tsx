@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgCard } from '../OrgCard';
 import type { OrgSummary } from '../org-sessions';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import type { AgentSession } from '@/models/agent';
 
 const mockNavigate = vi.fn();
 const mockDeleteSession = vi.fn();
+const mockOnDeleted = vi.fn();
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
@@ -62,8 +63,13 @@ const mockOrg: OrgSummary = {
 };
 
 describe('OrgCard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOnDeleted.mockResolvedValue(undefined);
+  });
+
   it('renders organization information correctly', () => {
-    render(<OrgCard org={mockOrg} />);
+    render(<OrgCard org={mockOrg} onDeleted={mockOnDeleted} />);
 
     expect(screen.getByText('Research Org')).toBeInTheDocument();
     // Use getAllByText because 'Root Session' appears in the title and the value
@@ -72,7 +78,7 @@ describe('OrgCard', () => {
   });
 
   it('navigates to root session when resume button is clicked', () => {
-    render(<OrgCard org={mockOrg} />);
+    render(<OrgCard org={mockOrg} onDeleted={mockOnDeleted} />);
 
     fireEvent.click(screen.getByText('Resume Root Session'));
     expect(mockNavigate).toHaveBeenCalledWith('/agent/root-1');
@@ -80,7 +86,7 @@ describe('OrgCard', () => {
 
   it('opens confirmation dialog and handles successful deletion', async () => {
     mockDeleteSession.mockResolvedValueOnce(undefined);
-    render(<OrgCard org={mockOrg} />);
+    render(<OrgCard org={mockOrg} onDeleted={mockOnDeleted} />);
 
     // Click trash icon
     const deleteButton = screen.getByRole('button', { name: 'Delete Organization' });
@@ -97,19 +103,21 @@ describe('OrgCard', () => {
 
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith('Organization deleted');
+      expect(mockOnDeleted).toHaveBeenCalledTimes(1);
       expect(screen.queryByText('Delete Organization?')).not.toBeInTheDocument();
     });
   });
 
   it('handles deletion failure and keeps dialog open', async () => {
     mockDeleteSession.mockRejectedValueOnce(new Error('Delete failed'));
-    render(<OrgCard org={mockOrg} />);
+    render(<OrgCard org={mockOrg} onDeleted={mockOnDeleted} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete Organization' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Failed to delete organization');
+      expect(mockOnDeleted).not.toHaveBeenCalled();
       // Dialog should still be open
       expect(screen.getByText('Delete Organization?')).toBeInTheDocument();
     });
@@ -123,7 +131,7 @@ describe('OrgCard', () => {
     });
     mockDeleteSession.mockReturnValue(deletePromise);
 
-    render(<OrgCard org={mockOrg} />);
+    render(<OrgCard org={mockOrg} onDeleted={mockOnDeleted} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete Organization' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
