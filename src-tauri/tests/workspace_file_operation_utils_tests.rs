@@ -59,3 +59,23 @@ fn format_file_diff_counts_replacements_as_removed_and_added_lines() {
         "unchanged lines should not be mislabeled as removals: {diff}"
     );
 }
+
+#[test]
+fn format_file_diff_uses_linear_fallback_for_large_replacement_windows() {
+    let repeated = std::iter::repeat_n("same", 1_100)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let old_content = format!("{repeated}\nold_marker\n{repeated}\n");
+    let new_content = format!("{repeated}\nnew_marker\n{repeated}\n");
+
+    let diff = format_file_diff(&old_content, &new_content, "demo.txt");
+
+    assert!(
+        diff.contains("**Changes:** 1 line(s) added, 1 line(s) removed"),
+        "large replacement-only diffs should keep accurate add/remove counts without quadratic diff cost: {diff}"
+    );
+    assert!(
+        diff.contains("- old_marker") && diff.contains("+ new_marker"),
+        "fallback diff preview should still show the changed middle lines: {diff}"
+    );
+}

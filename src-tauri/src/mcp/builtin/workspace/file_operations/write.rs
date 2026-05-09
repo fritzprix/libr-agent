@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use super::utils::{format_as_hashlines, format_file_size};
+use super::utils::{format_as_hashlines, format_file_size, format_tail_as_hashlines};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, permission_denied_error, ErrorCategory, SuccessHint,
     ToolGroup,
@@ -218,24 +218,35 @@ impl WorkspaceServer {
                         || current_content.len() > max_display_bytes;
 
                     let display_hashlines = if is_truncated {
-                        let truncated: Vec<&str> = if current_content.len() > max_display_bytes {
-                            let truncated_bytes =
-                                &current_content[..max_display_bytes.min(current_content.len())];
-                            truncated_bytes.lines().take(max_display_lines).collect()
+                        if mode == "append" {
+                            let shown_line_count = content_lines.len().min(max_display_lines);
+                            format!(
+                                "{}\n\n... (truncated: showing last {} of {} lines, including the appended tail)",
+                                format_tail_as_hashlines(&current_content, max_display_lines),
+                                shown_line_count,
+                                content_lines.len(),
+                            )
                         } else {
-                            content_lines
-                                .iter()
-                                .take(max_display_lines)
-                                .copied()
-                                .collect()
-                        };
-                        let partial = truncated.join("\n");
-                        format!(
-                            "{}\n\n... (truncated: showing first {} of {} lines)",
-                            format_as_hashlines(&partial),
-                            truncated.len(),
-                            content_lines.len(),
-                        )
+                            let truncated: Vec<&str> = if current_content.len() > max_display_bytes
+                            {
+                                let truncated_bytes = &current_content
+                                    [..max_display_bytes.min(current_content.len())];
+                                truncated_bytes.lines().take(max_display_lines).collect()
+                            } else {
+                                content_lines
+                                    .iter()
+                                    .take(max_display_lines)
+                                    .copied()
+                                    .collect()
+                            };
+                            let partial = truncated.join("\n");
+                            format!(
+                                "{}\n\n... (truncated: showing first {} of {} lines)",
+                                format_as_hashlines(&partial),
+                                truncated.len(),
+                                content_lines.len(),
+                            )
+                        }
                     } else {
                         format_as_hashlines(&current_content)
                     };

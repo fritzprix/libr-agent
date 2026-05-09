@@ -359,7 +359,36 @@ impl WorkspaceServer {
             html_content,
         );
 
-        let resource_uri = ui_resource["uri"].as_str().unwrap_or_default();
+        let resource_uri = match ui_resource.get("uri").and_then(|value| value.as_str()) {
+            Some(uri) if !uri.is_empty() => uri,
+            _ => {
+                return guided_error(
+                    ErrorCategory::InternalError,
+                    "Export UI resource was created without a valid URI".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Retry the export request".to_string(),
+                    "If this keeps happening, inspect the export UI resource builder".to_string(),
+                ])
+                .to_mcp_result();
+            }
+        };
+        let resource_text = match ui_resource.get("text").and_then(|value| value.as_str()) {
+            Some(text) => text,
+            None => {
+                return guided_error(
+                    ErrorCategory::InternalError,
+                    "Export UI resource was created without HTML content".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Retry the export request".to_string(),
+                    "If this keeps happening, inspect the export UI resource builder".to_string(),
+                ])
+                .to_mcp_result();
+            }
+        };
         let full_text = format!(
             "{text_response}\nUI resource: `{}`\nUse the UI resource to trigger the download workflow.",
             resource_uri
@@ -368,7 +397,7 @@ impl WorkspaceServer {
         crate::mcp::builtin::utils::create_resource_response(
             resource_uri,
             "text/html",
-            ui_resource["text"].as_str().unwrap(),
+            resource_text,
             "workspace",
             tool_name,
             Some(&full_text),

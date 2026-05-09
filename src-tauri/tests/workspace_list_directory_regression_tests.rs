@@ -51,8 +51,12 @@ async fn list_directory_returns_not_found_contract_for_missing_workspace_subdire
         "missing directory should use the not-found contract: {text}"
     );
     assert!(
-        text.contains("Use listDirectory to see available files"),
-        "resource-not-found guidance should stay visible: {text}"
+        text.contains("Use listDirectory('.') to inspect the workspace root"),
+        "resource-not-found guidance should still point at the workspace root: {text}"
+    );
+    assert!(
+        text.contains("Verify the directory path is correct"),
+        "missing-directory guidance should stay directory-specific: {text}"
     );
     assert!(
         !text.contains("Verify the directory exists"),
