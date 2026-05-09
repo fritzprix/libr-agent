@@ -189,7 +189,7 @@ async fn reset_repeated_thinking_retry_count(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) {
-    let active = active_sessions.write().await;
+    let active = active_sessions.read().await;
     if let Some(session) = active.get(session_id) {
         *session.repeated_thinking_retry_count.write().await = 0;
     }
