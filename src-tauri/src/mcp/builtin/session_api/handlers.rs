@@ -565,26 +565,45 @@ pub async fn handle_tool_call(
             Ok(success_result(message, session_responses))
         }
         "listAgentTypes" => {
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50);
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+
             let assistant_repo = crate::state::get_assistant_repository();
             let assistants = assistant_repo
                 .list_assistants()
                 .await
                 .map_err(|e| format!("Failed to list assistants: {}", e))?;
+
             let data = serde_json::to_value(&assistants)
                 .map_err(|e| format!("Failed to serialize assistants: {}", e))?;
-            let assistants = data
+            let assistants_array = data
                 .as_array()
                 .cloned()
                 .or_else(|| data.get("assistants").and_then(|v| v.as_array()).cloned())
                 .or_else(|| data.get("items").and_then(|v| v.as_array()).cloned())
                 .unwrap_or_default();
 
-            let message = if assistants.is_empty() {
-                "No assistant types available.".to_string()
-            } else {
-                let mut lines = vec![format!("Available assistant types ({}):", assistants.len())];
+            let total_count = assistants_array.len() as u64;
 
-                for assistant in &assistants {
+            let paginated_assistants: Vec<Value> = assistants_array
+                .into_iter()
+                .skip(offset as usize)
+                .take(limit as usize)
+                .collect();
+
+            let message = if paginated_assistants.is_empty() {
+                if total_count > 0 {
+                    format!("No assistant types available at offset {}. Total available: {}.", offset, total_count)
+                } else {
+                    "No assistant types available.".to_string()
+                }
+            } else {
+                let mut lines = vec![
+                    "| Name | ID | Model | Description |".to_string(),
+                    "| --- | --- | --- | --- |".to_string(),
+                ];
+
+                for assistant in &paginated_assistants {
                     let id = assistant
                         .get("id")
                         .and_then(|v| v.as_str())
@@ -592,7 +611,9 @@ pub async fn handle_tool_call(
                     let name = assistant
                         .get("name")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Unnamed");
+                        .unwrap_or("Unnamed")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
 
                     let config = assistant.get("config").cloned().unwrap_or(json!({}));
                     let parsed_config = if let Some(s) = config.as_str() {
@@ -600,22 +621,46 @@ pub async fn handle_tool_call(
                     } else {
                         config
                     };
-                    let description = extract_assistant_description(&parsed_config);
+                    let description = extract_assistant_description(&parsed_config)
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
                     let model = parsed_config
                         .get("model")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Unknown");
+                        .unwrap_or("Unknown")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
 
                     lines.push(format!(
-                        "- {} [ID: {}]\n  model: {}\n  description: {}",
+                        "| {} | `{}` | {} | {} |",
                         name, id, model, description
                     ));
                 }
 
-                lines.join("\n")
+                let mut output = lines.join("\n");
+
+                let current_showing = paginated_assistants.len() as u64;
+                if offset + current_showing < total_count {
+                    let next_offset = offset + current_showing;
+                    output.push_str(&format!(
+                        "\n\n*(Showing {}/{} results. Call this tool again with offset: {} to see more)*",
+                        current_showing,
+                        total_count,
+                        next_offset
+                    ));
+                }
+
+                output
             };
 
-            Ok(success_result(message, data))
+            let paginated_data = json!({
+                "items": paginated_assistants,
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+            });
+
+            Ok(success_result(message, paginated_data))
         }
         "getAgentConfig" => {
             let assistant_id = read_required_string(&args, "assistantId")?;
