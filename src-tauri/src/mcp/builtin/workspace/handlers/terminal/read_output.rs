@@ -279,7 +279,7 @@ impl WorkspaceServer {
         }
 
         let text = format!(
-            "Read output from process {} (stream: {}, mode: {}, status: {})\n\nOutput paths:\n{}\n\n{}",
+            "Read output from process {} (stream: {}, mode: {}, status: {})\n\nInternal output files (absolute paths, not workspace-relative):\n{}\n\n{}",
             process_id,
             selection.as_str(),
             mode,
@@ -300,15 +300,30 @@ impl WorkspaceServer {
             (
                 "note".to_string(),
                 json!(
-                    "Text output only. Max 100 lines per request. Use output_paths with file tools for deeper inspection."
+                    "Text output only. Max 100 lines per request. output_paths are absolute internal diagnostics paths; do not pass them to readFile or listDirectory."
                 ),
             ),
         ]);
 
-        let hint = SuccessHint::new(
-            text,
-            SuccessHint::for_tool("readProcessOutput", ToolGroup::Workspace),
-        );
+        let next_actions = if is_process_running {
+            vec![
+                format!(
+                    "Use waitForProcess('{}', 0) to check whether it has finished",
+                    process_id
+                ),
+                format!(
+                    "Use stopProcess('{}') only if the running process is stuck",
+                    process_id
+                ),
+            ]
+        } else {
+            vec![
+                "Analyze the captured output to verify command success".to_string(),
+                "Use listProcesses() if you need another processId from this session".to_string(),
+            ]
+        };
+
+        let hint = SuccessHint::new(text, next_actions);
 
         Ok(hint.to_mcp_result_with_data(Some(Value::Object(response))))
     }

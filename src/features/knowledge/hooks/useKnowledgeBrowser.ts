@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  listAssistantSummaries,
-  type AssistantSummary,
-} from '@/lib/backend/assistants';
-import { getLogger } from '@/lib/logger';
 import { useKnowledgeDelete } from './useKnowledgeDelete';
 import { useKnowledgeDetail } from './useKnowledgeDetail';
 import { useKnowledgeList } from './useKnowledgeList';
-
-const logger = getLogger('useKnowledgeBrowser');
+import { useAssistantSummaries } from '@/features/agent/hooks/useAssistantSummaries';
 
 interface KnowledgeAssistantOption {
   id: string;
@@ -20,9 +14,8 @@ export function useKnowledgeBrowser() {
   const [assistantFilter, setAssistantFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [listRefreshToken, setListRefreshToken] = useState(0);
-  const [assistantSummaries, setAssistantSummaries] = useState<
-    AssistantSummary[]
-  >([]);
+
+  const { assistants: assistantSummaries } = useAssistantSummaries();
   const {
     assistants,
     hasMoreItems,
@@ -38,34 +31,6 @@ export function useKnowledgeBrowser() {
     refreshToken: listRefreshToken,
   });
   const { detail, isDetailLoading } = useKnowledgeDetail(selectedId);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadAssistantSummaries = async () => {
-      try {
-        const summaries = await listAssistantSummaries();
-        if (!active) {
-          return;
-        }
-        setAssistantSummaries(summaries);
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-        logger.warn(
-          'Failed to load assistant summaries for knowledge filter labels',
-          error,
-        );
-      }
-    };
-
-    void loadAssistantSummaries();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,

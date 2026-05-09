@@ -9,6 +9,7 @@ use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
 use super::super::super::{terminal_manager, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::{normalization, process, validation};
+use super::format_duration_ms;
 
 impl WorkspaceServer {
     /// Execute shell commands with isolation
@@ -247,7 +248,10 @@ impl WorkspaceServer {
                 }
 
                 // Enhanced text response with explicit status and output visibility
-                let header = format!("Command executed in {}ms (exit code: 0)", duration_ms);
+                let header = format!(
+                    "Command executed in {} (exit code: 0)",
+                    format_duration_ms(duration_ms)
+                );
 
                 // Include output in text message if available (CRITICAL FIX for sync visibility)
                 let text_message = if !stdout.is_empty() {

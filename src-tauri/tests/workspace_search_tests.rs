@@ -486,6 +486,92 @@ async fn write_file_duplicate_resource_guidance_keeps_numbered_steps_clean() {
 }
 
 #[tokio::test]
+async fn write_file_append_returns_updated_anchors_without_forcing_followup_read() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-append-anchors";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    server
+        .handle_write_file(
+            json!({
+                "path": "notes.txt",
+                "content": "alpha\n",
+                "mode": "create",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("initial write should succeed");
+
+    let append_result = server
+        .handle_write_file(
+            json!({
+                "path": "notes.txt",
+                "content": "beta\n",
+                "mode": "append",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("append write should succeed");
+
+    let text = extract_text_content(&append_result);
+    assert!(
+        text.contains("**✅ Content Appended Successfully**"),
+        "append response should keep the append-specific success header: {text}"
+    );
+    assert!(
+        text.contains("1:") && text.contains("2:"),
+        "append response should include current anchored lines for immediate follow-up edits: {text}"
+    );
+    assert!(
+        !text.contains("Use `readFile` to see the full content including the appended part."),
+        "append response should not force a follow-up read just to inspect the result: {text}"
+    );
+}
+
+#[tokio::test]
+async fn write_file_append_truncation_keeps_appended_tail_visible() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "write-file-append-tail-preview";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    let original = (1..=140)
+        .map(|index| format!("line-{index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(workspace_dir.join("notes.txt"), format!("{original}\n"))
+        .expect("seed large file");
+
+    let append_result = server
+        .handle_write_file(
+            json!({
+                "path": "notes.txt",
+                "content": "fresh-tail-line\n",
+                "mode": "append",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("append write should succeed");
+
+    let text = extract_text_content(&append_result);
+    assert!(
+        text.contains("showing last"),
+        "truncated append response should explain that it is showing the tail: {text}"
+    );
+    assert!(
+        text.contains("fresh-tail-line"),
+        "truncated append response should include the appended line in the preview: {text}"
+    );
+    assert!(
+        text.contains("\n42:") && !text.contains("\n1:"),
+        "truncated append response should keep the tail window instead of restarting from line 1: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_skips_binary_looking_files_even_without_binary_extension() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-binary-skip";

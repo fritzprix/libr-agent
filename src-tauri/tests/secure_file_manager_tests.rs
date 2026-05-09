@@ -108,3 +108,66 @@ async fn test_append_file_string_within_limit() {
         "Append should succeed when within the configured limit"
     );
 }
+
+fn assert_windows_reserved_filename_error(result: Result<(), String>, path: &str) {
+    let error = result.expect_err("Operation should reject Windows reserved filenames");
+    assert!(
+        error.contains("Windows reserved filename"),
+        "Expected reserved filename error for '{path}', got: {error}"
+    );
+}
+
+fn windows_reserved_filename_bypass_cases() -> [&'static str; 3] {
+    ["CON ", "NUL.", "COM1..."]
+}
+
+#[tokio::test]
+async fn test_write_operations_reject_windows_reserved_filenames() {
+    let dir = tempdir().unwrap();
+    let manager = SecureFileManager::new_with_base_dir(dir.path().to_path_buf());
+
+    assert_windows_reserved_filename_error(manager.write_file("CON", b"blocked").await, "CON");
+    assert_windows_reserved_filename_error(
+        manager.write_file_string("NUL.txt", "blocked").await,
+        "NUL.txt",
+    );
+    assert_windows_reserved_filename_error(
+        manager.append_file_string("COM1.txt", "blocked").await,
+        "COM1.txt",
+    );
+
+    for path in windows_reserved_filename_bypass_cases() {
+        assert_windows_reserved_filename_error(manager.write_file(path, b"blocked").await, path);
+    }
+}
+
+#[tokio::test]
+async fn test_copy_file_from_external_rejects_windows_reserved_filenames() {
+    let dir = tempdir().unwrap();
+    let manager = SecureFileManager::new_with_base_dir(dir.path().to_path_buf());
+
+    let external_source = dir.path().join("source.txt");
+    std::fs::write(&external_source, "blocked").unwrap();
+
+    let error = manager
+        .copy_file_from_external(&external_source, "LPT1.txt")
+        .await
+        .expect_err("Copy should reject Windows reserved filenames");
+
+    assert!(
+        error.contains("Windows reserved filename"),
+        "Expected reserved filename error for copy destination, got: {error}"
+    );
+
+    for path in windows_reserved_filename_bypass_cases() {
+        let error = manager
+            .copy_file_from_external(&external_source, path)
+            .await
+            .expect_err("Copy should reject Windows reserved filename bypass variants");
+
+        assert!(
+            error.contains("Windows reserved filename"),
+            "Expected reserved filename error for copy destination '{path}', got: {error}"
+        );
+    }
+}

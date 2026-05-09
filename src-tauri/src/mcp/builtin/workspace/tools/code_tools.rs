@@ -97,8 +97,9 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "runInPersistentShell".to_string(),
         title: Some("Execute Shell Command (Persistent Session)".to_string()),
         description: "Run a shell command in a persistent session that preserves working directory and env vars across calls.\n\
-                      Use when you need 'cd' to stick, 'export' to carry forward, or interactive commands (sudo).\n\
-                      For simple stateless commands: runShell."
+                       Use when you need 'cd' to stick, 'export' to carry forward, or interactive commands (sudo).\n\
+                       File tools such as readFile and listDirectory still use workspace root paths and do not follow the shell's current directory.\n\
+                       For simple stateless commands: runShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -129,7 +130,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         string_prop(
             None,
             Some(100),
-            Some("Optional name for the process for easier identification"),
+            Some("Optional label shown in spawnProcess/listProcesses results. Control tools still require the returned processId."),
         ),
     );
 
@@ -137,8 +138,9 @@ pub fn create_spawn_process_tool() -> MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
         description: "Start a command as a non-blocking background process. Returns process_id immediately.\n\
-                      Stateless — starts from workspace root each call. No interactive input.\n\
-                      Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
+                       Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require process_id.\n\
+                       Stateless — starts from workspace root each call. No interactive input.\n\
+                       Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -239,8 +241,9 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "runInPersistentPowerShell".to_string(),
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
         description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
-                      - Use ';' to chain commands.\n\
-                      - For simple stateless commands: runPowerShell."
+                       - Use ';' to chain commands.\n\
+                       - File tools such as readFile and listDirectory still use workspace root paths and do not follow the shell's current location.\n\
+                       - For simple stateless commands: runPowerShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -271,7 +274,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         string_prop(
             None,
             Some(100),
-            Some("Optional name for the process for easier identification"),
+            Some("Optional label shown in spawnProcess/listProcesses results. Control tools still require the returned processId."),
         ),
     );
 
@@ -279,8 +282,9 @@ pub fn create_spawn_process_tool() -> MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
         description: "Start a command as a non-blocking background process. Returns process_id immediately.\n\
-                      Stateless — starts from workspace root each call. No interactive input.\n\
-                      Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
+                       Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require process_id.\n\
+                       Stateless — starts from workspace root each call. No interactive input.\n\
+                       Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,

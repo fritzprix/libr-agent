@@ -17,7 +17,7 @@ Connect any LLM (cloud or local via Ollama), extend with any MCP server, and let
 
 ## Why LibrAgent?
 
-The AI industry's focus has shifted. Recent 2026 benchmark analyses showed that the **same model can produce double-digit task-success gaps depending on the harness around it**. The model is the engine — but the harness determines how far it goes.
+The AI industry's focus has shifted. In practice, the **same model can show large task-success gaps depending on the harness around it**. The model is the engine — but the harness determines how far it goes.
 
 Every current option still forces a tradeoff:
 
@@ -56,18 +56,18 @@ LibrAgent treats security as a first-class architectural concern:
 
 - **Session Isolation**: Every agent session gets its own dedicated `MCPServiceProxy` instance — zero cross-session data leakage
 - **Built-in SecurityValidator**: Path traversal attacks and command injection blocked at the system level
-- **No cloud substrate required**: All execution happens locally; only LLM API calls leave your machine
+- **No cloud substrate required**: Core execution happens locally; external connections are mainly optional cloud providers and remote MCP/HTTP services you choose to use, plus production update checks for new releases
 - **Full offline support**: Pair with [Ollama](https://ollama.ai) for a completely air-gapped agent stack
 
 #### What stays local vs. what leaves your machine
 
 - **Always local**: workspaces, local files, bundled skills, session state, MCP server configs, browser state, and local tool execution
-- **Leaves your machine only when you choose it**: requests to cloud LLM providers or remote MCP/HTTP services you explicitly configure
+- **Leaves your machine when needed**: requests to cloud LLM providers or remote MCP/HTTP services you explicitly configure, plus production update checks for new releases
 - **Fully offline mode**: use Ollama or another local runtime plus local MCP servers for an air-gapped workflow
 
 ### 2. 🧩 MCP-Native Ecosystem — Infinite Extensibility by Design
 
-MCP (Model Context Protocol) became a Linux Foundation standard in 2026. LibrAgent treats it not as a feature — but as the architectural backbone:
+MCP (Model Context Protocol) is the open standard behind LibrAgent's extensibility model. LibrAgent treats it not as a feature — but as the architectural backbone:
 
 - **Full transport support**: stdio, HTTP, SSE, and OAuth 2.1 — the complete spec
 - **12+ built-in servers**: Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store, and more
@@ -79,12 +79,12 @@ MCP (Model Context Protocol) became a Linux Foundation standard in 2026. LibrAge
 
 Most AI tools are impressive in demos and brittle in production. LibrAgent is obsessively engineered for long-running, real work:
 
-| Substrate     | Capabilities                                                                                         |
-| ------------- | ---------------------------------------------------------------------------------------------------- |
-| **Workspace** | Line-precise editing, multi-file ops, unified search, `@file`/`@skill`/`@playbook` context injection |
-| **Shell**     | Isolated execution AND persistent shells — async process monitoring (`poll`, `read output`, `list`)  |
-| **Browser**   | Playwright-style tools (`goto`, `click`, `fill`, `screenshot`) with cache consistency guarantees     |
-| **Knowledge** | Graph-based knowledge management with entity/relation extraction (v2), BM25 full-text search         |
+| Substrate     | Capabilities                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| **Workspace** | Line-precise editing, multi-file ops, unified search, `@file`/`@skill`/`@playbook` context injection  |
+| **Shell**     | Isolated execution AND persistent shells — async process monitoring (`poll`, `read output`, `list`)   |
+| **Browser**   | Headless browser automation with a Playwright-like interaction model and cache consistency guarantees |
+| **Knowledge** | Graph-based knowledge management with entity/relation extraction (v2), BM25 full-text search          |
 
 **Reliability engineering included**: Context compaction, loop prevention, circuit breakers, and stale-response guards keep agents productive in sessions that last hours — not minutes.
 

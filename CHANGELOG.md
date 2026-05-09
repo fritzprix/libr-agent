@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.23] - 2026-05-10
+
+### 🚀 Features
+
+- **Assistant Summaries Optimization**: Refactored `useAssistantSummaries` to use SWR, added error logging, and disabled automatic revalidation for better performance and debugging.
+- **Workspace Preview Enhancements**: Optimized workspace append previews to provide a more responsive experience during file modifications.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Security: Windows Reserved Filename Hardening**: Fixed a bypass in `SecureFileManager` by enforcing Windows reserved filename validation during file creation, appending, and copying.
+- **Improved Session & Chat Stability**: Reduced response session lock contention, fixed assistant summaries SWR behavior, and resolved an initial agent chat bottom-scroll issue.
+- **Workspace & Org Reliability**: Fixed organization delete refresh, workspace guidance and anchor responses, and resolved Ollama compaction tool disabling.
+- **Documentation & UI Alignment**: Clarified optional networking and update checks, and aligned README claims with the current implementation.
+
+### 🔧 Internal
+
+- **LLM Response & Testing Refactor**: Refactored LLM response handling and session tests for better maintainability and reliability.
+- **CI & Review Maintenance**: Resolved various PR review blockers and workspace CI/review followups to keep the development pipeline clean.
+
 ## [0.7.22] - 2026-05-08
 
 ### 🚀 Features

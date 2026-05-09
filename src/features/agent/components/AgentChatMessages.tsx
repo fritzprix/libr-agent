@@ -27,7 +27,12 @@ import { PendingApprovalWidget } from './PendingApprovalWidget';
 import { getLogger } from '@/lib/logger';
 import type { Message } from '@/models/chat';
 import { useTranslation } from 'react-i18next';
-import { Virtuoso, type Components, type ListProps } from 'react-virtuoso';
+import {
+  Virtuoso,
+  type Components,
+  type ListProps,
+  type VirtuosoHandle,
+} from 'react-virtuoso';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -97,6 +102,23 @@ function scrollFooterSentinelIntoView(sentinel: HTMLDivElement | null) {
     inline: 'nearest',
     behavior: 'auto',
   });
+}
+
+function scrollVirtuosoToBottom(
+  virtuoso: VirtuosoHandle | null,
+  itemCount: number,
+): boolean {
+  if (!virtuoso || itemCount === 0) {
+    return false;
+  }
+
+  virtuoso.scrollToIndex({
+    index: 'LAST',
+    align: 'end',
+    behavior: 'auto',
+  });
+
+  return true;
 }
 
 function renderVirtualPlaceholder() {
@@ -366,8 +388,16 @@ export function AgentChatMessages() {
   const assistantName = session?.assistant?.name || 'Agent';
   const footerEndRef = useRef<HTMLDivElement | null>(null);
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const isPinnedToBottomRef = useRef(true);
   const autoScrollFrameRef = useRef<number | null>(null);
+  const hasHydratedMessagesRef = useRef<{
+    sessionId: string | undefined;
+    hasMessages: boolean;
+  }>({
+    sessionId: undefined,
+    hasMessages: false,
+  });
   const [firstItemIndex, setFirstItemIndex] = useState(
     INITIAL_FIRST_ITEM_INDEX,
   );
@@ -420,6 +450,17 @@ export function AgentChatMessages() {
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
 
+  const scrollToBottomNow = useCallback(() => {
+    const scrolledWithVirtuoso = scrollVirtuosoToBottom(
+      virtuosoRef.current,
+      groupedMessages.length,
+    );
+
+    if (!scrolledWithVirtuoso || groupedMessages.length === 0) {
+      scrollFooterSentinelIntoView(footerEndRef.current);
+    }
+  }, [groupedMessages.length]);
+
   useEffect(() => {
     const previous = previousListStateRef.current;
     const firstId = groupedMessages[0]?.message.id;
@@ -453,9 +494,9 @@ export function AgentChatMessages() {
 
     autoScrollFrameRef.current = requestAnimationFrame(() => {
       autoScrollFrameRef.current = null;
-      scrollFooterSentinelIntoView(footerEndRef.current);
+      scrollToBottomNow();
     });
-  }, []);
+  }, [scrollToBottomNow]);
 
   useEffect(() => {
     isPinnedToBottomRef.current = true;
@@ -502,6 +543,30 @@ export function AgentChatMessages() {
     };
   }, [bottomThreshold, session?.id]);
 
+  useEffect(() => {
+    const trackedSessionId = hasHydratedMessagesRef.current.sessionId;
+
+    if (trackedSessionId !== session?.id) {
+      hasHydratedMessagesRef.current = {
+        sessionId: session?.id,
+        hasMessages: groupedMessages.length > 0,
+      };
+      return;
+    }
+
+    if (
+      !hasHydratedMessagesRef.current.hasMessages &&
+      groupedMessages.length > 0 &&
+      isPinnedToBottomRef.current
+    ) {
+      scheduleScrollToBottom();
+    }
+
+    if (groupedMessages.length > 0) {
+      hasHydratedMessagesRef.current.hasMessages = true;
+    }
+  }, [groupedMessages.length, scheduleScrollToBottom, session?.id]);
+
   const scrollToBottom = useCallback(() => {
     isPinnedToBottomRef.current = true;
     setIsPinned(true);
@@ -525,6 +590,28 @@ export function AgentChatMessages() {
     });
 
     observer.observe(content);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [scheduleScrollToBottom, session?.id]);
+
+  useEffect(() => {
+    const scroller = scrollerElementRef.current;
+
+    if (!scroller || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (!isPinnedToBottomRef.current) {
+        return;
+      }
+
+      scheduleScrollToBottom();
+    });
+
+    observer.observe(scroller);
 
     return () => {
       observer.disconnect();
@@ -721,6 +808,7 @@ export function AgentChatMessages() {
     <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
       <Virtuoso
         key={session?.id ?? 'agent-chat'}
+        ref={virtuosoRef}
         className="flex-1"
         style={{ height: '100%' }}
         data={groupedMessages}

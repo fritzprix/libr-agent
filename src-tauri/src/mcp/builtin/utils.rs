@@ -197,11 +197,13 @@ impl SecurityValidator {
         let path_for_check = PathBuf::from(user_path.replace(['\\', '/'], "/"));
         for component in path_for_check.components() {
             if let Component::Normal(name) = component {
-                // Strip the extension (CON.txt -> CON) before checking.
+                // Windows strips trailing spaces and dots from path components before resolving
+                // device names, so normalize those away before checking reserved names.
                 let stem = Path::new(name)
                     .file_stem()
                     .and_then(|s| s.to_str())
-                    .unwrap_or("");
+                    .unwrap_or("")
+                    .trim_end_matches([' ', '.']);
                 let upper = stem.to_uppercase();
                 if RESERVED.contains(&upper.as_str()) {
                     return Err(SecurityError::InvalidPath(format!(

@@ -160,7 +160,7 @@ pub(super) async fn search_content_in_file(
             s.push_str("Use the returned anchors with editFiles. For range replacement/deletion, also copy endAnchor from the exact end line.\n");
         } else {
             s.push_str(
-                "Run with `showLineAnchors: true` to get anchors for targeted editing tools.\n",
+                "If you plan to use editFiles next, run again with `showLineAnchors: true` to get anchors.\n",
             );
         }
         s
@@ -383,9 +383,10 @@ pub(super) async fn search_content_in_dir(
     let paginated_files: Vec<_> = file_matches.into_iter().skip(offset).take(limit).collect();
     let has_more = offset + paginated_files.len() < total_files;
 
+    let per_file_preview_limit = 5usize;
     for fm in &paginated_files {
         text.push_str(&format!("### `{}`\n", fm.rel_path));
-        for hit in fm.hits.iter().take(5) {
+        for hit in fm.hits.iter().take(per_file_preview_limit) {
             let line_num = hit.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
             let t = hit.get("text").and_then(|v| v.as_str()).unwrap_or("");
             if let Some(anchor) = hit.get("anchor").and_then(|v| v.as_str()) {
@@ -394,10 +395,11 @@ pub(super) async fn search_content_in_dir(
                 text.push_str(&format!("- L{}: `{}`\n", line_num, t.trim()));
             }
         }
-        if fm.hits.len() > 5 {
+        if fm.hits.len() > per_file_preview_limit {
             text.push_str(&format!(
-                "  ... and {} more matches in this file\n",
-                fm.hits.len() - 5
+                "  ... and {} more matches in this file (showing first {} per file)\n",
+                fm.hits.len() - per_file_preview_limit,
+                per_file_preview_limit
             ));
         }
         text.push('\n');

@@ -88,7 +88,7 @@ impl SecureFileManager {
     pub async fn write_file(&self, path: &str, content: &[u8]) -> Result<(), String> {
         let safe_path = self
             .security
-            .validate_path(path)
+            .validate_path_for_write(path)
             .map_err(|e| format!("Security error: {e}"))?;
 
         // Check content size
@@ -199,7 +199,7 @@ impl SecureFileManager {
     pub async fn append_file_string(&self, path: &str, content: &str) -> Result<(), String> {
         let safe_path = self
             .security
-            .validate_path(path)
+            .validate_path_for_write(path)
             .map_err(|e| format!("Security error: {e}"))?;
 
         // If the file does not exist, create it by writing the content.
@@ -257,7 +257,7 @@ impl SecureFileManager {
         // Validate destination path using security validator
         let dest_path = self
             .security
-            .validate_path(dest_rel_path)
+            .validate_path_for_write(dest_rel_path)
             .map_err(|e| format!("Security error for destination: {e}"))?;
 
         // Check source file exists and is a file

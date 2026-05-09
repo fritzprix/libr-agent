@@ -127,7 +127,13 @@ export default function Org() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {orgs.map((org) => (
-            <OrgCard key={org.orgId} org={org} />
+            <OrgCard
+              key={org.orgId}
+              org={org}
+              onDeleted={async () => {
+                await mutate();
+              }}
+            />
           ))}
         </div>
       )}
