@@ -1,12 +1,77 @@
 use super::super::WorkspaceServer;
-use super::utils::{format_as_hashlines, format_file_size, format_tail_as_hashlines};
+use super::utils::{
+    format_as_hashlines, format_file_size, format_hashline, initial_prefix_hash_state,
+};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, permission_denied_error, ErrorCategory, SuccessHint,
     ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
+use std::collections::VecDeque;
+use std::io::BufRead;
+use std::path::Path;
 use tracing::error;
+
+struct AppendPreview {
+    total_lines: usize,
+    total_size_bytes: u64,
+    shown_lines: usize,
+    preview_was_truncated: bool,
+    display_hashlines: String,
+}
+
+fn read_back_append_preview(
+    safe_path: &Path,
+    max_display_lines: usize,
+    max_display_bytes: usize,
+) -> Result<AppendPreview, String> {
+    let total_size_bytes = std::fs::metadata(safe_path)
+        .map_err(|e| format!("failed to stat updated file: {e}"))?
+        .len();
+    let file = std::fs::File::open(safe_path).map_err(|e| e.to_string())?;
+    let reader = std::io::BufReader::new(file);
+
+    let mut prefix_state = initial_prefix_hash_state();
+    let mut total_lines = 0usize;
+    let mut preview_bytes = 0usize;
+    let mut tail_lines = VecDeque::new();
+
+    for line_result in reader.lines() {
+        let line = line_result.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                "Content appears to be binary or contains invalid UTF-8 characters".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+
+        total_lines += 1;
+        let anchored_line = format_hashline(total_lines, &line, &mut prefix_state);
+        preview_bytes += anchored_line.len() + 1;
+        tail_lines.push_back(anchored_line);
+
+        while tail_lines.len() > max_display_lines
+            || (preview_bytes > max_display_bytes && tail_lines.len() > 1)
+        {
+            if let Some(removed) = tail_lines.pop_front() {
+                preview_bytes = preview_bytes.saturating_sub(removed.len() + 1);
+            }
+        }
+    }
+
+    let shown_lines = tail_lines.len();
+    let preview_was_truncated =
+        total_lines > shown_lines || total_size_bytes > max_display_bytes as u64;
+
+    Ok(AppendPreview {
+        total_lines,
+        total_size_bytes,
+        shown_lines,
+        preview_was_truncated,
+        display_hashlines: tail_lines.into_iter().collect::<Vec<_>>().join("\n"),
+    })
+}
 
 impl WorkspaceServer {
     pub async fn handle_write_file(
@@ -153,13 +218,20 @@ impl WorkspaceServer {
                 // Invalidate service context cache
                 self.invalidate_context_cache().await;
 
-                let current_content = if mode == "append" {
-                    match tokio::fs::read_to_string(&safe_path).await {
-                        Ok(updated) => updated,
-                        Err(e) => {
+                let max_display_lines = 100;
+                let max_display_bytes = 51200; // 50KB
+                let append_preview = if mode == "append" {
+                    let safe_path = safe_path.clone();
+                    match tokio::task::spawn_blocking(move || {
+                        read_back_append_preview(&safe_path, max_display_lines, max_display_bytes)
+                    })
+                    .await
+                    {
+                        Ok(Ok(preview)) => Some(preview),
+                        Ok(Err(error)) => {
                             return Ok(guided_error(
                                 ErrorCategory::OperationFailed,
-                                format!("File was updated but could not be read back: {}", e),
+                                format!("File was updated but could not be read back: {}", error),
                                 ToolGroup::Workspace,
                             )
                             .guidance(vec![
@@ -172,13 +244,33 @@ impl WorkspaceServer {
                             ])
                             .to_mcp_result());
                         }
+                        Err(join_error) => return Err(join_error.to_string()),
                     }
                 } else {
-                    content.to_string()
+                    None
+                };
+                let current_content = if mode == "append" {
+                    None
+                } else {
+                    Some(content.to_string())
                 };
 
-                let total_lines = current_content.lines().count();
-                let total_size_str = format_file_size(current_content.len() as u64);
+                let total_lines = append_preview
+                    .as_ref()
+                    .map(|preview| preview.total_lines)
+                    .unwrap_or_else(|| {
+                        current_content
+                            .as_ref()
+                            .map_or(0, |text| text.lines().count())
+                    });
+                let total_size_str = format_file_size(
+                    append_preview
+                        .as_ref()
+                        .map(|preview| preview.total_size_bytes)
+                        .unwrap_or_else(|| {
+                            current_content.as_ref().map_or(0, |text| text.len() as u64)
+                        }),
+                );
                 let appended_lines = content.lines().count();
                 let appended_size_str = format_file_size(content.len() as u64);
 
@@ -211,22 +303,26 @@ impl WorkspaceServer {
                     ));
                 } else {
                     // New file / append — show anchors so agent can immediately use targeted editing tools
-                    let max_display_lines = 100;
-                    let max_display_bytes = 51200; // 50KB
-                    let content_lines: Vec<&str> = current_content.lines().collect();
-                    let is_truncated = content_lines.len() > max_display_lines
-                        || current_content.len() > max_display_bytes;
-
-                    let display_hashlines = if is_truncated {
-                        if mode == "append" {
-                            let shown_line_count = content_lines.len().min(max_display_lines);
+                    let display_hashlines = if let Some(preview) = append_preview.as_ref() {
+                        if preview.preview_was_truncated {
                             format!(
                                 "{}\n\n... (truncated: showing last {} of {} lines, including the appended tail)",
-                                format_tail_as_hashlines(&current_content, max_display_lines),
-                                shown_line_count,
-                                content_lines.len(),
+                                preview.display_hashlines,
+                                preview.shown_lines,
+                                preview.total_lines,
                             )
                         } else {
+                            preview.display_hashlines.clone()
+                        }
+                    } else {
+                        let current_content = current_content
+                            .as_ref()
+                            .expect("create/overwrite preview requires in-memory content");
+                        let content_lines: Vec<&str> = current_content.lines().collect();
+                        let is_truncated = content_lines.len() > max_display_lines
+                            || current_content.len() > max_display_bytes;
+
+                        if is_truncated {
                             let truncated: Vec<&str> = if current_content.len() > max_display_bytes
                             {
                                 let truncated_bytes = &current_content
@@ -246,9 +342,9 @@ impl WorkspaceServer {
                                 truncated.len(),
                                 content_lines.len(),
                             )
+                        } else {
+                            format_as_hashlines(current_content)
                         }
-                    } else {
-                        format_as_hashlines(&current_content)
                     };
 
                     message.push_str(&format!("```\n{}\n```\n", display_hashlines));
@@ -256,8 +352,15 @@ impl WorkspaceServer {
 
                 // Context-aware next steps
                 let mut next_steps = Vec::new();
-                let preview_was_truncated = (mode == "create" || mode == "append")
-                    && (current_content.lines().count() > 100 || current_content.len() > 51200);
+                let preview_was_truncated = append_preview
+                    .as_ref()
+                    .map(|preview| preview.preview_was_truncated)
+                    .unwrap_or_else(|| {
+                        current_content.as_ref().is_some_and(|text| {
+                            text.lines().count() > max_display_lines
+                                || text.len() > max_display_bytes
+                        })
+                    });
 
                 if preview_was_truncated {
                     next_steps.push(

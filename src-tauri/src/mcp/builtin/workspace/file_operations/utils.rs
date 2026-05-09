@@ -85,23 +85,6 @@ pub fn format_as_hashlines(content: &str) -> String {
         .join("\n")
 }
 
-pub fn format_tail_as_hashlines(content: &str, max_lines: usize) -> String {
-    let content_lines: Vec<&str> = content.lines().collect();
-    let start_idx = content_lines.len().saturating_sub(max_lines);
-    let mut prefix_state = initial_prefix_hash_state();
-
-    for line in &content_lines[..start_idx] {
-        prefix_state = update_prefix_hash_state(prefix_state, line);
-    }
-
-    content_lines[start_idx..]
-        .iter()
-        .enumerate()
-        .map(|(offset, line)| format_hashline(start_idx + offset + 1, line, &mut prefix_state))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 /// Format file size in bytes to human-readable format (B, KB, MB, GB)
 pub fn format_file_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
