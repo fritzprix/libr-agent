@@ -3,6 +3,8 @@ pub mod completion;
 pub mod context_selector;
 pub mod prompt;
 pub mod response;
+pub(crate) mod response_admission;
+pub(crate) mod response_circuit_breaker;
 pub mod stream_recovery;
 pub mod token_utils;
 pub(crate) mod tool_execution;

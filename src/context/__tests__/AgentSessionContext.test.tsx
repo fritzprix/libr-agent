@@ -1,4 +1,4 @@
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { render, renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
     AgentSessionProvider,
@@ -13,6 +13,10 @@ import type { Message } from '@/models/chat';
 const mockMarkSessionViewed = vi.fn();
 const mockClearPendingApproval = vi.fn();
 const mockRefreshCompactedRange = vi.fn();
+const listenMock = listen as ReturnType<typeof vi.fn>;
+const safeInvokeMock = safeInvoke as ReturnType<typeof vi.fn>;
+const openAgentSessionMock =
+  agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>;
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -59,67 +63,123 @@ vi.mock('../ModelProvider', () => ({
 }));
 
 const TEST_SESSION_ID = 'session-1';
+type OpenAgentSessionResponse = Awaited<
+  ReturnType<typeof agentCommandsBackend.openAgentSession>
+>;
+type RuntimeState = OpenAgentSessionResponse['runtimeState'];
+type AgentSessionStateSnapshot = ReturnType<typeof useAgentSessionState>;
+
 const READY_RUNTIME_STATE = {
-    sequence: 1,
-    phase: 'ready' as const,
-    proxy: {
-        exists: true,
-        mode: 'builtin_only' as const,
-        ready: true,
-    },
-    initialization: {
-        currentStep: 'Session initialization complete',
-        result: 'success' as const,
-    },
-    servers: [],
+  sequence: 1,
+  phase: 'ready' as const,
+  proxy: {
+    exists: true,
+    mode: 'builtin_only' as const,
+    ready: true,
+  },
+  initialization: {
+    currentStep: 'Session initialization complete',
+    result: 'success' as const,
+  },
+  servers: [],
 };
 
-function TestWrapper({ children }: { children: React.ReactNode }) {
-    // Provide a mocked sessionId prop
-    return <AgentSessionProvider sessionId={TEST_SESSION_ID}>{children}</AgentSessionProvider>;
+function createReadyRuntimeState(
+  overrides: Partial<RuntimeState> = {},
+): RuntimeState {
+  return {
+    ...READY_RUNTIME_STATE,
+    ...overrides,
+    proxy: {
+      ...READY_RUNTIME_STATE.proxy,
+      ...overrides.proxy,
+    },
+    initialization: {
+      ...READY_RUNTIME_STATE.initialization,
+      ...overrides.initialization,
+    },
+    servers: overrides.servers ?? READY_RUNTIME_STATE.servers,
+  };
 }
 
-function DynamicSessionWrapper({
-    children,
-    sessionId,
+function createOpenSessionResponse(
+  sessionId: string,
+  overrides: {
+    session?: Partial<OpenAgentSessionResponse['session']>;
+    messages?: OpenAgentSessionResponse['messages']['items'];
+    hasMoreBefore?: boolean;
+    oldestCursor?: OpenAgentSessionResponse['messages']['oldestCursor'];
+    pendingApprovals?: OpenAgentSessionResponse['pendingApprovals'];
+    runtimeState?: RuntimeState;
+  } = {},
+): OpenAgentSessionResponse {
+  const timestamp = Date.now();
+
+  return {
+    session: {
+      id: sessionId,
+      name: `Session ${sessionId}`,
+      status: 'idle',
+      model: 'test-model',
+      provider: 'test-provider',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      yoloMode: false,
+      ...overrides.session,
+    },
+    messages: {
+      items: overrides.messages ?? [],
+      hasMoreBefore: overrides.hasMoreBefore ?? false,
+      oldestCursor: overrides.oldestCursor ?? null,
+    },
+    pendingApprovals: overrides.pendingApprovals ?? [],
+    runtimeState: overrides.runtimeState ?? READY_RUNTIME_STATE,
+  };
+}
+
+function SessionWrapper({
+  children,
+  sessionId,
+}: React.PropsWithChildren<{ sessionId: string }>) {
+  return (
+    <AgentSessionProvider sessionId={sessionId}>{children}</AgentSessionProvider>
+  );
+}
+
+function AgentSessionStateObserver({
+  onRender,
 }: {
-    children: React.ReactNode;
-    sessionId: string;
+  onRender: (state: AgentSessionStateSnapshot) => void;
 }) {
-    return <AgentSessionProvider sessionId={sessionId}>{children}</AgentSessionProvider>;
+  const state = useAgentSessionState();
+  onRender(state);
+  return null;
 }
 
 describe('AgentSessionContext (Local)', () => {
-    const mockUnlisten = vi.fn();
+  const mockUnlisten = vi.fn();
+  const defaultWrapper = ({ children }: React.PropsWithChildren) => (
+    <SessionWrapper sessionId={TEST_SESSION_ID}>{children}</SessionWrapper>
+  );
 
-    beforeEach(() => {
-        vi.clearAllMocks();
-        mockMarkSessionViewed.mockResolvedValue(undefined);
-        mockRefreshCompactedRange.mockResolvedValue(undefined);
-        (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
-        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockResolvedValue({
-            session: {
-                id: TEST_SESSION_ID,
-                name: 'Test Session',
-                status: 'idle',
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-                yoloMode: false,
-            },
-            messages: {
-                items: [],
-                hasMoreBefore: false,
-                oldestCursor: null,
-            },
-            pendingApprovals: [],
-            runtimeState: READY_RUNTIME_STATE,
-        });
-        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMarkSessionViewed.mockResolvedValue(undefined);
+    mockRefreshCompactedRange.mockResolvedValue(undefined);
+    listenMock.mockResolvedValue(mockUnlisten);
+    openAgentSessionMock.mockResolvedValue(
+      createOpenSessionResponse(TEST_SESSION_ID, {
+        session: {
+          name: 'Test Session',
+        },
+      }),
+    );
+    safeInvokeMock.mockResolvedValue(undefined);
+  });
 
     it('should initialize with session state', async () => {
         const { result } = renderHook(() => useAgentSessionState(), {
-            wrapper: TestWrapper,
+            wrapper: defaultWrapper,
         });
 
         // Initially loading
@@ -140,7 +200,7 @@ describe('AgentSessionContext (Local)', () => {
 
     it('should register event listener for the session', async () => {
         renderHook(() => useAgentSessionState(), {
-            wrapper: TestWrapper,
+            wrapper: defaultWrapper,
         });
 
         await waitFor(() => {
@@ -149,47 +209,46 @@ describe('AgentSessionContext (Local)', () => {
     });
 
     it('does not reinitialize the session when rerendered with the same sessionId', async () => {
-        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
-            async (sessionId: string) => ({
-                session: {
-                    id: sessionId,
-                    name: `Session ${sessionId}`,
-                    status: 'idle',
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                    yoloMode: false,
-                },
-                messages: {
-                    items: [],
-                    hasMoreBefore: false,
-                    oldestCursor: null,
-                },
-                pendingApprovals: [],
-                runtimeState: READY_RUNTIME_STATE,
-            })
+        openAgentSessionMock.mockImplementation(async (sessionId: string) =>
+            createOpenSessionResponse(sessionId)
         );
 
-        const { result, rerender } = renderHook(() => useAgentSessionState(), {
-            wrapper: ({ children }) => (
-                <DynamicSessionWrapper sessionId="session-1">
-                    {children}
-                </DynamicSessionWrapper>
-            ),
-        });
+        let latestState: AgentSessionStateSnapshot | undefined;
+        const currentState = () => {
+            if (!latestState) {
+                throw new Error('Expected session state snapshot');
+            }
+            return latestState;
+        };
+        const { rerender } = render(
+            <SessionWrapper sessionId="session-1">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
+        );
 
         await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(false);
-            expect(result.current.session?.id).toBe('session-1');
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().session?.id).toBe('session-1');
         });
 
         expect(mockRefreshCompactedRange).toHaveBeenCalledTimes(1);
         expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
 
-        const initialOpenSessionCalls = (
-            agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>
-        ).mock.calls.length;
+        const initialOpenSessionCalls = openAgentSessionMock.mock.calls.length;
 
-        rerender();
+        rerender(
+            <SessionWrapper sessionId="session-1">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
+        );
 
         expect(agentCommandsBackend.openAgentSession).toHaveBeenCalledTimes(
             initialOpenSessionCalls
@@ -199,48 +258,45 @@ describe('AgentSessionContext (Local)', () => {
     });
 
     it('reinitializes exactly once when the active sessionId changes', async () => {
-        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
-            async (sessionId: string) => ({
-                session: {
-                    id: sessionId,
-                    name: `Session ${sessionId}`,
-                    status: 'idle',
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                    yoloMode: false,
-                },
-                messages: {
-                    items: [],
-                    hasMoreBefore: false,
-                    oldestCursor: null,
-                },
-                pendingApprovals: [],
-                runtimeState: READY_RUNTIME_STATE,
-            })
+        openAgentSessionMock.mockImplementation(async (sessionId: string) =>
+            createOpenSessionResponse(sessionId)
         );
 
-        let activeSessionId = 'session-1';
-        const Wrapper = ({ children }: { children: React.ReactNode }) => (
-            <DynamicSessionWrapper sessionId={activeSessionId}>
-                {children}
-            </DynamicSessionWrapper>
+        let latestState: AgentSessionStateSnapshot | undefined;
+        const currentState = () => {
+            if (!latestState) {
+                throw new Error('Expected session state snapshot');
+            }
+            return latestState;
+        };
+        const { rerender } = render(
+            <SessionWrapper sessionId="session-1">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
         );
 
-        const { result, rerender } = renderHook(() => useAgentSessionState(), {
-            wrapper: Wrapper,
+        await waitFor(() => {
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().session?.id).toBe('session-1');
         });
 
-        await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(false);
-            expect(result.current.session?.id).toBe('session-1');
-        });
+        rerender(
+            <SessionWrapper sessionId="session-2">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
+        );
 
-        activeSessionId = 'session-2';
-        rerender();
-
         await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(false);
-            expect(result.current.session?.id).toBe('session-2');
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().session?.id).toBe('session-2');
         });
 
         expect(mockRefreshCompactedRange).toHaveBeenNthCalledWith(1, 'session-1');
@@ -263,181 +319,160 @@ describe('AgentSessionContext (Local)', () => {
               ) => void)
             | undefined;
 
-        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
-            (sessionId: string) => {
+        openAgentSessionMock.mockImplementation((sessionId: string) => {
                 if (sessionId === 'session-2') {
                     return new Promise((resolve) => {
                         resolveNextSession = resolve;
                     });
                 }
 
-                return Promise.resolve({
-                    session: {
-                        id: sessionId,
-                        name: `Session ${sessionId}`,
-                        status: 'idle',
-                        model: 'test-model',
-                        provider: 'test-provider',
-                        createdAt: Date.now(),
-                        updatedAt: Date.now(),
-                        yoloMode: false,
-                    },
-                    messages: {
-                        items: [],
-                        hasMoreBefore: false,
-                        oldestCursor: null,
-                    },
-                    pendingApprovals: [],
-                    runtimeState: READY_RUNTIME_STATE,
-                });
+                return Promise.resolve(createOpenSessionResponse(sessionId));
             }
         );
 
-        let activeSessionId = 'session-1';
-        const Wrapper = ({ children }: { children: React.ReactNode }) => (
-            <DynamicSessionWrapper sessionId={activeSessionId}>
-                {children}
-            </DynamicSessionWrapper>
+        let latestState: AgentSessionStateSnapshot | undefined;
+        const currentState = () => {
+            if (!latestState) {
+                throw new Error('Expected session state snapshot');
+            }
+            return latestState;
+        };
+        const { rerender } = render(
+            <SessionWrapper sessionId="session-1">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
         );
 
-        const { result, rerender } = renderHook(() => useAgentSessionState(), {
-            wrapper: Wrapper,
+        await waitFor(() => {
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().session?.id).toBe('session-1');
         });
+
+        rerender(
+            <SessionWrapper sessionId="session-2">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
+        );
 
         await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(false);
-            expect(result.current.session?.id).toBe('session-1');
+            expect(currentState().isSessionLoading).toBe(true);
         });
 
-        activeSessionId = 'session-2';
-        rerender();
-
-        await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(true);
-        });
-
-        expect(result.current.session?.id).toBe('session-1');
+        expect(currentState().session?.id).toBe('session-1');
 
         await waitFor(() => {
             expect(resolveNextSession).toBeDefined();
         });
 
         await act(async () => {
-            resolveNextSession?.({
-                session: {
-                    id: 'session-2',
-                    name: 'Session session-2',
-                    status: 'idle',
-                    model: 'test-model',
-                    provider: 'test-provider',
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                    yoloMode: false,
-                },
-                messages: {
-                    items: [],
-                    hasMoreBefore: false,
-                    oldestCursor: null,
-                },
-                pendingApprovals: [],
-                runtimeState: READY_RUNTIME_STATE,
-            });
+            resolveNextSession?.(createOpenSessionResponse('session-2'));
         });
 
         await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(false);
-            expect(result.current.session?.id).toBe('session-2');
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().session?.id).toBe('session-2');
         });
     });
 
     it('clears stale session state when the next session fails to hydrate', async () => {
         let rejectNextSession: ((reason?: unknown) => void) | undefined;
 
-        (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>).mockImplementation(
-            (sessionId: string) => {
+        openAgentSessionMock.mockImplementation((sessionId: string) => {
                 if (sessionId === 'session-2') {
                     return new Promise((_, reject) => {
                         rejectNextSession = reject;
                     });
                 }
 
-                return Promise.resolve({
-                    session: {
-                        id: sessionId,
-                        name: `Session ${sessionId}`,
-                        status: 'idle',
-                        model: 'test-model',
-                        provider: 'test-provider',
+                return Promise.resolve(
+                    createOpenSessionResponse(sessionId, {
+                        session: {
+                            yoloMode: true,
+                        },
+                messages: [
+                    {
+                        id: 'message-1',
+                        sessionId,
+                        threadId: sessionId,
+                        role: 'assistant',
+                        content: [{ type: 'text', text: 'Existing message' }],
                         createdAt: Date.now(),
                         updatedAt: Date.now(),
-                        yoloMode: true,
                     },
-                    messages: {
-                        items: [
+                ],
+                        pendingApprovals: [
                             {
-                                id: 'message-1',
-                                sessionId,
-                                threadId: sessionId,
-                                role: 'assistant',
-                                content: [{ type: 'text', text: 'Existing message' }],
-                                createdAt: new Date().toISOString(),
+                                toolCallId: 'tool-1',
+                                toolName: 'write_file',
+                                arguments: '{}',
                             },
                         ],
-                        hasMoreBefore: false,
-                        oldestCursor: null,
-                    },
-                    pendingApprovals: [
-                        {
-                            toolCallId: 'tool-1',
-                            toolName: 'write_file',
-                            arguments: '{}',
-                        },
-                    ],
-                    runtimeState: READY_RUNTIME_STATE,
-                });
+                    })
+                );
             }
         );
 
-        let activeSessionId = 'session-1';
-        const Wrapper = ({ children }: { children: React.ReactNode }) => (
-            <DynamicSessionWrapper sessionId={activeSessionId}>
-                {children}
-            </DynamicSessionWrapper>
+        let latestState: AgentSessionStateSnapshot | undefined;
+        const currentState = () => {
+            if (!latestState) {
+                throw new Error('Expected session state snapshot');
+            }
+            return latestState;
+        };
+        const { rerender } = render(
+            <SessionWrapper sessionId="session-1">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
         );
 
-        const { result, rerender } = renderHook(() => useAgentSessionState(), {
-            wrapper: Wrapper,
+        await waitFor(() => {
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().session?.id).toBe('session-1');
+            expect(currentState().messages).toHaveLength(1);
+            expect(currentState().pendingApprovals).toHaveLength(1);
         });
+
+        rerender(
+            <SessionWrapper sessionId="session-2">
+                <AgentSessionStateObserver
+                    onRender={(state) => {
+                        latestState = state;
+                    }}
+                />
+            </SessionWrapper>
+        );
 
         await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(false);
-            expect(result.current.session?.id).toBe('session-1');
-            expect(result.current.messages).toHaveLength(1);
-            expect(result.current.pendingApprovals).toHaveLength(1);
+            expect(currentState().isSessionLoading).toBe(true);
         });
 
-        activeSessionId = 'session-2';
-        rerender();
-
-        await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(true);
-        });
-
-        expect(result.current.session?.id).toBe('session-1');
+        expect(currentState().session?.id).toBe('session-1');
 
         await act(async () => {
             rejectNextSession?.(new Error('Session open failed'));
         });
 
         await waitFor(() => {
-            expect(result.current.isSessionLoading).toBe(false);
-            expect(result.current.session).toBeNull();
+            expect(currentState().isSessionLoading).toBe(false);
+            expect(currentState().session).toBeNull();
         });
 
-        expect(result.current.messages).toEqual([]);
-        expect(result.current.pendingApprovals).toEqual([]);
-        expect(result.current.workflowStatus).toBe('error');
-        expect(result.current.error?.displayMessage).toContain('Session open failed');
+        expect(currentState().messages).toEqual([]);
+        expect(currentState().pendingApprovals).toEqual([]);
+        expect(currentState().workflowStatus).toBe('error');
+        expect(currentState().error?.displayMessage).toContain('Session open failed');
     });
 
     describe('Event Handling', () => {
@@ -451,14 +486,13 @@ describe('AgentSessionContext (Local)', () => {
                   ) => void)
                 | undefined;
 
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (_eventName, handler) => {
                     eventHandler = handler;
                     return mockUnlisten;
                 },
             );
-            (agentCommandsBackend.openAgentSession as ReturnType<typeof vi.fn>)
-                .mockImplementation(
+            openAgentSessionMock.mockImplementation(
                     () =>
                         new Promise((resolve) => {
                             resolveOpenSession = resolve;
@@ -466,7 +500,7 @@ describe('AgentSessionContext (Local)', () => {
                 );
 
             const { result } = renderHook(() => useAgentSessionState(), {
-                wrapper: TestWrapper,
+                wrapper: defaultWrapper,
             });
 
             await waitFor(() => {
@@ -478,38 +512,25 @@ describe('AgentSessionContext (Local)', () => {
                     payload: {
                         type: 'sessionRuntimeStateUpdated',
                         sessionId: TEST_SESSION_ID,
-                        runtimeState: {
-                            ...READY_RUNTIME_STATE,
+                        runtimeState: createReadyRuntimeState({
                             sequence: 3,
                             initialization: {
                                 currentStep: 'Newer runtime state',
                                 result: 'success' as const,
                             },
-                        },
+                        }),
                     },
                 });
             });
 
             await act(async () => {
-                resolveOpenSession?.({
-                    session: {
-                        id: TEST_SESSION_ID,
-                        name: 'Test Session',
-                        status: 'idle',
-                        model: 'test-model',
-                        provider: 'test-provider',
-                        createdAt: Date.now(),
-                        updatedAt: Date.now(),
-                        yoloMode: false,
-                    },
-                    messages: {
-                        items: [],
-                        hasMoreBefore: false,
-                        oldestCursor: null,
-                    },
-                    pendingApprovals: [],
-                    runtimeState: READY_RUNTIME_STATE,
-                });
+                resolveOpenSession?.(
+                    createOpenSessionResponse(TEST_SESSION_ID, {
+                        session: {
+                            name: 'Test Session',
+                        },
+                    }),
+                );
             });
 
             await waitFor(() => {
@@ -522,7 +543,7 @@ describe('AgentSessionContext (Local)', () => {
 
         it('ignores stale runtime-state events that arrive after a newer event snapshot', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (_eventName, handler) => {
                     eventHandler = handler;
                     return mockUnlisten;
@@ -530,7 +551,7 @@ describe('AgentSessionContext (Local)', () => {
             );
 
             const { result } = renderHook(() => useAgentSessionState(), {
-                wrapper: TestWrapper,
+                wrapper: defaultWrapper,
             });
 
             await waitFor(() => {
@@ -543,14 +564,13 @@ describe('AgentSessionContext (Local)', () => {
                     payload: {
                         type: 'sessionRuntimeStateUpdated',
                         sessionId: TEST_SESSION_ID,
-                        runtimeState: {
-                            ...READY_RUNTIME_STATE,
+                        runtimeState: createReadyRuntimeState({
                             sequence: 4,
                             initialization: {
                                 currentStep: 'Newest runtime state',
                                 result: 'success' as const,
                             },
-                        },
+                        }),
                     },
                 });
             });
@@ -560,14 +580,13 @@ describe('AgentSessionContext (Local)', () => {
                     payload: {
                         type: 'sessionRuntimeStateUpdated',
                         sessionId: TEST_SESSION_ID,
-                        runtimeState: {
-                            ...READY_RUNTIME_STATE,
+                        runtimeState: createReadyRuntimeState({
                             sequence: 2,
                             initialization: {
                                 currentStep: 'Stale runtime state',
                                 result: 'success' as const,
                             },
-                        },
+                        }),
                     },
                 });
             });
@@ -582,7 +601,7 @@ describe('AgentSessionContext (Local)', () => {
 
         it('should update workflow status on statusChanged event', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (eventName, handler) => {
                     if (eventName === 'agent:event') {
                         eventHandler = handler as (event: unknown) => void;
@@ -593,7 +612,7 @@ describe('AgentSessionContext (Local)', () => {
 
             const { result } = renderHook(
                 () => useAgentSessionState(),
-                { wrapper: TestWrapper }
+                { wrapper: defaultWrapper }
             );
 
             await waitFor(() => {
@@ -619,7 +638,7 @@ describe('AgentSessionContext (Local)', () => {
 
         it('keeps cancelled workflows paused when workflowCompleted is emitted', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (eventName, handler) => {
                     if (eventName === 'agent:event') {
                         eventHandler = handler as (event: unknown) => void;
@@ -630,7 +649,7 @@ describe('AgentSessionContext (Local)', () => {
 
             const { result } = renderHook(
                 () => useAgentSessionState(),
-                { wrapper: TestWrapper }
+                { wrapper: defaultWrapper }
             );
 
             await waitFor(() => {
@@ -656,7 +675,7 @@ describe('AgentSessionContext (Local)', () => {
 
         it('should append message on messageAdded event', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (eventName, handler) => {
                     if (eventName === 'agent:event') {
                         eventHandler = handler as (event: unknown) => void;
@@ -667,7 +686,7 @@ describe('AgentSessionContext (Local)', () => {
 
             const { result } = renderHook(
                 () => useAgentSessionState(),
-                { wrapper: TestWrapper }
+                { wrapper: defaultWrapper }
             );
 
             await waitFor(() => {
@@ -701,7 +720,7 @@ describe('AgentSessionContext (Local)', () => {
 
         it('should ignore events from other sessions', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (eventName, handler) => {
                     if (eventName === 'agent:event') {
                         eventHandler = handler as (event: unknown) => void;
@@ -712,7 +731,7 @@ describe('AgentSessionContext (Local)', () => {
 
             const { result } = renderHook(
                 () => useAgentSessionState(),
-                { wrapper: TestWrapper }
+                { wrapper: defaultWrapper }
             );
 
             await waitFor(() => {
@@ -736,7 +755,7 @@ describe('AgentSessionContext (Local)', () => {
 
         it('should handle workflowError event', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (eventName, handler) => {
                     if (eventName === 'agent:event') {
                         eventHandler = handler as (event: unknown) => void;
@@ -747,7 +766,7 @@ describe('AgentSessionContext (Local)', () => {
 
             const { result } = renderHook(
                 () => useAgentSessionState(),
-                { wrapper: TestWrapper }
+                { wrapper: defaultWrapper }
             );
 
             await waitFor(() => {
@@ -789,7 +808,7 @@ describe('AgentSessionContext (Local)', () => {
         it('marks the session viewed after resuming the workflow', async () => {
             const { result } = renderHook(
                 () => useAgentSessionActions(),
-                { wrapper: TestWrapper }
+                { wrapper: defaultWrapper }
             );
 
             await waitFor(() => {
@@ -814,7 +833,7 @@ describe('AgentSessionContext (Local)', () => {
 
         it('clears global approval counts and marks the session viewed when YOLO auto-approves pending tools', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
-            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            listenMock.mockImplementation(
                 async (eventName, handler) => {
                     if (eventName === 'agent:event') {
                         eventHandler = handler as (event: unknown) => void;
@@ -828,7 +847,7 @@ describe('AgentSessionContext (Local)', () => {
                     state: useAgentSessionState(),
                     actions: useAgentSessionActions(),
                 }),
-                { wrapper: TestWrapper }
+                { wrapper: defaultWrapper }
             );
 
             await waitFor(() => {
