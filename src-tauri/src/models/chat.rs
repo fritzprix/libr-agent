@@ -178,6 +178,32 @@ impl Message {
         }
     }
 
+    pub fn new_compact_summary_message(session_id: &str, text: String, created_at: i64) -> Self {
+        Self {
+            id: format!("compact-summary-{}", session_id),
+            session_id: session_id.to_string(),
+            role: "assistant".to_string(),
+            content: vec![MCPContent::Text {
+                text,
+                is_error: None,
+            }],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: None,
+            attachments: None,
+            tool_use: None,
+            usage: None,
+            created_at,
+            updated_at: created_at,
+            source: Some(MessageSource::CompactSummary),
+            error: None,
+            metadata: None,
+        }
+    }
+
     fn source_with_legacy_fallback(&self) -> Option<MessageSource> {
         match self.source.as_ref() {
             Some(MessageSource::Unknown(_)) | None => MessageSource::from_id(&self.id),

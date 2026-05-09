@@ -1,17 +1,17 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
-use crate::agent::types::{ToolCall, ToolCallFunction};
+use crate::agent::types::ToolCall;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-use super::circuit_breaker;
 use super::completion::{request_llm_completion, trigger_post_response_compaction_if_needed};
+use super::response_admission;
+use super::response_circuit_breaker;
 use super::tool_execution;
 use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::llm::types::{
@@ -125,26 +125,110 @@ pub fn validate_expected_response_id(
     expected_response_id: Option<&str>,
     received_message_id: &str,
 ) -> Result<(), String> {
-    let Some(expected_response_id) = expected_response_id else {
-        log::info!(
-            "Ignoring stray LLM response for session {} (received_message_id={}, expected_response_id=<none>)",
-            session_id,
-            received_message_id
-        );
-        return Err("LLM response superseded".to_string());
-    };
+    response_admission::validate_expected_response_id(
+        session_id,
+        expected_response_id,
+        received_message_id,
+    )
+}
 
-    if received_message_id != expected_response_id {
+struct AssistantMessageShape {
+    has_content: bool,
+    has_thinking: bool,
+    has_tool_calls: bool,
+}
+
+fn inspect_assistant_message_shape(message: &Message) -> AssistantMessageShape {
+    let has_content = message.content.iter().any(|content| match content {
+        crate::mcp::types::MCPContent::Text { text, .. } => !text.trim().is_empty(),
+        _ => true,
+    });
+    let has_thinking = message
+        .thinking
+        .as_ref()
+        .map(|thinking| !thinking.is_empty())
+        .unwrap_or(false);
+    let has_tool_calls = message
+        .tool_calls
+        .as_ref()
+        .map(|tool_calls| !tool_calls.is_empty())
+        .unwrap_or(false);
+
+    AssistantMessageShape {
+        has_content,
+        has_thinking,
+        has_tool_calls,
+    }
+}
+
+async fn cache_assistant_message(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    assistant_message: &Message,
+) {
+    let sessions = active_sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        let mut messages = session.messages.write().await;
+        messages.push(assistant_message.clone());
+
+        if messages.len() > MAX_CACHED_MESSAGES {
+            let removed = messages.remove(0);
+            log::debug!("Sliding window: evicted message {}", removed.id);
+        }
+
         log::info!(
-            "Ignoring superseded LLM response for session {} (expected_response_id={}, received_message_id={})",
+            "🤖 Message stack after assistant message: session={}, count={}, latest_message={}",
             session_id,
-            expected_response_id,
-            received_message_id
+            messages.len(),
+            assistant_message.id
         );
-        return Err("LLM response superseded".to_string());
+    }
+}
+
+async fn reset_repeated_thinking_retry_count(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let active = active_sessions.write().await;
+    if let Some(session) = active.get(session_id) {
+        *session.repeated_thinking_retry_count.write().await = 0;
+    }
+}
+
+async fn session_has_pending_events(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> bool {
+    let active = active_sessions.read().await;
+    if let Some(session) = active.get(session_id) {
+        return session.pending_events.read().await.count() > 0;
     }
 
-    Ok(())
+    false
+}
+
+async fn initialize_pending_execution(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    assistant_message_id: &str,
+    tool_calls: &[ToolCall],
+) {
+    let mut active = active_sessions.write().await;
+    if let Some(session) = active.get_mut(session_id) {
+        let expected_tool_call_ids: std::collections::HashSet<String> =
+            tool_calls.iter().map(|tc| tc.id.clone()).collect();
+        session.pending_execution = Some(crate::agent::state::PendingToolExecution {
+            message_id: assistant_message_id.to_string(),
+            total_expected: tool_calls.len(),
+            results: Vec::new(),
+            tool_names: tool_calls
+                .iter()
+                .map(|tc| (tc.id.clone(), tc.function.name.clone()))
+                .collect(),
+            expected_tool_call_ids,
+            completed_tool_call_ids: std::collections::HashSet::new(),
+        });
+    }
 }
 
 /// Handle an LLM response from the frontend
@@ -163,49 +247,15 @@ pub async fn handle_llm_response(
         .map(|calls| !calls.is_empty())
         .unwrap_or(false);
 
-    let mut should_mark_busy = false;
-    {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
-            let token_cancelled = session.cancellation_token.is_cancelled();
-            let cancel_pending = session.cancel_pending.load(Ordering::SeqCst);
-            let status = session.metadata.status.clone();
+    let admission = response_admission::inspect_response_admission(
+        active_sessions,
+        &session_id,
+        allow_idle_tool_entry,
+    )
+    .await?;
 
-            if token_cancelled || cancel_pending {
-                log::info!(
-                    "Workflow cancelled for session: {} (token_cancelled={}, cancel_pending={}, status={:?})",
-                    session_id,
-                    token_cancelled,
-                    cancel_pending,
-                    status
-                );
-                return Err("Workflow was cancelled".to_string());
-            }
-
-            if status == SessionStatus::Busy {
-                // Normal path while workflow is already running
-            } else if status == SessionStatus::Idle && allow_idle_tool_entry {
-                // Allow tool-call initiated workflow start from Idle
-                should_mark_busy = true;
-            } else {
-                log::info!(
-                    "Rejecting LLM response for session {} (status={:?}, has_tool_calls={})",
-                    session_id,
-                    status,
-                    allow_idle_tool_entry
-                );
-                return Err("Workflow was cancelled".to_string());
-            }
-        }
-    }
-
-    if should_mark_busy {
-        {
-            let active = active_sessions.read().await;
-            if let Some(session) = active.get(&session_id) {
-                session.cancel_pending.store(false, Ordering::SeqCst);
-            }
-        }
+    if admission.should_mark_busy {
+        response_admission::clear_cancel_pending_flag(active_sessions, &session_id).await;
 
         crate::agent::lifecycle::update_session_status(
             session_repo,
@@ -224,208 +274,20 @@ pub async fn handle_llm_response(
     }
 
     // [Message ID Matching] Use pre-generated ID if available
-    {
-        let sessions = active_sessions.read().await;
-        if let Some(session) = sessions.get(&session_id) {
-            let mut expected_id = session.expected_response_id.write().await;
-            validate_expected_response_id(
-                &session_id,
-                expected_id.as_deref(),
-                &assistant_message.id,
-            )?;
-            expected_id.take();
-        }
-    }
+    response_admission::consume_expected_response_id(
+        active_sessions,
+        &session_id,
+        &assistant_message.id,
+    )
+    .await?;
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
-    let mut forced_circuit_break_message: Option<crate::mcp::types::MCPContent> = None;
-    if let Some(tool_calls) = &mut assistant_message.tool_calls {
-        let mut break_index = None;
-        let mut break_action = None;
-        let mut ui_alias_enabled = true;
-        let loop_threshold = circuit_breaker::load_loop_prevention_threshold().await;
-
-        {
-            let sessions = active_sessions.read().await;
-            if let Some(session) = sessions.get(&session_id) {
-                ui_alias_enabled = circuit_breaker::is_builtin_alias_enabled(
-                    session.metadata.agent_config.as_deref(),
-                    "ui",
-                );
-                let messages = session.messages.read().await;
-                let call_signature_by_id = circuit_breaker::build_tool_call_indices(&messages);
-
-                for (i, tool_call) in tool_calls.iter().enumerate() {
-                    if let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
-                        &messages,
-                        tool_call,
-                        &call_signature_by_id,
-                        loop_threshold,
-                    ) {
-                        break_index = Some(i);
-                        break_action = Some(action);
-                        break;
-                    }
-                }
-            }
-        }
-
-        if let Some(idx) = break_index {
-            if let Some(action) = break_action {
-                match action {
-                    circuit_breaker::CircuitBreakerAction::HardBreak {
-                        count,
-                        tool_name,
-                        args,
-                    } => {
-                        log::warn!(
-                            "Circuit breaker triggered for session {} tool {} (count {})",
-                            session_id,
-                            tool_name,
-                            count
-                        );
-
-                        if ui_alias_enabled {
-                            let circuit_break_call = ToolCall {
-                                id: uuid::Uuid::new_v4().to_string(),
-                                function: ToolCallFunction {
-                                    name: "ui__circuitBreak".to_string(),
-                                    arguments: serde_json::json!({
-                                        "toolName": tool_name,
-                                        "repetitionCount": count,
-                                        "args": args
-                                    })
-                                    .to_string(),
-                                },
-                                r#type: "function".to_string(),
-                            };
-
-                            tool_calls[idx] = circuit_break_call;
-                            tool_calls.truncate(idx + 1);
-                        } else {
-                            log::warn!(
-                                "UI alias disabled for session {}. Using text-only circuit break fallback.",
-                                session_id
-                            );
-
-                            forced_circuit_break_message = Some(crate::mcp::types::MCPContent::Text {
-                                text: format!(
-                                    "⚠️ Circuit breaker triggered: detected runaway loop for tool '{}' (count {}).
-
-The 'ui' builtin server is disabled for this session, so interactive circuit-break UI was skipped. Workflow was force-stopped to prevent further runaway calls.",
-                                    tool_name, count
-                                ),
-                                is_error: None,
-                            });
-                        }
-                    }
-                    circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
-                        count,
-                        tool_name,
-                        ..
-                    } => {
-                        log::warn!(
-                            "Natural recovery (Error track) triggered for session {} tool {} (count {})",
-                            session_id, tool_name, count
-                        );
-                        let entropy = uuid::Uuid::new_v4().to_string();
-                        let nanos = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .subsec_nanos() as usize;
-
-                        let error_templates = [
-                            "Wait, my action '{TOOL_NAME}' keeps failing and I am stuck in a loop. I must reflect on my previous state and consider a completely different alternative approach instead of repeating the identical action.",
-                            "The tool '{TOOL_NAME}' has resulted in an error repeatedly. Let me stop using it and think about another way to achieve the goal.",
-                            "Attempting '{TOOL_NAME}' with the same arguments is clearly not working. I should review the error messages carefully and change my strategy.",
-                            "I'm caught in an error loop with '{TOOL_NAME}'. Let's halt this action. What am I missing in the configuration or arguments?",
-                            "Calling '{TOOL_NAME}' again won't fix the issue. I need to formulate a new plan and avoid the path that leads to this failure.",
-                            "I keep hitting the same wall with '{TOOL_NAME}'. Let me step back, analyze the root cause of this error, and try a different tool.",
-                            "This repeated failure on '{TOOL_NAME}' indicates my approach is flawed. I must deviate from this pattern immediately and re-evaluate.",
-                            "I must break this cycle. '{TOOL_NAME}' is consistently failing. I will stop executing it and instead focus on debugging the core problem.",
-                            "There's no point in trying '{TOOL_NAME}' one more time here. I need to take a fundamentally different approach to this task.",
-                            "I am stuck. The same error keeps popping up for '{TOOL_NAME}'. Let me pause, clear my assumptions, and look for an alternative method."
-                        ];
-
-                        let template = error_templates[nanos % error_templates.len()];
-                        let recovery_thought = format!(
-                            "{} [Entropy ID: {}]",
-                            template.replace("{TOOL_NAME}", &tool_name),
-                            entropy
-                        );
-
-                        let think_call = ToolCall {
-                            id: uuid::Uuid::new_v4().to_string(),
-                            function: ToolCallFunction {
-                                name: "scratchpad__think".to_string(),
-                                arguments: serde_json::json!({
-                                    "thought": recovery_thought
-                                })
-                                .to_string(),
-                            },
-                            r#type: "function".to_string(),
-                        };
-                        tool_calls[idx] = think_call;
-                        tool_calls.truncate(idx + 1);
-                    }
-                    circuit_breaker::CircuitBreakerAction::NaturalRecoverySuccess {
-                        count,
-                        tool_name,
-                        ..
-                    } => {
-                        log::warn!(
-                            "Natural recovery (Success track) triggered for session {} tool {} (count {})",
-                            session_id, tool_name, count
-                        );
-                        let entropy = uuid::Uuid::new_v4().to_string();
-                        let nanos = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .subsec_nanos() as usize;
-
-                        let success_templates = [
-                            "I have repeatedly called '{TOOL_NAME}' successfully with identical parameters but I am not making progress. What was I originally scheduled to do? I need to focus on the next step immediately.",
-                            "The repeated success of '{TOOL_NAME}' means the state has changed as intended, but I'm inexplicably repeating it. I must move forward to the next logical task.",
-                            "Executing '{TOOL_NAME}' over and over with the same inputs is redundant. I have already achieved the result of this step. Time to proceed.",
-                            "I'm looping on '{TOOL_NAME}' even though it's succeeding. I must break out of this repetition and execute the next action in my plan.",
-                            "Why am I doing this? '{TOOL_NAME}' was already successful. Let me read my original plan and advance to the next unmet objective.",
-                            "I need to advance. The repeated execution of '{TOOL_NAME}' is a loop. Let me stop this and focus on what remains to be done.",
-                            "This is a redundant success loop. '{TOOL_NAME}' worked, so I should stop calling it and move on to the next phase of the workflow.",
-                            "I've verified that '{TOOL_NAME}' succeeds. There's no need to rerun it. I will check my task list and transition to the subsequent step.",
-                            "I am stuck in a pattern of repeating '{TOOL_NAME}'. I need to break this habit immediately and progress with the remainder of my objective.",
-                            "Success on '{TOOL_NAME}' is verified. Repeating it adds no value. Let me pivot to the next action required to complete my goal."
-                        ];
-
-                        let template = success_templates[nanos % success_templates.len()];
-                        let recovery_thought = format!(
-                            "{} [Entropy ID: {}]",
-                            template.replace("{TOOL_NAME}", &tool_name),
-                            entropy
-                        );
-
-                        let think_call = ToolCall {
-                            id: uuid::Uuid::new_v4().to_string(),
-                            function: ToolCallFunction {
-                                name: "scratchpad__think".to_string(),
-                                arguments: serde_json::json!({
-                                    "thought": recovery_thought
-                                })
-                                .to_string(),
-                            },
-                            r#type: "function".to_string(),
-                        };
-                        tool_calls[idx] = think_call;
-                        tool_calls.truncate(idx + 1);
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(circuit_break_message) = forced_circuit_break_message {
-        assistant_message.tool_calls = None;
-        assistant_message.content = vec![circuit_break_message];
-    }
+    response_circuit_breaker::preprocess_assistant_tool_calls(
+        active_sessions,
+        &session_id,
+        &mut assistant_message,
+    )
+    .await;
 
     let post_response_compaction_pressure =
         calculate_post_response_compaction_pressure(&assistant_message).await;
@@ -435,23 +297,10 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
     // We check that at least one content item has meaningful text (matching
     // the frontend's hasContent logic), so that Gemini-style empty-text
     // responses like [{type:"text", text:""}] are not treated as valid content.
-    let has_content = assistant_message.content.iter().any(|c| match c {
-        crate::mcp::types::MCPContent::Text { text, .. } => !text.trim().is_empty(),
-        _ => true, // Non-text content (Image, Audio, Resource, etc.) is always meaningful
-    });
-    let has_thinking = assistant_message
-        .thinking
-        .as_ref()
-        .map(|t| !t.is_empty())
-        .unwrap_or(false);
-    let has_tool_calls = assistant_message
-        .tool_calls
-        .as_ref()
-        .map(|tool_calls| !tool_calls.is_empty())
-        .unwrap_or(false);
+    let assistant_shape = inspect_assistant_message_shape(&assistant_message);
 
-    if !has_tool_calls {
-        if !has_content && !has_thinking {
+    if !assistant_shape.has_tool_calls {
+        if !assistant_shape.has_content && !assistant_shape.has_thinking {
             // content, tool_calls, AND thinking are all empty - this is an error
             log::warn!(
                 "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
@@ -480,7 +329,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
             return Ok(post_response_compaction_pressure.clone());
         }
 
-        if has_thinking && !has_content {
+        if assistant_shape.has_thinking && !assistant_shape.has_content {
             match defer_for_post_response_compaction_if_needed(
                 active_sessions,
                 app_handle,
@@ -524,25 +373,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
     }
 
     // 1. Add assistant message to cache
-    {
-        let sessions = active_sessions.read().await;
-        if let Some(session) = sessions.get(&session_id) {
-            let mut messages = session.messages.write().await;
-            messages.push(assistant_message.clone());
-
-            if messages.len() > MAX_CACHED_MESSAGES {
-                let removed = messages.remove(0);
-                log::debug!("Sliding window: evicted message {}", removed.id);
-            }
-
-            log::info!(
-                "🤖 Message stack after assistant message: session={}, count={}, latest_message={}",
-                session_id,
-                messages.len(),
-                assistant_message.id
-            );
-        }
-    }
+    cache_assistant_message(active_sessions, &session_id, &assistant_message).await;
 
     // 2. Emit MessageAdded event
     let message_added_event = crate::agent::events::AgentEvent::MessageAdded {
@@ -571,22 +402,10 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
     let tool_calls: Vec<ToolCall> = assistant_message.tool_calls.take().unwrap_or_default();
 
     if tool_calls.is_empty() {
-        {
-            let active = active_sessions.write().await;
-            if let Some(session) = active.get(&session_id) {
-                *session.repeated_thinking_retry_count.write().await = 0;
-            }
-        }
+        reset_repeated_thinking_retry_count(active_sessions, &session_id).await;
 
         // Check for pending messages before finishing
-        let has_pending = {
-            let active = active_sessions.read().await;
-            if let Some(session) = active.get(&session_id) {
-                session.pending_events.read().await.count() > 0
-            } else {
-                false
-            }
-        };
+        let has_pending = session_has_pending_events(active_sessions, &session_id).await;
 
         if has_pending {
             match defer_for_post_response_compaction_if_needed(
@@ -692,12 +511,7 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
             session_id
         );
 
-        {
-            let active = active_sessions.write().await;
-            if let Some(session) = active.get(&session_id) {
-                *session.repeated_thinking_retry_count.write().await = 0;
-            }
-        }
+        reset_repeated_thinking_retry_count(active_sessions, &session_id).await;
 
         match defer_for_post_response_compaction_if_needed(
             active_sessions,
@@ -743,24 +557,13 @@ The 'ui' builtin server is disabled for this session, so interactive circuit-bre
         .await?;
 
         // Initialize pending execution state
-        {
-            let mut active = active_sessions.write().await;
-            if let Some(session) = active.get_mut(&session_id) {
-                let expected_tool_call_ids: std::collections::HashSet<String> =
-                    tool_calls.iter().map(|tc| tc.id.clone()).collect();
-                session.pending_execution = Some(crate::agent::state::PendingToolExecution {
-                    message_id: assistant_message.id.clone(),
-                    total_expected: tool_calls.len(),
-                    results: Vec::new(),
-                    tool_names: tool_calls
-                        .iter()
-                        .map(|tc| (tc.id.clone(), tc.function.name.clone()))
-                        .collect(),
-                    expected_tool_call_ids,
-                    completed_tool_call_ids: std::collections::HashSet::new(),
-                });
-            }
-        }
+        initialize_pending_execution(
+            active_sessions,
+            &session_id,
+            &assistant_message.id,
+            &tool_calls,
+        )
+        .await;
 
         // Execute tool calls
         // 🔥 CRITICAL CHANGE: Execute tools SEQUENTIALLY to prevent race conditions

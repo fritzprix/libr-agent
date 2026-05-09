@@ -2,7 +2,7 @@ use crate::agent::references::build_default_registry;
 use crate::agent::state::AgentSession;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
-use crate::models::chat::{Message, MessageSource};
+use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::CompactContextRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
@@ -87,29 +87,7 @@ pub fn resolve_preserved_calibration_ratio(
 }
 
 pub fn build_compact_summary_message(session_id: &str, text: String, created_at: i64) -> Message {
-    Message {
-        id: format!("compact-summary-{}", session_id),
-        session_id: session_id.to_string(),
-        role: "assistant".to_string(),
-        content: vec![MCPContent::Text {
-            text,
-            is_error: None,
-        }],
-        source: Some(MessageSource::CompactSummary),
-        created_at,
-        updated_at: created_at,
-        tool_calls: None,
-        tool_call_id: None,
-        is_streaming: None,
-        thinking: None,
-        thinking_signature: None,
-        assistant_id: None,
-        attachments: None,
-        tool_use: None,
-        usage: None,
-        error: None,
-        metadata: None,
-    }
+    Message::new_compact_summary_message(session_id, text, created_at)
 }
 
 pub fn build_compact_summary_message_for_messages(
