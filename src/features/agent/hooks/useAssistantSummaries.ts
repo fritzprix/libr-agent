@@ -15,6 +15,7 @@ export function useAssistantSummaries() {
   } = useSWR<AssistantSummary[]>('assistantSummaries', listAssistantSummaries, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
+    shouldRetryOnError: false,
     onError: (err) => {
       logger.warn('Failed to load assistant summaries', err);
     },
