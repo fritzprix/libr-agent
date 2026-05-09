@@ -5,7 +5,10 @@ use std::collections::HashMap;
 pub fn create_read_process_output_tool() -> MCPTool {
     let mut props = HashMap::new();
 
-    props.insert("processId".to_string(), string_prop_required("Process ID"));
+    props.insert(
+        "processId".to_string(),
+        string_prop_required("Process ID returned by spawnProcess or listProcesses"),
+    );
 
     props.insert(
         "stream".to_string(),
@@ -47,7 +50,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
 
     props.insert(
         "processId".to_string(),
-        string_prop_required("Process ID to wait for"),
+        string_prop_required("Process ID returned by spawnProcess or listProcesses"),
     );
     props.insert(
         "timeout".to_string(),
@@ -101,7 +104,7 @@ pub fn create_stop_process_tool() -> MCPTool {
 
     props.insert(
         "processId".to_string(),
-        string_prop_required("Process ID to stop"),
+        string_prop_required("Process ID returned by spawnProcess or listProcesses"),
     );
 
     MCPTool {

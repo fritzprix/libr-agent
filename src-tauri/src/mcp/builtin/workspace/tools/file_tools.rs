@@ -34,14 +34,14 @@ pub fn create_read_file_tool() -> MCPTool {
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Optional: include opaque edit anchors for each line (e.g. '42:a31f2c|...'). For edit tools, copy only the 6-character anchor between ':' and '|', not the line number or line content.",
+            "Optional: include opaque edit anchors for each line in the form '42:a31f2c|...'. Here '42' is the line number and 'a31f2c' is the anchor. For edit tools, pass only the 6-character anchor (for example 'a31f2c'), not '42:a31f2c' or the trailing '|...'.",
         )),
     );
 
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true before calling editFiles to obtain anchor values."
+        description: "Read the contents of a file. Large responses are chunked automatically to stay inline; use the returned startLine/endLine guidance to continue reading. Use showLineAnchors=true when you need anchors for editFiles."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -79,7 +79,7 @@ pub fn create_write_file_tool() -> MCPTool {
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create, overwrite, or append content to a file. mode='overwrite' returns a diff of the changes."
+        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Responses include current line anchors so follow-up editFiles calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
@@ -188,7 +188,7 @@ pub fn create_search_tool() -> MCPTool {
         integer_prop(
             Some(1),
             Some(1000),
-            Some("Maximum number of results to return (default: 50)"),
+            Some("Maximum number of file entries to return (default: 50). For content search, this limits files with matches, not individual matching lines."),
         ),
     );
     props.insert(
@@ -222,7 +222,7 @@ pub fn create_search_tool() -> MCPTool {
     props.insert(
         "showLineAnchors".to_string(),
         boolean_prop(Some(
-            "Include edit anchors in results for use with editFiles (default: false). For edit tools, copy only the 6-character anchor between ':' and '|'.",
+            "Include edit anchors in results for use with editFiles (default: false). Anchored lines look like '42:a31f2c|...'; for edit tools, pass only the 6-character anchor (for example 'a31f2c').",
         )),
     );
 
@@ -651,7 +651,7 @@ pub fn create_edit_files_tool() -> MCPTool {
         title: Some("Edit Files (Batch)".to_string()),
         description: "Apply multiple line edits across one or more files atomically in a single operation.
 
-PREREQUISITE: Call readFile(showLineAnchors=true) first to obtain anchor values. For anchors, pass only the 6 hex characters between ':' and '|'.
+PREREQUISITE: Obtain anchors from a prior readFile(showLineAnchors=true), writeFile response, or previous editFiles response. Anchored lines look like `42:a31f2c|...`; for anchors, pass only the 6-character code such as `a31f2c`, not `42:a31f2c`.
 
 Line numbering is 1-based for existing content. The only valid 0 value is startLine=0, which prepends at the file top.
 

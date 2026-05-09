@@ -387,12 +387,11 @@ impl SuccessHint {
             ("runShell" | "runPowerShell", ToolGroup::Workspace) => vec![
                 "Use listDirectory to verify created files".to_string(),
                 "Use readFile to verify file contents".to_string(),
-                "Use stopProcess if a long-running command needs to be terminated".to_string(),
             ],
             ("runInPersistentShell" | "runInPersistentPowerShell", ToolGroup::Workspace) => vec![
                 "Command state (CWD, env vars) is preserved for the next call".to_string(),
-                "Use listDirectory to verify file system changes".to_string(),
-                "Use readFile to check written output".to_string(),
+                "Use shell commands like `pwd` or `ls` in the next persistent-shell call to inspect the current shell directory".to_string(),
+                "readFile and listDirectory still use workspace root, not the shell CWD".to_string(),
             ],
             ("spawnProcess", ToolGroup::Workspace) => vec![
                 "Use listProcesses to see the status of the background task".to_string(),

@@ -27,6 +27,20 @@ fn extract_resource_html(result: &MCPResult) -> String {
         .expect("resource html expected")
 }
 
+fn extract_text_content(result: &MCPResult) -> String {
+    result
+        .content
+        .as_ref()
+        .expect("content expected")
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[tokio::test]
 async fn list_directory_hides_internal_tmp_and_exports_inside_libragent() {
     let temp_dir = tempdir().expect("temp dir");
@@ -143,9 +157,18 @@ async fn export_response_uses_libragent_download_path() {
         .expect("export should succeed");
 
     let html = extract_resource_html(&result);
+    let text = extract_text_content(&result);
     assert!(
         html.contains(".libragent/exports/files/"),
         "download path should point at .libragent exports: {html}"
+    );
+    assert!(
+        text.contains("Saved export: `.libragent/exports/files/"),
+        "text response should expose the saved export path: {text}"
+    );
+    assert!(
+        text.contains("UI resource: `ui://export/"),
+        "text response should expose the UI resource URI: {text}"
     );
 
     let exports_dir = workspace_dir.join(".libragent/exports/files");

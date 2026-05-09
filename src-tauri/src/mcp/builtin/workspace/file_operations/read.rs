@@ -258,7 +258,7 @@ impl WorkspaceServer {
                 // Format response for clean markdown rendering
                 let text_message = if show_line_anchors {
                     format!(
-                        "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nAnchor format: `{{N}}:{{anchor}}|{{content}}` — for edit tools, pass only `{{anchor}}` (the 6 hex characters between `:` and `|`), not `{{N}}:` or `|{{content}}`",
+                        "📄 **`{}`** — {} — {}{}\n\n```\n{}\n```\n\nLine format: `{{lineNumber}}:{{anchor}}|{{content}}`\n- `{{lineNumber}}`: 1-based line number\n- `{{anchor}}`: 6-character hex code (example: `792c6f`)\n- `{{content}}`: line content\n\nFor edit tools, pass only the 6-character anchor (example: `792c6f`). Do not pass `1:792c6f` or `|{{content}}`.",
                         path_str, size_str, chunk_summary, summary_suffix, chunk.content
                     )
                 } else {
@@ -272,7 +272,7 @@ impl WorkspaceServer {
                 let first_hint = if show_line_anchors {
                     "Use editFiles with path plus only the 6-character startAnchor; for ranges, also copy only the 6-character endAnchor from the final line".to_string()
                 } else {
-                    "Rerun with showLineAnchors=true to get anchors for precise line editing with editFiles".to_string()
+                    "If you plan to use editFiles next, rerun with showLineAnchors=true to get anchors".to_string()
                 };
                 let mut next_actions = vec![
                     first_hint,
@@ -310,6 +310,27 @@ impl WorkspaceServer {
                 let is_not_found = e.contains("No such file") || e.contains("not found");
                 if is_not_found {
                     Ok(not_found_error("File", path_str, ToolGroup::Workspace))
+                } else if let Some((requested_line, total_lines)) =
+                    parse_start_line_exceeds_error(&e)
+                {
+                    Ok(
+                        guided_error(ErrorCategory::InvalidInput, &e, ToolGroup::Workspace)
+                            .guidance(vec![
+                                format!(
+                                    "Choose startLine between 1 and {} for this file",
+                                    total_lines
+                                ),
+                                format!(
+                                "Use startLine {} (or omit line bounds) to read from the file end",
+                                total_lines
+                            ),
+                                format!(
+                                    "Requested startLine {} is out of range for this file",
+                                    requested_line
+                                ),
+                            ])
+                            .to_mcp_result(),
+                    )
                 } else {
                     Ok(
                         guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
@@ -327,6 +348,18 @@ impl WorkspaceServer {
 }
 
 // Helper functions
+
+fn parse_start_line_exceeds_error(message: &str) -> Option<(usize, usize)> {
+    let prefix = "Requested start line ";
+    let middle = " exceeds file length of ";
+    let suffix = " lines";
+
+    let after_prefix = message.strip_prefix(prefix)?;
+    let (requested_line, after_requested) = after_prefix.split_once(middle)?;
+    let total_lines = after_requested.strip_suffix(suffix)?;
+
+    Some((requested_line.parse().ok()?, total_lines.parse().ok()?))
+}
 
 async fn read_file_lines_range(
     path: &std::path::Path,

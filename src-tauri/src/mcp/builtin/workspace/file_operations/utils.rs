@@ -10,6 +10,7 @@ const FNV_PRIME: u32 = 16_777_619;
 const LINE_HASH_LEN: usize = 2;
 const PREFIX_HASH_LEN: usize = 4;
 const ANCHOR_LEN: usize = LINE_HASH_LEN + PREFIX_HASH_LEN;
+const MAX_LCS_CELLS: usize = 2_000_000;
 
 /// Compute a 2-char hex content hash for anchor generation.
 ///
@@ -229,15 +230,148 @@ pub fn calculate_similarity(text1: &str, text2: &str) -> f32 {
     matching_chars as f32 / len1.max(len2) as f32
 }
 
+fn lcs_table(old_lines: &[&str], new_lines: &[&str]) -> Vec<Vec<usize>> {
+    let mut table = vec![vec![0usize; new_lines.len() + 1]; old_lines.len() + 1];
+
+    for old_idx in (0..old_lines.len()).rev() {
+        for new_idx in (0..new_lines.len()).rev() {
+            table[old_idx][new_idx] = if old_lines[old_idx] == new_lines[new_idx] {
+                table[old_idx + 1][new_idx + 1] + 1
+            } else {
+                table[old_idx + 1][new_idx].max(table[old_idx][new_idx + 1])
+            };
+        }
+    }
+
+    table
+}
+
+fn diff_change_window(old_lines: &[&str], new_lines: &[&str]) -> (usize, usize, usize, usize) {
+    let mut common_prefix = 0usize;
+    let max_prefix = old_lines.len().min(new_lines.len());
+    while common_prefix < max_prefix && old_lines[common_prefix] == new_lines[common_prefix] {
+        common_prefix += 1;
+    }
+
+    let mut common_suffix = 0usize;
+    while common_suffix < old_lines.len().saturating_sub(common_prefix)
+        && common_suffix < new_lines.len().saturating_sub(common_prefix)
+        && old_lines[old_lines.len() - 1 - common_suffix]
+            == new_lines[new_lines.len() - 1 - common_suffix]
+    {
+        common_suffix += 1;
+    }
+
+    let old_changed_end = old_lines.len().saturating_sub(common_suffix);
+    let new_changed_end = new_lines.len().saturating_sub(common_suffix);
+    (
+        common_prefix,
+        old_changed_end,
+        common_prefix,
+        new_changed_end,
+    )
+}
+
+fn emit_diff_preview(
+    diff_lines: &mut Vec<String>,
+    removed_lines: &[&str],
+    added_lines: &[&str],
+    max_diff_lines: usize,
+) {
+    let mut shown_lines = 0usize;
+    let mut omitted_change_lines = 0usize;
+
+    let emit_line = |line: String,
+                     shown_lines: &mut usize,
+                     omitted_change_lines: &mut usize,
+                     diff_lines: &mut Vec<String>| {
+        if *shown_lines < max_diff_lines {
+            diff_lines.push(line);
+            *shown_lines += 1;
+        } else {
+            *omitted_change_lines += 1;
+        }
+    };
+
+    for line in removed_lines {
+        emit_line(
+            format!("- {}", line),
+            &mut shown_lines,
+            &mut omitted_change_lines,
+            diff_lines,
+        );
+    }
+
+    for line in added_lines {
+        emit_line(
+            format!("+ {}", line),
+            &mut shown_lines,
+            &mut omitted_change_lines,
+            diff_lines,
+        );
+    }
+
+    if omitted_change_lines > 0 {
+        diff_lines.push(format!(
+            "... {} more changed line(s) omitted",
+            omitted_change_lines
+        ));
+    }
+}
+
 /// Format full file diff output (Git-style unified diff)
 pub fn format_file_diff(old_content: &str, new_content: &str, _file_path: &str) -> String {
     let old_lines: Vec<&str> = old_content.lines().collect();
     let new_lines: Vec<&str> = new_content.lines().collect();
-
-    let added = new_lines.len().saturating_sub(old_lines.len());
-    let removed = old_lines.len().saturating_sub(new_lines.len());
-
     let mut diff_lines = Vec::new();
+    let max_diff_lines = 50;
+    let max_cells = old_lines.len().saturating_mul(new_lines.len());
+
+    let (added, removed, removed_preview, added_preview) = if max_cells <= MAX_LCS_CELLS {
+        let lcs = lcs_table(&old_lines, &new_lines);
+        let common_line_count = lcs[0][0];
+        let added = new_lines.len().saturating_sub(common_line_count);
+        let removed = old_lines.len().saturating_sub(common_line_count);
+
+        let mut old_idx = 0usize;
+        let mut new_idx = 0usize;
+        let mut removed_preview = Vec::new();
+        let mut added_preview = Vec::new();
+
+        while old_idx < old_lines.len() || new_idx < new_lines.len() {
+            if old_idx < old_lines.len()
+                && new_idx < new_lines.len()
+                && old_lines[old_idx] == new_lines[new_idx]
+            {
+                old_idx += 1;
+                new_idx += 1;
+                continue;
+            }
+
+            if old_idx < old_lines.len()
+                && (new_idx == new_lines.len()
+                    || lcs[old_idx + 1][new_idx] >= lcs[old_idx][new_idx + 1])
+            {
+                removed_preview.push(old_lines[old_idx]);
+                old_idx += 1;
+            } else if new_idx < new_lines.len() {
+                added_preview.push(new_lines[new_idx]);
+                new_idx += 1;
+            }
+        }
+
+        (added, removed, removed_preview, added_preview)
+    } else {
+        let (old_start, old_end, new_start, new_end) = diff_change_window(&old_lines, &new_lines);
+        let removed_preview = old_lines[old_start..old_end].to_vec();
+        let added_preview = new_lines[new_start..new_end].to_vec();
+        (
+            added_preview.len(),
+            removed_preview.len(),
+            removed_preview,
+            added_preview,
+        )
+    };
 
     diff_lines.push(format!(
         "**Changes:** {} line(s) added, {} line(s) removed\n",
@@ -252,36 +386,12 @@ pub fn format_file_diff(old_content: &str, new_content: &str, _file_path: &str) 
         1,
         new_lines.len()
     ));
-
-    // Show removed lines (limited to first 50 for display)
-    let max_diff_lines = 50;
-    let mut shown_lines = 0;
-
-    for (idx, line) in old_lines.iter().enumerate() {
-        if shown_lines >= max_diff_lines {
-            diff_lines.push(format!(
-                "... {} more removed lines omitted",
-                old_lines.len() - idx
-            ));
-            break;
-        }
-        diff_lines.push(format!("- {}", line));
-        shown_lines += 1;
-    }
-
-    shown_lines = 0;
-    // Show added lines (limited to first 50 for display)
-    for (idx, line) in new_lines.iter().enumerate() {
-        if shown_lines >= max_diff_lines {
-            diff_lines.push(format!(
-                "... {} more added lines omitted",
-                new_lines.len() - idx
-            ));
-            break;
-        }
-        diff_lines.push(format!("+ {}", line));
-        shown_lines += 1;
-    }
+    emit_diff_preview(
+        &mut diff_lines,
+        &removed_preview,
+        &added_preview,
+        max_diff_lines,
+    );
 
     diff_lines.push("```".to_string());
 

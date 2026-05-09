@@ -7,6 +7,7 @@ use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::normalization;
+use super::format_duration_ms;
 
 impl WorkspaceServer {
     /// Execute command using persistent shell
@@ -31,6 +32,7 @@ impl WorkspaceServer {
 
         // Track execution time
         let execution_start = std::time::Instant::now();
+        let previous_cwd = self.shell_manager.get_shell_cwd(&session_id).await;
 
         // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
@@ -95,7 +97,10 @@ impl WorkspaceServer {
                     self.invalidate_context_cache().await;
 
                     // Success - format with clear state reporting
-                    let header = format!("Command executed successfully in {}ms", duration_ms);
+                    let header = format!(
+                        "Command executed in {} (exit code: 0)",
+                        format_duration_ms(duration_ms)
+                    );
 
                     // Clear shell state section with persistence indicator
                     let shell_state = format!(
@@ -103,8 +108,32 @@ impl WorkspaceServer {
                         PERSISTENT_SHELL_TOOL, display_cwd, exit_code
                     );
 
-                    // Only show warning if shell CWD differs from workspace root for less noise
-                    let file_tools_warning = if display_cwd != "." {
+                    let previous_display_cwd = previous_cwd.as_deref().map(|previous| {
+                        let previous_path = std::path::Path::new(previous);
+                        let relative_previous = previous_path
+                            .strip_prefix(&workspace_path)
+                            .unwrap_or(previous_path)
+                            .to_string_lossy();
+
+                        if relative_previous.is_empty() {
+                            ".".to_string()
+                        } else if relative_previous.starts_with(".")
+                            || relative_previous.starts_with(std::path::MAIN_SEPARATOR)
+                            || relative_previous.contains(":")
+                        {
+                            relative_previous.to_string()
+                        } else {
+                            format!(".{}{}", std::path::MAIN_SEPARATOR, relative_previous)
+                        }
+                    });
+
+                    let cwd_changed = previous_display_cwd
+                        .as_deref()
+                        .map(|previous| previous != display_cwd)
+                        .unwrap_or(display_cwd != ".");
+
+                    // Only warn when this call moved the shell away from workspace root or to another directory.
+                    let file_tools_warning = if display_cwd != "." && cwd_changed {
                         "\n⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find"
                     } else {
                         ""
@@ -119,10 +148,25 @@ impl WorkspaceServer {
                         format!("{}\n\n{}{}", header, shell_state, file_tools_warning)
                     };
 
-                    let hint = SuccessHint::new(
-                        text_message,
-                        SuccessHint::for_tool(tool_name, ToolGroup::Workspace),
-                    );
+                    let next_actions = if display_cwd == "." {
+                        vec![
+                            "Command state (CWD, env vars) is preserved for the next call"
+                                .to_string(),
+                            "Use listDirectory to inspect workspace-root file changes".to_string(),
+                            "Use readFile to inspect workspace-root file contents".to_string(),
+                        ]
+                    } else {
+                        vec![
+                            format!(
+                                "Use {} with shell commands like `pwd` or `ls` to inspect the current shell directory",
+                                tool_name
+                            ),
+                            "readFile and listDirectory still use workspace root, not the shell CWD"
+                                .to_string(),
+                        ]
+                    };
+
+                    let hint = SuccessHint::new(text_message, next_actions);
                     Ok(hint.to_mcp_result_with_data(Some(structured_data)))
                 } else {
                     // Failure - use ErrorGuidance format

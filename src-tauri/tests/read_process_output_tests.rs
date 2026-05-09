@@ -138,8 +138,12 @@ async fn read_process_output_both_returns_both_sections_and_structured_outputs()
         "stderr content missing: {text}"
     );
     assert!(
-        text.contains("Output paths:"),
-        "output paths section missing: {text}"
+        text.contains("Internal output files (absolute paths, not workspace-relative):"),
+        "output paths section should clearly explain path scope: {text}"
+    );
+    assert!(
+        text.contains("not workspace-relative"),
+        "readProcessOutput should warn that these paths cannot be fed back into workspace file tools: {text}"
     );
 
     let structured = read_result
@@ -250,4 +254,163 @@ async fn read_process_output_stdout_returns_single_output_path() {
     assert!(structured["output_paths"].get("stderr").is_none());
     assert!(structured["outputs"]["stdout"].is_object());
     assert!(structured["outputs"].get("stderr").is_none());
+}
+
+#[tokio::test]
+async fn spawn_and_list_processes_surface_optional_name_labels() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "process-name-labels";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let spawn_result = server
+        .handle_spawn_process(
+            json!({
+                "command": dual_stream_command(),
+                "name": "demo-process"
+            }),
+            session_id,
+        )
+        .await
+        .expect("spawnProcess should succeed");
+
+    let spawn_text = extract_text_content(&spawn_result);
+    assert!(
+        spawn_text.contains("• Name: demo-process"),
+        "spawn response should expose process name label: {spawn_text}"
+    );
+
+    let structured = spawn_result
+        .structured_content
+        .as_ref()
+        .expect("spawn structured content expected");
+    let process_id = structured["process_id"]
+        .as_str()
+        .expect("spawnProcess should return process_id")
+        .to_string();
+    assert_eq!(structured["name"], json!("demo-process"));
+
+    let list_result = server
+        .handle_list_processes(json!({}), session_id)
+        .await
+        .expect("listProcesses should succeed");
+
+    let list_text = extract_text_content(&list_result);
+    assert!(
+        list_text.contains("Name: demo-process"),
+        "listProcesses should show the optional process name: {list_text}"
+    );
+
+    let processes = list_result
+        .structured_content
+        .as_ref()
+        .and_then(|value| value.get("processes"))
+        .and_then(|value| value.as_array())
+        .expect("process list expected");
+    assert!(
+        processes.iter().any(|item| {
+            item["process_id"] == json!(process_id) && item["name"] == json!("demo-process")
+        }),
+        "structured process list should include process name"
+    );
+}
+
+#[tokio::test]
+async fn list_processes_prefers_read_output_for_finished_processes() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "list-processes-finished-hints";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let spawn_result = server
+        .handle_spawn_process(json!({ "command": dual_stream_command() }), session_id)
+        .await
+        .expect("spawnProcess should succeed");
+    let process_id = spawn_result
+        .structured_content
+        .as_ref()
+        .and_then(|data| data.get("process_id"))
+        .and_then(|value| value.as_str())
+        .expect("spawnProcess should return process_id")
+        .to_string();
+
+    wait_for_terminal_state(&server, &process_id, session_id).await;
+
+    let list_result = server
+        .handle_list_processes(json!({}), session_id)
+        .await
+        .expect("listProcesses should succeed");
+
+    let text = extract_text_content(&list_result);
+    assert!(
+        text.contains(&format!(
+            "Use readProcessOutput('{}', 'both') to inspect stdout and stderr",
+            process_id
+        )),
+        "finished processes should point to readProcessOutput first: {text}"
+    );
+    assert!(
+        !text.contains(&format!(
+            "Use waitForProcess('{}', 0) to check status",
+            process_id
+        )),
+        "finished processes should not suggest polling again as the primary next step: {text}"
+    );
+    assert!(
+        !text.contains("Use stopProcess"),
+        "finished processes should not suggest stopProcess: {text}"
+    );
+}
+
+#[tokio::test]
+async fn read_process_output_avoids_stop_hint_after_process_has_finished() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-process-output-finished-hints";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let spawn_result = server
+        .handle_spawn_process(json!({ "command": dual_stream_command() }), session_id)
+        .await
+        .expect("spawnProcess should succeed");
+    let process_id = spawn_result
+        .structured_content
+        .as_ref()
+        .and_then(|data| data.get("process_id"))
+        .and_then(|value| value.as_str())
+        .expect("spawnProcess should return process_id")
+        .to_string();
+
+    wait_for_terminal_state(&server, &process_id, session_id).await;
+
+    let result = server
+        .call_tool(
+            "readProcessOutput",
+            json!({
+                "processId": process_id,
+                "stream": "both",
+                "mode": "tail",
+                "lines": 10
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readProcessOutput should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Analyze the captured output to verify command success"),
+        "finished processes should suggest analyzing the finished output: {text}"
+    );
+    assert!(
+        !text.contains("Use stopProcess"),
+        "finished processes should not suggest stopProcess: {text}"
+    );
+    assert!(
+        !text.contains("waitForProcess"),
+        "finished processes should not suggest waiting again: {text}"
+    );
 }

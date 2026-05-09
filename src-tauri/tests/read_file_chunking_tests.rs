@@ -73,6 +73,12 @@ async fn read_file_truncates_large_output_and_guides_next_chunk() {
         "response should tell the agent how to continue reading: {text}"
     );
     assert!(
+        text.contains(
+            "If you plan to use editFiles next, rerun with showLineAnchors=true to get anchors"
+        ),
+        "plain readFile should keep anchor guidance optional instead of sounding mandatory: {text}"
+    );
+    assert!(
         !text.contains("line truncated to fit inline limit"),
         "readFile should only emit complete lines: {text}"
     );
@@ -177,8 +183,12 @@ async fn read_file_with_anchors_uses_more_conservative_line_budget() {
         text.len()
     );
     assert!(
-        text.contains("Anchor format:"),
+        text.contains("Line format:"),
         "anchored response should keep anchor guidance: {text}"
+    );
+    assert!(
+        text.contains("Do not pass `1:792c6f`"),
+        "anchored response should clarify that only the 6-character anchor is valid: {text}"
     );
     assert!(
         !text.contains("line truncated to fit inline limit"),

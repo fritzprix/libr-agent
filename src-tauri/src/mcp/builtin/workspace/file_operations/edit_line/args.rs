@@ -421,6 +421,20 @@ pub(super) fn parse_line_edit(
         .map(|anchor| anchor.to_string());
 
     let requires_anchor = !(action == EditAction::InsertAfter && start_line == 0);
+    if !requires_anchor && (start_anchor.is_some() || end_anchor.is_some()) {
+        return Err(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "{edit_label}: prepend edits with startLine 0 must omit 'startAnchor' and 'endAnchor'"
+            ),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "When startLine is 0, the edit inserts before the first line and does not target existing content".to_string(),
+            "Remove startAnchor/endAnchor and keep only startLine: 0 plus content".to_string(),
+        ])
+        .to_mcp_result());
+    }
     if requires_anchor && start_anchor.is_none() {
         return Err(guided_error(
             ErrorCategory::InvalidInput,
@@ -430,7 +444,7 @@ pub(super) fn parse_line_edit(
         .guidance(vec![
             "Run readFile(showLineAnchors=true) or search(showLineAnchors=true) first"
                 .to_string(),
-            "Copy only the 6-character start-line anchor from the form N:anchor|content (the part between ':' and '|')".to_string(),
+            "Copy only the 6-character start-line anchor from the line format N:anchor|content. Example: from '42:a31f2c|let x = 1;', pass only 'a31f2c'.".to_string(),
             "If the edit also uses endLine for a range, copy only the 6-character endAnchor from the exact final line"
                 .to_string(),
             "Only insert_after with startLine: 0 may omit anchors".to_string(),

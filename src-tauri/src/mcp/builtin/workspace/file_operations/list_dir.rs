@@ -1,8 +1,6 @@
 use super::super::WorkspaceServer;
 use super::utils::{is_not_found_io_error, normalize_workspace_path_input};
-use crate::mcp::builtin::error_guidance::{
-    guided_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
-};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
@@ -209,24 +207,29 @@ impl WorkspaceServer {
                 let hint = if total_items == 0 {
                     SuccessHint::new(
                         format!(
-                            "Directory listing for '{}':\n\n(This directory is empty)\n\n💡 Next Steps:\n- Use writeFile('{}/filename.txt', content) to create a file\n- Use listDirectory('{}') to verify the directory exists\n- This is a valid empty directory",
-                            path_str, path_str, path_str
+                            "Directory listing for '{}':\n\n(This directory is empty)\n\nThis is a valid empty directory.",
+                            path_str
                         ),
                         vec![
-                            format!("Use writeFile('{}/filename.txt', content) to create a file", path_str),
-                            format!("Use listDirectory('{}') to verify the directory exists", path_str)
+                            format!(
+                                "Use writeFile with {{\"path\": \"{}/filename.txt\", \"content\": \"...\"}} to create a file",
+                                path_str
+                            )
                         ],
                     )
                 } else {
                     SuccessHint::new(
                         format!(
-                            "Directory listing for '{}':\n\n{}{}\n\n💡 Next Steps:\n- Use readFile('{}/filename') to read a file\n- Use listDirectory('{}/subdir') to explore subdirectories\n- Use search to search for content in files",
-                            path_str, listing_str, truncation_note, path_str, path_str
+                            "Directory listing for '{}':\n\n{}{}",
+                            path_str, listing_str, truncation_note
                         ),
                         vec![
                             format!("Use readFile('{}/filename') to read a file", path_str),
-                            format!("Use listDirectory('{}/subdir') to explore subdirectories", path_str),
-                            "Use search to search for content in files".to_string()
+                            format!(
+                                "Use listDirectory('{}/subdir') to explore subdirectories",
+                                path_str
+                            ),
+                            "Use search to search for content in files".to_string(),
                         ],
                     )
                 };
@@ -243,11 +246,18 @@ impl WorkspaceServer {
             Err(e) => {
                 error!("Failed to list directory {:?}: {}", safe_path, e);
                 if is_not_found_io_error(&e) {
-                    Ok(not_found_error(
-                        "Directory",
-                        &path_str,
+                    Ok(guided_error(
+                        ErrorCategory::ResourceNotFound,
+                        format!("Directory '{}' not found", path_str),
                         ToolGroup::Workspace,
-                    ))
+                    )
+                    .guidance(vec![
+                        "Use listDirectory('.') to inspect the workspace root".to_string(),
+                        "Verify the directory path is correct".to_string(),
+                        "Check whether the directory exists under the current workspace"
+                            .to_string(),
+                    ])
+                    .to_mcp_result())
                 } else {
                     Ok(guided_error(
                         ErrorCategory::OperationFailed,
