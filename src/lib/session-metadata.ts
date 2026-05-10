@@ -8,6 +8,28 @@ const parsedAgentConfigCache = new Map<
   Record<string, unknown> | null
 >();
 
+export function coalesceExecutionModeFlags(
+  yoloMode: boolean | undefined,
+  unsafeMode: boolean | undefined,
+): {
+  executionMode: 'normal' | 'yolo' | 'unsafe';
+  yoloMode: boolean;
+  unsafeMode: boolean;
+} {
+  const normalizedUnsafeMode = unsafeMode === true;
+  const normalizedYoloMode = normalizedUnsafeMode ? false : yoloMode === true;
+
+  return {
+    executionMode: normalizedUnsafeMode
+      ? 'unsafe'
+      : normalizedYoloMode
+        ? 'yolo'
+        : 'normal',
+    yoloMode: normalizedYoloMode,
+    unsafeMode: normalizedUnsafeMode,
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -219,6 +241,10 @@ export function mapSessionMetadataToAgentSession(
     metadata.id;
   const depth =
     metadata.depth ?? parsedConfig.depth ?? (parentSessionId ? 1 : 0);
+  const executionMode = coalesceExecutionModeFlags(
+    metadata.yoloMode,
+    metadata.unsafeMode,
+  );
 
   return {
     id: metadata.id,
@@ -247,8 +273,8 @@ export function mapSessionMetadataToAgentSession(
       : undefined,
     lastAttentionReason: metadata.lastAttentionReason,
     isBookmarked: metadata.isBookmarked ?? false,
-    yoloMode: metadata.yoloMode ?? false,
-    unsafeMode: metadata.unsafeMode ?? false,
+    yoloMode: executionMode.yoloMode,
+    unsafeMode: executionMode.unsafeMode,
     pendingApprovalCount,
   };
 }

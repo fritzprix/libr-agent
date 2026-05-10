@@ -648,17 +648,33 @@ impl AgentSessionManager {
             .await
             .map_err(|e| format!("Failed to update session execution mode: {}", e))?;
 
-        {
+        let has_active_session = {
             let active = self.active_sessions.read().await;
             if let Some(session) = active.get(session_id) {
                 session.yolo_mode.store(yolo_enabled, Ordering::Relaxed);
                 session.unsafe_mode.store(unsafe_enabled, Ordering::Relaxed);
+                true
+            } else {
+                false
             }
+        };
+
+        if !has_active_session {
+            log::info!(
+                "Updated execution mode for persisted session '{}' without active runtime state",
+                session_id
+            );
         }
 
         if let Some(include_hard_approvals) = mode.include_hard_approvals() {
-            approvals::approve_all_pending_tool_approvals(self, session_id, include_hard_approvals)
+            if has_active_session {
+                approvals::approve_all_pending_tool_approvals(
+                    self,
+                    session_id,
+                    include_hard_approvals,
+                )
                 .await?;
+            }
         }
 
         Ok(())

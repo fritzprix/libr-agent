@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAgentConfigMetadata } from '../session-metadata';
+import {
+  coalesceExecutionModeFlags,
+  parseAgentConfigMetadata,
+} from '../session-metadata';
 
 describe('parseAgentConfigMetadata', () => {
   const agentConfig = JSON.stringify({
@@ -62,5 +65,23 @@ describe('parseAgentConfigMetadata', () => {
     expect(parsed.assistant?.description).toBe('Keeps plans tidy');
     expect(parsed.assistant?.localServices).toEqual(['workspace']);
     expect(parsed.assistant?.disabledSkills).toEqual(['skill-a']);
+  });
+});
+
+describe('coalesceExecutionModeFlags', () => {
+  it('maps legacy yolo-only sessions to yolo mode', () => {
+    expect(coalesceExecutionModeFlags(true, undefined)).toEqual({
+      executionMode: 'yolo',
+      yoloMode: true,
+      unsafeMode: false,
+    });
+  });
+
+  it('prefers unsafe mode when legacy flags are both enabled', () => {
+    expect(coalesceExecutionModeFlags(true, true)).toEqual({
+      executionMode: 'unsafe',
+      yoloMode: false,
+      unsafeMode: true,
+    });
   });
 });

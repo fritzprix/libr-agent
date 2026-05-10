@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { openAgentSession } from '@/lib/backend/agent-commands';
 import { getLogger } from '@/lib/logger';
+import { coalesceExecutionModeFlags } from '@/lib/session-metadata';
 import { rustMessageToMessage } from '@/models/chat';
 import type { AgentSession } from '@/models/agent';
 import type { AgentEventPayload } from './types';
@@ -248,6 +249,11 @@ export function useAgentSessionEvents(
           }
         }
 
+        const executionMode = coalesceExecutionModeFlags(
+          sessionMetadata.yoloMode,
+          sessionMetadata.unsafeMode,
+        );
+
         const sessionData: AgentSession = {
           id: sessionMetadata.id,
           name: sessionMetadata.name,
@@ -269,8 +275,8 @@ export function useAgentSessionEvents(
             ? new Date(sessionMetadata.lastAttentionAt)
             : undefined,
           lastAttentionReason: sessionMetadata.lastAttentionReason,
-          yoloMode: sessionMetadata.yoloMode,
-          unsafeMode: sessionMetadata.unsafeMode ?? false,
+          yoloMode: executionMode.yoloMode,
+          unsafeMode: executionMode.unsafeMode,
         };
 
         setters.setSession(sessionData);
