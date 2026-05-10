@@ -381,12 +381,30 @@ fn normalize_policy_path(path: &Path) -> String {
 }
 
 fn normalize_policy_value(value: &str) -> String {
-    let normalized = SecurityValidator::normalize_path_separators(value);
+    let normalized =
+        normalize_macos_private_aliases(&SecurityValidator::normalize_path_separators(value));
     if cfg!(windows) {
         normalized.to_ascii_lowercase()
     } else {
         normalized
     }
+}
+
+fn normalize_macos_private_aliases(value: &str) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        for public_root in ["/etc", "/var", "/tmp"] {
+            let private_root = format!("/private{public_root}");
+            if value == private_root {
+                return public_root.to_string();
+            }
+            if let Some(suffix) = value.strip_prefix(&(private_root.clone() + "/")) {
+                return format!("{public_root}/{suffix}");
+            }
+        }
+    }
+
+    value.to_string()
 }
 
 fn current_policy_os() -> SensitivePathRuleOs {
