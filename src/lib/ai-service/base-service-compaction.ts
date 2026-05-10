@@ -24,6 +24,7 @@ interface CompactionContext {
       config?: CompactOptions['config'];
       forceToolUse: false;
       disableToolUse: true;
+      signal?: AbortSignal;
     },
   ) => AsyncGenerator<string, void, void>;
   isAborted: () => boolean;
@@ -57,6 +58,7 @@ export async function compactMessages(
     config: context.options?.config,
     forceToolUse: false,
     disableToolUse: true,
+    signal: context.options?.signal,
   });
 
   let summaryText = '';

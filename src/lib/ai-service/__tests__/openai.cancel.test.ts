@@ -75,6 +75,7 @@ async function consumeStream(
 describe('OpenAIService cancellation wiring', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createMock.mockReset();
     vi.useFakeTimers();
   });
 
@@ -82,39 +83,40 @@ describe('OpenAIService cancellation wiring', () => {
     vi.useRealTimers();
   });
 
-  it('reuses the original AbortSignal for stream retries after cancel', async () => {
+  it('keeps the provided AbortSignal across stream retry scheduling and aborts before retrying', async () => {
     createMock
       .mockRejectedValueOnce({ status: 500 })
       .mockResolvedValueOnce(createEmptyStream());
 
     const { OpenAIService } = await import('../openai');
-    const service = new OpenAIService('sk-test', { retryDelay: 0 });
+    const service = new OpenAIService('sk-test', { retryDelay: 1000 });
+    const controller = new AbortController();
 
     const streamPromise = consumeStream(
       service.streamChat([createUserMessage('hello')], {
         modelName: 'gpt-4o-mini',
+        signal: controller.signal,
       }),
     );
+    const streamExpectation = expect(streamPromise).rejects.toMatchObject({
+      name: 'AbortError',
+    });
 
+    await Promise.resolve();
+    controller.abort();
     await vi.runAllTimersAsync();
-    service.cancel();
-    await vi.runAllTimersAsync();
-    await streamPromise;
+    await streamExpectation;
 
     const firstOptions = createMock.mock.calls[0]?.[1] as
       | { signal?: AbortSignal }
       | undefined;
-    const secondOptions = createMock.mock.calls[1]?.[1] as
-      | { signal?: AbortSignal }
-      | undefined;
 
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(firstOptions?.signal).toBeInstanceOf(AbortSignal);
-    expect(secondOptions?.signal).toBe(firstOptions?.signal);
-    expect(secondOptions?.signal?.aborted).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(firstOptions?.signal).toBe(controller.signal);
+    expect(firstOptions?.signal?.aborted).toBe(true);
   });
 
-  it('reuses the original AbortSignal for non-stream retries after cancel', async () => {
+  it('keeps the provided AbortSignal across non-stream retry scheduling and aborts before retrying', async () => {
     createMock
       .mockRejectedValueOnce({ status: 500 })
       .mockResolvedValueOnce({
@@ -133,27 +135,28 @@ describe('OpenAIService cancellation wiring', () => {
       });
 
     const { OpenAIService } = await import('../openai');
-    const service = new OpenAIService('sk-test', { retryDelay: 0 });
+    const service = new OpenAIService('sk-test', { retryDelay: 1000 });
+    const controller = new AbortController();
 
     const samplePromise = service.sampleText('hello', {
       modelName: 'gpt-4o-mini',
+      signal: controller.signal,
+    });
+    const sampleExpectation = expect(samplePromise).rejects.toMatchObject({
+      name: 'AbortError',
     });
 
+    await Promise.resolve();
+    controller.abort();
     await vi.runAllTimersAsync();
-    service.cancel();
-    await vi.runAllTimersAsync();
-    await samplePromise;
+    await sampleExpectation;
 
     const firstOptions = createMock.mock.calls[0]?.[1] as
       | { signal?: AbortSignal }
       | undefined;
-    const secondOptions = createMock.mock.calls[1]?.[1] as
-      | { signal?: AbortSignal }
-      | undefined;
 
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(firstOptions?.signal).toBeInstanceOf(AbortSignal);
-    expect(secondOptions?.signal).toBe(firstOptions?.signal);
-    expect(secondOptions?.signal?.aborted).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(firstOptions?.signal).toBe(controller.signal);
+    expect(firstOptions?.signal?.aborted).toBe(true);
   });
 });

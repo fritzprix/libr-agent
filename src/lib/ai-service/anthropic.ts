@@ -259,6 +259,7 @@ export class AnthropicService extends BaseAIService<
       config?: AIServiceConfig;
       forceToolUse?: boolean;
       disableToolUse?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
@@ -289,6 +290,12 @@ export class AnthropicService extends BaseAIService<
         options.systemPrompt,
         options.sessionContext,
       );
+      const requestTools = tools;
+      const toolChoice = options.disableToolUse
+        ? { type: 'none' as const }
+        : options.forceToolUse && requestTools?.length
+          ? { type: 'any' as const }
+          : undefined;
 
       const stream = this.anthropic.messages.stream(
         {
@@ -297,11 +304,10 @@ export class AnthropicService extends BaseAIService<
           messages: anthropicMessages,
           ...(systemBlocks && { system: systemBlocks }),
           ...(extendedThinking && { extended_thinking: extendedThinking }),
-          tools: tools,
-          ...(options.forceToolUse &&
-            options.availableTools?.length && { tool_choice: { type: 'any' } }),
+          ...(requestTools && { tools: requestTools }),
+          ...(toolChoice && { tool_choice: toolChoice }),
         },
-        { signal: this.getAbortSignal() },
+        { signal: options.signal },
       );
 
       // Tool call accumulator for partial JSON streaming
@@ -323,13 +329,13 @@ export class AnthropicService extends BaseAIService<
       // Track current usage metrics (updated from message_start and message_delta)
       let currentUsage: TokenUsage = createEmptyAnthropicUsage();
 
-      if (this.getAbortSignal().aborted) {
+      if (options.signal?.aborted) {
         this.logger.debug('Stream aborted before iteration');
         return;
       }
 
       for await (const chunk of stream) {
-        if (this.getAbortSignal().aborted) {
+        if (options.signal?.aborted) {
           this.logger.debug('Stream aborted during iteration');
           break;
         }
@@ -605,29 +611,32 @@ export class AnthropicService extends BaseAIService<
       modelName?: string;
       samplingOptions?: SamplingOptions;
       config?: AIServiceConfig;
+      signal?: AbortSignal;
     },
   ): Promise<SamplingResponse> {
     const config = this.mergeConfig(options);
     const model =
       options?.modelName || config.defaultModel || this.getDefaultModel();
     const s = options?.samplingOptions;
-    const abortSignal = this.getAbortSignal();
+    const abortSignal = options?.signal;
 
-    const response = await this.withRetry(() =>
-      this.anthropic.messages.create(
-        {
-          model,
-          max_tokens: s?.maxTokens ?? config.maxTokens ?? 4096,
-          temperature: s?.temperature ?? config.temperature,
-          top_p: s?.topP,
-          top_k: s?.topK,
-          stop_sequences: s?.stopSequences,
-          messages: [{ role: 'user', content: prompt }],
-        },
-        {
-          signal: abortSignal,
-        },
-      ),
+    const response = await this.withRetry(
+      () =>
+        this.anthropic.messages.create(
+          {
+            model,
+            max_tokens: s?.maxTokens ?? config.maxTokens ?? 4096,
+            temperature: s?.temperature ?? config.temperature,
+            top_p: s?.topP,
+            top_k: s?.topK,
+            stop_sequences: s?.stopSequences,
+            messages: [{ role: 'user', content: prompt }],
+          },
+          {
+            signal: abortSignal,
+          },
+        ),
+      abortSignal,
     );
 
     const textBlock = response.content.find((b) => b.type === 'text');

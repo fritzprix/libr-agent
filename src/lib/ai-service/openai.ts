@@ -213,6 +213,7 @@ export class OpenAIService extends BaseAIService<
       config?: AIServiceConfig;
       forceToolUse?: boolean;
       disableToolUse?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
@@ -300,108 +301,104 @@ export class OpenAIService extends BaseAIService<
         request,
       });
 
-      const abortSignal = this.getAbortSignal();
-      const completion = await this.withRetry(() =>
-        this.openai.chat.completions.create(request, {
-          signal: abortSignal,
-          headers: {
-            'x-libragent-request-id': requestId,
-          },
-        }),
+      const abortSignal = options.signal;
+      const completion = await this.withRetry(
+        () =>
+          this.openai.chat.completions.create(request, {
+            signal: abortSignal,
+            headers: {
+              'x-libragent-request-id': requestId,
+            },
+          }),
+        abortSignal,
       );
 
-      if (abortSignal.aborted) {
+      if (abortSignal?.aborted) {
         this.logger.debug('Stream aborted before iteration');
         return;
       }
 
-      // Wrap with TTFT measurement (OpenAI doesn't provide native prefill timing)
-      const startTime = performance.now();
-      let firstChunkReceived = false;
-      for await (const chunk of completion) {
-        if (abortSignal.aborted) {
-          this.logger.info('Stream aborted during iteration');
-          break;
-        }
+      yield* this.streamChatWithTTFT(
+        (async function* (
+          service: OpenAIService,
+        ): AsyncGenerator<string, void, void> {
+          for await (const chunk of completion) {
+            if (abortSignal?.aborted) {
+              service.logger.info('Stream aborted during iteration');
+              break;
+            }
 
-        // Measure TTFT on first chunk (OpenAI doesn't provide native prefill timing).
-        // Only yield details here — yielding zero token counts would briefly reset the
-        // gauge to 0% before the real usage chunk arrives at the end of the stream.
-        if (!firstChunkReceived) {
-          const ttft = performance.now() - startTime;
-          firstChunkReceived = true;
-          yield JSON.stringify({
-            usage: { details: { timeToFirstToken: ttft } },
-          });
-        }
+            const rawUsage = chunk.usage;
+            if (rawUsage && isOpenAIStreamUsage(rawUsage)) {
+              const u = rawUsage as OpenAIStreamUsage;
+              service.promptDiagnostics.logPromptCacheMetadata({
+                mode: 'stream',
+                model: modelName,
+                request,
+                usage: u,
+              });
+              const cachedPromptTokens =
+                u.prompt_tokens_details?.cached_tokens ??
+                u.prompt_cache_hit_tokens;
 
-        const rawUsage = chunk.usage;
-        if (rawUsage && isOpenAIStreamUsage(rawUsage)) {
-          const u = rawUsage as OpenAIStreamUsage;
-          this.promptDiagnostics.logPromptCacheMetadata({
-            mode: 'stream',
-            model: modelName,
-            request,
-            usage: u,
-          });
-          const cachedPromptTokens =
-            u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens;
-
-          const usage: TokenUsage = {
-            promptTokens: u.prompt_tokens || 0,
-            completionTokens: u.completion_tokens || 0,
-            totalTokens: u.total_tokens || 0,
-            cachedPromptTokens,
-            details: {
-              reasoningTokens: u.completion_tokens_details?.reasoning_tokens,
-            },
-          };
-          yield JSON.stringify({ usage });
-        }
-
-        const delta = chunk.choices[0]
-          ?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
-          reasoning_content?: string;
-        };
-        if (delta?.reasoning_content) {
-          yield JSON.stringify({
-            thinking: delta.reasoning_content || '',
-          });
-        }
-
-        if (delta?.tool_calls) {
-          const toolCalls = delta.tool_calls
-            .map((toolCall) => {
-              if (typeof toolCall.index !== 'number') {
-                return null;
-              }
-
-              return createSerializableToolCallArgumentDelta(
-                toolCall.index,
-                toolCall.function?.arguments || '',
-                {
-                  id: toolCall.id,
-                  name: toolCall.function?.name,
+              const usage: TokenUsage = {
+                promptTokens: u.prompt_tokens || 0,
+                completionTokens: u.completion_tokens || 0,
+                totalTokens: u.total_tokens || 0,
+                cachedPromptTokens,
+                details: {
+                  reasoningTokens:
+                    u.completion_tokens_details?.reasoning_tokens,
                 },
-              );
-            })
-            .filter(
-              (
-                toolCall,
-              ): toolCall is ReturnType<
-                typeof createSerializableToolCallArgumentDelta
-              > => toolCall !== null,
-            );
+              };
+              yield JSON.stringify({ usage });
+            }
 
-          if (toolCalls.length > 0) {
-            yield serializeToolCallArgumentDeltas(toolCalls);
+            const delta = chunk.choices[0]
+              ?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
+              reasoning_content?: string;
+            };
+            if (delta?.reasoning_content) {
+              yield JSON.stringify({
+                thinking: delta.reasoning_content || '',
+              });
+            }
+
+            if (delta?.tool_calls) {
+              const toolCalls = delta.tool_calls
+                .map((toolCall) => {
+                  if (typeof toolCall.index !== 'number') {
+                    return null;
+                  }
+
+                  return createSerializableToolCallArgumentDelta(
+                    toolCall.index,
+                    toolCall.function?.arguments || '',
+                    {
+                      id: toolCall.id,
+                      name: toolCall.function?.name,
+                    },
+                  );
+                })
+                .filter(
+                  (
+                    toolCall,
+                  ): toolCall is ReturnType<
+                    typeof createSerializableToolCallArgumentDelta
+                  > => toolCall !== null,
+                );
+
+              if (toolCalls.length > 0) {
+                yield serializeToolCallArgumentDeltas(toolCalls);
+              }
+            } else if (delta?.content) {
+              yield JSON.stringify({
+                content: delta.content || '',
+              });
+            }
           }
-        } else if (delta?.content) {
-          yield JSON.stringify({
-            content: delta.content || '',
-          });
-        }
-      }
+        })(this),
+      );
     } catch (error) {
       this.handleStreamingError(error, { messages, options, config });
     }
@@ -527,6 +524,7 @@ export class OpenAIService extends BaseAIService<
       modelName?: string;
       samplingOptions?: SamplingOptions;
       config?: AIServiceConfig;
+      signal?: AbortSignal;
     },
   ): Promise<SamplingResponse> {
     const config = this.mergeConfig(options);
@@ -565,14 +563,16 @@ export class OpenAIService extends BaseAIService<
       request,
     });
 
-    const abortSignal = this.getAbortSignal();
-    const response = await this.withRetry(() =>
-      this.openai.chat.completions.create(request, {
-        signal: abortSignal,
-        headers: {
-          'x-libragent-request-id': requestId,
-        },
-      }),
+    const abortSignal = options?.signal;
+    const response = await this.withRetry(
+      () =>
+        this.openai.chat.completions.create(request, {
+          signal: abortSignal,
+          headers: {
+            'x-libragent-request-id': requestId,
+          },
+        }),
+      abortSignal,
     );
 
     if (response.usage) {

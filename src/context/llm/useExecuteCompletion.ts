@@ -28,10 +28,7 @@ import type {
   MCPToolCallContent,
 } from '@/lib/mcp';
 import type { Settings } from '@/lib/services/settings-service';
-import {
-  applyServiceRuntimeConfig,
-  buildServiceRuntimeConfig,
-} from './service-runtime-config';
+import { buildServiceRuntimeConfig } from './service-runtime-config';
 import { isSupersededRequestError } from './types';
 import {
   buildStreamingMessage,
@@ -77,7 +74,7 @@ export function useExecuteCompletion({
   setStreamingMessages,
   updateSessionStatus,
 }: UseExecuteCompletionProps) {
-  // Track active service instances for cleanup
+  // Track which shared service instance is currently bound to each session
   const activeServicesRef = useRef<Map<string, AICompletionExecutionService>>(
     new Map(),
   );
@@ -103,7 +100,6 @@ export function useExecuteCompletion({
       );
       timeoutsRef.current.clear();
 
-      activeServicesRef.current.forEach((svc) => svc.dispose());
       activeServicesRef.current.clear();
       activeRequestIdsRef.current.clear();
     };
@@ -141,15 +137,13 @@ export function useExecuteCompletion({
         lastMessageId: messages[messages.length - 1]?.id ?? 'none',
       });
 
-      // Cancel and dispose any previously active request for this session
+      // Cancel any previously active request for this session.
+      // Shared service instances are factory-owned and must not be disposed here.
       const previousController = abortControllersRef.current.get(sessionId);
       if (previousController) {
         previousController.abort();
       }
-      const previousService = activeServicesRef.current.get(sessionId);
-      if (previousService) {
-        previousService.dispose();
-      }
+      activeServicesRef.current.delete(sessionId);
       const previousTimeoutId = timeoutsRef.current.get(sessionId);
       if (previousTimeoutId) {
         clearTimeout(previousTimeoutId);
@@ -174,7 +168,6 @@ export function useExecuteCompletion({
         settingsRef.current,
         providerConfig,
       );
-      applyServiceRuntimeConfig(service, runtimeConfig);
       activeServicesRef.current.set(sessionId, service);
 
       // Get existing streaming message (already set by event listener)
@@ -271,6 +264,7 @@ export function useExecuteCompletion({
           availableTools: availableTools || [],
           config,
           forceToolUse: false,
+          signal: abortController.signal,
         });
 
         for await (const rawChunk of streamGenerator) {
@@ -801,15 +795,13 @@ export function useExecuteCompletion({
         timeoutsRef.current.delete(sessionId);
       }
       const service = activeServicesRef.current.get(sessionId);
-      if (service) {
-        activeServicesRef.current.delete(sessionId);
-        service.cancel();
-        service.dispose();
-      }
       const abortController = abortControllersRef.current.get(sessionId);
       if (abortController) {
         abortControllersRef.current.delete(sessionId);
         abortController.abort();
+      }
+      if (service) {
+        activeServicesRef.current.delete(sessionId);
       }
     },
     [setStreamingMessages],

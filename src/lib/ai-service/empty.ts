@@ -42,20 +42,18 @@ export class EmptyAIService extends BaseAIService<unknown, never> {
    */
   protected async *doStreamChat(
     messages: Message[],
-    options?: unknown,
+    options?: { signal?: AbortSignal },
   ): AsyncGenerator<string, void, void> {
     void messages;
-    void options;
-    if (this.getAbortSignal().aborted) {
+    if (options?.signal?.aborted) {
       this.logger.info('EmptyAIService stream cancelled before starting.');
       return;
     }
-    yield '';
+    yield* [];
     throw new AIServiceError(
       `EmptyAIService does not support streaming chat`,
       AIServiceProvider.Empty,
     );
-    // Yield nothing, this is an empty service
   }
 
   protected convertMessages(

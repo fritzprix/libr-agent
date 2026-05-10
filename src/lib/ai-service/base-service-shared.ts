@@ -10,6 +10,7 @@ export interface StreamChatOptions {
   config?: AIServiceConfig;
   forceToolUse?: boolean;
   disableToolUse?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface PrepareStreamChatOptions {
@@ -19,6 +20,7 @@ export interface PrepareStreamChatOptions {
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
   disableToolUse?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface PrepareStreamChatResult<TProviderTool> {
@@ -39,12 +41,14 @@ export interface CompactOptions {
   systemPrompt?: string;
   sessionContext?: string;
   availableTools?: MCPTool[];
+  signal?: AbortSignal;
 }
 
 export interface SampleTextOptions {
   modelName?: string;
   samplingOptions?: SamplingOptions;
   config?: AIServiceConfig;
+  signal?: AbortSignal;
 }
 
 export interface SyntheticSessionContextMessageOptions {

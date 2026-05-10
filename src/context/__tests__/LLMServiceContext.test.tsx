@@ -82,6 +82,7 @@ describe('LLMServiceContext – Core', () => {
   const mockListModels = vi.fn();
   const mockCancel = vi.fn();
   const mockDispose = vi.fn();
+  const mockSetDefaultConfig = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,6 +97,7 @@ describe('LLMServiceContext – Core', () => {
       listModels: mockListModels,
       cancel: mockCancel,
       dispose: mockDispose,
+      setDefaultConfig: mockSetDefaultConfig,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
       // Default implementation: pass-through (mirrors BaseAIService default)
       prepareContextInjection: vi.fn((systemPrompt, _sessionContext, messages) => ({
@@ -235,6 +237,8 @@ describe('LLMServiceContext – Core', () => {
       await waitFor(() => {
         expect(mockUnlisten).toHaveBeenCalled();
       });
+
+      expect(mockDispose).not.toHaveBeenCalled();
     });
   });
 
@@ -350,6 +354,7 @@ describe('LLMServiceContext – Core', () => {
         'test-key',
         expect.any(Object), // Settings config object
       );
+      expect(mockSetDefaultConfig).not.toHaveBeenCalled();
     });
 
     it('should handle tool calls in response', async () => {
@@ -740,14 +745,13 @@ describe('LLMServiceContext – Core', () => {
         wrapper: TestWrapper,
       });
 
-      let cancelled = false;
-      mockCancel.mockImplementation(() => {
-        cancelled = true;
-      });
-      mockStreamChat.mockImplementation(async function* () {
+      mockStreamChat.mockImplementation(async function* (
+        _messages: Message[],
+        options?: { signal?: AbortSignal },
+      ) {
         yield JSON.stringify({ thinking: 'looping...' });
 
-        while (!cancelled) {
+        while (!options?.signal?.aborted) {
           await new Promise((resolve) => window.setTimeout(resolve, 0));
         }
       });
@@ -793,6 +797,75 @@ describe('LLMServiceContext – Core', () => {
       await act(async () => {
         await requestPromise;
       });
+
+      expect(mockDispose).not.toHaveBeenCalled();
+    });
+
+    it('does not dispose a shared cached service when a new request supersedes the old one', async () => {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
+        wrapper: TestWrapper,
+      });
+
+      let streamCallCount = 0;
+      mockStreamChat.mockImplementation(async function* (
+        _messages: Message[],
+        options?: { signal?: AbortSignal },
+      ) {
+        streamCallCount += 1;
+        if (streamCallCount === 1) {
+          while (!options?.signal?.aborted) {
+            await new Promise((resolve) => window.setTimeout(resolve, 0));
+          }
+          return;
+        }
+
+        yield JSON.stringify({ content: 'fresh reply' });
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let firstPromise!: Promise<Message>;
+      let secondPromise!: Promise<Message>;
+      let firstSettled!: Promise<unknown>;
+      let secondSettled!: Promise<unknown>;
+      await act(async () => {
+        firstPromise = result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-old',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+        firstSettled = firstPromise.catch((error: unknown) => error);
+      });
+
+      await act(async () => {
+        secondPromise = result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-new',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+        secondSettled = secondPromise.catch((error: unknown) => error);
+      });
+
+      await act(async () => {
+        await Promise.all([firstSettled, secondSettled]);
+      });
+
+      expect(mockDispose).not.toHaveBeenCalled();
     });
   });
 });

@@ -21,6 +21,7 @@ interface StreamChatOptions {
   sessionContext?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
+  signal?: AbortSignal;
 }
 /** @internal */
 interface ChunkChoice {
@@ -160,6 +161,7 @@ export class CerebrasService extends BaseAIService<
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
+      const abortSignal = options.signal;
 
       const stream = await this.withRetry(
         async (): Promise<AsyncIterable<unknown>> => {
@@ -175,64 +177,53 @@ export class CerebrasService extends BaseAIService<
               tools: tools,
               tool_choice: tools ? 'auto' : undefined,
             },
-            { signal: this.getAbortSignal() },
+            { signal: abortSignal },
           );
         },
+        abortSignal,
       );
 
-      if (this.getAbortSignal().aborted) {
+      if (abortSignal?.aborted) {
         this.logger.info('Stream aborted before iteration');
         return;
       }
 
-      // Measure TTFT (Cerebras doesn't provide native prefill timing)
-      const startTime = performance.now();
-      let firstChunkReceived = false;
+      yield* this.streamChatWithTTFT(
+        (async function* (
+          service: CerebrasService,
+        ): AsyncGenerator<string, void, void> {
+          for await (const chunk of stream) {
+            if (abortSignal?.aborted) {
+              service.logger.info('Stream aborted during iteration');
+              break;
+            }
 
-      for await (const chunk of stream) {
-        if (this.getAbortSignal().aborted) {
-          this.logger.info('Stream aborted during iteration');
-          break;
-        }
+            // Handle usage metrics usually found in the final chunk
+            const chunkObj = chunk as unknown as Record<string, unknown>;
+            if (chunkObj?.usage) {
+              const u = chunkObj.usage as unknown as {
+                prompt_tokens?: number;
+                completion_tokens?: number;
+                total_tokens?: number;
+                prompt_tokens_details?: { cached_tokens?: number };
+              };
+              yield JSON.stringify({
+                usage: {
+                  promptTokens: u.prompt_tokens || 0,
+                  completionTokens: u.completion_tokens || 0,
+                  totalTokens: u.total_tokens || 0,
+                  cachedPromptTokens: u.prompt_tokens_details?.cached_tokens,
+                },
+              });
+            }
 
-        // Inject TTFT metric on first chunk
-        if (!firstChunkReceived) {
-          const ttft = performance.now() - startTime;
-          firstChunkReceived = true;
-          yield JSON.stringify({
-            usage: {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              details: { timeToFirstToken: ttft },
-            },
-          });
-        }
-
-        // Handle usage metrics usually found in the final chunk
-        const chunkObj = chunk as unknown as Record<string, unknown>;
-        if (chunkObj?.usage) {
-          const u = chunkObj.usage as unknown as {
-            prompt_tokens?: number;
-            completion_tokens?: number;
-            total_tokens?: number;
-            prompt_tokens_details?: { cached_tokens?: number };
-          };
-          yield JSON.stringify({
-            usage: {
-              promptTokens: u.prompt_tokens || 0,
-              completionTokens: u.completion_tokens || 0,
-              totalTokens: u.total_tokens || 0,
-              cachedPromptTokens: u.prompt_tokens_details?.cached_tokens,
-            },
-          });
-        }
-
-        const processedChunk = this.processChunk(chunk);
-        if (processedChunk) {
-          yield processedChunk;
-        }
-      }
+            const processedChunk = service.processChunk(chunk);
+            if (processedChunk) {
+              yield processedChunk;
+            }
+          }
+        })(this),
+      );
     } catch (error: unknown) {
       this.handleStreamingError(error, { messages, options, config });
     }
@@ -475,6 +466,7 @@ export class CerebrasService extends BaseAIService<
       modelName?: string;
       samplingOptions?: SamplingOptions;
       config?: AIServiceConfig;
+      signal?: AbortSignal;
     },
   ): Promise<SamplingResponse> {
     if (!this.cerebras) {
@@ -484,18 +476,20 @@ export class CerebrasService extends BaseAIService<
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
-    const response = await this.withRetry(() =>
-      this.cerebras!.chat.completions.create({
-        model,
-        stream: false,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: s?.maxTokens ?? config.maxTokens,
-        temperature: s?.temperature ?? config.temperature,
-        top_p: s?.topP,
-        presence_penalty: s?.presencePenalty,
-        frequency_penalty: s?.frequencyPenalty,
-        stop: s?.stopSequences,
-      }),
+    const response = await this.withRetry(
+      () =>
+        this.cerebras!.chat.completions.create({
+          model,
+          stream: false,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: s?.maxTokens ?? config.maxTokens,
+          temperature: s?.temperature ?? config.temperature,
+          top_p: s?.topP,
+          presence_penalty: s?.presencePenalty,
+          frequency_penalty: s?.frequencyPenalty,
+          stop: s?.stopSequences,
+        }),
+      options?.signal,
     );
 
     // The Cerebras SDK's ChatCompletion union includes streaming chunks; narrow to the response type
