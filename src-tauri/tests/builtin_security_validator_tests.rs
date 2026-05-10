@@ -153,11 +153,17 @@ fn test_symlink_to_general_external_file_is_allowed() {
     let link_path = temp_dir.path().join("safe_link");
     symlink(&external_file, &link_path).expect("create symlink");
 
+    let expected_link_path = temp_dir
+        .path()
+        .canonicalize()
+        .expect("canonical temp dir")
+        .join("safe_link");
+
     assert_eq!(
         validator
             .validate_path("safe_link")
             .expect("symlink to general file should be allowed"),
-        link_path
+        expected_link_path
     );
 }
 
