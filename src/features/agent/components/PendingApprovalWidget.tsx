@@ -8,18 +8,28 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ShieldAlert, Check, X, Code, Loader2 } from 'lucide-react';
+import {
+  ShieldAlert,
+  Check,
+  X,
+  Code,
+  Loader2,
+  Shield,
+  TriangleAlert,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PendingApproval } from '@/context/AgentSessionContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface PendingApprovalWidgetProps {
   approvals: PendingApproval[];
+  yoloModeEnabled: boolean;
   onRespond: (toolCallId: string, approved: boolean) => Promise<void>;
 }
 
 export function PendingApprovalWidget({
   approvals,
+  yoloModeEnabled,
   onRespond,
 }: PendingApprovalWidgetProps) {
   const { t } = useTranslation();
@@ -47,19 +57,58 @@ export function PendingApprovalWidget({
         }
 
         const isSubmitting = submittingId === approval.toolCallId;
+        const isHardApproval = approval.approvalKind === 'hard';
+        const title = isHardApproval
+          ? t('agent.approval.hardTitle', 'Hard Approval Required')
+          : t('agent.approval.title', 'Approval Required');
+        const subtitle = isHardApproval
+          ? yoloModeEnabled
+            ? t(
+                'agent.approval.hardDescriptionYolo',
+                'YOLO mode is on, but this high-risk action still requires manual approval.',
+              )
+            : t(
+                'agent.approval.hardDescription',
+                'This high-risk action requires explicit approval.',
+              )
+          : t(
+              'agent.approval.description',
+              'The agent wants to execute this tool.',
+            );
+        const containerClass = isHardApproval
+          ? 'border-destructive/50 bg-destructive/5 shadow-md'
+          : 'border-warning/50 bg-warning/5 shadow-md';
+        const iconContainerClass = isHardApproval
+          ? 'w-8 h-8 rounded-full bg-destructive/15 flex items-center justify-center text-destructive flex-shrink-0'
+          : 'w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center text-warning flex-shrink-0';
+        const ApproveIcon = isHardApproval ? Shield : Check;
+        const approvalKindLabel = isHardApproval
+          ? t('agent.approval.hardBadge', 'Hard approval')
+          : t('agent.approval.standardBadge', 'Standard approval');
 
         return (
-          <Card
-            key={approval.toolCallId}
-            className="border-warning/50 bg-warning/5 shadow-md"
-          >
+          <Card key={approval.toolCallId} className={containerClass}>
             <CardHeader className="pb-3 flex flex-row items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center text-warning flex-shrink-0">
-                <ShieldAlert size={18} />
+              <div className={iconContainerClass}>
+                {isHardApproval ? (
+                  <TriangleAlert size={18} />
+                ) : (
+                  <ShieldAlert size={18} />
+                )}
               </div>
               <div className="flex-1 overflow-hidden">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  {t('agent.approval.title', 'Approval Required')}
+                  {title}
+                  <Badge
+                    variant="outline"
+                    className={
+                      isHardApproval
+                        ? 'text-[10px] border-destructive/30 bg-destructive/10 text-destructive'
+                        : 'text-[10px] bg-background/50'
+                    }
+                  >
+                    {approvalKindLabel}
+                  </Badge>
                   <Badge
                     variant="outline"
                     className="font-mono text-[10px] bg-background/50"
@@ -68,10 +117,7 @@ export function PendingApprovalWidget({
                   </Badge>
                 </CardTitle>
                 <div className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                  {t(
-                    'agent.approval.description',
-                    'The agent wants to execute this tool.',
-                  )}
+                  {subtitle}
                 </div>
               </div>
             </CardHeader>
@@ -111,14 +157,20 @@ export function PendingApprovalWidget({
                 size="sm"
                 onClick={() => handleResponse(approval.toolCallId, true)}
                 disabled={isSubmitting}
-                className="bg-warning hover:bg-warning/90 text-warning-foreground"
+                className={
+                  isHardApproval
+                    ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground'
+                    : 'bg-warning hover:bg-warning/90 text-warning-foreground'
+                }
               >
                 {isSubmitting && submittingId === approval.toolCallId ? (
                   <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                 ) : (
-                  <Check className="w-3.5 h-3.5 mr-1.5" />
+                  <ApproveIcon className="w-3.5 h-3.5 mr-1.5" />
                 )}
-                {t('agent.approval.approve', 'Approve')}
+                {isHardApproval
+                  ? t('agent.approval.hardApprove', 'Approve high-risk action')
+                  : t('agent.approval.approve', 'Approve')}
               </Button>
             </CardFooter>
           </Card>

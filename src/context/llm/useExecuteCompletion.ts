@@ -42,6 +42,7 @@ const logger = getLogger('useExecuteCompletion');
 const STREAMING_TEXT_THROTTLE_MS = 50;
 const STREAMING_TOOL_CALL_THROTTLE_MS = 100;
 const REPEATED_THINKING_CHECK_INTERVAL = 5;
+type RequestTerminationReason = 'aborted' | 'superseded';
 
 function createExecutionError(
   type: MessageError['type'],
@@ -86,6 +87,10 @@ export function useExecuteCompletion({
   const lastStreamingUpdateRef = useRef<Map<string, number>>(new Map());
   // Track the latest request identity per session to suppress stale stream updates/results
   const activeRequestIdsRef = useRef<Map<string, string>>(new Map());
+  // Track explicit request termination reasons so late chunks cannot "win" races.
+  const terminatedRequestsRef = useRef<Map<string, RequestTerminationReason>>(
+    new Map(),
+  );
 
   // Context window usage per session for gauge display
 
@@ -102,8 +107,23 @@ export function useExecuteCompletion({
 
       activeServicesRef.current.clear();
       activeRequestIdsRef.current.clear();
+      terminatedRequestsRef.current.clear();
     };
   }, []);
+
+  const getRequestKey = useCallback(
+    (sessionId: string, responseMessageId: string) =>
+      `${sessionId}:${responseMessageId}`,
+    [],
+  );
+
+  const getRequestTerminationReason = useCallback(
+    (sessionId: string, responseMessageId: string) =>
+      terminatedRequestsRef.current.get(
+        getRequestKey(sessionId, responseMessageId),
+      ),
+    [getRequestKey],
+  );
 
   const isCurrentRequest = useCallback(
     (sessionId: string, responseMessageId: string) =>
@@ -139,10 +159,21 @@ export function useExecuteCompletion({
 
       // Cancel any previously active request for this session.
       // Shared service instances are factory-owned and must not be disposed here.
+      terminatedRequestsRef.current.delete(
+        getRequestKey(sessionId, responseMessageId),
+      );
+      const previousRequestId = activeRequestIdsRef.current.get(sessionId);
       const previousController = abortControllersRef.current.get(sessionId);
-      if (previousController) {
+      if (previousController && previousRequestId) {
+        terminatedRequestsRef.current.set(
+          getRequestKey(sessionId, previousRequestId),
+          'superseded',
+        );
         previousController.abort();
       }
+      terminatedRequestsRef.current.delete(
+        getRequestKey(sessionId, responseMessageId),
+      );
       activeServicesRef.current.delete(sessionId);
       const previousTimeoutId = timeoutsRef.current.get(sessionId);
       if (previousTimeoutId) {
@@ -238,6 +269,67 @@ export function useExecuteCompletion({
         let repeatedThinkingCheckCounter = 0;
 
         const startTime = performance.now();
+        const ensureRequestStillActive = (phase: string) => {
+          const terminationReason = getRequestTerminationReason(
+            sessionId,
+            responseMessageId,
+          );
+          const activeRequestId = activeRequestIdsRef.current.get(sessionId);
+
+          if (terminationReason === 'superseded') {
+            logger.info(`Dropping ${phase} for superseded request`, {
+              sessionId,
+              responseMessageId,
+              activeRequestId,
+            });
+            throw new Error('Request superseded');
+          }
+
+          if (terminationReason === 'aborted') {
+            logger.warn(`Completion request aborted during ${phase}`, {
+              sessionId,
+              responseMessageId,
+            });
+            throw new Error('Request aborted');
+          }
+
+          if (!isCurrentRequest(sessionId, responseMessageId)) {
+            if (
+              activeRequestId !== undefined &&
+              activeRequestId !== responseMessageId
+            ) {
+              logger.info(`Dropping ${phase} for superseded request`, {
+                sessionId,
+                responseMessageId,
+                activeRequestId,
+              });
+              throw new Error('Request superseded');
+            }
+
+            if (abortController.signal.aborted) {
+              logger.warn(`Completion request aborted during ${phase}`, {
+                sessionId,
+                responseMessageId,
+              });
+              throw new Error('Request aborted');
+            }
+
+            logger.info(`Dropping ${phase} for inactive request`, {
+              sessionId,
+              responseMessageId,
+              activeRequestId,
+            });
+            throw new Error('Request superseded');
+          }
+
+          if (abortController.signal.aborted) {
+            logger.warn(`Completion request aborted during ${phase}`, {
+              sessionId,
+              responseMessageId,
+            });
+            throw new Error('Request aborted');
+          }
+        };
 
         // Let the provider choose how to deliver sessionContext (stable system
         // prompt concat vs. ephemeral tail message injection for prefix caching).
@@ -268,21 +360,10 @@ export function useExecuteCompletion({
         });
 
         for await (const rawChunk of streamGenerator) {
-          if (!isCurrentRequest(sessionId, responseMessageId)) {
-            logger.info('Dropping stream for superseded request', {
-              sessionId,
-              responseMessageId,
-            });
-            throw new Error('Request superseded');
-          }
+          ensureRequestStillActive('stream processing');
 
           if (firstChunkTime === undefined) {
             firstChunkTime = performance.now();
-          }
-
-          if (abortController.signal.aborted) {
-            logger.warn('Completion request aborted', { sessionId });
-            throw new Error('Request aborted');
           }
 
           const chunk = parseStreamChunk(rawChunk);
@@ -578,26 +659,7 @@ export function useExecuteCompletion({
           return next;
         });
 
-        const activeRequestId = activeRequestIdsRef.current.get(sessionId);
-
-        if (
-          activeRequestId !== undefined &&
-          activeRequestId !== responseMessageId
-        ) {
-          logger.info('Dropping completed stream for superseded request', {
-            sessionId,
-            responseMessageId,
-            activeRequestId,
-          });
-          throw new Error('Request superseded');
-        }
-
-        if (abortController.signal.aborted) {
-          logger.warn('Completion request aborted before first chunk', {
-            sessionId,
-          });
-          throw new Error('Request aborted');
-        }
+        ensureRequestStillActive('stream finalization');
 
         const endTime = performance.now();
         const totalDurationMs = endTime - startTime;
@@ -700,6 +762,8 @@ export function useExecuteCompletion({
           );
         }
 
+        ensureRequestStillActive('final message commit');
+
         // 1. Update with isStreaming: false IMMEDIATELY
         setStreamingMessages((prev) => {
           if (!isCurrentRequest(sessionId, responseMessageId)) {
@@ -728,6 +792,8 @@ export function useExecuteCompletion({
         }, 500);
         timeoutsRef.current.set(sessionId, timeoutId);
 
+        ensureRequestStillActive('request completion');
+
         updateSessionStatus(sessionId, 'idle');
 
         if (activeRequestIdsRef.current.get(sessionId) === responseMessageId) {
@@ -739,6 +805,9 @@ export function useExecuteCompletion({
         if (activeServicesRef.current.get(sessionId) === service) {
           activeServicesRef.current.delete(sessionId);
         }
+        terminatedRequestsRef.current.delete(
+          getRequestKey(sessionId, responseMessageId),
+        );
 
         return finalMessage;
       } catch (error) {
@@ -779,11 +848,21 @@ export function useExecuteCompletion({
         if (activeServicesRef.current.get(sessionId) === service) {
           activeServicesRef.current.delete(sessionId);
         }
+        terminatedRequestsRef.current.delete(
+          getRequestKey(sessionId, responseMessageId),
+        );
 
         throw error;
       }
     },
-    [isCurrentRequest, updateSessionStatus, settingsRef, setStreamingMessages],
+    [
+      getRequestKey,
+      getRequestTerminationReason,
+      isCurrentRequest,
+      updateSessionStatus,
+      settingsRef,
+      setStreamingMessages,
+    ],
   );
 
   const cancelCompletionRequest = useCallback(
@@ -803,6 +882,12 @@ export function useExecuteCompletion({
       }
 
       logger.info('Manually cancelling completion request', { sessionId });
+      if (activeResponseMessageId) {
+        terminatedRequestsRef.current.set(
+          getRequestKey(sessionId, activeResponseMessageId),
+          'aborted',
+        );
+      }
       activeRequestIdsRef.current.delete(sessionId);
       lastStreamingUpdateRef.current.delete(sessionId);
       setStreamingMessages((prev) => {
@@ -825,7 +910,7 @@ export function useExecuteCompletion({
         activeServicesRef.current.delete(sessionId);
       }
     },
-    [setStreamingMessages],
+    [getRequestKey, setStreamingMessages],
   );
 
   return { executeCompletionRequest, cancelCompletionRequest };

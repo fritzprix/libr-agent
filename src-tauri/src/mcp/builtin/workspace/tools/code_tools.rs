@@ -98,7 +98,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         title: Some("Execute Shell Command (Persistent Session)".to_string()),
         description: "Run a shell command in a persistent session that preserves working directory and env vars across calls.\n\
                        Use when you need 'cd' to stick, 'export' to carry forward, or interactive commands (sudo).\n\
-                       File tools such as readFile and listDirectory still use workspace root paths and do not follow the shell's current directory.\n\
+                       File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current directory automatically.\n\
                        For simple stateless commands: runShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
@@ -242,7 +242,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
         description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
                        - Use ';' to chain commands.\n\
-                       - File tools such as readFile and listDirectory still use workspace root paths and do not follow the shell's current location.\n\
+                       - File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current location automatically.\n\
                        - For simple stateless commands: runPowerShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),

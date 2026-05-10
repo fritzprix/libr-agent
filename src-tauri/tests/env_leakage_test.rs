@@ -69,9 +69,7 @@ async fn test_env_leakage_in_unix_isolation() {
 async fn test_env_leakage_in_linux_high_isolation() {
     use std::collections::HashMap;
     use tauri_mcp_agent_lib::session_isolation::platforms::linux::create_high_isolated_command;
-    use tauri_mcp_agent_lib::session_isolation::types::{
-        IsolatedProcessConfig, IsolationConfig, IsolationLevel, ResourceLimits,
-    };
+    use tauri_mcp_agent_lib::session_isolation::types::{IsolatedProcessConfig, IsolationLevel};
 
     // Skip if unprivileged user namespaces are not usable in this environment.
     // Use the exact flags that create_high_isolated_command probes with, so we
@@ -99,10 +97,6 @@ async fn test_env_leakage_in_linux_high_isolation() {
     std::env::set_var("SECRET_API_KEY", "super_secret_value");
     std::env::set_var("XDG_RUNTIME_DIR", "/run/user/9999");
 
-    let isolation_config = IsolationConfig {
-        resource_limits: ResourceLimits::default(),
-    };
-
     let config = IsolatedProcessConfig {
         session_id: "test-high-session".to_string(),
         workspace_path: workspace.path().to_path_buf(),
@@ -113,7 +107,7 @@ async fn test_env_leakage_in_linux_high_isolation() {
         shell_type: None,
     };
 
-    let mut cmd = create_high_isolated_command(config, &isolation_config)
+    let mut cmd = create_high_isolated_command(config)
         .await
         .expect("Failed to create high isolation command");
 

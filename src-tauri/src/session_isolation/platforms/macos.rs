@@ -1,18 +1,17 @@
 use crate::session_isolation::common::is_command_available;
 use crate::session_isolation::platforms::unix::create_medium_isolated_command;
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
+use crate::session_isolation::types::IsolatedProcessConfig;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
 /// macOS high isolation using sandbox-exec
 pub async fn create_high_isolated_command(
     config: IsolatedProcessConfig,
-    isolation_config: &IsolationConfig,
 ) -> Result<AsyncCommand, String> {
     // Check if sandbox-exec is available
     if !is_command_available("sandbox-exec").await {
         warn!("sandbox-exec not available, falling back to medium isolation");
-        return create_medium_isolated_command(config, isolation_config).await;
+        return create_medium_isolated_command(config).await;
     }
 
     // Create a sandbox profile for this session

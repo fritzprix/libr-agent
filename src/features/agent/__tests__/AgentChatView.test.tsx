@@ -42,7 +42,9 @@ function createBaseSessionState(): AgentSessionStateContextValue {
     runtimeState: createBaseRuntimeState(),
     initializationStep: null,
     pendingApprovals: [],
+    executionMode: 'normal',
     yoloModeEnabled: false,
+    unsafeModeEnabled: false,
   };
 }
 

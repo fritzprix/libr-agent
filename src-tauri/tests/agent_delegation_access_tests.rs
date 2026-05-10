@@ -31,6 +31,7 @@ fn session(id: &str, parent_session_id: Option<&str>) -> SessionMetadata {
         last_attention_reason: None,
         is_bookmarked: false,
         yolo_mode: false,
+        unsafe_mode: false,
         workspace_override: None,
     }
 }

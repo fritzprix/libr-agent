@@ -3,7 +3,7 @@ use super::contracts::{
     CreateAgentSessionWithMessageRequest, ListAgentSessionsRequest, PendingApprovalSnapshot,
     UpdateAgentConfigRequest,
 };
-use crate::agent::AgentSessionManager;
+use crate::agent::{AgentSessionManager, ExecutionMode};
 use crate::mcp::types::{MCPTool, ServiceContext};
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::session_repository::SessionRepository;
@@ -71,6 +71,10 @@ pub async fn agent_open_session(
                     tool_call_id: tool_call_id.clone(),
                     tool_name: data.tool_name.clone(),
                     arguments: data.arguments.clone(),
+                    approval_kind: data.approval_kind,
+                    request_id: data.request_id.clone(),
+                    description: data.description.clone(),
+                    input_preview: data.input_preview.clone(),
                 })
                 .collect()
         } else {
@@ -321,6 +325,28 @@ pub async fn agent_set_yolo_mode(
     enabled: bool,
 ) -> Result<(), String> {
     manager.set_yolo_mode(&session_id, enabled).await
+}
+
+/// Set unsafe mode for a session
+#[command]
+pub async fn agent_set_unsafe_mode(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    manager.set_unsafe_mode(&session_id, enabled).await
+}
+
+/// Set the exclusive execution mode for a session.
+#[command]
+pub async fn agent_set_execution_mode(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    mode: String,
+) -> Result<(), String> {
+    manager
+        .set_execution_mode(&session_id, mode.parse::<ExecutionMode>()?)
+        .await
 }
 
 /// Factory reset the agent system (used for "Reset All Data & Settings" feature)

@@ -1,4 +1,4 @@
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig, ShellType};
+use crate::session_isolation::types::{IsolatedProcessConfig, ShellType};
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
@@ -126,10 +126,9 @@ pub async fn create_basic_isolated_command(
     Ok(cmd)
 }
 
-/// Medium isolation: process groups + resource limits
+/// Medium isolation: process groups
 pub async fn create_medium_isolated_command(
     config: IsolatedProcessConfig,
-    isolation_config: &IsolationConfig,
 ) -> Result<AsyncCommand, String> {
     let mut cmd = create_basic_isolated_command(config.clone()).await?;
 
@@ -139,13 +138,6 @@ pub async fn create_medium_isolated_command(
         cmd.process_group(0); // Create new process group
     }
 
-    // Apply resource limits (Logging only for now as per original code)
-    let limits = &isolation_config.resource_limits;
-    info!(
-        "Resource limits configured: memory_mb={:?}, time_secs={:?}, open_files={:?}",
-        limits.max_memory_mb, limits.max_execution_time_secs, limits.max_open_files
-    );
-
     Ok(cmd)
 }
 
@@ -153,8 +145,7 @@ pub async fn create_medium_isolated_command(
 #[allow(dead_code)] // Unused on Linux/macOS as they have specific implementations
 pub async fn create_high_isolated_command(
     config: IsolatedProcessConfig,
-    isolation_config: &IsolationConfig,
 ) -> Result<AsyncCommand, String> {
     warn!("High isolation not supported on this platform, falling back to medium isolation");
-    create_medium_isolated_command(config, isolation_config).await
+    create_medium_isolated_command(config).await
 }

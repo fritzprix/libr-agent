@@ -26,13 +26,20 @@ impl WorkspaceServer {
         let workspace_path = self
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
+        let previous_cwd = self.shell_manager.get_shell_cwd(&session_id).await;
+        let current_dir = previous_cwd.as_deref().map(std::path::Path::new);
+
+        if let Some(result) =
+            self.apply_shell_policy_block(tool_name, command, &workspace_path, current_dir, None)
+        {
+            return Ok(result);
+        }
 
         // Normalize command
         let normalized_command = normalization::normalize_shell_command(command);
 
         // Track execution time
         let execution_start = std::time::Instant::now();
-        let previous_cwd = self.shell_manager.get_shell_cwd(&session_id).await;
 
         // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
@@ -134,7 +141,7 @@ impl WorkspaceServer {
 
                     // Only warn when this call moved the shell away from workspace root or to another directory.
                     let file_tools_warning = if display_cwd != "." && cwd_changed {
-                        "\n⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find"
+                        "\n⚠️  readFile and listDirectory still use workspace root, not the shell CWD\n    Use absolute paths or shell commands like ls/find for the current shell directory"
                     } else {
                         ""
                     };
@@ -161,7 +168,7 @@ impl WorkspaceServer {
                                 "Use {} with shell commands like `pwd` or `ls` to inspect the current shell directory",
                                 tool_name
                             ),
-                            "readFile and listDirectory still use workspace root, not the shell CWD"
+                            "Use absolute file-tool paths if you want them to target the shell's current directory"
                                 .to_string(),
                         ]
                     };

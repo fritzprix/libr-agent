@@ -148,6 +148,7 @@ interface AgentChatVirtuosoContext {
   scrollToLoadOlderLabel: string;
   sessionAssistantName: string;
   workflowStatus: ReturnType<typeof useAgentChat>['workflowStatus'];
+  yoloModeEnabled: ReturnType<typeof useAgentSession>['yoloModeEnabled'];
 }
 
 type AgentChatVirtuosoContextProps = {
@@ -239,6 +240,7 @@ function AgentChatMessagesFooter({ context }: AgentChatVirtuosoContextProps) {
         <div className="flex justify-start mb-8 mt-3">
           <PendingApprovalWidget
             approvals={context.pendingApprovals}
+            yoloModeEnabled={context.yoloModeEnabled}
             onRespond={context.respondToToolApproval}
           />
         </div>
@@ -348,6 +350,7 @@ export function AgentChatMessages() {
     session,
     pendingApprovals,
     respondToToolApproval,
+    yoloModeEnabled,
     hasOlderMessages,
     isLoadingOlderMessages,
     loadOlderMessages,
@@ -654,6 +657,7 @@ export function AgentChatMessages() {
       ),
       sessionAssistantName: assistantName,
       workflowStatus,
+      yoloModeEnabled,
     }),
     [
       agentError,
@@ -668,6 +672,7 @@ export function AgentChatMessages() {
       retryMessage,
       assistantName,
       workflowStatus,
+      yoloModeEnabled,
     ],
   );
 

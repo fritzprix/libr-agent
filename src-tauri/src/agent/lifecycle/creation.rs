@@ -159,6 +159,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         last_attention_at: None,
         last_attention_reason: None,
         yolo_mode: false,
+        unsafe_mode: false,
         workspace_override,
     };
 
@@ -223,6 +224,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 transition_lock: Arc::new(tokio::sync::Mutex::new(())),
                 cancellation_token: CancellationToken::new(),
                 yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
+                unsafe_mode: Arc::new(AtomicBool::new(session.unsafe_mode)),
                 cancel_pending: Arc::new(AtomicBool::new(false)),
                 pending_execution: None,
                 messages: Arc::new(RwLock::new(Vec::new())),

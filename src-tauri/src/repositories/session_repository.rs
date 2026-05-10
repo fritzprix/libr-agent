@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 use crate::entity::{prelude::*, session};
 
-const SESSION_UPSERT_COLUMNS: [session::Column; 20] = [
+const SESSION_UPSERT_COLUMNS: [session::Column; 21] = [
     session::Column::Name,
     session::Column::Status,
     session::Column::Model,
@@ -30,6 +30,7 @@ const SESSION_UPSERT_COLUMNS: [session::Column; 20] = [
     session::Column::LastAttentionAt,
     session::Column::LastAttentionReason,
     session::Column::YoloMode,
+    session::Column::UnsafeMode,
     session::Column::WorkspaceOverride,
 ];
 
@@ -129,6 +130,7 @@ pub struct SessionMetadata {
     pub last_attention_reason: Option<SessionAttentionReason>,
     pub is_bookmarked: bool,
     pub yolo_mode: bool,
+    pub unsafe_mode: bool,
     pub workspace_override: Option<String>,
 }
 
@@ -177,6 +179,7 @@ impl TryFrom<session::Model> for SessionMetadata {
                 .transpose()?,
             is_bookmarked: model.is_bookmarked,
             yolo_mode: model.yolo_mode,
+            unsafe_mode: model.unsafe_mode,
             workspace_override: model.workspace_override,
         })
     }
@@ -230,6 +233,17 @@ pub trait SessionRepository: Send + Sync {
 
     /// Update the YOLO mode flag for a session
     async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError>;
+
+    /// Update the unsafe mode flag for a session
+    async fn update_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError>;
+
+    /// Update both execution mode flags atomically for a session.
+    async fn update_execution_mode(
+        &self,
+        session_id: &str,
+        yolo_enabled: bool,
+        unsafe_enabled: bool,
+    ) -> Result<(), DbError>;
 
     /// Persist the workspace override path for a session (None clears it)
     async fn update_workspace_override(
@@ -307,6 +321,7 @@ impl SqliteSessionRepository {
                 .map(str::to_string)),
             is_bookmarked: Set(session.is_bookmarked),
             yolo_mode: Set(session.yolo_mode),
+            unsafe_mode: Set(session.unsafe_mode),
             workspace_override: Set(session.workspace_override.clone()),
         }
     }
@@ -515,6 +530,30 @@ impl SessionRepository for SqliteSessionRepository {
         self.apply_partial_update(session::ActiveModel {
             id: Set(session_id.to_string()),
             yolo_mode: Set(enabled),
+            ..Default::default()
+        })
+        .await
+    }
+
+    async fn update_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
+        self.apply_partial_update(session::ActiveModel {
+            id: Set(session_id.to_string()),
+            unsafe_mode: Set(enabled),
+            ..Default::default()
+        })
+        .await
+    }
+
+    async fn update_execution_mode(
+        &self,
+        session_id: &str,
+        yolo_enabled: bool,
+        unsafe_enabled: bool,
+    ) -> Result<(), DbError> {
+        self.apply_partial_update(session::ActiveModel {
+            id: Set(session_id.to_string()),
+            yolo_mode: Set(yolo_enabled),
+            unsafe_mode: Set(unsafe_enabled),
             ..Default::default()
         })
         .await

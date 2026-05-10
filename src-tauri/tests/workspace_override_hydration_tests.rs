@@ -80,6 +80,7 @@ fn make_session(session_id: &str, workspace_override: Option<String>) -> Session
         last_attention_reason: None,
         is_bookmarked: false,
         yolo_mode: false,
+        unsafe_mode: false,
         workspace_override,
     }
 }

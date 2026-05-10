@@ -40,8 +40,9 @@ use commands::agent_commands::{
     agent_list_attention_sessions, agent_list_sessions, agent_mark_session_viewed,
     agent_open_session, agent_pause_workflow, agent_report_llm_streaming_issue,
     agent_respond_channel_permission, agent_respond_tool_approval, agent_resume_session,
-    agent_resume_workflow, agent_save_compact_context, agent_send_message, agent_set_yolo_mode,
-    agent_terminate_workflow, agent_toggle_session_bookmark, agent_update_session_config,
+    agent_resume_workflow, agent_save_compact_context, agent_send_message,
+    agent_set_execution_mode, agent_set_unsafe_mode, agent_set_yolo_mode, agent_terminate_workflow,
+    agent_toggle_session_bookmark, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant,
@@ -271,6 +272,8 @@ pub fn run() {
                 agent_toggle_session_bookmark,
                 agent_mark_session_viewed,
                 agent_set_yolo_mode,
+                agent_set_unsafe_mode,
+                agent_set_execution_mode,
                 agent_respond_tool_approval,
                 agent_get_compact_context,
                 agent_save_compact_context,

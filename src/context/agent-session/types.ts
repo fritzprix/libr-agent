@@ -2,6 +2,8 @@ import type { Message, MessageError, RustMessage } from '@/models/chat';
 import type { AgentSession } from '@/models/agent';
 import type {
   AgentRuntimeError,
+  PendingApprovalKind,
+  PendingApprovalSnapshot,
   SessionRuntimeState,
   WorkflowCompletionReason,
 } from '@/models/agent-ipc';
@@ -33,6 +35,10 @@ export type AgentEventPayload =
       toolCallId: string;
       toolName: string;
       arguments: string;
+      approvalKind: PendingApprovalKind;
+      requestId?: string;
+      description?: string;
+      inputPreview?: string;
     }
   | {
       type: 'channelPermissionRequest';
@@ -40,6 +46,7 @@ export type AgentEventPayload =
       requestId: string;
       toolCallId: string;
       toolName: string;
+      approvalKind: PendingApprovalKind;
       description: string;
       inputPreview: string;
     }
@@ -69,11 +76,9 @@ export type WorkflowPhase =
   | 'waiting_approval'
   | 'error';
 
-export interface PendingApproval {
-  toolCallId: string;
-  toolName: string;
-  arguments: string;
-}
+export type ExecutionMode = 'normal' | 'yolo' | 'unsafe';
+
+export type PendingApproval = PendingApprovalSnapshot;
 
 export interface AgentSessionStateContextValue {
   session: AgentSession | null;
@@ -92,6 +97,8 @@ export interface AgentSessionStateContextValue {
   } | null;
   pendingApprovals: PendingApproval[];
   yoloModeEnabled: boolean;
+  unsafeModeEnabled: boolean;
+  executionMode: ExecutionMode;
 }
 
 export interface AgentSessionActionsContextValue {
@@ -105,6 +112,8 @@ export interface AgentSessionActionsContextValue {
     toolCallId: string,
     approved: boolean,
   ) => Promise<void>;
+  setExecutionMode: (mode: ExecutionMode) => Promise<void>;
   toggleYoloMode: () => void;
+  toggleUnsafeMode: () => void;
   updateSessionConfig: (model: string, provider: string) => void;
 }

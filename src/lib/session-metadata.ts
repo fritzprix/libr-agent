@@ -248,6 +248,7 @@ export function mapSessionMetadataToAgentSession(
     lastAttentionReason: metadata.lastAttentionReason,
     isBookmarked: metadata.isBookmarked ?? false,
     yoloMode: metadata.yoloMode ?? false,
+    unsafeMode: metadata.unsafeMode ?? false,
     pendingApprovalCount,
   };
 }

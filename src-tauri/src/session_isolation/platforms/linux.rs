@@ -1,12 +1,11 @@
 use crate::session_isolation::platforms::unix::create_medium_isolated_command;
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
+use crate::session_isolation::types::IsolatedProcessConfig;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
 /// Linux high isolation using unshare (user namespaces)
 pub async fn create_high_isolated_command(
     config: IsolatedProcessConfig,
-    isolation_config: &IsolationConfig,
 ) -> Result<AsyncCommand, String> {
     // Probe whether unprivileged user namespaces are actually usable, not just
     // whether the binary exists.  On many CI/container environments `unshare` is
@@ -28,7 +27,7 @@ pub async fn create_high_isolated_command(
 
     if !userns_available {
         warn!("user namespaces not available or unprivileged, falling back to medium isolation");
-        return create_medium_isolated_command(config, isolation_config).await;
+        return create_medium_isolated_command(config).await;
     }
 
     let mut cmd = AsyncCommand::new("unshare");

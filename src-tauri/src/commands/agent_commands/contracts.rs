@@ -130,6 +130,13 @@ pub struct PendingApprovalSnapshot {
     pub tool_call_id: String,
     pub tool_name: String,
     pub arguments: String,
+    pub approval_kind: crate::agent::state::PendingApprovalKind,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub input_preview: Option<String>,
 }
 
 /// Tool execution result from frontend

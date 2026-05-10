@@ -7,7 +7,7 @@ import type {
   SessionRuntimeState,
 } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
-import type { WorkflowPhase, PendingApproval } from './types';
+import type { ExecutionMode, WorkflowPhase, PendingApproval } from './types';
 import { buildMessageError } from './utils';
 
 const DEFAULT_RUNTIME_STATE: SessionRuntimeState = {
@@ -44,13 +44,14 @@ export function useAgentSessionState() {
     [],
   );
   const [yoloModeEnabled, setYoloModeEnabled] = useState(false);
+  const [unsafeModeEnabled, setUnsafeModeEnabled] = useState(false);
+  const executionMode: ExecutionMode = unsafeModeEnabled
+    ? 'unsafe'
+    : yoloModeEnabled
+      ? 'yolo'
+      : 'normal';
 
-  const yoloModeRef = useRef(yoloModeEnabled);
   const workflowPhaseRef = useRef(workflowPhase);
-
-  useEffect(() => {
-    yoloModeRef.current = yoloModeEnabled;
-  }, [yoloModeEnabled]);
 
   useEffect(() => {
     workflowPhaseRef.current = workflowPhase;
@@ -109,6 +110,7 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPendingApprovals,
       setYoloModeEnabled,
+      setUnsafeModeEnabled,
       applyLocalViewedAt,
       addMessage,
       prependMessages,
@@ -126,6 +128,7 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPendingApprovals,
       setYoloModeEnabled,
+      setUnsafeModeEnabled,
       applyLocalViewedAt,
       addMessage,
       prependMessages,
@@ -166,9 +169,10 @@ export function useAgentSessionState() {
       initializationStep,
       pendingApprovals,
       yoloModeEnabled,
+      unsafeModeEnabled,
+      executionMode,
     },
     refs: {
-      yoloModeRef,
       workflowPhaseRef,
     },
     setters,

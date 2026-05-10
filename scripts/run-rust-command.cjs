@@ -35,8 +35,12 @@ function getRecommendedBuildJobs() {
 function getRecommendedTestBuildJobs() {
   const cpuCount = Math.max(1, getCpuCount());
   const totalMemGiB = os.totalmem() / 1024 ** 3;
-  const cpuLimitedJobs = clamp(Math.floor(cpuCount / 4), 1, 2);
-  const memoryLimitedJobs = clamp(Math.floor(totalMemGiB / 8), 1, 2);
+  const cpuLimitedJobs = clamp(
+    cpuCount <= 2 ? 1 : cpuCount <= 4 ? cpuCount - 1 : Math.floor(cpuCount / 2),
+    1,
+    8,
+  );
+  const memoryLimitedJobs = clamp(Math.floor(totalMemGiB / 4), 1, 8);
 
   return Math.min(cpuLimitedJobs, memoryLimitedJobs);
 }
