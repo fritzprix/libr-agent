@@ -253,7 +253,7 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Use listDirectory('.') to inspect the workspace directory".to_string(),
+                        "Use listDirectory('.') to inspect the workspace root".to_string(),
                         "Verify the directory path is correct".to_string(),
                         "Check whether the directory exists and is readable".to_string(),
                     ])
