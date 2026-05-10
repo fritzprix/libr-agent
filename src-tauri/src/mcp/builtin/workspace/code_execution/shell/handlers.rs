@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::sync::atomic::Ordering;
 
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
@@ -10,6 +11,21 @@ use super::super::validation;
 use super::policy::{evaluate_shell_policy, ShellPolicyAction, ShellPolicyContext};
 
 impl WorkspaceServer {
+    fn unsafe_mode_bypasses_shell_policy(&self) -> bool {
+        let Some(active_sessions) = crate::state::try_get_active_sessions() else {
+            return false;
+        };
+
+        let Ok(active) = active_sessions.try_read() else {
+            return false;
+        };
+
+        active
+            .get(&self.session_id)
+            .map(|session| session.unsafe_mode.load(Ordering::Relaxed))
+            .unwrap_or(false)
+    }
+
     #[cfg(windows)]
     fn validate_windows_shell_syntax(&self, raw_command: &str) -> Option<MCPResult> {
         if !validation::contains_unquoted_andand(raw_command) {
@@ -294,6 +310,10 @@ impl WorkspaceServer {
             return None;
         }
 
+        if self.unsafe_mode_bypasses_shell_policy() {
+            return None;
+        }
+
         Some(
             guided_error(
                 ErrorCategory::PermissionDenied,
@@ -303,10 +323,124 @@ impl WorkspaceServer {
             .guidance(vec![
                 "Use workspace file tools for normal file inspection and editing".to_string(),
                 "Avoid protected home/system credential locations in shell commands".to_string(),
-                "If you need this access, change the policy rather than relying on YOLO"
+                "YOLO does not bypass policy blocks; use Unsafe mode only if you intentionally accept the risk"
                     .to_string(),
             ])
             .to_mcp_result(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::context::registry::ContextRegistry;
+    use crate::agent::state::{AgentSession, CompactionRuntimeState, PendingEventManager};
+    use crate::repositories::{SessionMetadata, SessionStatus};
+    use crate::session::SessionManager;
+    use std::collections::HashMap;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+    use tokio::sync::RwLock;
+    use tokio_util::sync::CancellationToken;
+
+    fn build_session_metadata(session_id: &str) -> SessionMetadata {
+        let now = chrono::Utc::now().timestamp_millis();
+        SessionMetadata {
+            id: session_id.to_string(),
+            name: Some("Shell Policy Test".to_string()),
+            status: SessionStatus::Idle,
+            model: "test-model".to_string(),
+            provider: "test-provider".to_string(),
+            agent_config: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
+            created_at: now,
+            updated_at: now,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
+            is_bookmarked: false,
+            yolo_mode: false,
+            unsafe_mode: true,
+            workspace_override: None,
+        }
+    }
+
+    fn build_active_agent_session(metadata: SessionMetadata) -> AgentSession {
+        AgentSession {
+            metadata,
+            is_running: false,
+            active_permit: None,
+            status_transition: Arc::new(RwLock::new(None)),
+            transition_lock: Arc::new(tokio::sync::Mutex::new(())),
+            cancellation_token: CancellationToken::new(),
+            yolo_mode: Arc::new(AtomicBool::new(false)),
+            unsafe_mode: Arc::new(AtomicBool::new(true)),
+            cancel_pending: Arc::new(AtomicBool::new(false)),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(true)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+            repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
+            pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
+            pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+            context_registry: Arc::new(ContextRegistry::new()),
+            compact_context: Arc::new(RwLock::new(None)),
+            compaction: CompactionRuntimeState::new(),
+            expected_response_id: Arc::new(RwLock::new(None)),
+            cached_stable_prompt: Arc::new(RwLock::new(None)),
+            last_completion_request: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    async fn register_unsafe_active_session(session_id: &str) {
+        let active_sessions = if let Some(existing) = crate::state::try_get_active_sessions() {
+            existing.clone()
+        } else {
+            let sessions = Arc::new(RwLock::new(HashMap::new()));
+            crate::state::init_active_sessions(sessions.clone());
+            sessions
+        };
+
+        active_sessions.write().await.insert(
+            session_id.to_string(),
+            build_active_agent_session(build_session_metadata(session_id)),
+        );
+    }
+
+    #[tokio::test]
+    async fn unsafe_mode_bypasses_shell_policy_blocks() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-unsafe-bypass";
+        register_unsafe_active_session(session_id).await;
+
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+        let workspace_path = temp_dir.path().join(session_id);
+
+        let result = server.apply_shell_policy_block(
+            "runShell",
+            "cat ~/.ssh/id_rsa",
+            &workspace_path,
+            None,
+            None,
+        );
+
+        assert!(
+            result.is_none(),
+            "unsafe mode should bypass shell policy blocks"
+        );
     }
 }

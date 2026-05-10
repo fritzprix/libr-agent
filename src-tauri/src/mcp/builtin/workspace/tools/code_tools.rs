@@ -324,7 +324,7 @@ define_mcp_tool! {
     const EXECUTE_PENDING_SHELL = "executePendingShell";
     fn create_execute_pending_shell_tool();
     title: "Execute Pending Shell Command";
-    description: "[Internal callback] Continue a pending interactive shell execution with executionId and userInput.";
+    description: "[Internal callback] Continue a pending interactive shell execution with executionId and base64-encoded UTF-8 userInput.";
     inputs: props => {
         props.insert(
             "executionId".to_string(),
@@ -340,7 +340,7 @@ define_mcp_tool! {
             string_prop(
                 None,
                 None,
-                Some("User input (password or text) to inject into command stdin"),
+                Some("Base64-encoded UTF-8 user input (password or text) to inject into command stdin"),
             ),
         );
     };

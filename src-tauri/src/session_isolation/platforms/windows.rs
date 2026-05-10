@@ -1,7 +1,7 @@
 use crate::session_isolation::types::{IsolatedProcessConfig, ShellType};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::process::Command as AsyncCommand;
-use tracing::{info, warn};
+use tracing::info;
 
 use super::windows_python::detect_python_path;
 
