@@ -90,6 +90,7 @@ async fn tool_policy_blocks_sensitive_shell_command() {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn tool_policy_blocks_attached_redirection_to_sensitive_path() {
     let decision = evaluate_tool_execution_policy(
@@ -335,6 +336,7 @@ async fn tool_policy_requires_hard_approval_for_unresolved_variable_path() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn shell_policy_tracks_variable_across_segments() {
     let workspace = tempdir().expect("temp dir");
