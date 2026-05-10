@@ -11,7 +11,11 @@ use super::ui;
 
 impl WorkspaceServer {
     /// Handle interactive shell execution (1st tool call)
-    /// Returns UIResource with execution_id for user input
+    /// Returns UIResource with execution_id for user input.
+    ///
+    /// The follow-up UI payload is base64-encoded UTF-8 for transport safety only.
+    /// It is not treated as a cryptographic protection layer because this UI runs
+    /// inside the same trusted local desktop app boundary as the callback handler.
     pub(crate) async fn handle_interactive_shell(
         &self,
         command: &str,
@@ -33,16 +37,6 @@ impl WorkspaceServer {
             .unwrap_or("sync")
             .to_string();
 
-        // Generate nonce for client-side obfuscation
-        // SECURITY WARNING:
-        // XOR-based obfuscation with a UUID nonce provides only limited security.
-        // Since the nonce is transmitted in the HTML, an attacker who can intercept or observe
-        // the HTML content can easily reverse the obfuscation by applying the same XOR operation.
-        // This approach protects against casual logging but NOT against determined attackers.
-        // If the threat model requires protection against active attackers who can observe the UI content,
-        // consider using a stronger encryption method (e.g., AES with secure key exchange via Web Crypto API).
-        let encryption_nonce = uuid::Uuid::new_v4().to_string();
-
         // Store pending execution
         let pending = PendingShellExecution {
             execution_id: execution_id.clone(),
@@ -51,7 +45,6 @@ impl WorkspaceServer {
             display_command: sanitized_command.clone(), // For logs/UI
             run_mode,                                // Store for 2nd call
             timeout: args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30), // Command execution timeout
-            encryption_nonce: encryption_nonce.clone(),
             created_at: chrono::Utc::now(),
         };
 
@@ -59,7 +52,7 @@ impl WorkspaceServer {
 
         // Build UIResource with platform-aware prompt
         let (prompt, input_type) = self.get_prompt_config(command, args);
-        let html = ui::build_shell_input_ui(&execution_id, prompt, input_type, &encryption_nonce);
+        let html = ui::build_shell_input_ui(&execution_id, prompt, input_type);
 
         // Create UI resource JSON
         let _ui_resource = serde_json::json!({

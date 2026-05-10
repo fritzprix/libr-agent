@@ -76,6 +76,16 @@ function useLLMServiceHarness() {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('LLMServiceContext – Core', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
@@ -808,12 +818,13 @@ describe('LLMServiceContext – Core', () => {
       const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
+      const firstChunkGate = createDeferred<void>();
 
       mockStreamChat.mockImplementation(async function* (
         _messages: Message[],
         options?: { signal?: AbortSignal },
       ) {
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        await firstChunkGate.promise;
         if (options?.signal?.aborted) {
           return;
         }
@@ -849,8 +860,15 @@ describe('LLMServiceContext – Core', () => {
           'response-msg-silent-cancel',
         );
       });
+      const abortedExpectation = expect(requestPromise).rejects.toThrow(
+        'Request aborted',
+      );
 
-      await expect(requestPromise).rejects.toThrow('Request aborted');
+      await act(async () => {
+        firstChunkGate.resolve();
+      });
+
+      await abortedExpectation;
       expect(mockDispose).not.toHaveBeenCalled();
     });
 
@@ -858,12 +876,24 @@ describe('LLMServiceContext – Core', () => {
       const { result } = renderHook(() => useLLMServiceHarness(), {
         wrapper: TestWrapper,
       });
+      const firstChunkGate = createDeferred<void>();
+      const secondChunkGate = createDeferred<void>();
 
-      mockStreamChat.mockImplementation(async function* (
+      mockStreamChat.mockImplementationOnce(async function* (
         _messages: Message[],
         options?: { signal?: AbortSignal },
       ) {
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        await firstChunkGate.promise;
+        if (options?.signal?.aborted) {
+          return;
+        }
+        yield JSON.stringify({ content: 'stale reply' });
+      });
+      mockStreamChat.mockImplementationOnce(async function* (
+        _messages: Message[],
+        options?: { signal?: AbortSignal },
+      ) {
+        await secondChunkGate.promise;
         if (options?.signal?.aborted) {
           return;
         }
@@ -898,11 +928,20 @@ describe('LLMServiceContext – Core', () => {
         'openai',
         'test-key',
       );
-
-      await expect(firstPromise).rejects.toThrow('Request superseded');
-      await expect(secondPromise).resolves.toMatchObject({
+      const firstExpectation = expect(firstPromise).rejects.toThrow(
+        'Request superseded',
+      );
+      const secondExpectation = expect(secondPromise).resolves.toMatchObject({
         content: [{ type: 'text', text: 'fresh reply' }],
       });
+
+      await act(async () => {
+        firstChunkGate.resolve();
+        secondChunkGate.resolve();
+      });
+
+      await firstExpectation;
+      await secondExpectation;
       expect(mockDispose).not.toHaveBeenCalled();
     });
 

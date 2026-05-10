@@ -14,7 +14,7 @@ impl SecureFileManager {
     /// Creates a new `SecureFileManager` with a specified base directory.
     ///
     /// # Arguments
-    /// * `base_dir` - The base directory to which all file operations will be restricted.
+    /// * `base_dir` - The workspace anchor used for resolving relative paths.
     pub fn new_with_base_dir(base_dir: std::path::PathBuf) -> Self {
         Self {
             security: SecurityValidator::new_with_base_dir(base_dir),

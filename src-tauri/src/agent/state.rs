@@ -78,11 +78,20 @@ impl PendingEventManager {
 }
 
 /// Data for a pending tool execution approval
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingApprovalKind {
+    Standard,
+    Hard,
+}
+
+/// Data for a pending tool execution approval
 #[derive(Debug)]
 pub struct PendingApprovalData {
     pub sender: oneshot::Sender<bool>,
     pub tool_name: String,
     pub arguments: String,
+    pub approval_kind: PendingApprovalKind,
     pub request_id: Option<String>,
     pub description: Option<String>,
     pub input_preview: Option<String>,
@@ -181,6 +190,9 @@ pub struct AgentSession {
 
     /// YOLO mode: execute tools without requiring approval
     pub yolo_mode: Arc<AtomicBool>,
+
+    /// Unsafe mode: bypass approval and policy enforcement
+    pub unsafe_mode: Arc<AtomicBool>,
 
     /// Cancel-pending flag to block post-cancel recursion/re-entry
     pub cancel_pending: Arc<AtomicBool>,

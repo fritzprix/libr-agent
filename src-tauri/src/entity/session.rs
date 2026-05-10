@@ -26,6 +26,7 @@ pub struct Model {
     pub last_attention_reason: Option<String>,
     pub is_bookmarked: bool,
     pub yolo_mode: bool,
+    pub unsafe_mode: bool,
     pub workspace_override: Option<String>,
 }
 

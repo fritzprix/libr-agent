@@ -15,12 +15,14 @@ fn channel_permission_request_ids_match_claude_constraints() {
 }
 
 #[test]
-fn channel_permission_preview_is_truncated_to_200_chars() {
+fn channel_permission_preview_preserves_head_and_tail_context() {
     let long_input = "x".repeat(240);
     let preview = build_channel_permission_input_preview(&long_input);
 
-    assert_eq!(preview.chars().count(), 201);
-    assert!(preview.ends_with('…'));
+    assert_eq!(preview.chars().count(), 183);
+    assert!(preview.contains('…'));
+    assert!(preview.starts_with(&"x".repeat(140)));
+    assert!(preview.ends_with(&"x".repeat(40)));
 }
 
 #[test]

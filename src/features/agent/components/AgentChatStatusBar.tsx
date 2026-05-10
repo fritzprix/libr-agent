@@ -9,6 +9,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  Shield,
   Wrench,
   AlertTriangle,
   Zap,
@@ -37,7 +38,7 @@ const logger = getLogger('AgentChatStatusBar');
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
   const { value: settings } = useSettings();
-  const { session, yoloModeEnabled, toggleYoloMode, updateSessionConfig } =
+  const { session, executionMode, setExecutionMode, updateSessionConfig } =
     useAgentSession();
   const { workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
@@ -147,6 +148,41 @@ export function AgentChatStatusBar() {
     workflowStatus === 'idle' ||
     workflowStatus === 'paused' ||
     workflowStatus === 'error';
+  const executionModeOptions = [
+    {
+      mode: 'normal' as const,
+      label: 'Normal',
+      icon: Shield,
+      title: t(
+        'agent.statusBar.executionModeNormalTitle',
+        'Normal mode. Policy blocks and approval rules are enforced.',
+      ),
+      activeClass: 'bg-secondary text-foreground',
+      iconClass: 'text-foreground',
+    },
+    {
+      mode: 'yolo' as const,
+      label: 'YOLO',
+      icon: Zap,
+      title: t(
+        'agent.statusBar.executionModeYoloTitle',
+        'YOLO mode. Standard approvals are auto-approved, but hard approvals still require manual approval.',
+      ),
+      activeClass: 'bg-primary/10 text-primary',
+      iconClass: 'fill-primary text-primary',
+    },
+    {
+      mode: 'unsafe' as const,
+      label: 'Unsafe',
+      icon: DatabaseZap,
+      title: t(
+        'agent.statusBar.executionModeUnsafeTitle',
+        'Unsafe mode. Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
+      ),
+      activeClass: 'bg-destructive/10 text-destructive',
+      iconClass: 'fill-destructive text-destructive',
+    },
+  ];
 
   const handleRetry = async () => {
     if (isRetrying) return;
@@ -408,33 +444,40 @@ export function AgentChatStatusBar() {
           )}
         </div>
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleYoloMode}
-            className={`h-6 px-2 text-xs flex items-center gap-1 ${
-              yoloModeEnabled
-                ? 'text-primary bg-primary/10 hover:bg-primary/20'
-                : 'text-muted-foreground hover:bg-muted'
-            }`}
-            title={
-              yoloModeEnabled
-                ? t(
-                    'agent.statusBar.yoloModeOnTitle',
-                    'YOLO Mode is ON. Tools will execute without asking for approval.',
-                  )
-                : t(
-                    'agent.statusBar.yoloModeOffTitle',
-                    'YOLO Mode is OFF. Sensitive tools require approval.',
-                  )
-            }
+          <div
+            className="flex items-center gap-2"
+            data-testid="execution-mode-control"
           >
-            <Zap
-              size={14}
-              className={yoloModeEnabled ? 'fill-primary text-primary' : ''}
-            />
-            YOLO Mode
-          </Button>
+            <span className="text-xs text-muted-foreground">Execution</span>
+            <div className="flex items-center rounded-md border border-border/70 bg-background/60 p-0.5">
+              {executionModeOptions.map((option) => {
+                const Icon = option.icon;
+                const isActive = executionMode === option.mode;
+
+                return (
+                  <Button
+                    key={option.mode}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void setExecutionMode(option.mode)}
+                    className={cn(
+                      'h-6 rounded-sm px-2 text-xs flex items-center gap-1',
+                      isActive
+                        ? option.activeClass
+                        : 'text-muted-foreground hover:bg-muted',
+                    )}
+                    title={option.title}
+                  >
+                    <Icon
+                      size={14}
+                      className={isActive ? option.iconClass : 'text-current'}
+                    />
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Token Metrics Badge - Show if metrics exist */}
           {displayMetrics && (

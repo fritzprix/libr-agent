@@ -128,6 +128,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
             last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         })
         .await
@@ -223,6 +224,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
             last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         })
         .await
@@ -294,6 +296,7 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
             last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         })
         .await

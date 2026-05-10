@@ -2,43 +2,97 @@ use tauri_mcp_agent_lib::mcp::builtin::utils::{SecurityError, SecurityValidator}
 use tempfile::tempdir;
 
 #[test]
-fn test_path_validation() {
-    let temp_dir = tempdir().unwrap();
+fn test_path_validation_allows_general_absolute_paths_but_blocks_sensitive_ones() {
+    let temp_dir = tempdir().expect("temp dir");
     let validator = SecurityValidator::new_with_base_dir(temp_dir.path().to_path_buf());
+    let outside_dir = tempdir().expect("outside dir");
+    let outside_file = outside_dir.path().join("safe.txt");
 
-    // Valid paths
     assert!(validator.validate_path("test.txt").is_ok());
     assert!(validator.validate_path("./test.txt").is_ok());
     assert!(validator.validate_path("subdir/test.txt").is_ok());
     assert!(validator
         .validate_path("attachments/docker_조사....md")
         .is_ok());
+    assert_eq!(
+        validator
+            .validate_path_for_read(&outside_file.to_string_lossy())
+            .expect("general absolute path should be allowed"),
+        outside_file
+    );
 
-    // Absolute paths for read operations are now strictly rejected
-    assert!(validator
-        .validate_path_for_read("/tmp/some-file.txt")
-        .is_err());
+    assert!(matches!(
+        validator.validate_path("../test.txt"),
+        Err(SecurityError::PathTraversal(_))
+    ));
+    assert!(matches!(
+        validator.validate_path("./subdir/../../../etc/passwd"),
+        Err(SecurityError::PathTraversal(_))
+    ));
+    assert!(matches!(
+        validator.validate_path("subdir\\..\\..\\Windows"),
+        Err(SecurityError::PathTraversal(_))
+    ));
 
-    // Invalid paths (directory traversal)
-    assert!(validator.validate_path("../test.txt").is_err());
-    assert!(validator.validate_path("../../etc/passwd").is_err());
+    let project_env_path = outside_dir.path().join(".env.production");
+    assert_eq!(
+        validator
+            .validate_path(&project_env_path.to_string_lossy())
+            .expect("project-local .env outside home should remain readable"),
+        project_env_path
+    );
 
-    // Invalid paths (absolute paths)
-    assert!(validator.validate_path("/etc/passwd").is_err());
-    assert!(validator.validate_path("/Users/test/file.txt").is_err());
-    assert!(validator.validate_path("/tmp/outside.txt").is_err());
+    if let Some(home) = dirs::home_dir() {
+        let home_env_path = home.join(".env.production");
+        assert!(matches!(
+            validator.validate_path(&home_env_path.to_string_lossy()),
+            Err(SecurityError::AccessDenied(_))
+        ));
 
-    // Invalid paths (Windows drive letters)
-    assert!(validator.validate_path("C:\\Windows\\System32").is_err());
-    assert!(validator.validate_path("D:\\secret.txt").is_err());
+        let ssh_path = home.join(".ssh").join("config");
+        assert!(matches!(
+            validator.validate_path(&ssh_path.to_string_lossy()),
+            Err(SecurityError::AccessDenied(_))
+        ));
 
-    // Invalid paths (complex traversal attempts)
-    assert!(validator
-        .validate_path("./subdir/../../../etc/passwd")
-        .is_err());
+        let kube_path = home.join(".kube").join("config");
+        assert!(matches!(
+            validator.validate_path(&kube_path.to_string_lossy()),
+            Err(SecurityError::AccessDenied(_))
+        ));
+    }
 
-    // Windows-style separators are normalized, but parent traversal must still be blocked.
-    assert!(validator.validate_path("subdir\\..\\..\\Windows").is_err());
+    #[cfg(unix)]
+    {
+        assert!(matches!(
+            validator.validate_path("/root/.ssh/id_rsa"),
+            Err(SecurityError::AccessDenied(_))
+        ));
+        assert!(matches!(
+            validator.validate_path("/home/otheruser/.aws/credentials"),
+            Err(SecurityError::AccessDenied(_))
+        ));
+        assert!(matches!(
+            validator.validate_path("/Users/otheruser/.gnupg/pubring.kbx"),
+            Err(SecurityError::AccessDenied(_))
+        ));
+        assert!(matches!(
+            validator.validate_path("/home/otheruser/.kube/config"),
+            Err(SecurityError::AccessDenied(_))
+        ));
+        assert!(matches!(
+            validator.validate_path("/home/otheruser/.local/share/keyrings/login.keyring"),
+            Err(SecurityError::AccessDenied(_))
+        ));
+        assert!(matches!(
+            validator.validate_path("/etc/shadow"),
+            Err(SecurityError::AccessDenied(_))
+        ));
+        assert!(matches!(
+            validator.validate_path("/etc/sudoers"),
+            Err(SecurityError::AccessDenied(_))
+        ));
+    }
 }
 
 #[test]
@@ -58,128 +112,83 @@ fn test_normalize_path_separators() {
 
 #[test]
 fn test_extract_filename() {
-    // Windows paths
-    let path = "C:\\Users\\user\\Downloads\\test.pdf";
-    let filename = SecurityValidator::extract_filename(path);
-    assert_eq!(filename, Some("test.pdf".to_string()));
-
-    // Unix paths
-    let path = "/home/user/downloads/test.pdf";
-    let filename = SecurityValidator::extract_filename(path);
-    assert_eq!(filename, Some("test.pdf".to_string()));
-
-    // Mixed separators
-    let path = "C:/Users/user\\Downloads\\test.pdf";
-    let filename = SecurityValidator::extract_filename(path);
-    assert_eq!(filename, Some("test.pdf".to_string()));
-
-    // Edge cases
-    let path = "test.pdf";
-    let filename = SecurityValidator::extract_filename(path);
-    assert_eq!(filename, Some("test.pdf".to_string()));
-
-    let path = "";
-    let filename = SecurityValidator::extract_filename(path);
-    assert_eq!(filename, Some("".to_string()));
-
-    let path = "C:\\Users\\";
-    let filename = SecurityValidator::extract_filename(path);
-    assert_eq!(filename, Some("".to_string()));
+    assert_eq!(
+        SecurityValidator::extract_filename("C:\\Users\\user\\Downloads\\test.pdf"),
+        Some("test.pdf".to_string())
+    );
+    assert_eq!(
+        SecurityValidator::extract_filename("/home/user/downloads/test.pdf"),
+        Some("test.pdf".to_string())
+    );
+    assert_eq!(
+        SecurityValidator::extract_filename("C:/Users/user\\Downloads\\test.pdf"),
+        Some("test.pdf".to_string())
+    );
+    assert_eq!(
+        SecurityValidator::extract_filename("test.pdf"),
+        Some("test.pdf".to_string())
+    );
+    assert_eq!(
+        SecurityValidator::extract_filename(""),
+        Some("".to_string())
+    );
+    assert_eq!(
+        SecurityValidator::extract_filename("C:\\Users\\"),
+        Some("".to_string())
+    );
 }
 
 #[test]
 #[cfg(unix)]
-fn test_symlink_traversal() {
+fn test_symlink_to_general_external_file_is_allowed() {
     use std::os::unix::fs::symlink;
-    let temp_dir = tempdir().unwrap();
 
+    let temp_dir = tempdir().expect("temp dir");
     let validator = SecurityValidator::new_with_base_dir(temp_dir.path().to_path_buf());
 
-    // Create a secret file outside
-    let outside_dir = tempdir().unwrap();
-    let secret_file = outside_dir.path().join("mcp_secret.txt");
-    std::fs::write(&secret_file, "secret").unwrap();
+    let outside_dir = tempdir().expect("outside dir");
+    let external_file = outside_dir.path().join("external.txt");
+    std::fs::write(&external_file, "safe").expect("write external file");
 
-    // Create a symlink inside base_dir pointing to secret file
-    let link_path = temp_dir.path().join("bad_link");
-    symlink(&secret_file, &link_path).unwrap();
+    let link_path = temp_dir.path().join("safe_link");
+    symlink(&external_file, &link_path).expect("create symlink");
 
-    // Try to access via symlink
-    let result = validator.validate_path("bad_link");
+    let expected_link_path = temp_dir
+        .path()
+        .canonicalize()
+        .expect("canonical temp dir")
+        .join("safe_link");
 
-    assert!(result.is_err(), "Symlink traversal should be blocked");
-    if let Err(SecurityError::PathTraversal(msg)) = result {
-        assert!(msg.contains("resolves outside allowed directory"));
-    } else {
-        panic!("Expected PathTraversal error");
-    }
-}
-
-#[test]
-#[cfg(unix)]
-fn test_symlink_base_dir_traversal() {
-    use std::os::unix::fs::symlink;
-
-    let temp_root = tempdir().unwrap();
-
-    // real base directory and a symlink used as the validator's base_dir
-    let real_base = temp_root.path().join("real_base");
-    std::fs::create_dir_all(&real_base).unwrap();
-    let base_dir_link = temp_root.path().join("base_link");
-    symlink(&real_base, &base_dir_link).unwrap();
-
-    // Use the symlinked path as base_dir; new_with_base_dir should canonicalize it
-    let validator = SecurityValidator::new_with_base_dir(base_dir_link.clone());
-
-    // secret file outside the real base
-    let outside_dir = tempdir().unwrap();
-    let secret_file = outside_dir.path().join("mcp_secret_base_dir.txt");
-    std::fs::write(&secret_file, "secret").unwrap();
-
-    // symlink inside the real base that points to the secret file outside
-    let escaping_link = real_base.join("escaping_link");
-    symlink(&secret_file, &escaping_link).unwrap();
-
-    let result = validator.validate_path("escaping_link");
-
-    assert!(
-        result.is_err(),
-        "Symlink traversal via symlinked base_dir should be blocked"
+    assert_eq!(
+        validator
+            .validate_path("safe_link")
+            .expect("symlink to general file should be allowed"),
+        expected_link_path
     );
-    if let Err(SecurityError::PathTraversal(msg)) = result {
-        assert!(msg.contains("resolves outside allowed directory"));
-    } else {
-        panic!("Expected PathTraversal error");
-    }
 }
 
 #[test]
 #[cfg(unix)]
-fn test_symlink_traversal_nonexistent_file() {
+fn test_symlink_to_sensitive_target_is_blocked() {
     use std::os::unix::fs::symlink;
 
-    let temp_dir = tempdir().unwrap();
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let ssh_dir = home.join(".ssh");
+    if !ssh_dir.exists() {
+        return;
+    }
+
+    let temp_dir = tempdir().expect("temp dir");
     let validator = SecurityValidator::new_with_base_dir(temp_dir.path().to_path_buf());
+    let link_path = temp_dir.path().join("ssh_link");
+    symlink(&ssh_dir, &link_path).expect("create symlink");
 
-    // Create an outside directory
-    let outside_dir = tempdir().unwrap();
-
-    // Create a symlink inside base_dir pointing to outside directory
-    let link_path = temp_dir.path().join("bad_link_dir");
-    symlink(outside_dir.path(), &link_path).unwrap();
-
-    // Try to access a nonexistent file via the symlink
-    let result = validator.validate_path("bad_link_dir/nonexistent_file.txt");
-
-    assert!(
-        result.is_err(),
-        "Symlink traversal to nonexistent file should be blocked"
-    );
-    if let Err(SecurityError::PathTraversal(msg)) = result {
-        assert!(msg.contains("resolves outside allowed directory"));
-    } else {
-        panic!("Expected PathTraversal error");
-    }
+    assert!(matches!(
+        validator.validate_path("ssh_link/config"),
+        Err(SecurityError::AccessDenied(_))
+    ));
 }
 
 #[test]
@@ -187,24 +196,15 @@ fn test_symlink_traversal_nonexistent_file() {
 fn test_dangling_symlink_parent_is_rejected() {
     use std::os::unix::fs::symlink;
 
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("temp dir");
     let validator = SecurityValidator::new_with_base_dir(temp_dir.path().to_path_buf());
 
-    let outside_dir = tempdir().unwrap();
+    let outside_dir = tempdir().expect("outside dir");
     let missing_target_dir = outside_dir.path().join("missing-target");
 
     let link_path = temp_dir.path().join("dangling_link_dir");
-    symlink(&missing_target_dir, &link_path).unwrap();
+    symlink(&missing_target_dir, &link_path).expect("create symlink");
 
     let result = validator.validate_path("dangling_link_dir/new_file.txt");
-
-    assert!(
-        result.is_err(),
-        "Dangling symlink parents should be rejected during path validation"
-    );
-    if let Err(SecurityError::PathTraversal(msg)) = result {
-        assert!(msg.contains("unresolved symlink parent"));
-    } else {
-        panic!("Expected PathTraversal error");
-    }
+    assert!(matches!(result, Err(SecurityError::PathTraversal(_))));
 }

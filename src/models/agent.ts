@@ -31,6 +31,7 @@ export interface AgentSession {
   orgRootSessionId?: string;
   isBookmarked?: boolean;
   yoloMode: boolean;
+  unsafeMode?: boolean;
   pendingApprovalCount?: number;
 }
 /**

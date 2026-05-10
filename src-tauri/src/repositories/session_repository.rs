@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 use crate::entity::{prelude::*, session};
 
-const SESSION_UPSERT_COLUMNS: [session::Column; 20] = [
+const SESSION_UPSERT_COLUMNS: [session::Column; 21] = [
     session::Column::Name,
     session::Column::Status,
     session::Column::Model,
@@ -30,8 +30,19 @@ const SESSION_UPSERT_COLUMNS: [session::Column; 20] = [
     session::Column::LastAttentionAt,
     session::Column::LastAttentionReason,
     session::Column::YoloMode,
+    session::Column::UnsafeMode,
     session::Column::WorkspaceOverride,
 ];
+
+fn coalesce_execution_flags(yolo_mode: bool, unsafe_mode: bool) -> (bool, bool) {
+    if unsafe_mode {
+        (false, true)
+    } else if yolo_mode {
+        (true, false)
+    } else {
+        (false, false)
+    }
+}
 
 /// Session status enum representing the agent workflow state
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,6 +140,7 @@ pub struct SessionMetadata {
     pub last_attention_reason: Option<SessionAttentionReason>,
     pub is_bookmarked: bool,
     pub yolo_mode: bool,
+    pub unsafe_mode: bool,
     pub workspace_override: Option<String>,
 }
 
@@ -150,6 +162,7 @@ impl TryFrom<session::Model> for SessionMetadata {
     type Error = DbError;
 
     fn try_from(model: session::Model) -> Result<Self, Self::Error> {
+        let (yolo_mode, unsafe_mode) = coalesce_execution_flags(model.yolo_mode, model.unsafe_mode);
         Ok(SessionMetadata {
             id: model.id,
             name: model.name,
@@ -176,7 +189,8 @@ impl TryFrom<session::Model> for SessionMetadata {
                 .map(SessionAttentionReason::from_str)
                 .transpose()?,
             is_bookmarked: model.is_bookmarked,
-            yolo_mode: model.yolo_mode,
+            yolo_mode,
+            unsafe_mode,
             workspace_override: model.workspace_override,
         })
     }
@@ -231,6 +245,17 @@ pub trait SessionRepository: Send + Sync {
     /// Update the YOLO mode flag for a session
     async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError>;
 
+    /// Update the unsafe mode flag for a session
+    async fn update_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError>;
+
+    /// Update both execution mode flags atomically for a session.
+    async fn update_execution_mode(
+        &self,
+        session_id: &str,
+        yolo_enabled: bool,
+        unsafe_enabled: bool,
+    ) -> Result<(), DbError>;
+
     /// Persist the workspace override path for a session (None clears it)
     async fn update_workspace_override(
         &self,
@@ -276,6 +301,8 @@ impl SqliteSessionRepository {
     }
 
     fn build_active_model(session: &SessionMetadata) -> session::ActiveModel {
+        let (yolo_mode, unsafe_mode) =
+            coalesce_execution_flags(session.yolo_mode, session.unsafe_mode);
         session::ActiveModel {
             id: Set(session.id.clone()),
             name: Set(session.name.clone()),
@@ -306,7 +333,8 @@ impl SqliteSessionRepository {
                 .map(SessionAttentionReason::as_str)
                 .map(str::to_string)),
             is_bookmarked: Set(session.is_bookmarked),
-            yolo_mode: Set(session.yolo_mode),
+            yolo_mode: Set(yolo_mode),
+            unsafe_mode: Set(unsafe_mode),
             workspace_override: Set(session.workspace_override.clone()),
         }
     }
@@ -515,6 +543,30 @@ impl SessionRepository for SqliteSessionRepository {
         self.apply_partial_update(session::ActiveModel {
             id: Set(session_id.to_string()),
             yolo_mode: Set(enabled),
+            ..Default::default()
+        })
+        .await
+    }
+
+    async fn update_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
+        self.apply_partial_update(session::ActiveModel {
+            id: Set(session_id.to_string()),
+            unsafe_mode: Set(enabled),
+            ..Default::default()
+        })
+        .await
+    }
+
+    async fn update_execution_mode(
+        &self,
+        session_id: &str,
+        yolo_enabled: bool,
+        unsafe_enabled: bool,
+    ) -> Result<(), DbError> {
+        self.apply_partial_update(session::ActiveModel {
+            id: Set(session_id.to_string()),
+            yolo_mode: Set(yolo_enabled),
+            unsafe_mode: Set(unsafe_enabled),
             ..Default::default()
         })
         .await

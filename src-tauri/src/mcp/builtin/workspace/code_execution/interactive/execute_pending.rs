@@ -15,6 +15,7 @@ use crate::mcp::builtin::workspace::{terminal_manager, WorkspaceServer};
 
 // Import normalization from sibling modules
 use super::super::normalization;
+use super::super::shell::format_command_io_message;
 
 // Import security from sibling modules in interactive
 use super::security;
@@ -42,7 +43,7 @@ impl WorkspaceServer {
         };
 
         // Extract user_input (support both camelCase and snake_case)
-        let obfuscated_input = match args
+        let encoded_input = match args
             .get("userInput")
             .or_else(|| args.get("user_input"))
             .and_then(|v| v.as_str())
@@ -88,25 +89,25 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // De-obfuscate user input
-        let user_input =
-            match security::deobfuscate_input(obfuscated_input, &pending.encryption_nonce) {
-                Ok(s) => s,
-                Err(e) => {
-                    return Ok(guided_error(
-                        ErrorCategory::InternalError,
-                        "De-obfuscate user input failed".to_string(),
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec![
-                        "This is an internal error - the UI should handle obfuscation".to_string(),
-                        "Try executing the command again".to_string(),
-                        "Contact support if this persists".to_string(),
-                        format!("Error: {}", e),
-                    ])
-                    .to_mcp_result());
-                }
-            };
+        // Decode transport-encoded user input
+        let user_input = match security::decode_input_payload(encoded_input) {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::InternalError,
+                    "Decode user input failed".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "This is an internal error - the UI should send base64-encoded input"
+                        .to_string(),
+                    "Try executing the command again".to_string(),
+                    "Contact support if this persists".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
+            }
+        };
         let user_input = user_input.as_str();
 
         // Validate timeout (5 minutes for user input)
@@ -158,6 +159,24 @@ impl WorkspaceServer {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
+        let current_dir = if use_persistent_shell && pending.run_mode == "sync" {
+            self.shell_manager
+                .get_shell_cwd(&session_id)
+                .await
+                .map(std::path::PathBuf::from)
+        } else {
+            None
+        };
+        if let Some(result) = self.apply_shell_policy_block(
+            crate::mcp::builtin::workspace::PERSISTENT_SHELL_TOOL,
+            &final_command,
+            &workspace_path,
+            current_dir.as_deref(),
+            None,
+        ) {
+            return Ok(result);
+        }
+
         // Try persistent shell path first (if enabled)
         if use_persistent_shell && pending.run_mode == "sync" {
             let normalized_command = normalization::normalize_shell_command(&final_command);
@@ -190,21 +209,22 @@ impl WorkspaceServer {
                     let redacted_stderr =
                         security::redact_sensitive_input(stderr.trim(), user_input);
 
-                    let result_text = if exit_code == 0 {
+                    let header = if exit_code == 0 {
                         if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
                             "Command executed successfully (no output)".to_string()
-                        } else if redacted_stderr.is_empty() {
-                            format!("Command executed successfully:\n{redacted_stdout}")
                         } else {
-                            format!(
-                                "Command executed successfully:\nSTDOUT:\n{redacted_stdout}\n\nSTDERR:\n{redacted_stderr}"
-                            )
+                            "Command executed successfully".to_string()
                         }
                     } else {
-                        format!(
-                            "Command failed with exit code {exit_code}:\nSTDOUT:\n{redacted_stdout}\n\nSTDERR:\n{redacted_stderr}"
-                        )
+                        format!("Command failed with exit code {exit_code}")
                     };
+                    let result_text = format_command_io_message(
+                        &header,
+                        "STDOUT",
+                        &redacted_stdout,
+                        "STDERR",
+                        &redacted_stderr,
+                    );
 
                     if exit_code == 0 {
                         return Ok(MCPResult::success(&result_text));
@@ -387,46 +407,21 @@ impl WorkspaceServer {
 
             let success = exit_code == 0;
 
-            let result_text = if success {
-                if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
-                    format!(
-                        "Interactive command executed successfully (exit code: {})",
-                        exit_code
-                    )
-                } else if redacted_stderr.is_empty() {
-                    format!(
-                        "Interactive command executed successfully (exit code: {})\n\nSTDOUT:\n{}",
-                        exit_code, redacted_stdout
-                    )
-                } else if redacted_stdout.is_empty() {
-                    format!(
-                        "Interactive command executed successfully (exit code: {})\n\nSTDERR:\n{}",
-                        exit_code, redacted_stderr
-                    )
-                } else {
-                    format!(
-                        "Interactive command executed successfully (exit code: {})\n\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                        exit_code, redacted_stdout, redacted_stderr
-                    )
-                }
-            } else if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
-                format!("Interactive command failed (exit code: {})", exit_code)
-            } else if redacted_stderr.is_empty() {
+            let header = if success {
                 format!(
-                    "Interactive command failed (exit code: {})\n\nSTDOUT:\n{}",
-                    exit_code, redacted_stdout
-                )
-            } else if redacted_stdout.is_empty() {
-                format!(
-                    "Interactive command failed (exit code: {})\n\nSTDERR:\n{}",
-                    exit_code, redacted_stderr
+                    "Interactive command executed successfully (exit code: {})",
+                    exit_code
                 )
             } else {
-                format!(
-                    "Interactive command failed (exit code: {})\n\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                    exit_code, redacted_stdout, redacted_stderr
-                )
+                format!("Interactive command failed (exit code: {})", exit_code)
             };
+            let result_text = format_command_io_message(
+                &header,
+                "STDOUT",
+                &redacted_stdout,
+                "STDERR",
+                &redacted_stderr,
+            );
 
             let response_data = serde_json::json!({
                 "exit_code": exit_code,
@@ -564,6 +559,7 @@ mod tests {
     use super::*;
     use crate::mcp::builtin::workspace::PendingShellExecution;
     use crate::session::SessionManager;
+    use base64::{engine::general_purpose, Engine as _};
     use serde_json::json;
     use std::sync::Arc;
     use tempfile::tempdir;
@@ -588,14 +584,14 @@ mod tests {
             display_command: "echo 'hello'".to_string(),
             run_mode: "sync".to_string(),
             timeout: 30,
-            encryption_nonce: "nonce".to_string(),
             created_at: chrono::Utc::now(),
         });
 
         // Test with snake_case (fallback)
+        let encoded_input = general_purpose::STANDARD.encode("test input");
         let args_snake = json!({
             "execution_id": execution_id,
-            "user_input": "obfuscated"
+            "user_input": encoded_input
         });
 
         // This will fail because we are in a test environment without a real process manager
@@ -621,13 +617,12 @@ mod tests {
             display_command: "echo 'hello'".to_string(),
             run_mode: "sync".to_string(),
             timeout: 30,
-            encryption_nonce: "nonce".to_string(),
             created_at: chrono::Utc::now(),
         });
 
         let args_camel = json!({
             "executionId": execution_id,
-            "userInput": "obfuscated"
+            "userInput": general_purpose::STANDARD.encode("test input")
         });
 
         let result = server
@@ -640,5 +635,41 @@ mod tests {
             let text = content[0].get("text").and_then(|t| t.as_str()).unwrap();
             assert!(!text.contains("Missing executionId"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_execute_pending_shell_blocks_policy_denied_command() {
+        let server = create_server().await;
+        let execution_id = "blocked-execution-id";
+
+        server.pending_executions.insert(PendingShellExecution {
+            execution_id: execution_id.to_string(),
+            session_id: "test-session".to_string(),
+            executable_command: "cat ~/.ssh/id_rsa".to_string(),
+            display_command: "cat ~/.ssh/id_rsa".to_string(),
+            run_mode: "sync".to_string(),
+            timeout: 30,
+            created_at: chrono::Utc::now(),
+        });
+
+        let result = server
+            .handle_execute_pending_shell(
+                json!({
+                    "executionId": execution_id,
+                    "userInput": general_purpose::STANDARD.encode("ignored")
+                }),
+                "test-session",
+            )
+            .await
+            .expect("executePendingShell should return MCPResult");
+
+        let response = serde_json::to_value(result).expect("serialize result");
+        let text = response["content"][0]["text"]
+            .as_str()
+            .expect("text content should exist");
+        assert!(
+            text.contains("Shell command blocked by policy"),
+            "expected policy block message, got: {text}"
+        );
     }
 }

@@ -9,7 +9,7 @@ use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
 use super::super::super::{terminal_manager, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::{normalization, process, validation};
-use super::format_duration_ms;
+use super::{format_command_io_message, format_duration_ms};
 
 impl WorkspaceServer {
     /// Execute shell commands with isolation
@@ -27,6 +27,16 @@ impl WorkspaceServer {
         let workspace_path = self
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
+
+        if let Some(result) = self.apply_shell_policy_block(
+            tool_name,
+            command,
+            &workspace_path,
+            None,
+            Some(&env_vars),
+        ) {
+            return Ok(result);
+        }
 
         // Normalize shell command
         let normalized_command = normalization::normalize_shell_command(command);
@@ -254,13 +264,8 @@ impl WorkspaceServer {
                 );
 
                 // Include output in text message if available (CRITICAL FIX for sync visibility)
-                let text_message = if !stdout.is_empty() {
-                    format!("{}\n\nOutput:\n{}", header, stdout)
-                } else if !stderr.is_empty() {
-                    format!("{}\n\nStderr:\n{}", header, stderr)
-                } else {
-                    header
-                };
+                let text_message =
+                    format_command_io_message(&header, "Output", &stdout, "Stderr", &stderr);
 
                 // ✅ ENHANCED: Detect signs of interactive prompts or cancelled operations
                 let output_lower = (stdout.clone() + &stderr).to_lowercase();

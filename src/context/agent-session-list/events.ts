@@ -11,6 +11,7 @@ export interface AgentEventPayload {
     createdAt: number;
   };
   toolCallId?: string;
+  approvalKind?: 'standard' | 'hard';
   approved?: boolean;
   reason?: WorkflowCompletionReason;
 }

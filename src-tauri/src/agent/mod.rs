@@ -18,4 +18,4 @@ pub mod types;
 pub mod workflow;
 
 pub use config::AgentConfig;
-pub use session_manager::AgentSessionManager;
+pub use session_manager::{AgentSessionManager, ExecutionMode};

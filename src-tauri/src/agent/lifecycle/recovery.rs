@@ -113,6 +113,7 @@ fn build_recovered_session(
         transition_lock: Arc::new(tokio::sync::Mutex::new(())),
         cancellation_token: CancellationToken::new(),
         yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
+        unsafe_mode: Arc::new(AtomicBool::new(session.unsafe_mode)),
         cancel_pending: Arc::new(AtomicBool::new(false)),
         pending_execution: None,
         messages: Arc::new(RwLock::new(Vec::new())),

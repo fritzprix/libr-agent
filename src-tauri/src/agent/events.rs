@@ -72,6 +72,10 @@ pub enum AgentEvent {
         tool_call_id: String,
         tool_name: String,
         arguments: String,
+        approval_kind: crate::agent::state::PendingApprovalKind,
+        request_id: Option<String>,
+        description: Option<String>,
+        input_preview: Option<String>,
     },
 
     /// Remote-channel-friendly permission relay request emitted for external bridges
@@ -81,6 +85,7 @@ pub enum AgentEvent {
         request_id: String,
         tool_call_id: String,
         tool_name: String,
+        approval_kind: crate::agent::state::PendingApprovalKind,
         description: String,
         input_preview: String,
     },

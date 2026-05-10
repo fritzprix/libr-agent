@@ -171,3 +171,39 @@ async fn test_copy_file_from_external_rejects_windows_reserved_filenames() {
         );
     }
 }
+
+#[tokio::test]
+async fn test_external_paths_are_allowed_and_sensitive_targets_are_scoped() {
+    let workspace = tempdir().unwrap();
+    let external_root = tempdir().unwrap();
+    let external_file = external_root.path().join("external.txt");
+
+    let manager = SecureFileManager::new_with_base_dir(workspace.path().to_path_buf());
+
+    manager
+        .write_file_string(&external_file.to_string_lossy(), "allowed")
+        .await
+        .expect("general external writes should be allowed");
+
+    let content = manager
+        .read_file_as_string(&external_file.to_string_lossy())
+        .await
+        .expect("general external reads should be allowed");
+    assert_eq!(content, "allowed");
+
+    let project_env_path = external_root.path().join(".env.local");
+    manager
+        .write_file_string(&project_env_path.to_string_lossy(), "still allowed")
+        .await
+        .expect("project-local .env outside home should remain allowed");
+
+    let sensitive_path = dirs::home_dir().expect("home dir").join(".env.local");
+    let error = manager
+        .write_file_string(&sensitive_path.to_string_lossy(), "blocked")
+        .await
+        .expect_err("sensitive paths should stay blocked");
+    assert!(
+        error.contains("protected location"),
+        "unexpected sensitive path error: {error}"
+    );
+}

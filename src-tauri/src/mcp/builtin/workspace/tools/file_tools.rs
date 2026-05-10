@@ -12,7 +12,7 @@ pub fn create_read_file_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file to read (from workspace root)"),
+            Some("Path to the file to read. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
     props.insert(
@@ -56,7 +56,7 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path from workspace root (e.g. 'src/main.rs')"),
+            Some("Path to write. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
     props.insert(
@@ -94,7 +94,7 @@ pub fn create_list_directory_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the directory to list (from workspace root)"),
+            Some("Path to the directory to list. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
     props.insert(
@@ -119,8 +119,9 @@ pub fn create_list_directory_tool() -> MCPTool {
         title: Some("List Directory".to_string()),
         description: "List files and subdirectories in a workspace directory.
 
-- listDirectory('.') — workspace root
+- listDirectory('.') — workspace directory
 - listDirectory('src/components') — subdirectory
+- listDirectory('/tmp') — absolute directory
 
 Returns names and types (file/directory). Use search with filePattern when you need glob-style filtering."
             .to_string(),
@@ -180,7 +181,7 @@ pub fn create_search_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file or directory to search (from workspace root)"),
+            Some("Path to the file or directory to search. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
     props.insert(
@@ -229,7 +230,7 @@ pub fn create_search_tool() -> MCPTool {
     MCPTool {
         name: "search".to_string(),
         title: Some("Search Workspace".to_string()),
-        description: "Search workspace files by name or content.".to_string(),
+        description: "Search files by name or content. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -243,7 +244,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file to edit (from workspace root)"),
+            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
 
@@ -363,7 +364,7 @@ pub fn create_insert_after_line_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file to edit (from workspace root)"),
+            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
     props.insert(
@@ -453,7 +454,7 @@ pub fn create_delete_lines_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file to edit (from workspace root)"),
+            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
     props.insert(
@@ -547,7 +548,8 @@ Use flat params (line/anchor) for a single deletion, or the `edits` array for mu
 }
 
 fn create_edit_item_schema(path_required: bool) -> JSONSchema {
-    let path_desc = "Relative path to the file to edit (from workspace root).";
+    let path_desc =
+        "Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.";
     let start_line_desc = "Target start line number. Existing lines are 1-based. Use 0 only to prepend at the file top; to insert below an existing line, keep that line's 1-based number and set op='insert_after'.";
     let end_line_desc =
         "Inclusive end line for a multi-line replace/delete range. Omit for a single-line edit.";
@@ -616,7 +618,7 @@ pub fn create_edit_file_input_schema() -> JSONSchema {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file to edit (from workspace root)"),
+            Some("Path to the file to edit. Relative paths resolve from the workspace; absolute paths are also allowed unless protected."),
         ),
     );
     props.insert(

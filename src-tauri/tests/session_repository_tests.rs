@@ -1,6 +1,8 @@
 mod common;
 
+use sea_orm::{ActiveModelTrait, Set};
 use std::str::FromStr;
+use tauri_mcp_agent_lib::entity::session;
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
@@ -34,6 +36,7 @@ fn build_session(id: &str, updated_at: i64) -> SessionMetadata {
         last_attention_reason: None,
         is_bookmarked: false,
         yolo_mode: false,
+        unsafe_mode: false,
         workspace_override: None,
     }
 }
@@ -226,4 +229,49 @@ async fn toggle_bookmark_persists_boolean_value() {
             .expect("session should exist")
             .is_bookmarked
     );
+}
+
+#[tokio::test]
+async fn get_session_coalesces_legacy_execution_flags() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+
+    session::ActiveModel {
+        id: Set("legacy-session".to_string()),
+        name: Set(Some("Legacy Session".to_string())),
+        status: Set("idle".to_string()),
+        model: Set("gpt-4".to_string()),
+        provider: Set("openai".to_string()),
+        agent_config: Set(None),
+        parent_session_id: Set(None),
+        lineage_id: Set(None),
+        depth: Set(None),
+        max_depth: Set(None),
+        max_fanout: Set(None),
+        org_id: Set(None),
+        org_name: Set(None),
+        org_root_session_id: Set(None),
+        created_at: Set(1_000),
+        updated_at: Set(1_000),
+        last_viewed_at: Set(None),
+        last_message_at: Set(None),
+        last_attention_at: Set(None),
+        last_attention_reason: Set(None),
+        is_bookmarked: Set(false),
+        yolo_mode: Set(true),
+        unsafe_mode: Set(true),
+        workspace_override: Set(None),
+    }
+    .insert(&db)
+    .await
+    .expect("legacy row should insert");
+
+    let retrieved = repo
+        .get_session("legacy-session")
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should exist");
+
+    assert!(!retrieved.yolo_mode);
+    assert!(retrieved.unsafe_mode);
 }

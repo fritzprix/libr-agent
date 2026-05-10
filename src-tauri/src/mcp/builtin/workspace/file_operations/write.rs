@@ -91,8 +91,9 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Provide a file path relative to workspace root".to_string(),
-                    "Example: {\"path\": \"src/main.rs\"}".to_string(),
+                    "Provide a file path (relative paths resolve from the workspace)".to_string(),
+                    "Examples: {\"path\": \"src/main.rs\"} or {\"path\": \"/tmp/file.txt\"}"
+                        .to_string(),
                     "Use listDirectory('.') to explore available paths".to_string(),
                 ])
                 .to_mcp_result());
@@ -110,7 +111,7 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use relative paths from workspace root".to_string(),
+                "Use a normal file path without '..' traversal segments".to_string(),
                 "Example: 'src/main.rs' instead of '../src/main.rs'".to_string(),
                 "Use listDirectory to explore available paths".to_string(),
             ])
@@ -142,7 +143,7 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Verify the file path is within workspace boundaries".to_string(),
+                    "Verify the target path is not a protected location".to_string(),
                     "Use listDirectory to see available paths".to_string(),
                 ])
                 .to_mcp_result());

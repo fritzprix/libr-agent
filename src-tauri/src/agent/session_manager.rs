@@ -18,6 +18,44 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionMode {
+    Normal,
+    Yolo,
+    Unsafe,
+}
+
+impl ExecutionMode {
+    fn runtime_flags(self) -> (bool, bool) {
+        match self {
+            Self::Normal => (false, false),
+            Self::Yolo => (true, false),
+            Self::Unsafe => (false, true),
+        }
+    }
+
+    fn include_hard_approvals(self) -> Option<bool> {
+        match self {
+            Self::Normal => None,
+            Self::Yolo => Some(false),
+            Self::Unsafe => Some(true),
+        }
+    }
+}
+
+impl std::str::FromStr for ExecutionMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "normal" => Ok(Self::Normal),
+            "yolo" => Ok(Self::Yolo),
+            "unsafe" => Ok(Self::Unsafe),
+            _ => Err(format!("Unknown execution mode: {}", value)),
+        }
+    }
+}
+
 #[path = "session_manager/approvals.rs"]
 mod approvals;
 #[path = "session_manager/channel.rs"]
@@ -215,6 +253,10 @@ impl AgentSessionManager {
                             tool_call_id: tool_call_id.clone(),
                             tool_name: data.tool_name.clone(),
                             arguments: data.arguments.clone(),
+                            approval_kind: data.approval_kind,
+                            request_id: data.request_id.clone(),
+                            description: data.description.clone(),
+                            input_preview: data.input_preview.clone(),
                         },
                     );
                     if let Some(request_id) = &data.request_id {
@@ -223,6 +265,7 @@ impl AgentSessionManager {
                             request_id: request_id.clone(),
                             tool_call_id: tool_call_id.clone(),
                             tool_name: data.tool_name.clone(),
+                            approval_kind: data.approval_kind,
                             description: data.description.clone().unwrap_or_else(|| {
                                 crate::agent::tool_approvals::build_channel_permission_description(
                                     &data.tool_name,
@@ -561,23 +604,15 @@ impl AgentSessionManager {
 
     /// Set YOLO mode for a session
     pub async fn set_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
-        // 1. Update in-memory state
-        {
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                session
-                    .yolo_mode
-                    .store(enabled, std::sync::atomic::Ordering::Relaxed);
-            }
-        }
-
-        // 2. Persist to DB via partial update
-        self.session_repo
-            .update_yolo_mode(session_id, enabled)
-            .await
-            .map_err(|e| format!("Failed to update session YOLO mode: {}", e))?;
-
-        Ok(())
+        self.set_execution_mode(
+            session_id,
+            if enabled {
+                ExecutionMode::Yolo
+            } else {
+                ExecutionMode::Normal
+            },
+        )
+        .await
     }
 
     /// Returns the current yolo_mode for a session (false if session not found).
@@ -586,6 +621,71 @@ impl AgentSessionManager {
         active
             .get(session_id)
             .map(|s| s.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(false)
+    }
+
+    /// Set unsafe mode for a session
+    pub async fn set_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
+        self.set_execution_mode(
+            session_id,
+            if enabled {
+                ExecutionMode::Unsafe
+            } else {
+                ExecutionMode::Normal
+            },
+        )
+        .await
+    }
+
+    pub async fn set_execution_mode(
+        &self,
+        session_id: &str,
+        mode: ExecutionMode,
+    ) -> Result<(), String> {
+        let (yolo_enabled, unsafe_enabled) = mode.runtime_flags();
+        self.session_repo
+            .update_execution_mode(session_id, yolo_enabled, unsafe_enabled)
+            .await
+            .map_err(|e| format!("Failed to update session execution mode: {}", e))?;
+
+        let has_active_session = {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                session.yolo_mode.store(yolo_enabled, Ordering::Relaxed);
+                session.unsafe_mode.store(unsafe_enabled, Ordering::Relaxed);
+                true
+            } else {
+                false
+            }
+        };
+
+        if !has_active_session {
+            log::info!(
+                "Updated execution mode for persisted session '{}' without active runtime state",
+                session_id
+            );
+        }
+
+        if let Some(include_hard_approvals) = mode.include_hard_approvals() {
+            if has_active_session {
+                approvals::approve_all_pending_tool_approvals(
+                    self,
+                    session_id,
+                    include_hard_approvals,
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns the current unsafe_mode for a session (false if session not found).
+    pub async fn get_unsafe_mode(&self, session_id: &str) -> bool {
+        let active = self.active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|s| s.unsafe_mode.load(std::sync::atomic::Ordering::Relaxed))
             .unwrap_or(false)
     }
 

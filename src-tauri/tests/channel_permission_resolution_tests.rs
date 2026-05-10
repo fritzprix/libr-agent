@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tauri_mcp_agent_lib::agent::state::PendingApprovalData;
+use tauri_mcp_agent_lib::agent::state::{PendingApprovalData, PendingApprovalKind};
 use tauri_mcp_agent_lib::agent::tool_approvals::{
     find_pending_approval_tool_call_id, parse_channel_permission_behavior,
 };
@@ -33,6 +33,7 @@ fn find_pending_approval_tool_call_id_matches_request_id() {
                 sender: tx1,
                 tool_name: "workspace__writeFile".to_string(),
                 arguments: "{}".to_string(),
+                approval_kind: PendingApprovalKind::Standard,
                 request_id: Some("abcde".to_string()),
                 description: Some("first".to_string()),
                 input_preview: Some("{}".to_string()),
@@ -44,6 +45,7 @@ fn find_pending_approval_tool_call_id_matches_request_id() {
                 sender: tx2,
                 tool_name: "workspace__writeFile".to_string(),
                 arguments: "{}".to_string(),
+                approval_kind: PendingApprovalKind::Standard,
                 request_id: Some("fghij".to_string()),
                 description: Some("second".to_string()),
                 input_preview: Some("{}".to_string()),
@@ -70,6 +72,7 @@ fn find_pending_approval_tool_call_id_ignores_entries_without_request_ids() {
             sender: tx,
             tool_name: "workspace__writeFile".to_string(),
             arguments: "{}".to_string(),
+            approval_kind: PendingApprovalKind::Standard,
             request_id: None,
             description: None,
             input_preview: None,
