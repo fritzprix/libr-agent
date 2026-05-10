@@ -115,7 +115,7 @@ async fn tool_policy_blocks_attached_redirection_to_sensitive_path() {
 async fn tool_policy_blocks_globbed_sensitive_path() {
     let decision = evaluate_tool_execution_policy(
         "workspace__runShell",
-        &json!({ "command": "cat /etc/sha*" }),
+        &json!({ "command": "cat /etc/ssh/*" }),
     )
     .await;
 
@@ -388,11 +388,11 @@ fn shell_policy_blocks_symlinked_protected_target() {
 
     let workspace = tempdir().expect("temp dir");
     let link_path = workspace.path().join("etc-link");
-    symlink("/etc", &link_path).expect("create symlink");
+    symlink("/etc/ssh", &link_path).expect("create symlink");
 
     let decision = evaluate_shell_policy(ShellPolicyContext {
         tool_name: "runShell",
-        command: "cat ./etc-link/shadow",
+        command: "cat ./etc-link/ssh_config",
         workspace_dir: Some(workspace.path()),
         current_dir: None,
         environment: None,
@@ -419,12 +419,12 @@ async fn run_shell_blocks_symlinked_protected_target() {
     let (server, session_manager) =
         build_workspace_server_with_manager(temp_dir.path(), session_id);
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(session_id);
-    symlink("/etc", workspace_dir.join("etc-link")).expect("create symlink");
+    symlink("/etc/ssh", workspace_dir.join("etc-link")).expect("create symlink");
 
     let result = server
         .handle_run_shell(
             json!({
-                "command": "cat ./etc-link/shadow"
+                "command": "cat ./etc-link/ssh_config"
             }),
             session_id,
         )
