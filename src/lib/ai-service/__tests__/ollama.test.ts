@@ -185,4 +185,43 @@ describe('OllamaService prompt layout', () => {
 
     expect(request.tools).toBeUndefined();
   });
+
+  it('removes the abort listener after stream cleanup', async () => {
+    const { OllamaService } = await import('../ollama');
+    const service = new OllamaService('ollama-local');
+    const controller = new AbortController();
+    const addEventListenerSpy = vi.spyOn(controller.signal, 'addEventListener');
+    const removeEventListenerSpy = vi.spyOn(
+      controller.signal,
+      'removeEventListener',
+    );
+
+    const abortSpy = vi.fn();
+    chatMock.mockResolvedValue({
+      abort: abortSpy,
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => ({ done: true, value: undefined as never }),
+        };
+      },
+    });
+
+    await consumeStream(
+      service.streamChat([createUserMessage('hello')], {
+        modelName: 'llama3.1',
+        signal: controller.signal,
+      }),
+    );
+
+    expect(addEventListenerSpy).toHaveBeenCalledWith(
+      'abort',
+      expect.any(Function),
+      { once: true },
+    );
+    expect(removeEventListenerSpy).toHaveBeenCalledWith(
+      'abort',
+      expect.any(Function),
+    );
+    expect(abortSpy).not.toHaveBeenCalled();
+  });
 });

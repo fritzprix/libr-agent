@@ -23,7 +23,7 @@ describe('EmptyAIService', () => {
     expect(() => service.convertTools(mockTools)).toThrow('Tool conversion not supported');
   });
 
-  it('should throw an error and yield empty string when streaming chat', async () => {
+  it('should throw an error without yielding any stream chunks', async () => {
     const service = new EmptyAIService();
     const mockMessages: Message[] = [];
 
@@ -42,7 +42,7 @@ describe('EmptyAIService', () => {
 
     expect(caughtError).toBeInstanceOf(AIServiceError);
     expect(caughtError?.message).toContain('EmptyAIService does not support streaming chat');
-    expect(output).toEqual(['']); // Yields empty string before throwing
+    expect(output).toEqual([]);
   });
 
   it('should return empty array when converting messages', () => {

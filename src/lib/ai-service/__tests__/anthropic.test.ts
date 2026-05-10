@@ -284,6 +284,62 @@ describe('AnthropicService', () => {
   });
 
   describe('streamChat()', () => {
+    it('preserves tools but disables tool use when disableToolUse is true', async () => {
+      const mockStreamFn = vi.fn().mockReturnValue(
+        (async function* () {
+          yield {
+            type: 'content_block_delta',
+            delta: {
+              type: 'text_delta',
+              text: 'summary',
+            },
+          };
+        })(),
+      );
+
+      (
+        mockAnthropicClient as { messages: { stream: typeof mockStreamFn } }
+      ).messages.stream = mockStreamFn;
+
+      const stream = service.streamChat(
+        [
+          {
+            id: 'user-1',
+            sessionId: 'session-1',
+            threadId: 'thread-1',
+            role: 'user',
+            content: [{ type: 'text', text: 'Summarize this thread' }],
+          },
+        ],
+        {
+          availableTools: [
+            {
+              name: 'workspace__writeFile',
+              description: 'Write a file',
+              inputSchema: {
+                type: 'object',
+                properties: {},
+              },
+            },
+          ],
+          disableToolUse: true,
+        },
+      );
+
+      await stream.next();
+
+      const request = mockStreamFn.mock.calls[0]?.[0] as
+        | {
+            tools?: unknown;
+            tool_choice?: { type: string };
+          }
+        | undefined;
+
+      expect(request?.tools).toBeDefined();
+      expect(Array.isArray(request?.tools)).toBe(true);
+      expect(request?.tool_choice).toEqual({ type: 'none' });
+    });
+
     it('emits a provisional indexed tool call as soon as tool_use starts', async () => {
       const mockStreamFn = vi.fn().mockReturnValue(
         (async function* () {

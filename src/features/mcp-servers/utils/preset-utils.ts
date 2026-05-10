@@ -23,6 +23,7 @@ export function buildPresetMetadata(
   preset: MCPServerPreset,
 ): MCPServerEntity['metadata'] {
   return {
+    category: preset.category,
     description: preset.description,
     logo: preset.logo,
     variableDefinitions: preset.variableDefinitions,

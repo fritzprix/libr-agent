@@ -59,15 +59,17 @@ describe('GroqService cancellation wiring', () => {
     vi.clearAllMocks();
   });
 
-  it('passes an AbortSignal to streaming requests and aborts it on cancel', async () => {
+  it('passes through the provided AbortSignal to streaming requests', async () => {
     createMock.mockResolvedValueOnce(createEmptyStream());
 
     const { GroqService } = await import('../groq');
     const service = new GroqService('test-key');
+    const controller = new AbortController();
 
     await consumeStream(
       service.streamChat([createUserMessage('hello')], {
         modelName: 'llama-3.1-8b-instant',
+        signal: controller.signal,
       }),
     );
 
@@ -75,15 +77,15 @@ describe('GroqService cancellation wiring', () => {
       | { signal?: AbortSignal }
       | undefined;
 
-    expect(requestOptions?.signal).toBeInstanceOf(AbortSignal);
+    expect(requestOptions?.signal).toBe(controller.signal);
     expect(requestOptions?.signal?.aborted).toBe(false);
 
-    service.cancel();
+    controller.abort();
 
     expect(requestOptions?.signal?.aborted).toBe(true);
   });
 
-  it('passes an AbortSignal to non-streaming requests', async () => {
+  it('passes through the provided AbortSignal to non-streaming requests', async () => {
     createMock.mockResolvedValueOnce({
       choices: [
         {
@@ -101,15 +103,17 @@ describe('GroqService cancellation wiring', () => {
 
     const { GroqService } = await import('../groq');
     const service = new GroqService('test-key');
+    const controller = new AbortController();
 
     await service.sampleText('hello', {
       modelName: 'llama-3.1-8b-instant',
+      signal: controller.signal,
     });
 
     const requestOptions = createMock.mock.calls[0]?.[1] as
       | { signal?: AbortSignal }
       | undefined;
 
-    expect(requestOptions?.signal).toBeInstanceOf(AbortSignal);
+    expect(requestOptions?.signal).toBe(controller.signal);
   });
 });

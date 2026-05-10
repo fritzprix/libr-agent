@@ -81,10 +81,10 @@ function isFunctionCallPart(part: GeminiChunkPart): part is GeminiChunkPart & {
  */
 export async function* processGeminiStream(
   result: AsyncIterable<GeminiStreamChunk>,
-  signal: AbortSignal,
+  signal: AbortSignal | undefined,
   logger: ReturnType<typeof getLogger>,
 ): AsyncGenerator<string, void, void> {
-  if (signal.aborted) {
+  if (signal?.aborted) {
     logger.debug('Stream aborted before iteration');
     return;
   }
@@ -105,7 +105,7 @@ export async function* processGeminiStream(
   let usageUpdateCount = 0;
 
   for await (const chunk of result) {
-    if (signal.aborted) {
+    if (signal?.aborted) {
       logger.info('Stream aborted during iteration');
       break;
     }

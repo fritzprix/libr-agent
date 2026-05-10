@@ -31,10 +31,7 @@ import {
   isSupersededRequestError,
   isWorkflowCancelledError,
 } from './types';
-import {
-  applyServiceRuntimeConfig,
-  buildServiceRuntimeConfig,
-} from './service-runtime-config';
+import { buildServiceRuntimeConfig } from './service-runtime-config';
 import {
   extractCompactionPressure,
   shouldBypassRetryAndFallback,
@@ -467,7 +464,6 @@ export function useLLMListener({
             );
             const service: AIContextCompactionService =
               AIServiceFactory.getService(provider, apiKey, providerConfig);
-            applyServiceRuntimeConfig(service, runtimeConfig);
             const summary = await service.compact(messages, {
               modelName: model,
               systemPrompt: parentRequest?.systemPrompt,

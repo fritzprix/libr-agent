@@ -446,7 +446,11 @@ describe('compact request handler', () => {
 
   it('forwards summary to handleCompactResponse on success', async () => {
     const compactService = vi.fn().mockResolvedValue('A concise summary.');
-    const getService = vi.fn().mockReturnValue({ compact: compactService });
+    const setDefaultConfig = vi.fn();
+    const getService = vi.fn().mockReturnValue({
+      compact: compactService,
+      setDefaultConfig,
+    });
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     const setCompactedRangeForSession = vi.fn();
 
@@ -466,6 +470,7 @@ describe('compact request handler', () => {
       TO_ID,
       'A concise summary.',
     );
+    expect(setDefaultConfig).not.toHaveBeenCalled();
     expect(setCompactedRangeForSession).toHaveBeenCalledWith(SESSION_ID, {
       fromId: FROM_ID,
       toId: TO_ID,

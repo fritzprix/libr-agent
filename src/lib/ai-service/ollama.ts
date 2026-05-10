@@ -60,6 +60,39 @@ interface StreamChatOptions {
   config?: AIServiceConfig;
   forceToolUse?: boolean;
   disableToolUse?: boolean;
+  signal?: AbortSignal;
+}
+
+interface OllamaAbortableStream extends AsyncIterable<unknown> {
+  abort?: () => void;
+}
+
+interface OllamaChatResponsePayload {
+  model: string;
+  done: boolean;
+  message: {
+    content: string;
+  };
+  eval_count?: number;
+  prompt_eval_count?: number;
+}
+
+function isOllamaChatResponsePayload(
+  value: unknown,
+): value is OllamaChatResponsePayload {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'model' in value &&
+    typeof value.model === 'string' &&
+    'done' in value &&
+    typeof value.done === 'boolean' &&
+    'message' in value &&
+    typeof value.message === 'object' &&
+    value.message !== null &&
+    'content' in value.message &&
+    typeof value.message.content === 'string'
+  );
 }
 
 /**
@@ -153,16 +186,6 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
    */
   convertTools(mcpTools: MCPTool[]): Tool[] {
     return convertMCPToolsToOllamaTools(mcpTools, coreLogger);
-  }
-
-  /**
-   * Cancels any ongoing streams by calling the Ollama client's abort method.
-   * This will abort all running requests on the client instance.
-   */
-  public cancel(): void {
-    super.cancel(); // Call base implementation to set the abort signal
-    this.logger.info('Calling Ollama client abort()');
-    this.ollamaClient.abort();
   }
 
   /**
@@ -278,6 +301,7 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
       const shouldIncludeTools = !options.disableToolUse;
       const requestTools = shouldIncludeTools ? ollamaTools : undefined;
+      const abortSignal = options.signal;
 
       logger.info('📨 Converted messages for Ollama', {
         originalCount: sanitizedMessages.length,
@@ -347,12 +371,10 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
           }
           throw error;
         }
-      });
+      }, abortSignal);
 
-      if (this.getAbortSignal().aborted) {
-        this.logger.debug('Stream aborted before iteration');
-        return;
-      }
+      const abortableStream: OllamaAbortableStream = stream;
+      const abortStream = () => abortableStream.abort?.();
 
       // Tool call accumulator for partial JSON handling
       const toolCallAccumulators = new Map<
@@ -360,52 +382,63 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
         import('./ollama-core').OllamaToolCallAccumulator
       >();
 
-      for await (const chunk of stream) {
-        if (this.getAbortSignal().aborted) {
-          this.logger.debug('Stream aborted during iteration');
-          break;
+      try {
+        abortSignal?.addEventListener('abort', abortStream, { once: true });
+        if (abortSignal?.aborted) {
+          abortStream();
+          this.logger.debug('Stream aborted before iteration');
+          return;
         }
 
-        // DIAGNOSTIC LOGGING: Log raw chunk from generator
-        // This is high volume, so keep it at debug level
-        if (typeof chunk === 'object') {
-          // It's already an object from ollama library
-          // logger.debug('Raw Ollama Chunk', { chunk });
+        for await (const chunk of stream) {
+          if (abortSignal?.aborted) {
+            this.logger.debug('Stream aborted during iteration');
+            break;
+          }
+
+          // DIAGNOSTIC LOGGING: Log raw chunk from generator
+          // This is high volume, so keep it at debug level
+          if (typeof chunk === 'object') {
+            // It's already an object from ollama library
+            // logger.debug('Raw Ollama Chunk', { chunk });
+          }
+
+          const processedChunk = processChunk(
+            chunk,
+            coreLogger,
+            toolCallAccumulators,
+          );
+          if (processedChunk) {
+            if (processedChunk.content) {
+              yield JSON.stringify({ content: processedChunk.content });
+            }
+
+            if (processedChunk.thinking) {
+              yield JSON.stringify({ thinking: processedChunk.thinking });
+            }
+
+            if (processedChunk.tool_calls) {
+              const toolCalls = processedChunk.tool_calls.map((toolCall) =>
+                createSerializableDirectToolCall(
+                  toolCall.id,
+                  toolCall.function.name,
+                  toolCall.function.arguments,
+                ),
+              );
+              yield serializeDirectToolCalls(toolCalls);
+            }
+
+            if (processedChunk.usage) {
+              yield JSON.stringify({ usage: processedChunk.usage });
+            }
+
+            if (processedChunk.error) {
+              logger.error('Error processing chunk', processedChunk.error);
+            }
+          }
         }
-
-        const processedChunk = processChunk(
-          chunk,
-          coreLogger,
-          toolCallAccumulators,
-        );
-        if (processedChunk) {
-          if (processedChunk.content) {
-            yield JSON.stringify({ content: processedChunk.content });
-          }
-
-          if (processedChunk.thinking) {
-            yield JSON.stringify({ thinking: processedChunk.thinking });
-          }
-
-          if (processedChunk.tool_calls) {
-            const toolCalls = processedChunk.tool_calls.map((toolCall) =>
-              createSerializableDirectToolCall(
-                toolCall.id,
-                toolCall.function.name,
-                toolCall.function.arguments,
-              ),
-            );
-            yield serializeDirectToolCalls(toolCalls);
-          }
-
-          if (processedChunk.usage) {
-            yield JSON.stringify({ usage: processedChunk.usage });
-          }
-
-          if (processedChunk.error) {
-            logger.error('Error processing chunk', processedChunk.error);
-          }
-        }
+      } finally {
+        abortSignal?.removeEventListener('abort', abortStream);
       }
 
       // Cleanup: Check for incomplete tool calls
@@ -470,23 +503,46 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
       modelName?: string;
       samplingOptions?: SamplingOptions;
       config?: AIServiceConfig;
+      signal?: AbortSignal;
     },
   ): Promise<SamplingResponse> {
     const config = this.mergeConfig(options);
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
+    const response = await this.withRetry(async () => {
+      const ollamaResponse = await fetch(new URL('/api/chat', this.host), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          stream: false,
+          messages: [{ role: 'user', content: prompt }],
+          options: {
+            num_predict: s?.maxTokens ?? config.maxTokens,
+            temperature: s?.temperature ?? config.temperature,
+            top_p: s?.topP,
+            stop: s?.stopSequences,
+          },
+        }),
+        signal: options?.signal,
+      });
 
-    const response = await this.ollamaClient.chat({
-      model,
-      stream: false,
-      messages: [{ role: 'user', content: prompt }],
-      options: {
-        num_predict: s?.maxTokens ?? config.maxTokens,
-        temperature: s?.temperature ?? config.temperature,
-        top_p: s?.topP,
-        stop: s?.stopSequences,
-      },
-    });
+      if (!ollamaResponse.ok) {
+        const errorText = await ollamaResponse.text();
+        throw new Error(
+          `Ollama request failed (${ollamaResponse.status}): ${errorText || ollamaResponse.statusText}`,
+        );
+      }
+
+      const payload: unknown = await ollamaResponse.json();
+      if (!isOllamaChatResponsePayload(payload)) {
+        throw new Error('Invalid Ollama chat response payload');
+      }
+
+      return payload;
+    }, options?.signal);
 
     const text = response.message.content;
 

@@ -1,24 +1,28 @@
 {
   "mcpServers": {
     "hn": {
+      "category": "search",
       "description": "Read Hacker News — top, new, best, Ask HN, Show HN, and job stories.",
       "logo": "https://news.ycombinator.com/favicon.ico",
       "command": "npx",
       "args": ["-y", "@fre4x/hn"]
     },
     "yahoo-finance": {
+      "category": "data",
       "description": "Get real-time stock prices, financials, options chains, and insider data. No API key required.",
       "logo": "https://s.yimg.com/rz/p/yahoo_finance_en-US_h_p_finance_2.png",
       "command": "npx",
       "args": ["-y", "@fre4x/yahoo-finance"]
     },
     "ddg-search": {
+      "category": "search",
       "description": "Search the web privately using DuckDuckGo.",
       "logo": "https://duckduckgo.com/favicon.ico",
       "command": "uvx",
       "args": ["duckduckgo-mcp-server"]
     },
     "context7": {
+      "category": "devtools",
       "description": "Access up-to-date documentation for any library via Context7.",
       "logo": "https://context7.com/favicon.ico",
       "url": "https://mcp.context7.com/mcp",
@@ -36,6 +40,7 @@
       }
     },
     "serena": {
+      "category": "devtools",
       "description": "Semantic coding agent with symbol-level code understanding and editing.",
       "logo": "https://oraios.github.io/serena/_static/serena-icon-32.png",
       "command": "uvx",
@@ -47,6 +52,7 @@
       ]
     },
     "github": {
+      "category": "devtools",
       "description": "Interact with GitHub repositories, issues, PRs, and code search.",
       "logo": "https://github.com/favicon.ico",
       "url": "https://api.githubcopilot.com/mcp/",
@@ -64,6 +70,7 @@
       }
     },
     "jules": {
+      "category": "devtools",
       "description": "Google Jules — autonomous coding agent for GitHub tasks.",
       "logo": "https://jules.google.com/favicon.ico",
       "command": "npx",
@@ -81,6 +88,7 @@
       }
     },
     "brave-search": {
+      "category": "search",
       "description": "Search the web with Brave Search API.",
       "logo": "https://brave.com/favicon.ico",
       "command": "docker",
@@ -105,6 +113,7 @@
       }
     },
     "exa": {
+      "category": "search",
       "description": "AI-powered web search and content retrieval via Exa.",
       "logo": "https://exa.ai/favicon.ico",
       "url": "https://mcp.exa.ai/mcp",
@@ -119,6 +128,7 @@
       }
     },
     "fred": {
+      "category": "data",
       "description": "Access Federal Reserve economic data — GDP, inflation, unemployment, interest rates, and 800K+ series.",
       "logo": "https://fred.stlouisfed.org/favicon.ico",
       "command": "npx",
@@ -136,12 +146,14 @@
       }
     },
     "arxiv": {
+      "category": "search",
       "description": "Search and retrieve academic papers from arXiv — millions of papers across all categories.",
       "logo": "https://arxiv.org/favicon.ico",
       "command": "npx",
       "args": ["-y", "@fre4x/arxiv"]
     },
     "gemini": {
+      "category": "ai",
       "description": "Google Gemini — multimodal text generation, image/video analysis, and image synthesis via Imagen.",
       "logo": "https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06.svg",
       "command": "npx",
@@ -159,6 +171,7 @@
       }
     },
     "grok": {
+      "category": "ai",
       "description": "Grok API access for text generation and analysis.",
       "logo": "https://grok.ai/favicon.ico",
       "command": "npx",
@@ -176,18 +189,21 @@
       }
     },
     "docx": {
+      "category": "documents",
       "description": "Work with Word documents programmatically through MCP APIs.",
       "logo": "https://www.docx.com/favicon.ico",
       "command": "npx",
       "args": ["-y", "@fre4x/docx"]
     },
     "jupyter": {
+      "category": "documents",
       "description": "Execute and manage Jupyter notebooks via MCP.",
       "logo": "https://jupyter.org/favicon.ico",
       "command": "npx",
       "args": ["-y", "@fre4x/jupyter"]
     },
     "comfyui": {
+      "category": "creative",
       "description": "Interact with ComfyUI to generate and manage AI images.",
       "command": "npx",
       "args": ["-y", "@fre4x/comfyui"],
@@ -204,6 +220,7 @@
       }
     },
     "openai": {
+      "category": "ai",
       "description": "OpenAI MCP server for text generation and analysis.",
       "command": "npx",
       "args": ["-y", "@fre4x/openai"],
@@ -220,6 +237,7 @@
       }
     },
     "huggingface": {
+      "category": "ai",
       "description": "Interact with Hugging Face models and datasets.",
       "logo": "https://huggingface.co/front/assets/huggingface_logo-noborder.svg",
       "command": "npx",
@@ -253,6 +271,23 @@
           "required": false,
           "label": "Allow Remote Models",
           "description": "Set to 'true' to allow downloading remote models",
+          "type": "text"
+        }
+      }
+    },
+    "benchmark": {
+      "category": "devtools",
+      "description": "Run GAIA benchmark challenges to evaluate AI agent capabilities.",
+      "command": "npx",
+      "args": ["-y", "@fre4x/benchmark"],
+      "env": {
+        "BENCHMARK_GAIA_DATA_FILE": ""
+      },
+      "variableDefinitions": {
+        "BENCHMARK_GAIA_DATA_FILE": {
+          "required": true,
+          "label": "GAIA Data File Path",
+          "description": "Absolute path to the GAIA benchmark challenges JSON file",
           "type": "text"
         }
       }

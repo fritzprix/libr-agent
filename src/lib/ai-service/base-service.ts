@@ -72,9 +72,6 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    */
   protected logger = getLogger(this.getProvider());
 
-  // Instance-level AbortController for stream cancellation
-  protected abortController: AbortController = new AbortController();
-
   /**
    * Initializes a new instance of the `BaseAIService`.
    * @param apiKey The API key for the service.
@@ -89,32 +86,12 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   }
 
   /**
-   * Sets the default configuration for the service.
-   * @param config The new default configuration.
-   */
-  setDefaultConfig(config: AIServiceConfig): void {
-    this.defaultConfig = { ...this.defaultConfig, ...config };
-  }
-
-  /**
    * Cancels any ongoing streaming request.
    */
   cancel(): void {
-    if (!this.abortController.signal.aborted) {
-      this.logger.info('Cancelling active stream');
-      this.abortController.abort();
-    }
-    // Re-create the AbortController for the next request
-    this.abortController = new AbortController();
-  }
-
-  /**
-   * Returns the `AbortSignal` for the current request.
-   * @returns The `AbortSignal`.
-   * @protected
-   */
-  protected getAbortSignal(): AbortSignal {
-    return this.abortController.signal;
+    this.logger.debug(
+      'Ignoring service-level cancel; request-scoped signal owns cancellation',
+    );
   }
 
   /**
@@ -154,11 +131,14 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @returns A promise that resolves to the result of the function.
    * @protected
    */
-  protected async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  protected async withRetry<T>(
+    fn: () => Promise<T>,
+    abortSignal?: AbortSignal,
+  ): Promise<T> {
     return withRetryPolicy({
       fn,
       config: this.defaultConfig,
-      abortSignal: this.abortController.signal,
+      abortSignal,
       logger: this.logger,
       provider: this.getProvider(),
       shouldRetry: (error) => this.shouldRetry(error),
@@ -227,7 +207,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
     throwStreamingError({
       error,
       context,
-      abortSignal: this.abortController.signal,
+      abortSignal: context.options.signal,
       logger: this.logger,
       provider: this.getProvider(),
     });
@@ -264,9 +244,6 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
     options: PrepareStreamChatOptions = {},
   ): PrepareStreamChatResult<TProviderTool> {
     this.validateMessages(messages);
-
-    // Re-initialize AbortController for this call
-    this.abortController = new AbortController();
 
     return prepareStreamChatRequest({
       messages,
@@ -539,7 +516,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
         ),
       streamChat: (compactInput, compactOptions) =>
         this.streamChat(compactInput, compactOptions),
-      isAborted: () => this.getAbortSignal().aborted,
+      isAborted: () => options?.signal?.aborted ?? false,
       getProvider: () => this.getProvider(),
     });
   }

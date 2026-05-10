@@ -176,6 +176,7 @@ export async function getMCPServer(
 
 export interface MCPServerPreset {
   name: string;
+  category?: string;
   description?: string;
   logo?: string;
   transportType: 'stdio' | 'sse';

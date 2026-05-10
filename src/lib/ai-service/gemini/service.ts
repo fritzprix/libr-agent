@@ -248,80 +248,85 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       config?: AIServiceConfig;
       forceToolUse?: boolean;
       disableToolUse?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
-      messages,
-      options,
-    );
-    try {
-      const abortSignal = this.getAbortSignal();
-      const normalizedContextInjection = this.prepareContextInjection(
-        options.systemPrompt,
-        options.sessionContext,
-        sanitizedMessages,
+    const abortSignal = options.signal;
+    let currentOptions = options;
+    let allowMalformedFunctionRetry = Boolean(options.availableTools?.length);
+
+    while (true) {
+      const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+        messages,
+        currentOptions,
       );
-      const geminiMessages = this.convertMessages(
-        normalizedContextInjection.messages,
-        normalizedContextInjection.systemPrompt,
-      );
-      if (geminiMessages.length === 0) {
-        throw new Error(
-          'No valid messages to send to Gemini (must start with user/tool role)',
+
+      try {
+        const normalizedContextInjection = this.prepareContextInjection(
+          currentOptions.systemPrompt,
+          currentOptions.sessionContext,
+          sanitizedMessages,
         );
-      }
-      const geminiTools = tools
-        ? [
-            {
-              functionDeclarations: tools as FunctionDeclaration[],
-            },
-          ]
-        : undefined;
-
-      const model =
-        options.modelName || config.defaultModel || getDefaultModel();
-      const stablePrefix = normalizedContextInjection.systemPrompt ?? '';
-      const encoder = new TextEncoder();
-      const toolDeclarationCount =
-        geminiTools?.[0]?.functionDeclarations.length ?? 0;
-
-      const requestMessageSummary = summarizeLibrAgentMessages(
-        normalizedContextInjection.messages,
-      );
-      const geminiContentSummary = summarizeGeminiContents(geminiMessages);
-
-      this.logger.info('Gemini request assembly breakdown', {
-        model,
-        implicitCachingEligible: model.startsWith('gemini-2.5-'),
-        disableToolUse: options.disableToolUse ?? false,
-        forceToolUse: options.forceToolUse ?? false,
-        librAgentMessages: requestMessageSummary,
-        geminiContents: geminiContentSummary,
-        stablePrefixLength: stablePrefix.length,
-        stablePrefixBytes: encoder.encode(stablePrefix).length,
-        toolDeclarationCount,
-      });
-
-      let thinkingConfig: GeminiServiceConfig['thinkingConfig'];
-      if (config.enableReasoning) {
-        const modelSupportsThinking = await checkThinkingSupport(
-          model,
-          this.modelCache,
+        const geminiMessages = this.convertMessages(
+          normalizedContextInjection.messages,
+          normalizedContextInjection.systemPrompt,
         );
-        if (modelSupportsThinking) {
-          const thinkingBudget = mapReasoningEffortToBudget(
-            config.reasoningEffort,
+        if (geminiMessages.length === 0) {
+          throw new Error(
+            'No valid messages to send to Gemini (must start with user/tool role)',
           );
-          thinkingConfig = {
-            thinkingBudget,
-            includeThoughts: true,
-          };
         }
-      }
+        const geminiTools =
+          (tools?.length ?? 0) > 0
+            ? [
+                {
+                  functionDeclarations: tools as FunctionDeclaration[],
+                },
+              ]
+            : undefined;
 
-      const safetySettings = prepareSafetySettings(config);
+        const model =
+          currentOptions.modelName || config.defaultModel || getDefaultModel();
+        const stablePrefix = normalizedContextInjection.systemPrompt ?? '';
+        const encoder = new TextEncoder();
+        const toolDeclarationCount =
+          geminiTools?.[0]?.functionDeclarations.length ?? 0;
 
-      const createGeminiConfig = (): GeminiServiceConfig => {
+        const requestMessageSummary = summarizeLibrAgentMessages(
+          normalizedContextInjection.messages,
+        );
+        const geminiContentSummary = summarizeGeminiContents(geminiMessages);
+
+        this.logger.info('Gemini request assembly breakdown', {
+          model,
+          implicitCachingEligible: model.startsWith('gemini-2.5-'),
+          disableToolUse: currentOptions.disableToolUse ?? false,
+          forceToolUse: currentOptions.forceToolUse ?? false,
+          librAgentMessages: requestMessageSummary,
+          geminiContents: geminiContentSummary,
+          stablePrefixLength: stablePrefix.length,
+          stablePrefixBytes: encoder.encode(stablePrefix).length,
+          toolDeclarationCount,
+        });
+
+        let thinkingConfig: GeminiServiceConfig['thinkingConfig'];
+        if (config.enableReasoning) {
+          const modelSupportsThinking = await checkThinkingSupport(
+            model,
+            this.modelCache,
+          );
+          if (modelSupportsThinking) {
+            const thinkingBudget = mapReasoningEffortToBudget(
+              config.reasoningEffort,
+            );
+            thinkingConfig = {
+              thinkingBudget,
+              includeThoughts: true,
+            };
+          }
+        }
+
+        const safetySettings = prepareSafetySettings(config);
         const geminiConfig: GeminiServiceConfig = {
           responseMimeType: 'text/plain',
           abortSignal,
@@ -335,13 +340,13 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         }
 
         if (geminiTools) {
-          if (options.disableToolUse) {
+          if (currentOptions.disableToolUse) {
             geminiConfig.toolConfig = {
               functionCallingConfig: {
                 mode: FunctionCallingConfigMode.NONE,
               },
             };
-          } else if (options.forceToolUse) {
+          } else if (currentOptions.forceToolUse) {
             geminiConfig.toolConfig = {
               functionCallingConfig: {
                 mode: FunctionCallingConfigMode.ANY,
@@ -364,62 +369,60 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
         geminiConfig.safetySettings = safetySettings;
 
-        return geminiConfig;
-      };
-
-      const geminiConfig = createGeminiConfig();
-
-      // 🔍 Detailed Logging before API Call
-      const sysPromptText = geminiConfig.systemInstruction?.[0]?.text || '';
-      this.logger.debug('🚀 Calling Gemini API - System Prompt Verification', {
-        model,
-        systemPromptLength: sysPromptText.length,
-        includesSkills: sysPromptText.includes('<available_skills>'),
-        first500Chars: sysPromptText.substring(0, 500),
-        last500Chars: sysPromptText.substring(sysPromptText.length - 500),
-      });
-
-      const createStream = async (requestConfig: GeminiServiceConfig) => {
-        return this.genAI.models.generateContentStream({
-          model: model,
-          config: requestConfig,
-          contents: geminiMessages,
-        });
-      };
-
-      const result = await this.withRetry(async () => {
-        return createStream(geminiConfig);
-      });
-
-      if (abortSignal.aborted) {
-        this.logger.debug('Stream aborted before iteration');
-        return;
-      }
-
-      // Use the stream processing logic from stream.ts
-      yield* processGeminiStream(result, abortSignal, this.logger);
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes('malformed_function_call') ||
-          error.message.includes('MALFORMED_FUNCTION_CALL'))
-      ) {
-        this.logger.warn(
-          'MALFORMED_FUNCTION_CALL detected. Retrying request without tools.',
-          { originalError: error },
+        // 🔍 Detailed Logging before API Call
+        const sysPromptText = geminiConfig.systemInstruction?.[0]?.text || '';
+        this.logger.debug(
+          '🚀 Calling Gemini API - System Prompt Verification',
+          {
+            model,
+            systemPromptLength: sysPromptText.length,
+            includesSkills: sysPromptText.includes('<available_skills>'),
+            first500Chars: sysPromptText.substring(0, 500),
+            last500Chars: sysPromptText.substring(sysPromptText.length - 500),
+          },
         );
-        if (options.availableTools && options.availableTools.length > 0) {
-          const retryOptions = { ...options, availableTools: [] };
-          yield* this.streamChat(messages, retryOptions);
+
+        const result = await this.withRetry(async () => {
+          return this.genAI.models.generateContentStream({
+            model: model,
+            config: geminiConfig,
+            contents: geminiMessages,
+          });
+        }, abortSignal);
+
+        if (abortSignal?.aborted) {
+          this.logger.debug('Stream aborted before iteration');
           return;
         }
-      }
 
-      this.handleStreamingError(error, {
-        messages,
-        options,
-        config,
-      });
+        yield* processGeminiStream(result, abortSignal, this.logger);
+        return;
+      } catch (error) {
+        const malformedFunctionCall =
+          error instanceof Error &&
+          (error.message.includes('malformed_function_call') ||
+            error.message.includes('MALFORMED_FUNCTION_CALL'));
+
+        if (malformedFunctionCall && allowMalformedFunctionRetry) {
+          this.logger.warn(
+            'MALFORMED_FUNCTION_CALL detected. Retrying request without tools.',
+            { originalError: error },
+          );
+          allowMalformedFunctionRetry = false;
+          currentOptions = {
+            ...currentOptions,
+            availableTools: [],
+            forceToolUse: false,
+          };
+          continue;
+        }
+
+        this.handleStreamingError(error, {
+          messages,
+          options: currentOptions,
+          config,
+        });
+      }
     }
   }
 
@@ -539,6 +542,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       modelName?: string;
       samplingOptions?: SamplingOptions;
       config?: AIServiceConfig;
+      signal?: AbortSignal;
     },
   ): Promise<SamplingResponse> {
     const rawConfig = this.mergeConfig(options) as AIServiceConfig &
@@ -546,21 +550,23 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     const model =
       options?.modelName || rawConfig.defaultModel || getDefaultModel();
     const s = options?.samplingOptions;
-    const abortSignal = this.getAbortSignal();
+    const abortSignal = options?.signal;
 
-    const response = await this.withRetry(() =>
-      this.genAI.models.generateContent({
-        model,
-        config: {
-          abortSignal,
-          maxOutputTokens: s?.maxTokens ?? rawConfig.maxTokens,
-          temperature: s?.temperature ?? rawConfig.temperature,
-          topP: s?.topP,
-          topK: s?.topK,
-          stopSequences: s?.stopSequences,
-        },
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      }),
+    const response = await this.withRetry(
+      () =>
+        this.genAI.models.generateContent({
+          model,
+          config: {
+            abortSignal,
+            maxOutputTokens: s?.maxTokens ?? rawConfig.maxTokens,
+            temperature: s?.temperature ?? rawConfig.temperature,
+            topP: s?.topP,
+            topK: s?.topK,
+            stopSequences: s?.stopSequences,
+          },
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        }),
+      abortSignal,
     );
 
     const candidate = response.candidates?.[0];

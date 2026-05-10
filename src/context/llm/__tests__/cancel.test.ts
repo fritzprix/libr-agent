@@ -300,8 +300,6 @@ describe('cancelCompletionRequest coordinates provider and local aborts', () => 
       const activeService = services.get(targetSessionId);
       if (activeService) {
         services.delete(targetSessionId);
-        activeService.cancel();
-        activeService.dispose();
       }
       const activeController = controllers.get(targetSessionId);
       if (activeController) {
@@ -312,8 +310,8 @@ describe('cancelCompletionRequest coordinates provider and local aborts', () => 
 
     cancelCompletionRequest(sessionId);
 
-    expect(service.cancel).toHaveBeenCalledTimes(1);
-    expect(service.dispose).toHaveBeenCalledTimes(1);
+    expect(service.cancel).not.toHaveBeenCalled();
+    expect(service.dispose).not.toHaveBeenCalled();
     expect(controller.signal.aborted).toBe(true);
     expect(requestIds.has(sessionId)).toBe(false);
     expect(timeouts.has(sessionId)).toBe(false);
@@ -369,8 +367,6 @@ describe('cancelCompletionRequest coordinates provider and local aborts', () => 
       const activeService = services.get(targetSessionId);
       if (activeService) {
         services.delete(targetSessionId);
-        activeService.cancel();
-        activeService.dispose();
       }
       const activeController = controllers.get(targetSessionId);
       if (activeController) {

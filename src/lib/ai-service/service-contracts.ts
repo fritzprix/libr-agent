@@ -14,12 +14,14 @@ export interface AIStreamChatOptions {
   config?: AIServiceConfig;
   forceToolUse?: boolean;
   disableToolUse?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface AISampleTextOptions {
   modelName?: string;
   samplingOptions?: SamplingOptions;
   config?: AIServiceConfig;
+  signal?: AbortSignal;
 }
 
 export interface AICompactOptions {
@@ -28,6 +30,7 @@ export interface AICompactOptions {
   systemPrompt?: string;
   sessionContext?: string;
   availableTools?: MCPTool[];
+  signal?: AbortSignal;
 }
 
 export interface AIStreamingService {
