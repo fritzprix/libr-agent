@@ -7,6 +7,18 @@
       "command": "npx",
       "args": ["-y", "@fre4x/hn"]
     },
+
+    "fre4x-inspector-bridge": {
+      "category": "devtools",
+      "description": "MCP bridge — connect and use external MCP servers within LibrAgent.",
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package",
+        "@fre4x/inspector-bridge",
+        "fre4x-inspector-bridge"
+      ]
+    },
     "yahoo-finance": {
       "category": "data",
       "description": "Get real-time stock prices, financials, options chains, and insider data. No API key required.",
