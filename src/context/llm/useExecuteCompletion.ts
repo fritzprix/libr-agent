@@ -578,6 +578,27 @@ export function useExecuteCompletion({
           return next;
         });
 
+        const activeRequestId = activeRequestIdsRef.current.get(sessionId);
+
+        if (
+          activeRequestId !== undefined &&
+          activeRequestId !== responseMessageId
+        ) {
+          logger.info('Dropping completed stream for superseded request', {
+            sessionId,
+            responseMessageId,
+            activeRequestId,
+          });
+          throw new Error('Request superseded');
+        }
+
+        if (abortController.signal.aborted) {
+          logger.warn('Completion request aborted before first chunk', {
+            sessionId,
+          });
+          throw new Error('Request aborted');
+        }
+
         const endTime = performance.now();
         const totalDurationMs = endTime - startTime;
 

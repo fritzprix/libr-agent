@@ -69,10 +69,6 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
     [presets],
   );
 
-  if (normalizedPresets.length === 0) {
-    return null;
-  }
-
   const categoryCounts = useMemo(() => {
     return normalizedPresets.reduce<Record<PresetCategory, number>>(
       (counts, preset) => {
@@ -139,6 +135,10 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   const shouldGroupByCategory =
     activeCategory === 'all' && trimmedSearchQuery.length === 0;
 
+  if (normalizedPresets.length === 0) {
+    return null;
+  }
+
   const renderPresetCard = (preset: CategorizedPreset) => {
     const isInstalled = installedServerNames.has(preset.name);
     const canInstall = !isInstalled && registryLoaded;
@@ -146,6 +146,10 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
       !isInstalled && !registryLoaded && !!registryError;
     const categoryMeta = PRESET_CATEGORY_META[preset.category];
     const CategoryIcon = categoryMeta.icon;
+    const transportLabel = t(
+      `assistant.mcp.transport.${preset.transportType}`,
+      preset.transportType,
+    );
     const presetCommandPreview = preset.command
       ? `${preset.command} ${preset.args?.[0] ?? ''}`.trim()
       : (preset.url ?? t('assistant.mcp.transport.sse', 'sse'));
@@ -215,7 +219,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
               </span>
             ) : canInstall ? (
               <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
-                {t('assistant.mcp.transport.stdio', 'stdio')}
+                {transportLabel}
               </span>
             ) : canRetryRegistryLoad ? (
               <span className="text-[10px] bg-destructive/10 px-1.5 py-0.5 rounded text-destructive uppercase">

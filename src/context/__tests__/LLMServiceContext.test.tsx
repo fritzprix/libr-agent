@@ -768,6 +768,7 @@ describe('LLMServiceContext – Core', () => {
       ];
 
       let requestPromise!: Promise<Message>;
+      let requestSettled!: Promise<unknown>;
       await act(async () => {
         requestPromise = result.current.executeCompletionRequest(
           'test-session',
@@ -777,6 +778,7 @@ describe('LLMServiceContext – Core', () => {
           'openai',
           'test-key',
         );
+        requestSettled = requestPromise.catch((error: unknown) => error);
       });
 
       await waitFor(() => {
@@ -794,10 +796,113 @@ describe('LLMServiceContext – Core', () => {
         expect(result.current.streamingMessages.has('test-session')).toBe(false);
       });
 
+      await expect(requestPromise).rejects.toThrow('Request aborted');
       await act(async () => {
-        await requestPromise;
+        await requestSettled;
       });
 
+      expect(mockDispose).not.toHaveBeenCalled();
+    });
+
+    it('treats a silent pre-first-chunk abort as cancellation instead of empty response', async () => {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
+        wrapper: TestWrapper,
+      });
+
+      mockStreamChat.mockImplementation(async function* (
+        _messages: Message[],
+        options?: { signal?: AbortSignal },
+      ) {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        if (options?.signal?.aborted) {
+          return;
+        }
+        yield JSON.stringify({ content: 'late reply' });
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let requestPromise!: Promise<Message>;
+      await act(async () => {
+        requestPromise = result.current.executeCompletionRequest(
+          'test-session',
+          'response-msg-silent-cancel',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      act(() => {
+        result.current.cancelCompletionRequest(
+          'test-session',
+          'response-msg-silent-cancel',
+        );
+      });
+
+      await expect(requestPromise).rejects.toThrow('Request aborted');
+      expect(mockDispose).not.toHaveBeenCalled();
+    });
+
+    it('treats a silent pre-first-chunk supersede as superseded instead of empty response', async () => {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
+        wrapper: TestWrapper,
+      });
+
+      mockStreamChat.mockImplementation(async function* (
+        _messages: Message[],
+        options?: { signal?: AbortSignal },
+      ) {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        if (options?.signal?.aborted) {
+          return;
+        }
+        yield JSON.stringify({ content: 'fresh reply' });
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      const firstPromise = result.current.executeCompletionRequest(
+        'test-session',
+        'response-msg-old-silent',
+        messages,
+        'gpt-4',
+        'openai',
+        'test-key',
+      );
+
+      const secondPromise = result.current.executeCompletionRequest(
+        'test-session',
+        'response-msg-new-silent',
+        messages,
+        'gpt-4',
+        'openai',
+        'test-key',
+      );
+
+      await expect(firstPromise).rejects.toThrow('Request superseded');
+      await expect(secondPromise).resolves.toMatchObject({
+        content: [{ type: 'text', text: 'fresh reply' }],
+      });
       expect(mockDispose).not.toHaveBeenCalled();
     });
 
