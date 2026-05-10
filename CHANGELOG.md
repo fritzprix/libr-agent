@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.24] - 2026-05-10
+
+### 🚀 Features
+
+- **New MCP Server: fre4x-inspector-bridge**: Added a new built-in MCP server for inspector bridge capabilities.
+- **Enhanced MCP Configuration**: Implemented required preset categories across MCP configurations for better organization and discovery.
+- **Execution Safety Controls**: Introduced execution mode safety controls to provide finer governance over LLM tool usage.
+
+### 🐛 Fixes
+
+- **Improved Security & Policy Handling**: Aligned unsafe shell policy handling and hardened shell execution safety.
+- **Backward Compatibility**: Resolved critical backward compatibility issues in session and configuration loading.
+- **Regression Fixes**: Addressed blocker regressions identified in recent PR reviews to ensure system stability.
+
+### 🔧 Internal
+
+- **Test & Execution Cleanup**: Stabilized symlink validator tests and performed cleanup of LLM execution internal logic.
+
 ## [0.7.23] - 2026-05-10
 
 ### 🚀 Features
