@@ -4,12 +4,7 @@ use crate::mcp::builtin::workspace::tools::code_tools::{
 
 /// Build UIResource HTML for shell input form
 /// Returns HTML string with embedded execution_id, prompt, and input type
-pub fn build_shell_input_ui(
-    execution_id: &str,
-    prompt: &str,
-    input_type: &str,
-    nonce: &str,
-) -> String {
+pub fn build_shell_input_ui(execution_id: &str, prompt: &str, input_type: &str) -> String {
     let safe_input_type = if input_type.eq_ignore_ascii_case("password") {
         "password"
     } else {
@@ -96,20 +91,13 @@ pub fn build_shell_input_ui(
 
     <script>
       const executionId = '{}';
-      const nonce = '{}';
-
-      function obfuscate(input, nonce) {{
+      function encodeInput(input) {{
         const textEncoder = new TextEncoder();
         const inputBytes = textEncoder.encode(input);
-        const nonceBytes = textEncoder.encode(nonce);
-        const xored = new Uint8Array(inputBytes.length);
-        for (let i = 0; i < inputBytes.length; i++) {{
-          xored[i] = inputBytes[i] ^ nonceBytes[i % nonceBytes.length];
-        }}
         // Convert to Base64 more safely (avoid stack overflow)
         let binary = '';
-        for (let i = 0; i < xored.length; i++) {{
-          binary += String.fromCharCode(xored[i]);
+        for (let i = 0; i < inputBytes.length; i++) {{
+          binary += String.fromCharCode(inputBytes[i]);
         }}
         return btoa(binary);
       }}
@@ -119,7 +107,7 @@ pub fn build_shell_input_ui(
         .addEventListener('submit', async (e) => {{
           e.preventDefault();
           const userInput = document.getElementById('userInput').value;
-          const obfuscatedInput = obfuscate(userInput, nonce);
+          const encodedInput = encodeInput(userInput);
 
           // Send to parent window (MCP Worker) - triggers 2nd tool call
           // IMPORTANT: Use window.parent.postMessage to send to parent frame
@@ -131,7 +119,7 @@ pub fn build_shell_input_ui(
                 toolName: '{}',
                 params: {{
                   executionId: executionId,
-                  userInput: obfuscatedInput,
+                  userInput: encodedInput,
                 }},
               }},
             }},
@@ -170,7 +158,6 @@ pub fn build_shell_input_ui(
         html_escape::encode_safe(prompt),
         safe_input_type,
         execution_id,
-        nonce,
         EXECUTE_PENDING_SHELL,
         CANCEL_PENDING_EXECUTION
     )
@@ -182,18 +169,14 @@ mod tests {
 
     #[test]
     fn test_build_shell_input_ui_whitelists_input_type() {
-        let html = build_shell_input_ui("exec-1", "Prompt", "password", "nonce-1");
+        let html = build_shell_input_ui("exec-1", "Prompt", "password");
         assert!(
             html.contains(r#"type="password""#),
             "password should be preserved as allowed input type"
         );
 
-        let html_with_invalid_type = build_shell_input_ui(
-            "exec-2",
-            "Prompt",
-            r#"text" autofocus onfocus="alert(1)""#,
-            "nonce-2",
-        );
+        let html_with_invalid_type =
+            build_shell_input_ui("exec-2", "Prompt", r#"text" autofocus onfocus="alert(1)""#);
         assert!(
             html_with_invalid_type.contains(r#"type="text""#),
             "invalid input_type should be downgraded to text"
@@ -206,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_build_shell_input_ui_uses_static_placeholder() {
-        let html = build_shell_input_ui("exec-3", "Prompt", "password", "nonce-3");
+        let html = build_shell_input_ui("exec-3", "Prompt", "password");
         assert!(html.contains(r#"placeholder="Enter input...""#));
         assert!(!html.contains("Enter password..."));
     }

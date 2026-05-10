@@ -247,6 +247,7 @@ export interface AgentSessionMetadata {
   lastAttentionReason?: SessionAttentionReason;
   isBookmarked?: boolean;
   yoloMode: boolean;
+  unsafeMode?: boolean;
 }
 
 export interface AgentSessionListCursor {
@@ -270,10 +271,16 @@ export interface MessageSlice<TMessage = RustMessage> {
   oldestCursor?: MessageCursor | null;
 }
 
+export type PendingApprovalKind = 'standard' | 'hard';
+
 export interface PendingApprovalSnapshot {
   toolCallId: string;
   toolName: string;
   arguments: string;
+  approvalKind: PendingApprovalKind;
+  requestId?: string;
+  description?: string;
+  inputPreview?: string;
 }
 
 export interface AgentOpenSessionResponse {

@@ -27,6 +27,7 @@ fn build_parent_session(model: &str, provider: &str) -> SessionMetadata {
         last_attention_reason: None,
         is_bookmarked: false,
         yolo_mode: false,
+        unsafe_mode: false,
         workspace_override: None,
     }
 }

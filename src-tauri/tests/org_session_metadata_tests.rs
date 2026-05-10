@@ -32,6 +32,7 @@ async fn session_repository_persists_explicit_org_identity() {
         last_attention_reason: None,
         is_bookmarked: false,
         yolo_mode: false,
+        unsafe_mode: false,
         workspace_override: None,
     })
     .await

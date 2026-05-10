@@ -28,6 +28,7 @@ vi.mock('react-i18next', () => ({
 
 const basePreset: MCPServerPreset = {
   name: 'filesystem',
+  category: 'devtools',
   description: 'Filesystem tools',
   transportType: 'stdio',
   command: 'npx',
@@ -65,6 +66,36 @@ describe('RecommendedPresets', () => {
     expect(
       screen.queryByRole('button', { name: 'Install filesystem extension' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('keeps hook ordering stable when presets load after an empty render', () => {
+    const { rerender } = render(
+      <RecommendedPresets
+        presets={[]}
+        servers={[]}
+        allServers={[]}
+        registryLoaded={true}
+        registryError={undefined}
+        onSetupPreset={vi.fn()}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    rerender(
+      <RecommendedPresets
+        presets={[basePreset]}
+        servers={[]}
+        allServers={[]}
+        registryLoaded={true}
+        registryError={undefined}
+        onSetupPreset={vi.fn()}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Install filesystem extension' }),
+    ).toBeInTheDocument();
   });
 
   it('uses the visible installed grid as a temporary installed source before the full registry finishes loading', () => {
@@ -108,6 +139,32 @@ describe('RecommendedPresets', () => {
 
     fireEvent.click(presetCard);
     expect(onSetupPreset).not.toHaveBeenCalled();
+  });
+
+  it('shows the actual preset transport badge for installable presets', () => {
+    render(
+      <RecommendedPresets
+        presets={[
+          {
+            ...basePreset,
+            name: 'exa',
+            transportType: 'sse',
+            command: undefined,
+            args: undefined,
+            url: 'https://example.com/sse',
+          },
+        ]}
+        servers={[]}
+        allServers={[]}
+        registryLoaded={true}
+        registryError={undefined}
+        onSetupPreset={vi.fn()}
+        onRetryRegistryLoad={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByText('sse')).toBeInTheDocument();
+    expect(screen.queryByText('stdio')).not.toBeInTheDocument();
   });
 
   it('offers a retry action when the full registry load failed', () => {

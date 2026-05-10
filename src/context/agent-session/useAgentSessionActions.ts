@@ -5,6 +5,7 @@ import { getLogger } from '@/lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
 import type { AgentResponse, SendUserMessageRequest } from '@/models/agent-ipc';
 import type { useAgentSessionState } from './useAgentSessionState';
+import type { ExecutionMode } from './types';
 
 const logger = getLogger('AgentSessionActions');
 
@@ -17,6 +18,28 @@ export function useAgentSessionActionsLogic(
   },
 ) {
   const { state, setters } = stateProps;
+  const currentExecutionMode: ExecutionMode = state.unsafeModeEnabled
+    ? 'unsafe'
+    : state.yoloModeEnabled
+      ? 'yolo'
+      : 'normal';
+
+  const applyExecutionModeLocally = useCallback(
+    (mode: ExecutionMode) => {
+      setters.setYoloModeEnabled(mode === 'yolo');
+      setters.setUnsafeModeEnabled(mode === 'unsafe');
+      setters.setSession((previous) =>
+        previous
+          ? {
+              ...previous,
+              yoloMode: mode === 'yolo',
+              unsafeMode: mode === 'unsafe',
+            }
+          : previous,
+      );
+    },
+    [setters],
+  );
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -156,45 +179,53 @@ export function useAgentSessionActionsLogic(
     [externalActions, setters, state.session],
   );
 
-  const toggleYoloMode = useCallback(async () => {
-    const newVal = !state.yoloModeEnabled;
-    try {
-      await safeInvoke<void>('agent_set_yolo_mode', {
-        sessionId,
-        enabled: newVal,
-      });
-      setters.setYoloModeEnabled(newVal);
-      logger.info(`YOLO mode ${newVal ? 'enabled' : 'disabled'}`);
-
-      if (newVal && state.pendingApprovals.length > 0) {
-        logger.info('Auto-approving pending tools due to YOLO toggle', {
-          count: state.pendingApprovals.length,
-        });
-        const approvalsToClear = [...state.pendingApprovals];
-        approvalsToClear.forEach((p) => {
-          void safeInvoke<AgentResponse>('agent_respond_tool_approval', {
-            sessionId,
-            toolCallId: p.toolCallId,
-            approved: true,
-          }).catch((err) => {
-            logger.error('Failed to auto-approve tool upon YOLO toggle', err);
-          });
-          externalActions.clearPendingApproval(sessionId, p.toolCallId);
-        });
-        setters.setPendingApprovals([]);
-        setters.setWorkflowPhase('using_tools');
-        await externalActions.acknowledgeSessionAttention();
+  const setExecutionMode = useCallback(
+    async (mode: ExecutionMode) => {
+      if (mode === currentExecutionMode) {
+        return;
       }
-    } catch (err) {
-      logger.error('Failed to toggle YOLO mode on backend', err);
-    }
-  }, [
-    externalActions,
-    sessionId,
-    setters,
-    state.pendingApprovals,
-    state.yoloModeEnabled,
-  ]);
+
+      try {
+        await safeInvoke<void>('agent_set_execution_mode', {
+          sessionId,
+          mode,
+        });
+
+        applyExecutionModeLocally(mode);
+        logger.info(`Execution mode set to ${mode}`);
+
+        if (mode !== 'normal' && state.pendingApprovals.length > 0) {
+          logger.info(
+            'Backend will reconcile pending approvals after execution mode change',
+            {
+              mode,
+              count: state.pendingApprovals.length,
+            },
+          );
+          await externalActions.acknowledgeSessionAttention();
+        }
+      } catch (err) {
+        logger.error('Failed to set execution mode on backend', err);
+      }
+    },
+    [
+      applyExecutionModeLocally,
+      currentExecutionMode,
+      externalActions,
+      sessionId,
+      state.pendingApprovals.length,
+    ],
+  );
+
+  const toggleYoloMode = useCallback(async () => {
+    await setExecutionMode(currentExecutionMode === 'yolo' ? 'normal' : 'yolo');
+  }, [currentExecutionMode, setExecutionMode]);
+
+  const toggleUnsafeMode = useCallback(async () => {
+    await setExecutionMode(
+      currentExecutionMode === 'unsafe' ? 'normal' : 'unsafe',
+    );
+  }, [currentExecutionMode, setExecutionMode]);
 
   const updateSessionConfig = useCallback(
     (model: string, provider: string) => {
@@ -211,7 +242,9 @@ export function useAgentSessionActionsLogic(
     loadOlderMessages,
     resumeSession,
     respondToToolApproval,
+    setExecutionMode,
     toggleYoloMode,
+    toggleUnsafeMode,
     updateSessionConfig,
   };
 }

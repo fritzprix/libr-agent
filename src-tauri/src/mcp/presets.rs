@@ -6,6 +6,7 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase")]
 pub struct MCPServerPreset {
     pub name: String,
+    pub category: String,
     pub description: Option<String>,
     pub logo: Option<String>,
     pub transport_type: String, // "stdio" or "sse"
@@ -18,6 +19,7 @@ pub struct MCPServerPreset {
 
 #[derive(Deserialize)]
 struct RawPresetConfig {
+    category: String,
     // stdio fields
     command: Option<String>,
     #[serde(default)]
@@ -71,6 +73,7 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
 
         presets.push(MCPServerPreset {
             name: key,
+            category: config.category,
             description: config.description,
             logo: config.logo,
             transport_type,
@@ -103,6 +106,7 @@ mod tests {
         assert_eq!(exa.transport_type, "sse");
         assert!(exa.url.is_some(), "exa must have a url");
         assert!(exa.command.is_none(), "exa must not have a command");
+        assert_eq!(exa.category, "search");
     }
 
     /// Regression: stdlib stdio presets must still parse correctly after making command Optional.
@@ -115,6 +119,7 @@ mod tests {
         assert_eq!(ddg.transport_type, "stdio");
         assert!(ddg.command.is_some(), "ddg-search must have a command");
         assert!(ddg.url.is_none());
+        assert_eq!(ddg.category, "search");
     }
 
     /// All presets in mcp-server.json must parse without panicking.
@@ -128,6 +133,11 @@ mod tests {
                 p.transport_type == "stdio" || p.transport_type == "sse",
                 "transport_type must be stdio or sse, got: {}",
                 p.transport_type
+            );
+            assert!(
+                !p.category.is_empty(),
+                "preset {} must declare a category",
+                p.name
             );
         }
     }

@@ -298,7 +298,7 @@ pub(super) async fn prepare_file_edit_batch(
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Use paths relative to workspace root".to_string(),
+                "Use a normal file path without '..' traversal segments".to_string(),
                 "Use listDirectory to inspect valid target paths".to_string(),
             ])
             .to_mcp_result());

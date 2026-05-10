@@ -9,9 +9,7 @@ pub use types::*;
 
 /// Cross-platform session isolation manager
 #[derive(Debug, Clone)]
-pub struct SessionIsolationManager {
-    isolation_config: IsolationConfig,
-}
+pub struct SessionIsolationManager;
 
 impl Default for SessionIsolationManager {
     fn default() -> Self {
@@ -21,9 +19,7 @@ impl Default for SessionIsolationManager {
 
 impl SessionIsolationManager {
     pub fn new() -> Self {
-        Self {
-            isolation_config: IsolationConfig::default(),
-        }
+        Self
     }
 
     /// Create an isolated command based on the current platform
@@ -56,7 +52,7 @@ impl SessionIsolationManager {
         &self,
         config: IsolatedProcessConfig,
     ) -> Result<AsyncCommand, String> {
-        platforms::create_medium_isolated_command(config, &self.isolation_config).await
+        platforms::create_medium_isolated_command(config).await
     }
 
     /// High isolation: platform-specific sandboxing
@@ -65,7 +61,7 @@ impl SessionIsolationManager {
         config: IsolatedProcessConfig,
     ) -> Result<AsyncCommand, String> {
         // Platform modules expose create_high_isolated_command
-        platforms::create_high_isolated_command(config, &self.isolation_config).await
+        platforms::create_high_isolated_command(config).await
     }
 }
 
@@ -75,11 +71,6 @@ mod tests {
 
     #[test]
     fn test_isolation_manager_creation() {
-        let manager = SessionIsolationManager::new();
-        assert!(manager
-            .isolation_config
-            .resource_limits
-            .max_memory_mb
-            .is_some());
+        let _manager = SessionIsolationManager::new();
     }
 }

@@ -284,6 +284,28 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(())
     }
 
+    async fn update_unsafe_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.unsafe_mode = enabled;
+        }
+        Ok(())
+    }
+
+    async fn update_execution_mode(
+        &self,
+        session_id: &str,
+        yolo_enabled: bool,
+        unsafe_enabled: bool,
+    ) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.yolo_mode = yolo_enabled;
+            session.unsafe_mode = unsafe_enabled;
+        }
+        Ok(())
+    }
+
     async fn update_workspace_override(
         &self,
         session_id: &str,
@@ -385,6 +407,7 @@ mod tests {
             last_attention_at: None,
             last_attention_reason: None,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         };
 
@@ -424,6 +447,7 @@ mod tests {
             last_attention_at: None,
             last_attention_reason: None,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         };
 
@@ -475,6 +499,7 @@ mod tests {
             last_attention_at: None,
             last_attention_reason: None,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         };
 
@@ -519,6 +544,7 @@ mod tests {
                 last_attention_at: None,
                 last_attention_reason: None,
                 yolo_mode: false,
+                unsafe_mode: false,
                 workspace_override: None,
             };
             repo.upsert_session(&session).await.unwrap();
@@ -558,6 +584,7 @@ mod tests {
                 last_attention_at: None,
                 last_attention_reason: None,
                 yolo_mode: false,
+                unsafe_mode: false,
                 workspace_override: None,
             };
             repo.upsert_session(&session).await.unwrap();
@@ -605,6 +632,7 @@ mod tests {
                     org_name: None,
                     org_root_session_id: None,
                     yolo_mode: false,
+                    unsafe_mode: false,
                     workspace_override: None,
                 };
                 repo_clone.upsert_session(&session).await.unwrap();

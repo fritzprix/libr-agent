@@ -96,6 +96,7 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
             last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         })
         .await
@@ -125,6 +126,7 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
             last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
+            unsafe_mode: false,
             workspace_override: None,
         })
         .await

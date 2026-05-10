@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { safeInvoke } from '@/lib/backend/core';
 import { openAgentSession } from '@/lib/backend/agent-commands';
 import { getLogger } from '@/lib/logger';
+import { coalesceExecutionModeFlags } from '@/lib/session-metadata';
 import { rustMessageToMessage } from '@/models/chat';
 import type { AgentSession } from '@/models/agent';
-import type { AgentResponse } from '@/models/agent-ipc';
 import type { AgentEventPayload } from './types';
 import { buildMessageError } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
@@ -175,27 +174,6 @@ export function useAgentSessionEvents(
             }
 
             case 'toolExecutionRequiresApproval': {
-              if (refs.yoloModeRef.current) {
-                logger.info(
-                  'YOLO Mode enabled: Auto-approving tool execution',
-                  {
-                    toolName: payload.toolName,
-                    toolCallId: payload.toolCallId,
-                  },
-                );
-
-                safeInvoke<AgentResponse>('agent_respond_tool_approval', {
-                  sessionId,
-                  toolCallId: payload.toolCallId,
-                  approved: true,
-                }).catch((err) => {
-                  logger.error('Failed to auto-approve tool in YOLO mode', err);
-                });
-
-                setters.setWorkflowPhase('using_tools');
-                break;
-              }
-
               setters.setWorkflowPhase('waiting_approval');
               setters.setPendingApprovals((prev) => {
                 if (prev.some((p) => p.toolCallId === payload.toolCallId)) {
@@ -207,6 +185,10 @@ export function useAgentSessionEvents(
                     toolCallId: payload.toolCallId,
                     toolName: payload.toolName,
                     arguments: payload.arguments,
+                    approvalKind: payload.approvalKind,
+                    requestId: payload.requestId,
+                    description: payload.description,
+                    inputPreview: payload.inputPreview,
                   },
                 ];
               });
@@ -267,6 +249,11 @@ export function useAgentSessionEvents(
           }
         }
 
+        const executionMode = coalesceExecutionModeFlags(
+          sessionMetadata.yoloMode,
+          sessionMetadata.unsafeMode,
+        );
+
         const sessionData: AgentSession = {
           id: sessionMetadata.id,
           name: sessionMetadata.name,
@@ -288,12 +275,14 @@ export function useAgentSessionEvents(
             ? new Date(sessionMetadata.lastAttentionAt)
             : undefined,
           lastAttentionReason: sessionMetadata.lastAttentionReason,
-          yoloMode: sessionMetadata.yoloMode,
+          yoloMode: executionMode.yoloMode,
+          unsafeMode: executionMode.unsafeMode,
         };
 
         setters.setSession(sessionData);
         setters.setWorkflowStatus(sessionData.status);
         setters.setYoloModeEnabled(sessionData.yoloMode);
+        setters.setUnsafeModeEnabled(sessionData.unsafeMode ?? false);
         setters.setMessages(response.messages.items.map(rustMessageToMessage));
         setters.setHasOlderMessages(response.messages.hasMoreBefore);
         setters.setOldestMessageCursor(response.messages.oldestCursor ?? null);

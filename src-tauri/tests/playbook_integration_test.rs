@@ -83,6 +83,7 @@ async fn test_playbook_ui_rendering_integration() {
         last_attention_reason: Set(None),
         is_bookmarked: Set(false),
         yolo_mode: Set(false),
+        unsafe_mode: Set(false),
         workspace_override: Set(None),
     };
     session::Entity::insert(new_session)
@@ -242,6 +243,7 @@ async fn test_playbook_ui_interaction_flow() {
         last_attention_reason: Set(None),
         is_bookmarked: Set(false),
         yolo_mode: Set(false),
+        unsafe_mode: Set(false),
         workspace_override: Set(None),
     };
     session::Entity::insert(new_session)
@@ -378,6 +380,7 @@ async fn test_playbook_listing_respects_sorting_and_bookmark_priority() {
         last_attention_reason: Set(None),
         is_bookmarked: Set(false),
         yolo_mode: Set(false),
+        unsafe_mode: Set(false),
         workspace_override: Set(None),
     };
     session::Entity::insert(new_session)

@@ -95,6 +95,9 @@ impl AgentService {
             if manager.get_yolo_mode(parent_id).await {
                 let _ = manager.set_yolo_mode(&session_id, true).await;
             }
+            if manager.get_unsafe_mode(parent_id).await {
+                let _ = manager.set_unsafe_mode(&session_id, true).await;
+            }
         }
 
         let initial_message = Message::new_user_message(

@@ -23,9 +23,10 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Provide a directory path relative to workspace root".to_string(),
-                        "Example: {\"path\": \"src\"}".to_string(),
-                        "Use listDirectory('.') to inspect the workspace root".to_string(),
+                        "Provide a directory path (relative paths resolve from the workspace)"
+                            .to_string(),
+                        "Examples: {\"path\": \"src\"} or {\"path\": \"/tmp\"}".to_string(),
+                        "Use listDirectory('.') to inspect the workspace directory".to_string(),
                     ])
                     .to_mcp_result());
                 }
@@ -254,8 +255,7 @@ impl WorkspaceServer {
                     .guidance(vec![
                         "Use listDirectory('.') to inspect the workspace root".to_string(),
                         "Verify the directory path is correct".to_string(),
-                        "Check whether the directory exists under the current workspace"
-                            .to_string(),
+                        "Check whether the directory exists and is readable".to_string(),
                     ])
                     .to_mcp_result())
                 } else {

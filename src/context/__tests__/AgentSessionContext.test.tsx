@@ -413,6 +413,10 @@ describe('AgentSessionContext (Local)', () => {
                                 toolCallId: 'tool-1',
                                 toolName: 'write_file',
                                 arguments: '{}',
+                                approvalKind: 'standard',
+                                requestId: 'req-1',
+                                description: 'Approve write_file',
+                                inputPreview: '{}',
                             },
                         ],
                     })
@@ -442,6 +446,13 @@ describe('AgentSessionContext (Local)', () => {
             expect(currentState().session?.id).toBe('session-1');
             expect(currentState().messages).toHaveLength(1);
             expect(currentState().pendingApprovals).toHaveLength(1);
+        });
+        expect(currentState().pendingApprovals[0]).toMatchObject({
+            toolCallId: 'tool-1',
+            approvalKind: 'standard',
+            requestId: 'req-1',
+            description: 'Approve write_file',
+            inputPreview: '{}',
         });
 
         rerender(
@@ -863,6 +874,10 @@ describe('AgentSessionContext (Local)', () => {
                         toolCallId: 'call-1',
                         toolName: 'shell',
                         arguments: '{}',
+                        approvalKind: 'standard',
+                        requestId: 'req-1',
+                        description: 'Approve shell',
+                        inputPreview: '{}',
                     },
                 });
                 eventHandler?.({
@@ -872,12 +887,23 @@ describe('AgentSessionContext (Local)', () => {
                         toolCallId: 'call-2',
                         toolName: 'shell',
                         arguments: '{}',
+                        approvalKind: 'hard',
+                        requestId: 'req-2',
+                        description: 'Approve shell',
+                        inputPreview: '{}',
                     },
                 });
             });
 
             await waitFor(() => {
                 expect(result.current.state.pendingApprovals).toHaveLength(2);
+            });
+            expect(result.current.state.pendingApprovals[0]).toMatchObject({
+                toolCallId: 'call-1',
+                approvalKind: 'standard',
+                requestId: 'req-1',
+                description: 'Approve shell',
+                inputPreview: '{}',
             });
 
             mockMarkSessionViewed.mockClear();
@@ -887,35 +913,54 @@ describe('AgentSessionContext (Local)', () => {
                 await result.current.actions.toggleYoloMode();
             });
 
-            expect(safeInvoke).toHaveBeenCalledWith('agent_set_yolo_mode', {
+            expect(safeInvoke).toHaveBeenCalledWith('agent_set_execution_mode', {
                 sessionId: TEST_SESSION_ID,
-                enabled: true,
+                mode: 'yolo',
             });
-            expect(safeInvoke).toHaveBeenCalledWith('agent_respond_tool_approval', {
+            expect(safeInvoke).not.toHaveBeenCalledWith('agent_respond_tool_approval', {
                 sessionId: TEST_SESSION_ID,
                 toolCallId: 'call-1',
                 approved: true,
             });
-            expect(safeInvoke).toHaveBeenCalledWith('agent_respond_tool_approval', {
+            expect(safeInvoke).not.toHaveBeenCalledWith('agent_respond_tool_approval', {
                 sessionId: TEST_SESSION_ID,
                 toolCallId: 'call-2',
                 approved: true,
             });
-            expect(mockClearPendingApproval).toHaveBeenCalledTimes(2);
-            expect(mockClearPendingApproval).toHaveBeenNthCalledWith(
-                1,
-                TEST_SESSION_ID,
-                'call-1',
-            );
-            expect(mockClearPendingApproval).toHaveBeenNthCalledWith(
-                2,
-                TEST_SESSION_ID,
-                'call-2',
-            );
+            expect(mockClearPendingApproval).not.toHaveBeenCalled();
             expect(mockMarkSessionViewed).toHaveBeenCalledWith(
                 TEST_SESSION_ID,
                 expect.any(Date),
             );
+        });
+
+        it('switches execution mode exclusively when unsafe mode is selected', async () => {
+            const { result } = renderHook(
+                () => ({
+                    state: useAgentSessionState(),
+                    actions: useAgentSessionActions(),
+                }),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(result.current.state.isSessionLoading).toBe(false);
+            });
+
+            safeInvokeMock.mockClear();
+
+            await act(async () => {
+                await result.current.actions.setExecutionMode('unsafe');
+            });
+
+            expect(safeInvoke).toHaveBeenCalledTimes(1);
+            expect(safeInvoke).toHaveBeenNthCalledWith(1, 'agent_set_execution_mode', {
+                sessionId: TEST_SESSION_ID,
+                mode: 'unsafe',
+            });
+            expect(result.current.state.executionMode).toBe('unsafe');
+            expect(result.current.state.yoloModeEnabled).toBe(false);
+            expect(result.current.state.unsafeModeEnabled).toBe(true);
         });
     });
 });

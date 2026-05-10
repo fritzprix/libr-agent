@@ -6,6 +6,8 @@ pub(crate) mod unix;
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
+mod windows_python;
+#[cfg(target_os = "windows")]
 pub use windows::*;
 
 #[cfg(target_os = "linux")]

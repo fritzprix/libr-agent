@@ -91,13 +91,14 @@ export class GroqService extends BaseAIService<
       sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
+      signal?: AbortSignal;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
       messages,
       options,
     );
-    const abortSignal = this.getAbortSignal();
+    const abortSignal = options.signal;
 
     try {
       const groqMessages = this.convertMessages(
@@ -110,107 +111,104 @@ export class GroqService extends BaseAIService<
         options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
       );
 
-      const chatCompletion = await this.withRetry(() =>
-        this.groq.chat.completions.create(
-          {
-            messages: groqMessages,
-            model:
-              options.modelName ||
-              config.defaultModel ||
-              'llama-3.1-8b-instant',
-            temperature: config.temperature,
-            max_tokens: config.maxTokens,
-            reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
-            stream: true,
-            tools: tools,
-            tool_choice: options.availableTools ? 'auto' : undefined,
-          },
-          {
-            signal: abortSignal,
-          },
-        ),
+      const chatCompletion = await this.withRetry(
+        () =>
+          this.groq.chat.completions.create(
+            {
+              messages: groqMessages,
+              model:
+                options.modelName ||
+                config.defaultModel ||
+                'llama-3.1-8b-instant',
+              temperature: config.temperature,
+              max_tokens: config.maxTokens,
+              reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
+              stream: true,
+              tools: tools,
+              tool_choice: options.availableTools ? 'auto' : undefined,
+            },
+            {
+              signal: abortSignal,
+            },
+          ),
+        abortSignal,
       );
 
-      if (abortSignal.aborted) {
+      if (abortSignal?.aborted) {
         this.logger.info('Stream aborted before iteration');
         return;
       }
 
-      // Measure TTFT (Groq doesn't provide native prefill timing)
-      const startTime = performance.now();
-      let firstChunkReceived = false;
+      yield* this.streamChatWithTTFT(
+        (async function* (
+          service: GroqService,
+        ): AsyncGenerator<string, void, void> {
+          for await (const chunk of chatCompletion) {
+            if (abortSignal?.aborted) {
+              service.logger.info('Stream aborted during iteration');
+              break;
+            }
 
-      for await (const chunk of chatCompletion) {
-        if (abortSignal.aborted) {
-          this.logger.info('Stream aborted during iteration');
-          break;
-        }
+            // Extract usage from the last chunk if available
+            const chunkObj = chunk as unknown as Record<string, unknown>;
+            const xGroq = chunkObj?.x_groq as
+              | Record<string, unknown>
+              | undefined;
+            if (xGroq?.usage) {
+              const u = xGroq.usage as unknown as {
+                prompt_tokens?: number;
+                completion_tokens?: number;
+                total_tokens?: number;
+                prompt_cache_hit_tokens?: number;
+              };
+              const usage: TokenUsage = {
+                promptTokens: u.prompt_tokens || 0,
+                completionTokens: u.completion_tokens || 0,
+                totalTokens: u.total_tokens || 0,
+                cachedPromptTokens: u.prompt_cache_hit_tokens,
+              };
+              yield JSON.stringify({ usage });
+            }
 
-        // Inject TTFT metric on first chunk.
-        // Only yield details here — yielding zero token counts would briefly reset the
-        // gauge to 0% before the real usage chunk arrives at the end of the stream.
-        if (!firstChunkReceived) {
-          const ttft = performance.now() - startTime;
-          firstChunkReceived = true;
-          yield JSON.stringify({
-            usage: { details: { timeToFirstToken: ttft } },
-          });
-        }
+            if (chunk.choices[0]?.delta?.reasoning) {
+              yield JSON.stringify({
+                thinking: chunk.choices[0].delta.reasoning,
+              });
+            } else if (chunk.choices[0]?.delta?.tool_calls) {
+              const toolCalls = chunk.choices[0].delta.tool_calls
+                .map((toolCall) => {
+                  if (typeof toolCall.index !== 'number') {
+                    return null;
+                  }
 
-        // Extract usage from the last chunk if available
-        const chunkObj = chunk as unknown as Record<string, unknown>;
-        const xGroq = chunkObj?.x_groq as Record<string, unknown> | undefined;
-        if (xGroq?.usage) {
-          const u = xGroq.usage as unknown as {
-            prompt_tokens?: number;
-            completion_tokens?: number;
-            total_tokens?: number;
-            prompt_cache_hit_tokens?: number;
-          };
-          const usage: TokenUsage = {
-            promptTokens: u.prompt_tokens || 0,
-            completionTokens: u.completion_tokens || 0,
-            totalTokens: u.total_tokens || 0,
-            cachedPromptTokens: u.prompt_cache_hit_tokens,
-          };
-          yield JSON.stringify({ usage });
-        }
+                  return createSerializableToolCallArgumentDelta(
+                    toolCall.index,
+                    toolCall.function?.arguments || '',
+                    {
+                      id: toolCall.id,
+                      name: toolCall.function?.name,
+                    },
+                  );
+                })
+                .filter(
+                  (
+                    toolCall,
+                  ): toolCall is ReturnType<
+                    typeof createSerializableToolCallArgumentDelta
+                  > => toolCall !== null,
+                );
 
-        if (chunk.choices[0]?.delta?.reasoning) {
-          yield JSON.stringify({ thinking: chunk.choices[0].delta.reasoning });
-        } else if (chunk.choices[0]?.delta?.tool_calls) {
-          const toolCalls = chunk.choices[0].delta.tool_calls
-            .map((toolCall) => {
-              if (typeof toolCall.index !== 'number') {
-                return null;
+              if (toolCalls.length > 0) {
+                yield serializeToolCallArgumentDeltas(toolCalls);
               }
-
-              return createSerializableToolCallArgumentDelta(
-                toolCall.index,
-                toolCall.function?.arguments || '',
-                {
-                  id: toolCall.id,
-                  name: toolCall.function?.name,
-                },
-              );
-            })
-            .filter(
-              (
-                toolCall,
-              ): toolCall is ReturnType<
-                typeof createSerializableToolCallArgumentDelta
-              > => toolCall !== null,
-            );
-
-          if (toolCalls.length > 0) {
-            yield serializeToolCallArgumentDeltas(toolCalls);
+            } else if (chunk.choices[0]?.delta?.content) {
+              yield JSON.stringify({
+                content: chunk.choices[0]?.delta?.content || '',
+              });
+            }
           }
-        } else if (chunk.choices[0]?.delta?.content) {
-          yield JSON.stringify({
-            content: chunk.choices[0]?.delta?.content || '',
-          });
-        }
-      }
+        })(this),
+      );
     } catch (error) {
       this.handleStreamingError(error, { messages, options, config });
     }
@@ -389,30 +387,33 @@ export class GroqService extends BaseAIService<
       modelName?: string;
       samplingOptions?: SamplingOptions;
       config?: AIServiceConfig;
+      signal?: AbortSignal;
     },
   ): Promise<SamplingResponse> {
     const config = this.mergeConfig(options);
     const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
-    const abortSignal = this.getAbortSignal();
+    const abortSignal = options?.signal;
 
-    const response = await this.withRetry(() =>
-      this.groq.chat.completions.create(
-        {
-          model,
-          stream: false,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: s?.maxTokens ?? config.maxTokens,
-          temperature: s?.temperature ?? config.temperature,
-          top_p: s?.topP,
-          presence_penalty: s?.presencePenalty,
-          frequency_penalty: s?.frequencyPenalty,
-          stop: s?.stopSequences,
-        },
-        {
-          signal: abortSignal,
-        },
-      ),
+    const response = await this.withRetry(
+      () =>
+        this.groq.chat.completions.create(
+          {
+            model,
+            stream: false,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: s?.maxTokens ?? config.maxTokens,
+            temperature: s?.temperature ?? config.temperature,
+            top_p: s?.topP,
+            presence_penalty: s?.presencePenalty,
+            frequency_penalty: s?.frequencyPenalty,
+            stop: s?.stopSequences,
+          },
+          {
+            signal: abortSignal,
+          },
+        ),
+      abortSignal,
     );
 
     const choice = response.choices[0];

@@ -37,6 +37,7 @@ fn build_session(
         last_attention_reason: None,
         is_bookmarked: false,
         yolo_mode: false,
+        unsafe_mode: false,
         workspace_override: None,
     }
 }

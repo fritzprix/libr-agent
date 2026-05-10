@@ -9,6 +9,7 @@ import type { TransportConfig, OAuthConfig } from './transport';
  * Server metadata (optional descriptive information)
  */
 export interface ServerMetadata {
+  category?: string;
   description?: string;
   logo?: string;
   vendor?: string;

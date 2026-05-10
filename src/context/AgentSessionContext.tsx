@@ -76,6 +76,8 @@ export function AgentSessionProvider({
       initializationStep: stateProps.state.initializationStep,
       pendingApprovals: stateProps.state.pendingApprovals,
       yoloModeEnabled: stateProps.state.yoloModeEnabled,
+      unsafeModeEnabled: stateProps.state.unsafeModeEnabled,
+      executionMode: stateProps.state.executionMode,
     }),
     [
       stateProps.state.session,
@@ -91,6 +93,8 @@ export function AgentSessionProvider({
       stateProps.state.initializationStep,
       stateProps.state.pendingApprovals,
       stateProps.state.yoloModeEnabled,
+      stateProps.state.unsafeModeEnabled,
+      stateProps.state.executionMode,
     ],
   );
 

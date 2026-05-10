@@ -66,15 +66,7 @@ pub fn is_likely_interactive_command(command: &str) -> bool {
 
             // Exception: "python -c", "python -m", "node -e" are NOT REPL (check first)
             // These execute code or modules non-interactively
-            if rest.starts_with("-c ")
-                || rest.starts_with("-m ")
-                || rest.starts_with("-e ")
-                || rest.starts_with("--eval ")
-                || rest.starts_with("-c\t")
-                || rest.starts_with("-m\t")
-                || rest.starts_with("-e\t")
-                || rest.starts_with("--eval\t")
-            {
+            if starts_with_non_repl_flag(rest) {
                 continue;
             }
 
@@ -129,6 +121,13 @@ pub fn is_likely_interactive_command(command: &str) -> bool {
     }
 
     false
+}
+
+fn starts_with_non_repl_flag(rest: &str) -> bool {
+    matches!(
+        rest.split_whitespace().next(),
+        Some("-c" | "-m" | "-e" | "--eval")
+    )
 }
 
 #[cfg(windows)]

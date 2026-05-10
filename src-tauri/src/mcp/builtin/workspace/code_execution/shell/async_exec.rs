@@ -31,6 +31,25 @@ impl WorkspaceServer {
         let workspace_path = self
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
+        let env_vars = _args
+            .get("env")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .map(|(key, value)| (key.clone(), value.as_str().unwrap_or("").to_string()))
+                    .collect::<std::collections::HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+
+        if let Some(result) = self.apply_shell_policy_block(
+            "spawnProcess",
+            command,
+            &workspace_path,
+            None,
+            Some(&env_vars),
+        ) {
+            return Ok(result);
+        }
 
         // Check concurrent process limit (max 20 per session)
         const MAX_CONCURRENT_PROCESSES: usize = 20;
@@ -102,15 +121,7 @@ impl WorkspaceServer {
             workspace_path: workspace_path.clone(),
             command: normalized_command.clone(),
             args: vec![],
-            env_vars: _args
-                .get("env")
-                .and_then(|v| v.as_object())
-                .map(|obj| {
-                    obj.iter()
-                        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            env_vars,
             isolation_level,
             shell_type: None, // Default to platform default shell
         };

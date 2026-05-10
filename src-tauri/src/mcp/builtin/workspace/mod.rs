@@ -50,7 +50,6 @@ pub struct PendingShellExecution {
     pub display_command: String,    // Sanitized version for logs/UI
     pub run_mode: String,           // "sync" or "async" from 1st call
     pub timeout: u64,               // Command execution timeout in seconds
-    pub encryption_nonce: String,   // Nonce for client-side input obfuscation
     pub created_at: DateTime<Utc>,
 }
 
@@ -729,7 +728,6 @@ mod tests {
             display_command: "ls".to_string(),
             run_mode: "sync".to_string(),
             timeout: 30,
-            encryption_nonce: "nonce".to_string(),
             created_at: now - chrono::Duration::minutes(15),
         });
 
@@ -741,7 +739,6 @@ mod tests {
             display_command: "ls".to_string(),
             run_mode: "sync".to_string(),
             timeout: 30,
-            encryption_nonce: "nonce".to_string(),
             created_at: now,
         });
 

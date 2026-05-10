@@ -3,12 +3,13 @@ import '@testing-library/jest-dom';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ExecutionMode } from '@/context/agent-session/types';
 import { AgentChatStatusBar } from '../AgentChatStatusBar';
 
 const mocks = vi.hoisted(() => ({
   safeInvoke: vi.fn(),
   updateSessionConfig: vi.fn(),
-  toggleYoloMode: vi.fn(),
+  setExecutionMode: vi.fn(),
   retryMessage: vi.fn(),
   resume: vi.fn(),
   toastSuccess: vi.fn(),
@@ -41,8 +42,10 @@ const mockSession: MockSession = {
 
 const mockAgentSession = {
   session: mockSession,
+  executionMode: 'normal' as ExecutionMode,
   yoloModeEnabled: false,
-  toggleYoloMode: mocks.toggleYoloMode,
+  unsafeModeEnabled: false,
+  setExecutionMode: mocks.setExecutionMode,
   updateSessionConfig: mocks.updateSessionConfig,
 };
 
@@ -182,6 +185,9 @@ describe('AgentChatStatusBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAgentSession.session = { ...mockSession };
+    mockAgentSession.executionMode = 'normal';
+    mockAgentSession.yoloModeEnabled = false;
+    mockAgentSession.unsafeModeEnabled = false;
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = null;
     mockAgentChat.llmError = null;
@@ -222,6 +228,29 @@ describe('AgentChatStatusBar', () => {
       'data-disabled',
       'true',
     );
+  });
+
+  it('renders a single execution mode control and switches to unsafe mode', () => {
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('execution-mode-control')).toBeInTheDocument();
+    expect(screen.queryByText('YOLO Mode')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unsafe Mode')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /unsafe/i }));
+
+    expect(mocks.setExecutionMode).toHaveBeenCalledWith('unsafe');
+  });
+
+  it('explains that hard approvals still require manual confirmation in YOLO mode', () => {
+    mockAgentSession.executionMode = 'yolo';
+    mockAgentSession.yoloModeEnabled = true;
+
+    render(<AgentChatStatusBar />);
+
+    expect(
+      screen.getByTitle(/hard approvals still require manual approval/i),
+    ).toBeInTheDocument();
   });
 
   it('updates provider and model during error recovery', async () => {

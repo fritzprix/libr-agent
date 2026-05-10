@@ -15,6 +15,12 @@ interface StreamingErrorLogger {
   error: (message: string, ...args: unknown[]) => unknown;
 }
 
+export function createAbortError(): Error {
+  const abortError = new Error('Request aborted');
+  abortError.name = 'AbortError';
+  return abortError;
+}
+
 export function shouldRetryRequest(error: unknown): boolean {
   const status = (error as { status?: number })?.status;
   if (status === undefined) {
@@ -31,7 +37,7 @@ export function shouldRetryRequest(error: unknown): boolean {
 export async function withRetryPolicy<T>(args: {
   fn: () => Promise<T>;
   config: AIServiceConfig;
-  abortSignal: AbortSignal;
+  abortSignal?: AbortSignal;
   logger: RetryLogger;
   provider: AIServiceProvider;
   shouldRetry: (error: unknown) => boolean;
@@ -45,7 +51,7 @@ export async function withRetryPolicy<T>(args: {
     } catch (error: unknown) {
       lastError = error;
 
-      if (args.abortSignal.aborted) {
+      if (args.abortSignal?.aborted) {
         throw error;
       }
 
@@ -54,7 +60,25 @@ export async function withRetryPolicy<T>(args: {
         args.logger.warn(
           `Retrying request (${i + 1}/${maxRetries}) after ${delay}ms...`,
         );
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise<void>((resolve, reject) => {
+          if (args.abortSignal?.aborted) {
+            reject(createAbortError());
+            return;
+          }
+
+          const timeoutId = setTimeout(() => {
+            args.abortSignal?.removeEventListener('abort', onAbort);
+            resolve();
+          }, delay);
+
+          const onAbort = () => {
+            clearTimeout(timeoutId);
+            args.abortSignal?.removeEventListener('abort', onAbort);
+            reject(createAbortError());
+          };
+
+          args.abortSignal?.addEventListener('abort', onAbort, { once: true });
+        });
         continue;
       }
 
@@ -77,7 +101,7 @@ export async function withRetryPolicy<T>(args: {
 export function throwStreamingError(args: {
   error: unknown;
   context: StreamingErrorContext;
-  abortSignal: AbortSignal;
+  abortSignal?: AbortSignal;
   logger: StreamingErrorLogger;
   provider: AIServiceProvider;
 }): never {
@@ -86,7 +110,7 @@ export function throwStreamingError(args: {
   const errorStack = args.error instanceof Error ? args.error.stack : undefined;
 
   const isCancellation =
-    args.abortSignal.aborted ||
+    args.abortSignal?.aborted ||
     (args.error instanceof Error &&
       (args.error.name === 'AbortError' ||
         args.error.message.includes('abort') ||
@@ -94,12 +118,7 @@ export function throwStreamingError(args: {
 
   if (isCancellation) {
     args.logger.info(`${args.provider} stream cancelled by user`);
-    throw new AIServiceError(
-      `${args.provider} stream cancelled`,
-      args.provider,
-      undefined,
-      args.error instanceof Error ? args.error : undefined,
-    );
+    throw createAbortError();
   }
 
   args.logger.error(`${args.provider} streaming failed`, {

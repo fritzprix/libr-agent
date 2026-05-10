@@ -1,8 +1,9 @@
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig, ShellType};
-use std::path::PathBuf;
+use crate::session_isolation::types::{IsolatedProcessConfig, ShellType};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::process::Command as AsyncCommand;
-use tracing::{info, warn};
+use tracing::info;
+
+use super::windows_python::detect_python_path;
 
 /// Monotonic counter for unique script filenames within a process lifetime.
 static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -178,10 +179,9 @@ pub async fn create_basic_isolated_command(
     Ok(cmd)
 }
 
-/// Medium isolation: process groups + resource limits
+/// Medium isolation: process groups
 pub async fn create_medium_isolated_command(
     config: IsolatedProcessConfig,
-    _isolation_config: &IsolationConfig,
 ) -> Result<AsyncCommand, String> {
     let mut cmd = create_basic_isolated_command(config.clone()).await?;
 
@@ -192,18 +192,14 @@ pub async fn create_medium_isolated_command(
         cmd.creation_flags(0x08000000 | 0x00000200); // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
     }
 
-    // Windows resource limits not implemented yet
-    warn!("Windows resource limits not implemented yet, using basic limits");
-
     Ok(cmd)
 }
 
 /// Windows high isolation using job objects and restricted tokens
 pub async fn create_high_isolated_command(
     config: IsolatedProcessConfig,
-    isolation_config: &IsolationConfig,
 ) -> Result<AsyncCommand, String> {
-    let mut cmd = create_medium_isolated_command(config.clone(), isolation_config).await?;
+    let mut cmd = create_medium_isolated_command(config.clone()).await?;
 
     // Apply Windows-specific isolation
     #[cfg(target_os = "windows")]
@@ -217,81 +213,6 @@ pub async fn create_high_isolated_command(
         config.session_id
     );
     Ok(cmd)
-}
-
-/// Detects a valid Python installation on Windows, prioritizing non-Store versions.
-async fn detect_python_path() -> Option<PathBuf> {
-    // 1. Try `where python` to find registered executables
-    let mut cmd = AsyncCommand::new("where");
-    crate::utils::env::apply_isolated_env_async(&mut cmd);
-    cmd.arg("python");
-
-    if let Ok(output) = cmd.output().await {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let path = PathBuf::from(line.trim());
-                // Filter out WindowsApps shim which redirects to Microsoft Store
-                if !path.to_string_lossy().contains("WindowsApps") && path.exists() {
-                    if let Some(parent) = path.parent() {
-                        info!("Detected Python via 'where': {:?}", parent);
-                        return Some(parent.to_path_buf());
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Check standard installation locations as fallback
-    let common_paths = vec![
-        // Anaconda (User)
-        std::env::var("LOCALAPPDATA")
-            .ok()
-            .map(|p| PathBuf::from(p).join("Anaconda3")),
-        // Anaconda (System)
-        std::env::var("ProgramData")
-            .ok()
-            .map(|p| PathBuf::from(p).join("Anaconda3")),
-        // Anaconda (User Profile)
-        std::env::var("USERPROFILE")
-            .ok()
-            .map(|p| PathBuf::from(p).join("anaconda3")),
-        // Standard Python (User) - check for Python3* directories
-        std::env::var("LOCALAPPDATA")
-            .ok()
-            .map(|p| PathBuf::from(p).join("Programs").join("Python")),
-    ];
-
-    // Use spawn_blocking to avoid blocking async runtime with fs operations
-    let found_path = tokio::task::spawn_blocking(move || {
-        for path in common_paths.into_iter().flatten() {
-            // For standard Python, we might need to look deeper (e.g. Python39, Python310)
-            if path.join("python.exe").exists() {
-                return Some(path);
-            }
-
-            // Check subdirectories for standard Python installs
-            if path.exists() && path.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&path) {
-                    for entry in entries.flatten() {
-                        let subpath = entry.path();
-                        if subpath.join("python.exe").exists() {
-                            return Some(subpath);
-                        }
-                    }
-                }
-            }
-        }
-        None
-    })
-    .await
-    .unwrap_or(None);
-
-    if let Some(path) = &found_path {
-        info!("Detected Python via standard path search: {:?}", path);
-    }
-
-    found_path
 }
 
 #[cfg(test)]

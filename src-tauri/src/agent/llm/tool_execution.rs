@@ -1,5 +1,8 @@
 use crate::agent::state::AgentSession;
-use crate::agent::types::ToolCall;
+use crate::agent::state::PendingApprovalKind;
+use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
+use crate::agent::types::{ToolCall, ToolCallFunction};
+use crate::commands::agent_commands::ToolExecutionResult;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;
 use std::collections::HashMap;
@@ -7,204 +10,196 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::{oneshot, RwLock};
 
-pub async fn execute_tool_calls(
-    session_repo: Arc<dyn SessionRepository>,
-    active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
-    proxy_manager: Arc<MCPServiceProxyManager>,
-    app_handle: AppHandle,
-    session_id: String,
-    tool_calls: Vec<ToolCall>,
-) {
-    for tool_call in tool_calls {
-        let tool_name = tool_call.function.name.clone();
-        let tool_call_id = tool_call.id.clone();
-        let args_str = tool_call.function.arguments.clone();
+struct ToolExecutionContext<'a> {
+    session_repo: &'a Arc<dyn SessionRepository>,
+    active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &'a Arc<MCPServiceProxyManager>,
+    app_handle: &'a AppHandle,
+    session_id: &'a str,
+}
 
-        // Emit ToolExecutionStarted
+enum ApprovalOutcome {
+    Approved,
+    Rejected,
+    ChannelClosed,
+}
+
+impl ToolExecutionContext<'_> {
+    fn emit_tool_execution_started(&self, tool_name: &str) {
         let event = crate::agent::events::AgentEvent::ToolExecutionStarted {
-            session_id: session_id.clone(),
-            tool_name: tool_name.clone(),
+            session_id: self.session_id.to_string(),
+            tool_name: tool_name.to_string(),
         };
-        if let Err(e) = crate::agent::tauri_events::emit_agent_event(&app_handle, event) {
-            log::error!("Failed to emit tool execution started event: {}", e);
+        if let Err(error) = crate::agent::tauri_events::emit_agent_event(self.app_handle, event) {
+            log::error!("Failed to emit tool execution started event: {}", error);
         }
+    }
 
-        // Parse arguments
-        let args = match serde_json::from_str::<serde_json::Value>(&args_str) {
-            Ok(v) => v,
-            Err(e) => {
-                log::error!("Failed to parse tool arguments: {}", e);
-                let result = crate::commands::agent_commands::ToolExecutionResult {
-                    success: false,
-                    content: String::new(),
-                    structured_content: None,
-                    error: Some(format!("Failed to parse args: {}", e)),
-                    is_error: true,
-                    mcp_content: None,
-                };
-                // Handle result (error case)
-                if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
-                    &session_repo,
-                    &active_sessions,
-                    &proxy_manager,
-                    &app_handle,
-                    session_id.clone(),
-                    tool_call_id,
-                    result,
-                )
-                .await
-                {
-                    log::error!("Error continuing workflow after failed tool parse: {}", e);
-                }
-                continue; // Proceed to next tool
-            }
-        };
+    async fn current_yolo_mode(&self) -> bool {
+        let active = self.active_sessions.read().await;
+        active
+            .get(self.session_id)
+            .map(|session| session.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(false)
+    }
 
-        // Call tool
-        let requires_approval =
-            crate::agent::tool_approvals::is_approval_required(&tool_name).await;
+    async fn current_unsafe_mode(&self) -> bool {
+        let active = self.active_sessions.read().await;
+        active
+            .get(self.session_id)
+            .map(|session| {
+                session
+                    .unsafe_mode
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            })
+            .unwrap_or(false)
+    }
 
-        let yolo_enabled = {
-            let active = active_sessions.read().await;
-            active
-                .get(&session_id)
-                .map(|s| s.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
-                .unwrap_or(false)
-        };
+    async fn continue_after_tool(
+        &self,
+        tool_call_id: &str,
+        result: ToolExecutionResult,
+        error_context: &str,
+    ) {
+        if let Err(error) = crate::agent::workflow::continue_workflow_after_tool(
+            self.session_repo,
+            self.active_sessions,
+            self.proxy_manager,
+            self.app_handle,
+            self.session_id.to_string(),
+            tool_call_id.to_string(),
+            result,
+        )
+        .await
+        {
+            log::error!(
+                "Error continuing workflow after {}: {}",
+                error_context,
+                error
+            );
+        }
+    }
 
-        if requires_approval && !yolo_enabled {
-            let (tx, rx) = oneshot::channel();
-            let attention_at = chrono::Utc::now().timestamp_millis();
-            let has_permission_relay_channel = proxy_manager
-                .session_has_permission_relay_channels(&session_id)
-                .await;
-            let request_id = has_permission_relay_channel
-                .then(crate::agent::tool_approvals::generate_channel_permission_request_id);
-            let description = has_permission_relay_channel.then(|| {
-                crate::agent::tool_approvals::build_channel_permission_description(
-                    &tool_name, &args_str,
-                )
-            });
-            let input_preview = has_permission_relay_channel.then(|| {
-                crate::agent::tool_approvals::build_channel_permission_input_preview(&args_str)
-            });
+    async fn request_approval(
+        &self,
+        tool_call_id: &str,
+        tool_name: &str,
+        args_str: &str,
+        approval_request: &ToolApprovalRequest,
+        approval_kind: PendingApprovalKind,
+    ) -> ApprovalOutcome {
+        let (tx, rx) = oneshot::channel();
+        let attention_at = chrono::Utc::now().timestamp_millis();
+        let has_permission_relay_channel = self
+            .proxy_manager
+            .session_has_permission_relay_channels(self.session_id)
+            .await;
+        let request_id = has_permission_relay_channel
+            .then(crate::agent::tool_approvals::generate_channel_permission_request_id);
+        let description = Some(approval_request.description.clone());
+        let input_preview = Some(approval_request.input_preview.clone());
 
-            // Add tx to pending approvals
-            {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&session_id) {
-                    let mut approvals = session.pending_approvals.write().await;
-                    approvals.insert(
-                        tool_call_id.clone(),
-                        crate::agent::state::PendingApprovalData {
-                            sender: tx,
-                            tool_name: tool_name.clone(),
-                            arguments: args_str.clone(),
-                            request_id: request_id.clone(),
-                            description: description.clone(),
-                            input_preview: input_preview.clone(),
-                        },
-                    );
-                }
-            }
-
-            if let Err(e) = session_repo
-                .update_attention(
-                    &session_id,
-                    attention_at,
-                    crate::repositories::session_repository::SessionAttentionReason::PendingApproval,
-                )
-                .await
-            {
-                log::error!(
-                    "Failed to persist pending-approval attention for session {}: {}",
-                    session_id,
-                    e
+        {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(self.session_id) {
+                let mut approvals = session.pending_approvals.write().await;
+                approvals.insert(
+                    tool_call_id.to_string(),
+                    crate::agent::state::PendingApprovalData {
+                        sender: tx,
+                        tool_name: tool_name.to_string(),
+                        arguments: args_str.to_string(),
+                        approval_kind,
+                        request_id: request_id.clone(),
+                        description: description.clone(),
+                        input_preview: input_preview.clone(),
+                    },
                 );
             }
+        }
 
-            // Emit approval event
-            let event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
-                session_id: session_id.clone(),
-                tool_call_id: tool_call_id.clone(),
-                tool_name: tool_name.clone(),
-                arguments: args_str.clone(),
+        if let Err(error) = self
+            .session_repo
+            .update_attention(
+                self.session_id,
+                attention_at,
+                crate::repositories::session_repository::SessionAttentionReason::PendingApproval,
+            )
+            .await
+        {
+            log::error!(
+                "Failed to persist pending-approval attention for session {}: {}",
+                self.session_id,
+                error
+            );
+        }
+
+        let approval_event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
+            session_id: self.session_id.to_string(),
+            tool_call_id: tool_call_id.to_string(),
+            tool_name: tool_name.to_string(),
+            arguments: args_str.to_string(),
+            approval_kind,
+            request_id: request_id.clone(),
+            description: description.clone(),
+            input_preview: input_preview.clone(),
+        };
+        if let Err(error) =
+            crate::agent::tauri_events::emit_agent_event(self.app_handle, approval_event)
+        {
+            log::error!(
+                "Failed to emit ToolExecutionRequiresApproval event: {}",
+                error
+            );
+        }
+
+        if let (Some(request_id), Some(description), Some(input_preview)) =
+            (request_id, description, input_preview)
+        {
+            let channel_event = crate::agent::events::AgentEvent::ChannelPermissionRequest {
+                session_id: self.session_id.to_string(),
+                request_id,
+                tool_call_id: tool_call_id.to_string(),
+                tool_name: tool_name.to_string(),
+                approval_kind,
+                description,
+                input_preview,
             };
-            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&app_handle, event) {
-                log::error!("Failed to emit ToolExecutionRequiresApproval event: {}", e);
-            }
-
-            if let (Some(request_id), Some(description), Some(input_preview)) =
-                (request_id, description, input_preview)
+            if let Err(error) =
+                crate::agent::tauri_events::emit_agent_event(self.app_handle, channel_event)
             {
-                let channel_event = crate::agent::events::AgentEvent::ChannelPermissionRequest {
-                    session_id: session_id.clone(),
-                    request_id,
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    description,
-                    input_preview,
-                };
-                if let Err(e) =
-                    crate::agent::tauri_events::emit_agent_event(&app_handle, channel_event)
-                {
-                    log::error!("Failed to emit ChannelPermissionRequest event: {}", e);
-                }
-            }
-
-            // Wait for approval response
-            match rx.await {
-                Ok(approved) => {
-                    if !approved {
-                        // User rejected
-                        let result = crate::commands::agent_commands::ToolExecutionResult {
-                            success: false,
-                            content: String::from("User rejected the tool execution."),
-                            structured_content: None,
-                            error: Some(String::from("User rejected the tool execution.")),
-                            is_error: true,
-                            mcp_content: None,
-                        };
-
-                        if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
-                            &session_repo,
-                            &active_sessions,
-                            &proxy_manager,
-                            &app_handle,
-                            session_id.clone(),
-                            tool_call_id,
-                            result,
-                        )
-                        .await
-                        {
-                            log::error!("Error continuing workflow after tool rejection: {}", e);
-                        }
-                        return; // Halt this loop, workflow continues normally handling rejection
-                    }
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Approval channel closed before receiving a response for {}",
-                        tool_name
-                    );
-                    continue; // Skip execution if channel dropped
-                }
+                log::error!("Failed to emit ChannelPermissionRequest event: {}", error);
             }
         }
 
-        let result = match proxy_manager.call_tool(&session_id, &tool_name, args).await {
+        match rx.await {
+            Ok(true) => ApprovalOutcome::Approved,
+            Ok(false) => ApprovalOutcome::Rejected,
+            Err(_) => {
+                log::warn!(
+                    "Approval channel closed before receiving a response for {}",
+                    tool_name
+                );
+                ApprovalOutcome::ChannelClosed
+            }
+        }
+    }
+
+    async fn execute_tool(&self, tool_name: &str, args: serde_json::Value) -> ToolExecutionResult {
+        match self
+            .proxy_manager
+            .call_tool(self.session_id, tool_name, args)
+            .await
+        {
             Ok(response) => {
-                // Derive is_error from both the JSON-RPC protocol error AND the
-                // tool-level MCPResult.is_error / MCPContent error flag, so
-                // builtin tool failures are not silently reported as success.
                 let protocol_error = response.error.is_some();
                 let tool_level_error = match &response.result {
                     Some(crate::mcp::types::MCPResponseResult::ToolCall(mcp_result)) => {
                         mcp_result.is_error == Some(true)
                             || mcp_result.content.as_ref().is_some_and(|content| {
-                                content.iter().any(|c| {
+                                content.iter().any(|content_item| {
                                     matches!(
-                                        c,
+                                        content_item,
                                         crate::mcp::types::MCPContent::Text {
                                             is_error: Some(true),
                                             ..
@@ -216,20 +211,16 @@ pub async fn execute_tool_calls(
                     _ => false,
                 };
                 let is_error = protocol_error || tool_level_error;
-                let error_msg = response.error.map(|e| e.message);
-
-                // Avoid expensive pretty-serialization unless needed (no mcp_content present)
-                // or when debug logging is enabled.
+                let error_msg = response.error.map(|error| error.message);
                 let debug_content = if log::log_enabled!(log::Level::Debug) {
                     response
                         .result
                         .as_ref()
-                        .and_then(|r| serde_json::to_string_pretty(r).ok())
+                        .and_then(|result| serde_json::to_string_pretty(result).ok())
                         .unwrap_or_else(|| "{}".to_string())
                 } else {
                     String::new()
                 };
-
                 let mcp_content =
                     crate::agent::tools::convert_mcp_response_content(response.result.clone());
                 let structured_content = match response.result {
@@ -239,7 +230,7 @@ pub async fn execute_tool_calls(
                     _ => None,
                 };
 
-                crate::commands::agent_commands::ToolExecutionResult {
+                ToolExecutionResult {
                     success: !is_error,
                     content: debug_content,
                     structured_content,
@@ -248,29 +239,142 @@ pub async fn execute_tool_calls(
                     mcp_content,
                 }
             }
-            Err(e) => crate::commands::agent_commands::ToolExecutionResult {
+            Err(error) => ToolExecutionResult {
                 success: false,
                 content: String::new(),
                 structured_content: None,
-                error: Some(e),
+                error: Some(error),
                 is_error: true,
                 mcp_content: None,
             },
+        }
+    }
+}
+
+fn args_parse_error_result(error: &serde_json::Error) -> ToolExecutionResult {
+    ToolExecutionResult {
+        success: false,
+        content: String::new(),
+        structured_content: None,
+        error: Some(format!("Failed to parse args: {}", error)),
+        is_error: true,
+        mcp_content: None,
+    }
+}
+
+fn error_result(message: impl Into<String>) -> ToolExecutionResult {
+    let message = message.into();
+    ToolExecutionResult {
+        success: false,
+        content: message.clone(),
+        structured_content: None,
+        error: Some(message),
+        is_error: true,
+        mcp_content: None,
+    }
+}
+
+pub async fn execute_tool_calls(
+    session_repo: Arc<dyn SessionRepository>,
+    active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: Arc<MCPServiceProxyManager>,
+    app_handle: AppHandle,
+    session_id: String,
+    tool_calls: Vec<ToolCall>,
+) {
+    let context = ToolExecutionContext {
+        session_repo: &session_repo,
+        active_sessions: &active_sessions,
+        proxy_manager: &proxy_manager,
+        app_handle: &app_handle,
+        session_id: &session_id,
+    };
+
+    for ToolCall {
+        id: tool_call_id,
+        function,
+        ..
+    } in tool_calls
+    {
+        let ToolCallFunction {
+            name: tool_name,
+            arguments: args_str,
+        } = function;
+
+        context.emit_tool_execution_started(&tool_name);
+
+        let args = match serde_json::from_str::<serde_json::Value>(&args_str) {
+            Ok(args) => args,
+            Err(error) => {
+                log::error!("Failed to parse tool arguments: {}", error);
+                context
+                    .continue_after_tool(
+                        &tool_call_id,
+                        args_parse_error_result(&error),
+                        "failed tool parse",
+                    )
+                    .await;
+                continue;
+            }
         };
 
-        // Handle result and potentially continue workflow
-        if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
-            &session_repo,
-            &active_sessions,
-            &proxy_manager,
-            &app_handle,
-            session_id.clone(),
-            tool_call_id,
-            result,
-        )
-        .await
-        {
-            log::error!("Error continuing workflow after tool execution: {}", e);
+        let policy_decision =
+            crate::agent::tool_approvals::evaluate_tool_execution_policy(&tool_name, &args).await;
+
+        let unsafe_enabled = context.current_unsafe_mode().await;
+        if let Some(blocked) = crate::agent::tool_approvals::blocked_execution_for_runtime(
+            &policy_decision,
+            unsafe_enabled,
+        ) {
+            context
+                .continue_after_tool(
+                    &tool_call_id,
+                    error_result(blocked.message.clone()),
+                    "policy-blocked tool execution",
+                )
+                .await;
+            continue;
         }
+
+        let yolo_enabled = context.current_yolo_mode().await;
+        if let Some(approval_request) = crate::agent::tool_approvals::approval_request_for_runtime(
+            &policy_decision,
+            yolo_enabled,
+            unsafe_enabled,
+        ) {
+            let approval_kind = match &policy_decision {
+                ToolExecutionPolicyDecision::RequireHardApproval(_) => PendingApprovalKind::Hard,
+                ToolExecutionPolicyDecision::RequireApproval(_) => PendingApprovalKind::Standard,
+                _ => PendingApprovalKind::Standard,
+            };
+            match context
+                .request_approval(
+                    &tool_call_id,
+                    &tool_name,
+                    &args_str,
+                    approval_request,
+                    approval_kind,
+                )
+                .await
+            {
+                ApprovalOutcome::Approved => {}
+                ApprovalOutcome::Rejected => {
+                    context
+                        .continue_after_tool(
+                            &tool_call_id,
+                            error_result("User rejected the tool execution."),
+                            "tool rejection",
+                        )
+                        .await;
+                    return;
+                }
+                ApprovalOutcome::ChannelClosed => continue,
+            }
+        }
+
+        let result = context.execute_tool(&tool_name, args).await;
+        context
+            .continue_after_tool(&tool_call_id, result, "tool execution")
+            .await;
     }
 }
