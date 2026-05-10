@@ -28,6 +28,7 @@ vi.mock('react-i18next', () => ({
 
 const basePreset: MCPServerPreset = {
   name: 'filesystem',
+  category: 'devtools',
   description: 'Filesystem tools',
   transportType: 'stdio',
   command: 'npx',
