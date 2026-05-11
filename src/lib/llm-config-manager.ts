@@ -95,7 +95,7 @@ export class LLMConfigManager {
   getProviders(): Record<string, ProviderInfo> {
     // ⚡ Bolt: Removed O(N) intermediate array allocation and secondary iteration
     // by replacing .map().reduce() chain with a single-pass loop.
-    // Impact: ~2x faster execution and reduced GC pressure on startup.
+    // Impact: avoids extra allocations and reduces GC pressure on startup.
     const result: Record<string, ProviderInfo> = {};
     for (const [id, provider] of Object.entries(this.config.providers)) {
       result[id] = { ...provider, id };
