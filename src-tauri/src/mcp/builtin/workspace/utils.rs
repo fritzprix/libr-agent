@@ -61,8 +61,8 @@ pub async fn get_diff_context_lines() -> usize {
     }
 }
 
-/// Validate timeout value, applying the configured default when absent
-pub fn validate_timeout(timeout: Option<u64>) -> u64 {
+/// Resolve a timeout value, applying the configured default when absent
+pub fn resolve_timeout(timeout: Option<u64>) -> u64 {
     timeout.unwrap_or_else(crate::config::default_execution_timeout)
 }
 

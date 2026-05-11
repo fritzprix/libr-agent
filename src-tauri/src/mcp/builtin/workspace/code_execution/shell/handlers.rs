@@ -102,7 +102,7 @@ impl WorkspaceServer {
         }
 
         // Sync mode: persistent shell execution
-        let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+        let timeout_secs = utils::resolve_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
         // Execute with persistent shell (state preservation)
         self.execute_shell_persistent(raw_command, PERSISTENT_SHELL_TOOL, timeout_secs, session_id)
@@ -159,7 +159,7 @@ impl WorkspaceServer {
         }
 
         // Get timeout (use default if not specified)
-        let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+        let timeout_secs = utils::resolve_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
         // Execute with configured isolation level (always workspace root anchored)
         let isolation_level = utils::get_shell_isolation_level().await;
