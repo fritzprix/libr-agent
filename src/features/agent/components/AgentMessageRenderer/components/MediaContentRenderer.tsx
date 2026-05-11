@@ -127,6 +127,8 @@ export function ImageContentRenderer({
   );
   const [copied, setCopied] = useState(false);
   const canCopyImage = canWriteImagesToClipboard();
+  const copyButtonClassName =
+    'flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
   if (!imageSrc) {
     return loadError ? (
@@ -191,27 +193,41 @@ export function ImageContentRenderer({
     }
   };
 
+  const copyButton = (
+    <button
+      type="button"
+      onClick={handleCopy}
+      disabled={!canCopyImage}
+      className={copyButtonClassName}
+      aria-label="Copy image to clipboard"
+    >
+      {copied ? (
+        <Check size={16} className="text-emerald-500" />
+      ) : (
+        <Copy size={16} />
+      )}
+    </button>
+  );
+
   return (
     <div className="group relative inline-block max-w-full">
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-md border border-border bg-background/80 p-1 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <Tooltip>
-          <TooltipTrigger asChild>
-            <span tabIndex={0} className="flex items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <button
-                type="button"
-                onClick={handleCopy}
-                disabled={!canCopyImage}
-                className="flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 w-full h-full"
+          {canCopyImage ? (
+            <TooltipTrigger asChild>{copyButton}</TooltipTrigger>
+          ) : (
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                role="button"
                 aria-label="Copy image to clipboard"
+                aria-disabled="true"
+                className="flex items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {copied ? (
-                  <Check size={16} className="text-emerald-500" />
-                ) : (
-                  <Copy size={16} />
-                )}
-              </button>
-            </span>
-          </TooltipTrigger>
+                {copyButton}
+              </span>
+            </TooltipTrigger>
+          )}
           <TooltipContent>
             {canCopyImage
               ? 'Copy Image'
@@ -230,9 +246,7 @@ export function ImageContentRenderer({
               <Download size={16} />
             </button>
           </TooltipTrigger>
-          <TooltipContent>
-            Download Image
-          </TooltipContent>
+          <TooltipContent>Download Image</TooltipContent>
         </Tooltip>
       </div>
 
