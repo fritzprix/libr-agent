@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import type { AgentSession } from '@/models/agent';
 import type { Message, MessageError } from '@/models/chat';
 import type {
@@ -52,10 +52,7 @@ export function useAgentSessionState() {
       : 'normal';
 
   const workflowPhaseRef = useRef(workflowPhase);
-
-  useEffect(() => {
-    workflowPhaseRef.current = workflowPhase;
-  }, [workflowPhase]);
+  workflowPhaseRef.current = workflowPhase;
 
   const setError = useCallback(
     (nextError: string | AgentRuntimeError | null) => {
