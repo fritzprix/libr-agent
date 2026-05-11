@@ -224,10 +224,24 @@ pub async fn message_to_session(
         .get("waitForResponse")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
-    let timeout_seconds = args
-        .get("timeout")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(3600);
+    let timeout_seconds = match args.get("timeout") {
+        None => 3600,
+        Some(value) => match value.as_u64() {
+            Some(timeout) if (1..=3600).contains(&timeout) => timeout,
+            _ => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "timeout must be an integer between 1 and 3600 seconds".to_string(),
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "Omit timeout to use the default 3600-second wait window".to_string(),
+                    "Use a value between 1 and 3600 when waitForResponse=true".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        },
+    };
     if let Err(result) = load_accessible_delegated_session(
         manager,
         caller_session_id,

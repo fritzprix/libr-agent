@@ -1,11 +1,11 @@
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::utils::build_agent_tool_data;
 use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
-use crate::{agent::tools::runtime_allowed_builtin_service_aliases, agent::AgentConfig};
 
 use super::super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
@@ -155,14 +155,12 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
-        let parsed_agent_config = serde_json::from_value::<AgentConfig>(config.clone())
-            .unwrap_or_else(|_| AgentConfig::default());
         let desc = config
             .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("No description");
         let builtins = extract_string_list(config.get("allowedBuiltInServiceAliases"));
-        let effective_builtins = runtime_allowed_builtin_service_aliases(&parsed_agent_config);
+        let effective_builtins = runtime_allowed_builtin_service_aliases_from_value(&config);
         let external_ids = extract_string_list(config.get("mcpServerIds"));
         let external_labels = resolve_external_server_labels(&external_ids, &server_name_lookup);
 

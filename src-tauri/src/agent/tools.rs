@@ -58,6 +58,44 @@ pub fn runtime_allowed_builtin_service_aliases(
         .collect()
 }
 
+/// Derive the runtime-enabled builtin aliases directly from a stored config JSON value.
+///
+/// This preserves the runtime contract even when legacy or partially invalid config payloads
+/// fail full `AgentConfig` deserialization. Explicit builtin lists remain explicit; they do not
+/// silently fall back to "all optional builtins enabled".
+pub fn runtime_allowed_builtin_service_aliases_from_value(config: &Value) -> Vec<String> {
+    if let Ok(agent_config) = serde_json::from_value::<crate::agent::AgentConfig>(config.clone()) {
+        return runtime_allowed_builtin_service_aliases(&agent_config);
+    }
+
+    let mut allowed: HashSet<String> = CORE_BUILTIN_SERVICE_ALIASES
+        .iter()
+        .map(|alias| alias.to_string())
+        .collect();
+
+    match config.get("allowedBuiltInServiceAliases") {
+        Some(Value::Array(configured_aliases)) => {
+            for alias in configured_aliases.iter().filter_map(Value::as_str) {
+                if let Some(canonical_alias) = canonicalize_builtin_service_alias(alias) {
+                    allowed.insert(canonical_alias.to_string());
+                }
+            }
+        }
+        Some(_) => {}
+        None => {
+            for entry in BUILTIN_SERVICE_REGISTRY.iter().filter(|e| e.optional) {
+                allowed.insert(entry.canonical.to_string());
+            }
+        }
+    }
+
+    BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .filter(|entry| allowed.contains(entry.canonical))
+        .map(|entry| entry.canonical.to_string())
+        .collect()
+}
+
 pub fn is_builtin_service_alias_enabled(
     agent_config: &crate::agent::AgentConfig,
     alias: &str,

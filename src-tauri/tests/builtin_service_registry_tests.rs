@@ -7,11 +7,12 @@
 
 use std::collections::HashMap;
 
+use serde_json::json;
 use tauri_mcp_agent_lib::agent::state::PendingToolExecution;
 use tauri_mcp_agent_lib::agent::tools::{
     canonicalize_builtin_service_alias, classify_tool_result, create_error_tool_result,
     create_tool_result_message, create_tool_result_message_with_content, extract_builtin_tool_ids,
-    ToolResultAcceptance,
+    runtime_allowed_builtin_service_aliases_from_value, ToolResultAcceptance,
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
 use tauri_mcp_agent_lib::mcp::builtin::agent::tools as agent_tools;
@@ -232,6 +233,37 @@ fn extract_builtin_tool_ids_always_includes_core_aliases() {
         tool_ids.contains(&"browser".to_string()),
         "browser was explicitly requested and must be present"
     );
+}
+
+#[test]
+fn runtime_allowed_builtin_aliases_from_value_keeps_explicit_lists_explicit_on_parse_failure() {
+    let config = json!({
+        "name": "Legacy Assistant",
+        "systemPrompt": "You are helpful",
+        "allowedBuiltInServiceAliases": ["workspace", "not-a-real-service"]
+    });
+
+    let effective = runtime_allowed_builtin_service_aliases_from_value(&config);
+
+    assert!(effective.contains(&"workspace".to_string()));
+    assert!(effective.contains(&"planning".to_string()));
+    assert!(effective.contains(&"scratchpad".to_string()));
+    assert!(!effective.contains(&"browser".to_string()));
+    assert!(!effective.contains(&"knowledge".to_string()));
+}
+
+#[test]
+fn runtime_allowed_builtin_aliases_from_value_keeps_optional_defaults_when_list_is_missing() {
+    let config = json!({
+        "name": "Default Assistant",
+        "systemPrompt": "You are helpful"
+    });
+
+    let effective = runtime_allowed_builtin_service_aliases_from_value(&config);
+
+    assert!(effective.contains(&"browser".to_string()));
+    assert!(effective.contains(&"knowledge".to_string()));
+    assert!(effective.contains(&"attachments".to_string()));
 }
 
 /// Regression: tool was registered as optional:false but omitted from

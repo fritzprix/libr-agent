@@ -33,12 +33,10 @@ fn format_summary_list(values: &[String]) -> String {
 }
 
 fn build_agent_config_response_data(id: &str, name: &str, config: &Value) -> Value {
-    let parsed_config = serde_json::from_value::<crate::agent::AgentConfig>(config.clone())
-        .unwrap_or_else(|_| crate::agent::AgentConfig::default());
     let configured_builtin_capabilities =
         extract_string_array(config, "allowedBuiltInServiceAliases");
     let effective_builtin_capabilities =
-        crate::agent::tools::runtime_allowed_builtin_service_aliases(&parsed_config);
+        crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value(config);
     let external_mcp_servers = extract_string_array(config, "mcpServerIds");
 
     json!({
@@ -59,10 +57,8 @@ fn build_agent_config_response_data(id: &str, name: &str, config: &Value) -> Val
 fn build_agent_config_echo_message(action: &str, name: &str, id: &str, config: &Value) -> String {
     let configured_builtin_capabilities =
         extract_string_array(config, "allowedBuiltInServiceAliases");
-    let parsed_config = serde_json::from_value::<crate::agent::AgentConfig>(config.clone())
-        .unwrap_or_else(|_| crate::agent::AgentConfig::default());
     let effective_builtin_capabilities =
-        crate::agent::tools::runtime_allowed_builtin_service_aliases(&parsed_config);
+        crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value(config);
     let external_mcp_servers = extract_string_array(config, "mcpServerIds");
     let description = config
         .get("description")
