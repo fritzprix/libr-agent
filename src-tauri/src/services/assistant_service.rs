@@ -157,7 +157,7 @@ impl AssistantService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::assistant::Model as AssistantModel;
+    use crate::entity::assistant::Model as AssistantModel;
     use crate::repositories::{AssistantRepository, DbError};
     use async_trait::async_trait;
 
@@ -191,6 +191,19 @@ mod tests {
         }
         async fn list_assistants(&self) -> Result<Vec<AssistantModel>, DbError> {
             unimplemented!()
+        }
+        async fn list_assistants_paginated(
+            &self,
+            limit: u64,
+            offset: u64,
+        ) -> Result<Vec<AssistantModel>, DbError> {
+            Ok(self
+                .assistants
+                .iter()
+                .skip(offset as usize)
+                .take(limit as usize)
+                .cloned()
+                .collect())
         }
         async fn search_assistants(&self, _query: &str) -> Result<Vec<AssistantModel>, DbError> {
             Ok(self.assistants.clone())

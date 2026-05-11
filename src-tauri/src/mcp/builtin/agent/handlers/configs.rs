@@ -5,6 +5,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHi
 use crate::mcp::builtin::session_api::utils::build_agent_tool_data;
 use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::{agent::tools::runtime_allowed_builtin_service_aliases, agent::AgentConfig};
 
 use super::super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
@@ -128,6 +129,10 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
     let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let verbose = args
+        .get("verbose")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
 
     let total = agents.len();
     let paged_agents: Vec<_> = agents.into_iter().skip(offset).take(limit).collect();
@@ -137,6 +142,7 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
+    let mut any_truncated = false;
     if !paged_agents.is_empty() {
         text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
         text_summary.push_str("|---|---|---|---|---|\n");
@@ -149,22 +155,26 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
 
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
+        let parsed_agent_config = serde_json::from_value::<AgentConfig>(config.clone())
+            .unwrap_or_else(|_| AgentConfig::default());
         let desc = config
             .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("No description");
         let builtins = extract_string_list(config.get("allowedBuiltInServiceAliases"));
+        let effective_builtins = runtime_allowed_builtin_service_aliases(&parsed_agent_config);
         let external_ids = extract_string_list(config.get("mcpServerIds"));
         let external_labels = resolve_external_server_labels(&external_ids, &server_name_lookup);
 
         let desc_clean = desc.replace('|', "\\|").replace('\n', " ");
-        let desc_trunc = if desc_clean.chars().count() > 100 {
+        let desc_trunc = if !verbose && desc_clean.chars().count() > 100 {
+            any_truncated = true;
             format!("{}...", desc_clean.chars().take(97).collect::<String>())
         } else {
             desc_clean
         };
         let name_clean = agent.name.replace('|', "\\|").replace('\n', " ");
-        let capabilities = format_capability_list(&builtins)
+        let capabilities = format_capability_list(&effective_builtins)
             .replace('|', "\\|")
             .replace('\n', " ");
         let servers = format_external_server_refs(&external_ids, &server_name_lookup)
@@ -180,16 +190,21 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             "id": agent.id,
             "name": agent.name,
             "description": desc,
-            "builtinCapabilities": builtins,
+            "configuredBuiltinCapabilities": builtins,
+            "builtinCapabilities": effective_builtins.clone(),
+            "effectiveBuiltinCapabilities": effective_builtins,
             "externalMcpServers": external_ids,
             "externalMcpServerLabels": external_labels
         }));
     }
 
-    let hint = SuccessHint::new(
-        text_summary,
-        vec!["Use startSession(agentId=\"...\") to delegate work".to_string()],
-    );
+    let mut hint_lines = vec!["Use startSession(agentId=\"...\") to delegate work".to_string()];
+    if any_truncated {
+        hint_lines.push(
+            "Use list(type=\"configs\", verbose=true) to show full descriptions.".to_string(),
+        );
+    }
+    let hint = SuccessHint::new(text_summary, hint_lines);
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
         "list",

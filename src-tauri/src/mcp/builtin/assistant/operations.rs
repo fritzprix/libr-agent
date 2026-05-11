@@ -11,6 +11,82 @@ use serde_json::{json, Value};
 
 use super::AssistantServer;
 
+fn extract_string_array(config: &Value, key: &str) -> Vec<String> {
+    config
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn format_summary_list(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_string()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn build_agent_config_response_data(id: &str, name: &str, config: &Value) -> Value {
+    let parsed_config = serde_json::from_value::<crate::agent::AgentConfig>(config.clone())
+        .unwrap_or_else(|_| crate::agent::AgentConfig::default());
+    let configured_builtin_capabilities =
+        extract_string_array(config, "allowedBuiltInServiceAliases");
+    let effective_builtin_capabilities =
+        crate::agent::tools::runtime_allowed_builtin_service_aliases(&parsed_config);
+    let external_mcp_servers = extract_string_array(config, "mcpServerIds");
+
+    json!({
+        "success": true,
+        "id": id,
+        "name": name,
+        "description": config.get("description").and_then(Value::as_str),
+        "systemPrompt": config.get("systemPrompt").and_then(Value::as_str),
+        "temperature": config.get("temperature").and_then(Value::as_f64),
+        "builtinCapabilities": effective_builtin_capabilities.clone(),
+        "configuredBuiltinCapabilities": configured_builtin_capabilities.clone(),
+        "effectiveBuiltinCapabilities": effective_builtin_capabilities,
+        "externalMcpServers": external_mcp_servers.clone(),
+        "mcpServerIds": external_mcp_servers,
+    })
+}
+
+fn build_agent_config_echo_message(action: &str, name: &str, id: &str, config: &Value) -> String {
+    let configured_builtin_capabilities =
+        extract_string_array(config, "allowedBuiltInServiceAliases");
+    let parsed_config = serde_json::from_value::<crate::agent::AgentConfig>(config.clone())
+        .unwrap_or_else(|_| crate::agent::AgentConfig::default());
+    let effective_builtin_capabilities =
+        crate::agent::tools::runtime_allowed_builtin_service_aliases(&parsed_config);
+    let external_mcp_servers = extract_string_array(config, "mcpServerIds");
+    let description = config
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    let temperature = config
+        .get("temperature")
+        .and_then(Value::as_f64)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "provider default".to_string());
+
+    format!(
+        "Agent configuration '{}' {} (ID: {})\n\nDescription: {}\nTemperature: {}\nConfigured builtin capabilities: {}\nEffective builtin capabilities: {}\nExternal MCP servers: {}",
+        name,
+        action,
+        id,
+        description,
+        temperature,
+        format_summary_list(&configured_builtin_capabilities),
+        format_summary_list(&effective_builtin_capabilities),
+        format_summary_list(&external_mcp_servers),
+    )
+}
+
 /// Request structure for creating an assistant
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,7 +255,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         };
 
     // Always auto-generate ID
-    let id = cuid2::create_id();
+    let id = uuid::Uuid::new_v4().to_string();
 
     // Use repository from server's db connection instead of global state
     let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
@@ -245,10 +321,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
     {
         Ok(_) => {
             let hint = SuccessHint::new(
-                format!(
-                    "Agent configuration '{}' created successfully (ID: {})",
-                    normalized_name, id
-                ),
+                build_agent_config_echo_message("created successfully", &normalized_name, &id, &config),
                 vec![
                     "List agent configurations to review the new configuration".to_string(),
                     "Update the configuration if you want to refine its prompt, temperature, or capabilities"
@@ -265,11 +338,13 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
                 Some(id.clone()),
             );
 
-            Ok(hint.to_mcp_result_with_data(Some(json!({
-                "success": true,
-                "id": id,
-                "name": normalized_name
-            }))))
+            Ok(
+                hint.to_mcp_result_with_data(Some(build_agent_config_response_data(
+                    &id,
+                    &normalized_name,
+                    &config,
+                ))),
+            )
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
@@ -408,7 +483,12 @@ pub async fn update_assistant(
     match result {
         Ok(_) => {
             let hint = SuccessHint::new(
-                format!("Agent configuration '{}' updated successfully", request.id),
+                build_agent_config_echo_message(
+                    "updated successfully",
+                    &name,
+                    &request.id,
+                    &config,
+                ),
                 vec![
                     "Inspect the configuration details to verify the changes".to_string(),
                     "Start a new delegated session to apply the updated configuration".to_string(),
@@ -424,12 +504,13 @@ pub async fn update_assistant(
                 Some(request.id.clone()),
             );
 
-            Ok(hint.to_mcp_result_with_data(Some(json!({
-                "success": true,
-                "id": request.id,
-                "name": name,
-                "config": config
-            }))))
+            Ok(
+                hint.to_mcp_result_with_data(Some(build_agent_config_response_data(
+                    &request.id,
+                    &name,
+                    &config,
+                ))),
+            )
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,

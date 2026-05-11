@@ -220,6 +220,14 @@ pub async fn message_to_session(
         .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
     let message_text = read_required_string(&args, "message")?;
+    let wait_for_response = args
+        .get("waitForResponse")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let timeout_seconds = args
+        .get("timeout")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(3600);
     if let Err(result) = load_accessible_delegated_session(
         manager,
         caller_session_id,
@@ -244,6 +252,19 @@ pub async fn message_to_session(
         }
         Err(err) => return Err(err),
     };
+
+    if wait_for_response {
+        return check_session(
+            server,
+            json!({
+                "sessionId": session_id,
+                "wait": true,
+                "timeout": timeout_seconds
+            }),
+            caller_session_id,
+        )
+        .await;
+    }
 
     let hint = SuccessHint::new(
         format!("Message {} for session {}.", response.status, session_id),
@@ -290,11 +311,38 @@ pub async fn stop_session(
         ));
     }
 
-    if let Err(result) =
-        load_accessible_delegated_session(manager, caller_session_id, &session_id, "stopSession")
-            .await
+    let target_session = match load_accessible_delegated_session(
+        manager,
+        caller_session_id,
+        &session_id,
+        "stopSession",
+    )
+    .await
     {
-        return Ok(result);
+        Ok(session) => session,
+        Err(result) => return Ok(result),
+    };
+
+    if target_session.status != SessionStatus::Busy {
+        let current_status = target_session.status.as_str().to_string();
+        let message = format!(
+            "Session {} was already {}. No action taken.",
+            session_id, current_status
+        );
+        let mut response_data = build_agent_tool_data(
+            "stopSession",
+            "session",
+            Some(&session_id),
+            &message,
+            "noop",
+            vec![],
+        );
+        response_data.insert("sessionId".to_string(), Value::String(session_id));
+        response_data.insert("stopped".to_string(), Value::Bool(false));
+        response_data.insert("status".to_string(), Value::String(current_status));
+
+        return Ok(SuccessHint::new(message, vec![])
+            .to_mcp_result_with_data(Some(Value::Object(response_data))));
     }
 
     if let Err(error) = manager.terminate_session(session_id.clone()).await {

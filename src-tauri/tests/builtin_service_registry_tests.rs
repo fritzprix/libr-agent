@@ -595,6 +595,38 @@ fn compact_session_context_tool_schema_is_exposed() {
 }
 
 #[test]
+fn agent_list_tool_schema_supports_verbose_descriptions() {
+    let list_tool = agent_tools::all_tools()
+        .into_iter()
+        .find(|tool| tool.name == "list")
+        .expect("list tool must exist");
+    let props = extract_object_properties(&list_tool.input_schema, "list");
+
+    assert!(
+        props.contains_key("verbose"),
+        "list input_schema must include 'verbose'"
+    );
+}
+
+#[test]
+fn message_to_session_tool_schema_supports_inline_waiting() {
+    let message_tool = agent_tools::all_tools()
+        .into_iter()
+        .find(|tool| tool.name == "messageToSession")
+        .expect("messageToSession tool must exist");
+    let props = extract_object_properties(&message_tool.input_schema, "messageToSession");
+
+    assert!(
+        props.contains_key("waitForResponse"),
+        "messageToSession input_schema must include 'waitForResponse'"
+    );
+    assert!(
+        props.contains_key("timeout"),
+        "messageToSession input_schema must include 'timeout'"
+    );
+}
+
+#[test]
 fn tool_transport_schema_allows_env_and_header_maps() {
     let register_tool = tool_tools::register_server_tool();
     let props = extract_object_properties(&register_tool.input_schema, "register");
