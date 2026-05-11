@@ -167,7 +167,7 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
         String::new()
     };
     text_summary.push_str(&truncation_note);
-    text_summary.push_str("\n");
+    text_summary.push('\n');
 
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
