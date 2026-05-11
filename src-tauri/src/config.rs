@@ -14,7 +14,6 @@
 /// # Available Environment Variables
 /// - `LIBRAGENT_MAX_FILE_SIZE`: Maximum file size in bytes (default: 104857600 = 100MB)
 /// - `LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT`: Default command timeout in seconds (default: 30)
-/// - `LIBRAGENT_MAX_EXECUTION_TIMEOUT`: Maximum command timeout in seconds (default: 300)
 /// - `LIBRAGENT_MAX_OUTPUT_SIZE`: Maximum process output size in bytes (default: 104857600 = 100MB)
 /// - `LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout in seconds (default: 3)
 /// - `LIBRAGENT_POLL_THRESHOLD`: Excessive polling detection threshold (default: 5 consecutive polls)
@@ -29,9 +28,6 @@ const DEFAULT_MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
 
 /// Default execution timeout (30 seconds)
 const DEFAULT_EXECUTION_TIMEOUT: u64 = 30;
-
-/// Default maximum execution timeout (5 minutes)
-const DEFAULT_MAX_EXECUTION_TIMEOUT: u64 = 300;
 
 /// Default snippet length for message index (200 characters)
 const DEFAULT_SNIPPET_LENGTH: usize = 200;
@@ -110,36 +106,6 @@ pub fn default_execution_timeout() -> u64 {
             );
             DEFAULT_EXECUTION_TIMEOUT
         })
-}
-
-/// Get maximum execution timeout from environment or use default
-///
-/// Environment variable: LIBRAGENT_MAX_EXECUTION_TIMEOUT
-/// Default: 300 seconds (5 minutes)
-pub fn max_execution_timeout() -> u64 {
-    let max_timeout = env::var("LIBRAGENT_MAX_EXECUTION_TIMEOUT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| {
-            tracing::debug!(
-                "Using default max execution timeout: {} seconds",
-                DEFAULT_MAX_EXECUTION_TIMEOUT
-            );
-            DEFAULT_MAX_EXECUTION_TIMEOUT
-        });
-
-    // Ensure max timeout is at least as large as default timeout
-    let default_timeout = default_execution_timeout();
-    if max_timeout < default_timeout {
-        tracing::warn!(
-            "Max execution timeout ({}) is less than default timeout ({}). Using default as max.",
-            max_timeout,
-            default_timeout
-        );
-        default_timeout
-    } else {
-        max_timeout
-    }
 }
 
 /// Get message index snippet length from environment or use default
@@ -248,15 +214,6 @@ mod tests {
         // In a real test environment, you might want to use a library like `temp-env`
         assert_eq!(max_file_size(), DEFAULT_MAX_FILE_SIZE);
         assert_eq!(default_execution_timeout(), DEFAULT_EXECUTION_TIMEOUT);
-        assert_eq!(max_execution_timeout(), DEFAULT_MAX_EXECUTION_TIMEOUT);
         assert_eq!(message_index_snippet_length(), DEFAULT_SNIPPET_LENGTH);
-    }
-
-    #[test]
-    fn test_max_timeout_validation() {
-        // max_execution_timeout should be at least as large as default_execution_timeout
-        let max = max_execution_timeout();
-        let default = default_execution_timeout();
-        assert!(max >= default);
     }
 }

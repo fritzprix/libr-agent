@@ -53,36 +53,6 @@ impl WorkspaceServer {
         None
     }
 
-    fn validate_sync_timeout(&self, timeout_secs: u64) -> Option<MCPResult> {
-        let sync_max = crate::config::default_execution_timeout();
-        if timeout_secs <= sync_max {
-            return None;
-        }
-
-        Some(
-            guided_error(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "Timeout ({} seconds) exceeds maximum ({} seconds)",
-                    timeout_secs, sync_max
-                ),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                format!(
-                    "Use spawnProcess for commands longer than {} seconds",
-                    sync_max
-                ),
-                "spawnProcess runs in background and returns process_id".to_string(),
-                format!(
-                    "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
-                    sync_max
-                ),
-            ])
-            .to_mcp_result(),
-        )
-    }
-
     pub async fn handle_execute_shell(
         &self,
         args: Value,
@@ -133,11 +103,6 @@ impl WorkspaceServer {
 
         // Sync mode: persistent shell execution
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
-
-        // Enforce maximum sync timeout
-        if let Some(result) = self.validate_sync_timeout(timeout_secs) {
-            return Ok(result);
-        }
 
         // Execute with persistent shell (state preservation)
         self.execute_shell_persistent(raw_command, PERSISTENT_SHELL_TOOL, timeout_secs, session_id)
@@ -195,11 +160,6 @@ impl WorkspaceServer {
 
         // Get timeout (use default if not specified)
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
-
-        // Enforce maximum sync timeout
-        if let Some(result) = self.validate_sync_timeout(timeout_secs) {
-            return Ok(result);
-        }
 
         // Execute with configured isolation level (always workspace root anchored)
         let isolation_level = utils::get_shell_isolation_level().await;
