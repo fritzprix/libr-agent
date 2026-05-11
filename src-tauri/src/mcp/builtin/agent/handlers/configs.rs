@@ -97,7 +97,7 @@ pub async fn list_agents_or_sessions(
 
     match list_type {
         "configs" => list_agent_configs(server, &args).await,
-        "sessions" => list_delegated_sessions(caller_session_id).await,
+        "sessions" => list_delegated_sessions(caller_session_id, &args).await,
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
             format!(
@@ -146,6 +146,28 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             offset, limit
         ));
     }
+
+    let has_more = offset + paged_agents.len() < total;
+    let truncation_note = if has_more {
+        format!(
+            "\n\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+            offset + 1,
+            offset + paged_agents.len(),
+            total,
+            offset + limit
+        )
+    } else if offset > 0 {
+        format!(
+            "\n\n*(Showing {} to {} of {} items)*",
+            offset + 1,
+            offset + paged_agents.len(),
+            total
+        )
+    } else {
+        String::new()
+    };
+    text_summary.push_str(&truncation_note);
+    text_summary.push_str("\n");
 
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
@@ -208,7 +230,7 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
-async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, String> {
+async fn list_delegated_sessions(caller_session_id: &str, args: &Value) -> Result<MCPResult, String> {
     let session_repo = crate::state::get_session_repository();
     use crate::repositories::session_repository::SessionRepository;
 
@@ -229,11 +251,14 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     };
 
-    let mut results = Vec::new();
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+    let mut all_results = Vec::new();
     for child_id in &child_ids {
         if let Ok(Some(child_data)) = session_repo.get_session(child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
-            results.push(json!({
+            all_results.push(json!({
                 "id": child_id,
                 "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
                 "status": status
@@ -241,11 +266,36 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     }
 
-    let mut message = format!("Found {} sub-agent sessions.\n\n", results.len());
-    if !results.is_empty() {
+    let total = all_results.len();
+    let paged_results: Vec<_> = all_results.into_iter().skip(offset).take(limit).collect();
+    let has_more = offset + paged_results.len() < total;
+
+    let mut message = format!("Found {} sub-agent sessions.\n\n", total);
+
+    let truncation_note = if has_more {
+        format!(
+            "*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*\n\n",
+            offset + 1,
+            offset + paged_results.len(),
+            total,
+            offset + limit
+        )
+    } else if offset > 0 {
+        format!(
+            "*(Showing {} to {} of {} items)*\n\n",
+            offset + 1,
+            offset + paged_results.len(),
+            total
+        )
+    } else {
+        String::new()
+    };
+    message.push_str(&truncation_note);
+
+    if !paged_results.is_empty() {
         message.push_str("| Name | Session ID | Status |\n");
         message.push_str("|---|---|---|\n");
-        for result in &results {
+        for result in &paged_results {
             let name_clean = result["name"]
                 .as_str()
                 .unwrap_or("")
@@ -285,7 +335,7 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         })],
     );
     response_data.insert("type".to_string(), Value::String("sessions".to_string()));
-    response_data.insert("sessions".to_string(), Value::Array(results));
-    response_data.insert("total".to_string(), json!(child_ids.len()));
+    response_data.insert("sessions".to_string(), Value::Array(paged_results));
+    response_data.insert("total".to_string(), json!(total));
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
