@@ -230,7 +230,10 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
-async fn list_delegated_sessions(caller_session_id: &str, args: &Value) -> Result<MCPResult, String> {
+async fn list_delegated_sessions(
+    caller_session_id: &str,
+    args: &Value,
+) -> Result<MCPResult, String> {
     let session_repo = crate::state::get_session_repository();
     use crate::repositories::session_repository::SessionRepository;
 
