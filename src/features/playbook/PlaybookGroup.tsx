@@ -34,9 +34,9 @@ export function PlaybookGroup({
           type="button"
           aria-expanded={!isCollapsed}
           aria-controls={panelId}
-          aria-label={t('playbook.group.title', {
+          aria-label={t('playbook.group.ariaLabel', {
             title,
-            defaultValue: `${title} playbooks`,
+            defaultValue: `${title} ${t('playbook.title')}`,
           })}
           className="flex w-full items-center gap-2 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
           onClick={() => setIsCollapsed(!isCollapsed)}
