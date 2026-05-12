@@ -23,7 +23,7 @@ pub fn create_run_shell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
+            None,
             crate::config::default_execution_timeout() as i64,
             Some("Timeout in seconds"),
         ),
@@ -34,7 +34,7 @@ pub fn create_run_shell_tool() -> MCPTool {
         title: Some("Run Shell Command (Isolated)".to_string()),
         description: "Run a synchronous shell command (bash/sh). Stateless — each call starts fresh at workspace root.\n\
                       Use 'cd dir && command' for subdirectories.\n\
-                      For persistent cd/env vars: runInPersistentShell. For commands >30s: spawnProcess."
+                      For persistent cd/env vars: runInPersistentShell. For long-running or non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -63,7 +63,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
+            None,
             crate::config::default_execution_timeout() as i64,
             Some("Timeout in seconds"),
         ),
@@ -169,7 +169,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
+            None,
             crate::config::default_execution_timeout() as i64,
             Some("Timeout in seconds"),
         ),
@@ -212,7 +212,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
+            None,
             crate::config::default_execution_timeout() as i64,
             Some("Timeout in seconds"),
         ),

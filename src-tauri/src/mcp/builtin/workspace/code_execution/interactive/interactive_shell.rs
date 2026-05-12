@@ -44,7 +44,10 @@ impl WorkspaceServer {
             executable_command: command.to_string(), // Will be executed (may get -S flag)
             display_command: sanitized_command.clone(), // For logs/UI
             run_mode,                                // Store for 2nd call
-            timeout: args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30), // Command execution timeout
+            timeout: args
+                .get("timeout")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(crate::config::default_execution_timeout), // Command execution timeout
             created_at: chrono::Utc::now(),
         };
 
