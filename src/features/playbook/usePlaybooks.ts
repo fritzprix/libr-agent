@@ -33,14 +33,14 @@ export function usePlaybooks(
       listAssistants(),
     ]);
 
-    const assistantMap = assistantsData.reduce<
-      Record<string, { name: string }>
-    >((acc, curr) => {
+    // Use a straightforward loop here to avoid per-item reducer callbacks while
+    // building the lookup map.
+    const assistantMap: Record<string, { name: string }> = {};
+    for (const curr of assistantsData) {
       if (curr && curr.id) {
-        acc[curr.id] = { name: curr.name };
+        assistantMap[curr.id] = { name: curr.name };
       }
-      return acc;
-    }, {});
+    }
 
     return { playbooks: playbooksData, assistants: assistantMap };
   };
