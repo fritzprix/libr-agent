@@ -591,6 +591,7 @@
       "bookmarksFirst": "Signets en premier"
     },
     "group": {
+      "ariaLabel": "{{title}} scénarios",
       "today": "Aujourd'hui",
       "yesterday": "Hier",
       "thisWeek": "Cette semaine",

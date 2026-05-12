@@ -591,6 +591,7 @@
       "bookmarksFirst": "ブックマークを優先"
     },
     "group": {
+      "ariaLabel": "{{title}} のプレイブック",
       "today": "今日",
       "yesterday": "昨日",
       "thisWeek": "今週",

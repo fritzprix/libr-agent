@@ -704,6 +704,7 @@
       "bookmarksFirst": "북마크 우선"
     },
     "group": {
+      "ariaLabel": "{{title}} 플레이북",
       "today": "오늘",
       "yesterday": "어제",
       "thisWeek": "이번 주",
