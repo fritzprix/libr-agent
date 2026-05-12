@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -125,9 +125,10 @@ export function useSettingsForm() {
     formState: globalSettings,
     dirtyState: getEmptyDirtyState(),
   }));
-  const previousGlobalSettingsRef = useRef(globalSettings);
-  const shouldAcceptNextGlobalSyncRef = useRef(false);
-  const globalSettingsRef = useRef(globalSettings);
+  const [previousGlobalSettings, setPreviousGlobalSettings] =
+    useState(globalSettings);
+  const [shouldAcceptNextGlobalSync, setShouldAcceptNextGlobalSync] =
+    useState(false);
 
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
@@ -135,44 +136,34 @@ export function useSettingsForm() {
         const nextFormState = updater(previous.formState);
         return {
           formState: nextFormState,
-          dirtyState: getSettingsDirtyState(
-            nextFormState,
-            globalSettingsRef.current,
-          ),
+          dirtyState: getSettingsDirtyState(nextFormState, globalSettings),
         };
       });
     },
-    [],
+    [globalSettings],
   );
 
-  useEffect(() => {
-    const previousGlobalSettings = previousGlobalSettingsRef.current;
-
-    if (globalSettings === previousGlobalSettings) {
-      return;
-    }
-
+  // Adjusting State During Render Pattern
+  if (globalSettings !== previousGlobalSettings) {
     const shouldSyncFormState =
-      shouldAcceptNextGlobalSyncRef.current ||
+      shouldAcceptNextGlobalSync ||
       equal(state.formState, previousGlobalSettings);
 
-    previousGlobalSettingsRef.current = globalSettings;
-    globalSettingsRef.current = globalSettings;
-    shouldAcceptNextGlobalSyncRef.current = false;
+    setPreviousGlobalSettings(globalSettings);
+    setShouldAcceptNextGlobalSync(false);
 
     if (shouldSyncFormState) {
       setState({
         formState: globalSettings,
         dirtyState: getEmptyDirtyState(),
       });
-      return;
+    } else {
+      setState((previous) => ({
+        formState: previous.formState,
+        dirtyState: getSettingsDirtyState(previous.formState, globalSettings),
+      }));
     }
-
-    setState((previous) => ({
-      formState: previous.formState,
-      dirtyState: getSettingsDirtyState(previous.formState, globalSettings),
-    }));
-  }, [globalSettings, state.formState]);
+  }
 
   // Generic update for top-level keys
   const update = useCallback(
@@ -247,18 +238,18 @@ export function useSettingsForm() {
 
   const reset = useCallback(() => {
     setState({
-      formState: globalSettingsRef.current,
+      formState: globalSettings,
       dirtyState: getEmptyDirtyState(),
     });
-  }, []);
+  }, [globalSettings]);
 
   const save = useCallback(async () => {
-    shouldAcceptNextGlobalSyncRef.current = true;
+    setShouldAcceptNextGlobalSync(true);
 
     try {
       await updateGlobal(state.formState);
     } catch (error) {
-      shouldAcceptNextGlobalSyncRef.current = false;
+      setShouldAcceptNextGlobalSync(false);
       throw error;
     }
   }, [state.formState, updateGlobal]);
