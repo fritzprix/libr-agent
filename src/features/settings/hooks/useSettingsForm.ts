@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -129,7 +129,6 @@ export function useSettingsForm() {
     useState(globalSettings);
   const [shouldAcceptNextGlobalSync, setShouldAcceptNextGlobalSync] =
     useState(false);
-  const globalSettingsRef = useRef(globalSettings);
 
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
@@ -137,14 +136,11 @@ export function useSettingsForm() {
         const nextFormState = updater(previous.formState);
         return {
           formState: nextFormState,
-          dirtyState: getSettingsDirtyState(
-            nextFormState,
-            globalSettingsRef.current,
-          ),
+          dirtyState: getSettingsDirtyState(nextFormState, globalSettings),
         };
       });
     },
-    [],
+    [globalSettings],
   );
 
   // Adjusting State During Render Pattern
@@ -154,7 +150,6 @@ export function useSettingsForm() {
       equal(state.formState, previousGlobalSettings);
 
     setPreviousGlobalSettings(globalSettings);
-    globalSettingsRef.current = globalSettings;
     setShouldAcceptNextGlobalSync(false);
 
     if (shouldSyncFormState) {
@@ -243,10 +238,10 @@ export function useSettingsForm() {
 
   const reset = useCallback(() => {
     setState({
-      formState: globalSettingsRef.current,
+      formState: globalSettings,
       dirtyState: getEmptyDirtyState(),
     });
-  }, []);
+  }, [globalSettings]);
 
   const save = useCallback(async () => {
     setShouldAcceptNextGlobalSync(true);
