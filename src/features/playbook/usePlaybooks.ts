@@ -33,9 +33,8 @@ export function usePlaybooks(
       listAssistants(),
     ]);
 
-    // ⚡ Bolt: Removed O(N) intermediate functional iteration and closure overhead
-    // by replacing .reduce() with a single-pass loop.
-    // Impact: avoids extra allocations and improves startup performance for playbook loading.
+    // Use a straightforward loop here to avoid per-item reducer callbacks while
+    // building the lookup map.
     const assistantMap: Record<string, { name: string }> = {};
     for (const curr of assistantsData) {
       if (curr && curr.id) {
