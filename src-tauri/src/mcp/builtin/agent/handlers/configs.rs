@@ -98,7 +98,7 @@ pub async fn list_agents_or_sessions(
 
     match list_type {
         "configs" => list_agent_configs(server, &args).await,
-        "sessions" => list_delegated_sessions(caller_session_id).await,
+        "sessions" => list_delegated_sessions(caller_session_id, &args).await,
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
             format!(
@@ -196,6 +196,16 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
         }));
     }
 
+    if offset + limit < total {
+        text_summary.push_str(&format!(
+            "\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+            offset + 1,
+            offset + results.len(),
+            total,
+            offset + limit
+        ));
+    }
+
     let mut hint_lines = vec!["Use startSession(agentId=\"...\") to delegate work".to_string()];
     if any_truncated {
         hint_lines.push(
@@ -221,7 +231,7 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
-async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, String> {
+async fn list_delegated_sessions(caller_session_id: &str, args: &Value) -> Result<MCPResult, String> {
     let session_repo = crate::state::get_session_repository();
     use crate::repositories::session_repository::SessionRepository;
 
@@ -242,8 +252,14 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     };
 
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let total = child_ids.len();
+
+    let paged_ids: Vec<_> = child_ids.into_iter().skip(offset).take(limit).collect();
+
     let mut results = Vec::new();
-    for child_id in &child_ids {
+    for child_id in &paged_ids {
         if let Ok(Some(child_data)) = session_repo.get_session(child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
             results.push(json!({
@@ -254,10 +270,18 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     }
 
-    let mut message = format!("Found {} sub-agent sessions.\n\n", results.len());
+    let mut message = format!("Found {} sub-agent sessions.\n\n", total);
     if !results.is_empty() {
         message.push_str("| Name | Session ID | Status |\n");
         message.push_str("|---|---|---|\n");
+    } else if total > 0 {
+        message.push_str(&format!(
+            "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+            offset, limit
+        ));
+    }
+
+    if !results.is_empty() {
         for result in &results {
             let name_clean = result["name"]
                 .as_str()
@@ -281,6 +305,16 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     }
 
+    if offset + limit < total {
+        message.push_str(&format!(
+            "\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+            offset + 1,
+            offset + results.len(),
+            total,
+            offset + limit
+        ));
+    }
+
     let hint = SuccessHint::new(
         message,
         vec!["Use checkSession(sessionId) to get results".to_string()],
@@ -299,6 +333,6 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
     );
     response_data.insert("type".to_string(), Value::String("sessions".to_string()));
     response_data.insert("sessions".to_string(), Value::Array(results));
-    response_data.insert("total".to_string(), json!(child_ids.len()));
+    response_data.insert("total".to_string(), json!(total));
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
