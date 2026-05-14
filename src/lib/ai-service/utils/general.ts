@@ -1,5 +1,10 @@
 import { createId } from '@paralleldrive/cuid2';
-import { AIServiceProvider, TokenUsage } from '../types';
+import {
+  AIServiceError,
+  AIServiceProvider,
+  type AIServiceErrorKind,
+  TokenUsage,
+} from '../types';
 import {
   type Message,
   type MessageError,
@@ -201,6 +206,13 @@ export function normalizeAIServiceError(error: unknown): {
   recoverable: boolean;
   errorCode?: string;
 } | null {
+  if (error instanceof AIServiceError) {
+    const mapped = mapTypedAIServiceError(error);
+    if (mapped) {
+      return mapped;
+    }
+  }
+
   const rawMessage = getErrorMessage(error);
   const parsedPayload = parseProviderErrorPayload(rawMessage);
   const providerMessage = parsedPayload?.message?.trim();
@@ -243,4 +255,74 @@ export function normalizeAIServiceError(error: unknown): {
   }
 
   return null;
+}
+
+function mapTypedAIServiceError(error: AIServiceError): {
+  type: MessageError['type'];
+  displayMessage: string;
+  recoverable: boolean;
+  errorCode?: string;
+} | null {
+  const kind = error.metadata.kind;
+  if (!kind) {
+    return null;
+  }
+
+  const providerMessage = error.message
+    .replace(/^[^:]+ streaming failed:\s*/i, '')
+    .trim();
+
+  const byKind: Record<
+    AIServiceErrorKind,
+    {
+      type: MessageError['type'];
+      recoverable: boolean;
+      errorCode: string;
+    }
+  > = {
+    context_limit: {
+      type: 'CONTEXT_LIMIT_ERROR',
+      recoverable: true,
+      errorCode: 'CONTEXT_LIMIT_EXCEEDED',
+    },
+    rate_limit: {
+      type: 'RATE_LIMIT_ERROR',
+      recoverable: error.metadata.retryable ?? true,
+      errorCode: isSpendingCapError(error)
+        ? 'SPENDING_CAP_EXCEEDED'
+        : 'RATE_LIMIT_EXCEEDED',
+    },
+    authentication: {
+      type: 'AUTHENTICATION_ERROR',
+      recoverable: false,
+      errorCode: 'AUTHENTICATION_FAILED',
+    },
+    network: {
+      type: 'NETWORK_ERROR',
+      recoverable: true,
+      errorCode: 'NETWORK_ERROR',
+    },
+    invalid_request: {
+      type: 'VALIDATION_ERROR',
+      recoverable: false,
+      errorCode: 'INVALID_REQUEST',
+    },
+    server: {
+      type: 'AI_SERVICE_ERROR',
+      recoverable: true,
+      errorCode: 'PROVIDER_SERVER_ERROR',
+    },
+    unknown: {
+      type: 'AI_SERVICE_ERROR',
+      recoverable: true,
+      errorCode: 'AI_SERVICE_ERROR',
+    },
+  };
+
+  return {
+    type: byKind[kind].type,
+    displayMessage: providerMessage || error.message,
+    recoverable: byKind[kind].recoverable,
+    errorCode: byKind[kind].errorCode,
+  };
 }

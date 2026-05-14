@@ -2,6 +2,8 @@ import { isSpendingCapError } from '@/lib/ai-service/utils';
 import {
   AIServiceError,
   type AIServiceConfig,
+  type AIServiceErrorKind,
+  type AIServiceErrorMetadata,
   type AIServiceProvider,
 } from './types';
 import type { StreamingErrorContext } from './base-service-shared';
@@ -22,6 +24,18 @@ export function createAbortError(): Error {
 }
 
 export function shouldRetryRequest(error: unknown): boolean {
+  if (error instanceof AIServiceError) {
+    if (error.metadata.retryable !== undefined) {
+      return error.metadata.retryable;
+    }
+    if (error.statusCode === 429) {
+      return error.metadata.kind !== 'rate_limit' || !isSpendingCapError(error);
+    }
+    if (error.metadata.kind === 'context_limit') {
+      return false;
+    }
+  }
+
   const status = (error as { status?: number })?.status;
   if (status === undefined) {
     return false;
@@ -32,6 +46,161 @@ export function shouldRetryRequest(error: unknown): boolean {
   }
 
   return status >= 500 && status <= 599;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumber(
+  record: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getNestedRecord(
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function parseStructuredProviderError(error: unknown): {
+  statusCode?: number;
+  providerCode?: string | number;
+  providerStatus?: string;
+  providerMessage?: string;
+  rawPayload?: unknown;
+} {
+  if (!isRecord(error)) {
+    return {};
+  }
+
+  const topLevelError = getNestedRecord(error, 'error');
+  const errorRecord = topLevelError ?? error;
+  const providerMessage =
+    getString(errorRecord, 'message') ?? getString(error, 'message');
+  const providerStatus =
+    getString(errorRecord, 'type') ?? getString(errorRecord, 'status');
+  const providerCode =
+    getString(errorRecord, 'code') ??
+    getNumber(errorRecord, 'code') ??
+    getString(error, 'code') ??
+    getNumber(error, 'code');
+  const statusCode =
+    getNumber(error, 'status') ?? getNumber(errorRecord, 'status');
+
+  return {
+    statusCode,
+    providerCode,
+    providerStatus,
+    providerMessage,
+    rawPayload: topLevelError ?? error,
+  };
+}
+
+function classifyProviderErrorKind(args: {
+  providerMessage?: string;
+  providerStatus?: string;
+  providerCode?: string | number;
+  statusCode?: number;
+  error: unknown;
+}): AIServiceErrorKind {
+  if (isSpendingCapError(args.error)) {
+    return 'rate_limit';
+  }
+
+  if (args.statusCode === 429) {
+    return 'rate_limit';
+  }
+
+  if (args.statusCode === 401 || args.statusCode === 403) {
+    return 'authentication';
+  }
+
+  const normalizedStatus = args.providerStatus?.toLowerCase();
+  const normalizedCode =
+    typeof args.providerCode === 'string'
+      ? args.providerCode.toLowerCase()
+      : undefined;
+
+  if (
+    normalizedStatus === 'context_length_exceeded' ||
+    normalizedStatus === 'context_window_exceeded' ||
+    normalizedCode === 'context_length_exceeded' ||
+    normalizedCode === 'context_window_exceeded'
+  ) {
+    return 'context_limit';
+  }
+
+  const normalizedMessage = args.providerMessage?.toLowerCase();
+  if (
+    normalizedMessage?.includes('context size has been exceeded') ||
+    normalizedMessage?.includes('maximum context length') ||
+    normalizedMessage?.includes('context window exceeded') ||
+    normalizedMessage?.includes('prompt is too long')
+  ) {
+    return 'context_limit';
+  }
+
+  if (
+    normalizedStatus === 'invalid_request_error' ||
+    normalizedCode === 'invalid_request_error' ||
+    args.statusCode === 400
+  ) {
+    return 'invalid_request';
+  }
+
+  if (normalizedMessage?.includes('connection error')) {
+    return 'network';
+  }
+
+  if (
+    args.statusCode !== undefined &&
+    args.statusCode >= 500 &&
+    args.statusCode <= 599
+  ) {
+    return 'server';
+  }
+
+  return 'unknown';
+}
+
+function buildAIServiceErrorMetadata(error: unknown): {
+  statusCode?: number;
+  metadata: AIServiceErrorMetadata;
+} {
+  const parsed = parseStructuredProviderError(error);
+  const kind = classifyProviderErrorKind({
+    ...parsed,
+    error,
+  });
+  const retryable =
+    kind === 'network' ||
+    kind === 'server' ||
+    (kind === 'rate_limit' && !isSpendingCapError(error));
+
+  return {
+    statusCode: parsed.statusCode,
+    metadata: {
+      kind,
+      retryable,
+      providerCode: parsed.providerCode,
+      providerStatus: parsed.providerStatus,
+      rawPayload: parsed.rawPayload,
+    },
+  };
 }
 
 export async function withRetryPolicy<T>(args: {
@@ -86,16 +255,29 @@ export async function withRetryPolicy<T>(args: {
     }
   }
 
+  if (lastError instanceof AIServiceError) {
+    throw lastError;
+  }
+
   if (lastError instanceof Error) {
+    const { statusCode, metadata } = buildAIServiceErrorMetadata(lastError);
     throw new AIServiceError(
       lastError.message,
       args.provider,
-      undefined,
+      statusCode,
       lastError,
+      metadata,
     );
   }
 
-  throw new AIServiceError(String(lastError), args.provider);
+  const { statusCode, metadata } = buildAIServiceErrorMetadata(lastError);
+  throw new AIServiceError(
+    String(lastError),
+    args.provider,
+    statusCode,
+    undefined,
+    metadata,
+  );
 }
 
 export function throwStreamingError(args: {
@@ -132,10 +314,12 @@ export function throwStreamingError(args: {
     },
   });
 
+  const { statusCode, metadata } = buildAIServiceErrorMetadata(args.error);
   throw new AIServiceError(
     `${args.provider} streaming failed: ${errorMessage}`,
     args.provider,
-    undefined,
+    statusCode,
     args.error instanceof Error ? args.error : undefined,
+    metadata,
   );
 }

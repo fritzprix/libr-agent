@@ -19,6 +19,7 @@ pub use request::{
     build_compact_context_selection_options, build_compact_summary_message_for_messages,
     build_compact_summary_text, merge_consecutive_user_messages, normalize_request_messages,
     request_llm_completion, resolve_preserved_calibration_ratio,
+    try_apply_lossy_main_request_fallback,
 };
 
 // Crate-internal re-exports for intra-module visibility

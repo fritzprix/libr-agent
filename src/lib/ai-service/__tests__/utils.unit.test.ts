@@ -9,9 +9,10 @@ import {
   formatUsageMetrics,
   processMessageContent,
   processMultiModalContent,
+  normalizeAIServiceError,
 } from '../utils';
 import { formatNumber } from '@/lib/utils';
-import { AIServiceProvider, TokenUsage } from '../types';
+import { AIServiceError, AIServiceProvider, TokenUsage } from '../types';
 import { MCPContent } from '@/lib/mcp';
 
 describe('AI Service Utils', () => {
@@ -134,6 +135,50 @@ describe('AI Service Utils', () => {
       };
       const result = formatUsageMetrics(usage);
       expect(result.speed).toBe('50.0 t/s');
+    });
+  });
+
+  describe('normalizeAIServiceError', () => {
+    it('maps typed context-limit errors without relying on generic string parsing', () => {
+      const error = new AIServiceError(
+        'openai streaming failed: Context size has been exceeded.',
+        AIServiceProvider.OpenAI,
+        500,
+        undefined,
+        {
+          kind: 'context_limit',
+          retryable: false,
+          providerStatus: 'server_error',
+          providerCode: 500,
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'CONTEXT_LIMIT_ERROR',
+        displayMessage: 'Context size has been exceeded.',
+        recoverable: true,
+        errorCode: 'CONTEXT_LIMIT_EXCEEDED',
+      });
+    });
+
+    it('maps typed network errors to network classification', () => {
+      const error = new AIServiceError(
+        'openai streaming failed: Connection error.',
+        AIServiceProvider.OpenAI,
+        undefined,
+        undefined,
+        {
+          kind: 'network',
+          retryable: true,
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'NETWORK_ERROR',
+        displayMessage: 'Connection error.',
+        recoverable: true,
+        errorCode: 'NETWORK_ERROR',
+      });
     });
   });
 
