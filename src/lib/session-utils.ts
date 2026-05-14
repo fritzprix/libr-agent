@@ -81,9 +81,11 @@ export function buildDescendantCounts<T extends AgentSession>(
     }
 
     const children = childrenMap.get(sessionId) || [];
-    const total =
-      children.length +
-      children.reduce((sum, child) => sum + count(child.id), 0);
+    // Bolt: Eliminate .reduce() chaining to improve performance for deep tree traversals
+    let total = children.length;
+    for (let i = 0; i < children.length; i++) {
+      total += count(children[i].id);
+    }
 
     counts.set(sessionId, total);
     return total;
