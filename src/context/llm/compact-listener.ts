@@ -1,4 +1,7 @@
-import { handleCompactError, handleCompactResponse } from '@/lib/backend/agent-commands';
+import {
+  handleCompactError,
+  handleCompactResponse,
+} from '@/lib/backend/agent-commands';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import type {
   AIContextCompactionService,
@@ -85,7 +88,10 @@ export async function setupCompactRequestListener({
         settings.serviceConfigs?.[provider] ?? {};
 
       try {
-        const runtimeConfig = buildServiceRuntimeConfig(settings, providerConfig);
+        const runtimeConfig = buildServiceRuntimeConfig(
+          settings,
+          providerConfig,
+        );
         const service: AIContextCompactionService = AIServiceFactory.getService(
           provider,
           apiKey,

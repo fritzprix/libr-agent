@@ -1,7 +1,5 @@
 use super::AgentSessionManager;
-use crate::agent::compact_recovery::{
-    clear_compact_in_flight, handle_compact_error_state, CompactErrorAction,
-};
+use crate::agent::compact_recovery::{clear_compact_in_flight, handle_compact_error_state};
 use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::CompactStatePhase;
 use crate::agent::state::{AgentSession, DeferredWorkflowStep};
@@ -95,35 +93,7 @@ pub async fn handle_compact_error_with_dispatcher(
     session_id: String,
     error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<(), String> {
-    if matches!(
-        handle_compact_error_state(
-            session_repo,
-            active_sessions,
-            dispatcher,
-            session_id.clone(),
-            error
-        )
-        .await?,
-        CompactErrorAction::FinalizeWorkflow
-    ) {
-        if let Some(app_handle) = crate::state::get_app_handle() {
-            crate::agent::lifecycle::update_session_status(
-                session_repo,
-                active_sessions,
-                app_handle,
-                &session_id,
-                SessionStatus::Idle,
-            )
-            .await?;
-        }
-
-        dispatcher.emit_agent_event(crate::agent::events::AgentEvent::WorkflowCompleted {
-            session_id,
-            reason: crate::agent::events::WorkflowCompletionReason::Natural,
-        })?;
-    }
-
-    Ok(())
+    handle_compact_error_state(session_repo, active_sessions, dispatcher, session_id, error).await
 }
 
 pub async fn handle_compact_response(
@@ -182,17 +152,12 @@ pub async fn handle_compact_response(
         .as_ref()
         .map(|plan| plan.should_resume_completion)
         .unwrap_or(false);
-    let should_finalize_after_compact = completion_plan
-        .as_ref()
-        .map(|plan| plan.should_finalize_after_compact)
-        .unwrap_or(false);
     let deferred_workflow_step = completion_plan.and_then(|plan| plan.deferred_workflow_step);
 
     log::info!(
-        "📌 Compact completion decision for session {}: should_resume_completion={}, should_finalize_after_compact={}, deferred_step={}",
+        "📌 Compact completion decision for session {}: should_resume_completion={}, deferred_step={}",
         session_id,
         should_resume_completion,
-        should_finalize_after_compact,
         deferred_workflow_step.is_some()
     );
 
@@ -262,13 +227,6 @@ pub async fn handle_compact_response(
             session_id
         );
         spawn_resume_completion(manager, session_id, "LLM completion");
-    } else if should_finalize_after_compact {
-        finalize_workflow_completion(
-            manager,
-            session_id,
-            crate::agent::events::WorkflowCompletionReason::Natural,
-        )
-        .await?;
     }
 
     Ok(())

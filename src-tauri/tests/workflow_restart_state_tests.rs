@@ -81,10 +81,6 @@ async fn reset_session_execution_state_clears_cancel_poison_and_stale_compaction
         .compaction
         .awaiting_completion
         .store(true, Ordering::SeqCst);
-    session
-        .compaction
-        .finalize_workflow_after_compact
-        .store(true, Ordering::SeqCst);
     *session.compaction.deferred_workflow_step.write().await =
         Some(DeferredWorkflowStep::RequestCompletion);
 
@@ -96,10 +92,6 @@ async fn reset_session_execution_state_clears_cancel_poison_and_stale_compaction
     assert!(!session
         .compaction
         .awaiting_completion
-        .load(Ordering::SeqCst));
-    assert!(!session
-        .compaction
-        .finalize_workflow_after_compact
         .load(Ordering::SeqCst));
     assert!(session
         .compaction

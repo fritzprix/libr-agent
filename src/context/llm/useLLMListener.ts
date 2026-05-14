@@ -415,34 +415,46 @@ export function useLLMListener({
     };
 
     setupCancelListener();
-    void setupCompactRequestListener({
-      settingsRef,
-      clearCompactionPressureForSession,
-      setCompactedRangeForSession,
-      isMounted: () => isMounted,
-      onRegistered: () => {
-        logStartupLifecycleOnce(
-          'compact-request-registered',
-          'LLM compact request listener registered',
-        );
-      },
-    }).then((cleanup) => {
-      unlistenCompact = cleanup;
-    });
+    void (async () => {
+      try {
+        const [compactRequestCleanup, compactStateCleanup] = await Promise.all([
+          setupCompactRequestListener({
+            settingsRef,
+            clearCompactionPressureForSession,
+            setCompactedRangeForSession,
+            isMounted: () => isMounted,
+            onRegistered: () => {
+              logStartupLifecycleOnce(
+                'compact-request-registered',
+                'LLM compact request listener registered',
+              );
+            },
+          }),
+          setupCompactStateListener({
+            setCompactingFromEvent,
+            setAwaitingCompactForSession,
+            isMounted: () => isMounted,
+            onRegistered: () => {
+              logStartupLifecycleOnce(
+                'compact-state-registered',
+                'LLM compact state listener registered',
+              );
+            },
+          }),
+        ]);
 
-    void setupCompactStateListener({
-      setCompactingFromEvent,
-      setAwaitingCompactForSession,
-      isMounted: () => isMounted,
-      onRegistered: () => {
-        logStartupLifecycleOnce(
-          'compact-state-registered',
-          'LLM compact state listener registered',
-        );
-      },
-    }).then((cleanup) => {
-      unlistenCompactState = cleanup;
-    });
+        if (!isMounted) {
+          compactRequestCleanup?.();
+          compactStateCleanup?.();
+          return;
+        }
+
+        unlistenCompact = compactRequestCleanup;
+        unlistenCompactState = compactStateCleanup;
+      } catch (error) {
+        logger.error('Failed to register compact listeners', error);
+      }
+    })();
 
     return () => {
       isMounted = false;

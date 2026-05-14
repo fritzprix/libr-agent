@@ -119,7 +119,6 @@ pub struct CompactionSnapshot {
     pub in_flight: bool,
     pub last_compacted_tail_id: Option<String>,
     pub awaiting_completion: bool,
-    pub finalize_workflow_after_compact: bool,
     pub deferred_workflow_step: Option<DeferredWorkflowStep>,
     pub started_at_ms: Option<i64>,
 }
@@ -127,7 +126,6 @@ pub struct CompactionSnapshot {
 #[derive(Debug, Clone)]
 pub struct CompactionCompletionPlan {
     pub should_resume_completion: bool,
-    pub should_finalize_after_compact: bool,
     pub deferred_workflow_step: Option<DeferredWorkflowStep>,
 }
 
@@ -147,10 +145,6 @@ pub struct CompactionRuntimeState {
     /// before Rust should retry the LLM request.
     pub awaiting_completion: Arc<AtomicBool>,
 
-    /// True when the current workflow has already produced its assistant response
-    /// and must not be marked complete until the triggered compaction finishes.
-    pub finalize_workflow_after_compact: Arc<AtomicBool>,
-
     /// Workflow continuation deferred until the current compaction finishes.
     /// This lets Rust block the next workflow step on a completed assistant response.
     pub deferred_workflow_step: Arc<RwLock<Option<DeferredWorkflowStep>>>,
@@ -166,7 +160,6 @@ impl CompactionRuntimeState {
             in_flight: Arc::new(AtomicBool::new(false)),
             last_compacted_tail_id: Arc::new(RwLock::new(None)),
             awaiting_completion: Arc::new(AtomicBool::new(false)),
-            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
             deferred_workflow_step: Arc::new(RwLock::new(None)),
             started_at_ms: Arc::new(RwLock::new(None)),
         }
@@ -181,7 +174,6 @@ impl CompactionRuntimeState {
             in_flight: Arc::new(AtomicBool::new(in_flight)),
             last_compacted_tail_id: Arc::new(RwLock::new(last_tail_id)),
             awaiting_completion: Arc::new(AtomicBool::new(awaiting_completion)),
-            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
             deferred_workflow_step: Arc::new(RwLock::new(None)),
             started_at_ms: Arc::new(RwLock::new(None)),
         }
@@ -192,9 +184,6 @@ impl CompactionRuntimeState {
             in_flight: self.in_flight.load(Ordering::SeqCst),
             last_compacted_tail_id: self.last_compacted_tail_id.read().await.clone(),
             awaiting_completion: self.awaiting_completion.load(Ordering::SeqCst),
-            finalize_workflow_after_compact: self
-                .finalize_workflow_after_compact
-                .load(Ordering::SeqCst),
             deferred_workflow_step: self.deferred_workflow_step.read().await.clone(),
             started_at_ms: *self.started_at_ms.read().await,
         }
@@ -203,8 +192,6 @@ impl CompactionRuntimeState {
     pub async fn clear_runtime_state(&self, clear_last_compacted_tail_id: bool) {
         self.in_flight.store(false, Ordering::SeqCst);
         self.awaiting_completion.store(false, Ordering::SeqCst);
-        self.finalize_workflow_after_compact
-            .store(false, Ordering::SeqCst);
         *self.deferred_workflow_step.write().await = None;
         *self.started_at_ms.write().await = None;
 
@@ -231,24 +218,17 @@ impl CompactionRuntimeState {
         }
     }
 
-    pub async fn arm_finalize_after_compact(&self, deferred_step: DeferredWorkflowStep) {
-        self.finalize_workflow_after_compact
-            .store(true, Ordering::SeqCst);
+    pub async fn set_deferred_workflow_step(&self, deferred_step: DeferredWorkflowStep) {
         *self.deferred_workflow_step.write().await = Some(deferred_step);
     }
 
-    pub async fn clear_finalize_after_compact(&self) {
-        self.finalize_workflow_after_compact
-            .store(false, Ordering::SeqCst);
+    pub async fn clear_deferred_workflow_step(&self) {
         *self.deferred_workflow_step.write().await = None;
     }
 
     pub async fn take_completion_plan(&self) -> CompactionCompletionPlan {
         CompactionCompletionPlan {
             should_resume_completion: self.awaiting_completion.swap(false, Ordering::SeqCst),
-            should_finalize_after_compact: self
-                .finalize_workflow_after_compact
-                .swap(false, Ordering::SeqCst),
             deferred_workflow_step: self.deferred_workflow_step.write().await.take(),
         }
     }

@@ -102,7 +102,7 @@ pub async fn resume_session(
         // changed between sessions, so it must be rebuilt on the next LLM call.
         *existing_session.cached_stable_prompt.write().await = None;
         // Update compact context if it was loaded
-        crate::agent::lifecycle::apply_compact_context_if_present(
+        crate::agent::lifecycle::set_compact_context_if_loaded(
             existing_session,
             compact_context_record,
         )

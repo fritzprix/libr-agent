@@ -35,7 +35,7 @@ pub async fn init_session_with_messages(
         let mut synced_at = session.last_synced_at.write().await;
         *synced_at = Some(SystemTime::now());
 
-        crate::agent::lifecycle::replace_compact_context(session, compact_context).await;
+        crate::agent::lifecycle::overwrite_compact_context(session, compact_context).await;
 
         session.cache_initialized.store(true, Ordering::Release);
 

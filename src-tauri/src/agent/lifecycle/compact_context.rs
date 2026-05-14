@@ -28,7 +28,8 @@ pub async fn load_compact_context_record(
     Ok(compact_context)
 }
 
-pub async fn replace_compact_context(
+/// Overwrite the in-memory compact context, even when the loaded value is `None`.
+pub async fn overwrite_compact_context(
     session: &AgentSession,
     compact_context: Option<CompactContextRecord>,
 ) {
@@ -36,7 +37,8 @@ pub async fn replace_compact_context(
     *session_compact = compact_context;
 }
 
-pub async fn apply_compact_context_if_present(
+/// Only update the in-memory compact context when a loaded record is present.
+pub async fn set_compact_context_if_loaded(
     session: &AgentSession,
     compact_context: Option<CompactContextRecord>,
 ) {

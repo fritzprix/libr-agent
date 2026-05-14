@@ -7,12 +7,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CompactErrorAction {
-    None,
-    FinalizeWorkflow,
-}
-
 async fn clear_compaction_state(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -46,7 +40,7 @@ pub async fn handle_compact_error_state(
     dispatcher: &dyn AgentEventDispatcher,
     session_id: String,
     error: AgentRuntimeError,
-) -> Result<CompactErrorAction, String> {
+) -> Result<(), String> {
     let (snapshot, session_name) = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
@@ -64,7 +58,6 @@ pub async fn handle_compact_error_state(
                     in_flight: false,
                     last_compacted_tail_id: None,
                     awaiting_completion: false,
-                    finalize_workflow_after_compact: false,
                     deferred_workflow_step: None,
                     started_at_ms: None,
                 },
@@ -100,8 +93,10 @@ pub async fn handle_compact_error_state(
         session_id,
         if snapshot.awaiting_completion {
             "preflight"
+        } else if snapshot.deferred_workflow_step.is_some() {
+            "post-response"
         } else {
-            "background"
+            "manual"
         },
         elapsed_ms
             .map(|value| value.to_string())
@@ -128,11 +123,7 @@ pub async fn handle_compact_error_state(
             session_id,
             error: error.clone(),
         })?;
-
-        Ok(CompactErrorAction::None)
-    } else if snapshot.finalize_workflow_after_compact {
-        Ok(CompactErrorAction::FinalizeWorkflow)
-    } else {
-        Ok(CompactErrorAction::None)
     }
+
+    Ok(())
 }

@@ -1,8 +1,10 @@
 use crate::agent::llm::completion::context::load_context_management_settings;
 use crate::agent::llm::completion::request::normalize_request_messages;
-use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
+use crate::agent::llm::types::{CompactRequest, CompactStatePhase, CompactionParentRequest};
 use crate::agent::state::{AgentSession, DeferredWorkflowStep};
-use crate::agent::tauri_events::{emit_compact_request, emit_compact_started};
+use crate::agent::tauri_events::{
+    emit_compact_finished, emit_compact_request, emit_compact_started,
+};
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
@@ -259,7 +261,7 @@ async fn prepare_compaction_request(
     }))
 }
 
-async fn trigger_post_response_background_compaction(
+async fn trigger_post_response_blocking_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
@@ -333,40 +335,55 @@ async fn trigger_post_response_background_compaction(
 
     let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
-    let app = app_handle.clone();
-    let state_session_id = session_id.to_string();
-    let state_session_name = session_name.to_string();
-    let in_flight_flag = handles.compact_in_flight_arc.clone();
     let tail_id_for_task = prepared.current_tail_id.clone();
     let compact_event = prepared.compact_event;
     let started_at_ms = prepared.started_at_ms;
 
-    tokio::spawn(async move {
-        if let Err(e) = emit_compact_started(
-            &app,
-            state_session_id.clone(),
-            Some(state_session_name),
-            false,
+    if let Some(compaction_state) = compaction_state {
+        compaction_state
+            .mark_compaction_started(tail_id_for_task, started_at_ms, true)
+            .await;
+
+        if let Err(error) = emit_compact_started(
+            app_handle,
+            session_id.to_string(),
+            Some(session_name.to_string()),
+            true,
         ) {
-            log::error!("Failed to emit llm:compact-state: {}", e);
-            in_flight_flag.store(false, Ordering::SeqCst);
-            return;
+            compaction_state.clear_runtime_state(true).await;
+            return Err(error);
         }
-        if let Err(e) = emit_compact_request(&app, compact_event) {
-            log::error!("Failed to emit llm:compact-request: {}", e);
-            in_flight_flag.store(false, Ordering::SeqCst);
-            return;
+
+        if let Err(error) = emit_compact_request(app_handle, compact_event) {
+            compaction_state.clear_runtime_state(true).await;
+            if let Err(emit_error) = emit_compact_finished(
+                app_handle,
+                session_id.to_string(),
+                Some(session_name.to_string()),
+                CompactStatePhase::Failed,
+                Some(error.clone()),
+            ) {
+                log::warn!(
+                    "Failed to emit post-response compaction failure state for session {}: {}",
+                    session_id,
+                    emit_error
+                );
+            }
+            return Err(error);
         }
-        if let Some(compaction_state) = compaction_state {
-            compaction_state
-                .mark_compaction_started(tail_id_for_task, started_at_ms, false)
-                .await;
-        }
-    });
+    } else {
+        emit_compact_started(
+            app_handle,
+            session_id.to_string(),
+            Some(session_name.to_string()),
+            true,
+        )?;
+        emit_compact_request(app_handle, compact_event)?;
+    }
 
     in_flight_guard.disarm();
     log::info!(
-        "🔧 Background compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+        "🔧 Post-response compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
         session_id,
         log_from_id,
         log_to_id,
@@ -431,9 +448,9 @@ pub async fn trigger_post_response_compaction_if_needed(
     };
 
     compaction_state
-        .arm_finalize_after_compact(deferred_step)
+        .set_deferred_workflow_step(deferred_step)
         .await;
-    let triggered = trigger_post_response_background_compaction(
+    let triggered = match trigger_post_response_blocking_compaction(
         active_sessions,
         app_handle,
         session_id,
@@ -442,13 +459,20 @@ pub async fn trigger_post_response_compaction_if_needed(
         None,
         &handles,
     )
-    .await?;
+    .await
+    {
+        Ok(triggered) => triggered,
+        Err(error) => {
+            compaction_state.clear_deferred_workflow_step().await;
+            return Err(error);
+        }
+    };
 
     if !triggered {
-        compaction_state.clear_finalize_after_compact().await;
+        compaction_state.clear_deferred_workflow_step().await;
     } else {
         log::info!(
-            "🧹 Post-response compaction triggered synchronously from completed response usage: session={}, total_tokens={}, limit={}",
+            "🧹 Blocking post-response compaction armed from completed response usage: session={}, total_tokens={}, limit={}",
             session_id,
             usage_total_tokens,
             safe_input_token_limit

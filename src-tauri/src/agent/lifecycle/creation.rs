@@ -205,7 +205,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         );
         existing_session.metadata = session.clone();
         // Update compact context if it was loaded
-        crate::agent::lifecycle::apply_compact_context_if_present(
+        crate::agent::lifecycle::set_compact_context_if_loaded(
             existing_session,
             compact_context_record,
         )
