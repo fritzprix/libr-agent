@@ -8,7 +8,6 @@ use crate::agent::state::{AgentSession, DeferredWorkflowStep};
 use crate::agent::tauri_events::emit_compact_finished;
 use crate::repositories::{CompactContextRecord, SessionRepository, SessionStatus};
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -134,17 +133,17 @@ pub async fn handle_compact_response(
     to_id: String,
     summary: String,
 ) -> Result<(), String> {
-    let (compact_started_at_ms_handle, session_name) = {
+    let (compaction, session_name) = {
         let active = manager.active_sessions.read().await;
         active.get(session_id).map_or((None, None), |session| {
             (
-                Some(session.compaction.started_at_ms.clone()),
+                Some(session.compaction.clone()),
                 session.metadata.name.clone(),
             )
         })
     };
-    let started_at_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        *compact_started_at_ms_handle.read().await
+    let started_at_ms = if let Some(compaction) = compaction {
+        compaction.snapshot().await.started_at_ms
     } else {
         None
     };
@@ -171,29 +170,23 @@ pub async fn handle_compact_response(
     };
     manager.save_compact_context(session_id, record).await?;
 
-    let (should_resume_completion, should_finalize_after_compact, deferred_workflow_step) = {
+    let completion_plan = {
         let active = manager.active_sessions.read().await;
         if let Some(session) = active.get(session_id) {
-            (
-                session
-                    .compaction
-                    .awaiting_completion
-                    .swap(false, Ordering::SeqCst),
-                session
-                    .compaction
-                    .finalize_workflow_after_compact
-                    .swap(false, Ordering::SeqCst),
-                session
-                    .compaction
-                    .deferred_workflow_step
-                    .write()
-                    .await
-                    .take(),
-            )
+            Some(session.compaction.take_completion_plan().await)
         } else {
-            (false, false, None)
+            None
         }
     };
+    let should_resume_completion = completion_plan
+        .as_ref()
+        .map(|plan| plan.should_resume_completion)
+        .unwrap_or(false);
+    let should_finalize_after_compact = completion_plan
+        .as_ref()
+        .map(|plan| plan.should_finalize_after_compact)
+        .unwrap_or(false);
+    let deferred_workflow_step = completion_plan.and_then(|plan| plan.deferred_workflow_step);
 
     log::info!(
         "📌 Compact completion decision for session {}: should_resume_completion={}, should_finalize_after_compact={}, deferred_step={}",

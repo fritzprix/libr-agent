@@ -292,17 +292,21 @@ async fn trigger_post_response_background_compaction(
     }
 
     let started_at_ms = chrono::Utc::now().timestamp_millis();
-    let compact_context_record = {
+    let compact_context_handles = {
         let active = active_sessions.read().await;
         active
             .get(session_id)
-            .map(|session| session.compact_context.clone())
+            .map(|session| (session.compact_context.clone(), session.compaction.clone()))
     };
-    let compact_context_record = if let Some(compact_context_handle) = compact_context_record {
-        compact_context_handle.read().await.clone()
-    } else {
-        None
-    };
+    let (compact_context_record, compaction_state) =
+        if let Some((compact_context_handle, compaction_state)) = compact_context_handles {
+            (
+                compact_context_handle.read().await.clone(),
+                Some(compaction_state),
+            )
+        } else {
+            (None, None)
+        };
 
     let Some(prepared) = prepare_compaction_request(
         active_sessions,
@@ -327,20 +331,12 @@ async fn trigger_post_response_background_compaction(
         return Ok(false);
     };
 
-    let compact_started_at_ms_handle = {
-        let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| session.compaction.started_at_ms.clone())
-    };
-
     let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
     let app = app_handle.clone();
     let state_session_id = session_id.to_string();
     let state_session_name = session_name.to_string();
     let in_flight_flag = handles.compact_in_flight_arc.clone();
-    let last_compacted_tail_id_arc = handles.last_compacted_tail_id_arc.clone();
     let tail_id_for_task = prepared.current_tail_id.clone();
     let compact_event = prepared.compact_event;
     let started_at_ms = prepared.started_at_ms;
@@ -361,9 +357,10 @@ async fn trigger_post_response_background_compaction(
             in_flight_flag.store(false, Ordering::SeqCst);
             return;
         }
-        *last_compacted_tail_id_arc.write().await = tail_id_for_task;
-        if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-            *compact_started_at_ms_handle.write().await = Some(started_at_ms);
+        if let Some(compaction_state) = compaction_state {
+            compaction_state
+                .mark_compaction_started(tail_id_for_task, started_at_ms, false)
+                .await;
         }
     });
 
@@ -419,7 +416,7 @@ pub async fn trigger_post_response_compaction_if_needed(
         return Ok(false);
     }
 
-    let (handles, finalize_workflow_after_compact, deferred_workflow_step_handle) = {
+    let (handles, compaction_state) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
@@ -429,13 +426,13 @@ pub async fn trigger_post_response_compaction_if_needed(
                 compact_in_flight_arc: session.compaction.in_flight.clone(),
                 last_compacted_tail_id_arc: session.compaction.last_compacted_tail_id.clone(),
             },
-            session.compaction.finalize_workflow_after_compact.clone(),
-            session.compaction.deferred_workflow_step.clone(),
+            session.compaction.clone(),
         )
     };
 
-    finalize_workflow_after_compact.store(true, Ordering::SeqCst);
-    *deferred_workflow_step_handle.write().await = Some(deferred_step);
+    compaction_state
+        .arm_finalize_after_compact(deferred_step)
+        .await;
     let triggered = trigger_post_response_background_compaction(
         active_sessions,
         app_handle,
@@ -448,8 +445,7 @@ pub async fn trigger_post_response_compaction_if_needed(
     .await?;
 
     if !triggered {
-        finalize_workflow_after_compact.store(false, Ordering::SeqCst);
-        *deferred_workflow_step_handle.write().await = None;
+        compaction_state.clear_finalize_after_compact().await;
     } else {
         log::info!(
             "🧹 Post-response compaction triggered synchronously from completed response usage: session={}, total_tokens={}, limit={}",
@@ -489,12 +485,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(false);
     }
 
-    let (
-        compact_in_flight_arc,
-        last_compacted_tail_id_arc,
-        awaiting_compact_arc,
-        compact_context_handle,
-    ) = {
+    let (compact_in_flight_arc, last_compacted_tail_id_arc, compact_context_handle, compaction) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
@@ -502,15 +493,13 @@ pub(crate) async fn try_trigger_preflight_compaction(
         (
             session.compaction.in_flight.clone(),
             session.compaction.last_compacted_tail_id.clone(),
-            session.compaction.awaiting_completion.clone(),
             session.compact_context.clone(),
+            session.compaction.clone(),
         )
     };
 
     let Some(mut in_flight_guard) = try_claim_in_flight(&compact_in_flight_arc) else {
-        if resume_completion_after_compact {
-            awaiting_compact_arc.store(true, Ordering::SeqCst);
-        }
+        compaction.mark_reused_in_flight(resume_completion_after_compact);
         emit_compact_started(
             app_handle,
             session_id.to_string(),
@@ -571,13 +560,6 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(false);
     };
 
-    let compact_started_at_ms_handle = {
-        let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| session.compaction.started_at_ms.clone())
-    };
-
     let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
     emit_compact_started(
@@ -587,13 +569,13 @@ pub(crate) async fn try_trigger_preflight_compaction(
         resume_completion_after_compact,
     )?;
     emit_compact_request(app_handle, prepared.compact_event)?;
-    if resume_completion_after_compact {
-        awaiting_compact_arc.store(true, Ordering::SeqCst);
-    }
-    *last_compacted_tail_id_arc.write().await = prepared.current_tail_id.clone();
-    if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        *compact_started_at_ms_handle.write().await = Some(prepared.started_at_ms);
-    }
+    compaction
+        .mark_compaction_started(
+            prepared.current_tail_id.clone(),
+            prepared.started_at_ms,
+            resume_completion_after_compact,
+        )
+        .await;
     in_flight_guard.disarm();
 
     if resume_completion_after_compact {
