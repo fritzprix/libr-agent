@@ -136,6 +136,19 @@ function classifyProviderErrorKind(args: {
       : undefined;
 
   if (
+    normalizedStatus === 'resource_exhausted' ||
+    normalizedStatus === 'quota_exceeded' ||
+    normalizedStatus === 'insufficient_quota' ||
+    normalizedStatus === 'rate_limit_exceeded' ||
+    normalizedCode === 'resource_exhausted' ||
+    normalizedCode === 'quota_exceeded' ||
+    normalizedCode === 'insufficient_quota' ||
+    normalizedCode === 'rate_limit_exceeded'
+  ) {
+    return 'rate_limit';
+  }
+
+  if (
     normalizedStatus === 'context_length_exceeded' ||
     normalizedStatus === 'context_window_exceeded' ||
     normalizedCode === 'context_length_exceeded' ||

@@ -98,19 +98,14 @@ export function formatUsageMetrics(usage: TokenUsage): {
 }
 
 export function isSpendingCapError(error: unknown): boolean {
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'object' &&
-          error !== null &&
-          'message' in error &&
-          typeof error.message === 'string'
-        ? error.message
-        : String(error);
-  return (
-    message.includes('spending cap') ||
-    (message.includes('RESOURCE_EXHAUSTED') && message.includes('spending'))
-  );
+  return getErrorMessageCandidates(error).some((message) => {
+    const normalizedMessage = message.toLowerCase();
+    return (
+      normalizedMessage.includes('spending cap') ||
+      (message.includes('RESOURCE_EXHAUSTED') &&
+        normalizedMessage.includes('spending'))
+    );
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -195,6 +190,32 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function serializeRawPayload(payload: unknown): string | undefined {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload === undefined) {
+    return undefined;
+  }
+
+  const serialized = safeJsonStringify(payload);
+  return serialized === '{}' ? undefined : serialized;
+}
+
+function getErrorMessageCandidates(error: unknown): string[] {
+  const candidates = [getErrorMessage(error)];
+
+  if (error instanceof AIServiceError) {
+    const rawPayload = serializeRawPayload(error.metadata.rawPayload);
+    if (rawPayload) {
+      candidates.push(rawPayload);
+    }
+  }
+
+  return candidates;
+}
+
 function extractFirstUrl(input: string): string | undefined {
   const match = input.match(/https?:\/\/[^\s)"]+/i);
   return match?.[0];
@@ -214,19 +235,31 @@ export function normalizeAIServiceError(error: unknown): {
   }
 
   const rawMessage = getErrorMessage(error);
-  const parsedPayload = parseProviderErrorPayload(rawMessage);
+  const rawPayloadText =
+    error instanceof AIServiceError
+      ? serializeRawPayload(error.metadata.rawPayload)
+      : undefined;
+  const parsedPayload =
+    parseProviderErrorPayload(rawMessage) ??
+    (rawPayloadText ? parseProviderErrorPayload(rawPayloadText) : null);
   const providerMessage = parsedPayload?.message?.trim();
   const normalizedProviderMessage =
     providerMessage && !providerMessage.startsWith('{')
       ? providerMessage.replace(/\s+/g, ' ').trim()
       : undefined;
-  const billingUrl = extractFirstUrl(normalizedProviderMessage ?? rawMessage);
+  const billingUrl = extractFirstUrl(
+    normalizedProviderMessage ?? rawPayloadText ?? rawMessage,
+  );
   const status = parsedPayload?.status;
   const code = parsedPayload?.code;
   const lowerRawMessage = rawMessage.toLowerCase();
+  const normalizedStatus = status?.toLowerCase();
   const isRateLimit =
     code === 429 ||
-    status === 'RESOURCE_EXHAUSTED' ||
+    normalizedStatus === 'resource_exhausted' ||
+    normalizedStatus === 'quota_exceeded' ||
+    normalizedStatus === 'insufficient_quota' ||
+    normalizedStatus === 'rate_limit_exceeded' ||
     lowerRawMessage.includes('rate limit') ||
     lowerRawMessage.includes('too many requests');
 
@@ -264,7 +297,11 @@ function mapTypedAIServiceError(error: AIServiceError): {
   errorCode?: string;
 } | null {
   const kind = error.metadata.kind;
-  if (!kind) {
+  if (!kind || kind === 'unknown') {
+    return null;
+  }
+
+  if (kind === 'rate_limit' && isSpendingCapError(error)) {
     return null;
   }
 

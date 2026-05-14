@@ -415,33 +415,41 @@ export function useLLMListener({
     };
 
     setupCancelListener();
-    void (async () => {
+    const registerCompactListeners = async () => {
+      let compactRequestCleanup: (() => void) | undefined;
+      let compactStateCleanup: (() => void) | undefined;
+
       try {
-        const [compactRequestCleanup, compactStateCleanup] = await Promise.all([
-          setupCompactRequestListener({
-            settingsRef,
-            clearCompactionPressureForSession,
-            setCompactedRangeForSession,
-            isMounted: () => isMounted,
-            onRegistered: () => {
-              logStartupLifecycleOnce(
-                'compact-request-registered',
-                'LLM compact request listener registered',
-              );
-            },
-          }),
-          setupCompactStateListener({
-            setCompactingFromEvent,
-            setAwaitingCompactForSession,
-            isMounted: () => isMounted,
-            onRegistered: () => {
-              logStartupLifecycleOnce(
-                'compact-state-registered',
-                'LLM compact state listener registered',
-              );
-            },
-          }),
-        ]);
+        compactRequestCleanup = await setupCompactRequestListener({
+          settingsRef,
+          clearCompactionPressureForSession,
+          setCompactedRangeForSession,
+          isMounted: () => isMounted,
+          onRegistered: () => {
+            logStartupLifecycleOnce(
+              'compact-request-registered',
+              'LLM compact request listener registered',
+            );
+          },
+        });
+
+        if (!isMounted) {
+          compactRequestCleanup?.();
+          return;
+        }
+
+        unlistenCompact = compactRequestCleanup;
+        compactStateCleanup = await setupCompactStateListener({
+          setCompactingFromEvent,
+          setAwaitingCompactForSession,
+          isMounted: () => isMounted,
+          onRegistered: () => {
+            logStartupLifecycleOnce(
+              'compact-state-registered',
+              'LLM compact state listener registered',
+            );
+          },
+        });
 
         if (!isMounted) {
           compactRequestCleanup?.();
@@ -449,12 +457,17 @@ export function useLLMListener({
           return;
         }
 
-        unlistenCompact = compactRequestCleanup;
         unlistenCompactState = compactStateCleanup;
       } catch (error) {
+        compactStateCleanup?.();
+        compactRequestCleanup?.();
+        unlistenCompact = undefined;
+        unlistenCompactState = undefined;
         logger.error('Failed to register compact listeners', error);
       }
-    })();
+    };
+
+    void registerCompactListeners();
 
     return () => {
       isMounted = false;

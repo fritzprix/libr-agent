@@ -180,6 +180,60 @@ describe('AI Service Utils', () => {
         errorCode: 'NETWORK_ERROR',
       });
     });
+
+    it('preserves billing guidance for typed spending-cap errors via raw payload fallback', () => {
+      const error = new AIServiceError(
+        'gemini streaming failed',
+        AIServiceProvider.Gemini,
+        undefined,
+        undefined,
+        {
+          kind: 'rate_limit',
+          retryable: false,
+          rawPayload: {
+            error: {
+              status: 'RESOURCE_EXHAUSTED',
+              message:
+                'Project spending cap reached. Update billing at https://console.cloud.google.com/billing',
+            },
+          },
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'RATE_LIMIT_ERROR',
+        displayMessage:
+          'Billing limit reached for this AI provider. Update your billing or quota settings and try again: https://console.cloud.google.com/billing',
+        recoverable: false,
+        errorCode: 'SPENDING_CAP_EXCEEDED',
+      });
+    });
+
+    it('falls back to structured payload parsing for typed unknown errors', () => {
+      const error = new AIServiceError(
+        'gemini streaming failed',
+        AIServiceProvider.Gemini,
+        undefined,
+        undefined,
+        {
+          kind: 'unknown',
+          retryable: true,
+          rawPayload: {
+            error: {
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'Rate limit exceeded. Please retry later.',
+            },
+          },
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'RATE_LIMIT_ERROR',
+        displayMessage: 'Rate limit exceeded. Please retry later.',
+        recoverable: true,
+        errorCode: 'RATE_LIMIT_EXCEEDED',
+      });
+    });
   });
 
   describe('processMessageContent', () => {

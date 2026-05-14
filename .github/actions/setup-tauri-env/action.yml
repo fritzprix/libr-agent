@@ -23,6 +23,15 @@ runs:
     - name: 🦀 Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: 🦀 Ensure Cargo bin on PATH
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
+        else
+          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
+        fi
+
     - name: 🦀 Rust cache
       uses: swatinem/rust-cache@v2
       with:

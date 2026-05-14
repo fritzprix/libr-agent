@@ -21,6 +21,21 @@ use super::payload::{
 pub(crate) struct BackgroundCompactionHandles {
     pub(crate) compact_in_flight_arc: Arc<AtomicBool>,
     pub(crate) last_compacted_tail_id_arc: Arc<RwLock<Option<String>>>,
+    pub(crate) deferred_workflow_step_handle: Arc<RwLock<Option<DeferredWorkflowStep>>>,
+}
+
+enum PostResponseCompactionTriggerOutcome {
+    Triggered,
+    ReusedInFlight,
+    SkippedNoWork,
+}
+
+struct PostResponseCompactionInput<'a> {
+    session_id: &'a str,
+    session_name: &'a str,
+    messages: &'a [Message],
+    parent_request: Option<CompactionParentRequest>,
+    deferred_step: DeferredWorkflowStep,
 }
 
 struct InFlightResetGuard {
@@ -264,20 +279,36 @@ async fn prepare_compaction_request(
 async fn trigger_post_response_blocking_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
-    session_id: &str,
-    session_name: &str,
-    messages: &[Message],
-    parent_request: Option<CompactionParentRequest>,
+    input: PostResponseCompactionInput<'_>,
     handles: &BackgroundCompactionHandles,
-) -> Result<bool, String> {
+) -> Result<PostResponseCompactionTriggerOutcome, String> {
+    let PostResponseCompactionInput {
+        session_id,
+        session_name,
+        messages,
+        parent_request,
+        deferred_step,
+    } = input;
     let split_idx = find_background_compaction_split_index(messages);
     if split_idx == 0 {
-        return Ok(false);
+        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
     }
 
     let Some(mut in_flight_guard) = try_claim_in_flight(&handles.compact_in_flight_arc) else {
-        log::debug!("⏭️ Compaction skipped (in_flight): session={}", session_id);
-        return Ok(false);
+        let mut deferred_workflow_step = handles.deferred_workflow_step_handle.write().await;
+        if deferred_workflow_step.is_none() {
+            *deferred_workflow_step = Some(deferred_step);
+            log::info!(
+                "⏳ Reusing in-flight compaction and preserving post-response continuation: session={}",
+                session_id
+            );
+        } else {
+            log::warn!(
+                "Post-response compaction reused an in-flight compaction that already had a deferred continuation: session={}",
+                session_id
+            );
+        }
+        return Ok(PostResponseCompactionTriggerOutcome::ReusedInFlight);
     };
 
     let current_tail_id = messages.last().map(|message| message.id.clone());
@@ -290,7 +321,7 @@ async fn trigger_post_response_blocking_compaction(
             session_id,
             current_tail_id.as_deref().unwrap_or("?")
         );
-        return Ok(false);
+        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
     }
 
     let started_at_ms = chrono::Utc::now().timestamp_millis();
@@ -330,7 +361,7 @@ async fn trigger_post_response_blocking_compaction(
             session_id,
             current_tail_id.as_deref().unwrap_or("?")
         );
-        return Ok(false);
+        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
     };
 
     let log_from_id = prepared.compact_event.from_id.clone();
@@ -340,6 +371,9 @@ async fn trigger_post_response_blocking_compaction(
     let started_at_ms = prepared.started_at_ms;
 
     if let Some(compaction_state) = compaction_state {
+        compaction_state
+            .set_deferred_workflow_step(deferred_step)
+            .await;
         compaction_state
             .mark_compaction_started(tail_id_for_task, started_at_ms, true)
             .await;
@@ -372,6 +406,7 @@ async fn trigger_post_response_blocking_compaction(
             return Err(error);
         }
     } else {
+        *handles.deferred_workflow_step_handle.write().await = Some(deferred_step);
         emit_compact_started(
             app_handle,
             session_id.to_string(),
@@ -394,7 +429,7 @@ async fn trigger_post_response_blocking_compaction(
         started_at_ms
     );
 
-    Ok(true)
+    Ok(PostResponseCompactionTriggerOutcome::Triggered)
 }
 
 pub async fn trigger_post_response_compaction_if_needed(
@@ -433,53 +468,45 @@ pub async fn trigger_post_response_compaction_if_needed(
         return Ok(false);
     }
 
-    let (handles, compaction_state) = {
+    let handles = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        (
-            BackgroundCompactionHandles {
-                compact_in_flight_arc: session.compaction.in_flight.clone(),
-                last_compacted_tail_id_arc: session.compaction.last_compacted_tail_id.clone(),
-            },
-            session.compaction.clone(),
-        )
-    };
-
-    compaction_state
-        .set_deferred_workflow_step(deferred_step)
-        .await;
-    let triggered = match trigger_post_response_blocking_compaction(
-        active_sessions,
-        app_handle,
-        session_id,
-        session_name,
-        messages,
-        None,
-        &handles,
-    )
-    .await
-    {
-        Ok(triggered) => triggered,
-        Err(error) => {
-            compaction_state.clear_deferred_workflow_step().await;
-            return Err(error);
+        BackgroundCompactionHandles {
+            compact_in_flight_arc: session.compaction.in_flight.clone(),
+            last_compacted_tail_id_arc: session.compaction.last_compacted_tail_id.clone(),
+            deferred_workflow_step_handle: session.compaction.deferred_workflow_step.clone(),
         }
     };
 
-    if !triggered {
-        compaction_state.clear_deferred_workflow_step().await;
-    } else {
-        log::info!(
-            "🧹 Blocking post-response compaction armed from completed response usage: session={}, total_tokens={}, limit={}",
+    let outcome = trigger_post_response_blocking_compaction(
+        active_sessions,
+        app_handle,
+        PostResponseCompactionInput {
             session_id,
-            usage_total_tokens,
-            safe_input_token_limit
-        );
-    }
+            session_name,
+            messages,
+            parent_request: None,
+            deferred_step,
+        },
+        &handles,
+    )
+    .await?;
 
-    Ok(triggered)
+    match outcome {
+        PostResponseCompactionTriggerOutcome::Triggered => {
+            log::info!(
+                "🧹 Blocking post-response compaction armed from completed response usage: session={}, total_tokens={}, limit={}",
+                session_id,
+                usage_total_tokens,
+                safe_input_token_limit
+            );
+            Ok(true)
+        }
+        PostResponseCompactionTriggerOutcome::ReusedInFlight => Ok(true),
+        PostResponseCompactionTriggerOutcome::SkippedNoWork => Ok(false),
+    }
 }
 
 pub(crate) async fn try_trigger_preflight_compaction(

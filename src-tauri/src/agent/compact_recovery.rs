@@ -91,10 +91,10 @@ pub async fn handle_compact_error_state(
     log::warn!(
         "❌ Compaction failed: session={}, mode={}, elapsed_ms={}, error_code={}, message={}",
         session_id,
-        if snapshot.awaiting_completion {
-            "preflight"
-        } else if snapshot.deferred_workflow_step.is_some() {
+        if snapshot.deferred_workflow_step.is_some() {
             "post-response"
+        } else if snapshot.awaiting_completion {
+            "preflight"
         } else {
             "manual"
         },
