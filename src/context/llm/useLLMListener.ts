@@ -1,28 +1,20 @@
 import {
   handleLLMError,
   handleLLMResponse,
-  handleCompactResponse,
-  handleCompactError,
 } from '@/lib/backend/agent-commands';
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { toast } from 'sonner';
 
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { CompactionPressure } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
-import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
-import type {
-  AIContextCompactionService,
-  AIServiceConfig,
-} from '@/lib/ai-service/types';
+import type { AIServiceProvider } from '@/lib/ai-service';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
 import type {
   CompletionCancelRequest,
-  CompactRequest,
   CompactedRange,
   CompletionRequest,
 } from './types';
@@ -31,12 +23,15 @@ import {
   isSupersededRequestError,
   isWorkflowCancelledError,
 } from './types';
-import { buildServiceRuntimeConfig } from './service-runtime-config';
 import {
   extractCompactionPressure,
   shouldBypassRetryAndFallback,
   toAgentRuntimeError,
 } from './listener-utils';
+import {
+  setupCompactRequestListener,
+  setupCompactStateListener,
+} from './compact-listener';
 
 const logger = getLogger('useLLMListener');
 const startupLifecycleLogKeys = new Set<string>();
@@ -109,6 +104,8 @@ export function useLLMListener({
     let isMounted = true;
     let unlisten: (() => void) | undefined;
     let unlistenCancel: (() => void) | undefined;
+    let unlistenCompact: (() => void) | undefined;
+    let unlistenCompactState: (() => void) | undefined;
 
     const setupListener = async () => {
       logStartupLifecycleOnce(
@@ -418,150 +415,46 @@ export function useLLMListener({
     };
 
     setupCancelListener();
+    void (async () => {
+      try {
+        const [compactRequestCleanup, compactStateCleanup] = await Promise.all([
+          setupCompactRequestListener({
+            settingsRef,
+            clearCompactionPressureForSession,
+            setCompactedRangeForSession,
+            isMounted: () => isMounted,
+            onRegistered: () => {
+              logStartupLifecycleOnce(
+                'compact-request-registered',
+                'LLM compact request listener registered',
+              );
+            },
+          }),
+          setupCompactStateListener({
+            setCompactingFromEvent,
+            setAwaitingCompactForSession,
+            isMounted: () => isMounted,
+            onRegistered: () => {
+              logStartupLifecycleOnce(
+                'compact-state-registered',
+                'LLM compact state listener registered',
+              );
+            },
+          }),
+        ]);
 
-    // --- Compact request listener ---
-    let unlistenCompact: (() => void) | undefined;
-
-    const setupCompactListener = async () => {
-      const unlistenFn = await listen<CompactRequest>(
-        'llm:compact-request',
-        async (event) => {
-          const {
-            sessionId,
-            messages: rawMessages,
-            fromId,
-            toId,
-            parentRequest,
-          } = event.payload;
-          const messages = rawMessages.map(normalizeRustMessage);
-          logger.info(
-            `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
-          );
-
-          const settings = settingsRef.current;
-          if (!settings) {
-            logger.error('No settings available for compact request');
-            await handleCompactError(
-              sessionId,
-              toAgentRuntimeError(
-                new Error('No settings available for compact request'),
-              ),
-            );
-            return;
-          }
-
-          const provider = (parentRequest?.provider ??
-            settings.preferredModel.provider) as AIServiceProvider;
-          const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
-          const model = parentRequest?.model ?? settings.preferredModel.model;
-          const providerConfig: AIServiceConfig =
-            settings.serviceConfigs?.[provider] ?? {};
-
-          try {
-            const runtimeConfig = buildServiceRuntimeConfig(
-              settings,
-              providerConfig,
-            );
-            const service: AIContextCompactionService =
-              AIServiceFactory.getService(provider, apiKey, providerConfig);
-            const summary = await service.compact(messages, {
-              modelName: model,
-              systemPrompt: parentRequest?.systemPrompt,
-              sessionContext: parentRequest?.sessionContext,
-              availableTools: parentRequest?.availableTools,
-              config: runtimeConfig,
-            });
-            await handleCompactResponse(sessionId, fromId, toId, summary);
-            setCompactedRangeForSession(sessionId, {
-              fromId,
-              toId,
-              summary,
-            });
-            clearCompactionPressureForSession(sessionId);
-            logger.info(`✅ Compact summary stored: session=${sessionId}`);
-          } catch (error) {
-            const compactRuntimeError = toAgentRuntimeError(error);
-            logger.error(
-              `Compact LLM call failed: session=${sessionId}`,
-              compactRuntimeError,
-            );
-            await handleCompactError(sessionId, compactRuntimeError);
-          }
-        },
-      );
-
-      if (!isMounted) {
-        unlistenFn();
-      } else {
-        unlistenCompact = unlistenFn;
-        logStartupLifecycleOnce(
-          'compact-request-registered',
-          'LLM compact request listener registered',
-        );
-      }
-    };
-
-    setupCompactListener();
-
-    // --- Compact state listener (Rust-owned: compacting = true/false) ---
-    let unlistenCompactState: (() => void) | undefined;
-
-    const setupCompactStateListener = async () => {
-      const unlistenFn = await listen<{
-        sessionId: string;
-        sessionName?: string;
-        compacting: boolean;
-        awaitingCompact: boolean;
-        phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
-        error?: string;
-      }>('llm:compact-state', (event) => {
-        const {
-          sessionId,
-          sessionName,
-          compacting,
-          awaitingCompact,
-          phase,
-          error,
-        } = event.payload;
-        const toastId = `compact-${sessionId}`;
-        const description = sessionName ?? sessionId.slice(0, 8);
-
-        setCompactingFromEvent(sessionId, compacting);
-        setAwaitingCompactForSession(sessionId, awaitingCompact);
-
-        if (phase === 'STARTED') {
-          toast.loading(`Compacting context…`, {
-            id: toastId,
-            description,
-            duration: Infinity,
-          });
-        } else if (phase === 'SUCCEEDED') {
-          toast.success(`Context compacted`, {
-            id: toastId,
-            description,
-            duration: 3000,
-          });
-        } else if (phase === 'FAILED') {
-          toast.error(`Compaction failed`, {
-            id: toastId,
-            description: error ? `${description} - ${error}` : description,
-            duration: 4000,
-          });
+        if (!isMounted) {
+          compactRequestCleanup?.();
+          compactStateCleanup?.();
+          return;
         }
-      });
 
-      if (!isMounted) {
-        unlistenFn();
-      } else {
-        unlistenCompactState = unlistenFn;
-        logStartupLifecycleOnce(
-          'compact-state-registered',
-          'LLM compact state listener registered',
-        );
+        unlistenCompact = compactRequestCleanup;
+        unlistenCompactState = compactStateCleanup;
+      } catch (error) {
+        logger.error('Failed to register compact listeners', error);
       }
-    };
-
-    setupCompactStateListener();
+    })();
 
     return () => {
       isMounted = false;
@@ -575,11 +468,9 @@ export function useLLMListener({
       }
       if (unlistenCompact) {
         unlistenCompact();
-        logger.info('LLM compact request listener cleaned up');
       }
       if (unlistenCompactState) {
         unlistenCompactState();
-        logger.info('LLM compact state listener cleaned up');
       }
     };
   }, [cancelCompletionRequest]); // cancel handler identity must stay in sync

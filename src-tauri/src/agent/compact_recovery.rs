@@ -4,57 +4,27 @@ use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent, CompactStat
 use crate::agent::state::AgentSession;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CompactErrorAction {
-    None,
-    FinalizeWorkflow,
-}
 
 async fn clear_compaction_state(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
     clear_last_compacted_tail_id: bool,
 ) {
-    let handles = {
+    let compaction = {
         let active = active_sessions.read().await;
-        active.get(session_id).map(|session| {
-            session.compaction.in_flight.store(false, Ordering::SeqCst);
-            session
-                .compaction
-                .awaiting_completion
-                .store(false, Ordering::SeqCst);
-            session
-                .compaction
-                .finalize_workflow_after_compact
-                .store(false, Ordering::SeqCst);
-            (
-                session.compaction.started_at_ms.clone(),
-                clear_last_compacted_tail_id
-                    .then(|| session.compaction.last_compacted_tail_id.clone()),
-                session.compaction.deferred_workflow_step.clone(),
-            )
-        })
+        active
+            .get(session_id)
+            .map(|session| session.compaction.clone())
     };
 
-    let Some((
-        compact_started_at_ms_handle,
-        last_compacted_tail_id_handle,
-        deferred_workflow_step_handle,
-    )) = handles
-    else {
+    let Some(compaction) = compaction else {
         return;
     };
-
-    if let Some(last_compacted_tail_id_handle) = last_compacted_tail_id_handle {
-        *last_compacted_tail_id_handle.write().await = None;
-    }
-
-    *deferred_workflow_step_handle.write().await = None;
-    *compact_started_at_ms_handle.write().await = None;
+    compaction
+        .clear_runtime_state(clear_last_compacted_tail_id)
+        .await;
 }
 
 pub async fn clear_compact_in_flight(
@@ -70,56 +40,34 @@ pub async fn handle_compact_error_state(
     dispatcher: &dyn AgentEventDispatcher,
     session_id: String,
     error: AgentRuntimeError,
-) -> Result<CompactErrorAction, String> {
-    let (
-        was_awaiting,
-        should_finalize_after_compact,
-        deferred_workflow_step,
-        session_name,
-        compact_started_at_ms_handle,
-    ) = {
+) -> Result<(), String> {
+    let (snapshot, session_name) = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             (
-                session
-                    .compaction
-                    .awaiting_completion
-                    .load(Ordering::SeqCst),
-                session
-                    .compaction
-                    .finalize_workflow_after_compact
-                    .load(Ordering::SeqCst),
-                session
-                    .compaction
-                    .deferred_workflow_step
-                    .read()
-                    .await
-                    .clone(),
+                session.compaction.snapshot().await,
                 session
                     .metadata
                     .name
                     .clone()
                     .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
-                Some(session.compaction.started_at_ms.clone()),
             )
         } else {
             (
-                false,
-                false,
-                None,
+                crate::agent::state::CompactionSnapshot {
+                    in_flight: false,
+                    last_compacted_tail_id: None,
+                    awaiting_completion: false,
+                    deferred_workflow_step: None,
+                    started_at_ms: None,
+                },
                 session_id.chars().take(8).collect::<String>(),
-                None,
             )
         }
     };
-    let elapsed_ms = if let Some(compact_started_at_ms_handle) = compact_started_at_ms_handle {
-        compact_started_at_ms_handle
-            .read()
-            .await
-            .map(|started_at| chrono::Utc::now().timestamp_millis() - started_at)
-    } else {
-        None
-    };
+    let elapsed_ms = snapshot
+        .started_at_ms
+        .map(|started_at| chrono::Utc::now().timestamp_millis() - started_at);
 
     let error_code = error
         .details
@@ -143,10 +91,12 @@ pub async fn handle_compact_error_state(
     log::warn!(
         "❌ Compaction failed: session={}, mode={}, elapsed_ms={}, error_code={}, message={}",
         session_id,
-        if was_awaiting {
+        if snapshot.awaiting_completion {
             "preflight"
+        } else if snapshot.deferred_workflow_step.is_some() {
+            "post-response"
         } else {
-            "background"
+            "manual"
         },
         elapsed_ms
             .map(|value| value.to_string())
@@ -155,7 +105,7 @@ pub async fn handle_compact_error_state(
         error.display_message
     );
 
-    if was_awaiting || deferred_workflow_step.is_some() {
+    if snapshot.awaiting_completion || snapshot.deferred_workflow_step.is_some() {
         log::warn!(
             "Blocking compaction failed for session {}. Failing workflow.",
             session_id
@@ -173,11 +123,7 @@ pub async fn handle_compact_error_state(
             session_id,
             error: error.clone(),
         })?;
-
-        Ok(CompactErrorAction::None)
-    } else if should_finalize_after_compact {
-        Ok(CompactErrorAction::FinalizeWorkflow)
-    } else {
-        Ok(CompactErrorAction::None)
     }
+
+    Ok(())
 }
