@@ -916,6 +916,28 @@
       "thinkingProcess": "생각 프로세스",
       "thinkingProcessWithTime": "생각 프로세스 {{time}}",
       "thinking": "생각 중..."
+    },
+    "start": {
+      "heroTitle": "오늘 무엇을 하고 싶으신가요?",
+      "heroSubtitle": "새로운 자율 세션을 시작하려면 어시스턴트를 선택하세요.",
+      "builtinAssistants": "내장 어시스턴트",
+      "myAssistants": "내 어시스턴트",
+      "assistantsLoadFailed": "어시스턴트를 불러오지 못했습니다.",
+      "noAssistantsAvailable": "아직 사용 가능한 어시스턴트가 없습니다.",
+      "createAssistant": "어시스턴트 생성",
+      "manageAssistants": "+ 어시스턴트 관리",
+      "playbookNotFound": "플레이북을 찾을 수 없습니다",
+      "assistantNotFound": "어시스턴트를 찾을 수 없습니다",
+      "startingPlaybook": "플레이북 시작 중: {{goal}}",
+      "failedToStartPlaybookSession": "플레이북 세션을 시작하지 못했습니다",
+      "startingSession": "세션 시작 중..."
+    },
+    "chat": {
+      "loadingSession": "세션 불러오는 중...",
+      "playbookStartedAutomatically": "플레이북이 자동으로 시작되었습니다",
+      "failedToStartPlaybookWorkflow": "플레이북 워크플로우를 시작하지 못했습니다",
+      "sessionContextUnavailable": "세션 컨텍스트를 사용할 수 없습니다.",
+      "sessionNotFoundOrFailed": "세션을 찾을 수 없거나 불러오지 못했습니다."
     }
   },
   "scheduledTasks": {
