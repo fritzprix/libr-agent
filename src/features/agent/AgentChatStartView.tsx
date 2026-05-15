@@ -97,9 +97,12 @@ export default function AgentChatStartView() {
         }
 
         if (toastId)
-          toast.loading(t('agent.start.startingPlaybook', { goal: playbook.goal }), {
-            id: toastId,
-          });
+          toast.loading(
+            t('agent.start.startingPlaybook', { goal: playbook.goal }),
+            {
+              id: toastId,
+            },
+          );
 
         const session = await createSession({
           assistant: fullAssistant,
@@ -227,9 +230,7 @@ export default function AgentChatStartView() {
 
         {!loading && error && (
           <div className="text-center text-muted-foreground py-16">
-            <p className="text-sm">
-              {t('agent.start.assistantsLoadFailed')}
-            </p>
+            <p className="text-sm">{t('agent.start.assistantsLoadFailed')}</p>
           </div>
         )}
 
@@ -237,7 +238,9 @@ export default function AgentChatStartView() {
           <div className="text-center text-muted-foreground py-16">
             <p className="text-sm">{t('agent.start.noAssistantsAvailable')}</p>
             <Link to="/assistants">
-              <Button className="mt-4">{t('agent.start.createAssistant')}</Button>
+              <Button className="mt-4">
+                {t('agent.start.createAssistant')}
+              </Button>
             </Link>
           </div>
         )}
