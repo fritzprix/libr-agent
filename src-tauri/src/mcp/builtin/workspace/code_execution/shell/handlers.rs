@@ -53,6 +53,29 @@ impl WorkspaceServer {
         None
     }
 
+    fn sync_timeout_exceeded_result(&self, timeout_secs: u64, max_timeout: u64) -> MCPResult {
+        guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "Timeout ({} seconds) exceeds the sync execution limit ({} seconds)",
+                timeout_secs, max_timeout
+            ),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            format!(
+                "Use {} for commands longer than {} seconds",
+                "spawnProcess", max_timeout
+            ),
+            "Background processes do not block the active agent workflow".to_string(),
+            format!(
+                "{} and {} stay bounded because they run synchronously",
+                RUN_SHELL_TOOL, PERSISTENT_SHELL_TOOL
+            ),
+        ])
+        .to_mcp_result()
+    }
+
     pub async fn handle_execute_shell(
         &self,
         args: Value,
@@ -102,7 +125,15 @@ impl WorkspaceServer {
         }
 
         // Sync mode: persistent shell execution
-        let timeout_secs = utils::resolve_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+        let requested_timeout = args.get("timeout").and_then(|v| v.as_u64());
+        let timeout_secs = match utils::resolve_sync_timeout(requested_timeout) {
+            Ok(timeout) => timeout,
+            Err(max_timeout) => {
+                let attempted_timeout =
+                    requested_timeout.unwrap_or_else(utils::default_sync_execution_timeout);
+                return Ok(self.sync_timeout_exceeded_result(attempted_timeout, max_timeout));
+            }
+        };
 
         // Execute with persistent shell (state preservation)
         self.execute_shell_persistent(raw_command, PERSISTENT_SHELL_TOOL, timeout_secs, session_id)
@@ -159,7 +190,15 @@ impl WorkspaceServer {
         }
 
         // Get timeout (use default if not specified)
-        let timeout_secs = utils::resolve_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+        let requested_timeout = args.get("timeout").and_then(|v| v.as_u64());
+        let timeout_secs = match utils::resolve_sync_timeout(requested_timeout) {
+            Ok(timeout) => timeout,
+            Err(max_timeout) => {
+                let attempted_timeout =
+                    requested_timeout.unwrap_or_else(utils::default_sync_execution_timeout);
+                return Ok(self.sync_timeout_exceeded_result(attempted_timeout, max_timeout));
+            }
+        };
 
         // Execute with configured isolation level (always workspace root anchored)
         let isolation_level = utils::get_shell_isolation_level().await;

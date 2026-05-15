@@ -23,9 +23,9 @@ pub fn create_run_shell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            None,
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds"),
+            Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
+            crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
+            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
         ),
     );
 
@@ -33,8 +33,8 @@ pub fn create_run_shell_tool() -> MCPTool {
         name: "runShell".to_string(),
         title: Some("Run Shell Command (Isolated)".to_string()),
         description: "Run a synchronous shell command (bash/sh). Stateless — each call starts fresh at workspace root.\n\
-                      Use 'cd dir && command' for subdirectories.\n\
-                      For persistent cd/env vars: runInPersistentShell. For long-running or non-blocking tasks: spawnProcess."
+                       Use 'cd dir && command' for subdirectories.\n\
+                      For persistent cd/env vars: runInPersistentShell. Sync execution is capped at 300 seconds; use spawnProcess for longer or non-blocking tasks."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -63,9 +63,9 @@ pub fn create_execute_shell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            None,
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds"),
+            Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
+            crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
+            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
         ),
     );
     props.insert(
@@ -99,6 +99,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         description: "Run a shell command in a persistent session that preserves working directory and env vars across calls.\n\
                        Use when you need 'cd' to stick, 'export' to carry forward, or interactive commands (sudo).\n\
                        File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current directory automatically.\n\
+                       Sync execution is capped at 300 seconds; use spawnProcess for longer work.\n\
                        For simple stateless commands: runShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
@@ -169,9 +170,9 @@ pub fn create_run_powershell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            None,
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds"),
+            Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
+            crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
+            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
         ),
     );
 
@@ -212,9 +213,9 @@ pub fn create_execute_shell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            None,
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds"),
+            Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
+            crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
+            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
         ),
     );
     props.insert("requireUserInput".to_string(), {

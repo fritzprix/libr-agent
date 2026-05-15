@@ -7,6 +7,7 @@ use std::path::{Component, Path};
 pub const INTERNAL_WORKSPACE_STATE_DIR: &str = ".libragent";
 pub const INTERNAL_WORKSPACE_TMP_DIR: &str = "tmp";
 pub const INTERNAL_WORKSPACE_EXPORTS_DIR: &str = "exports";
+pub const MAX_SYNC_EXECUTION_TIMEOUT_SECONDS: u64 = 300;
 
 /// Get configured shell isolation level from settings
 /// Returns the configured isolation level or Medium as default
@@ -61,9 +62,27 @@ pub async fn get_diff_context_lines() -> usize {
     }
 }
 
-/// Resolve a timeout value, applying the configured default when absent
-pub fn resolve_timeout(timeout: Option<u64>) -> u64 {
-    timeout.unwrap_or_else(crate::config::default_execution_timeout)
+pub fn default_sync_execution_timeout() -> u64 {
+    crate::config::default_execution_timeout().min(MAX_SYNC_EXECUTION_TIMEOUT_SECONDS)
+}
+
+pub fn max_sync_execution_timeout() -> u64 {
+    MAX_SYNC_EXECUTION_TIMEOUT_SECONDS
+}
+
+/// Resolve the timeout for synchronous shell execution.
+///
+/// Sync shell tools block the agent workflow, so they must stay bounded and
+/// redirect longer work to background process APIs instead.
+pub fn resolve_sync_timeout(timeout: Option<u64>) -> Result<u64, u64> {
+    let resolved = timeout.unwrap_or_else(default_sync_execution_timeout);
+    let max_timeout = max_sync_execution_timeout();
+
+    if resolved > max_timeout {
+        Err(max_timeout)
+    } else {
+        Ok(resolved)
+    }
 }
 
 /// Remove sensitive flags from command for logging

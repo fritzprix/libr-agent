@@ -37,6 +37,40 @@ fn self_target_session_action_result(
     .to_mcp_result()
 }
 
+pub fn parse_message_to_session_wait_config(
+    args: &Value,
+) -> Result<(bool, Option<u64>), MCPResult> {
+    let wait_for_response = args
+        .get("waitForResponse")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    if !wait_for_response {
+        return Ok((false, None));
+    }
+
+    let timeout_seconds = match args.get("timeout") {
+        None => 3600,
+        Some(value) => match value.as_u64() {
+            Some(timeout) if (1..=3600).contains(&timeout) => timeout,
+            _ => {
+                return Err(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "timeout must be an integer between 1 and 3600 seconds".to_string(),
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "Omit timeout to use the default 3600-second wait window".to_string(),
+                    "Use a value between 1 and 3600 when waitForResponse=true".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        },
+    };
+
+    Ok((true, Some(timeout_seconds)))
+}
+
 async fn start_session_impl(
     server: &AgentServer,
     args: Value,
@@ -220,27 +254,9 @@ pub async fn message_to_session(
         .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
     let message_text = read_required_string(&args, "message")?;
-    let wait_for_response = args
-        .get("waitForResponse")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
-    let timeout_seconds = match args.get("timeout") {
-        None => 3600,
-        Some(value) => match value.as_u64() {
-            Some(timeout) if (1..=3600).contains(&timeout) => timeout,
-            _ => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    "timeout must be an integer between 1 and 3600 seconds".to_string(),
-                    ToolGroup::Agent,
-                )
-                .with_guidance(vec![
-                    "Omit timeout to use the default 3600-second wait window".to_string(),
-                    "Use a value between 1 and 3600 when waitForResponse=true".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        },
+    let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
+        Ok(config) => config,
+        Err(result) => return Ok(result),
     };
     if let Err(result) = load_accessible_delegated_session(
         manager,
@@ -273,7 +289,7 @@ pub async fn message_to_session(
             json!({
                 "sessionId": session_id,
                 "wait": true,
-                "timeout": timeout_seconds
+                "timeout": timeout_seconds.expect("wait timeout should exist when waiting")
             }),
             caller_session_id,
         )
