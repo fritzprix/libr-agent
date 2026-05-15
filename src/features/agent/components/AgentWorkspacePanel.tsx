@@ -1,4 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  type MutableRefObject,
+} from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,12 +47,31 @@ import type { FileNode } from './workspace-panel/types';
 
 const logger = getLogger('AgentWorkspacePanel');
 
+async function withNativeOpenLock(
+  sessionId: string | undefined,
+  isOpeningNative: boolean,
+  lockRef: MutableRefObject<boolean>,
+  setIsOpeningNative: (value: boolean) => void,
+  action: (sessionId: string) => Promise<void>,
+) {
+  if (!sessionId || isOpeningNative || lockRef.current) return;
+
+  lockRef.current = true;
+  setIsOpeningNative(true);
+  try {
+    await action(sessionId);
+  } finally {
+    setIsOpeningNative(false);
+    lockRef.current = false;
+  }
+}
+
 export function AgentWorkspacePanel() {
   const { t } = useTranslation();
   const { openWorkspaceFileWithDefaultApp } = useRustBackend();
   const { session } = useAgentSessionState();
 
-  const [rootPath] = useState<string>('./');
+  const rootPath = './';
   const panelRef = useRef<HTMLDivElement>(null);
   const { subscribe } = useDnDContext();
   const [dragState, setDragState] = useState<{ isOver: boolean }>({
@@ -163,32 +188,32 @@ export function AgentWorkspacePanel() {
   }, [subscribe, handleWorkspacePathDrop]);
 
   const handleOpenInExplorer = async () => {
-    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
-    openingNativeLock.current = true;
-    setIsOpeningNative(true);
     try {
-      await openWorkspaceInExplorer(session.id);
+      await withNativeOpenLock(
+        session?.id,
+        isOpeningNative,
+        openingNativeLock,
+        setIsOpeningNative,
+        openWorkspaceInExplorer,
+      );
     } catch (error) {
       logger.error('Failed to open explorer', error);
       toast.error(t('agent.workspace.openExplorerError', { error }));
-    } finally {
-      setIsOpeningNative(false);
-      openingNativeLock.current = false;
     }
   };
 
   const handleOpenInTerminal = async () => {
-    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
-    openingNativeLock.current = true;
-    setIsOpeningNative(true);
     try {
-      await openWorkspaceInTerminal(session.id);
+      await withNativeOpenLock(
+        session?.id,
+        isOpeningNative,
+        openingNativeLock,
+        setIsOpeningNative,
+        openWorkspaceInTerminal,
+      );
     } catch (error) {
       logger.error('Failed to open terminal', error);
       toast.error(t('agent.workspace.openTerminalError', { error }));
-    } finally {
-      setIsOpeningNative(false);
-      openingNativeLock.current = false;
     }
   };
 

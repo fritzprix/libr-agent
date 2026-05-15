@@ -31,8 +31,8 @@ import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
 import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
 import { AgentPlanningPanel } from './components/AgentPlanningPanel';
 import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
+import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
 import { getLogger } from '@/lib/logger';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
 
 const logger = getLogger('AgentChatView');
@@ -40,17 +40,6 @@ const logger = getLogger('AgentChatView');
 function getSessionLoadingLabel(isStartingSession: boolean): string {
   return isStartingSession ? 'Starting session...' : 'Loading session...';
 }
-
-const InitializationStatusDisplay = () => {
-  const { initializationStep } = useAgentSessionState();
-  if (!initializationStep) return null;
-
-  return (
-    <span className="animate-in fade-in slide-in-from-bottom-1 duration-300">
-      {initializationStep.step}
-    </span>
-  );
-};
 
 /**
  * Agent Chat View - Compound Component Pattern
@@ -200,7 +189,7 @@ export default function AgentChatView() {
   const shouldProvideSession =
     optionalSessionState === undefined && !!routeSessionId;
 
-  if (shouldProvideSession && routeSessionId) {
+  if (shouldProvideSession) {
     return (
       <AgentSessionProvider sessionId={routeSessionId}>
         <AgentChatView />
@@ -221,34 +210,18 @@ export default function AgentChatView() {
   const isStartingSession =
     session?.status === 'idle' && session?.id === routeSessionId;
   const sessionLoadingLabel = getSessionLoadingLabel(isStartingSession);
+  const initializationStep = optionalSessionState.initializationStep?.step;
   const shouldShowBlockingLoader = isSessionLoading && !session;
   const shouldShowOptimisticLoadingOverlay = isSessionLoading && !!session;
 
   return (
     <AgentResourceAttachmentProvider sessionId={attachmentSessionId}>
       {shouldShowBlockingLoader ? (
-        <div className="flex h-full items-center justify-center p-4">
-          <div className="flex flex-col items-center gap-3">
-            <LoadingSpinner
-              size="lg"
-              className="border-4"
-              label={sessionLoadingLabel}
-            />
-
-            <div className="flex flex-col items-center gap-1">
-              <div
-                className="text-muted-foreground font-medium animate-pulse"
-                aria-hidden="true"
-              >
-                {sessionLoadingLabel}
-              </div>
-
-              <div className="text-xs text-muted-foreground/70 h-4">
-                <InitializationStatusDisplay />
-              </div>
-            </div>
-          </div>
-        </div>
+        <SessionLoadingOverlay
+          label={sessionLoadingLabel}
+          initializationStep={initializationStep}
+          variant="blocking"
+        />
       ) : !session ? (
         <div className="flex h-full items-center justify-center p-4">
           <div className="text-destructive">
@@ -266,40 +239,14 @@ export default function AgentChatView() {
           </AgentChatProvider>
 
           {shouldShowOptimisticLoadingOverlay && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
-              <div className="flex flex-col items-center gap-3 rounded-xl border border-border/60 bg-background/90 px-6 py-5 shadow-lg">
-                <LoadingSpinner
-                  size="lg"
-                  className="border-4"
-                  label={sessionLoadingLabel}
-                />
-
-                <div className="flex flex-col items-center gap-1">
-                  <div
-                    className="text-muted-foreground font-medium"
-                    aria-hidden="true"
-                  >
-                    {sessionLoadingLabel}
-                  </div>
-
-                  <div className="text-xs text-muted-foreground/70 h-4">
-                    <InitializationStatusDisplay />
-                  </div>
-                </div>
-              </div>
-            </div>
+            <SessionLoadingOverlay
+              label={sessionLoadingLabel}
+              initializationStep={initializationStep}
+              variant="overlay"
+            />
           )}
         </div>
       )}
     </AgentResourceAttachmentProvider>
   );
 }
-
-// Compound component exports
-AgentChatView.Header = AgentChatHeader;
-AgentChatView.StatusBar = AgentChatStatusBar;
-AgentChatView.Messages = AgentChatMessages;
-AgentChatView.Input = AgentChatInput;
-AgentChatView.AttachedFiles = AgentChatAttachedFiles;
-AgentChatView.WorkspacePanel = AgentWorkspacePanel;
-AgentChatView.PlanningPanel = AgentPlanningPanel;
