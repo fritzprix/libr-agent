@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+} from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
@@ -35,11 +42,120 @@ import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
 import { getLogger } from '@/lib/logger';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatView');
 
-function getSessionLoadingLabel(isStartingSession: boolean, t: (key: string) => string): string {
-  return isStartingSession ? t('agent.start.startingSession') : t('agent.chat.loadingSession');
+function getSessionLoadingLabel(
+  isStartingSession: boolean,
+  t: (key: string) => string,
+): string {
+  return isStartingSession
+    ? t('agent.start.startingSession')
+    : t('agent.chat.loadingSession');
+}
+
+interface DesktopPanelRailProps {
+  side: 'left' | 'right';
+  open: boolean;
+  children: ReactNode;
+}
+
+function DesktopPanelRail({ side, open, children }: DesktopPanelRailProps) {
+  const railRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) {
+      return;
+    }
+
+    if (!open) {
+      rail.setAttribute('inert', '');
+      return;
+    }
+
+    rail.removeAttribute('inert');
+  }, [open]);
+
+  return (
+    <aside
+      ref={railRef}
+      aria-hidden={!open}
+      data-open={open}
+      className={cn(
+        'absolute inset-y-0 z-20 w-80 transition-transform duration-300 ease-out',
+        !open && 'pointer-events-none',
+        side === 'left'
+          ? 'left-0 data-[open=false]:-translate-x-full'
+          : 'right-0 data-[open=false]:translate-x-full',
+      )}
+    >
+      {children}
+    </aside>
+  );
+}
+
+interface MobilePanelSheetProps {
+  description: string;
+  open: boolean;
+  side: 'left' | 'right';
+  title: string;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}
+
+function MobilePanelSheet({
+  children,
+  description,
+  open,
+  side,
+  title,
+  onOpenChange,
+}: MobilePanelSheetProps) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side={side}
+        className="w-full max-w-none gap-0 p-0 sm:max-w-sm"
+      >
+        <SheetHeader className="sr-only">
+          <SheetTitle>{title}</SheetTitle>
+          <SheetDescription>{description}</SheetDescription>
+        </SheetHeader>
+        <div className="h-full pt-12">{children}</div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function AgentChatComposer() {
+  return (
+    <div className="relative shrink-0 px-4 pb-4">
+      <div
+        aria-hidden="true"
+        style={{ height: 'var(--agent-chat-composer-overlap, 64px)' }}
+      />
+      <div
+        className="relative z-10"
+        style={{
+          marginTop: 'calc(var(--agent-chat-composer-overlap, 64px) * -1)',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
+        <AgentChatAttachedFiles />
+        <AgentChatInput />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -60,8 +176,11 @@ function getSessionLoadingLabel(isStartingSession: boolean, t: (key: string) => 
  */
 
 function AgentChatInner() {
-  const { showWorkspacePanel } = useAgentWorkspace();
-  const { showPlanningPanel } = useAgentPlanning();
+  const isMobile = useIsMobile();
+  const { closeWorkspacePanel, openWorkspacePanel, showWorkspacePanel } =
+    useAgentWorkspace();
+  const { closePlanningPanel, openPlanningPanel, showPlanningPanel } =
+    useAgentPlanning();
   const { t } = useTranslation();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -69,6 +188,10 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
+  const [hasOpenedWorkspaceDesktop, setHasOpenedWorkspaceDesktop] =
+    useState(showWorkspacePanel);
+  const [hasOpenedPlanningDesktop, setHasOpenedPlanningDesktop] =
+    useState(showPlanningPanel);
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
   const assistantId = session?.assistant?.id;
@@ -139,47 +262,103 @@ function AgentChatInner() {
     workflowStatus,
   ]);
 
+  useEffect(() => {
+    if (!isMobile && showWorkspacePanel) {
+      setHasOpenedWorkspaceDesktop(true);
+    }
+  }, [isMobile, showWorkspacePanel]);
+
+  useEffect(() => {
+    if (!isMobile && showPlanningPanel) {
+      setHasOpenedPlanningDesktop(true);
+    }
+  }, [isMobile, showPlanningPanel]);
+
+  const handleWorkspaceSheetOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        openWorkspacePanel();
+        return;
+      }
+      closeWorkspacePanel();
+    },
+    [closeWorkspacePanel, openWorkspacePanel],
+  );
+
+  const handlePlanningSheetOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        openPlanningPanel();
+        return;
+      }
+      closePlanningPanel();
+    },
+    [closePlanningPanel, openPlanningPanel],
+  );
+
   return (
     <>
-      <div className="flex h-full w-full overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]">
-        {/* Workspace side panel */}
-        {showWorkspacePanel && <AgentWorkspacePanel />}
-
-        {/* Main chat area - components rendered directly inside provider scope */}
+      <div
+        className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]"
+        style={
+          {
+            '--agent-chat-composer-overlap': '64px',
+          } as CSSProperties
+        }
+      >
+        <AgentChatHeader />
         <div
-          className="flex-1 flex flex-col min-h-0 min-w-0"
-          style={
-            {
-              '--agent-chat-composer-overlap': '64px',
-            } as CSSProperties
-          }
+          className="relative flex min-h-0 flex-1 overflow-hidden"
+          data-testid="agent-chat-body"
         >
-          <AgentChatHeader />
-          <AgentChatStatusBar />
-          <AgentChatMessages />
+          {!isMobile && hasOpenedWorkspaceDesktop && (
+            <DesktopPanelRail side="left" open={showWorkspacePanel}>
+              <AgentWorkspacePanel
+                isVisible={showWorkspacePanel}
+                variant="rail"
+              />
+            </DesktopPanelRail>
+          )}
 
-          <div className="relative shrink-0 px-4 pb-4">
-            <div
-              aria-hidden="true"
-              style={{ height: 'var(--agent-chat-composer-overlap, 64px)' }}
-            />
-            <div
-              className="relative z-10"
-              style={{
-                marginTop:
-                  'calc(var(--agent-chat-composer-overlap, 64px) * -1)',
-              }}
-            >
-              <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
-              <AgentChatAttachedFiles />
-              <AgentChatInput />
-            </div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <AgentChatStatusBar />
+            <AgentChatMessages />
           </div>
-        </div>
 
-        {/* Planning side panel */}
-        {showPlanningPanel && <AgentPlanningPanel />}
+          {!isMobile && hasOpenedPlanningDesktop && (
+            <DesktopPanelRail side="right" open={showPlanningPanel}>
+              <AgentPlanningPanel
+                isVisible={showPlanningPanel}
+                variant="rail"
+              />
+            </DesktopPanelRail>
+          )}
+        </div>
+        <AgentChatComposer />
       </div>
+
+      {isMobile && (
+        <>
+          <MobilePanelSheet
+            open={showWorkspacePanel}
+            onOpenChange={handleWorkspaceSheetOpenChange}
+            side="left"
+            title={t('agent.workspace.title')}
+            description={t('agent.workspace.title')}
+          >
+            <AgentWorkspacePanel isVisible variant="sheet" />
+          </MobilePanelSheet>
+          <MobilePanelSheet
+            open={showPlanningPanel}
+            onOpenChange={handlePlanningSheetOpenChange}
+            side="right"
+            title={t('agent.planning.title')}
+            description={t('agent.planning.title')}
+          >
+            <AgentPlanningPanel isVisible variant="sheet" />
+          </MobilePanelSheet>
+        </>
+      )}
       <AgentPlanningUpdates />
     </>
   );
@@ -203,7 +382,9 @@ export default function AgentChatView() {
   if (!optionalSessionState) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <div className="text-destructive">{t('agent.chat.sessionContextUnavailable')}</div>
+        <div className="text-destructive">
+          {t('agent.chat.sessionContextUnavailable')}
+        </div>
       </div>
     );
   }
