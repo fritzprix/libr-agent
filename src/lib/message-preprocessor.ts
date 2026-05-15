@@ -278,7 +278,9 @@ export function estimateMCPContentTokens(content: MCPContent[]): number {
         );
         break;
       case 'tool_call':
-        total += estimateTextTokens(`${item.name ?? ''} ${item.arguments ?? ''}`);
+        total += estimateTextTokens(
+          `${item.name ?? ''} ${item.arguments ?? ''}`,
+        );
         break;
       case 'thinking':
         total += estimateTextTokens(item.thinking ?? '');
