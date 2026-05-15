@@ -223,10 +223,7 @@ pub async fn read_message(_server: &HistoryServer, args: Value) -> Result<MCPRes
             })
             .unwrap_or_default(),
     )
-    .to_mcp_result_with_data(Some(json!({
-        "message": response,
-        "rawMessage": message
-    }))))
+    .to_mcp_result_with_data(Some(json!(response))))
 }
 
 pub async fn search_history(
