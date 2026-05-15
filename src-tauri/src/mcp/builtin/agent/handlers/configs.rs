@@ -114,6 +114,40 @@ pub async fn list_agents_or_sessions(
     }
 }
 
+fn extract_pagination_args(args: &Value) -> (usize, usize) {
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|value| value.max(1) as usize)
+        .unwrap_or(20);
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+    (limit, offset)
+}
+
+fn build_pagination_note(offset: usize, page_len: usize, total: usize, limit: usize) -> String {
+    if page_len == 0 {
+        return String::new();
+    }
+
+    let start = offset + 1;
+    let end = offset + page_len;
+
+    if end < total {
+        format!(
+            "*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*\n",
+            start,
+            end,
+            total,
+            offset + limit
+        )
+    } else if offset > 0 {
+        format!("*(Showing {} to {} of {} items)*\n", start, end, total)
+    } else {
+        String::new()
+    }
+}
+
 async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPResult, String> {
     use crate::repositories::AssistantRepository;
 
@@ -126,8 +160,7 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             .retain(|a| a.name.to_lowercase().contains(&q) || a.config.to_lowercase().contains(&q));
     }
 
-    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
-    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let (limit, offset) = extract_pagination_args(args);
 
     let total = agents.len();
     let paged_agents: Vec<_> = agents.into_iter().skip(offset).take(limit).collect();
@@ -146,28 +179,6 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             offset, limit
         ));
     }
-
-    let has_more = offset + paged_agents.len() < total;
-    let truncation_note = if has_more {
-        format!(
-            "\n\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
-            offset + 1,
-            offset + paged_agents.len(),
-            total,
-            offset + limit
-        )
-    } else if offset > 0 {
-        format!(
-            "\n\n*(Showing {} to {} of {} items)*",
-            offset + 1,
-            offset + paged_agents.len(),
-            total
-        )
-    } else {
-        String::new()
-    };
-    text_summary.push_str(&truncation_note);
-    text_summary.push('\n');
 
     for agent in paged_agents {
         let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
@@ -206,6 +217,12 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             "externalMcpServers": external_ids,
             "externalMcpServerLabels": external_labels
         }));
+    }
+
+    let pagination_note = build_pagination_note(offset, results.len(), total, limit);
+    if !pagination_note.is_empty() {
+        text_summary.push('\n');
+        text_summary.push_str(&pagination_note);
     }
 
     let hint = SuccessHint::new(
@@ -254,14 +271,15 @@ async fn list_delegated_sessions(
         }
     };
 
-    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
-    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let (limit, offset) = extract_pagination_args(args);
+    let total = child_ids.len();
+    let paged_child_ids: Vec<_> = child_ids.into_iter().skip(offset).take(limit).collect();
 
-    let mut all_results = Vec::new();
-    for child_id in &child_ids {
-        if let Ok(Some(child_data)) = session_repo.get_session(child_id).await {
+    let mut paged_results = Vec::new();
+    for child_id in paged_child_ids {
+        if let Ok(Some(child_data)) = session_repo.get_session(&child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
-            all_results.push(json!({
+            paged_results.push(json!({
                 "id": child_id,
                 "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
                 "status": status
@@ -269,32 +287,7 @@ async fn list_delegated_sessions(
         }
     }
 
-    let total = all_results.len();
-    let paged_results: Vec<_> = all_results.into_iter().skip(offset).take(limit).collect();
-    let has_more = offset + paged_results.len() < total;
-
     let mut message = format!("Found {} sub-agent sessions.\n\n", total);
-
-    let truncation_note = if has_more {
-        format!(
-            "*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*\n\n",
-            offset + 1,
-            offset + paged_results.len(),
-            total,
-            offset + limit
-        )
-    } else if offset > 0 {
-        format!(
-            "*(Showing {} to {} of {} items)*\n\n",
-            offset + 1,
-            offset + paged_results.len(),
-            total
-        )
-    } else {
-        String::new()
-    };
-    message.push_str(&truncation_note);
-
     if !paged_results.is_empty() {
         message.push_str("| Name | Session ID | Status |\n");
         message.push_str("|---|---|---|\n");
@@ -319,6 +312,17 @@ async fn list_delegated_sessions(
                 name_clean, id_clean, status_clean
             ));
         }
+    } else if total > 0 {
+        message.push_str(&format!(
+            "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+            offset, limit
+        ));
+    }
+
+    let pagination_note = build_pagination_note(offset, paged_results.len(), total, limit);
+    if !pagination_note.is_empty() {
+        message.push('\n');
+        message.push_str(&pagination_note);
     }
 
     let hint = SuccessHint::new(
