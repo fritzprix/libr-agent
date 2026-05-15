@@ -1,7 +1,7 @@
 # 🤖 LibrAgent
 
-> **自主智能时代的代理编排系统。**
-> _不仅仅是一个聊天应用。这是一个代理工作、协作和扩展的执行底层架构。_
+> **一款本地优先的 AI 代理桌面应用：能调用真实工具、并行工作，而且控制权在你手里。**
+> _连接任意 LLM，接入任意 MCP 服务器，让代理读取文件、运行 Shell、浏览网页，并把自动化真正做完。_
 
 [English](./README.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -9,27 +9,30 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-LibrAgent 是基于 Tauri + Rust + React 构建的**本地优先代理操作系统**。它超越了聊天界面——提供安全的执行底层架构、MCP 原生工具生态系统，以及将单个代理扩展到协调群集的递归委派架构。
+LibrAgent 是一个基于 Tauri + Rust + React 构建的**本地优先代理工作空间**。它不是另一个聊天壳子，而是为真实文件访问、Shell 执行、浏览器自动化、MCP 扩展能力，以及能连续运行数小时而不是演示一轮就散架的多代理工作流而设计。
 
-连接任何 LLM（通过 Ollama 的云端或本地），使用任何 MCP 服务器进行扩展，让代理做真正的工作：编辑文件、运行 Shell、浏览网页、管理知识——自主地，持续任意长时间。
+你可以连接云模型，也可以连接像 Ollama 这样的本地运行时；导入你已经在用的 MCP 服务器；然后把代码检查、文件编辑、命令执行、网页浏览、知识沉淀和子任务委派交给代理，而不必把整套工作流交给别人的云端 VM。
+
+**从这里开始：**[下载最新版本](https://github.com/fritzprix/libr-agent/releases/latest) · [跳转到 5 分钟入门](#5-分钟入门路径) · [查看真实场景](#-真实使用场景)
 
 ---
 
 ## 为什么选择 LibrAgent？
 
-AI 行业的焦点已经转移。实际情况是，**相同的模型在不同的 agent harness 之上运行时，任务成功率也会出现明显差距**。模型是引擎——但编排系统决定它能走多远。
+大多数代理产品还在强迫你接受这种糟糕的取舍：
 
-每个当前选项仍然迫使人们做出妥协：
+- **界面简单，但执行力很弱**
+- **自动化很强，但产品体验粗糙**
+- **云端很方便，但隐私控制很差**
+- **框架很灵活，但整套系统都得你自己拼**
 
-| 平台                     | 代价                                                                                           |
-| ------------------------ | ---------------------------------------------------------------------------------------------- |
-| **OpenClaw**             | 高灵活性的开放生态系统，但 2026 年初的分析指出实例暴露、明文密钥处理和社区技能的提示注入风险。 |
-| **Claude Cowork**        | 强大的本地用户体验，但在复杂的自主任务上仍然有限。封闭生态系统。不可扩展。                     |
-| **Claude Code / Cursor** | 仅限开发者。需要终端熟练度。不是通用型。                                                       |
-| **Google Mariner**       | 你的工作在 Google 的云端 VM 上运行。你无法控制你的数据。                                       |
-| **LangGraph / CrewAI**   | 强大的框架，但你需要自己组装一切。没有产品体验。                                               |
+LibrAgent 想做的是人们真正想要的那个中间点：
 
-**LibrAgent 旨在消除这种妥协。** 本地优先安全。MCP 原生可扩展性。群集→组织多代理协调。为非开发者打造的精致 GUI。全部在一个开源桌面应用中。
+- **本地优先控制**：文件、工作空间、会话和浏览器状态默认都留在本机
+- **通过 MCP 获得开放扩展性**，而不是封闭插件故事
+- **真正能干活的执行层**：Shell、浏览器、工作空间、知识工具都能联动
+- **正常人能用的 GUI**，又不牺牲高级能力
+- **从一个代理自然扩展到多个代理团队**
 
 ### LibrAgent 适合谁
 
@@ -48,7 +51,35 @@ _从单个代理到协调群集——递归委派、MCP 工具和持久工作空
 
 ---
 
-## 核心支柱
+## 前 10 分钟你就能做的事
+
+### 1. 用真实工具审查仓库
+
+- 用 Workspace 工具连接本地仓库
+- 添加 GitHub MCP 预设
+- 直接问：_“检查 PR #42 的安全问题，并把报告保存下来”_
+
+### 2. 搭一套完全本地的代理工作栈
+
+- 运行 `ollama pull qwen3:14b`
+- 连接 Workspace + Shell
+- 让代理在不把代码发到云端 VM 的前提下读取、修改、测试并持续迭代
+
+### 3. 把研究工作变成可重复流程
+
+- 添加 Browser + Knowledge
+- 直接问：_“跟踪这 5 个竞品博客，并每天早上给我总结”_
+- 把一次性任务变成定时管线
+
+### 4. 从一个助手扩展成一个真正的团队
+
+- 用 `specialist-creator` 创建专职代理
+- 用 `delegate` 拆分工作
+- 用 `teamwork` 或 `org` 把重复协作沉淀成共享工作空间
+
+---
+
+## 为什么它不是只会演示的玩具
 
 ### 1. 🔐 本地优先安全——数据留在你的机器上
 
@@ -173,11 +204,12 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
-```
-Windows  →  LibrAgent_x.x.x_x64-setup.exe
-macOS    →  LibrAgent_x.x.x_aarch64.dmg
-Linux    →  libragent_x.x.x_amd64.AppImage
-```
+<!-- RELEASE_DOWNLOADS_START -->
+- **Windows：** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+<!-- RELEASE_DOWNLOADS_END -->
 
 **开发者设置：**
 
@@ -229,17 +261,15 @@ pnpm tauri dev
 
 ---
 
-## LibrAgent 比较
+## LibrAgent 最适合什么场景
 
-```
-                    Privacy/Local  MCP Ecosystem  Non-Dev UX  Multi-Agent  Open Source
-LibrAgent              ★★★★★          ★★★★★         ★★★★☆       ★★★★★           ✅
-OpenClaw               ★★☆☆☆          ★★★★☆         ★★★☆☆       ★★★☆☆           ✅
-Claude Cowork          ★★★★☆          ★★☆☆☆         ★★★★★       ★★☆☆☆           ❌
-Claude Code            ★★★★☆          ★★★☆☆         ★☆☆☆☆       ★★★☆☆           ❌
-Google Mariner         ★★☆☆☆          ★★★☆☆         ★★★★☆       ★★★★☆           ❌
-LangGraph / CrewAI     ★★★☆☆          ★★★☆☆         ★★☆☆☆       ★★★☆☆           ✅
-```
+| 如果你想要…… | LibrAgent 的优势在于…… |
+| --- | --- |
+| **一台本地 AI 工作站** | 文件、会话、工作空间和浏览器状态默认都保留在你的机器上 |
+| **真正 MCP 原生的桌面产品** | 你可以直接在产品里安装、导入和管理 MCP 服务器，而不是把它当成一个薄壳 |
+| **能真正干活的代理** | Workspace、Shell、Browser 和 Knowledge 工具都是为长时间执行设计的 |
+| **不用先造框架的多代理工作流** | `delegate`、`teamwork`、`org` 和 `schedule` 已经是产品内建能力 |
+| **兼顾 GUI 易用性和高级深度** | 你得到桌面 UI，同时不丢失扩展性和控制力 |
 
 ---
 

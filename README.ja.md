@@ -1,7 +1,7 @@
 # 🤖 LibrAgent
 
-> **自律型知能の時代のためのエージェントハーネス。**
-> _単なるチャットアプリではありません。エージェントが働き、協力し、スケールする実行基盤です。_
+> **実際のツールを使い、並列に働き、しかも自分の管理下に置けるAIエージェントのためのローカルファーストなデスクトップアプリ。**
+> _任意のLLMを接続し、任意のMCPサーバーを追加して、エージェントにファイル読み取り、シェル実行、ウェブ操作、自動化の完遂まで任せられます。_
 
 [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -9,27 +9,30 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-LibrAgentはTauri + Rust + React上に構築された**ローカルファーストのエージェントOS**です。チャットインターフェースをはるかに超え、安全な実行基盤、MCPネイティブのツールエコシステム、単一エージェントを協調クラスターに拡張する再帰的委任アーキテクチャを提供します。
+LibrAgentはTauri + Rust + Reactで構築された**ローカルファーストのエージェントワークスペース**です。単なるチャットUIではなく、実ファイルへのアクセス、シェル実行、ブラウザ自動化、MCP拡張性、そしてデモ一発で終わらず何時間も走り続けるマルチエージェントワークフローのために作られています。
 
-任意のLLM（クラウドまたはOllama経由のローカル）に接続し、任意のMCPサーバーで拡張し、エージェントに実際の作業をさせましょう：ファイル編集、シェル実行、ウェブブラウジング、知識管理——自律的に、必要なだけ長く。
+クラウドモデルでも、Ollamaのようなローカルランタイムでも接続できます。すでに使っているツールからMCPサーバーを取り込み、コード調査、ファイル編集、コマンド実行、ウェブ閲覧、知識蓄積、サブタスク委任をエージェントに任せてください。作業全体を他人のクラウドVMに渡す必要はありません。
+
+**ここから始める:** [最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディングへ移動](#5分オンボーディングパス) · [実際のユースケースを見る](#-実際のユースケース)
 
 ---
 
 ## なぜLibrAgentなのか？
 
-AI業界の焦点が変わりました。実際には、**同じモデルでも、どんなハーネスの上で動くかによってタスク成功率に大きな差**が出ます。モデルはエンジンです——しかしハーネスがどこまで到達できるかを決めます。
+多くのエージェント製品は、まだこの面倒なトレードオフを押しつけてきます。
 
-現在のすべての選択肢はまだトレードオフを強いています：
+- **UIは簡単。でも実行力が弱い**
+- **自動化は強い。でも製品として粗い**
+- **クラウドは便利。でもプライバシー制御が弱い**
+- **フレームワークは柔軟。でも全部自分で組み立てる羽目になる**
 
-| プラットフォーム         | 問題点                                                                                                                                                 |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **OpenClaw**             | 高い柔軟性のオープンエコシステムだが、2026年初頭の分析は露出インスタンス、平文秘密鍵処理、コミュニティスキルのプロンプトインジェクションリスクを指摘。 |
-| **Claude Cowork**        | 強力なローカルUXだが、複雑な自律タスクでは依然限界あり。クローズドエコシステム。拡張不可。                                                             |
-| **Claude Code / Cursor** | 開発者専用。ターミナルの習熟が必要。汎用ではない。                                                                                                     |
-| **Google Mariner**       | 作業がGoogleのクラウドVMで実行される。データを制御できない。                                                                                           |
-| **LangGraph / CrewAI**   | 強力なフレームワークだが、すべて自分で組み立てる必要がある。製品体験なし。                                                                             |
+LibrAgentが狙っているのは、みんなが本当に欲しい中間地点です。
 
-**LibrAgentはそのトレードオフを解消するために構築されました。** ローカルファーストのセキュリティ。MCPネイティブの拡張性。クラスター→組織のマルチエージェント調整。非開発者向けに洗練されたGUI。すべてひとつのオープンソースデスクトップアプリに。
+- **ローカルファーストな制御**：ファイル、ワークスペース、セッション、ブラウザ状態を基本的に手元に残せる
+- **閉じたプラグイン路線ではなくMCPによるオープンな拡張性**
+- **シェル、ブラウザ、ワークスペース、知識ツールを横断する実行力**
+- **パワーユーザー向けの深さを失わないGUI**
+- **一人のエージェントから複数のチームへ自然に広げられる構造**
 
 ### LibrAgentが対象とするユーザー
 
@@ -48,7 +51,35 @@ _単一エージェントから協調クラスターまで——再帰的委任�
 
 ---
 
-## コアピラー
+## 最初の10分でできること
+
+### 1. 実ツールでリポジトリをレビューする
+
+- Workspaceツールでローカルリポジトリを接続
+- GitHub MCPプリセットを追加
+- _「PR #42のセキュリティ問題を見つけて、レポートとして保存して」_ と依頼
+
+### 2. 完全ローカルなエージェントスタックを作る
+
+- `ollama pull qwen3:14b` を実行
+- Workspace + Shell を接続
+- コードをクラウドVMへ送らずに、エージェントへ読み取り、修正、テスト、反復を任せる
+
+### 3. 調査を繰り返し使えるワークフローに変える
+
+- Browser + Knowledge を追加
+- _「この競合ブログ5件を追跡して、毎朝要約して」_ と依頼
+- 単発タスクを定期パイプラインへ変換
+
+### 4. 一人のアシスタントから本物のチームへ進む
+
+- `specialist-creator` で専門エージェントを作成
+- `delegate` で作業を分割
+- `teamwork` または `org` で継続的な協業を共有ワークスペース化
+
+---
+
+## デモの後でも崩れない理由
 
 ### 1. 🔐 ローカルファーストセキュリティ——データはあなたのマシンに
 
@@ -173,11 +204,12 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
-```
-Windows  →  LibrAgent_x.x.x_x64-setup.exe
-macOS    →  LibrAgent_x.x.x_aarch64.dmg
-Linux    →  libragent_x.x.x_amd64.AppImage
-```
+<!-- RELEASE_DOWNLOADS_START -->
+- **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+<!-- RELEASE_DOWNLOADS_END -->
 
 **開発者セットアップ：**
 
@@ -229,17 +261,15 @@ pnpm tauri dev
 
 ---
 
-## LibrAgentの比較
+## LibrAgentが特にハマるケース
 
-```
-                    Privacy/Local  MCP Ecosystem  Non-Dev UX  Multi-Agent  Open Source
-LibrAgent              ★★★★★          ★★★★★         ★★★★☆       ★★★★★           ✅
-OpenClaw               ★★☆☆☆          ★★★★☆         ★★★☆☆       ★★★☆☆           ✅
-Claude Cowork          ★★★★☆          ★★☆☆☆         ★★★★★       ★★☆☆☆           ❌
-Claude Code            ★★★★☆          ★★★☆☆         ★☆☆☆☆       ★★★☆☆           ❌
-Google Mariner         ★★☆☆☆          ★★★☆☆         ★★★★☆       ★★★★☆           ❌
-LangGraph / CrewAI     ★★★☆☆          ★★★☆☆         ★★☆☆☆       ★★★☆☆           ✅
-```
+| こういうものが欲しいなら… | LibrAgentが強い理由 |
+| --- | --- |
+| **ローカルAIワークステーション** | ファイル、セッション、ワークスペース、ブラウザ状態が基本的に自分のマシンに残る |
+| **MCPネイティブなデスクトップ製品** | 薄いラッパーではなく、MCPサーバーの導入・インポート・管理まで製品内で完結できる |
+| **本当に仕事を進めるエージェント** | Workspace、Shell、Browser、Knowledge が長時間実行を前提に設計されている |
+| **先にフレームワークを組まなくていいマルチエージェント運用** | `delegate`、`teamwork`、`org`、`schedule` がすでに製品に入っている |
+| **GUIの使いやすさとパワーユーザーの深さの両立** | デスクトップUIを使いながら拡張性と制御力を失わない |
 
 ---
 

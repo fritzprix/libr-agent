@@ -1,7 +1,7 @@
 # 🤖 LibrAgent
 
-> **The Agent Harness for the Age of Autonomous Intelligence.**
-> _Not just a chat app. An execution substrate where agents work, collaborate, and scale._
+> **A local-first desktop app for AI agents that use real tools, run in parallel, and stay under your control.**
+> _Connect any LLM, add any MCP server, and let agents read files, run shells, browse the web, and automate work that actually finishes._
 
 [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -9,27 +9,30 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-LibrAgent is a **local-first Agent Operating System** built on Tauri + Rust + React. It goes far beyond chat interfaces — providing a secure execution substrate, an MCP-native tool ecosystem, and a recursive delegation architecture that scales a single agent into a coordinated swarm.
+LibrAgent is a **local-first agent workspace** built on Tauri + Rust + React. It is designed for people who want more than chat: real file access, shell execution, browser automation, MCP extensibility, and multi-agent workflows that can keep going for hours instead of falling apart after one demo loop.
 
-Connect any LLM (cloud or local via Ollama), extend with any MCP server, and let agents do real work: editing files, running shells, browsing the web, managing knowledge — autonomously, for as long as it takes.
+Connect cloud models or local runtimes like Ollama. Import MCP servers from tools you already use. Then hand work to agents that can inspect code, edit files, run commands, browse sites, capture knowledge, and delegate subtasks without shipping your whole workflow to somebody else's VM.
+
+**Start here:** [Download the latest release](https://github.com/fritzprix/libr-agent/releases/latest) · [Jump to 5-minute onboarding](#the-5-minute-onboarding-path) · [See real-world scenarios](#-real-world-scenarios)
 
 ---
 
 ## Why LibrAgent?
 
-The AI industry's focus has shifted. In practice, the **same model can show large task-success gaps depending on the harness around it**. The model is the engine — but the harness determines how far it goes.
+Most agent products still force an annoying tradeoff:
 
-Every current option still forces a tradeoff:
+- **Easy UI, weak execution**
+- **Strong automation, no product polish**
+- **Cloud convenience, weak privacy**
+- **Framework flexibility, but you build the whole damn stack yourself**
 
-| Platform                 | The Catch                                                                                                                                                         |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **OpenClaw**             | High-flexibility open ecosystem, but early-2026 analyses highlighted exposed instances, plaintext secret handling, and prompt-injection risk in community skills. |
-| **Claude Cowork**        | Strong local UX, but still limited on complex autonomous tasks. Closed ecosystem. Not extensible.                                                                 |
-| **Claude Code / Cursor** | Developer-only. Requires terminal fluency. Not general-purpose.                                                                                                   |
-| **Google Mariner**       | Your work runs on Google's cloud VMs. You don't control your data.                                                                                                |
-| **LangGraph / CrewAI**   | Powerful frameworks, but you assemble everything yourself. No product experience.                                                                                 |
+LibrAgent is built for the middle that people actually want:
 
-**LibrAgent is built to collapse that tradeoff.** Local-first security. MCP-native extensibility. Swarm-to-Org multi-agent coordination. A polished GUI that works for non-developers. All in one open-source desktop app.
+- **Local-first control** for files, workspaces, sessions, and browser state
+- **Open extensibility** through MCP instead of a closed plugin story
+- **Real execution** across shell, browser, workspace, and knowledge tools
+- **A GUI that normal humans can use** without giving up power-user depth
+- **A path from one agent to many** when a single assistant stops being enough
 
 ### Who LibrAgent Is For
 
@@ -48,7 +51,35 @@ _From a single agent to a coordinated swarm — recursive delegation, MCP toolin
 
 ---
 
-## Core Pillars
+## What You Can Do in the First 10 Minutes
+
+### 1. Review a repository with real tools
+
+- Connect a local repo with the Workspace tool
+- Add the GitHub MCP preset
+- Ask: _"Review PR #42 for security issues and save the report"_
+
+### 2. Build a fully local agent stack
+
+- Run `ollama pull qwen3:14b`
+- Connect Workspace + Shell
+- Let an agent read, modify, test, and iterate without sending your code to a cloud VM
+
+### 3. Turn research into a repeatable workflow
+
+- Add Browser + Knowledge
+- Ask: _"Track these 5 competitor blogs and give me a summary every morning"_
+- Convert a one-off task into a scheduled pipeline
+
+### 4. Go from one assistant to a real team
+
+- Create specialists with `specialist-creator`
+- Split work with `delegate`
+- Turn recurring collaboration into a shared `teamwork` or `org` workspace
+
+---
+
+## Why It Holds Up After the Demo
 
 ### 1. 🔐 Local-First Security — Your Data Stays on Your Machine
 
@@ -173,11 +204,12 @@ _Important: `bootstrap` is a builtin capability often used alongside these skill
 
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
-```
-Windows  →  LibrAgent_x.x.x_x64-setup.exe
-macOS    →  LibrAgent_x.x.x_aarch64.dmg
-Linux    →  libragent_x.x.x_amd64.AppImage
-```
+<!-- RELEASE_DOWNLOADS_START -->
+- **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+<!-- RELEASE_DOWNLOADS_END -->
 
 **Developer Setup:**
 
@@ -229,17 +261,15 @@ pnpm tauri dev
 
 ---
 
-## How LibrAgent Compares
+## Where LibrAgent Fits Best
 
-```
-                    Privacy/Local  MCP Ecosystem  Non-Dev UX  Multi-Agent  Open Source
-LibrAgent              ★★★★★          ★★★★★         ★★★★☆       ★★★★★           ✅
-OpenClaw               ★★☆☆☆          ★★★★☆         ★★★☆☆       ★★★☆☆           ✅
-Claude Cowork          ★★★★☆          ★★☆☆☆         ★★★★★       ★★☆☆☆           ❌
-Claude Code            ★★★★☆          ★★★☆☆         ★☆☆☆☆       ★★★☆☆           ❌
-Google Mariner         ★★☆☆☆          ★★★☆☆         ★★★★☆       ★★★★☆           ❌
-LangGraph / CrewAI     ★★★☆☆          ★★★☆☆         ★★☆☆☆       ★★★☆☆           ✅
-```
+| If you want... | LibrAgent is strong because... |
+| --- | --- |
+| **A local AI workstation** | Files, sessions, workspaces, and browser state stay on your machine by default |
+| **An MCP-native desktop product** | You can install, import, and manage MCP servers without treating the app like a thin wrapper |
+| **Agents that do real work** | Workspace, shell, browser, and knowledge tools are built for long-running execution |
+| **Multi-agent workflows without building a framework first** | `delegate`, `teamwork`, `org`, and `schedule` are already part of the product |
+| **A bridge between power-user depth and GUI usability** | You get a desktop UI without giving up extensibility or control |
 
 ---
 

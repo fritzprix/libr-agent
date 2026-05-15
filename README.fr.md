@@ -1,7 +1,7 @@
 # 🤖 LibrAgent
 
-> **Le harnais d'agents pour l'ère de l'intelligence autonome.**
-> _Pas seulement une application de chat. Un substrat d'exécution où les agents travaillent, collaborent et évoluent._
+> **Une application desktop local-first pour des agents IA qui utilisent de vrais outils, travaillent en parallèle et restent sous votre contrôle.**
+> _Connectez n'importe quel LLM, ajoutez n'importe quel serveur MCP, et laissez les agents lire des fichiers, lancer des shells, naviguer sur le web et automatiser de vraies tâches jusqu'au bout._
 
 [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -9,27 +9,30 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-LibrAgent est un **système d'exploitation d'agents local-first** construit sur Tauri + Rust + React. Il va bien au-delà des interfaces de chat — fournissant un substrat d'exécution sécurisé, un écosystème d'outils natif MCP, et une architecture de délégation récursive qui fait évoluer un seul agent en un essaim coordonné.
+LibrAgent est un **espace de travail d'agents local-first** construit avec Tauri + Rust + React. Ce n'est pas juste une autre interface de chat : il est pensé pour l'accès réel aux fichiers, l'exécution shell, l'automatisation navigateur, l'extensibilité MCP et les workflows multi-agents qui tiennent pendant des heures au lieu de s'écrouler après une jolie démo.
 
-Connectez n'importe quel LLM (cloud ou local via Ollama), étendez avec n'importe quel serveur MCP, et laissez les agents faire du vrai travail : éditer des fichiers, lancer des shells, naviguer sur le web, gérer des connaissances — de manière autonome, aussi longtemps que nécessaire.
+Vous pouvez connecter des modèles cloud ou des runtimes locaux comme Ollama, importer les serveurs MCP des outils que vous utilisez déjà, puis confier aux agents l'inspection de code, l'édition de fichiers, l'exécution de commandes, la navigation web, la capture de connaissances et la délégation de sous-tâches — sans expédier tout votre workflow sur la VM cloud de quelqu'un d'autre.
+
+**Commencez ici :** [Télécharger la dernière release](https://github.com/fritzprix/libr-agent/releases/latest) · [Aller au parcours d'intégration en 5 minutes](#parcours-dintégration-en-5-minutes) · [Voir les scénarios concrets](#-scénarios-concrets)
 
 ---
 
 ## Pourquoi LibrAgent ?
 
-L'industrie de l'IA a changé de focale. En pratique, **le même modèle peut montrer de gros écarts de réussite selon le harnais qui l'entoure**. Le modèle est le moteur — mais le harnais détermine jusqu'où il peut aller.
+La plupart des produits d'agents imposent encore un compromis pénible :
 
-Chaque option actuelle impose encore un compromis :
+- **Une UI facile, mais une exécution faible**
+- **Une automatisation puissante, mais une expérience produit bancale**
+- **Le confort du cloud, mais peu de contrôle sur la confidentialité**
+- **Des frameworks flexibles, mais à vous de monter toute la stack**
 
-| Plateforme               | Le problème                                                                                                                                                                                              |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **OpenClaw**             | Écosystème ouvert très flexible, mais les analyses début 2026 ont mis en évidence des instances exposées, des secrets en clair et des risques d'injection de prompt dans les compétences communautaires. |
-| **Claude Cowork**        | UX local solide, mais encore limité sur les tâches autonomes complexes. Écosystème fermé. Non extensible.                                                                                                |
-| **Claude Code / Cursor** | Réservé aux développeurs. Requiert une maîtrise du terminal. Pas généraliste.                                                                                                                            |
-| **Google Mariner**       | Votre travail tourne sur les VM cloud de Google. Vous ne contrôlez pas vos données.                                                                                                                      |
-| **LangGraph / CrewAI**   | Frameworks puissants, mais vous devez tout assembler vous-même. Aucune expérience produit.                                                                                                               |
+LibrAgent vise le milieu que les gens veulent vraiment :
 
-**LibrAgent est conçu pour effacer ce compromis.** Sécurité local-first. Extensibilité native MCP. Coordination multi-agents essaim→organisation. Une interface graphique soignée qui fonctionne pour les non-développeurs. Le tout dans une application de bureau open source.
+- **Un contrôle local-first** sur les fichiers, workspaces, sessions et état navigateur
+- **Une extensibilité ouverte via MCP** au lieu d'un récit plugin fermé
+- **Une vraie capacité d'exécution** sur shell, browser, workspace et knowledge
+- **Une GUI utilisable par des humains normaux** sans sacrifier la profondeur power-user
+- **Un passage naturel d'un agent à plusieurs** quand un seul assistant ne suffit plus
 
 ### À qui s'adresse LibrAgent
 
@@ -48,7 +51,35 @@ _D'un agent unique à un essaim coordonné — délégation récursive, outillag
 
 ---
 
-## Piliers fondamentaux
+## Ce que vous pouvez faire dans les 10 premières minutes
+
+### 1. Relire un dépôt avec de vrais outils
+
+- Connectez un dépôt local avec l'outil Workspace
+- Ajoutez le preset GitHub MCP
+- Demandez : _"Trouve les problèmes de sécurité dans la PR #42 et sauvegarde le rapport"_
+
+### 2. Monter une stack d'agents 100 % locale
+
+- Lancez `ollama pull qwen3:14b`
+- Connectez Workspace + Shell
+- Laissez un agent lire, modifier, tester et itérer sans envoyer votre code vers une VM cloud
+
+### 3. Transformer une recherche en workflow réutilisable
+
+- Ajoutez Browser + Knowledge
+- Demandez : _"Suis ces 5 blogs concurrents et résume-moi ça chaque matin"_
+- Transformez une tâche ponctuelle en pipeline planifié
+
+### 4. Passer d'un assistant à une vraie équipe
+
+- Créez des spécialistes avec `specialist-creator`
+- Répartissez le travail avec `delegate`
+- Faites de la collaboration récurrente un workspace partagé `teamwork` ou `org`
+
+---
+
+## Pourquoi ça tient après la démo
 
 ### 1. 🔐 Sécurité local-first — Vos données restent sur votre machine
 
@@ -173,11 +204,12 @@ _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces
 
 Téléchargez le dernier installateur pour votre plateforme depuis la **[page des Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
-```
-Windows  →  LibrAgent_x.x.x_x64-setup.exe
-macOS    →  LibrAgent_x.x.x_aarch64.dmg
-Linux    →  libragent_x.x.x_amd64.AppImage
-```
+<!-- RELEASE_DOWNLOADS_START -->
+- **Windows :** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
+- **macOS (Apple Silicon) :** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
+- **Linux :** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
+- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+<!-- RELEASE_DOWNLOADS_END -->
 
 **Configuration développeur :**
 
@@ -229,17 +261,15 @@ pnpm tauri dev
 
 ---
 
-## Comparaison de LibrAgent
+## Là où LibrAgent est le plus pertinent
 
-```
-                    Privacy/Local  MCP Ecosystem  Non-Dev UX  Multi-Agent  Open Source
-LibrAgent              ★★★★★          ★★★★★         ★★★★☆       ★★★★★           ✅
-OpenClaw               ★★☆☆☆          ★★★★☆         ★★★☆☆       ★★★☆☆           ✅
-Claude Cowork          ★★★★☆          ★★☆☆☆         ★★★★★       ★★☆☆☆           ❌
-Claude Code            ★★★★☆          ★★★☆☆         ★☆☆☆☆       ★★★☆☆           ❌
-Google Mariner         ★★☆☆☆          ★★★☆☆         ★★★★☆       ★★★★☆           ❌
-LangGraph / CrewAI     ★★★☆☆          ★★★☆☆         ★★☆☆☆       ★★★☆☆           ✅
-```
+| Si vous voulez... | LibrAgent est fort parce que... |
+| --- | --- |
+| **Une station de travail IA locale** | fichiers, sessions, workspaces et état navigateur restent sur votre machine par défaut |
+| **Un produit desktop vraiment natif MCP** | vous pouvez installer, importer et gérer des serveurs MCP sans traiter l'app comme un simple wrapper |
+| **Des agents qui font un vrai boulot** | Workspace, Shell, Browser et Knowledge sont conçus pour de l'exécution longue durée |
+| **Des workflows multi-agents sans construire un framework d'abord** | `delegate`, `teamwork`, `org` et `schedule` font déjà partie du produit |
+| **Un pont entre profondeur power-user et confort GUI** | vous gardez une interface desktop sans perdre l'extensibilité ni le contrôle |
 
 ---
 
