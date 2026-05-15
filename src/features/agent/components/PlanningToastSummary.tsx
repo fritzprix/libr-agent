@@ -19,6 +19,7 @@ export function PlanningToastSummary({
   scratchpadChanged,
 }: PlanningToastSummaryProps) {
   const { t } = useTranslation();
+  const updatedLabel = t('agent.planning.updated');
 
   const visibleTodos = useMemo(() => {
     if (todos.length <= 5) return todos;
@@ -152,7 +153,8 @@ export function PlanningToastSummary({
                     {(isNew || isChanged) && (
                       <span
                         className="ml-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-primary"
-                        title="Updated"
+                        title={updatedLabel}
+                        aria-label={updatedLabel}
                       />
                     )}
                   </span>
@@ -180,7 +182,7 @@ export function PlanningToastSummary({
           {scratchpad?.count
             ? scratchpad.count
             : t('agent.planning.noScratchpad')}
-          {scratchpadChanged ? ` • ${t('agent.planning.updated')}` : ''}
+          {scratchpadChanged ? ` • ${updatedLabel}` : ''}
         </div>
       </div>
     </div>
