@@ -562,7 +562,10 @@ pub async fn handle_tool_call(
                 message.push_str("| Name | ID | Status | Turns | Latest Result |\n");
                 message.push_str("|---|---|---|---|---|\n");
                 for resp in &session_responses {
-                    let latest = resp.latest_result.as_deref().unwrap_or("-")
+                    let latest = resp
+                        .latest_result
+                        .as_deref()
+                        .unwrap_or("-")
                         .replace('\n', " ")
                         .replace('|', "\\|");
                     message.push_str(&format!(
@@ -615,15 +618,24 @@ pub async fn handle_tool_call(
                 .unwrap_or_default();
 
             let total_count = assistants_array.len();
-            let paginated_assistants: Vec<_> = assistants_array.into_iter().skip(offset).take(limit).collect();
+            let paginated_assistants: Vec<_> = assistants_array
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .collect();
 
             let mut message = if paginated_assistants.is_empty() {
                 "No assistant types available.".to_string()
             } else {
                 let mut lines = vec![
-                    format!("Available assistant types (showing {} to {} of {}):", offset + 1, offset + paginated_assistants.len(), total_count),
+                    format!(
+                        "Available assistant types (showing {} to {} of {}):",
+                        offset + 1,
+                        offset + paginated_assistants.len(),
+                        total_count
+                    ),
                     "\n| Name | ID | Model | Description |".to_string(),
-                    "|---|---|---|---|".to_string()
+                    "|---|---|---|---|".to_string(),
                 ];
 
                 for assistant in &paginated_assistants {
