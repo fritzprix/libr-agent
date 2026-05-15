@@ -21,14 +21,11 @@ jobs:
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: 🦀 Ensure Cargo bin on PATH
+      - name: 🦀 Ensure Cargo bin on PATH (Windows)
+        if: runner.os == 'Windows'
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
-          else
-            echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
-          fi
+          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: 🦀 Rust cache
         uses: swatinem/rust-cache@v2
@@ -126,14 +123,11 @@ jobs:
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: 🦀 Ensure Cargo bin on PATH
+      - name: 🦀 Ensure Cargo bin on PATH (Windows)
+        if: runner.os == 'Windows'
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
-          else
-            echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
-          fi
+          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: 📦 Install pnpm
         uses: pnpm/action-setup@v5
