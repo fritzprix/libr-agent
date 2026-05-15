@@ -265,31 +265,33 @@ export function calculateContextSafetyMargin(effectiveLimit: number): number {
 }
 
 export function estimateMCPContentTokens(content: MCPContent[]): number {
-  return content.reduce((total, item) => {
+  // ⚡ Bolt: Replace .reduce() with for-loop for better token estimation performance on hot paths
+  let total = 0;
+  for (const item of content) {
     switch (item.type) {
       case 'text':
-        return total + estimateTextTokens(item.text);
+        total += estimateTextTokens(item.text);
+        break;
       case 'resource':
-        return (
-          total +
-          estimateTextTokens(
-            typeof item.resource?.text === 'string' ? item.resource.text : '',
-          )
+        total += estimateTextTokens(
+          typeof item.resource?.text === 'string' ? item.resource.text : '',
         );
+        break;
       case 'tool_call':
-        return (
-          total +
-          estimateTextTokens(`${item.name ?? ''} ${item.arguments ?? ''}`)
-        );
+        total += estimateTextTokens(`${item.name ?? ''} ${item.arguments ?? ''}`);
+        break;
       case 'thinking':
-        return total + estimateTextTokens(item.thinking ?? '');
+        total += estimateTextTokens(item.thinking ?? '');
+        break;
       case 'image':
       case 'audio':
-        return total + 1000;
+        total += 1000;
+        break;
       default:
-        return total;
+        break;
     }
-  }, 0);
+  }
+  return total;
 }
 
 export function estimateMessageTokens(message: Message): number {
@@ -297,14 +299,12 @@ export function estimateMessageTokens(message: Message): number {
   total += estimateMCPContentTokens(message.content);
 
   if (message.tool_calls) {
-    total += message.tool_calls.reduce(
-      (sum, toolCall) =>
-        sum +
-        estimateTextTokens(
-          `${toolCall.function?.name ?? ''} ${toolCall.function?.arguments ?? ''}`,
-        ),
-      0,
-    );
+    // ⚡ Bolt: Replace .reduce() with for-loop for better token estimation performance on hot paths
+    for (const toolCall of message.tool_calls) {
+      total += estimateTextTokens(
+        `${toolCall.function?.name ?? ''} ${toolCall.function?.arguments ?? ''}`,
+      );
+    }
   }
 
   if (message.tool_use) {
