@@ -501,13 +501,19 @@ pub async fn handle_tool_call(
                 .clone()
                 .ok_or_else(|| "getChildAgents requires a caller session context".to_string())?;
             let session_repo = crate::state::get_session_repository();
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
             let child_ids = session_repo
                 .get_child_session_ids(&parent_session_id)
                 .await
                 .map_err(|e| format!("Failed to fetch child sessions: {}", e))?;
+
+            let total_count = child_ids.len();
+
             let data = json!({
                 "parentSessionId": parent_session_id,
-                "count": child_ids.len(),
+                "count": total_count,
                 "children": child_ids,
             });
 
@@ -518,6 +524,8 @@ pub async fn handle_tool_call(
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|value| value.as_str().map(str::to_string))
+                .skip(offset)
+                .take(limit)
                 .collect::<Vec<_>>();
 
             let mut session_responses: Vec<AgentSessionResponse> = Vec::new();
@@ -547,18 +555,42 @@ pub async fn handle_tool_call(
 
             if session_responses.is_empty() {
                 message.push_str(
-                    "\n\nNo direct sub-agents online. Next step: spawnAgent to deploy a worker.",
+                    "\n\nNo direct sub-agents online. Next step: use spawnAgent to deploy a worker.",
                 );
             } else {
                 message.push_str("\n\nDirect unit roster:\n");
+                message.push_str("| Name | ID | Status | Turns | Latest Result |\n");
+                message.push_str("|---|---|---|---|---|\n");
                 for resp in &session_responses {
+                    let latest = resp.latest_result.as_deref().unwrap_or("-")
+                        .replace('\n', " ")
+                        .replace('|', "\\|");
                     message.push_str(&format!(
-                        "- {} (ID: {}) status={}\n",
-                        resp.name, resp.id, resp.status
+                        "| {} | `{}` | {} | {} | {} |\n",
+                        resp.name.replace('\n', " ").replace('|', "\\|"),
+                        resp.id,
+                        resp.status,
+                        resp.turn_count,
+                        latest
                     ));
-                    if let Some(summary) = &resp.latest_result {
-                        message.push_str(&format!("  latest assistant: {}\n", summary));
-                    }
+                }
+
+                let has_more = offset + session_responses.len() < total_count;
+                if has_more {
+                    message.push_str(&format!(
+                        "\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+                        offset + 1,
+                        offset + session_responses.len(),
+                        total_count,
+                        offset + limit
+                    ));
+                } else if offset > 0 {
+                    message.push_str(&format!(
+                        "\n*(Showing {} to {} of {} items)*",
+                        offset + 1,
+                        offset + session_responses.len(),
+                        total_count
+                    ));
                 }
             }
 
@@ -566,25 +598,35 @@ pub async fn handle_tool_call(
         }
         "listAgentTypes" => {
             let assistant_repo = crate::state::get_assistant_repository();
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
             let assistants = assistant_repo
                 .list_assistants()
                 .await
                 .map_err(|e| format!("Failed to list assistants: {}", e))?;
             let data = serde_json::to_value(&assistants)
                 .map_err(|e| format!("Failed to serialize assistants: {}", e))?;
-            let assistants = data
+            let assistants_array = data
                 .as_array()
                 .cloned()
                 .or_else(|| data.get("assistants").and_then(|v| v.as_array()).cloned())
                 .or_else(|| data.get("items").and_then(|v| v.as_array()).cloned())
                 .unwrap_or_default();
 
-            let message = if assistants.is_empty() {
+            let total_count = assistants_array.len();
+            let paginated_assistants: Vec<_> = assistants_array.into_iter().skip(offset).take(limit).collect();
+
+            let mut message = if paginated_assistants.is_empty() {
                 "No assistant types available.".to_string()
             } else {
-                let mut lines = vec![format!("Available assistant types ({}):", assistants.len())];
+                let mut lines = vec![
+                    format!("Available assistant types (showing {} to {} of {}):", offset + 1, offset + paginated_assistants.len(), total_count),
+                    "\n| Name | ID | Model | Description |".to_string(),
+                    "|---|---|---|---|".to_string()
+                ];
 
-                for assistant in &assistants {
+                for assistant in &paginated_assistants {
                     let id = assistant
                         .get("id")
                         .and_then(|v| v.as_str())
@@ -592,7 +634,9 @@ pub async fn handle_tool_call(
                     let name = assistant
                         .get("name")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Unnamed");
+                        .unwrap_or("Unnamed")
+                        .replace('\n', " ")
+                        .replace('|', "\\|");
 
                     let config = assistant.get("config").cloned().unwrap_or(json!({}));
                     let parsed_config = if let Some(s) = config.as_str() {
@@ -600,20 +644,42 @@ pub async fn handle_tool_call(
                     } else {
                         config
                     };
-                    let description = extract_assistant_description(&parsed_config);
+                    let description = extract_assistant_description(&parsed_config)
+                        .replace('\n', " ")
+                        .replace('|', "\\|");
                     let model = parsed_config
                         .get("model")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Unknown");
+                        .unwrap_or("Unknown")
+                        .replace('\n', " ")
+                        .replace('|', "\\|");
 
                     lines.push(format!(
-                        "- {} [ID: {}]\n  model: {}\n  description: {}",
+                        "| {} | `{}` | {} | {} |",
                         name, id, model, description
                     ));
                 }
 
                 lines.join("\n")
             };
+
+            let has_more = offset + paginated_assistants.len() < total_count;
+            if has_more {
+                message.push_str(&format!(
+                    "\n\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+                    offset + 1,
+                    offset + paginated_assistants.len(),
+                    total_count,
+                    offset + limit
+                ));
+            } else if offset > 0 {
+                message.push_str(&format!(
+                    "\n\n*(Showing {} to {} of {} items)*",
+                    offset + 1,
+                    offset + paginated_assistants.len(),
+                    total_count
+                ));
+            }
 
             Ok(success_result(message, data))
         }
@@ -624,7 +690,7 @@ pub async fn handle_tool_call(
                 .get_assistant(&assistant_id)
                 .await
                 .map_err(|e| format!("Failed to fetch assistant: {}", e))?
-                .ok_or_else(|| format!("Assistant '{}' not found", assistant_id))?;
+                .ok_or_else(|| format!("Assistant '{}' not found\n\nSuggestion: Use listAgentTypes to see available assistant IDs.", assistant_id))?;
             let data = serde_json::to_value(&assistant)
                 .map_err(|e| format!("Failed to serialize assistant config: {}", e))?;
 

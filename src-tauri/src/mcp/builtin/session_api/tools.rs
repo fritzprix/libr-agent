@@ -218,7 +218,28 @@ pub fn get_child_sessions_tool() -> MCPTool {
         name: "getChildAgents".to_string(),
         title: Some("Get Child Agents".to_string()),
         description: "List all agents directly spawned by the calling session.".to_string(),
-        input_schema: object_prop(vec![], vec![], None),
+        input_schema: object_prop(
+            vec![
+                (
+                    "limit".to_string(),
+                    integer_prop(
+                        Some(1),
+                        Some(100),
+                        Some("Maximum number of agents to return. If omitted, default: 20."),
+                    ),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop(
+                        Some(0),
+                        None,
+                        Some("Offset for pagination. If omitted, default: 0."),
+                    ),
+                ),
+            ],
+            vec![],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }
@@ -273,7 +294,28 @@ pub fn list_assistants_tool() -> MCPTool {
         name: "listAgentTypes".to_string(),
         title: Some("List Agent Types".to_string()),
         description: "List available agent types (assistants) you can spawn. Call this to discover which specialists exist before delegating tasks.".to_string(),
-        input_schema: object_prop(vec![], vec![], None),
+        input_schema: object_prop(
+            vec![
+                (
+                    "limit".to_string(),
+                    integer_prop(
+                        Some(1),
+                        Some(100),
+                        Some("Maximum number of assistant types to return. If omitted, default: 20."),
+                    ),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop(
+                        Some(0),
+                        None,
+                        Some("Offset for pagination. If omitted, default: 0."),
+                    ),
+                ),
+            ],
+            vec![],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }
