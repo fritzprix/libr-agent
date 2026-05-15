@@ -34,11 +34,12 @@ import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
 import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
 import { getLogger } from '@/lib/logger';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
+import { useTranslation } from 'react-i18next';
 
 const logger = getLogger('AgentChatView');
 
-function getSessionLoadingLabel(isStartingSession: boolean): string {
-  return isStartingSession ? 'Starting session...' : 'Loading session...';
+function getSessionLoadingLabel(isStartingSession: boolean, t: (key: string) => string): string {
+  return isStartingSession ? t('agent.start.startingSession') : t('agent.chat.loadingSession');
 }
 
 /**
@@ -61,6 +62,7 @@ function getSessionLoadingLabel(isStartingSession: boolean): string {
 function AgentChatInner() {
   const { showWorkspacePanel } = useAgentWorkspace();
   const { showPlanningPanel } = useAgentPlanning();
+  const { t } = useTranslation();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const { session } = useAgentSessionState();
@@ -98,10 +100,10 @@ function AgentChatInner() {
         );
 
         await injectMessages([toolCallMsg, toolResultMsg]);
-        toast.success('Playbook started automatically');
+        toast.success(t('agent.chat.playbookStartedAutomatically'));
       } catch (error) {
         logger.error('Failed to auto-select playbook', error);
-        toast.error('Failed to start playbook workflow');
+        toast.error(t('agent.chat.failedToStartPlaybookWorkflow'));
       }
     },
     [assistantId, injectMessages, sessionId],
@@ -184,6 +186,7 @@ function AgentChatInner() {
 }
 
 export default function AgentChatView() {
+  const { t } = useTranslation();
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const optionalSessionState = useOptionalAgentSessionState();
   const shouldProvideSession =
@@ -200,7 +203,7 @@ export default function AgentChatView() {
   if (!optionalSessionState) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <div className="text-destructive">Session context is unavailable.</div>
+        <div className="text-destructive">{t('agent.chat.sessionContextUnavailable')}</div>
       </div>
     );
   }
@@ -209,7 +212,7 @@ export default function AgentChatView() {
   const attachmentSessionId = session?.id ?? routeSessionId ?? '';
   const isStartingSession =
     session?.status === 'idle' && session?.id === routeSessionId;
-  const sessionLoadingLabel = getSessionLoadingLabel(isStartingSession);
+  const sessionLoadingLabel = getSessionLoadingLabel(isStartingSession, t);
   const initializationStep = optionalSessionState.initializationStep?.step;
   const shouldShowBlockingLoader = isSessionLoading && !session;
   const shouldShowOptimisticLoadingOverlay = isSessionLoading && !!session;
@@ -225,7 +228,7 @@ export default function AgentChatView() {
       ) : !session ? (
         <div className="flex h-full items-center justify-center p-4">
           <div className="text-destructive">
-            Session not found or failed to load.
+            {t('agent.chat.sessionNotFoundOrFailed')}
           </div>
         </div>
       ) : (
