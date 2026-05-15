@@ -5,7 +5,7 @@ use crate::agent::state::{AgentSession, SessionStatusTransition};
 use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
-use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};
+use crate::repositories::{SessionMetadata, SessionStatus};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -87,21 +87,8 @@ pub async fn resume_session(
     );
 
     // Load compact context if exists (SP17)
-    let compact_context_record = {
-        let repo = crate::state::get_compact_context_repository();
-        repo.get_by_session_id(session_id)
-            .await
-            .map_err(|e| format!("Failed to get compact context: {}", e))?
-    };
-
-    if let Some(record) = &compact_context_record {
-        log::info!(
-            "Loaded compact context for resumed session: {} (range: {} to {})",
-            session_id,
-            record.from_id,
-            record.to_id
-        );
-    }
+    let compact_context_record =
+        crate::agent::lifecycle::load_compact_context_record(session_id, "session resume").await?;
 
     // Add to active sessions with cancellation token and empty cache
     let mut active = active_sessions.write().await;
@@ -115,10 +102,11 @@ pub async fn resume_session(
         // changed between sessions, so it must be rebuilt on the next LLM call.
         *existing_session.cached_stable_prompt.write().await = None;
         // Update compact context if it was loaded
-        if let Some(record) = compact_context_record {
-            let mut compact = existing_session.compact_context.write().await;
-            *compact = Some(record);
-        }
+        crate::agent::lifecycle::set_compact_context_if_loaded(
+            existing_session,
+            compact_context_record,
+        )
+        .await;
         // Transient states (pending_execution, messages, cancellation_token, etc.) are preserved
     } else {
         log::info!(

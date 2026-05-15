@@ -11,7 +11,6 @@ pub use channel_commands::{
 };
 pub use compaction_commands::{
     agent_get_compact_context, agent_handle_compact_error, agent_handle_compact_response,
-    agent_save_compact_context,
 };
 pub use contracts::{
     AgentOpenSessionResponse, AgentResponse, AgentSessionListResponse, CreateAgentSessionRequest,

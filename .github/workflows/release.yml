@@ -34,6 +34,12 @@ jobs:
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Ensure Cargo bin on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:

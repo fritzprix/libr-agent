@@ -5,7 +5,7 @@ use crate::agent::types::ToolCall;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::oneshot;
@@ -115,6 +115,21 @@ pub enum DeferredWorkflowStep {
 }
 
 #[derive(Debug, Clone)]
+pub struct CompactionSnapshot {
+    pub in_flight: bool,
+    pub last_compacted_tail_id: Option<String>,
+    pub awaiting_completion: bool,
+    pub deferred_workflow_step: Option<DeferredWorkflowStep>,
+    pub started_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompactionCompletionPlan {
+    pub should_resume_completion: bool,
+    pub deferred_workflow_step: Option<DeferredWorkflowStep>,
+}
+
+#[derive(Debug, Clone)]
 pub struct CompactionRuntimeState {
     /// Guard: true while a llm:compact-request is in-flight (frontend hasn't returned yet).
     /// Prevents double-triggering compaction within the same session.
@@ -129,10 +144,6 @@ pub struct CompactionRuntimeState {
     /// True when the current turn is blocked waiting for compaction to finish
     /// before Rust should retry the LLM request.
     pub awaiting_completion: Arc<AtomicBool>,
-
-    /// True when the current workflow has already produced its assistant response
-    /// and must not be marked complete until the triggered compaction finishes.
-    pub finalize_workflow_after_compact: Arc<AtomicBool>,
 
     /// Workflow continuation deferred until the current compaction finishes.
     /// This lets Rust block the next workflow step on a completed assistant response.
@@ -149,7 +160,6 @@ impl CompactionRuntimeState {
             in_flight: Arc::new(AtomicBool::new(false)),
             last_compacted_tail_id: Arc::new(RwLock::new(None)),
             awaiting_completion: Arc::new(AtomicBool::new(false)),
-            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
             deferred_workflow_step: Arc::new(RwLock::new(None)),
             started_at_ms: Arc::new(RwLock::new(None)),
         }
@@ -164,10 +174,67 @@ impl CompactionRuntimeState {
             in_flight: Arc::new(AtomicBool::new(in_flight)),
             last_compacted_tail_id: Arc::new(RwLock::new(last_tail_id)),
             awaiting_completion: Arc::new(AtomicBool::new(awaiting_completion)),
-            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
             deferred_workflow_step: Arc::new(RwLock::new(None)),
             started_at_ms: Arc::new(RwLock::new(None)),
         }
+    }
+
+    pub async fn snapshot(&self) -> CompactionSnapshot {
+        CompactionSnapshot {
+            in_flight: self.in_flight.load(Ordering::SeqCst),
+            last_compacted_tail_id: self.last_compacted_tail_id.read().await.clone(),
+            awaiting_completion: self.awaiting_completion.load(Ordering::SeqCst),
+            deferred_workflow_step: self.deferred_workflow_step.read().await.clone(),
+            started_at_ms: *self.started_at_ms.read().await,
+        }
+    }
+
+    pub async fn clear_runtime_state(&self, clear_last_compacted_tail_id: bool) {
+        self.in_flight.store(false, Ordering::SeqCst);
+        self.awaiting_completion.store(false, Ordering::SeqCst);
+        *self.deferred_workflow_step.write().await = None;
+        *self.started_at_ms.write().await = None;
+
+        if clear_last_compacted_tail_id {
+            *self.last_compacted_tail_id.write().await = None;
+        }
+    }
+
+    pub async fn mark_compaction_started(
+        &self,
+        current_tail_id: Option<String>,
+        started_at_ms: i64,
+        awaiting_completion: bool,
+    ) {
+        self.awaiting_completion
+            .store(awaiting_completion, Ordering::SeqCst);
+        *self.last_compacted_tail_id.write().await = current_tail_id;
+        *self.started_at_ms.write().await = Some(started_at_ms);
+    }
+
+    pub fn mark_reused_in_flight(&self, awaiting_completion: bool) {
+        if awaiting_completion {
+            self.awaiting_completion.store(true, Ordering::SeqCst);
+        }
+    }
+
+    pub async fn set_deferred_workflow_step(&self, deferred_step: DeferredWorkflowStep) {
+        *self.deferred_workflow_step.write().await = Some(deferred_step);
+    }
+
+    pub async fn clear_deferred_workflow_step(&self) {
+        *self.deferred_workflow_step.write().await = None;
+    }
+
+    pub async fn take_completion_plan(&self) -> CompactionCompletionPlan {
+        CompactionCompletionPlan {
+            should_resume_completion: self.awaiting_completion.swap(false, Ordering::SeqCst),
+            deferred_workflow_step: self.deferred_workflow_step.write().await.take(),
+        }
+    }
+
+    pub fn is_settled(&self) -> bool {
+        !self.in_flight.load(Ordering::SeqCst) && !self.awaiting_completion.load(Ordering::SeqCst)
     }
 }
 

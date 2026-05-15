@@ -86,6 +86,52 @@ pub fn resolve_preserved_calibration_ratio(
     })
 }
 
+pub fn try_apply_lossy_main_request_fallback(
+    messages: &[Message],
+    provider: &str,
+    safe_input_token_limit: usize,
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+    fallback_calibration_ratio: Option<f64>,
+) -> Option<Vec<Message>> {
+    let mut lossy_messages =
+        crate::agent::llm::context_selector::trim_messages_to_fit_conservative_limit(
+            messages,
+            provider,
+            safe_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+            fallback_calibration_ratio,
+        );
+
+    lossy_messages =
+        crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
+            &lossy_messages,
+            safe_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+            fallback_calibration_ratio,
+        );
+
+    if lossy_messages.is_empty() {
+        return None;
+    }
+
+    let conservative_total =
+        crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+            &lossy_messages,
+            system_prompt_tokens,
+            tools_tokens,
+            fallback_calibration_ratio,
+        );
+
+    if conservative_total >= safe_input_token_limit {
+        return None;
+    }
+
+    Some(lossy_messages)
+}
+
 pub fn build_compact_summary_message(session_id: &str, text: String, created_at: i64) -> Message {
     Message::new_compact_summary_message(session_id, text, created_at)
 }
@@ -626,7 +672,7 @@ pub async fn request_llm_completion(
             .unwrap_or_else(|| "none".to_string())
     );
 
-    let final_messages = if uses_compaction_strategy(&context_strategy) {
+    let mut final_messages = if uses_compaction_strategy(&context_strategy) {
         messages.clone()
     } else {
         crate::agent::llm::context_selector::select_recent_messages_fifo(
@@ -685,7 +731,7 @@ pub async fn request_llm_completion(
 
     if uses_compaction_strategy(&context_strategy) {
         let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-        let conservative_preflight_tokens =
+        let mut conservative_preflight_tokens =
             crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
                 &final_messages,
                 system_prompt_tokens,
@@ -724,27 +770,59 @@ pub async fn request_llm_completion(
                 return Ok(());
             }
 
-            return Err(
-                AgentRuntimeError::new(
-                    AgentRuntimeErrorType::ContextLimitError,
-                    format!(
-                        "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens). Trigger preflight compaction or reduce the latest message size.",
-                        conservative_preflight_tokens, safe_input_token_limit
-                    ),
-                )
-                .with_code("RUST_PREFLIGHT_CONTEXT_LIMIT")
-                .with_original_error(serde_json::json!({
-                    "sessionId": session_id,
-                    "conservativePromptTokens": conservative_preflight_tokens,
-                    "safeInputTokenLimit": safe_input_token_limit,
-                    "compactSummaryInjected": compact_summary_injected,
-                    "selectedMessageCount": final_messages.len(),
-                    "systemPromptTokens": system_prompt_tokens,
-                    "toolsTokens": tools_tokens,
-                    "preservedCalibrationRatio": preserved_calibration_ratio,
-                    "selectedBreakdown": selected_message_breakdown,
-                })),
-            );
+            if let Some(lossy_messages) = try_apply_lossy_main_request_fallback(
+                &final_messages,
+                &provider,
+                safe_input_token_limit,
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio,
+            ) {
+                let lossy_breakdown =
+                    crate::agent::llm::token_utils::summarize_message_token_breakdown(
+                        &lossy_messages,
+                    );
+                conservative_preflight_tokens =
+                    crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+                        &lossy_messages,
+                        system_prompt_tokens,
+                        tools_tokens,
+                        preserved_calibration_ratio,
+                    );
+                log::warn!(
+                    "🪓 Applied lossy fallback to main completion request: session={}, original_message_count={}, reduced_message_count={}, conservative_prompt_tokens={}, safe_input_token_limit={}, compact_summary_injected={}, reduced_breakdown=[{}]",
+                    session_id,
+                    final_messages.len(),
+                    lossy_messages.len(),
+                    conservative_preflight_tokens,
+                    safe_input_token_limit,
+                    compact_summary_injected,
+                    lossy_breakdown
+                );
+                final_messages = lossy_messages;
+            } else {
+                return Err(
+                    AgentRuntimeError::new(
+                        AgentRuntimeErrorType::ContextLimitError,
+                        format!(
+                            "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens). Trigger preflight compaction or reduce the latest message size.",
+                            conservative_preflight_tokens, safe_input_token_limit
+                        ),
+                    )
+                    .with_code("RUST_PREFLIGHT_CONTEXT_LIMIT")
+                    .with_original_error(serde_json::json!({
+                        "sessionId": session_id,
+                        "conservativePromptTokens": conservative_preflight_tokens,
+                        "safeInputTokenLimit": safe_input_token_limit,
+                        "compactSummaryInjected": compact_summary_injected,
+                        "selectedMessageCount": final_messages.len(),
+                        "systemPromptTokens": system_prompt_tokens,
+                        "toolsTokens": tools_tokens,
+                        "preservedCalibrationRatio": preserved_calibration_ratio,
+                        "selectedBreakdown": selected_message_breakdown,
+                    })),
+                );
+            }
         }
     }
 

@@ -1,5 +1,10 @@
 import { createId } from '@paralleldrive/cuid2';
-import { AIServiceProvider, TokenUsage } from '../types';
+import {
+  AIServiceError,
+  AIServiceProvider,
+  type AIServiceErrorKind,
+  TokenUsage,
+} from '../types';
 import {
   type Message,
   type MessageError,
@@ -93,19 +98,14 @@ export function formatUsageMetrics(usage: TokenUsage): {
 }
 
 export function isSpendingCapError(error: unknown): boolean {
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'object' &&
-          error !== null &&
-          'message' in error &&
-          typeof error.message === 'string'
-        ? error.message
-        : String(error);
-  return (
-    message.includes('spending cap') ||
-    (message.includes('RESOURCE_EXHAUSTED') && message.includes('spending'))
-  );
+  return getErrorMessageCandidates(error).some((message) => {
+    const normalizedMessage = message.toLowerCase();
+    return (
+      normalizedMessage.includes('spending cap') ||
+      (message.includes('RESOURCE_EXHAUSTED') &&
+        normalizedMessage.includes('spending'))
+    );
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -190,6 +190,32 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function serializeRawPayload(payload: unknown): string | undefined {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload === undefined) {
+    return undefined;
+  }
+
+  const serialized = safeJsonStringify(payload);
+  return serialized === '{}' ? undefined : serialized;
+}
+
+function getErrorMessageCandidates(error: unknown): string[] {
+  const candidates = [getErrorMessage(error)];
+
+  if (error instanceof AIServiceError) {
+    const rawPayload = serializeRawPayload(error.metadata.rawPayload);
+    if (rawPayload) {
+      candidates.push(rawPayload);
+    }
+  }
+
+  return candidates;
+}
+
 function extractFirstUrl(input: string): string | undefined {
   const match = input.match(/https?:\/\/[^\s)"]+/i);
   return match?.[0];
@@ -201,20 +227,39 @@ export function normalizeAIServiceError(error: unknown): {
   recoverable: boolean;
   errorCode?: string;
 } | null {
+  if (error instanceof AIServiceError) {
+    const mapped = mapTypedAIServiceError(error);
+    if (mapped) {
+      return mapped;
+    }
+  }
+
   const rawMessage = getErrorMessage(error);
-  const parsedPayload = parseProviderErrorPayload(rawMessage);
+  const rawPayloadText =
+    error instanceof AIServiceError
+      ? serializeRawPayload(error.metadata.rawPayload)
+      : undefined;
+  const parsedPayload =
+    parseProviderErrorPayload(rawMessage) ??
+    (rawPayloadText ? parseProviderErrorPayload(rawPayloadText) : null);
   const providerMessage = parsedPayload?.message?.trim();
   const normalizedProviderMessage =
     providerMessage && !providerMessage.startsWith('{')
       ? providerMessage.replace(/\s+/g, ' ').trim()
       : undefined;
-  const billingUrl = extractFirstUrl(normalizedProviderMessage ?? rawMessage);
+  const billingUrl = extractFirstUrl(
+    normalizedProviderMessage ?? rawPayloadText ?? rawMessage,
+  );
   const status = parsedPayload?.status;
   const code = parsedPayload?.code;
   const lowerRawMessage = rawMessage.toLowerCase();
+  const normalizedStatus = status?.toLowerCase();
   const isRateLimit =
     code === 429 ||
-    status === 'RESOURCE_EXHAUSTED' ||
+    normalizedStatus === 'resource_exhausted' ||
+    normalizedStatus === 'quota_exceeded' ||
+    normalizedStatus === 'insufficient_quota' ||
+    normalizedStatus === 'rate_limit_exceeded' ||
     lowerRawMessage.includes('rate limit') ||
     lowerRawMessage.includes('too many requests');
 
@@ -243,4 +288,78 @@ export function normalizeAIServiceError(error: unknown): {
   }
 
   return null;
+}
+
+function mapTypedAIServiceError(error: AIServiceError): {
+  type: MessageError['type'];
+  displayMessage: string;
+  recoverable: boolean;
+  errorCode?: string;
+} | null {
+  const kind = error.metadata.kind;
+  if (!kind || kind === 'unknown') {
+    return null;
+  }
+
+  if (kind === 'rate_limit' && isSpendingCapError(error)) {
+    return null;
+  }
+
+  const providerMessage = error.message
+    .replace(/^[^:]+ streaming failed:\s*/i, '')
+    .trim();
+
+  const byKind: Record<
+    AIServiceErrorKind,
+    {
+      type: MessageError['type'];
+      recoverable: boolean;
+      errorCode: string;
+    }
+  > = {
+    context_limit: {
+      type: 'CONTEXT_LIMIT_ERROR',
+      recoverable: true,
+      errorCode: 'CONTEXT_LIMIT_EXCEEDED',
+    },
+    rate_limit: {
+      type: 'RATE_LIMIT_ERROR',
+      recoverable: error.metadata.retryable ?? true,
+      errorCode: isSpendingCapError(error)
+        ? 'SPENDING_CAP_EXCEEDED'
+        : 'RATE_LIMIT_EXCEEDED',
+    },
+    authentication: {
+      type: 'AUTHENTICATION_ERROR',
+      recoverable: false,
+      errorCode: 'AUTHENTICATION_FAILED',
+    },
+    network: {
+      type: 'NETWORK_ERROR',
+      recoverable: true,
+      errorCode: 'NETWORK_ERROR',
+    },
+    invalid_request: {
+      type: 'VALIDATION_ERROR',
+      recoverable: false,
+      errorCode: 'INVALID_REQUEST',
+    },
+    server: {
+      type: 'AI_SERVICE_ERROR',
+      recoverable: true,
+      errorCode: 'PROVIDER_SERVER_ERROR',
+    },
+    unknown: {
+      type: 'AI_SERVICE_ERROR',
+      recoverable: true,
+      errorCode: 'AI_SERVICE_ERROR',
+    },
+  };
+
+  return {
+    type: byKind[kind].type,
+    displayMessage: providerMessage || error.message,
+    recoverable: byKind[kind].recoverable,
+    errorCode: byKind[kind].errorCode,
+  };
 }

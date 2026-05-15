@@ -8,7 +8,7 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     preview_preflight_compaction_selection, resolve_context_management_settings,
     resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
     should_trigger_background_compaction, should_trigger_post_response_compaction,
-    uses_compaction_strategy,
+    try_apply_lossy_main_request_fallback, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_snapshot;
@@ -214,6 +214,56 @@ fn test_find_background_compaction_split_index_ignores_internal_synthetic_user_m
     let preview = preview_background_compaction_selection(&[synthetic]);
     assert_eq!(preview.compacted_ids, vec!["m1"]);
     assert!(preview.preserved_ids.is_empty());
+}
+
+#[test]
+fn test_lossy_main_request_fallback_drops_oldest_messages_until_within_limit() {
+    let messages = vec![
+        make_message("m1", "user", &"older context ".repeat(800)),
+        make_message("m2", "assistant", &"assistant context ".repeat(800)),
+        make_message("m3", "user", &"latest request ".repeat(400)),
+    ];
+
+    let original_total = calculate_conservative_preflight_prompt_tokens(&messages, 0, 0, None);
+    let safe_limit = original_total / 2;
+
+    let reduced =
+        try_apply_lossy_main_request_fallback(&messages, "openai", safe_limit, 0, 0, None)
+            .expect("lossy fallback should produce a reduced request");
+
+    let reduced_total = calculate_conservative_preflight_prompt_tokens(&reduced, 0, 0, None);
+
+    assert!(reduced.len() < messages.len());
+    assert!(reduced_total < safe_limit);
+}
+
+#[test]
+fn test_lossy_main_request_fallback_truncates_single_oversized_message() {
+    let messages = vec![make_message(
+        "m1",
+        "user",
+        &"single oversized message ".repeat(2000),
+    )];
+    let original_total = calculate_conservative_preflight_prompt_tokens(&messages, 0, 0, None);
+    let safe_limit = original_total / 3;
+
+    let reduced =
+        try_apply_lossy_main_request_fallback(&messages, "openai", safe_limit, 0, 0, None)
+            .expect("lossy fallback should truncate a single oversized user message");
+
+    let reduced_total = calculate_conservative_preflight_prompt_tokens(&reduced, 0, 0, None);
+    let reduced_text = reduced[0]
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+
+    assert_eq!(reduced.len(), 1);
+    assert!(reduced_total < safe_limit);
+    assert!(reduced_text.contains("[truncated for context fit]"));
 }
 
 #[test]

@@ -16,16 +16,7 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     *session.repeated_thinking_retry_count.write().await = 0;
     // Safety valve: clear any stale in-flight compaction state before
     // explicitly starting or restarting a workflow from the current stack.
-    session.compaction.in_flight.store(false, Ordering::SeqCst);
-    session
-        .compaction
-        .awaiting_completion
-        .store(false, Ordering::SeqCst);
-    session
-        .compaction
-        .finalize_workflow_after_compact
-        .store(false, Ordering::SeqCst);
-    *session.compaction.deferred_workflow_step.write().await = None;
+    session.compaction.clear_runtime_state(false).await;
 }
 
 pub async fn start_workflow(
