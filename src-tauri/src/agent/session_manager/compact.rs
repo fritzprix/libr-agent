@@ -1,8 +1,8 @@
 use super::AgentSessionManager;
-use crate::agent::compact_recovery::{clear_compact_in_flight, handle_compact_error_state};
+use crate::agent::compact_recovery::handle_compact_error_state;
 use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::CompactStatePhase;
-use crate::agent::state::{AgentSession, DeferredWorkflowStep};
+use crate::agent::state::{AgentSession, CompactionResumeAction, DeferredWorkflowStep};
 use crate::agent::tauri_events::emit_compact_finished;
 use crate::repositories::{CompactContextRecord, SessionRepository, SessionStatus};
 use std::collections::HashMap;
@@ -113,7 +113,7 @@ pub async fn handle_compact_response(
         })
     };
     let started_at_ms = if let Some(compaction) = compaction {
-        compaction.snapshot().await.started_at_ms
+        compaction.snapshot().await.started_at_ms()
     } else {
         None
     };
@@ -140,28 +140,25 @@ pub async fn handle_compact_response(
     };
     manager.save_compact_context(session_id, record).await?;
 
-    let completion_plan = {
+    let resume_action = {
         let active = manager.active_sessions.read().await;
         if let Some(session) = active.get(session_id) {
-            Some(session.compaction.take_completion_plan().await)
+            Some(session.compaction.complete_success().await)
         } else {
             None
         }
     };
-    let should_resume_completion = completion_plan
-        .as_ref()
-        .map(|plan| plan.should_resume_completion)
-        .unwrap_or(false);
-    let deferred_workflow_step = completion_plan.and_then(|plan| plan.deferred_workflow_step);
+    let resume_action = resume_action.unwrap_or(CompactionResumeAction::Nothing);
 
     log::info!(
-        "📌 Compact completion decision for session {}: should_resume_completion={}, deferred_step={}",
+        "📌 Compact completion decision for session {}: action={}",
         session_id,
-        should_resume_completion,
-        deferred_workflow_step.is_some()
+        match &resume_action {
+            CompactionResumeAction::Nothing => "nothing",
+            CompactionResumeAction::ResumeCompletion => "resume_completion",
+            CompactionResumeAction::RunDeferred(_) => "run_deferred",
+        }
     );
-
-    clear_compact_in_flight(&manager.active_sessions, session_id).await;
     if let Err(error) = emit_compact_finished(
         &manager.app_handle,
         session_id.to_string(),
@@ -176,8 +173,9 @@ pub async fn handle_compact_response(
         );
     }
 
-    if let Some(deferred_workflow_step) = deferred_workflow_step {
-        match deferred_workflow_step {
+    match resume_action {
+        CompactionResumeAction::RunDeferred(deferred_workflow_step) => match deferred_workflow_step
+        {
             DeferredWorkflowStep::RequestCompletion => {
                 log::info!(
                     "▶️ Resuming deferred LLM completion after compaction for session {}",
@@ -220,13 +218,15 @@ pub async fn handle_compact_response(
             DeferredWorkflowStep::FinalizeWorkflow { reason } => {
                 finalize_workflow_completion(manager, session_id, reason).await?;
             }
+        },
+        CompactionResumeAction::ResumeCompletion => {
+            log::info!(
+                "▶️ Resuming blocked LLM completion after compaction for session {}",
+                session_id
+            );
+            spawn_resume_completion(manager, session_id, "LLM completion");
         }
-    } else if should_resume_completion {
-        log::info!(
-            "▶️ Resuming blocked LLM completion after compaction for session {}",
-            session_id
-        );
-        spawn_resume_completion(manager, session_id, "LLM completion");
+        CompactionResumeAction::Nothing => {}
     }
 
     Ok(())

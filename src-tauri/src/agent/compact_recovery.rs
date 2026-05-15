@@ -55,18 +55,15 @@ pub async fn handle_compact_error_state(
         } else {
             (
                 crate::agent::state::CompactionSnapshot {
-                    in_flight: false,
+                    phase: crate::agent::state::CompactionPhase::Idle,
                     last_compacted_tail_id: None,
-                    awaiting_completion: false,
-                    deferred_workflow_step: None,
-                    started_at_ms: None,
                 },
                 session_id.chars().take(8).collect::<String>(),
             )
         }
     };
     let elapsed_ms = snapshot
-        .started_at_ms
+        .started_at_ms()
         .map(|started_at| chrono::Utc::now().timestamp_millis() - started_at);
 
     let error_code = error
@@ -91,13 +88,7 @@ pub async fn handle_compact_error_state(
     log::warn!(
         "❌ Compaction failed: session={}, mode={}, elapsed_ms={}, error_code={}, message={}",
         session_id,
-        if snapshot.deferred_workflow_step.is_some() {
-            "post-response"
-        } else if snapshot.awaiting_completion {
-            "preflight"
-        } else {
-            "manual"
-        },
+        snapshot.mode_label(),
         elapsed_ms
             .map(|value| value.to_string())
             .unwrap_or_else(|| "unknown".to_string()),
@@ -105,7 +96,7 @@ pub async fn handle_compact_error_state(
         error.display_message
     );
 
-    if snapshot.awaiting_completion || snapshot.deferred_workflow_step.is_some() {
+    if snapshot.blocks_workflow() {
         log::warn!(
             "Blocking compaction failed for session {}. Failing workflow.",
             session_id

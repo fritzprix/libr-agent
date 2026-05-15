@@ -5,7 +5,8 @@ use std::time::SystemTime;
 
 use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::state::{
-    AgentSession, CompactionRuntimeState, DeferredWorkflowStep, PendingEventManager,
+    AgentSession, CompactionKind, CompactionPhase, CompactionRuntimeState, DeferredWorkflowStep,
+    InFlightCompaction, PendingEventManager,
 };
 use tauri_mcp_agent_lib::agent::workflow::reset_session_execution_state;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
@@ -76,29 +77,27 @@ async fn reset_session_execution_state_clears_cancel_poison_and_stale_compaction
 
     session.cancel_pending.store(true, Ordering::SeqCst);
     session.cancellation_token.cancel();
-    session.compaction.in_flight.store(true, Ordering::SeqCst);
-    session
-        .compaction
-        .awaiting_completion
-        .store(true, Ordering::SeqCst);
-    *session.compaction.deferred_workflow_step.write().await =
-        Some(DeferredWorkflowStep::RequestCompletion);
+    session.compaction = CompactionRuntimeState::with_test_state(
+        CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::PostResponse {
+                deferred_step: DeferredWorkflowStep::RequestCompletion,
+            },
+            current_tail_id: Some("tail-before-reset".to_string()),
+            started_at_ms: 1234,
+        }),
+        Some("tail-before-reset".to_string()),
+    );
 
     reset_session_execution_state(&mut session).await;
+    let snapshot = session.compaction.snapshot().await;
 
     assert!(!session.cancel_pending.load(Ordering::SeqCst));
     assert!(!session.cancellation_token.is_cancelled());
-    assert!(!session.compaction.in_flight.load(Ordering::SeqCst));
-    assert!(!session
-        .compaction
-        .awaiting_completion
-        .load(Ordering::SeqCst));
-    assert!(session
-        .compaction
-        .deferred_workflow_step
-        .read()
-        .await
-        .is_none());
+    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
+    assert_eq!(
+        snapshot.last_compacted_tail_id,
+        Some("tail-before-reset".to_string())
+    );
 }
 
 #[tokio::test]

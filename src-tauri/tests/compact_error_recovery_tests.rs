@@ -14,7 +14,10 @@ use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
-use tauri_mcp_agent_lib::agent::state::{AgentSession, DeferredWorkflowStep, PendingEventManager};
+use tauri_mcp_agent_lib::agent::state::{
+    AgentSession, CompactionKind, CompactionPhase, DeferredWorkflowStep, InFlightCompaction,
+    PendingEventManager,
+};
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
 };
@@ -106,6 +109,11 @@ fn build_agent_session(
     metadata: SessionMetadata,
     awaiting_compact_completion: bool,
 ) -> AgentSession {
+    let kind = if awaiting_compact_completion {
+        CompactionKind::Preflight
+    } else {
+        CompactionKind::Manual
+    };
     AgentSession {
         metadata,
         is_running: true,
@@ -126,9 +134,12 @@ fn build_agent_session(
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compaction: tauri_mcp_agent_lib::agent::state::CompactionRuntimeState::with_test_state(
-            true,
+            CompactionPhase::InFlight(InFlightCompaction {
+                kind,
+                current_tail_id: Some("tail-before-error".to_string()),
+                started_at_ms: 1234,
+            }),
             Some("tail-before-error".to_string()),
-            awaiting_compact_completion,
         ),
         expected_response_id: Arc::new(RwLock::new(None)),
         cached_stable_prompt: Arc::new(RwLock::new(None)),
@@ -175,18 +186,9 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     let active = active_sessions.read().await;
     let session = active.get(session_id).expect("active session should exist");
     assert_eq!(session.metadata.status, SessionStatus::Error);
-    assert!(!session
-        .compaction
-        .in_flight
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert!(!session
-        .compaction
-        .awaiting_completion
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert_eq!(
-        *session.compaction.last_compacted_tail_id.read().await,
-        None
-    );
+    let snapshot = session.compaction.snapshot().await;
+    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
+    assert_eq!(snapshot.last_compacted_tail_id, None);
     drop(active);
 
     let compact_states = dispatcher.compact_states();
@@ -260,18 +262,9 @@ async fn manual_compact_failure_clears_flags_without_failing_workflow() {
     let active = active_sessions.read().await;
     let session = active.get(session_id).expect("active session should exist");
     assert_eq!(session.metadata.status, SessionStatus::Busy);
-    assert!(!session
-        .compaction
-        .in_flight
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert!(!session
-        .compaction
-        .awaiting_completion
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert_eq!(
-        *session.compaction.last_compacted_tail_id.read().await,
-        None
-    );
+    let snapshot = session.compaction.snapshot().await;
+    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
+    assert_eq!(snapshot.last_compacted_tail_id, None);
     drop(active);
 
     assert_eq!(dispatcher.compact_states().len(), 1);
@@ -291,10 +284,12 @@ async fn post_response_compact_failure_with_deferred_step_transitions_workflow_t
     let session_repo: Arc<dyn SessionRepository> = repo.clone();
 
     let session = build_agent_session(metadata.clone(), false);
-    *session.compaction.deferred_workflow_step.write().await =
-        Some(DeferredWorkflowStep::FinalizeWorkflow {
+    session
+        .compaction
+        .attach_deferred_workflow_step(DeferredWorkflowStep::FinalizeWorkflow {
             reason: tauri_mcp_agent_lib::agent::events::WorkflowCompletionReason::Natural,
-        });
+        })
+        .await;
     let active_sessions = Arc::new(RwLock::new(HashMap::from([(
         session_id.to_string(),
         session,
@@ -325,12 +320,8 @@ async fn post_response_compact_failure_with_deferred_step_transitions_workflow_t
     let active = active_sessions.read().await;
     let session = active.get(session_id).expect("active session should exist");
     assert_eq!(session.metadata.status, SessionStatus::Error);
-    assert!(session
-        .compaction
-        .deferred_workflow_step
-        .read()
-        .await
-        .is_none());
+    let snapshot = session.compaction.snapshot().await;
+    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
     drop(active);
 
     let agent_events = dispatcher.agent_events();

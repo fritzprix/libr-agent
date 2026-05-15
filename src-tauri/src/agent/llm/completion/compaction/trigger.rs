@@ -1,14 +1,16 @@
 use crate::agent::llm::completion::context::load_context_management_settings;
 use crate::agent::llm::completion::request::normalize_request_messages;
 use crate::agent::llm::types::{CompactRequest, CompactStatePhase, CompactionParentRequest};
-use crate::agent::state::{AgentSession, DeferredWorkflowStep};
+use crate::agent::state::{
+    AgentSession, CompactionBeginOutcome, CompactionKind, CompactionReuseOutcome,
+    DeferredWorkflowStep,
+};
 use crate::agent::tauri_events::{
     emit_compact_finished, emit_compact_request, emit_compact_started,
 };
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
@@ -17,12 +19,6 @@ use super::payload::{
     build_compaction_request_payload, estimate_compaction_non_message_tokens,
     fit_compaction_request_messages_to_limit, CompactionRequestPayload,
 };
-
-pub(crate) struct BackgroundCompactionHandles {
-    pub(crate) compact_in_flight_arc: Arc<AtomicBool>,
-    pub(crate) last_compacted_tail_id_arc: Arc<RwLock<Option<String>>>,
-    pub(crate) deferred_workflow_step_handle: Arc<RwLock<Option<DeferredWorkflowStep>>>,
-}
 
 enum PostResponseCompactionTriggerOutcome {
     Triggered,
@@ -36,35 +32,6 @@ struct PostResponseCompactionInput<'a> {
     messages: &'a [Message],
     parent_request: Option<CompactionParentRequest>,
     deferred_step: DeferredWorkflowStep,
-}
-
-struct InFlightResetGuard {
-    flag: Arc<AtomicBool>,
-    armed: bool,
-}
-
-impl InFlightResetGuard {
-    fn new(flag: Arc<AtomicBool>) -> Self {
-        Self { flag, armed: true }
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for InFlightResetGuard {
-    fn drop(&mut self) {
-        if self.armed {
-            self.flag.store(false, Ordering::SeqCst);
-        }
-    }
-}
-
-fn try_claim_in_flight(flag: &Arc<AtomicBool>) -> Option<InFlightResetGuard> {
-    flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_ok()
-        .then(|| InFlightResetGuard::new(flag.clone()))
 }
 
 async fn resolve_parent_request(
@@ -280,7 +247,6 @@ async fn trigger_post_response_blocking_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     input: PostResponseCompactionInput<'_>,
-    handles: &BackgroundCompactionHandles,
 ) -> Result<PostResponseCompactionTriggerOutcome, String> {
     let PostResponseCompactionInput {
         session_id,
@@ -294,37 +260,8 @@ async fn trigger_post_response_blocking_compaction(
         return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
     }
 
-    let Some(mut in_flight_guard) = try_claim_in_flight(&handles.compact_in_flight_arc) else {
-        let mut deferred_workflow_step = handles.deferred_workflow_step_handle.write().await;
-        if deferred_workflow_step.is_none() {
-            *deferred_workflow_step = Some(deferred_step);
-            log::info!(
-                "⏳ Reusing in-flight compaction and preserving post-response continuation: session={}",
-                session_id
-            );
-        } else {
-            log::warn!(
-                "Post-response compaction reused an in-flight compaction that already had a deferred continuation: session={}",
-                session_id
-            );
-        }
-        return Ok(PostResponseCompactionTriggerOutcome::ReusedInFlight);
-    };
-
     let current_tail_id = messages.last().map(|message| message.id.clone());
-    let last_compacted_tail = handles.last_compacted_tail_id_arc.read().await.clone();
-    let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
 
-    if same_tail && should_skip_same_tail_compaction(messages, split_idx) {
-        log::debug!(
-            "⏭️ Compaction skipped (same tail): session={}, tail={}",
-            session_id,
-            current_tail_id.as_deref().unwrap_or("?")
-        );
-        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
-    }
-
-    let started_at_ms = chrono::Utc::now().timestamp_millis();
     let compact_context_handles = {
         let active = active_sessions.read().await;
         active
@@ -340,6 +277,22 @@ async fn trigger_post_response_blocking_compaction(
         } else {
             (None, None)
         };
+    let Some(compaction_state) = compaction_state else {
+        return Err(format!("Session not found: {}", session_id));
+    };
+    let last_compacted_tail = compaction_state.last_compacted_tail_id().await;
+    let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
+
+    if same_tail && should_skip_same_tail_compaction(messages, split_idx) {
+        log::debug!(
+            "⏭️ Compaction skipped (same tail): session={}, tail={}",
+            session_id,
+            current_tail_id.as_deref().unwrap_or("?")
+        );
+        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
+    }
+
+    let started_at_ms = chrono::Utc::now().timestamp_millis();
 
     let Some(prepared) = prepare_compaction_request(
         active_sessions,
@@ -370,53 +323,69 @@ async fn trigger_post_response_blocking_compaction(
     let compact_event = prepared.compact_event;
     let started_at_ms = prepared.started_at_ms;
 
-    if let Some(compaction_state) = compaction_state {
-        compaction_state
-            .set_deferred_workflow_step(deferred_step)
-            .await;
-        compaction_state
-            .mark_compaction_started(tail_id_for_task, started_at_ms, true)
-            .await;
-
-        if let Err(error) = emit_compact_started(
-            app_handle,
-            session_id.to_string(),
-            Some(session_name.to_string()),
-            true,
-        ) {
-            compaction_state.clear_runtime_state(true).await;
-            return Err(error);
-        }
-
-        if let Err(error) = emit_compact_request(app_handle, compact_event) {
-            compaction_state.clear_runtime_state(true).await;
-            if let Err(emit_error) = emit_compact_finished(
+    match compaction_state
+        .try_begin(
+            CompactionKind::PostResponse {
+                deferred_step: deferred_step.clone(),
+            },
+            tail_id_for_task,
+            started_at_ms,
+        )
+        .await
+    {
+        CompactionBeginOutcome::Started => {
+            if let Err(error) = emit_compact_started(
                 app_handle,
                 session_id.to_string(),
                 Some(session_name.to_string()),
-                CompactStatePhase::Failed,
-                Some(error.clone()),
+                true,
             ) {
-                log::warn!(
-                    "Failed to emit post-response compaction failure state for session {}: {}",
-                    session_id,
-                    emit_error
-                );
+                compaction_state.clear_runtime_state(true).await;
+                return Err(error);
             }
-            return Err(error);
+
+            if let Err(error) = emit_compact_request(app_handle, compact_event) {
+                compaction_state.clear_runtime_state(true).await;
+                if let Err(emit_error) = emit_compact_finished(
+                    app_handle,
+                    session_id.to_string(),
+                    Some(session_name.to_string()),
+                    CompactStatePhase::Failed,
+                    Some(error.clone()),
+                ) {
+                    log::warn!(
+                        "Failed to emit post-response compaction failure state for session {}: {}",
+                        session_id,
+                        emit_error
+                    );
+                }
+                return Err(error);
+            }
         }
-    } else {
-        *handles.deferred_workflow_step_handle.write().await = Some(deferred_step);
-        emit_compact_started(
-            app_handle,
-            session_id.to_string(),
-            Some(session_name.to_string()),
-            true,
-        )?;
-        emit_compact_request(app_handle, compact_event)?;
+        CompactionBeginOutcome::AlreadyInFlight => {
+            match compaction_state
+                .attach_deferred_workflow_step(deferred_step)
+                .await
+            {
+                CompactionReuseOutcome::Promoted => log::info!(
+                    "⏳ Reusing in-flight compaction and preserving post-response continuation: session={}",
+                    session_id
+                ),
+                CompactionReuseOutcome::NoChange => log::warn!(
+                    "Post-response compaction reused an in-flight compaction that already had a deferred continuation: session={}",
+                    session_id
+                ),
+                CompactionReuseOutcome::NotInFlight => {
+                    return Err(format!(
+                        "Compaction phase unexpectedly became idle while reusing post-response compaction for session {}",
+                        session_id
+                    ));
+                }
+            }
+            return Ok(PostResponseCompactionTriggerOutcome::ReusedInFlight);
+        }
     }
 
-    in_flight_guard.disarm();
     log::info!(
         "🔧 Post-response compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
         session_id,
@@ -468,18 +437,6 @@ pub async fn trigger_post_response_compaction_if_needed(
         return Ok(false);
     }
 
-    let handles = {
-        let active = active_sessions.read().await;
-        let session = active
-            .get(session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        BackgroundCompactionHandles {
-            compact_in_flight_arc: session.compaction.in_flight.clone(),
-            last_compacted_tail_id_arc: session.compaction.last_compacted_tail_id.clone(),
-            deferred_workflow_step_handle: session.compaction.deferred_workflow_step.clone(),
-        }
-    };
-
     let outcome = trigger_post_response_blocking_compaction(
         active_sessions,
         app_handle,
@@ -490,7 +447,6 @@ pub async fn trigger_post_response_compaction_if_needed(
             parent_request: None,
             deferred_step,
         },
-        &handles,
     )
     .await?;
 
@@ -536,43 +492,16 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(false);
     }
 
-    let (compact_in_flight_arc, last_compacted_tail_id_arc, compact_context_handle, compaction) = {
+    let (compact_context_handle, compaction) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        (
-            session.compaction.in_flight.clone(),
-            session.compaction.last_compacted_tail_id.clone(),
-            session.compact_context.clone(),
-            session.compaction.clone(),
-        )
-    };
-
-    let Some(mut in_flight_guard) = try_claim_in_flight(&compact_in_flight_arc) else {
-        compaction.mark_reused_in_flight(resume_completion_after_compact);
-        emit_compact_started(
-            app_handle,
-            session_id.to_string(),
-            Some(session_name.to_string()),
-            resume_completion_after_compact,
-        )?;
-        if resume_completion_after_compact {
-            log::info!(
-                "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
-                session_id
-            );
-        } else {
-            log::info!(
-                "⏳ Reusing in-flight compaction without resume-after-compact: session={}, mode=manual",
-                session_id
-            );
-        }
-        return Ok(true);
+        (session.compact_context.clone(), session.compaction.clone())
     };
 
     let current_tail_id = messages.last().map(|message| message.id.clone());
-    let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
+    let last_compacted_tail = compaction.last_compacted_tail_id().await;
     if current_tail_id.as_deref() == last_compacted_tail.as_deref()
         && should_skip_same_tail_compaction(messages, split_idx)
     {
@@ -613,21 +542,71 @@ pub(crate) async fn try_trigger_preflight_compaction(
 
     let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
-    emit_compact_started(
-        app_handle,
-        session_id.to_string(),
-        Some(session_name.to_string()),
-        resume_completion_after_compact,
-    )?;
-    emit_compact_request(app_handle, prepared.compact_event)?;
-    compaction
-        .mark_compaction_started(
+    let compact_event = prepared.compact_event.clone();
+    let kind = if resume_completion_after_compact {
+        CompactionKind::Preflight
+    } else {
+        CompactionKind::Manual
+    };
+    match compaction
+        .try_begin(
+            kind,
             prepared.current_tail_id.clone(),
             prepared.started_at_ms,
-            resume_completion_after_compact,
         )
-        .await;
-    in_flight_guard.disarm();
+        .await
+    {
+        CompactionBeginOutcome::Started => {
+            if let Err(error) = emit_compact_started(
+                app_handle,
+                session_id.to_string(),
+                Some(session_name.to_string()),
+                resume_completion_after_compact,
+            ) {
+                compaction.clear_runtime_state(true).await;
+                return Err(error);
+            }
+            if let Err(error) = emit_compact_request(app_handle, compact_event) {
+                compaction.clear_runtime_state(true).await;
+                return Err(error);
+            }
+        }
+        CompactionBeginOutcome::AlreadyInFlight => {
+            let reuse_outcome = if resume_completion_after_compact {
+                compaction.arm_resume_completion().await
+            } else {
+                CompactionReuseOutcome::NoChange
+            };
+            emit_compact_started(
+                app_handle,
+                session_id.to_string(),
+                Some(session_name.to_string()),
+                resume_completion_after_compact,
+            )?;
+            if resume_completion_after_compact {
+                match reuse_outcome {
+                    CompactionReuseOutcome::Promoted | CompactionReuseOutcome::NoChange => {
+                        log::info!(
+                            "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}, mode=preflight",
+                            session_id
+                        );
+                    }
+                    CompactionReuseOutcome::NotInFlight => {
+                        return Err(format!(
+                            "Compaction phase unexpectedly became idle while reusing preflight compaction for session {}",
+                            session_id
+                        ));
+                    }
+                }
+            } else {
+                log::info!(
+                    "⏳ Reusing in-flight compaction without resume-after-compact: session={}, mode=manual",
+                    session_id
+                );
+            }
+            return Ok(true);
+        }
+    }
 
     if resume_completion_after_compact {
         log::info!(
