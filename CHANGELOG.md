@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.25] - 2026-05-16
+
+### 🚀 Features
+
+- **Enhanced Agent UI**: Refactored agent chat side panels for better organization and added tooltips to image content renderer buttons in the Palette.
+- **Expanded Localization**: Completed localization of Agent Chat views and expanded Korean (KO) coverage, including playbook group aria labels and status indicators.
+- **Performance Optimizations (Bolt)**: Optimized token estimation loops, session history tree traversal, and assistant map creation to significantly improve responsiveness.
+- **UI Accessibility**: Added aria-labels to playbook group toggles and extracted hardcoded "Close" strings in Dialog and Sheet components for better assistive tech support.
+
+### 🐛 Fixes
+
+- **Stability Improvements**: Fixed session and shell timeout regressions and resolved settings form synchronization baselines to prevent configuration drift.
+- **Workflow Reliability**: Fixed planning toast i18n labels and corrected agent tool contract gaps and review blockers identified in recent audits.
+- **Platform Compatibility**: Fixed Cargo PATH handling in CI and improved image tooltip keyboard behavior for better cross-platform accessibility.
+
+### 🔧 Internal
+
+- **Architectural Refinement**: Refactored compaction runtime phases, follow-up handling, and agent chat view cleanups for better maintainability and long-term stability.
+- **Modern React Patterns**: Applied the "Adjusting State During Render" pattern to `useSettingsForm` and `useListNavigation`, eliminating redundant re-renders and improving UI snappiness.
+- **Dependency Maintenance**: Updated core dependencies including `tokio`, `tauri`, `jsonschema`, and `calamine` to their latest versions.
+
 ## [0.7.24] - 2026-05-10
 
 ### 🚀 Features
