@@ -5,6 +5,8 @@ const logger = getLogger('AgentPlanningContext');
 
 interface AgentPlanningContextValue {
   showPlanningPanel: boolean;
+  openPlanningPanel: () => void;
+  closePlanningPanel: () => void;
   togglePlanningPanel: () => void;
 }
 
@@ -21,17 +23,39 @@ export function AgentPlanningProvider({
 }: AgentPlanningProviderProps) {
   const [showPlanningPanel, setShowPlanningPanel] = useState(false);
 
-  const togglePlanningPanel = useCallback(() => {
-    const newValue = !showPlanningPanel;
-    logger.info('Planning panel toggled', {
-      from: showPlanningPanel,
-      to: newValue,
+  const openPlanningPanel = useCallback(() => {
+    setShowPlanningPanel((current) => {
+      if (!current) {
+        logger.info('Planning panel opened');
+      }
+      return true;
     });
-    setShowPlanningPanel(newValue);
-  }, [showPlanningPanel]);
+  }, []);
+
+  const closePlanningPanel = useCallback(() => {
+    setShowPlanningPanel((current) => {
+      if (current) {
+        logger.info('Planning panel closed');
+      }
+      return false;
+    });
+  }, []);
+
+  const togglePlanningPanel = useCallback(() => {
+    setShowPlanningPanel((current) => {
+      const next = !current;
+      logger.info('Planning panel toggled', {
+        from: current,
+        to: next,
+      });
+      return next;
+    });
+  }, []);
 
   const value: AgentPlanningContextValue = {
     showPlanningPanel,
+    openPlanningPanel,
+    closePlanningPanel,
     togglePlanningPanel,
   };
 

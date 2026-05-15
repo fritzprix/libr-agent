@@ -591,6 +591,7 @@
       "bookmarksFirst": "Favoritos primeiro"
     },
     "group": {
+      "ariaLabel": "{{title}} roteiros",
       "today": "Hoje",
       "yesterday": "Ontem",
       "thisWeek": "Esta Semana",

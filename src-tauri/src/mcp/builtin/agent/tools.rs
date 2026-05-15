@@ -30,7 +30,7 @@ fn create_tool() -> MCPTool {
                 ("description".to_string(), string_prop(None, None, Some("Short description of what this agent does. If omitted, the configuration is created without a description."))),
                 ("systemPrompt".to_string(), string_prop(None, None, Some("The core personality and instructions for the agent. If omitted, no custom system prompt is stored."))),
                 ("temperature".to_string(), number_prop(Some(0.0), Some(2.0), Some("Sampling temperature (0.0 to 2.0). If omitted, the configuration leaves temperature unset and the runtime/model default applies."))),
-                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of builtin service aliases to allow (e.g. ['workspace', 'browser', 'planning']). If omitted, the configuration leaves builtin capability overrides unset."))),
+                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted, all optional builtin services stay enabled."))),
                 ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset."))),
             ],
             vec!["name".to_string()],
@@ -57,6 +57,11 @@ fn list_tool() -> MCPTool {
                     ),
                 ),
                 ("query".to_string(), string_prop(None, None, Some("Search term to filter agent configurations by name or description. If omitted, no text filtering is applied."))),
+                ("verbose".to_string(), {
+                    let mut schema = boolean_prop(Some("If true, show full descriptions instead of truncating them in the text table."));
+                    schema.default = Some(json!(false));
+                    schema
+                }),
                 (
                     "limit".to_string(),
                     integer_prop_with_default(
@@ -111,7 +116,7 @@ fn update_tool() -> MCPTool {
                     "temperature".to_string(),
                     number_prop(Some(0.0), Some(2.0), Some("Change temperature. If omitted, keep the current temperature unchanged.")),
                 ),
-                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("Replace the allowed builtin service aliases. If omitted, keep the current builtin capability list unchanged."))),
+                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("Replace the optional builtin service aliases that are added on top of the always-on core services. If omitted, keep the current optional builtin capability list unchanged."))),
                 ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("Replace the allowed external MCP server IDs. If omitted, keep the current external MCP server list unchanged."))),
             ],
             vec!["id".to_string()],
@@ -203,7 +208,7 @@ fn message_to_session_tool() -> MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
         description:
-            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state."
+            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Returns immediately unless waitForResponse=true."
                 .to_string(),
         input_schema: object_prop(
             vec![
@@ -214,6 +219,23 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "message".to_string(),
                     string_prop_required("The message or instruction to send."),
+                ),
+                (
+                    "waitForResponse".to_string(),
+                    {
+                        let mut schema = boolean_prop(Some("If true, block until the child reaches a terminal response after receiving this message."));
+                        schema.default = Some(json!(false));
+                        schema
+                    },
+                ),
+                (
+                    "timeout".to_string(),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(3600),
+                        3600,
+                        Some("Maximum seconds to wait when waitForResponse is true. Ignored otherwise."),
+                    ),
                 ),
             ],
             vec!["sessionId".to_string(), "message".to_string()],
@@ -259,7 +281,7 @@ fn stop_session_tool() -> MCPTool {
     MCPTool {
         name: "stopSession".to_string(),
         title: Some("Stop Agent Session".to_string()),
-        description: "Forcefully terminate an active sub-agent session. Use this when a delegated task is no longer needed or if the sub-agent appears stuck. This immediately halts execution.".to_string(),
+        description: "Forcefully terminate an active sub-agent session. Use this when a delegated task is no longer needed or if the sub-agent appears stuck. If the session is already non-running, the tool reports that no action was needed.".to_string(),
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to stop.")),

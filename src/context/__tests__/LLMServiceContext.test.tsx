@@ -250,6 +250,34 @@ describe('LLMServiceContext – Core', () => {
 
       expect(mockDispose).not.toHaveBeenCalled();
     });
+
+    it('cleans up the compact request listener when compact state registration fails', async () => {
+      const completionCleanup = vi.fn();
+      const cancelCleanup = vi.fn();
+      const compactRequestCleanup = vi.fn();
+      const registrationError = new Error('compact state registration failed');
+
+      (listen as ReturnType<typeof vi.fn>)
+        .mockReset()
+        .mockResolvedValueOnce(completionCleanup)
+        .mockResolvedValueOnce(cancelCleanup)
+        .mockResolvedValueOnce(compactRequestCleanup)
+        .mockRejectedValueOnce(registrationError);
+
+      renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      await waitFor(() => {
+        expect(loggerError).toHaveBeenCalledWith(
+          'Failed to register compact listeners',
+          registrationError,
+        );
+      });
+
+      expect(compactRequestCleanup).toHaveBeenCalledTimes(1);
+      expect(cancelCleanup).not.toHaveBeenCalled();
+    });
   });
 
   describe('Session Status', () => {

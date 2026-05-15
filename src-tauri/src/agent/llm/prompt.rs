@@ -226,6 +226,17 @@ fn build_stable_prefix(
         parts.push(agent_config.system_prompt.clone());
     }
 
+    if agent_config.id.is_some() || !agent_config.name.trim().is_empty() {
+        let agent_id = agent_config.id.as_deref().unwrap_or("(unknown)");
+        parts.push(format!(
+            "\n\n## Agent Runtime Identity\n\
+            - Agent Name: {}\n\
+            - Agent ID: {}",
+            agent_config.name.trim(),
+            agent_id
+        ));
+    }
+
     // 2. Persona / Voice Template — injected from SOUL.md and kept distinct from
     //    workspace instructions because it defines character, not task guidance.
     if let Some((filename, content)) = &soul_instruction {

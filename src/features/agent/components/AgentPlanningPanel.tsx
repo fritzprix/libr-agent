@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Circle, PanelRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAgentChat } from '@/context/AgentChatContext';
@@ -8,23 +8,32 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
 import { parsePlanningState, parseScratchpadState } from '@/models/planning';
+import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentPlanningPanel');
 
-export function AgentPlanningPanel() {
+interface AgentPlanningPanelProps {
+  isVisible?: boolean;
+  variant?: 'rail' | 'sheet';
+}
+
+export function AgentPlanningPanel({
+  isVisible = true,
+  variant = 'rail',
+}: AgentPlanningPanelProps) {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { serviceContexts, updateServiceContexts } = useAgentChat();
+  const wasVisibleRef = useRef(false);
 
-  // Component lifecycle logging
   useEffect(() => {
-    logger.info('AGENT_PLANNING_PANEL: Component mounted');
-    // Ensure we have the latest planning state when the panel opens
-    updateServiceContexts();
-    return () => {
-      logger.info('AGENT_PLANNING_PANEL: Component unmounted');
-    };
-  }, [updateServiceContexts]);
+    if (isVisible && !wasVisibleRef.current) {
+      logger.info('AGENT_PLANNING_PANEL: Panel became visible');
+      void updateServiceContexts();
+    }
+
+    wasVisibleRef.current = isVisible;
+  }, [isVisible, updateServiceContexts]);
 
   const planningState = useMemo(
     () => parsePlanningState(serviceContexts.planning?.structuredState),
@@ -54,7 +63,15 @@ export function AgentPlanningPanel() {
   if (!session) return null;
 
   return (
-    <Card className="h-full w-80 flex-shrink-0 rounded-none border-y-0 border-r-0 border-l border-border/40 bg-background py-0 shadow-none gap-0 overflow-hidden">
+    <Card
+      id="agent-planning-panel"
+      className={cn(
+        'h-full overflow-hidden rounded-none bg-background py-0 shadow-none gap-0',
+        variant === 'rail'
+          ? 'w-80 flex-shrink-0 border-y-0 border-r-0 border-l border-border/40'
+          : 'w-full border-0',
+      )}
+    >
       <CardHeader className="border-b border-border/40 px-4 py-3">
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">

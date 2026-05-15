@@ -3,7 +3,7 @@ use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::settings_repository::SettingsRepository;
-use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};
+use crate::repositories::{SessionMetadata, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -192,12 +192,9 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     );
 
     // Load compact context if exists (SP17)
-    let compact_context_record = {
-        let repo = crate::state::get_compact_context_repository();
-        repo.get_by_session_id(&session_id)
-            .await
-            .map_err(|e| format!("Failed to get compact context: {}", e))?
-    };
+    let compact_context_record =
+        crate::agent::lifecycle::load_compact_context_record(&session_id, "session creation")
+            .await?;
 
     // Add to active sessions with cancellation token and empty cache
     let mut active = active_sessions.write().await;
@@ -208,10 +205,11 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         );
         existing_session.metadata = session.clone();
         // Update compact context if it was loaded
-        if let Some(record) = compact_context_record {
-            let mut compact = existing_session.compact_context.write().await;
-            *compact = Some(record);
-        }
+        crate::agent::lifecycle::set_compact_context_if_loaded(
+            existing_session,
+            compact_context_record,
+        )
+        .await;
     } else {
         log::info!("Initializing new active state for session: {}", session_id);
         active.insert(

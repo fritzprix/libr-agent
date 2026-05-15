@@ -591,6 +591,7 @@
       "bookmarksFirst": "Marcadores primero"
     },
     "group": {
+      "ariaLabel": "{{title}} guías",
       "today": "Hoy",
       "yesterday": "Ayer",
       "thisWeek": "Esta semana",

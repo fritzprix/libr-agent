@@ -1,4 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  type MutableRefObject,
+} from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +38,7 @@ import {
   type DragAndDropPayload,
 } from '@/context/DnDContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { cn } from '@/lib/utils';
 
 import { FileTreeNode } from './workspace-panel/FileTreeNode';
 import { useWorkspaceFiles } from './workspace-panel/useWorkspaceFiles';
@@ -41,12 +48,39 @@ import type { FileNode } from './workspace-panel/types';
 
 const logger = getLogger('AgentWorkspacePanel');
 
-export function AgentWorkspacePanel() {
+async function withNativeOpenLock(
+  sessionId: string | undefined,
+  isOpeningNative: boolean,
+  lockRef: MutableRefObject<boolean>,
+  setIsOpeningNative: (value: boolean) => void,
+  action: (sessionId: string) => Promise<void>,
+) {
+  if (!sessionId || isOpeningNative || lockRef.current) return;
+
+  lockRef.current = true;
+  setIsOpeningNative(true);
+  try {
+    await action(sessionId);
+  } finally {
+    setIsOpeningNative(false);
+    lockRef.current = false;
+  }
+}
+
+interface AgentWorkspacePanelProps {
+  isVisible?: boolean;
+  variant?: 'rail' | 'sheet';
+}
+
+export function AgentWorkspacePanel({
+  isVisible = true,
+  variant = 'rail',
+}: AgentWorkspacePanelProps) {
   const { t } = useTranslation();
   const { openWorkspaceFileWithDefaultApp } = useRustBackend();
   const { session } = useAgentSessionState();
 
-  const [rootPath] = useState<string>('./');
+  const rootPath = './';
   const panelRef = useRef<HTMLDivElement>(null);
   const { subscribe } = useDnDContext();
   const [dragState, setDragState] = useState<{ isOver: boolean }>({
@@ -134,6 +168,11 @@ export function AgentWorkspacePanel() {
 
   // Subscribe to DnD events
   useEffect(() => {
+    if (!isVisible) {
+      setDragState((current) => (current.isOver ? { isOver: false } : current));
+      return;
+    }
+
     logger.debug('Setting up DnD subscription for AgentWorkspacePanel');
 
     const handler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
@@ -160,35 +199,35 @@ export function AgentWorkspacePanel() {
       logger.debug('Cleaning up DnD subscription for AgentWorkspacePanel');
       unsub();
     };
-  }, [subscribe, handleWorkspacePathDrop]);
+  }, [subscribe, handleWorkspacePathDrop, isVisible]);
 
   const handleOpenInExplorer = async () => {
-    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
-    openingNativeLock.current = true;
-    setIsOpeningNative(true);
     try {
-      await openWorkspaceInExplorer(session.id);
+      await withNativeOpenLock(
+        session?.id,
+        isOpeningNative,
+        openingNativeLock,
+        setIsOpeningNative,
+        openWorkspaceInExplorer,
+      );
     } catch (error) {
       logger.error('Failed to open explorer', error);
       toast.error(t('agent.workspace.openExplorerError', { error }));
-    } finally {
-      setIsOpeningNative(false);
-      openingNativeLock.current = false;
     }
   };
 
   const handleOpenInTerminal = async () => {
-    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
-    openingNativeLock.current = true;
-    setIsOpeningNative(true);
     try {
-      await openWorkspaceInTerminal(session.id);
+      await withNativeOpenLock(
+        session?.id,
+        isOpeningNative,
+        openingNativeLock,
+        setIsOpeningNative,
+        openWorkspaceInTerminal,
+      );
     } catch (error) {
       logger.error('Failed to open terminal', error);
       toast.error(t('agent.workspace.openTerminalError', { error }));
-    } finally {
-      setIsOpeningNative(false);
-      openingNativeLock.current = false;
     }
   };
 
@@ -250,13 +289,22 @@ export function AgentWorkspacePanel() {
 
   return (
     <div
+      id="agent-workspace-panel"
       ref={panelRef}
-      className={`h-full w-80 flex-shrink-0 ${dragState.isOver ? 'ring-2 ring-inset ring-success' : ''}`}
+      className={cn(
+        'h-full',
+        variant === 'rail' ? 'w-80 flex-shrink-0' : 'w-full',
+        dragState.isOver && 'ring-2 ring-inset ring-success',
+      )}
     >
       <Card
-        className={`h-full w-full rounded-none border-y-0 border-l-0 border-r border-border/40 bg-background py-0 shadow-none gap-0 ${
-          dragState.isOver ? 'border-success bg-success/5' : ''
-        }`}
+        className={cn(
+          'h-full w-full rounded-none bg-background py-0 shadow-none gap-0',
+          variant === 'rail'
+            ? 'border-y-0 border-l-0 border-r border-border/40'
+            : 'border-0',
+          dragState.isOver && 'border-success bg-success/5',
+        )}
       >
         <CardHeader className="border-b border-border/40 px-4 py-3">
           <div className="space-y-3">

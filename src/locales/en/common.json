@@ -734,6 +734,7 @@
       "bookmarksFirst": "Bookmarks First"
     },
     "group": {
+      "ariaLabel": "{{title}} playbooks",
       "today": "Today",
       "yesterday": "Yesterday",
       "thisWeek": "This Week",
@@ -945,6 +946,28 @@
       "thinkingProcess": "Thinking Process",
       "thinkingProcessWithTime": "Thinking Process {{time}}",
       "thinking": "Thinking..."
+    },
+    "start": {
+      "heroTitle": "What would you like to do today?",
+      "heroSubtitle": "Select an assistant to begin a new autonomous session.",
+      "builtinAssistants": "Built-in Assistants",
+      "myAssistants": "My Assistants",
+      "assistantsLoadFailed": "Failed to load assistants.",
+      "noAssistantsAvailable": "No assistants available yet.",
+      "createAssistant": "Create Assistant",
+      "manageAssistants": "+ Manage Assistants",
+      "playbookNotFound": "Playbook not found",
+      "assistantNotFound": "Assistant not found",
+      "startingPlaybook": "Starting playbook: {{goal}}",
+      "failedToStartPlaybookSession": "Failed to start playbook session",
+      "startingSession": "Starting session..."
+    },
+    "chat": {
+      "loadingSession": "Loading session...",
+      "playbookStartedAutomatically": "Playbook started automatically",
+      "failedToStartPlaybookWorkflow": "Failed to start playbook workflow",
+      "sessionContextUnavailable": "Session context is unavailable.",
+      "sessionNotFoundOrFailed": "Session not found or failed to load."
     }
   },
   "scheduledTasks": {

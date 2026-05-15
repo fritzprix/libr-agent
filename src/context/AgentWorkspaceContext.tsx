@@ -5,6 +5,8 @@ const logger = getLogger('AgentWorkspaceContext');
 
 interface AgentWorkspaceContextValue {
   showWorkspacePanel: boolean;
+  openWorkspacePanel: () => void;
+  closeWorkspacePanel: () => void;
   toggleWorkspacePanel: () => void;
 }
 
@@ -21,17 +23,39 @@ export function AgentWorkspaceProvider({
 }: AgentWorkspaceProviderProps) {
   const [showWorkspacePanel, setShowWorkspacePanel] = useState(false);
 
-  const toggleWorkspacePanel = useCallback(() => {
-    const newValue = !showWorkspacePanel;
-    logger.info('Workspace panel toggled', {
-      from: showWorkspacePanel,
-      to: newValue,
+  const openWorkspacePanel = useCallback(() => {
+    setShowWorkspacePanel((current) => {
+      if (!current) {
+        logger.info('Workspace panel opened');
+      }
+      return true;
     });
-    setShowWorkspacePanel(newValue);
-  }, [showWorkspacePanel]);
+  }, []);
+
+  const closeWorkspacePanel = useCallback(() => {
+    setShowWorkspacePanel((current) => {
+      if (current) {
+        logger.info('Workspace panel closed');
+      }
+      return false;
+    });
+  }, []);
+
+  const toggleWorkspacePanel = useCallback(() => {
+    setShowWorkspacePanel((current) => {
+      const next = !current;
+      logger.info('Workspace panel toggled', {
+        from: current,
+        to: next,
+      });
+      return next;
+    });
+  }, []);
 
   const value: AgentWorkspaceContextValue = {
     showWorkspacePanel,
+    openWorkspacePanel,
+    closeWorkspacePanel,
     toggleWorkspacePanel,
   };
 

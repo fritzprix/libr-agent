@@ -3,9 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use tauri_mcp_agent_lib::agent::compact_recovery::{
-    handle_compact_error_state, CompactErrorAction,
-};
+use tauri_mcp_agent_lib::agent::compact_recovery::handle_compact_error_state;
 use tauri_mcp_agent_lib::agent::concurrency::{
     ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
     DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
@@ -16,7 +14,10 @@ use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
-use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEventManager};
+use tauri_mcp_agent_lib::agent::state::{
+    AgentSession, CompactionKind, CompactionPhase, DeferredWorkflowStep, InFlightCompaction,
+    PendingEventManager,
+};
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
 };
@@ -108,6 +109,11 @@ fn build_agent_session(
     metadata: SessionMetadata,
     awaiting_compact_completion: bool,
 ) -> AgentSession {
+    let kind = if awaiting_compact_completion {
+        CompactionKind::Preflight
+    } else {
+        CompactionKind::Manual
+    };
     AgentSession {
         metadata,
         is_running: true,
@@ -128,9 +134,12 @@ fn build_agent_session(
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compaction: tauri_mcp_agent_lib::agent::state::CompactionRuntimeState::with_test_state(
-            true,
+            CompactionPhase::InFlight(InFlightCompaction {
+                kind,
+                current_tail_id: Some("tail-before-error".to_string()),
+                started_at_ms: 1234,
+            }),
             Some("tail-before-error".to_string()),
-            awaiting_compact_completion,
         ),
         expected_response_id: Arc::new(RwLock::new(None)),
         cached_stable_prompt: Arc::new(RwLock::new(None)),
@@ -157,7 +166,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     let dispatcher = RecordingDispatcher::default();
     let error = AgentRuntimeError::new(AgentRuntimeErrorType::RateLimitError, "LLM rate limit hit");
 
-    let action = handle_compact_error_state(
+    handle_compact_error_state(
         &session_repo,
         &active_sessions,
         &dispatcher,
@@ -166,7 +175,6 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     )
     .await
     .expect("compact error handling should succeed");
-    assert_eq!(action, CompactErrorAction::None);
 
     let persisted = repo
         .get_session(session_id)
@@ -178,18 +186,9 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     let active = active_sessions.read().await;
     let session = active.get(session_id).expect("active session should exist");
     assert_eq!(session.metadata.status, SessionStatus::Error);
-    assert!(!session
-        .compaction
-        .in_flight
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert!(!session
-        .compaction
-        .awaiting_completion
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert_eq!(
-        *session.compaction.last_compacted_tail_id.read().await,
-        None
-    );
+    let snapshot = session.compaction.snapshot().await;
+    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
+    assert_eq!(snapshot.last_compacted_tail_id, None);
     drop(active);
 
     let compact_states = dispatcher.compact_states();
@@ -226,7 +225,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
 }
 
 #[tokio::test]
-async fn background_compact_failure_clears_flags_without_failing_workflow() {
+async fn manual_compact_failure_clears_flags_without_failing_workflow() {
     init_runtime_primitives();
 
     let session_id = "compact-error-background";
@@ -243,7 +242,7 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     )])));
     let dispatcher = RecordingDispatcher::default();
 
-    let action = handle_compact_error_state(
+    handle_compact_error_state(
         &session_repo,
         &active_sessions,
         &dispatcher,
@@ -252,7 +251,6 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     )
     .await
     .expect("compact error handling should succeed");
-    assert_eq!(action, CompactErrorAction::None);
 
     let persisted = repo
         .get_session(session_id)
@@ -264,20 +262,82 @@ async fn background_compact_failure_clears_flags_without_failing_workflow() {
     let active = active_sessions.read().await;
     let session = active.get(session_id).expect("active session should exist");
     assert_eq!(session.metadata.status, SessionStatus::Busy);
-    assert!(!session
-        .compaction
-        .in_flight
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert!(!session
-        .compaction
-        .awaiting_completion
-        .load(std::sync::atomic::Ordering::SeqCst));
-    assert_eq!(
-        *session.compaction.last_compacted_tail_id.read().await,
-        None
-    );
+    let snapshot = session.compaction.snapshot().await;
+    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
+    assert_eq!(snapshot.last_compacted_tail_id, None);
     drop(active);
 
     assert_eq!(dispatcher.compact_states().len(), 1);
     assert!(dispatcher.agent_events().is_empty());
+}
+
+#[tokio::test]
+async fn post_response_compact_failure_with_deferred_step_transitions_workflow_to_error() {
+    init_runtime_primitives();
+
+    let session_id = "compact-error-post-response";
+    let metadata = build_session_metadata(session_id, SessionStatus::Busy);
+    let repo = Arc::new(InMemorySessionRepository::new());
+    repo.upsert_session(&metadata)
+        .await
+        .expect("session upsert should succeed");
+    let session_repo: Arc<dyn SessionRepository> = repo.clone();
+
+    let session = build_agent_session(metadata.clone(), false);
+    session
+        .compaction
+        .attach_deferred_workflow_step(DeferredWorkflowStep::FinalizeWorkflow {
+            reason: tauri_mcp_agent_lib::agent::events::WorkflowCompletionReason::Natural,
+        })
+        .await;
+    let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+        session_id.to_string(),
+        session,
+    )])));
+    let dispatcher = RecordingDispatcher::default();
+    let error = AgentRuntimeError::new(
+        AgentRuntimeErrorType::AiServiceError,
+        "post-response compaction failed",
+    );
+
+    handle_compact_error_state(
+        &session_repo,
+        &active_sessions,
+        &dispatcher,
+        session_id.to_string(),
+        error.clone(),
+    )
+    .await
+    .expect("compact error handling should succeed");
+
+    let persisted = repo
+        .get_session(session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should exist");
+    assert_eq!(persisted.status, SessionStatus::Error);
+
+    let active = active_sessions.read().await;
+    let session = active.get(session_id).expect("active session should exist");
+    assert_eq!(session.metadata.status, SessionStatus::Error);
+    let snapshot = session.compaction.snapshot().await;
+    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
+    drop(active);
+
+    let agent_events = dispatcher.agent_events();
+    assert_eq!(agent_events.len(), 2);
+    assert!(matches!(
+        &agent_events[0],
+        AgentEvent::StatusChanged {
+            session_id: emitted_session_id,
+            status: SessionStatus::Error,
+        } if emitted_session_id == session_id
+    ));
+    assert!(matches!(
+        &agent_events[1],
+        AgentEvent::WorkflowError {
+            session_id: emitted_session_id,
+            error: emitted_error,
+        } if emitted_session_id == session_id && emitted_error.display_message == error.display_message
+    ));
 }

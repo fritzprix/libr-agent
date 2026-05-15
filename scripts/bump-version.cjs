@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const versionType = process.argv[2];
 if (
@@ -10,6 +9,9 @@ if (
   console.error('Usage: node bump-version.js <patch|minor|major|version>');
   process.exit(1);
 }
+
+const REPO_OWNER = 'fritzprix';
+const REPO_NAME = 'libr-agent';
 
 // 1. Bump package.json
 const packageJsonPath = path.join(__dirname, '../package.json');
@@ -29,6 +31,120 @@ if (['patch', 'minor', 'major'].includes(versionType)) {
     parts[2]++;
   }
   newVersion = parts.join('.');
+}
+
+function buildReleaseUrl(tag, assetName) {
+  return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${tag}/${assetName}`;
+}
+
+function updateReadmeReleaseLinks(version) {
+  const releaseTag = `v${version}`;
+  const releasePageUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/${releaseTag}`;
+  const assets = {
+    windowsExe: `LibrAgent_${version}_x64-setup.exe`,
+    windowsMsi: `LibrAgent_${version}_x64_en-US.msi`,
+    macosDmg: `LibrAgent_${version}_aarch64.dmg`,
+    linuxAppImage: `LibrAgent_${version}_amd64.AppImage`,
+    linuxDeb: `LibrAgent_${version}_amd64.deb`,
+    linuxRpm: `LibrAgent-${version}-1.x86_64.rpm`,
+  };
+
+  const readmeConfigs = [
+    {
+      file: 'README.md',
+      lines: [
+        `- **Windows:** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon):** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux:** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **All release assets:** [Releases page](${releasePageUrl})`,
+      ],
+    },
+    {
+      file: 'README.ko.md',
+      lines: [
+        `- **Windows:** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon):** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux:** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **전체 릴리스 자산:** [릴리스 페이지](${releasePageUrl})`,
+      ],
+    },
+    {
+      file: 'README.zh.md',
+      lines: [
+        `- **Windows：** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS（Apple Silicon）：** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux：** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **完整发布资源：** [发布页面](${releasePageUrl})`,
+      ],
+    },
+    {
+      file: 'README.ja.md',
+      lines: [
+        `- **Windows:** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon):** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux:** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **すべてのリリース資産:** [リリースページ](${releasePageUrl})`,
+      ],
+    },
+    {
+      file: 'README.fr.md',
+      lines: [
+        `- **Windows :** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon) :** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux :** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **Tous les fichiers de release :** [page des Releases](${releasePageUrl})`,
+      ],
+    },
+    {
+      file: 'README.es.md',
+      lines: [
+        `- **Windows:** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon):** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux:** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **Todos los archivos de la release:** [página de Releases](${releasePageUrl})`,
+      ],
+    },
+    {
+      file: 'README.de.md',
+      lines: [
+        `- **Windows:** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon):** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux:** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **Alle Release-Artefakte:** [Releases-Seite](${releasePageUrl})`,
+      ],
+    },
+    {
+      file: 'README.pt.md',
+      lines: [
+        `- **Windows:** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon):** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux:** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **Todos os artefatos da release:** [página de Releases](${releasePageUrl})`,
+      ],
+    },
+  ];
+
+  for (const { file, lines } of readmeConfigs) {
+    const readmePath = path.join(__dirname, `../${file}`);
+    const readme = fs.readFileSync(readmePath, 'utf8');
+    const replacement = [
+      '<!-- RELEASE_DOWNLOADS_START -->',
+      ...lines,
+      '<!-- RELEASE_DOWNLOADS_END -->',
+    ].join('\n');
+
+    if (!readme.includes('<!-- RELEASE_DOWNLOADS_START -->')) {
+      throw new Error(`Missing RELEASE_DOWNLOADS_START marker in ${file}`);
+    }
+
+    const updatedReadme = readme.replace(
+      /<!-- RELEASE_DOWNLOADS_START -->[\s\S]*?<!-- RELEASE_DOWNLOADS_END -->/,
+      replacement,
+    );
+
+    fs.writeFileSync(readmePath, updatedReadme);
+    console.log(`Updated ${file} release download links to ${releaseTag}`);
+  }
 }
 
 packageJson.version = newVersion;
@@ -77,5 +193,8 @@ if (fs.existsSync(snapcraftPath)) {
   fs.writeFileSync(snapcraftPath, snapcraft);
   console.log(`Bumped snap/snapcraft.yaml to ${newVersion}`);
 }
+
+// 6. Refresh README direct download links for the new release tag
+updateReadmeReleaseLinks(newVersion);
 
 console.log(newVersion); // Output the new version for the shell script to capture

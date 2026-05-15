@@ -529,4 +529,7 @@ pub use orgs::{
     create_org, create_org_scaffold_preflight, existing_explicit_org_identity, get_org,
     inspect_teamwork_scaffold, TeamworkScaffoldStatus,
 };
-pub use sessions::{compact_session_context, message_to_session, start_session, stop_session};
+pub use sessions::{
+    compact_session_context, message_to_session, parse_message_to_session_wait_config,
+    start_session, stop_session,
+};

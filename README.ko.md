@@ -1,7 +1,7 @@
 # 🤖 LibrAgent
 
-> **자율 지능의 시대를 위한 에이전트 하니스.**
-> _단순한 채팅 앱이 아닙니다. 에이전트가 일하고, 협업하고, 확장하는 실행 기반입니다._
+> **실제 도구를 쓰고, 병렬로 일하고, 당신의 통제 아래 머무는 AI 에이전트를 위한 로컬 우선 데스크톱 앱.**
+> _어떤 LLM이든 연결하고, 어떤 MCP 서버든 붙인 뒤, 에이전트가 파일을 읽고, 셸을 실행하고, 웹을 탐색하고, 끝까지 자동화하게 하세요._
 
 [English](./README.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
@@ -9,27 +9,30 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-LibrAgent는 Tauri + Rust + React 위에 구축된 **로컬 우선 에이전트 운영체제**입니다. 채팅 인터페이스를 넘어 — 보안 실행 서브스트레이트, MCP 네이티브 도구 생태계, 단일 에이전트를 조정된 군집으로 확장하는 재귀적 위임 아키텍처를 제공합니다.
+LibrAgent는 Tauri + Rust + React로 만든 **로컬 우선 에이전트 워크스페이스**입니다. 단순한 채팅을 넘어서 실제 파일 접근, 셸 실행, 브라우저 자동화, MCP 확장성, 그리고 데모 한 번 돌고 무너지는 게 아니라 몇 시간짜리 작업도 버티는 멀티 에이전트 워크플로우를 위해 설계되었습니다.
 
-클라우드 또는 로컬(Ollama 경유) LLM에 연결하고, MCP 서버로 확장하며, 에이전트가 실제 작업을 수행하도록 하세요: 파일 편집, 셸 실행, 웹 탐색, 지식 관리 — 자율적으로, 필요한 만큼 오래.
+클라우드 모델도, Ollama 같은 로컬 런타임도 연결할 수 있습니다. 이미 쓰는 도구에서 MCP 서버를 가져오고, 에이전트에게 코드 조사, 파일 편집, 명령 실행, 웹 탐색, 지식 축적, 하위 작업 위임까지 맡기세요. 작업 전체를 남의 클라우드 VM으로 넘기지 않고도 가능합니다.
+
+**여기서 시작:** [최신 릴리스 다운로드](https://github.com/fritzprix/libr-agent/releases/latest) · [5분 온보딩으로 이동](#5-분-온보딩-경로) · [실전 시나리오 보기](#-실전-시나리오)
 
 ---
 
 ## 왜 LibrAgent인가?
 
-AI 산업의 초점이 이동했습니다. 실제로는 **동일한 모델도 어떤 하니스 위에서 작동하느냐에 따라 작업 성공률에서 큰 차이**를 보일 수 있습니다. 모델은 엔진입니다 — 하지만 그 엔진이 어디까지 갈 수 있는지는 하니스가 결정합니다.
+대부분의 에이전트 제품은 아직도 짜증나는 트레이드오프를 강요합니다:
 
-모든 현재 옵션은 여전히 트레이드오프를 강요합니다:
+- **쉬운 UI, 약한 실행력**
+- **강한 자동화, 형편없는 제품 경험**
+- **편한 클라우드, 약한 프라이버시**
+- **유연한 프레임워크, 그런데 스택은 전부 네가 조립**
 
-| 플랫폼                   | 함정                                                                                                                                      |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **OpenClaw**             | 개방형 생태계로 유연성은 높지만, 2026년 초 분석에서 노출된 인스턴스, 평문 비밀 처리, 커뮤니티 스킬의 프롬프트 인젝션 위험이 지적됐습니다. |
-| **Claude Cowork**        | 강력한 로컬 UX를 갖추고 있지만, 복잡한 자율 작업에는 여전히 제한적입니다. 폐쇄적 생태계로 확장이 불가합니다.                              |
-| **Claude Code / Cursor** | 개발자 전용입니다. 터미널 숙련도가 필요하며 범용적이지 않습니다.                                                                          |
-| **Google Mariner**       | 작업이 Google 클라우드 VM에서 실행됩니다. 데이터에 대한 통제권이 없습니다.                                                                |
-| **LangGraph / CrewAI**   | 강력한 프레임워크지만, 모든 것을 직접 조립해야 합니다. 완성된 제품 경험이 없습니다.                                                       |
+LibrAgent는 사람들이 실제로 원하는 중간 지점을 노립니다:
 
-**LibrAgent 는 그 트레이드오프를 해소하도록 구축되었습니다.** 로컬 우선 보안. MCP 네이티브 확장성. 군집→조직 멀티 에이전트 조정. 개발자가 아닌 사용자를 위한 다듬어진 GUI. 모두 하나의 오픈소스 데스크톱 앱에.
+- **로컬 우선 제어**: 파일, 워크스페이스, 세션, 브라우저 상태를 기본적으로 로컬에 유지
+- **닫힌 플러그인 스토리 대신 MCP 기반의 개방형 확장성**
+- **셸, 브라우저, 워크스페이스, 지식 도구를 통한 실제 실행력**
+- **파워유저 깊이를 포기하지 않는 GUI**
+- **한 명의 에이전트에서 여러 명의 팀으로 자연스럽게 확장되는 구조**
 
 ### LibrAgent 는 누구를 위한 것인가
 
@@ -48,7 +51,35 @@ _단일 에이전트에서 조정된 군집까지 — 재귀적 위임, MCP 도�
 
 ---
 
-## 핵심 기둥
+## 처음 10분 안에 할 수 있는 일
+
+### 1. 실제 도구로 저장소 리뷰하기
+
+- Workspace 도구로 로컬 저장소 연결
+- GitHub MCP 프리셋 추가
+- _"PR #42의 보안 이슈를 찾아서 보고서로 저장해"_ 라고 요청
+
+### 2. 완전한 로컬 에이전트 스택 만들기
+
+- `ollama pull qwen3:14b` 실행
+- Workspace + Shell 연결
+- 코드를 클라우드 VM으로 보내지 않고 에이전트가 읽고, 수정하고, 테스트하고, 반복하게 만들기
+
+### 3. 리서치를 반복 가능한 워크플로우로 바꾸기
+
+- Browser + Knowledge 추가
+- _"이 경쟁사 블로그 5개를 추적해서 매일 아침 요약해"_ 라고 요청
+- 일회성 작업을 예약 파이프라인으로 전환
+
+### 4. 한 명의 도우미에서 진짜 팀으로 가기
+
+- `specialist-creator`로 전문 에이전트 생성
+- `delegate`로 작업 분할
+- 반복 협업을 `teamwork` 또는 `org` 워크스페이스로 구조화
+
+---
+
+## 데모 뒤에도 무너지지 않는 이유
 
 ### 1. 🔐 로컬 우선 보안 — 데이터는 기계에 남습니다
 
@@ -173,11 +204,12 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
-```
-Windows  →  LibrAgent_x.x.x_x64-setup.exe
-macOS    →  LibrAgent_x.x.x_aarch64.dmg
-Linux    →  libragent_x.x.x_amd64.AppImage
-```
+<!-- RELEASE_DOWNLOADS_START -->
+- **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+<!-- RELEASE_DOWNLOADS_END -->
 
 **개발자 설정:**
 
@@ -229,17 +261,15 @@ pnpm tauri dev
 
 ---
 
-## LibrAgent 비교
+## LibrAgent가 특히 잘 맞는 경우
 
-```
-                    Privacy/Local  MCP Ecosystem  Non-Dev UX  Multi-Agent  Open Source
-LibrAgent              ★★★★★          ★★★★★         ★★★★☆       ★★★★★           ✅
-OpenClaw               ★★☆☆☆          ★★★★☆         ★★★☆☆       ★★★☆☆           ✅
-Claude Cowork          ★★★★☆          ★★☆☆☆         ★★★★★       ★★☆☆☆           ❌
-Claude Code            ★★★★☆          ★★★☆☆         ★☆☆☆☆       ★★★☆☆           ❌
-Google Mariner         ★★☆☆☆          ★★★☆☆         ★★★★☆       ★★★★☆           ❌
-LangGraph / CrewAI     ★★★☆☆          ★★★☆☆         ★★☆☆☆       ★★★☆☆           ✅
-```
+| 이런 걸 원한다면... | LibrAgent가 강한 이유 |
+| --- | --- |
+| **로컬 AI 워크스테이션** | 파일, 세션, 워크스페이스, 브라우저 상태가 기본적으로 로컬에 남습니다 |
+| **MCP 네이티브 데스크톱 제품** | 얇은 래퍼가 아니라 MCP 서버를 설치, 가져오기, 관리하는 경험 자체가 제품 안에 있습니다 |
+| **실제로 일하는 에이전트** | Workspace, Shell, Browser, Knowledge 도구가 장시간 실행을 전제로 설계되었습니다 |
+| **프레임워크를 먼저 짜지 않아도 되는 멀티 에이전트 워크플로우** | `delegate`, `teamwork`, `org`, `schedule`가 이미 제품 안에 들어 있습니다 |
+| **GUI 사용성과 파워유저 깊이의 균형** | 데스크톱 UI를 쓰면서도 확장성과 통제력을 잃지 않습니다 |
 
 ---
 

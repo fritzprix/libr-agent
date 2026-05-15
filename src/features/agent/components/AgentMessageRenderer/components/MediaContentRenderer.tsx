@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, Copy, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRustBackend } from '@/hooks/use-rust-backend';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
 import { useResolvedMediaSource } from '../hooks/useResolvedMediaSource';
 
@@ -126,6 +127,8 @@ export function ImageContentRenderer({
   );
   const [copied, setCopied] = useState(false);
   const canCopyImage = canWriteImagesToClipboard();
+  const copyButtonClassName =
+    'flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
   if (!imageSrc) {
     return loadError ? (
@@ -190,36 +193,61 @@ export function ImageContentRenderer({
     }
   };
 
+  const copyButton = (
+    <button
+      type="button"
+      onClick={handleCopy}
+      disabled={!canCopyImage}
+      className={copyButtonClassName}
+      aria-label="Copy image to clipboard"
+    >
+      {copied ? (
+        <Check size={16} className="text-emerald-500" />
+      ) : (
+        <Copy size={16} />
+      )}
+    </button>
+  );
+
   return (
     <div className="group relative inline-block max-w-full">
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-md border border-border bg-background/80 p-1 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        <button
-          type="button"
-          onClick={handleCopy}
-          disabled={!canCopyImage}
-          className="flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          title={
-            canCopyImage
-              ? 'Copy Image'
-              : 'Image clipboard is not supported in this environment'
-          }
-          aria-label="Copy image to clipboard"
-        >
-          {copied ? (
-            <Check size={16} className="text-emerald-500" />
+        <Tooltip>
+          {canCopyImage ? (
+            <TooltipTrigger asChild>{copyButton}</TooltipTrigger>
           ) : (
-            <Copy size={16} />
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                role="button"
+                aria-label="Copy image to clipboard"
+                aria-disabled="true"
+                className="flex items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {copyButton}
+              </span>
+            </TooltipTrigger>
           )}
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title="Download Image"
-          aria-label="Download image"
-        >
-          <Download size={16} />
-        </button>
+          <TooltipContent>
+            {canCopyImage
+              ? 'Copy Image'
+              : 'Image clipboard is not supported in this environment'}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Download image"
+            >
+              <Download size={16} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Download Image</TooltipContent>
+        </Tooltip>
       </div>
 
       <img

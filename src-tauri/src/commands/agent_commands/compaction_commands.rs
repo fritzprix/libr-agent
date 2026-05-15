@@ -12,22 +12,6 @@ pub async fn agent_get_compact_context(
     manager.get_compact_context(&session_id).await
 }
 
-/// Save compacted context for a session
-#[command]
-pub async fn agent_save_compact_context(
-    manager: State<'_, AgentSessionManager>,
-    session_id: String,
-    record: CompactContextRecord,
-) -> Result<AgentResponse, String> {
-    manager.save_compact_context(&session_id, record).await?;
-
-    Ok(AgentResponse {
-        success: true,
-        message: format!("Compact context saved for session: {}", session_id),
-        data: None,
-    })
-}
-
 /// Handle a successful compact response from the frontend LLM call.
 /// Stores the summary in-memory + DB and clears the in-flight flag.
 #[command]

@@ -37,6 +37,40 @@ fn self_target_session_action_result(
     .to_mcp_result()
 }
 
+pub fn parse_message_to_session_wait_config(
+    args: &Value,
+) -> Result<(bool, Option<u64>), MCPResult> {
+    let wait_for_response = args
+        .get("waitForResponse")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    if !wait_for_response {
+        return Ok((false, None));
+    }
+
+    let timeout_seconds = match args.get("timeout") {
+        None => 3600,
+        Some(value) => match value.as_u64() {
+            Some(timeout) if (1..=3600).contains(&timeout) => timeout,
+            _ => {
+                return Err(guided_error(
+                    ErrorCategory::InvalidInput,
+                    "timeout must be an integer between 1 and 3600 seconds".to_string(),
+                    ToolGroup::Agent,
+                )
+                .with_guidance(vec![
+                    "Omit timeout to use the default 3600-second wait window".to_string(),
+                    "Use a value between 1 and 3600 when waitForResponse=true".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        },
+    };
+
+    Ok((true, Some(timeout_seconds)))
+}
+
 async fn start_session_impl(
     server: &AgentServer,
     args: Value,
@@ -220,6 +254,10 @@ pub async fn message_to_session(
         .ok_or("AgentSessionManager not available")?;
     let session_id = read_required_string(&args, "sessionId")?;
     let message_text = read_required_string(&args, "message")?;
+    let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
+        Ok(config) => config,
+        Err(result) => return Ok(result),
+    };
     if let Err(result) = load_accessible_delegated_session(
         manager,
         caller_session_id,
@@ -244,6 +282,19 @@ pub async fn message_to_session(
         }
         Err(err) => return Err(err),
     };
+
+    if wait_for_response {
+        return check_session(
+            server,
+            json!({
+                "sessionId": session_id,
+                "wait": true,
+                "timeout": timeout_seconds.expect("wait timeout should exist when waiting")
+            }),
+            caller_session_id,
+        )
+        .await;
+    }
 
     let hint = SuccessHint::new(
         format!("Message {} for session {}.", response.status, session_id),
@@ -290,11 +341,38 @@ pub async fn stop_session(
         ));
     }
 
-    if let Err(result) =
-        load_accessible_delegated_session(manager, caller_session_id, &session_id, "stopSession")
-            .await
+    let target_session = match load_accessible_delegated_session(
+        manager,
+        caller_session_id,
+        &session_id,
+        "stopSession",
+    )
+    .await
     {
-        return Ok(result);
+        Ok(session) => session,
+        Err(result) => return Ok(result),
+    };
+
+    if target_session.status != SessionStatus::Busy {
+        let current_status = target_session.status.as_str().to_string();
+        let message = format!(
+            "Session {} was already {}. No action taken.",
+            session_id, current_status
+        );
+        let mut response_data = build_agent_tool_data(
+            "stopSession",
+            "session",
+            Some(&session_id),
+            &message,
+            "noop",
+            vec![],
+        );
+        response_data.insert("sessionId".to_string(), Value::String(session_id));
+        response_data.insert("stopped".to_string(), Value::Bool(false));
+        response_data.insert("status".to_string(), Value::String(current_status));
+
+        return Ok(SuccessHint::new(message, vec![])
+            .to_mcp_result_with_data(Some(Value::Object(response_data))));
     }
 
     if let Err(error) = manager.terminate_session(session_id.clone()).await {

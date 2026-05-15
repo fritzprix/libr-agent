@@ -9,9 +9,10 @@ import {
   formatUsageMetrics,
   processMessageContent,
   processMultiModalContent,
+  normalizeAIServiceError,
 } from '../utils';
 import { formatNumber } from '@/lib/utils';
-import { AIServiceProvider, TokenUsage } from '../types';
+import { AIServiceError, AIServiceProvider, TokenUsage } from '../types';
 import { MCPContent } from '@/lib/mcp';
 
 describe('AI Service Utils', () => {
@@ -134,6 +135,104 @@ describe('AI Service Utils', () => {
       };
       const result = formatUsageMetrics(usage);
       expect(result.speed).toBe('50.0 t/s');
+    });
+  });
+
+  describe('normalizeAIServiceError', () => {
+    it('maps typed context-limit errors without relying on generic string parsing', () => {
+      const error = new AIServiceError(
+        'openai streaming failed: Context size has been exceeded.',
+        AIServiceProvider.OpenAI,
+        500,
+        undefined,
+        {
+          kind: 'context_limit',
+          retryable: false,
+          providerStatus: 'server_error',
+          providerCode: 500,
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'CONTEXT_LIMIT_ERROR',
+        displayMessage: 'Context size has been exceeded.',
+        recoverable: true,
+        errorCode: 'CONTEXT_LIMIT_EXCEEDED',
+      });
+    });
+
+    it('maps typed network errors to network classification', () => {
+      const error = new AIServiceError(
+        'openai streaming failed: Connection error.',
+        AIServiceProvider.OpenAI,
+        undefined,
+        undefined,
+        {
+          kind: 'network',
+          retryable: true,
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'NETWORK_ERROR',
+        displayMessage: 'Connection error.',
+        recoverable: true,
+        errorCode: 'NETWORK_ERROR',
+      });
+    });
+
+    it('preserves billing guidance for typed spending-cap errors via raw payload fallback', () => {
+      const error = new AIServiceError(
+        'gemini streaming failed',
+        AIServiceProvider.Gemini,
+        undefined,
+        undefined,
+        {
+          kind: 'rate_limit',
+          retryable: false,
+          rawPayload: {
+            error: {
+              status: 'RESOURCE_EXHAUSTED',
+              message:
+                'Project spending cap reached. Update billing at https://console.cloud.google.com/billing',
+            },
+          },
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'RATE_LIMIT_ERROR',
+        displayMessage:
+          'Billing limit reached for this AI provider. Update your billing or quota settings and try again: https://console.cloud.google.com/billing',
+        recoverable: false,
+        errorCode: 'SPENDING_CAP_EXCEEDED',
+      });
+    });
+
+    it('falls back to structured payload parsing for typed unknown errors', () => {
+      const error = new AIServiceError(
+        'gemini streaming failed',
+        AIServiceProvider.Gemini,
+        undefined,
+        undefined,
+        {
+          kind: 'unknown',
+          retryable: true,
+          rawPayload: {
+            error: {
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'Rate limit exceeded. Please retry later.',
+            },
+          },
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'RATE_LIMIT_ERROR',
+        displayMessage: 'Rate limit exceeded. Please retry later.',
+        recoverable: true,
+        errorCode: 'RATE_LIMIT_EXCEEDED',
+      });
     });
   });
 
