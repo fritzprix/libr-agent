@@ -1,10 +1,18 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from 'react';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AgentWorkspaceContext');
 
 interface AgentWorkspaceContextValue {
   showWorkspacePanel: boolean;
+  openWorkspacePanel: () => void;
+  closeWorkspacePanel: () => void;
   toggleWorkspacePanel: () => void;
 }
 
@@ -21,19 +29,49 @@ export function AgentWorkspaceProvider({
 }: AgentWorkspaceProviderProps) {
   const [showWorkspacePanel, setShowWorkspacePanel] = useState(false);
 
-  const toggleWorkspacePanel = useCallback(() => {
-    const newValue = !showWorkspacePanel;
-    logger.info('Workspace panel toggled', {
-      from: showWorkspacePanel,
-      to: newValue,
+  const openWorkspacePanel = useCallback(() => {
+    setShowWorkspacePanel((current) => {
+      if (!current) {
+        logger.info('Workspace panel opened');
+      }
+      return true;
     });
-    setShowWorkspacePanel(newValue);
-  }, [showWorkspacePanel]);
+  }, []);
 
-  const value: AgentWorkspaceContextValue = {
-    showWorkspacePanel,
-    toggleWorkspacePanel,
-  };
+  const closeWorkspacePanel = useCallback(() => {
+    setShowWorkspacePanel((current) => {
+      if (current) {
+        logger.info('Workspace panel closed');
+      }
+      return false;
+    });
+  }, []);
+
+  const toggleWorkspacePanel = useCallback(() => {
+    setShowWorkspacePanel((current) => {
+      const next = !current;
+      logger.info('Workspace panel toggled', {
+        from: current,
+        to: next,
+      });
+      return next;
+    });
+  }, []);
+
+  const value = useMemo<AgentWorkspaceContextValue>(
+    () => ({
+      showWorkspacePanel,
+      openWorkspacePanel,
+      closeWorkspacePanel,
+      toggleWorkspacePanel,
+    }),
+    [
+      showWorkspacePanel,
+      openWorkspacePanel,
+      closeWorkspacePanel,
+      toggleWorkspacePanel,
+    ],
+  );
 
   return (
     <AgentWorkspaceContext.Provider value={value}>

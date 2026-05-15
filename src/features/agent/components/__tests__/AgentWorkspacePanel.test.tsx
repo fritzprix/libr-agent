@@ -14,6 +14,17 @@ import * as pathApi from '@tauri-apps/api/path';
 let latestHandler:
   | ((event: DragAndDropEvent, payload: DragAndDropPayload) => void)
   | undefined;
+const mocks = vi.hoisted(() => ({
+  subscribe: vi.fn(
+    (
+      _ref: unknown,
+      handler: (event: DragAndDropEvent, payload: DragAndDropPayload) => void,
+    ) => {
+      latestHandler = handler;
+      return vi.fn();
+    },
+  ),
+}));
 const mockRustBackend = {
   listWorkspaceFiles: vi.fn().mockResolvedValue([]),
   openWorkspaceFileWithDefaultApp: vi.fn(),
@@ -67,15 +78,7 @@ vi.mock('@/context/AgentChatContext', () => {
 
 vi.mock('@/context/DnDContext', () => {
   const mockDnD = {
-    subscribe: vi.fn(
-      (
-        _ref: unknown,
-        handler: (event: DragAndDropEvent, payload: DragAndDropPayload) => void,
-      ) => {
-        latestHandler = handler;
-        return vi.fn();
-      },
-    ),
+    subscribe: mocks.subscribe,
   };
   return {
     useDnDContext: () => mockDnD,
@@ -130,6 +133,18 @@ describe('AgentWorkspacePanel', () => {
         return `${basePath}/${childPath}`;
       },
     );
+  });
+
+  it('skips DnD subscription while hidden', async () => {
+    render(<AgentWorkspacePanel isVisible={false} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('agent.workspace.title').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    expect(mocks.subscribe).not.toHaveBeenCalled();
   });
 
   it('renders accessibility labels correctly', async () => {

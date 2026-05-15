@@ -21,6 +21,12 @@ jobs:
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: 🦀 Ensure Cargo bin on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: 🦀 Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -116,6 +122,12 @@ jobs:
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: 🦀 Ensure Cargo bin on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: 📦 Install pnpm
         uses: pnpm/action-setup@v5

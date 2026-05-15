@@ -148,41 +148,44 @@ export function AgentChatStatusBar() {
     workflowStatus === 'idle' ||
     workflowStatus === 'paused' ||
     workflowStatus === 'error';
-  const executionModeOptions = [
-    {
-      mode: 'normal' as const,
-      label: 'Normal',
-      icon: Shield,
-      title: t(
-        'agent.statusBar.executionModeNormalTitle',
-        'Normal mode. Policy blocks and approval rules are enforced.',
-      ),
-      activeClass: 'bg-secondary text-foreground',
-      iconClass: 'text-foreground',
-    },
-    {
-      mode: 'yolo' as const,
-      label: 'YOLO',
-      icon: Zap,
-      title: t(
-        'agent.statusBar.executionModeYoloTitle',
-        'YOLO mode. Standard approvals are auto-approved, but hard approvals still require manual approval.',
-      ),
-      activeClass: 'bg-primary/10 text-primary',
-      iconClass: 'fill-primary text-primary',
-    },
-    {
-      mode: 'unsafe' as const,
-      label: 'Unsafe',
-      icon: DatabaseZap,
-      title: t(
-        'agent.statusBar.executionModeUnsafeTitle',
-        'Unsafe mode. Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
-      ),
-      activeClass: 'bg-destructive/10 text-destructive',
-      iconClass: 'fill-destructive text-destructive',
-    },
-  ];
+  const executionModeOptions = useMemo(
+    () => [
+      {
+        mode: 'normal' as const,
+        label: 'Normal',
+        icon: Shield,
+        title: t(
+          'agent.statusBar.executionModeNormalTitle',
+          'Normal mode. Policy blocks and approval rules are enforced.',
+        ),
+        activeClass: 'bg-secondary text-foreground',
+        iconClass: 'text-foreground',
+      },
+      {
+        mode: 'yolo' as const,
+        label: 'YOLO',
+        icon: Zap,
+        title: t(
+          'agent.statusBar.executionModeYoloTitle',
+          'YOLO mode. Standard approvals are auto-approved, but hard approvals still require manual approval.',
+        ),
+        activeClass: 'bg-primary/10 text-primary',
+        iconClass: 'fill-primary text-primary',
+      },
+      {
+        mode: 'unsafe' as const,
+        label: 'Unsafe',
+        icon: DatabaseZap,
+        title: t(
+          'agent.statusBar.executionModeUnsafeTitle',
+          'Unsafe mode. Approval and policy enforcement are bypassed. You are fully responsible for tool execution risk.',
+        ),
+        activeClass: 'bg-destructive/10 text-destructive',
+        iconClass: 'fill-destructive text-destructive',
+      },
+    ],
+    [t],
+  );
 
   const handleRetry = async () => {
     if (isRetrying) return;

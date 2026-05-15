@@ -83,7 +83,7 @@ export default function AgentChatStartView() {
 
         if (!match) {
           if (toastId) toast.dismiss(toastId);
-          toast.error('Playbook not found');
+          toast.error(t('agent.start.playbookNotFound'));
           return;
         }
 
@@ -92,14 +92,17 @@ export default function AgentChatStartView() {
 
         if (!fullAssistant) {
           if (toastId) toast.dismiss(toastId);
-          toast.error('Assistant not found');
+          toast.error(t('agent.start.assistantNotFound'));
           return;
         }
 
         if (toastId)
-          toast.loading(`Starting playbook: ${playbook.goal}`, {
-            id: toastId,
-          });
+          toast.loading(
+            t('agent.start.startingPlaybook', { goal: playbook.goal }),
+            {
+              id: toastId,
+            },
+          );
 
         const session = await createSession({
           assistant: fullAssistant,
@@ -111,7 +114,7 @@ export default function AgentChatStartView() {
       } catch (error) {
         if (toastId) toast.dismiss(toastId);
         logger.error('Failed to start playbook session', error);
-        toast.error('Failed to start playbook session');
+        toast.error(t('agent.start.failedToStartPlaybookSession'));
       } finally {
         processingPlaybookRef.current = false;
         setIsCreating(false);
@@ -179,13 +182,10 @@ export default function AgentChatStartView() {
         {/* Hero Header */}
         <div className="text-center space-y-4 animate-in fade-in slide-in-from-top-4 duration-700">
           <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            {t('agent.start.heroTitle', 'What would you like to do today?')}
+            {t('agent.start.heroTitle')}
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto font-sans">
-            {t(
-              'agent.start.heroSubtitle',
-              'Select an assistant to begin a new autonomous session.',
-            )}
+            {t('agent.start.heroSubtitle')}
           </p>
         </div>
 
@@ -199,7 +199,7 @@ export default function AgentChatStartView() {
               id="builtin-heading"
               className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mb-6 font-sans ml-1"
             >
-              {t('agent.start.builtinAssistants', 'Built-in Assistants')}
+              {t('agent.start.builtinAssistants')}
             </h2>
             {renderGrid(builtinAssistants)}
           </section>
@@ -215,7 +215,7 @@ export default function AgentChatStartView() {
               id="custom-heading"
               className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mb-6 font-sans ml-1"
             >
-              {t('agent.start.myAssistants', 'My Assistants')}
+              {t('agent.start.myAssistants')}
             </h2>
             {renderGrid(customAssistants)}
           </section>
@@ -230,20 +230,17 @@ export default function AgentChatStartView() {
 
         {!loading && error && (
           <div className="text-center text-muted-foreground py-16">
-            <p className="text-sm">
-              {t(
-                'agent.start.assistantsLoadFailed',
-                'Failed to load assistants.',
-              )}
-            </p>
+            <p className="text-sm">{t('agent.start.assistantsLoadFailed')}</p>
           </div>
         )}
 
         {!loading && !error && assistants.length === 0 && (
           <div className="text-center text-muted-foreground py-16">
-            <p className="text-sm">No assistants available yet.</p>
+            <p className="text-sm">{t('agent.start.noAssistantsAvailable')}</p>
             <Link to="/assistants">
-              <Button className="mt-4">Create Assistant</Button>
+              <Button className="mt-4">
+                {t('agent.start.createAssistant')}
+              </Button>
             </Link>
           </div>
         )}
@@ -258,7 +255,7 @@ export default function AgentChatStartView() {
                 size="sm"
                 className="text-xs"
               >
-                + Manage Assistants
+                {t('agent.start.manageAssistants')}
               </Button>
             </Link>
           </div>

@@ -591,6 +591,7 @@
       "bookmarksFirst": "Lesezeichen zuerst"
     },
     "group": {
+      "ariaLabel": "Playbooks: {{title}}",
       "today": "Heute",
       "yesterday": "Gestern",
       "thisWeek": "Diese Woche",

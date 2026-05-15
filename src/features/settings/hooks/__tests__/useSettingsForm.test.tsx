@@ -177,4 +177,52 @@ describe('useSettingsForm', () => {
     expect(result.current.isDirty).toBe(true);
     expect(result.current.dirtyState['chat-interface']).toBe(true);
   });
+
+  it('should compare subsequent edits against the latest global settings', () => {
+    const { result, rerender } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.update('windowSize', 50);
+    });
+
+    act(() => {
+      currentGlobalSettings = {
+        ...cloneSettings(DEFAULT_SETTING),
+        windowSize: 64,
+      };
+      rerender();
+    });
+
+    act(() => {
+      result.current.update('windowSize', 64);
+    });
+
+    expect(result.current.formState.windowSize).toBe(64);
+    expect(result.current.isDirty).toBe(false);
+    expect(result.current.dirtyState['chat-interface']).toBe(false);
+  });
+
+  it('should reset to the latest global settings after an external change', () => {
+    const { result, rerender } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.update('windowSize', 50);
+    });
+
+    act(() => {
+      currentGlobalSettings = {
+        ...cloneSettings(DEFAULT_SETTING),
+        windowSize: 64,
+      };
+      rerender();
+    });
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.formState.windowSize).toBe(64);
+    expect(result.current.isDirty).toBe(false);
+    expect(result.current.dirtyState['chat-interface']).toBe(false);
+  });
 });

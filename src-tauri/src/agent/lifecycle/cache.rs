@@ -1,5 +1,4 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
-use crate::repositories::compact_context_repository::CompactContextRepository;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -24,16 +23,8 @@ pub async fn init_session_with_messages(
     let loaded_count = page.items.len();
 
     // Load compact context if exists (SP17)
-    let compact_repo = crate::state::get_compact_context_repository();
-    let compact_context = compact_repo
-        .get_by_session_id(session_id)
-        .await
-        .map_err(|e| {
-            format!(
-                "Failed to load compact context for session {}: {}",
-                session_id, e
-            )
-        })?;
+    let compact_context =
+        crate::agent::lifecycle::load_compact_context_record(session_id, "cache init").await?;
 
     // Populate in-memory cache
     let sessions = active_sessions.read().await;
@@ -44,8 +35,7 @@ pub async fn init_session_with_messages(
         let mut synced_at = session.last_synced_at.write().await;
         *synced_at = Some(SystemTime::now());
 
-        let mut session_compact = session.compact_context.write().await;
-        *session_compact = compact_context;
+        crate::agent::lifecycle::overwrite_compact_context(session, compact_context).await;
 
         session.cache_initialized.store(true, Ordering::Release);
 

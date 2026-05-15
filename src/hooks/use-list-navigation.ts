@@ -28,6 +28,22 @@ export function useListNavigation({
   resetDependencies = [],
 }: UseListNavigationProps) {
   const [internalActiveIndex, setInternalActiveIndex] = useState(0);
+  const [prevResetDeps, setPrevResetDeps] = useState(resetDependencies);
+  const [prevItemCount, setPrevItemCount] = useState(itemCount);
+
+  const depsChanged =
+    prevResetDeps.length !== resetDependencies.length ||
+    prevResetDeps.some((dep, i) => !Object.is(dep, resetDependencies[i]));
+
+  if (depsChanged) {
+    setInternalActiveIndex(0);
+    setPrevResetDeps(resetDependencies);
+    setPrevItemCount(itemCount);
+  } else if (itemCount !== prevItemCount) {
+    setInternalActiveIndex((prev) => clampIndex(prev, itemCount));
+    setPrevItemCount(itemCount);
+  }
+
   const activeIndex = clampIndex(internalActiveIndex, itemCount);
 
   const setActiveIndex = useCallback(
@@ -41,17 +57,6 @@ export function useListNavigation({
     },
     [itemCount],
   );
-
-  // Reset active index when items array length changes (if enabled)
-  useEffect(() => {
-    setInternalActiveIndex(0);
-  }, resetDependencies);
-
-  useEffect(() => {
-    setInternalActiveIndex((currentIndex) =>
-      clampIndex(currentIndex, itemCount),
-    );
-  }, [itemCount]);
 
   useEffect(() => {
     if (itemCount === 0) return;

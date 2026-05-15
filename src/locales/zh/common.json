@@ -591,6 +591,7 @@
       "bookmarksFirst": "书签优先"
     },
     "group": {
+      "ariaLabel": "{{title}}剧本",
       "today": "今天",
       "yesterday": "昨天",
       "thisWeek": "本周",

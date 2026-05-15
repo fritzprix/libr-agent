@@ -154,6 +154,23 @@ export enum AIServiceProvider {
   Empty = 'empty',
 }
 
+export type AIServiceErrorKind =
+  | 'context_limit'
+  | 'rate_limit'
+  | 'authentication'
+  | 'network'
+  | 'invalid_request'
+  | 'server'
+  | 'unknown';
+
+export interface AIServiceErrorMetadata {
+  kind?: AIServiceErrorKind;
+  retryable?: boolean;
+  providerCode?: string | number;
+  providerStatus?: string;
+  rawPayload?: unknown;
+}
+
 /**
  * A custom error class for AI service-related errors.
  * It includes information about the provider and the original error.
@@ -171,6 +188,7 @@ export class AIServiceError extends Error {
     public provider: AIServiceProvider,
     public statusCode?: number,
     public originalError?: Error,
+    public metadata: AIServiceErrorMetadata = {},
   ) {
     super(message);
     this.name = 'AIServiceError';

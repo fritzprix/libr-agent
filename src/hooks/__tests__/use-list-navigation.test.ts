@@ -37,6 +37,54 @@ describe('useListNavigation', () => {
     expect(onEnter).toHaveBeenCalledWith(0);
   });
 
+  it('resets the active index when resetDependencies change', () => {
+    const { result, rerender } = renderHook(
+      ({ resetDependencies }) =>
+        useListNavigation({
+          itemCount: 3,
+          onEnter: vi.fn(),
+          resetDependencies,
+        }),
+      {
+        initialProps: { resetDependencies: ['types', 'alpha'] },
+      },
+    );
+
+    act(() => {
+      result.current.setActiveIndex(2);
+    });
+
+    expect(result.current.activeIndex).toBe(2);
+
+    rerender({ resetDependencies: ['types', 'beta'] });
+
+    expect(result.current.activeIndex).toBe(0);
+  });
+
+  it('does not reset the active index when resetDependencies are element-wise equal', () => {
+    const { result, rerender } = renderHook(
+      ({ resetDependencies }) =>
+        useListNavigation({
+          itemCount: 3,
+          onEnter: vi.fn(),
+          resetDependencies,
+        }),
+      {
+        initialProps: { resetDependencies: ['types', 'alpha'] },
+      },
+    );
+
+    act(() => {
+      result.current.setActiveIndex(2);
+    });
+
+    expect(result.current.activeIndex).toBe(2);
+
+    rerender({ resetDependencies: ['types', 'alpha'] });
+
+    expect(result.current.activeIndex).toBe(2);
+  });
+
   it('only prevents Escape when the hook handles it', () => {
     const onEscape = vi.fn();
     const handled = renderHook(() =>

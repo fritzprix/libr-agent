@@ -10,6 +10,9 @@ import AgentChatView from '../AgentChatView';
 
 const mocks = vi.hoisted(() => ({
   agentSessionState: undefined as AgentSessionStateContextValue | undefined,
+  isMobile: false,
+  showWorkspacePanel: false,
+  showPlanningPanel: false,
 }));
 
 function createBaseRuntimeState(): SessionRuntimeState {
@@ -110,7 +113,10 @@ vi.mock('@/context/AgentWorkspaceContext', () => ({
     <>{children}</>
   ),
   useAgentWorkspace: () => ({
-    showWorkspacePanel: false,
+    showWorkspacePanel: mocks.showWorkspacePanel,
+    openWorkspacePanel: vi.fn(),
+    closeWorkspacePanel: vi.fn(),
+    toggleWorkspacePanel: vi.fn(),
   }),
 }));
 
@@ -119,8 +125,15 @@ vi.mock('@/context/AgentPlanningContext', () => ({
     <>{children}</>
   ),
   useAgentPlanning: () => ({
-    showPlanningPanel: false,
+    showPlanningPanel: mocks.showPlanningPanel,
+    openPlanningPanel: vi.fn(),
+    closePlanningPanel: vi.fn(),
+    togglePlanningPanel: vi.fn(),
   }),
+}));
+
+vi.mock('@/hooks/use-mobile', () => ({
+  useIsMobile: () => mocks.isMobile,
 }));
 
 vi.mock('../hooks/useAgentResourceAttachment', () => ({
@@ -162,6 +175,28 @@ vi.mock('../components/AgentPlanningUpdates', () => ({
   AgentPlanningUpdates: () => <div>mock-planning-updates</div>,
 }));
 
+vi.mock('@/components/ui/sheet', () => ({
+  Sheet: ({
+    children,
+    open,
+  }: {
+    children: ReactNode;
+    open: boolean;
+    onOpenChange?: (open: boolean) => void;
+  }) => <div data-testid={open ? 'sheet-open' : 'sheet-closed'}>{children}</div>,
+  SheetContent: ({
+    children,
+    side,
+  }: {
+    children: ReactNode;
+    side: string;
+    className?: string;
+  }) => <div data-testid={`sheet-content-${side}`}>{children}</div>,
+  SheetHeader: ({ children }: { children: ReactNode }) => <>{children}</>,
+  SheetTitle: ({ children }: { children: ReactNode }) => <>{children}</>,
+  SheetDescription: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
 vi.mock('@/components/ui/LoadingSpinner', () => ({
   default: ({ label }: { label?: string }) => <div>{label ?? 'spinner'}</div>,
 }));
@@ -197,6 +232,9 @@ vi.mock('@/lib/logger', () => ({
 describe('AgentChatView', () => {
   beforeEach(() => {
     mocks.agentSessionState = createSessionState();
+    mocks.isMobile = false;
+    mocks.showWorkspacePanel = false;
+    mocks.showPlanningPanel = false;
   });
 
   it('shows the blocking loader when there is no hydrated session yet', () => {
@@ -238,5 +276,36 @@ describe('AgentChatView', () => {
     expect(screen.getByText('mock-header')).toBeInTheDocument();
     expect(screen.getAllByText('Loading session...')).not.toHaveLength(0);
     expect(screen.getByTestId('chat-provider')).toBeInTheDocument();
+  });
+
+  it('renders both desktop side panels at the same time', () => {
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+    });
+    mocks.showWorkspacePanel = true;
+    mocks.showPlanningPanel = true;
+
+    render(<AgentChatView />);
+
+    expect(screen.getByText('mock-workspace-panel')).toBeInTheDocument();
+    expect(screen.getByText('mock-planning-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('sheet-content-left')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sheet-content-right')).not.toBeInTheDocument();
+  });
+
+  it('renders mobile panels inside sheets instead of desktop rails', () => {
+    mocks.agentSessionState = createSessionState({
+      session: createMockSession(),
+    });
+    mocks.isMobile = true;
+    mocks.showWorkspacePanel = true;
+    mocks.showPlanningPanel = true;
+
+    render(<AgentChatView />);
+
+    expect(screen.getByTestId('sheet-content-left')).toBeInTheDocument();
+    expect(screen.getByTestId('sheet-content-right')).toBeInTheDocument();
+    expect(screen.getAllByText('mock-workspace-panel')).toHaveLength(1);
+    expect(screen.getAllByText('mock-planning-panel')).toHaveLength(1);
   });
 });

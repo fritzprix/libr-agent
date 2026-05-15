@@ -33,23 +33,6 @@ export function AgentChatHeader({
   const [isCopying, setIsCopying] = useState(false);
   const { copyToClipboard } = useClipboard();
 
-  // Planning toggle comes from AgentPlanningContext to keep state in sync
-  const handleTogglePlanning = () => {
-    if (!showPlanningPanel) {
-      // About to open planning; ensure workspace is closed
-      if (showWorkspacePanel) toggleWorkspacePanel();
-    }
-    togglePlanningPanel();
-  };
-
-  const handleToggleWorkspace = () => {
-    if (!showWorkspacePanel) {
-      // About to open workspace; ensure planning is closed
-      if (showPlanningPanel) togglePlanningPanel();
-    }
-    toggleWorkspacePanel();
-  };
-
   const handleCopyMessages = async () => {
     if (isCopying) return;
     setIsCopying(true);
@@ -102,8 +85,10 @@ export function AgentChatHeader({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={handleToggleWorkspace}
+                onClick={toggleWorkspacePanel}
                 aria-label={t('agent.header.toggleWorkspaceAria')}
+                aria-controls="agent-workspace-panel"
+                aria-expanded={showWorkspacePanel}
                 className="h-6 px-2"
               >
                 <FolderOpen
@@ -122,8 +107,10 @@ export function AgentChatHeader({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={handleTogglePlanning}
+                onClick={togglePlanningPanel}
                 aria-label={t('agent.header.togglePlanningAria')}
+                aria-controls="agent-planning-panel"
+                aria-expanded={showPlanningPanel}
                 className="h-6 px-2"
               >
                 <PanelRight

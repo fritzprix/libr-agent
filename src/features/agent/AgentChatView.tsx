@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+} from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
@@ -31,26 +38,125 @@ import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
 import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
 import { AgentPlanningPanel } from './components/AgentPlanningPanel';
 import { AgentPlanningUpdates } from './components/AgentPlanningUpdates';
+import { SessionLoadingOverlay } from './components/SessionLoadingOverlay';
 import { getLogger } from '@/lib/logger';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { AgentResourceAttachmentProvider } from './hooks/useAgentResourceAttachment';
+import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatView');
 
-function getSessionLoadingLabel(isStartingSession: boolean): string {
-  return isStartingSession ? 'Starting session...' : 'Loading session...';
+function getSessionLoadingLabel(
+  isStartingSession: boolean,
+  t: (key: string) => string,
+): string {
+  return isStartingSession
+    ? t('agent.start.startingSession')
+    : t('agent.chat.loadingSession');
 }
 
-const InitializationStatusDisplay = () => {
-  const { initializationStep } = useAgentSessionState();
-  if (!initializationStep) return null;
+interface DesktopPanelRailProps {
+  side: 'left' | 'right';
+  open: boolean;
+  children: ReactNode;
+}
+
+function DesktopPanelRail({ side, open, children }: DesktopPanelRailProps) {
+  const railRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) {
+      return;
+    }
+
+    if (!open) {
+      rail.setAttribute('inert', '');
+      return;
+    }
+
+    rail.removeAttribute('inert');
+  }, [open]);
 
   return (
-    <span className="animate-in fade-in slide-in-from-bottom-1 duration-300">
-      {initializationStep.step}
-    </span>
+    <aside
+      ref={railRef}
+      aria-hidden={!open}
+      data-open={open}
+      className={cn(
+        'absolute inset-y-0 z-20 w-80 transition-transform duration-300 ease-out',
+        !open && 'pointer-events-none',
+        side === 'left'
+          ? 'left-0 data-[open=false]:-translate-x-full'
+          : 'right-0 data-[open=false]:translate-x-full',
+      )}
+    >
+      {children}
+    </aside>
   );
-};
+}
+
+interface MobilePanelSheetProps {
+  description: string;
+  open: boolean;
+  side: 'left' | 'right';
+  title: string;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}
+
+function MobilePanelSheet({
+  children,
+  description,
+  open,
+  side,
+  title,
+  onOpenChange,
+}: MobilePanelSheetProps) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side={side}
+        className="w-full max-w-none gap-0 p-0 sm:max-w-sm"
+      >
+        <SheetHeader className="sr-only">
+          <SheetTitle>{title}</SheetTitle>
+          <SheetDescription>{description}</SheetDescription>
+        </SheetHeader>
+        <div className="h-full pt-12">{children}</div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function AgentChatComposer() {
+  return (
+    <div className="relative shrink-0 px-4 pb-4">
+      <div
+        aria-hidden="true"
+        style={{ height: 'var(--agent-chat-composer-overlap, 64px)' }}
+      />
+      <div
+        className="relative z-10"
+        style={{
+          marginTop: 'calc(var(--agent-chat-composer-overlap, 64px) * -1)',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
+        <AgentChatAttachedFiles />
+        <AgentChatInput />
+      </div>
+    </div>
+  );
+}
 
 /**
  * Agent Chat View - Compound Component Pattern
@@ -70,14 +176,22 @@ const InitializationStatusDisplay = () => {
  */
 
 function AgentChatInner() {
-  const { showWorkspacePanel } = useAgentWorkspace();
-  const { showPlanningPanel } = useAgentPlanning();
+  const isMobile = useIsMobile();
+  const { closeWorkspacePanel, openWorkspacePanel, showWorkspacePanel } =
+    useAgentWorkspace();
+  const { closePlanningPanel, openPlanningPanel, showPlanningPanel } =
+    useAgentPlanning();
+  const { t } = useTranslation();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const { session } = useAgentSessionState();
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
+  const [hasOpenedWorkspaceDesktop, setHasOpenedWorkspaceDesktop] =
+    useState(showWorkspacePanel);
+  const [hasOpenedPlanningDesktop, setHasOpenedPlanningDesktop] =
+    useState(showPlanningPanel);
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
   const assistantId = session?.assistant?.id;
@@ -109,10 +223,10 @@ function AgentChatInner() {
         );
 
         await injectMessages([toolCallMsg, toolResultMsg]);
-        toast.success('Playbook started automatically');
+        toast.success(t('agent.chat.playbookStartedAutomatically'));
       } catch (error) {
         logger.error('Failed to auto-select playbook', error);
-        toast.error('Failed to start playbook workflow');
+        toast.error(t('agent.chat.failedToStartPlaybookWorkflow'));
       }
     },
     [assistantId, injectMessages, sessionId],
@@ -148,59 +262,116 @@ function AgentChatInner() {
     workflowStatus,
   ]);
 
+  useEffect(() => {
+    if (!isMobile && showWorkspacePanel) {
+      setHasOpenedWorkspaceDesktop(true);
+    }
+  }, [isMobile, showWorkspacePanel]);
+
+  useEffect(() => {
+    if (!isMobile && showPlanningPanel) {
+      setHasOpenedPlanningDesktop(true);
+    }
+  }, [isMobile, showPlanningPanel]);
+
+  const handleWorkspaceSheetOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        openWorkspacePanel();
+        return;
+      }
+      closeWorkspacePanel();
+    },
+    [closeWorkspacePanel, openWorkspacePanel],
+  );
+
+  const handlePlanningSheetOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        openPlanningPanel();
+        return;
+      }
+      closePlanningPanel();
+    },
+    [closePlanningPanel, openPlanningPanel],
+  );
+
   return (
     <>
-      <div className="flex h-full w-full overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]">
-        {/* Workspace side panel */}
-        {showWorkspacePanel && <AgentWorkspacePanel />}
-
-        {/* Main chat area - components rendered directly inside provider scope */}
+      <div
+        className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]"
+        style={
+          {
+            '--agent-chat-composer-overlap': '64px',
+          } as CSSProperties
+        }
+      >
+        <AgentChatHeader />
         <div
-          className="flex-1 flex flex-col min-h-0 min-w-0"
-          style={
-            {
-              '--agent-chat-composer-overlap': '64px',
-            } as CSSProperties
-          }
+          className="relative flex min-h-0 flex-1 overflow-hidden"
+          data-testid="agent-chat-body"
         >
-          <AgentChatHeader />
-          <AgentChatStatusBar />
-          <AgentChatMessages />
+          {!isMobile && hasOpenedWorkspaceDesktop && (
+            <DesktopPanelRail side="left" open={showWorkspacePanel}>
+              <AgentWorkspacePanel
+                isVisible={showWorkspacePanel}
+                variant="rail"
+              />
+            </DesktopPanelRail>
+          )}
 
-          <div className="relative shrink-0 px-4 pb-4">
-            <div
-              aria-hidden="true"
-              style={{ height: 'var(--agent-chat-composer-overlap, 64px)' }}
-            />
-            <div
-              className="relative z-10"
-              style={{
-                marginTop:
-                  'calc(var(--agent-chat-composer-overlap, 64px) * -1)',
-              }}
-            >
-              <div className="pointer-events-none absolute inset-x-0 -top-12 h-32 bg-gradient-to-t from-background/80 via-background/28 to-transparent" />
-              <AgentChatAttachedFiles />
-              <AgentChatInput />
-            </div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <AgentChatStatusBar />
+            <AgentChatMessages />
           </div>
-        </div>
 
-        {/* Planning side panel */}
-        {showPlanningPanel && <AgentPlanningPanel />}
+          {!isMobile && hasOpenedPlanningDesktop && (
+            <DesktopPanelRail side="right" open={showPlanningPanel}>
+              <AgentPlanningPanel
+                isVisible={showPlanningPanel}
+                variant="rail"
+              />
+            </DesktopPanelRail>
+          )}
+        </div>
+        <AgentChatComposer />
       </div>
+
+      {isMobile && (
+        <>
+          <MobilePanelSheet
+            open={showWorkspacePanel}
+            onOpenChange={handleWorkspaceSheetOpenChange}
+            side="left"
+            title={t('agent.workspace.title')}
+            description={t('agent.workspace.title')}
+          >
+            <AgentWorkspacePanel isVisible variant="sheet" />
+          </MobilePanelSheet>
+          <MobilePanelSheet
+            open={showPlanningPanel}
+            onOpenChange={handlePlanningSheetOpenChange}
+            side="right"
+            title={t('agent.planning.title')}
+            description={t('agent.planning.title')}
+          >
+            <AgentPlanningPanel isVisible variant="sheet" />
+          </MobilePanelSheet>
+        </>
+      )}
       <AgentPlanningUpdates />
     </>
   );
 }
 
 export default function AgentChatView() {
+  const { t } = useTranslation();
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const optionalSessionState = useOptionalAgentSessionState();
   const shouldProvideSession =
     optionalSessionState === undefined && !!routeSessionId;
 
-  if (shouldProvideSession && routeSessionId) {
+  if (shouldProvideSession) {
     return (
       <AgentSessionProvider sessionId={routeSessionId}>
         <AgentChatView />
@@ -211,7 +382,9 @@ export default function AgentChatView() {
   if (!optionalSessionState) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <div className="text-destructive">Session context is unavailable.</div>
+        <div className="text-destructive">
+          {t('agent.chat.sessionContextUnavailable')}
+        </div>
       </div>
     );
   }
@@ -220,39 +393,23 @@ export default function AgentChatView() {
   const attachmentSessionId = session?.id ?? routeSessionId ?? '';
   const isStartingSession =
     session?.status === 'idle' && session?.id === routeSessionId;
-  const sessionLoadingLabel = getSessionLoadingLabel(isStartingSession);
+  const sessionLoadingLabel = getSessionLoadingLabel(isStartingSession, t);
+  const initializationStep = optionalSessionState.initializationStep?.step;
   const shouldShowBlockingLoader = isSessionLoading && !session;
   const shouldShowOptimisticLoadingOverlay = isSessionLoading && !!session;
 
   return (
     <AgentResourceAttachmentProvider sessionId={attachmentSessionId}>
       {shouldShowBlockingLoader ? (
-        <div className="flex h-full items-center justify-center p-4">
-          <div className="flex flex-col items-center gap-3">
-            <LoadingSpinner
-              size="lg"
-              className="border-4"
-              label={sessionLoadingLabel}
-            />
-
-            <div className="flex flex-col items-center gap-1">
-              <div
-                className="text-muted-foreground font-medium animate-pulse"
-                aria-hidden="true"
-              >
-                {sessionLoadingLabel}
-              </div>
-
-              <div className="text-xs text-muted-foreground/70 h-4">
-                <InitializationStatusDisplay />
-              </div>
-            </div>
-          </div>
-        </div>
+        <SessionLoadingOverlay
+          label={sessionLoadingLabel}
+          initializationStep={initializationStep}
+          variant="blocking"
+        />
       ) : !session ? (
         <div className="flex h-full items-center justify-center p-4">
           <div className="text-destructive">
-            Session not found or failed to load.
+            {t('agent.chat.sessionNotFoundOrFailed')}
           </div>
         </div>
       ) : (
@@ -266,40 +423,14 @@ export default function AgentChatView() {
           </AgentChatProvider>
 
           {shouldShowOptimisticLoadingOverlay && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
-              <div className="flex flex-col items-center gap-3 rounded-xl border border-border/60 bg-background/90 px-6 py-5 shadow-lg">
-                <LoadingSpinner
-                  size="lg"
-                  className="border-4"
-                  label={sessionLoadingLabel}
-                />
-
-                <div className="flex flex-col items-center gap-1">
-                  <div
-                    className="text-muted-foreground font-medium"
-                    aria-hidden="true"
-                  >
-                    {sessionLoadingLabel}
-                  </div>
-
-                  <div className="text-xs text-muted-foreground/70 h-4">
-                    <InitializationStatusDisplay />
-                  </div>
-                </div>
-              </div>
-            </div>
+            <SessionLoadingOverlay
+              label={sessionLoadingLabel}
+              initializationStep={initializationStep}
+              variant="overlay"
+            />
           )}
         </div>
       )}
     </AgentResourceAttachmentProvider>
   );
 }
-
-// Compound component exports
-AgentChatView.Header = AgentChatHeader;
-AgentChatView.StatusBar = AgentChatStatusBar;
-AgentChatView.Messages = AgentChatMessages;
-AgentChatView.Input = AgentChatInput;
-AgentChatView.AttachedFiles = AgentChatAttachedFiles;
-AgentChatView.WorkspacePanel = AgentWorkspacePanel;
-AgentChatView.PlanningPanel = AgentPlanningPanel;

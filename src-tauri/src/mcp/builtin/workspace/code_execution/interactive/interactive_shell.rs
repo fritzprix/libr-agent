@@ -3,6 +3,10 @@ use serde_json::Value;
 use crate::mcp::builtin::workspace::{
     PendingShellExecution, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
+use crate::mcp::builtin::{
+    error_guidance::{guided_error, ErrorCategory, ToolGroup},
+    workspace::utils,
+};
 use crate::mcp::types::MCPResult;
 
 // Import validation and ui from sibling modules
@@ -36,6 +40,34 @@ impl WorkspaceServer {
             .and_then(|v| v.as_str())
             .unwrap_or("sync")
             .to_string();
+        let requested_timeout = args.get("timeout").and_then(|v| v.as_u64());
+        let timeout = match utils::resolve_sync_timeout(requested_timeout) {
+            Ok(timeout) => timeout,
+            Err(max_timeout) => {
+                let attempted_timeout =
+                    requested_timeout.unwrap_or_else(utils::default_sync_execution_timeout);
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Timeout ({} seconds) exceeds the sync execution limit ({} seconds)",
+                        attempted_timeout, max_timeout
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    format!(
+                        "Use spawnProcess for commands longer than {} seconds",
+                        max_timeout
+                    ),
+                    "Background processes do not block the active agent workflow".to_string(),
+                    format!(
+                        "{} stays bounded because it executes synchronously",
+                        PERSISTENT_SHELL_TOOL
+                    ),
+                ])
+                .to_mcp_result());
+            }
+        };
 
         // Store pending execution
         let pending = PendingShellExecution {
@@ -44,7 +76,7 @@ impl WorkspaceServer {
             executable_command: command.to_string(), // Will be executed (may get -S flag)
             display_command: sanitized_command.clone(), // For logs/UI
             run_mode,                                // Store for 2nd call
-            timeout: args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30), // Command execution timeout
+            timeout,
             created_at: chrono::Utc::now(),
         };
 

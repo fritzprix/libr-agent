@@ -238,9 +238,11 @@ export function SessionHistoryPanel({
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
 
-    const sessionById = new Map(
-      lineageSessions.map((session) => [session.id, session]),
-    );
+    // Bolt: Eliminate .map() array allocation, map manually
+    const sessionById = new Map<string, AgentSession>();
+    for (let i = 0; i < lineageSessions.length; i++) {
+      sessionById.set(lineageSessions[i].id, lineageSessions[i]);
+    }
     const childrenByParent = buildChildrenMap(lineageSessions);
     const visibleIds = new Set<string>();
     const nextAutoExpandedAncestorIds = new Set<string>();
@@ -248,6 +250,11 @@ export function SessionHistoryPanel({
     matchedSessions.forEach((session) => {
       let current: AgentSession | undefined = session;
       while (current) {
+        // Bolt: Break early if already visible to prevent O(N * Depth) traversal
+        if (visibleIds.has(current.id)) {
+          break;
+        }
+
         visibleIds.add(current.id);
         const parent: AgentSession | undefined = current.parentSessionId
           ? sessionById.get(current.parentSessionId)
@@ -266,9 +273,11 @@ export function SessionHistoryPanel({
       }
     });
 
-    const sortIndexById = new Map(
-      matchedSessions.map((session, index) => [session.id, index]),
-    );
+    // Bolt: Eliminate .map() array allocation, map manually
+    const sortIndexById = new Map<string, number>();
+    for (let i = 0; i < matchedSessions.length; i++) {
+      sortIndexById.set(matchedSessions[i].id, i);
+    }
     const orderCache = new Map<string, number>();
     const orderForSession = (session: AgentSession): number => {
       const cachedOrder = orderCache.get(session.id);
@@ -277,19 +286,24 @@ export function SessionHistoryPanel({
       }
 
       let computedOrder: number;
-      if (sortIndexById.has(session.id)) {
-        computedOrder =
-          sortIndexById.get(session.id) ?? Number.MAX_SAFE_INTEGER;
+      const indexOrder = sortIndexById.get(session.id);
+      if (indexOrder !== undefined) {
+        computedOrder = indexOrder;
       } else {
         const descendants = childrenByParent.get(session.id) || [];
-        const descendantOrders = descendants
-          .filter((child) => visibleIds.has(child.id))
-          .map((child) => orderForSession(child));
-
-        computedOrder =
-          descendantOrders.length > 0
-            ? Math.min(...descendantOrders)
-            : Number.MAX_SAFE_INTEGER;
+        // Bolt: Replaced .filter().map() with single-pass manual loop
+        // to prevent allocating intermediate arrays.
+        let minDescendantOrder = Number.MAX_SAFE_INTEGER;
+        for (let i = 0; i < descendants.length; i++) {
+          const child = descendants[i];
+          if (visibleIds.has(child.id)) {
+            const childOrder = orderForSession(child);
+            if (childOrder < minDescendantOrder) {
+              minDescendantOrder = childOrder;
+            }
+          }
+        }
+        computedOrder = minDescendantOrder;
       }
 
       orderCache.set(session.id, computedOrder);

@@ -115,58 +115,206 @@ pub enum DeferredWorkflowStep {
 }
 
 #[derive(Debug, Clone)]
+pub enum CompactionKind {
+    Manual,
+    Preflight,
+    PostResponse { deferred_step: DeferredWorkflowStep },
+}
+
+impl CompactionKind {
+    pub fn mode_label(&self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Preflight => "preflight",
+            Self::PostResponse { .. } => "post-response",
+        }
+    }
+
+    pub fn blocks_workflow(&self) -> bool {
+        !matches!(self, Self::Manual)
+    }
+
+    pub fn resumes_completion_after_compact(&self) -> bool {
+        matches!(self, Self::Preflight)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InFlightCompaction {
+    pub kind: CompactionKind,
+    pub current_tail_id: Option<String>,
+    pub started_at_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub enum CompactionPhase {
+    Idle,
+    InFlight(InFlightCompaction),
+}
+
+#[derive(Debug, Clone)]
+pub struct CompactionSnapshot {
+    pub phase: CompactionPhase,
+    pub last_compacted_tail_id: Option<String>,
+}
+
+impl CompactionSnapshot {
+    pub fn started_at_ms(&self) -> Option<i64> {
+        match &self.phase {
+            CompactionPhase::Idle => None,
+            CompactionPhase::InFlight(in_flight) => Some(in_flight.started_at_ms),
+        }
+    }
+
+    pub fn mode_label(&self) -> &'static str {
+        match &self.phase {
+            CompactionPhase::Idle => "manual",
+            CompactionPhase::InFlight(in_flight) => in_flight.kind.mode_label(),
+        }
+    }
+
+    pub fn blocks_workflow(&self) -> bool {
+        match &self.phase {
+            CompactionPhase::Idle => false,
+            CompactionPhase::InFlight(in_flight) => in_flight.kind.blocks_workflow(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum CompactionBeginOutcome {
+    Started,
+    AlreadyInFlight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactionReuseOutcome {
+    NotInFlight,
+    NoChange,
+    Promoted,
+}
+
+#[derive(Debug, Clone)]
+pub enum CompactionResumeAction {
+    Nothing,
+    ResumeCompletion,
+    RunDeferred(DeferredWorkflowStep),
+}
+
+#[derive(Debug, Clone)]
 pub struct CompactionRuntimeState {
-    /// Guard: true while a llm:compact-request is in-flight (frontend hasn't returned yet).
-    /// Prevents double-triggering compaction within the same session.
-    pub in_flight: Arc<AtomicBool>,
+    /// Closed runtime phase model for active compaction work.
+    phase: Arc<RwLock<CompactionPhase>>,
 
     /// The ID of the last message in the stack at the moment compaction was triggered.
-    /// On the next Step B evaluation, if messages.last().id still equals this value,
-    /// it means no new messages have been added since the last compaction — skip.
-    /// Replaced when a new compaction fires with a different tail.
-    pub last_compacted_tail_id: Arc<RwLock<Option<String>>>,
-
-    /// True when the current turn is blocked waiting for compaction to finish
-    /// before Rust should retry the LLM request.
-    pub awaiting_completion: Arc<AtomicBool>,
-
-    /// True when the current workflow has already produced its assistant response
-    /// and must not be marked complete until the triggered compaction finishes.
-    pub finalize_workflow_after_compact: Arc<AtomicBool>,
-
-    /// Workflow continuation deferred until the current compaction finishes.
-    /// This lets Rust block the next workflow step on a completed assistant response.
-    pub deferred_workflow_step: Arc<RwLock<Option<DeferredWorkflowStep>>>,
-
-    /// Timestamp (Unix ms) when the current in-flight compaction was started.
-    /// Used only for observability so logs can report end-to-end compaction duration.
-    pub started_at_ms: Arc<RwLock<Option<i64>>>,
+    /// This survives successful settlement so future triggers can skip same-tail work.
+    last_compacted_tail_id: Arc<RwLock<Option<String>>>,
 }
 
 impl CompactionRuntimeState {
     pub fn new() -> Self {
         Self {
-            in_flight: Arc::new(AtomicBool::new(false)),
+            phase: Arc::new(RwLock::new(CompactionPhase::Idle)),
             last_compacted_tail_id: Arc::new(RwLock::new(None)),
-            awaiting_completion: Arc::new(AtomicBool::new(false)),
-            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
-            deferred_workflow_step: Arc::new(RwLock::new(None)),
-            started_at_ms: Arc::new(RwLock::new(None)),
         }
     }
 
-    pub fn with_test_state(
-        in_flight: bool,
-        last_tail_id: Option<String>,
-        awaiting_completion: bool,
-    ) -> Self {
+    pub fn with_test_state(phase: CompactionPhase, last_tail_id: Option<String>) -> Self {
         Self {
-            in_flight: Arc::new(AtomicBool::new(in_flight)),
+            phase: Arc::new(RwLock::new(phase)),
             last_compacted_tail_id: Arc::new(RwLock::new(last_tail_id)),
-            awaiting_completion: Arc::new(AtomicBool::new(awaiting_completion)),
-            finalize_workflow_after_compact: Arc::new(AtomicBool::new(false)),
-            deferred_workflow_step: Arc::new(RwLock::new(None)),
-            started_at_ms: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub async fn snapshot(&self) -> CompactionSnapshot {
+        CompactionSnapshot {
+            phase: self.phase.read().await.clone(),
+            last_compacted_tail_id: self.last_compacted_tail_id.read().await.clone(),
+        }
+    }
+
+    pub async fn last_compacted_tail_id(&self) -> Option<String> {
+        self.last_compacted_tail_id.read().await.clone()
+    }
+
+    pub async fn clear_runtime_state(&self, clear_last_compacted_tail_id: bool) {
+        *self.phase.write().await = CompactionPhase::Idle;
+
+        if clear_last_compacted_tail_id {
+            *self.last_compacted_tail_id.write().await = None;
+        }
+    }
+
+    pub async fn try_begin(
+        &self,
+        kind: CompactionKind,
+        current_tail_id: Option<String>,
+        started_at_ms: i64,
+    ) -> CompactionBeginOutcome {
+        let mut phase = self.phase.write().await;
+        if matches!(&*phase, CompactionPhase::InFlight(_)) {
+            return CompactionBeginOutcome::AlreadyInFlight;
+        }
+
+        *phase = CompactionPhase::InFlight(InFlightCompaction {
+            kind,
+            current_tail_id: current_tail_id.clone(),
+            started_at_ms,
+        });
+        *self.last_compacted_tail_id.write().await = current_tail_id;
+        CompactionBeginOutcome::Started
+    }
+
+    pub async fn arm_resume_completion(&self) -> CompactionReuseOutcome {
+        let mut phase = self.phase.write().await;
+        match &mut *phase {
+            CompactionPhase::Idle => CompactionReuseOutcome::NotInFlight,
+            CompactionPhase::InFlight(in_flight) => match &in_flight.kind {
+                CompactionKind::Manual => {
+                    in_flight.kind = CompactionKind::Preflight;
+                    CompactionReuseOutcome::Promoted
+                }
+                CompactionKind::Preflight | CompactionKind::PostResponse { .. } => {
+                    CompactionReuseOutcome::NoChange
+                }
+            },
+        }
+    }
+
+    pub async fn attach_deferred_workflow_step(
+        &self,
+        deferred_step: DeferredWorkflowStep,
+    ) -> CompactionReuseOutcome {
+        let mut phase = self.phase.write().await;
+        match &mut *phase {
+            CompactionPhase::Idle => CompactionReuseOutcome::NotInFlight,
+            CompactionPhase::InFlight(in_flight) => match &in_flight.kind {
+                CompactionKind::PostResponse { .. } => CompactionReuseOutcome::NoChange,
+                CompactionKind::Manual | CompactionKind::Preflight => {
+                    in_flight.kind = CompactionKind::PostResponse { deferred_step };
+                    CompactionReuseOutcome::Promoted
+                }
+            },
+        }
+    }
+
+    pub async fn complete_success(&self) -> CompactionResumeAction {
+        match std::mem::replace(&mut *self.phase.write().await, CompactionPhase::Idle) {
+            CompactionPhase::Idle => CompactionResumeAction::Nothing,
+            CompactionPhase::InFlight(in_flight) => match in_flight.kind {
+                CompactionKind::Manual => CompactionResumeAction::Nothing,
+                CompactionKind::Preflight => CompactionResumeAction::ResumeCompletion,
+                CompactionKind::PostResponse { deferred_step } => {
+                    CompactionResumeAction::RunDeferred(deferred_step)
+                }
+            },
+        }
+    }
+
+    pub fn is_settled(&self) -> bool {
+        match self.phase.try_read() {
+            Ok(phase) => matches!(&*phase, CompactionPhase::Idle),
+            Err(_) => false,
         }
     }
 }
