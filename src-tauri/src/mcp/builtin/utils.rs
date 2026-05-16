@@ -22,13 +22,23 @@ pub enum SecurityError {
 /// Security utilities for built-in servers
 pub struct SecurityValidator {
     base_dir: PathBuf,
+    enforce_base_dir_containment: bool,
 }
 
 impl SecurityValidator {
     pub fn new_with_base_dir(base_dir: PathBuf) -> Self {
+        Self::new_internal(base_dir, false)
+    }
+
+    pub fn new_scoped_with_base_dir(base_dir: PathBuf) -> Self {
+        Self::new_internal(base_dir, true)
+    }
+
+    fn new_internal(base_dir: PathBuf, enforce_base_dir_containment: bool) -> Self {
         tracing::info!(
-            "SecurityValidator created with custom base_dir = {:?}",
-            base_dir
+            "SecurityValidator created with custom base_dir = {:?}, scoped = {}",
+            base_dir,
+            enforce_base_dir_containment
         );
 
         if let Err(e) = std::fs::create_dir_all(&base_dir) {
@@ -42,11 +52,25 @@ impl SecurityValidator {
 
         Self {
             base_dir: canonical_base,
+            enforce_base_dir_containment,
         }
     }
 
-    /// Validate and clean a file path to prevent directory traversal
+    /// Validate and clean a file path to prevent directory traversal.
+    ///
+    /// Read-only validation intentionally allows general absolute paths outside
+    /// `base_dir` as long as they are not sensitive and do not traverse via
+    /// parent segments or unsafe symlinks. Write validation tightens this by
+    /// requiring the resolved target to stay within `base_dir`.
     pub fn validate_path(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
+        self.validate_path_internal(user_path, self.enforce_base_dir_containment)
+    }
+
+    fn validate_path_internal(
+        &self,
+        user_path: &str,
+        enforce_base_containment: bool,
+    ) -> Result<PathBuf, SecurityError> {
         // Log the input and effective base directory to simplify security debugging.
         tracing::debug!(
             "Validating path: '{}' against base: '{:?}'",
@@ -101,7 +125,7 @@ impl SecurityValidator {
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
-        if !absolute_path.starts_with(&self.base_dir) {
+        if enforce_base_containment && !absolute_path.starts_with(&self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
             )));
@@ -141,6 +165,11 @@ impl SecurityValidator {
                 }
 
                 if let Some(canon) = existing_canonical {
+                    if enforce_base_containment && !canon.starts_with(&self.base_dir) {
+                        return Err(SecurityError::PathTraversal(format!(
+                            "Access denied: Path '{user_path}' resolves outside the allowed base directory"
+                        )));
+                    }
                     self.ensure_not_sensitive_path(&canon, user_path)?;
                 }
 
@@ -151,6 +180,12 @@ impl SecurityValidator {
                 absolute_path.clone()
             }
         };
+
+        if enforce_base_containment && !canonical_path.starts_with(&self.base_dir) {
+            return Err(SecurityError::PathTraversal(format!(
+                "Access denied: Path '{user_path}' resolves outside the allowed base directory"
+            )));
+        }
 
         self.ensure_not_sensitive_path(&canonical_path, user_path)?;
 
@@ -209,7 +244,7 @@ impl SecurityValidator {
                 }
             }
         }
-        self.validate_path(user_path)
+        self.validate_path_internal(user_path, self.enforce_base_dir_containment)
     }
 
     /// Validate a path for read-only operations.

@@ -174,6 +174,7 @@ async fn test_copy_file_from_external_rejects_windows_reserved_filenames() {
 
 #[tokio::test]
 async fn test_external_paths_are_allowed_and_sensitive_targets_are_scoped() {
+    let _env_guard = EnvVarGuard::set_temp("LIBRAGENT_MAX_FILE_SIZE", "1048576");
     let workspace = tempdir().unwrap();
     let external_root = tempdir().unwrap();
     let external_file = external_root.path().join("external.txt");
@@ -205,5 +206,33 @@ async fn test_external_paths_are_allowed_and_sensitive_targets_are_scoped() {
     assert!(
         error.contains("protected location"),
         "unexpected sensitive path error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn test_scoped_file_manager_blocks_external_paths() {
+    let _env_guard = EnvVarGuard::set_temp("LIBRAGENT_MAX_FILE_SIZE", "1048576");
+    let workspace = tempdir().unwrap();
+    let external_root = tempdir().unwrap();
+    let external_file = external_root.path().join("external.txt");
+
+    let manager = SecureFileManager::new_scoped_with_base_dir(workspace.path().to_path_buf());
+
+    let write_error = manager
+        .write_file_string(&external_file.to_string_lossy(), "blocked")
+        .await
+        .expect_err("scoped manager should block writes outside base_dir");
+    assert!(
+        write_error.contains("outside the allowed base directory"),
+        "unexpected scoped write error: {write_error}"
+    );
+
+    let read_error = manager
+        .read_file_as_string(&external_file.to_string_lossy())
+        .await
+        .expect_err("scoped manager should block reads outside base_dir");
+    assert!(
+        read_error.contains("outside the allowed base directory"),
+        "unexpected scoped read error: {read_error}"
     );
 }

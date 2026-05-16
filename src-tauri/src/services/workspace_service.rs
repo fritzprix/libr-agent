@@ -325,7 +325,8 @@ impl WorkspaceService {
             let workspace_dir =
                 crate::session::resolve_session_workspace_dir(session_manager, &sid).await?;
             // Create a temporary secure file manager for this operation
-            let manager = crate::services::SecureFileManager::new_with_base_dir(workspace_dir);
+            let manager =
+                crate::services::SecureFileManager::new_scoped_with_base_dir(workspace_dir);
             return manager.write_file(file_path, content).await;
         }
 

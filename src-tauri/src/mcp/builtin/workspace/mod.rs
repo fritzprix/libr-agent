@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinHandle;
@@ -11,6 +12,7 @@ use super::BuiltinMCPServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::{ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
+use crate::repositories::SessionRepository;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
 
@@ -325,7 +327,93 @@ impl WorkspaceServer {
         let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
 
         let workspace_dir = self.get_workspace_dir(&target_session_id);
-        Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
+        Arc::new(SecureFileManager::new_scoped_with_base_dir(workspace_dir))
+    }
+
+    async fn get_allowed_absolute_skill_roots(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<PathBuf>, String> {
+        let assistant_id = if let Some(repo) = crate::state::try_get_session_repository() {
+            repo.get_session(session_id)
+                .await
+                .map_err(|e| format!("Failed to load session metadata: {e}"))?
+                .and_then(|session| {
+                    let config_str = session.agent_config?;
+                    let config = serde_json::from_str::<Value>(&config_str).ok()?;
+                    config
+                        .get("assistantId")
+                        .or_else(|| config.get("id"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+        } else {
+            None
+        };
+
+        let workspace_dir = self.get_workspace_dir(session_id);
+        let (system_dir, user_dir, assistant_dir, workspace_skill_dir) =
+            crate::services::skill_service::resolve_skill_directories(
+                assistant_id.as_deref(),
+                Some(session_id),
+                Some(&workspace_dir),
+            )
+            .await?;
+
+        Ok(crate::services::skill_service::collect_allowed_skill_roots(
+            system_dir,
+            user_dir,
+            assistant_dir,
+            workspace_skill_dir,
+        ))
+    }
+
+    fn path_is_within_any_root(candidate_path: &Path, allowed_roots: &[PathBuf]) -> bool {
+        let normalized_candidate = candidate_path
+            .canonicalize()
+            .unwrap_or_else(|_| candidate_path.to_path_buf());
+
+        allowed_roots.iter().any(|root| {
+            let normalized_root = root.canonicalize().unwrap_or_else(|_| root.clone());
+            normalized_candidate.starts_with(&normalized_root)
+        })
+    }
+
+    pub async fn validate_read_path_with_skill_access(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
+        let file_manager = self.get_file_manager(Some(target_session_id.clone()));
+
+        match file_manager
+            .get_security_validator()
+            .validate_path_for_read(path_str)
+        {
+            Ok(path) => Ok(path),
+            Err(original_error) => {
+                let candidate_path = PathBuf::from(path_str);
+                if !candidate_path.is_absolute() {
+                    return Err(format!("Security error: {original_error}"));
+                }
+
+                let allowed_roots = self
+                    .get_allowed_absolute_skill_roots(&target_session_id)
+                    .await?;
+                if !Self::path_is_within_any_root(&candidate_path, &allowed_roots) {
+                    return Err(format!("Security error: {original_error}"));
+                }
+
+                let permissive_manager = SecureFileManager::new_with_base_dir(
+                    self.get_workspace_dir(&target_session_id),
+                );
+                permissive_manager
+                    .get_security_validator()
+                    .validate_path_for_read(path_str)
+                    .map_err(|e| format!("Security error: {e}"))
+            }
+        }
     }
 
     /// Validate path with security checks (helper for file operations)
