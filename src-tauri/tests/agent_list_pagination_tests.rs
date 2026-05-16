@@ -5,12 +5,10 @@ use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 use serde_json::json;
 use std::str::FromStr;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::sync::atomic::{AtomicU64, Ordering};
+use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
+    list_agent_configs_for_test, list_delegated_sessions_for_test,
 };
-use tauri_mcp_agent_lib::mcp::builtin::agent::AgentServer;
-use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
 use tauri_mcp_agent_lib::migration::Migrator;
 use tauri_mcp_agent_lib::repositories::{
@@ -115,18 +113,11 @@ fn build_session(
     }
 }
 
-async fn build_server(session_id: &str) -> AgentServer {
-    let db = test_db().await;
-    AgentServer::new(session_id.to_string(), Arc::new(db), None)
-        .await
-        .expect("agent server should initialize")
-}
-
 #[tokio::test]
 async fn list_configs_keeps_table_contiguous_and_adds_pagination_note_after_rows() {
     let _guard = TEST_GUARD.lock().await;
     let db = test_db().await;
-    let repo = SqliteAssistantRepository::new(db);
+    let repo = SqliteAssistantRepository::new(db.clone());
     let test_id = next_test_id();
     let query = format!("cfg-pagination-{test_id}");
 
@@ -145,20 +136,16 @@ async fn list_configs_keeps_table_contiguous_and_adds_pagination_note_after_rows
         .expect("assistant should be created");
     }
 
-    let server = build_server(&format!("caller-{test_id}")).await;
-    let result = server
-        .call_tool(
-            "list",
-            json!({
-                "type": "configs",
-                "query": query,
-                "limit": 2,
-                "offset": 1
-            }),
-            None,
-        )
-        .await
-        .expect("list should succeed");
+    let result = list_agent_configs_for_test(
+        &db,
+        &json!({
+            "query": query,
+            "limit": 2,
+            "offset": 1
+        }),
+    )
+    .await
+    .expect("list should succeed");
 
     let text = extract_text(&result);
     assert!(text.contains("|---|---|---|---|---|\n|"));
@@ -169,7 +156,7 @@ async fn list_configs_keeps_table_contiguous_and_adds_pagination_note_after_rows
 async fn list_configs_empty_page_reports_no_results_without_invalid_range() {
     let _guard = TEST_GUARD.lock().await;
     let db = test_db().await;
-    let repo = SqliteAssistantRepository::new(db);
+    let repo = SqliteAssistantRepository::new(db.clone());
     let test_id = next_test_id();
     let query = format!("cfg-empty-{test_id}");
 
@@ -186,20 +173,16 @@ async fn list_configs_empty_page_reports_no_results_without_invalid_range() {
     .await
     .expect("assistant should be created");
 
-    let server = build_server(&format!("caller-empty-{test_id}")).await;
-    let result = server
-        .call_tool(
-            "list",
-            json!({
-                "type": "configs",
-                "query": query,
-                "limit": 2,
-                "offset": 5
-            }),
-            None,
-        )
-        .await
-        .expect("list should succeed");
+    let result = list_agent_configs_for_test(
+        &db,
+        &json!({
+            "query": query,
+            "limit": 2,
+            "offset": 5
+        }),
+    )
+    .await
+    .expect("list should succeed");
 
     let text = extract_text(&result);
     assert!(text.contains("No results for this page (offset 5, limit 2). Try a smaller offset."));
@@ -241,19 +224,15 @@ async fn list_sessions_paginates_child_ids_before_rendering_current_page() {
         .expect("child session should be created");
     }
 
-    let server = build_server(&parent_id).await;
-    let result = server
-        .call_tool(
-            "list",
-            json!({
-                "type": "sessions",
-                "limit": 2,
-                "offset": 20
-            }),
-            None,
-        )
-        .await
-        .expect("list should succeed");
+    let result = list_delegated_sessions_for_test(
+        &parent_id,
+        &json!({
+            "limit": 2,
+            "offset": 20
+        }),
+    )
+    .await
+    .expect("list should succeed");
 
     let text = extract_text(&result);
     assert!(text.contains("Found 25 sub-agent sessions."));
@@ -306,19 +285,15 @@ async fn list_sessions_empty_page_reports_no_results_without_invalid_range() {
         .expect("child session should be created");
     }
 
-    let server = build_server(&parent_id).await;
-    let result = server
-        .call_tool(
-            "list",
-            json!({
-                "type": "sessions",
-                "limit": 2,
-                "offset": 5
-            }),
-            None,
-        )
-        .await
-        .expect("list should succeed");
+    let result = list_delegated_sessions_for_test(
+        &parent_id,
+        &json!({
+            "limit": 2,
+            "offset": 5
+        }),
+    )
+    .await
+    .expect("list should succeed");
 
     let text = extract_text(&result);
     assert!(text.contains("No results for this page (offset 5, limit 2). Try a smaller offset."));
