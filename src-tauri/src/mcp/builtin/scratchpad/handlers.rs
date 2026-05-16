@@ -8,6 +8,37 @@ use crate::state::get_planning_repository;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 
+fn sanitize_table_cell(value: &str) -> String {
+    value.replace(['\n', '\r'], " ").replace('|', "\\|")
+}
+
+fn truncate_preview(content: &str, max_chars: usize) -> String {
+    let preview_chars: Vec<char> = content.chars().take(max_chars + 1).collect();
+    let is_truncated = preview_chars.len() > max_chars;
+    let preview_text = if is_truncated {
+        preview_chars[..max_chars].iter().collect::<String>()
+    } else {
+        preview_chars.into_iter().collect::<String>()
+    };
+
+    let sanitized = sanitize_table_cell(&preview_text);
+    if is_truncated {
+        format!("{sanitized}...")
+    } else {
+        sanitized
+    }
+}
+
+fn truncate_preview_raw(content: &str, max_chars: usize) -> String {
+    let preview_chars: Vec<char> = content.chars().take(max_chars + 1).collect();
+    if preview_chars.len() > max_chars {
+        let preview_text = preview_chars[..max_chars].iter().collect::<String>();
+        format!("{preview_text}...")
+    } else {
+        preview_chars.into_iter().collect::<String>()
+    }
+}
+
 pub async fn add(
     _db: &DatabaseConnection,
     session_id: &str,
@@ -275,8 +306,42 @@ pub async fn list(
     };
 
     let total_items = filtered_items.len();
-    let skip = ((page - 1) * page_size) as usize;
-    let take = page_size as usize;
+    let zero_based_page = match page.checked_sub(1) {
+        Some(value) => value,
+        None => {
+            return Ok(invalid_input_error(
+                "page must be >= 1",
+                ToolGroup::Scratchpad,
+            ))
+        }
+    };
+    let skip_i64 = match zero_based_page.checked_mul(page_size) {
+        Some(value) => value,
+        None => {
+            return Ok(invalid_input_error(
+                "page and pageSize combination is too large",
+                ToolGroup::Scratchpad,
+            ));
+        }
+    };
+    let skip = match usize::try_from(skip_i64) {
+        Ok(value) => value,
+        Err(_) => {
+            return Ok(invalid_input_error(
+                "page and pageSize combination is too large",
+                ToolGroup::Scratchpad,
+            ));
+        }
+    };
+    let take = match usize::try_from(page_size) {
+        Ok(value) => value,
+        Err(_) => {
+            return Ok(invalid_input_error(
+                "pageSize is too large",
+                ToolGroup::Scratchpad,
+            ));
+        }
+    };
     let paged_items = filtered_items
         .into_iter()
         .skip(skip)
@@ -297,23 +362,27 @@ pub async fn list(
         text_output.push_str(&format!(
             "Scratchpad Notes (Page {}/{}):\n\n",
             page,
-            (total_items as f64 / page_size as f64).ceil() as u64
+            total_items.div_ceil(take)
         ));
         text_output.push_str("| ID | Title | Preview | Tags |\n");
         text_output.push_str("|---|---|---|---|\n");
         for item in &paged_items {
             let id = item.id;
-            let title = item.title.clone().unwrap_or_else(|| "Untitled".to_string());
-            let preview = if item.content.chars().count() > 200 {
-                let truncated: String = item.content.chars().take(200).collect();
-                format!("{}...", truncated.replace('\n', " ").replace('|', "\\|"))
-            } else {
-                item.content.replace('\n', " ").replace('|', "\\|")
-            };
+            let title = sanitize_table_cell(
+                item.title
+                    .clone()
+                    .unwrap_or_else(|| "Untitled".to_string())
+                    .as_str(),
+            );
+            let preview = truncate_preview(&item.content, 200);
             let tags_str = if let Some(t) = &item.tags {
                 if let Ok(parsed) = serde_json::from_str::<Vec<String>>(t) {
                     if !parsed.is_empty() {
-                        parsed.join(", ")
+                        parsed
+                            .iter()
+                            .map(|tag| sanitize_table_cell(tag))
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     } else {
                         "-".to_string()
                     }
@@ -329,7 +398,7 @@ pub async fn list(
             ));
         }
 
-        let has_more = ((page * page_size) as usize) < total_items;
+        let has_more = skip + paged_items.len() < total_items;
         if has_more {
             text_output.push_str(&format!(
                 "\n*(Showing {} to {} of {} items. Call list with page: {} to see more)*",
@@ -354,12 +423,7 @@ pub async fn list(
             json!({
                 "id": item.id,
                 "title": item.title,
-                "preview": if item.content.chars().count() > 200 {
-                    let truncated: String = item.content.chars().take(200).collect();
-                    format!("{}...", truncated)
-                } else {
-                    item.content.clone()
-                },
+                "preview": truncate_preview_raw(&item.content, 200),
                 "tags": item.tags.clone().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()),
                 "created_at": item.created_at
             })
