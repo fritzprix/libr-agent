@@ -122,8 +122,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         const modelList = await withTimeout(service.listModels(), 20000);
 
         // Convert ModelInfo[] into Record<string, ModelInfo>
-        // ⚡ Bolt: Replaced .reduce() with for-loop to eliminate O(N) functional callback allocation overhead and reduce GC pressure for large model lists
-        const modelsRecord: Record<string, ModelInfo> = {};
+        // ⚡ Bolt: Replaced .reduce() with a single-pass loop to reduce per-element callback overhead.
+        const modelsRecord = Object.create(null) as Record<string, ModelInfo>;
         for (const modelInfo of modelList) {
           const key = modelInfo.id || modelInfo.name;
           modelsRecord[key] = modelInfo;

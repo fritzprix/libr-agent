@@ -116,7 +116,7 @@ export function ScheduledTasksPage() {
   );
 
   const enabledTaskCount = useMemo(() => {
-    // ⚡ Bolt: Replaced .reduce() with for-loop to avoid O(N) functional callback overhead
+    // ⚡ Bolt: Replaced .reduce() with a loop to avoid per-element callback overhead.
     let count = 0;
     for (const task of tasks) {
       if (task.enabled) {

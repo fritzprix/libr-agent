@@ -265,7 +265,7 @@ export function calculateContextSafetyMargin(effectiveLimit: number): number {
 }
 
 export function estimateMCPContentTokens(content: MCPContent[]): number {
-  // ⚡ Bolt: Replace .reduce() with for-loop for better token estimation performance on hot paths
+  // ⚡ Bolt: Replace .reduce() with a loop to reduce per-element callback overhead on hot paths.
   let total = 0;
   for (const item of content) {
     switch (item.type) {
