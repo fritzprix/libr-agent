@@ -585,11 +585,8 @@ pub async fn handle_tool_call(
             let total_count = assistants.len();
 
             // In-memory pagination
-            let paginated_assistants: Vec<Value> = assistants
-                .into_iter()
-                .skip(offset)
-                .take(limit)
-                .collect();
+            let paginated_assistants: Vec<Value> =
+                assistants.into_iter().skip(offset).take(limit).collect();
 
             let message = if paginated_assistants.is_empty() {
                 if total_count == 0 {
@@ -599,7 +596,12 @@ pub async fn handle_tool_call(
                 }
             } else {
                 let mut lines = vec![
-                    format!("Available assistant types (Showing {} to {} of {}):", offset + 1, offset + paginated_assistants.len(), total_count),
+                    format!(
+                        "Available assistant types (Showing {} to {} of {}):",
+                        offset + 1,
+                        offset + paginated_assistants.len(),
+                        total_count
+                    ),
                     "".to_string(),
                     "| Name | ID | Model | Description |".to_string(),
                     "|---|---|---|---|".to_string(),

@@ -1,1 +1,0 @@
-cd src-tauri && cargo test --test workspace_search_tests write_file_append_returns_updated_anchors_without_forcing_followup_read
