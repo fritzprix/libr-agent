@@ -205,6 +205,7 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
@@ -263,13 +264,13 @@ pnpm tauri dev
 
 ## LibrAgent가 특히 잘 맞는 경우
 
-| 이런 걸 원한다면... | LibrAgent가 강한 이유 |
-| --- | --- |
-| **로컬 AI 워크스테이션** | 파일, 세션, 워크스페이스, 브라우저 상태가 기본적으로 로컬에 남습니다 |
-| **MCP 네이티브 데스크톱 제품** | 얇은 래퍼가 아니라 MCP 서버를 설치, 가져오기, 관리하는 경험 자체가 제품 안에 있습니다 |
-| **실제로 일하는 에이전트** | Workspace, Shell, Browser, Knowledge 도구가 장시간 실행을 전제로 설계되었습니다 |
-| **프레임워크를 먼저 짜지 않아도 되는 멀티 에이전트 워크플로우** | `delegate`, `teamwork`, `org`, `schedule`가 이미 제품 안에 들어 있습니다 |
-| **GUI 사용성과 파워유저 깊이의 균형** | 데스크톱 UI를 쓰면서도 확장성과 통제력을 잃지 않습니다 |
+| 이런 걸 원한다면...                                             | LibrAgent가 강한 이유                                                                 |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **로컬 AI 워크스테이션**                                        | 파일, 세션, 워크스페이스, 브라우저 상태가 기본적으로 로컬에 남습니다                  |
+| **MCP 네이티브 데스크톱 제품**                                  | 얇은 래퍼가 아니라 MCP 서버를 설치, 가져오기, 관리하는 경험 자체가 제품 안에 있습니다 |
+| **실제로 일하는 에이전트**                                      | Workspace, Shell, Browser, Knowledge 도구가 장시간 실행을 전제로 설계되었습니다       |
+| **프레임워크를 먼저 짜지 않아도 되는 멀티 에이전트 워크플로우** | `delegate`, `teamwork`, `org`, `schedule`가 이미 제품 안에 들어 있습니다              |
+| **GUI 사용성과 파워유저 깊이의 균형**                           | 데스크톱 UI를 쓰면서도 확장성과 통제력을 잃지 않습니다                                |
 
 ---
 

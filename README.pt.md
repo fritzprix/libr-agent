@@ -205,6 +205,7 @@ _Importante: `bootstrap` é uma capacidade integrada frequentemente usada com es
 Descarrega o instalador mais recente para a tua plataforma na **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
@@ -263,13 +264,13 @@ pnpm tauri dev
 
 ## Onde o LibrAgent encaixa melhor
 
-| Se queres... | O LibrAgent é forte porque... |
-| --- | --- |
-| **uma workstation local de IA** | ficheiros, sessões, workspaces e estado do navegador ficam na tua máquina por defeito |
-| **um produto desktop realmente nativo MCP** | podes instalar, importar e gerir servidores MCP sem tratar a app como um wrapper fino |
-| **agentes que fazem trabalho real** | Workspace, Shell, Browser e Knowledge foram pensados para execução prolongada |
-| **workflows multi-agente sem construir primeiro um framework** | `delegate`, `teamwork`, `org` e `schedule` já fazem parte do produto |
-| **equilíbrio entre GUI utilizável e profundidade de power user** | tens uma interface desktop sem perder extensibilidade nem controlo |
+| Se queres...                                                     | O LibrAgent é forte porque...                                                         |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **uma workstation local de IA**                                  | ficheiros, sessões, workspaces e estado do navegador ficam na tua máquina por defeito |
+| **um produto desktop realmente nativo MCP**                      | podes instalar, importar e gerir servidores MCP sem tratar a app como um wrapper fino |
+| **agentes que fazem trabalho real**                              | Workspace, Shell, Browser e Knowledge foram pensados para execução prolongada         |
+| **workflows multi-agente sem construir primeiro um framework**   | `delegate`, `teamwork`, `org` e `schedule` já fazem parte do produto                  |
+| **equilíbrio entre GUI utilizável e profundidade de power user** | tens uma interface desktop sem perder extensibilidade nem controlo                    |
 
 ---
 

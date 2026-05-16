@@ -205,6 +205,7 @@ _Important: `bootstrap` is a builtin capability often used alongside these skill
 Download the latest installer for your platform from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
@@ -263,13 +264,13 @@ pnpm tauri dev
 
 ## Where LibrAgent Fits Best
 
-| If you want... | LibrAgent is strong because... |
-| --- | --- |
-| **A local AI workstation** | Files, sessions, workspaces, and browser state stay on your machine by default |
-| **An MCP-native desktop product** | You can install, import, and manage MCP servers without treating the app like a thin wrapper |
-| **Agents that do real work** | Workspace, shell, browser, and knowledge tools are built for long-running execution |
-| **Multi-agent workflows without building a framework first** | `delegate`, `teamwork`, `org`, and `schedule` are already part of the product |
-| **A bridge between power-user depth and GUI usability** | You get a desktop UI without giving up extensibility or control |
+| If you want...                                               | LibrAgent is strong because...                                                               |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| **A local AI workstation**                                   | Files, sessions, workspaces, and browser state stay on your machine by default               |
+| **An MCP-native desktop product**                            | You can install, import, and manage MCP servers without treating the app like a thin wrapper |
+| **Agents that do real work**                                 | Workspace, shell, browser, and knowledge tools are built for long-running execution          |
+| **Multi-agent workflows without building a framework first** | `delegate`, `teamwork`, `org`, and `schedule` are already part of the product                |
+| **A bridge between power-user depth and GUI usability**      | You get a desktop UI without giving up extensibility or control                              |
 
 ---
 

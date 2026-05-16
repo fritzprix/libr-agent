@@ -205,6 +205,7 @@ _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces
 Téléchargez le dernier installateur pour votre plateforme depuis la **[page des Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows :** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
 - **macOS (Apple Silicon) :** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
 - **Linux :** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
@@ -263,13 +264,13 @@ pnpm tauri dev
 
 ## Là où LibrAgent est le plus pertinent
 
-| Si vous voulez... | LibrAgent est fort parce que... |
-| --- | --- |
-| **Une station de travail IA locale** | fichiers, sessions, workspaces et état navigateur restent sur votre machine par défaut |
-| **Un produit desktop vraiment natif MCP** | vous pouvez installer, importer et gérer des serveurs MCP sans traiter l'app comme un simple wrapper |
-| **Des agents qui font un vrai boulot** | Workspace, Shell, Browser et Knowledge sont conçus pour de l'exécution longue durée |
-| **Des workflows multi-agents sans construire un framework d'abord** | `delegate`, `teamwork`, `org` et `schedule` font déjà partie du produit |
-| **Un pont entre profondeur power-user et confort GUI** | vous gardez une interface desktop sans perdre l'extensibilité ni le contrôle |
+| Si vous voulez...                                                   | LibrAgent est fort parce que...                                                                      |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Une station de travail IA locale**                                | fichiers, sessions, workspaces et état navigateur restent sur votre machine par défaut               |
+| **Un produit desktop vraiment natif MCP**                           | vous pouvez installer, importer et gérer des serveurs MCP sans traiter l'app comme un simple wrapper |
+| **Des agents qui font un vrai boulot**                              | Workspace, Shell, Browser et Knowledge sont conçus pour de l'exécution longue durée                  |
+| **Des workflows multi-agents sans construire un framework d'abord** | `delegate`, `teamwork`, `org` et `schedule` font déjà partie du produit                              |
+| **Un pont entre profondeur power-user et confort GUI**              | vous gardez une interface desktop sans perdre l'extensibilité ni le contrôle                         |
 
 ---
 

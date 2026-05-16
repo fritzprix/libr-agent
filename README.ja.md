@@ -205,6 +205,7 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
@@ -263,13 +264,13 @@ pnpm tauri dev
 
 ## LibrAgentが特にハマるケース
 
-| こういうものが欲しいなら… | LibrAgentが強い理由 |
-| --- | --- |
-| **ローカルAIワークステーション** | ファイル、セッション、ワークスペース、ブラウザ状態が基本的に自分のマシンに残る |
-| **MCPネイティブなデスクトップ製品** | 薄いラッパーではなく、MCPサーバーの導入・インポート・管理まで製品内で完結できる |
-| **本当に仕事を進めるエージェント** | Workspace、Shell、Browser、Knowledge が長時間実行を前提に設計されている |
-| **先にフレームワークを組まなくていいマルチエージェント運用** | `delegate`、`teamwork`、`org`、`schedule` がすでに製品に入っている |
-| **GUIの使いやすさとパワーユーザーの深さの両立** | デスクトップUIを使いながら拡張性と制御力を失わない |
+| こういうものが欲しいなら…                                    | LibrAgentが強い理由                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| **ローカルAIワークステーション**                             | ファイル、セッション、ワークスペース、ブラウザ状態が基本的に自分のマシンに残る  |
+| **MCPネイティブなデスクトップ製品**                          | 薄いラッパーではなく、MCPサーバーの導入・インポート・管理まで製品内で完結できる |
+| **本当に仕事を進めるエージェント**                           | Workspace、Shell、Browser、Knowledge が長時間実行を前提に設計されている         |
+| **先にフレームワークを組まなくていいマルチエージェント運用** | `delegate`、`teamwork`、`org`、`schedule` がすでに製品に入っている              |
+| **GUIの使いやすさとパワーユーザーの深さの両立**              | デスクトップUIを使いながら拡張性と制御力を失わない                              |
 
 ---
 
