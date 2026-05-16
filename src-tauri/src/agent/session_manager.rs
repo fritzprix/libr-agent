@@ -8,53 +8,13 @@ use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
-    CompactContextRecord, CompactContextRepository, SessionListCursor, SessionListPage,
-    SessionMetadata, SessionRepository, SessionStatus,
+    CompactContextRecord, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
 };
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExecutionMode {
-    Normal,
-    Yolo,
-    Unsafe,
-}
-
-impl ExecutionMode {
-    fn runtime_flags(self) -> (bool, bool) {
-        match self {
-            Self::Normal => (false, false),
-            Self::Yolo => (true, false),
-            Self::Unsafe => (false, true),
-        }
-    }
-
-    fn include_hard_approvals(self) -> Option<bool> {
-        match self {
-            Self::Normal => None,
-            Self::Yolo => Some(false),
-            Self::Unsafe => Some(true),
-        }
-    }
-}
-
-impl std::str::FromStr for ExecutionMode {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "normal" => Ok(Self::Normal),
-            "yolo" => Ok(Self::Yolo),
-            "unsafe" => Ok(Self::Unsafe),
-            _ => Err(format!("Unknown execution mode: {}", value)),
-        }
-    }
-}
 
 #[path = "session_manager/approvals.rs"]
 mod approvals;
@@ -62,9 +22,14 @@ mod approvals;
 mod channel;
 #[path = "session_manager/compact.rs"]
 mod compact;
+#[path = "session_manager/execution_mode.rs"]
+pub mod execution_mode;
+#[path = "session_manager/message_injection.rs"]
+mod message_injection;
 
 pub use channel::format_channel_payload_for_test;
 pub use compact::handle_compact_error_with_dispatcher;
+pub use execution_mode::ExecutionMode;
 
 /// Manages agent sessions and their workflows
 ///
@@ -123,10 +88,7 @@ impl AgentSessionManager {
     }
 
     /// Return an owned clone of the `Arc` wrapping the active sessions map.
-    ///
-    /// Used at startup to register a shared reference in the global `state`
-    /// module so that builtin MCP tools can look up per-session cancellation
-    /// tokens without going through Tauri managed state.
+    /// Used at startup to register a shared reference in the global `state` module so that builtin MCP tools can look up per-session cancellation tokens.
     pub fn active_sessions_arc(&self) -> Arc<RwLock<HashMap<String, AgentSession>>> {
         self.active_sessions.clone()
     }
@@ -152,7 +114,6 @@ impl AgentSessionManager {
     }
 
     /// Clone self for use in async tasks
-    /// This creates a new instance with shared Arc references
     pub fn clone_for_task(&self) -> Self {
         Self {
             active_sessions: self.active_sessions.clone(),
@@ -163,7 +124,7 @@ impl AgentSessionManager {
         }
     }
 
-    /// Create a new session (wrapper around create_session_with_repo using internal repo)
+    /// Create a new session
     pub async fn create_session(
         &self,
         session_id: String,
@@ -172,7 +133,6 @@ impl AgentSessionManager {
         provider: Option<String>,
         agent_config: crate::agent::AgentConfig,
     ) -> Result<SessionMetadata, String> {
-        // Use the internal persistent repository
         self.create_session_with_repo(
             self.session_repo.clone(),
             session_id,
@@ -184,7 +144,7 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Create or update a session with a specific repository (for ephemeral vs persistent)
+    /// Create or update a session with a specific repository
     pub async fn create_session_with_repo(
         &self,
         session_repo: Arc<dyn crate::repositories::SessionRepository>,
@@ -284,7 +244,6 @@ impl AgentSessionManager {
             evs
         };
 
-        // Emit the existing pending approvals
         for event in pending_events {
             if let Err(e) = crate::agent::tauri_events::emit_agent_event(&self.app_handle, event) {
                 log::error!("Failed to re-emit pending approval event on resume: {}", e);
@@ -429,92 +388,14 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Inject messages into the session and let the backend decide whether to
-    /// continue the workflow based on the current session state.
+    /// Inject messages into the session
     pub async fn inject_messages(
         &self,
         session_id: String,
         messages: Vec<Message>,
     ) -> Result<bool, String> {
         self.ensure_session_active(&session_id).await?;
-        let should_trigger_workflow = {
-            let sessions = self.active_sessions.read().await;
-            let session = sessions
-                .get(&session_id)
-                .ok_or_else(|| format!("Session not found: {}", session_id))?;
-            let is_transitioning_to_busy = matches!(
-                session.status_transition.read().await.as_ref(),
-                Some(crate::agent::state::SessionStatusTransition::ToStatus(
-                    SessionStatus::Busy
-                ))
-            );
-
-            session.metadata.status != SessionStatus::Busy && !is_transitioning_to_busy
-        };
-
-        // Delegate message persistence, caching, and event emission to MessageService
-        crate::services::MessageService::inject_messages_to_session(
-            &self.active_sessions,
-            &self.app_handle,
-            &session_id,
-            messages,
-            should_trigger_workflow,
-        )
-        .await?;
-
-        if should_trigger_workflow {
-            log::info!(
-                "Triggering workflow after message injection for session: {}",
-                session_id
-            );
-
-            {
-                let mut sessions = self.active_sessions.write().await;
-                if let Some(session) = sessions.get_mut(&session_id) {
-                    crate::agent::workflow::start::reset_session_execution_state(session).await;
-                }
-            }
-
-            // Update status to Busy
-            crate::agent::lifecycle::update_session_status(
-                &self.session_repo,
-                &self.active_sessions,
-                &self.app_handle,
-                &session_id,
-                crate::repositories::SessionStatus::Busy,
-            )
-            .await?;
-
-            // Emit workflow started event
-            let event = crate::agent::events::AgentEvent::WorkflowStarted {
-                session_id: session_id.clone(),
-            };
-            if let Err(e) = crate::agent::tauri_events::emit_agent_event(&self.app_handle, event) {
-                log::error!(
-                    "Failed to emit WorkflowStarted event during injection: {}",
-                    e
-                );
-            }
-
-            crate::agent::workflow::start::ensure_proxy_ready(
-                &self.proxy_manager,
-                &self.app_handle,
-                &session_id,
-                60,
-            )
-            .await?;
-
-            crate::agent::llm::request_llm_completion_with_recovery(
-                &self.session_repo,
-                &self.active_sessions,
-                &self.proxy_manager,
-                &self.app_handle,
-                session_id,
-            )
-            .await?;
-        }
-
-        Ok(should_trigger_workflow)
+        message_injection::inject_messages(self, session_id, messages).await
     }
 
     pub async fn ensure_session_active(&self, session_id: &str) -> Result<(), String> {
@@ -570,7 +451,6 @@ impl AgentSessionManager {
         tool_call_id: String,
         result: crate::commands::agent_commands::ToolExecutionResult,
     ) -> Result<(), String> {
-        // Use shared workflow logic for consistency between internal and external tool execution
         crate::agent::workflow::continue_workflow_after_tool(
             &self.session_repo,
             &self.active_sessions,
@@ -615,7 +495,7 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Returns the current yolo_mode for a session (false if session not found).
+    /// Returns the current yolo_mode for a session
     pub async fn get_yolo_mode(&self, session_id: &str) -> bool {
         let active = self.active_sessions.read().await;
         active
@@ -642,45 +522,10 @@ impl AgentSessionManager {
         session_id: &str,
         mode: ExecutionMode,
     ) -> Result<(), String> {
-        let (yolo_enabled, unsafe_enabled) = mode.runtime_flags();
-        self.session_repo
-            .update_execution_mode(session_id, yolo_enabled, unsafe_enabled)
-            .await
-            .map_err(|e| format!("Failed to update session execution mode: {}", e))?;
-
-        let has_active_session = {
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                session.yolo_mode.store(yolo_enabled, Ordering::Relaxed);
-                session.unsafe_mode.store(unsafe_enabled, Ordering::Relaxed);
-                true
-            } else {
-                false
-            }
-        };
-
-        if !has_active_session {
-            log::info!(
-                "Updated execution mode for persisted session '{}' without active runtime state",
-                session_id
-            );
-        }
-
-        if let Some(include_hard_approvals) = mode.include_hard_approvals() {
-            if has_active_session {
-                approvals::approve_all_pending_tool_approvals(
-                    self,
-                    session_id,
-                    include_hard_approvals,
-                )
-                .await?;
-            }
-        }
-
-        Ok(())
+        execution_mode::set_execution_mode(self, session_id, mode).await
     }
 
-    /// Returns the current unsafe_mode for a session (false if session not found).
+    /// Returns the current unsafe_mode for a session
     pub async fn get_unsafe_mode(&self, session_id: &str) -> bool {
         let active = self.active_sessions.read().await;
         active
@@ -716,11 +561,12 @@ impl AgentSessionManager {
         })
     }
 
-    /// Delete an agent session and all its data
+    /// Delete an agent session and cascade through its descendants.
     ///
-    /// **Cascade Philosophy:** "When a parent is deleted, its children are also deleted"
-    /// - DB-level CASCADE automatically deletes child session records
-    /// - We must manually delete workspace directories for all descendants before DB deletion
+    /// This removes the target session together with child sessions and their
+    /// associated state, messages, workspace data, and search index entries.
+    /// Use `delete_session_only` when descendants should remain as top-level
+    /// sessions instead of being deleted.
     pub async fn delete_session(&self, session_id: String) -> Result<Vec<String>, String> {
         crate::agent::lifecycle::delete_session(
             &self.session_repo,
@@ -733,10 +579,6 @@ impl AgentSessionManager {
     }
 
     /// Delete only this session, leaving children as orphaned top-level sessions.
-    ///
-    /// - Direct children have their `parent_session_id` set to NULL (become top-level)
-    /// - Only this session's workspace and search index are removed
-    /// - No cascade to descendants
     pub async fn delete_session_only(
         &self,
         session_id: String,
@@ -751,8 +593,12 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Get available tools for a session based on agent configuration
-    /// Returns the filtered tool list that matches what the LLM will receive
+    /// Get available tools for a session based on agent configuration.
+    ///
+    /// Returns the filtered tool list that matches what the LLM will receive.
+    /// Wait for background tool loading... stdio/HTTP servers are spawned asynchronously...
+    /// partial tool list is far better than no list.
+    /// This operation has a 10-second timeout to prevent blocking the main thread if the proxy manager is unresponsive.
     pub async fn get_available_tools(
         &self,
         session_id: &str,
@@ -761,11 +607,6 @@ impl AgentSessionManager {
             .ensure_configured_proxy(session_id, Some(self.app_handle.clone()))
             .await?;
 
-        // Wait for background tool loading to finish (stdio/HTTP servers are spawned
-        // asynchronously during proxy creation). Use a short timeout here (10 s) because
-        // this is a UI query path — a partial tool list is far better than blocking the
-        // status indicator for a full minute while slow/failing external servers are
-        // still initialising. The LLM execution path uses the full 60 s timeout.
         if let Err(e) = self
             .proxy_manager
             .wait_until_proxy_ready(session_id, 10)
@@ -776,10 +617,8 @@ impl AgentSessionManager {
                 session_id,
                 e
             );
-            // Continue anyway – partial tool list is better than no list.
         }
 
-        // Use existing collect_available_tools function (same as LLM request)
         crate::agent::tools::collect_available_tools(session_id, &self.proxy_manager).await
     }
 
@@ -798,8 +637,8 @@ impl AgentSessionManager {
         self.get_available_tools(session_id).await
     }
 
-    /// Remove a message from the in-memory cache
-    /// Used when messages are deleted via messages_delete command to keep cache in sync
+    /// Remove a message from the in-memory cache.
+    /// Used when messages are deleted via messages_delete command to keep cache in sync.
     pub async fn remove_message_from_cache(
         &self,
         session_id: &str,
@@ -821,50 +660,24 @@ impl AgentSessionManager {
         }
     }
 
-    /// Get compacted context for a session (SP17)
+    /// Get compacted context for a session
     pub async fn get_compact_context(
         &self,
         session_id: &str,
     ) -> Result<Option<CompactContextRecord>, String> {
-        let active = self.active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            let compact = session.compact_context.read().await;
-            if compact.is_some() {
-                return Ok((*compact).clone());
-            }
-        }
-
-        // If not in active cache OR cache is None, check DB directly as safety measure
-        let repo = crate::state::get_compact_context_repository();
-        repo.get_by_session_id(session_id)
-            .await
-            .map_err(|e| e.to_string())
+        compact::get_compact_context(&self.active_sessions, session_id).await
     }
 
-    /// Save compacted context for a session (SP17)
+    /// Save compacted context for a session
     pub async fn save_compact_context(
         &self,
         session_id: &str,
         record: CompactContextRecord,
     ) -> Result<(), String> {
-        // 1. Update in-memory if active
-        {
-            let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                let mut compact = session.compact_context.write().await;
-                *compact = Some(record.clone());
-            }
-        }
-
-        // 2. Persist to DB
-        let repo = crate::state::get_compact_context_repository();
-        repo.upsert(&record).await.map_err(|e| e.to_string())?;
-
-        Ok(())
+        compact::save_compact_context(&self.active_sessions, session_id, record).await
     }
 
     /// Handle a successful compact response from the frontend.
-    /// Stores the summary record in-memory + DB and clears the in-flight flag.
     pub async fn handle_compact_response(
         &self,
         session_id: &str,
@@ -872,10 +685,20 @@ impl AgentSessionManager {
         to_id: String,
         summary: String,
     ) -> Result<(), String> {
-        compact::handle_compact_response(self, session_id, from_id, to_id, summary).await
+        compact::handle_compact_response(compact::CompactResponseParams {
+            active_sessions: &self.active_sessions,
+            app_handle: &self.app_handle,
+            session_repo: &self.session_repo,
+            proxy_manager: &self.proxy_manager,
+            session_id,
+            from_id,
+            to_id,
+            summary,
+        })
+        .await
     }
 
-    /// Handle a compact error from the LLM service. If we were awaiting compaction, fail the workflow.
+    /// Handle a compact error from the LLM service.
     pub async fn handle_compact_error(
         &self,
         session_id: String,
@@ -892,7 +715,7 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Clear the compact in-flight flag for a session (called on success or error).
+    /// Clear the compact in-flight flag for a session.
     pub async fn clear_compact_in_flight(&self, session_id: &str) {
         crate::agent::compact_recovery::clear_compact_in_flight(&self.active_sessions, session_id)
             .await;
@@ -914,30 +737,6 @@ impl AgentSessionManager {
         session_id: &str,
         timeout: Duration,
     ) -> Result<(), String> {
-        let started_at = Instant::now();
-
-        loop {
-            let is_settled = {
-                let active = self.active_sessions.read().await;
-                let session = active
-                    .get(session_id)
-                    .ok_or_else(|| format!("Session not found: {}", session_id))?;
-                session.compaction.is_settled()
-            };
-
-            if is_settled {
-                return Ok(());
-            }
-
-            if started_at.elapsed() >= timeout {
-                return Err(format!(
-                    "Timed out waiting for compaction to settle for session {} after {} seconds",
-                    session_id,
-                    timeout.as_secs()
-                ));
-            }
-
-            tokio::time::sleep(Duration::from_millis(150)).await;
-        }
+        compact::wait_for_compaction_to_settle(&self.active_sessions, session_id, timeout).await
     }
 }
