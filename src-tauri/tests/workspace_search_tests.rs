@@ -525,7 +525,7 @@ async fn write_file_append_returns_updated_anchors_without_forcing_followup_read
         "append response should include current anchored lines for immediate follow-up edits: {text}"
     );
     assert!(
-        !text.contains("Use `readFile` to see the full content including the appended part."),
+        !text.contains("Use readFile to inspect lines omitted from this preview"),
         "append response should not force a follow-up read just to inspect the result: {text}"
     );
 }
