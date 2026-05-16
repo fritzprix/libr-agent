@@ -273,7 +273,28 @@ pub fn list_assistants_tool() -> MCPTool {
         name: "listAgentTypes".to_string(),
         title: Some("List Agent Types".to_string()),
         description: "List available agent types (assistants) you can spawn. Call this to discover which specialists exist before delegating tasks.".to_string(),
-        input_schema: object_prop(vec![], vec![], None),
+        input_schema: object_prop(
+            vec![
+                (
+                    "limit".to_string(),
+                    integer_prop(
+                        Some(1),
+                        Some(100),
+                        Some("Maximum number of agents to return. Defaults to 20."),
+                    ),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop(
+                        Some(0),
+                        None,
+                        Some("Number of agents to skip before starting to collect the result set. Defaults to 0."),
+                    ),
+                ),
+            ],
+            vec![],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }
