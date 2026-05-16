@@ -115,10 +115,16 @@ export function ScheduledTasksPage() {
     [tasks],
   );
 
-  const enabledTaskCount = useMemo(
-    () => tasks.reduce((acc, task) => (task.enabled ? acc + 1 : acc), 0),
-    [tasks],
-  );
+  const enabledTaskCount = useMemo(() => {
+    // ⚡ Bolt: Replaced .reduce() with for-loop to avoid O(N) functional callback overhead
+    let count = 0;
+    for (const task of tasks) {
+      if (task.enabled) {
+        count++;
+      }
+    }
+    return count;
+  }, [tasks]);
 
   if (loading) {
     return (

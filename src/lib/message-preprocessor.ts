@@ -326,10 +326,13 @@ export function estimatePayloadTokens(
   availableTools: unknown[] | undefined,
 ): number {
   const promptTokens = systemPrompt ? estimateTextTokens(systemPrompt) : 0;
-  const messageTokens = messages.reduce(
-    (sum, message) => sum + estimateMessageTokens(message),
-    0,
-  );
+
+  // ⚡ Bolt: Replace .reduce() with for-loop for better token estimation performance on hot paths
+  let messageTokens = 0;
+  for (const message of messages) {
+    messageTokens += estimateMessageTokens(message);
+  }
+
   const toolTokens = availableTools
     ? estimateTextTokens(JSON.stringify(availableTools))
     : 0;
