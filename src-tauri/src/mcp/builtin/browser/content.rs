@@ -643,7 +643,8 @@ pub(crate) async fn save_downloaded_file(
     let target_session_id = session_id.unwrap_or("default");
     let session_manager = crate::session::get_session_manager().map_err(|e| e.to_string())?;
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(target_session_id);
-    let file_manager_state = crate::services::SecureFileManager::new_with_base_dir(workspace_dir);
+    let file_manager_state =
+        crate::services::SecureFileManager::new_scoped_with_base_dir(workspace_dir);
 
     match file_manager_state.write_file(save_path, bytes).await {
         Ok(_) => {

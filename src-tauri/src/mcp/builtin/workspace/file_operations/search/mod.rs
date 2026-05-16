@@ -92,10 +92,9 @@ impl WorkspaceServer {
         let workspace_root = self.get_workspace_dir(&target_session_id);
 
         // Security validation
-        let file_manager = self.get_file_manager(Some(target_session_id));
-        let safe_path = match file_manager
-            .get_security_validator()
-            .validate_path_for_read(search_path)
+        let safe_path = match self
+            .validate_read_path_with_skill_access(search_path, Some(target_session_id))
+            .await
         {
             Ok(path) => path,
             Err(e) => {
