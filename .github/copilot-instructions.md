@@ -91,6 +91,8 @@ After making any code changes, always run:
 pnpm refactor:validate
 ```
 
+**Hard rule for agents and contributors:** Do **not** push commits, update a PR branch, or claim the work is ready if formatting has not been applied and re-checked. A passing focused test or `cargo check` is not enough if `cargo fmt --check` / `pnpm rust:fmt` / repository format checks would still fail. If the change touches Rust files, run formatting before push; if the change touches multiple areas, prefer `pnpm refactor:validate` before saying the work is ready.
+
 This ensures:
 
 - Code consistency and formatting
@@ -98,7 +100,7 @@ This ensures:
 - No unused code
 - The application remains buildable
 
-> **Note:** All contributors must follow this workflow before submitting PRs or merging changes.
+> **Note:** All contributors and coding agents must follow this workflow before pushing PR updates, submitting PRs, or merging changes.
 
 ## File Structure
 
@@ -899,6 +901,8 @@ pub async fn command_name(param: Type) -> Result<ReturnType, String> {
 1. **Code Quality Check**: `pnpm lint` - Verify ESLint rules compliance
 2. **Code Formatting**: `pnpm format` - Apply Prettier formatting standards
 3. **Build Verification**: `pnpm build` - Ensure the application builds without errors
+
+**Rust-specific non-negotiable:** If you changed any Rust file under `src-tauri/`, you must run Rust formatting before push (`cargo fmt` or the repo wrapper that applies the same formatting). Never rely on CI to discover a formatting miss after the branch is already pushed.
 
 These steps must be completed successfully before considering any refactoring task complete. This ensures:
 
