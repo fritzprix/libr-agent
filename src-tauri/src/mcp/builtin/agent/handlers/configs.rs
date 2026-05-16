@@ -5,8 +5,8 @@ use crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::utils::build_agent_tool_data;
 use crate::mcp::types::MCPResult;
-use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::repositories::session_repository::SessionRepository;
 use sea_orm::DatabaseConnection;
 
 use super::super::formatting::{

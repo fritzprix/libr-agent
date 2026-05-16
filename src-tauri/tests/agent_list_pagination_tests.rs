@@ -5,9 +5,7 @@ use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 use serde_json::json;
 use std::str::FromStr;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
     list_agent_configs_for_test, list_delegated_sessions_for_test,
 };
