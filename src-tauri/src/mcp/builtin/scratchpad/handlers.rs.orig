@@ -329,7 +329,7 @@ pub async fn list(
             ));
         }
 
-        let has_more = ((page * page_size) as usize) < total_items as usize;
+        let has_more = ((page * page_size) as usize) < total_items;
         if has_more {
             text_output.push_str(&format!(
                 "\n*(Showing {} to {} of {} items. Call list with page: {} to see more)*",

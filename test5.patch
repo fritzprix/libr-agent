@@ -1,0 +1,10 @@
+--- src-tauri/tests/secure_file_manager_tests.rs
++++ src-tauri/tests/secure_file_manager_tests.rs
+@@ -194,7 +194,7 @@
+
+     let project_env_path = external_root.path().join(".env.local");
+     manager
+-        .write_file_string(&project_env_path.to_string_lossy(), "still allowed")
++        .write_file_string(&project_env_path.to_string_lossy(), "allowed")
+         .await
+         .expect("project-local .env outside home should remain allowed");

@@ -193,7 +193,7 @@ async fn test_external_paths_are_allowed_and_sensitive_targets_are_scoped() {
 
     let project_env_path = external_root.path().join(".env.local");
     manager
-        .write_file_string(&project_env_path.to_string_lossy(), "allowed")
+        .write_file_string(&project_env_path.to_string_lossy(), "still allowed")
         .await
         .expect("project-local .env outside home should remain allowed");
 
