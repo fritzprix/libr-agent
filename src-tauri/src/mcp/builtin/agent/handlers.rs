@@ -524,7 +524,10 @@ mod orgs;
 mod sessions;
 
 pub use check_session::check_session;
-pub use configs::{create_agent, list_agents_or_sessions, update_agent};
+pub use configs::{
+    create_agent, list_agent_configs_for_test, list_agents_or_sessions,
+    list_delegated_sessions_for_test, update_agent,
+};
 pub use orgs::{
     create_org, create_org_scaffold_preflight, existing_explicit_org_identity, get_org,
     inspect_teamwork_scaffold, TeamworkScaffoldStatus,

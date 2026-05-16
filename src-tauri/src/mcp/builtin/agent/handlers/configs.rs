@@ -5,7 +5,9 @@ use crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::session_api::utils::build_agent_tool_data;
 use crate::mcp::types::MCPResult;
+use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use sea_orm::DatabaseConnection;
 
 use super::super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
@@ -150,9 +152,23 @@ fn build_pagination_note(offset: usize, page_len: usize, total: usize, limit: us
 }
 
 async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPResult, String> {
+    list_agent_configs_from_db(server.get_db(), args).await
+}
+
+pub async fn list_agent_configs_for_test(
+    db: &DatabaseConnection,
+    args: &Value,
+) -> Result<MCPResult, String> {
+    list_agent_configs_from_db(db, args).await
+}
+
+async fn list_agent_configs_from_db(
+    db: &DatabaseConnection,
+    args: &Value,
+) -> Result<MCPResult, String> {
     use crate::repositories::AssistantRepository;
 
-    let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
+    let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
     let mut agents = repo.list_assistants().await.map_err(|e| e.to_string())?;
 
     if let Some(query) = args.get("query").and_then(|v| v.as_str()) {
@@ -260,12 +276,18 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
+pub async fn list_delegated_sessions_for_test(
+    caller_session_id: &str,
+    args: &Value,
+) -> Result<MCPResult, String> {
+    list_delegated_sessions(caller_session_id, args).await
+}
+
 async fn list_delegated_sessions(
     caller_session_id: &str,
     args: &Value,
 ) -> Result<MCPResult, String> {
     let session_repo = crate::state::get_session_repository();
-    use crate::repositories::session_repository::SessionRepository;
 
     let child_ids = match session_repo.get_child_session_ids(caller_session_id).await {
         Ok(ids) => ids,
