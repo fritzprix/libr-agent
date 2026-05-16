@@ -100,6 +100,13 @@ impl SecurityValidator {
         }
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
+
+        if !absolute_path.starts_with(&self.base_dir) {
+            return Err(SecurityError::PathTraversal(format!(
+                "Access denied: Path '{user_path}' is outside the allowed base directory"
+            )));
+        }
+
         self.ensure_not_sensitive_path(&absolute_path, user_path)?;
 
         // SecurityValidator only validates paths. Directory creation is handled explicitly by callers.
