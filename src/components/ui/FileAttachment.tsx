@@ -14,6 +14,7 @@ interface FileAttachmentProps {
   onRemove?: (index: number) => void;
   onAdd: (e: React.ChangeEvent<HTMLInputElement>) => void;
   maxFileSize?: number;
+  accept?: string;
   allowedExtensions?: string[];
   compact?: boolean;
   disabled?: boolean;
@@ -25,6 +26,7 @@ export default function FileAttachment({
   files,
   onRemove,
   onAdd,
+  accept,
   allowedExtensions = [
     'txt',
     'md',
@@ -52,10 +54,11 @@ export default function FileAttachment({
 }: FileAttachmentProps) {
   const { t } = useTranslation('common');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const accept =
-    allowedExtensions.length > 0
+  const fileAccept =
+    accept ??
+    (allowedExtensions.length > 0
       ? allowedExtensions.map((ext) => `.${ext}`).join(',')
-      : undefined;
+      : undefined);
 
   const handleFileSelect = () => {
     if (disabled) return;
@@ -70,7 +73,7 @@ export default function FileAttachment({
           ref={fileInputRef}
           type="file"
           multiple
-          accept={accept}
+          accept={fileAccept}
           onChange={onAdd}
           disabled={disabled}
           className="hidden"
@@ -137,7 +140,7 @@ export default function FileAttachment({
         ref={fileInputRef}
         type="file"
         multiple
-        accept={accept}
+        accept={fileAccept}
         onChange={onAdd}
         disabled={disabled}
         className="hidden"

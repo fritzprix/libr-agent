@@ -62,4 +62,20 @@ describe('FileAttachment', () => {
     expect(screen.getByRole('button', { name: 'Remove test.txt' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove image.png' })).toBeInTheDocument();
   });
+
+  it('prefers an explicit accept attribute override', () => {
+    const { container } = render(
+      <FileAttachment
+        files={mockFiles}
+        onRemove={mockOnRemove}
+        onAdd={mockOnAdd}
+        accept="image/*,audio/*"
+      />
+    );
+
+    expect(container.querySelector('input[type="file"]')).toHaveAttribute(
+      'accept',
+      'image/*,audio/*',
+    );
+  });
 });

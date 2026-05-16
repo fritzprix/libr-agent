@@ -14,6 +14,42 @@ import { useTranslation } from 'react-i18next';
 import type React from 'react';
 
 const logger = getLogger('AgentFileAttachment');
+const CLIPBOARD_IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'image/bmp': 'bmp',
+  'image/x-icon': 'ico',
+  'image/tiff': 'tiff',
+};
+
+function getClipboardImageExtension(mimeType: string): string {
+  return CLIPBOARD_IMAGE_EXTENSION_BY_MIME_TYPE[mimeType] ?? 'png';
+}
+
+function normalizeAttachmentFile(
+  file: File,
+  batchTimestamp: number,
+  index: number,
+): File {
+  const trimmedName = file.name.trim();
+  if (trimmedName.length > 0) {
+    return file;
+  }
+
+  const extension = getClipboardImageExtension(file.type);
+  const filename =
+    index === 0
+      ? `pasted-image-${batchTimestamp}.${extension}`
+      : `pasted-image-${batchTimestamp}-${index + 1}.${extension}`;
+
+  return new File([file], filename, {
+    type: file.type,
+    lastModified: file.lastModified,
+  });
+}
 
 /**
  * Agent V2 file attachment hook
@@ -44,6 +80,86 @@ export function useAgentFileAttachment() {
   const rustBackend = useRustBackend();
 
   const getMimeType = getMimeTypeFromFilename;
+
+  const attachFiles = useCallback(
+    async (inputFiles: File[]) => {
+      if (!session) {
+        logger.error('Cannot attach file: session not available.');
+        toast.error(t('agent.attachment.sessionError'));
+        return;
+      }
+
+      if (inputFiles.length === 0) {
+        return;
+      }
+
+      const batchTimestamp = Date.now();
+      const fileList = inputFiles.map((file, index) =>
+        normalizeAttachmentFile(file, batchTimestamp, index),
+      );
+
+      const placeholders = fileList.map((file) => ({
+        url: '',
+        filename: file.name,
+        mimeType: file.type || getMimeType(file.name),
+        status: 'processing' as const,
+      }));
+
+      const addedItems = addPendingFiles(placeholders);
+
+      await Promise.all(
+        fileList.map(async (file, index) => {
+          const pendingId = addedItems[index].pendingId!;
+
+          if (!validateFileSize(file, maxBytes)) {
+            toast.error(
+              createFileSizeErrorMessage(file.name, file.size, maxBytes),
+            );
+            removeFile(addedItems[index]);
+            return;
+          }
+
+          try {
+            logger.debug('Starting file processing', {
+              filename: file.name,
+              fileSize: file.size,
+              fileType: file.type,
+              sessionId: session.id,
+            });
+
+            updatePendingFile(pendingId, {
+              file,
+              size: file.size,
+              status: 'pending',
+            });
+
+            logger.info('File processed successfully', {
+              filename: file.name,
+              fileSize: file.size,
+            });
+          } catch (error) {
+            logger.error(`Error processing file ${file.name}:`, error);
+            toast.error(
+              t('agent.attachment.processingFileError', {
+                filePath: file.name,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
+            removeFile(addedItems[index]);
+          }
+        }),
+      );
+    },
+    [
+      session,
+      addPendingFiles,
+      getMimeType,
+      maxBytes,
+      removeFile,
+      t,
+      updatePendingFile,
+    ],
+  );
 
   const processFileDrop = useCallback(
     async (filePaths: string[]) => {
@@ -164,71 +280,14 @@ export function useAgentFileAttachment() {
   const handleFileAttachment = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
-      if (!files || !session) {
-        toast.error(t('agent.attachment.sessionError'));
+      if (!files) {
         return;
       }
 
-      const fileList = Array.from(files);
-
-      // --- STEP 1: Optimistic UI - Add placeholders immediately ---
-      const placeholders = fileList.map((file) => ({
-        url: '',
-        filename: file.name,
-        mimeType: file.type,
-        status: 'processing' as const,
-      }));
-
-      const addedItems = addPendingFiles(placeholders);
-
-      // --- STEP 2: Parallel Processing ---
-      await Promise.all(
-        fileList.map(async (file, index) => {
-          const pendingId = addedItems[index].pendingId!;
-
-          if (!validateFileSize(file, maxBytes)) {
-            toast.error(
-              createFileSizeErrorMessage(file.name, file.size, maxBytes),
-            );
-            removeFile(addedItems[index]);
-            return;
-          }
-
-          try {
-            logger.debug(`Starting file processing`, {
-              filename: file.name,
-              fileSize: file.size,
-              fileType: file.type,
-              sessionId: session?.id,
-            });
-
-            // Update the placeholder with actual file data and set to 'pending'
-            updatePendingFile(pendingId, {
-              file: file,
-              size: file.size,
-              status: 'pending',
-            });
-
-            logger.info(`File processed successfully`, {
-              filename: file.name,
-              fileSize: file.size,
-            });
-          } catch (error) {
-            logger.error(`Error processing file ${file.name}:`, error);
-            toast.error(
-              t('agent.attachment.processingFileError', {
-                filePath: file.name,
-                error: error instanceof Error ? error.message : String(error),
-              }),
-            );
-            removeFile(addedItems[index]);
-          }
-        }),
-      );
-
+      await attachFiles(Array.from(files));
       e.target.value = '';
     },
-    [session, addPendingFiles, updatePendingFile, removeFile, maxBytes, t],
+    [attachFiles],
   );
 
   const validateFiles = useCallback((paths: string[]): boolean => {
@@ -252,6 +311,7 @@ export function useAgentFileAttachment() {
     removeFile,
     clearPendingFiles,
     isAttachmentLoading,
+    attachFiles,
     handleFileAttachment,
     getMimeType,
     processFileDrop,

@@ -28,6 +28,7 @@ import { useScopedSkills } from '../hooks/useScopedSkills';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
+import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '../lib/attachment-picker';
 
 const logger = getLogger('AgentChatInput');
 
@@ -92,6 +93,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     commitPendingFiles,
     clearPendingFiles,
     isAttachmentLoading,
+    attachFiles,
     handleFileAttachment,
     removeFile,
     processFileDrop,
@@ -196,6 +198,29 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     void refreshScopedSkills();
   }, [refreshScopedSkills]);
 
+  const insertTextAtSelection = useCallback(
+    (text: string) => {
+      const textarea = textareaRef.current;
+      const selectionStart = textarea?.selectionStart ?? input.length;
+      const selectionEnd = textarea?.selectionEnd ?? input.length;
+      const nextValue =
+        input.slice(0, selectionStart) + text + input.slice(selectionEnd);
+      const nextCursorPosition = selectionStart + text.length;
+
+      setInput(nextValue);
+      onTokenInputChange(nextValue, nextCursorPosition);
+
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(
+          nextCursorPosition,
+          nextCursorPosition,
+        );
+      });
+    },
+    [input, onTokenInputChange, setInput],
+  );
+
   // Handle Enter/Shift+Enter for line breaks and submission
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -260,6 +285,40 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       logger.error('Failed to resume workflow:', err);
     }
   }, [resume]);
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const clipboardData = e.clipboardData;
+      const imageFilesFromItems = Array.from(clipboardData.items)
+        .filter(
+          (item) => item.kind === 'file' && item.type.startsWith('image/'),
+        )
+        .flatMap((item) => {
+          const file = item.getAsFile();
+          return file ? [file] : [];
+        });
+      const imageFiles =
+        imageFilesFromItems.length > 0
+          ? imageFilesFromItems
+          : Array.from(clipboardData.files).filter((file) =>
+              file.type.startsWith('image/'),
+            );
+
+      if (imageFiles.length === 0) {
+        return;
+      }
+
+      e.preventDefault();
+
+      const pastedText = clipboardData.getData('text/plain');
+      if (pastedText) {
+        insertTextAtSelection(pastedText);
+      }
+
+      void attachFiles(imageFiles);
+    },
+    [attachFiles, insertTextAtSelection],
+  );
 
   // Drag-and-drop handlers
   useEffect(() => {
@@ -387,6 +446,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           onRemove={handleRemoveFile}
           onAdd={handleFileAttachment}
           compact={true}
+          accept={AGENT_ATTACHMENT_PICKER_ACCEPT}
         />
         {children}
         <textarea
@@ -395,6 +455,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           onChange={handleAgentInputChange}
           onFocus={handleFocus}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={inputPlaceholder}
           className={inputClassName}
           style={textareaStyle}
