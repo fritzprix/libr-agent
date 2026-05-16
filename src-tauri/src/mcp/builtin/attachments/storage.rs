@@ -102,6 +102,16 @@ impl Default for AttachmentsStorage {
     }
 }
 
+pub(super) struct AddContentInput<'a> {
+    pub(super) session_id: &'a str,
+    pub(super) filename: &'a str,
+    pub(super) mime_type: &'a str,
+    pub(super) size: usize,
+    pub(super) content: &'a str,
+    pub(super) chunks: Vec<String>,
+    pub(super) src_url: Option<String>,
+}
+
 impl AttachmentsStorage {
     /// Create in-memory storage (default)
     pub fn new() -> Self {
@@ -160,15 +170,6 @@ impl AttachmentsStorage {
             contents: HashMap::new(),
             chunks: HashMap::new(),
             db: Some(db),
-        })
-    }
-
-    /// Get database connection for operations
-    #[allow(dead_code)]
-    fn db(&self) -> Result<&DatabaseConnection, String> {
-        self.db.as_ref().ok_or_else(|| {
-            "Database not initialized. Use new_sqlite() to create SQLite-backed storage."
-                .to_string()
         })
     }
 
@@ -264,21 +265,6 @@ impl AttachmentsStorage {
         self.stores.contains_key(session_id)
     }
 
-    /// Get debug information about all stores
-    #[allow(dead_code)]
-    pub fn debug_stores_info(&self) -> Vec<String> {
-        self.stores
-            .iter()
-            .map(|(id, store)| {
-                format!(
-                    "Store {}: name={}",
-                    id,
-                    store.name.as_deref().unwrap_or("unnamed")
-                )
-            })
-            .collect()
-    }
-
     /// Get content count for a specific session
     pub fn get_content_count(&self, session_id: &str) -> usize {
         self.contents
@@ -342,17 +328,20 @@ impl AttachmentsStorage {
     }
 
     /// Add content to a session's store
-    #[allow(clippy::too_many_arguments)]
-    pub async fn add_content(
+    pub(super) async fn add_content(
         &mut self,
-        session_id: &str,
-        filename: &str,
-        mime_type: &str,
-        size: usize,
-        content: &str,
-        chunks: Vec<String>,
-        src_url: Option<String>,
+        input: AddContentInput<'_>,
     ) -> Result<AttachmentItem, String> {
+        let AddContentInput {
+            session_id,
+            filename,
+            mime_type,
+            size,
+            content,
+            chunks,
+            src_url,
+        } = input;
+
         // Verify store exists for this session
         if !self.stores.contains_key(session_id) {
             return Err(format!(

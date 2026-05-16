@@ -19,10 +19,6 @@ use crate::session_isolation::types::ShellType;
 pub struct PersistentShellManager {
     /// session_id -> PersistentShell mapping
     shells: Arc<Mutex<HashMap<String, Arc<Mutex<PersistentShell>>>>>,
-
-    /// Maximum shells per session (resource limit)
-    #[allow(dead_code)]
-    max_shells_per_session: usize,
 }
 
 impl PersistentShellManager {
@@ -30,7 +26,6 @@ impl PersistentShellManager {
     pub fn new() -> Self {
         Self {
             shells: Arc::new(Mutex::new(HashMap::new())),
-            max_shells_per_session: 3,
         }
     }
 
@@ -218,10 +213,7 @@ impl PersistentShellManager {
         Ok(())
     }
 
-    /// Cleanup all shells
-    ///
-    /// Terminates all active shells. Used during shutdown.
-    #[allow(dead_code)]
+    /// Terminates all active shells. Used during shutdown and integration tests.
     pub async fn cleanup_all(&self) -> Result<(), String> {
         let mut shells = self.shells.lock().await;
         let count = shells.len();

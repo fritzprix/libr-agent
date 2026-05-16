@@ -16,8 +16,6 @@ pub struct RecentUploadInfo {
     pub filename: String,
     pub mime_type: String,
     pub line_count: usize,
-    #[allow(dead_code)]
-    pub uploaded_at: String,
 }
 
 /// Attachments built-in MCP server (native backend)

@@ -188,29 +188,33 @@ impl WorkspaceServer {
         };
 
         if safe_path.is_dir() {
-            content::search_content_in_dir(
-                &workspace_root,
-                &safe_path,
-                search_path,
-                &regex,
-                query_str,
-                glob_pat.as_ref(),
-                show_line_anchors,
-                ignore_case,
-                limit,
-                offset,
-            )
+            content::search_content_in_dir(content::SearchDirectoryRequest {
+                workspace_root: &workspace_root,
+                dir: &safe_path,
+                file_pattern: glob_pat.as_ref(),
+                search: content::SearchContentRequest {
+                    display_path: search_path,
+                    regex: &regex,
+                    query: query_str,
+                    show_hashes: show_line_anchors,
+                    ignore_case,
+                    limit,
+                    offset,
+                },
+            })
             .await
         } else {
             content::search_content_in_file(
                 &safe_path,
-                search_path,
-                &regex,
-                query_str,
-                show_line_anchors,
-                ignore_case,
-                limit,
-                offset,
+                content::SearchContentRequest {
+                    display_path: search_path,
+                    regex: &regex,
+                    query: query_str,
+                    show_hashes: show_line_anchors,
+                    ignore_case,
+                    limit,
+                    offset,
+                },
             )
             .await
         }

@@ -12,6 +12,16 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::MCPResult;
 
+struct ExportUiResponse<'a> {
+    title: &'a str,
+    items: &'a [String],
+    type_label: &'a str,
+    relative_path: &'a str,
+    filename: &'a str,
+    tool_name: &'a str,
+    text_response: &'a str,
+}
+
 impl WorkspaceServer {
     pub async fn handle_export(
         &self,
@@ -141,20 +151,23 @@ impl WorkspaceServer {
                 .join("exports")
                 .join("files")
                 .join(&export_filename);
+            let response_items = vec![single_file_rel_path_str];
+            let response_title = format!("File Export: {display_name}");
+            let response_relative_path = relative_path.to_string_lossy().replace('\\', "/");
+            let response_text = format!(
+                "✓ File '{}' exported successfully\n\nSaved export: `{}`\nDownload link available below",
+                display_name, response_relative_path
+            );
 
-            return Ok(self.build_ui_response(
-                &format!("File Export: {display_name}"),
-                &[single_file_rel_path_str],
-                "Single File",
-                &relative_path.to_string_lossy().replace('\\', "/"),
-                &display_name,
-                "export",
-                &format!(
-                    "✓ File '{}' exported successfully\n\nSaved export: `{}`\nDownload link available below",
-                    display_name,
-                    relative_path.to_string_lossy().replace('\\', "/")
-                ),
-            ));
+            return Ok(self.build_ui_response(&ExportUiResponse {
+                title: &response_title,
+                items: &response_items,
+                type_label: "Single File",
+                relative_path: &response_relative_path,
+                filename: &display_name,
+                tool_name: "export",
+                text_response: &response_text,
+            }));
         }
 
         // === ZIP PACKAGE EXPORT ===
@@ -313,49 +326,47 @@ impl WorkspaceServer {
             .join("exports")
             .join("packages")
             .join(&zip_filename);
+        let response_title = format!("ZIP Package: {package_name}");
+        let response_relative_path = relative_path.to_string_lossy().replace('\\', "/");
+        let response_text = format!(
+            "✓ ZIP package '{}' created successfully\n\nContains {} files\nSaved export: `{}`\nDownload link available below",
+            package_name,
+            processed_files.len(),
+            response_relative_path
+        );
 
-        Ok(self.build_ui_response(
-            &format!("ZIP Package: {package_name}"),
-            &processed_files,
-            "ZIP Package",
-            &relative_path.to_string_lossy().replace('\\', "/"),
-            &zip_filename,
-            "export",
-            &format!(
-                "✓ ZIP package '{}' created successfully\n\nContains {} files\nSaved export: `{}`\nDownload link available below",
-                package_name,
-                processed_files.len(),
-                relative_path.to_string_lossy().replace('\\', "/")
-            ),
-        ))
+        Ok(self.build_ui_response(&ExportUiResponse {
+            title: &response_title,
+            items: &processed_files,
+            type_label: "ZIP Package",
+            relative_path: &response_relative_path,
+            filename: &zip_filename,
+            tool_name: "export",
+            text_response: &response_text,
+        }))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn build_ui_response(
-        &self,
-        title: &str,
-        items: &[String],
-        type_label: &str,
-        relative_path: &str,
-        filename: &str,
-        tool_name: &str,
-        text_response: &str,
-    ) -> MCPResult {
+    fn build_ui_response(&self, response: &ExportUiResponse<'_>) -> MCPResult {
         let uid = cuid2::create_id();
         let ui_request_id: u64 = uid
             .chars()
             .filter_map(|c| c.to_digit(36))
             .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
 
-        let html_content =
-            ui_resources::create_html_export_ui(title, items, type_label, relative_path, filename);
+        let html_content = ui_resources::create_html_export_ui(
+            response.title,
+            response.items,
+            response.type_label,
+            response.relative_path,
+            response.filename,
+        );
 
         let ui_resource = ui_resources::create_export_ui_resource(
             ui_request_id,
-            title,
-            items,
-            type_label,
-            relative_path,
+            response.title,
+            response.items,
+            response.type_label,
+            response.relative_path,
             html_content,
         );
 
@@ -390,8 +401,8 @@ impl WorkspaceServer {
             }
         };
         let full_text = format!(
-            "{text_response}\nUI resource: `{}`\nUse the UI resource to trigger the download workflow.",
-            resource_uri
+            "{}\nUI resource: `{}`\nUse the UI resource to trigger the download workflow.",
+            response.text_response, resource_uri
         );
 
         crate::mcp::builtin::utils::create_resource_response(
@@ -399,7 +410,7 @@ impl WorkspaceServer {
             "text/html",
             resource_text,
             "workspace",
-            tool_name,
+            response.tool_name,
             Some(&full_text),
         )
     }
