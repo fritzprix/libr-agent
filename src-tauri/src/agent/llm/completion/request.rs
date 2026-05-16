@@ -1,7 +1,7 @@
-pub mod compact;
-pub mod context_selection;
-pub mod formatting;
-pub mod orchestration;
+mod compact;
+mod context_selection;
+mod formatting;
+mod orchestration;
 
 pub use compact::{
     build_compact_summary_message, build_compact_summary_message_for_messages,

@@ -48,17 +48,20 @@ pub async fn request_llm_completion(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), AgentRuntimeError> {
-    // 1. Drain pending messages
+    // 1. Validate session status before mutating pending state
+    validate_session_status(active_sessions, &session_id).await?;
+
+    // 2. Drain pending messages only after the session is still eligible to run
     process_pending_messages(active_sessions, app_handle, &session_id).await?;
 
-    // 2. Validate session status and snapshot config/messages
-    let snapshot = validate_and_snapshot_session(active_sessions, &session_id).await?;
+    // 3. Snapshot session config/messages after pending messages have been integrated
+    let snapshot = snapshot_session(active_sessions, &session_id).await?;
 
-    // 3. Build system prompt
+    // 4. Build system prompt
     let (system_prompt, session_context) =
         build_system_prompt(active_sessions, proxy_manager, &session_id).await?;
 
-    // 4. Collect tools
+    // 5. Collect tools
     let available_tools = crate::agent::tools::collect_available_tools(&session_id, proxy_manager)
         .await
         .ok();
@@ -66,23 +69,23 @@ pub async fn request_llm_completion(
         .as_ref()
         .map(|tools| serde_json::to_string(tools).unwrap_or_default());
 
-    // 5. Message Normalization (References & Merging)
+    // 6. Message Normalization (References & Merging)
     let messages = resolve_message_references(
-        snapshot.messages.clone(),
+        snapshot.messages,
         &session_id,
         snapshot.agent_config.id.as_deref(),
     )
     .await;
     let normalized_messages = normalize_messages(messages, &session_id);
 
-    // 6. Context Settings & Tokens
+    // 7. Context Settings & Tokens
     let context_settings = load_context_management_settings().await;
     let token_counts = compute_prompt_tokens(&system_prompt, &session_context, &tools_json);
     let system_prompt_tokens = token_counts.system_prompt_tokens;
     let tools_tokens = token_counts.tools_tokens;
     let raw_messages = normalized_messages.clone();
 
-    // 7. Inject Compact Summary
+    // 8. Inject Compact Summary
     let (messages_with_summary, compact_summary_injected) = inject_compact_summary(
         active_sessions,
         &session_id,
@@ -98,7 +101,7 @@ pub async fn request_llm_completion(
         tools_tokens,
     );
 
-    // 8. Select Final Messages
+    // 9. Select Final Messages
     let final_messages =
         select_final_messages(messages_with_summary, &snapshot.provider, &context_settings);
 
@@ -112,7 +115,7 @@ pub async fn request_llm_completion(
 
     store_last_completion_request(active_sessions, &session_id, &compaction_parent_request).await;
 
-    // 9. Check empty messages
+    // 10. Check empty messages
     match check_empty_messages(
         &final_messages,
         active_sessions,
@@ -136,7 +139,7 @@ pub async fn request_llm_completion(
         }
     }
 
-    // 10. Check token limit & apply lossy fallbacks
+    // 11. Check token limit & apply lossy fallbacks
     let final_messages = match check_token_limit(
         final_messages,
         active_sessions,
@@ -165,7 +168,7 @@ pub async fn request_llm_completion(
         }
     };
 
-    // 11. Generate ID & Emit Request
+    // 12. Generate ID & Emit Request
     let response_message_id = generate_response_message_id(active_sessions, &session_id).await;
 
     let request = CompletionRequest {
@@ -252,10 +255,10 @@ async fn process_pending_messages(
     Ok(())
 }
 
-async fn validate_and_snapshot_session(
+async fn validate_session_status(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
-) -> Result<SessionReadSnapshot, AgentRuntimeError> {
+) -> Result<(), AgentRuntimeError> {
     let sessions = active_sessions.read().await;
     let session = sessions.get(session_id).ok_or_else(|| {
         AgentRuntimeError::new(
@@ -283,6 +286,22 @@ async fn validate_and_snapshot_session(
         )
         .with_code("INVALID_SESSION_STATUS"));
     }
+
+    Ok(())
+}
+
+async fn snapshot_session(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<SessionReadSnapshot, AgentRuntimeError> {
+    let sessions = active_sessions.read().await;
+    let session = sessions.get(session_id).ok_or_else(|| {
+        AgentRuntimeError::new(
+            AgentRuntimeErrorType::AiServiceError,
+            format!("Session not found: {}", session_id),
+        )
+        .with_code("SESSION_NOT_FOUND")
+    })?;
 
     let agent_config = session
         .metadata
