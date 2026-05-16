@@ -8,8 +8,7 @@ use crate::mcp::types::ChannelNotification;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{
-    CompactContextRecord, SessionListCursor, SessionListPage,
-    SessionMetadata, SessionRepository,
+    CompactContextRecord, SessionListCursor, SessionListPage, SessionMetadata, SessionRepository,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -562,12 +561,12 @@ impl AgentSessionManager {
         })
     }
 
-    /// Delete an agent session and all its data.
+    /// Delete an agent session and cascade through its descendants.
     ///
-    /// Cascade Philosophy: Deleting a session should remove all associated data
-    /// including messages, state, and registered contexts to prevent leaks.
-    /// Direct children have their `parent_session_id` set to NULL (become top-level).
-    /// Only this session's workspace and search index are removed.
+    /// This removes the target session together with child sessions and their
+    /// associated state, messages, workspace data, and search index entries.
+    /// Use `delete_session_only` when descendants should remain as top-level
+    /// sessions instead of being deleted.
     pub async fn delete_session(&self, session_id: String) -> Result<Vec<String>, String> {
         crate::agent::lifecycle::delete_session(
             &self.session_repo,

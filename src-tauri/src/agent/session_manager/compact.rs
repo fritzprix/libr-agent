@@ -3,12 +3,12 @@ use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::CompactStatePhase;
 use crate::agent::state::{AgentSession, CompactionResumeAction, DeferredWorkflowStep};
 use crate::agent::tauri_events::emit_compact_finished;
-use crate::repositories::{CompactContextRecord, SessionRepository, SessionStatus};
-use crate::repositories::compact_context_repository::CompactContextRepository;
 use crate::mcp::MCPServiceProxyManager;
-use tauri::AppHandle;
+use crate::repositories::compact_context_repository::CompactContextRepository;
+use crate::repositories::{CompactContextRecord, SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 fn spawn_resume_completion(
@@ -117,9 +117,7 @@ pub struct CompactResponseParams<'a> {
     pub summary: String,
 }
 
-pub async fn handle_compact_response(
-    params: CompactResponseParams<'_>,
-) -> Result<(), String> {
+pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Result<(), String> {
     let CompactResponseParams {
         active_sessions,
         app_handle,
@@ -208,7 +206,14 @@ pub async fn handle_compact_response(
                     "▶️ Resuming deferred LLM completion after compaction for session {}",
                     session_id
                 );
-                spawn_resume_completion(session_repo, active_sessions, proxy_manager, app_handle, session_id, "deferred LLM completion");
+                spawn_resume_completion(
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                    session_id,
+                    "deferred LLM completion",
+                );
             }
             DeferredWorkflowStep::ExecuteToolCalls {
                 assistant_message_id,
@@ -240,10 +245,24 @@ pub async fn handle_compact_response(
                             });
                     }
                 }
-                spawn_resume_tool_execution(session_repo, active_sessions, proxy_manager, app_handle, session_id, tool_calls);
+                spawn_resume_tool_execution(
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                    session_id,
+                    tool_calls,
+                );
             }
             DeferredWorkflowStep::FinalizeWorkflow { reason } => {
-                finalize_workflow_completion(session_repo, active_sessions, app_handle, session_id, reason).await?;
+                finalize_workflow_completion(
+                    session_repo,
+                    active_sessions,
+                    app_handle,
+                    session_id,
+                    reason,
+                )
+                .await?;
             }
         },
         CompactionResumeAction::ResumeCompletion => {
@@ -251,7 +270,14 @@ pub async fn handle_compact_response(
                 "▶️ Resuming blocked LLM completion after compaction for session {}",
                 session_id
             );
-            spawn_resume_completion(session_repo, active_sessions, proxy_manager, app_handle, session_id, "LLM completion");
+            spawn_resume_completion(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id,
+                "LLM completion",
+            );
         }
         CompactionResumeAction::Nothing => {}
     }

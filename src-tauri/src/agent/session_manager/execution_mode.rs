@@ -45,7 +45,8 @@ pub async fn set_execution_mode(
     mode: ExecutionMode,
 ) -> Result<(), String> {
     let (yolo_enabled, unsafe_enabled) = mode.runtime_flags();
-    manager.session_repo
+    manager
+        .session_repo
         .update_execution_mode(session_id, yolo_enabled, unsafe_enabled)
         .await
         .map_err(|e| format!("Failed to update session execution mode: {}", e))?;
