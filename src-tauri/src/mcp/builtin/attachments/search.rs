@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Search result for keyword queries
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub content_id: String,
@@ -20,14 +19,6 @@ pub struct TextChunk {
     pub content_id: String,
     pub text: String,
     pub line_range: (usize, usize),
-}
-
-/// Index statistics
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IndexStats {
-    pub num_docs: usize,
-    pub num_segments: usize,
 }
 
 /// BM25 Search Engine Implementation using bm25 crate
