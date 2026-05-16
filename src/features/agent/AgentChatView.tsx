@@ -188,10 +188,20 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
-  const [hasOpenedWorkspaceDesktop, setHasOpenedWorkspaceDesktop] =
-    useState(showWorkspacePanel);
-  const [hasOpenedPlanningDesktop, setHasOpenedPlanningDesktop] =
-    useState(showPlanningPanel);
+  const [hasOpenedWorkspaceDesktop, setHasOpenedWorkspaceDesktop] = useState(
+    !isMobile && showWorkspacePanel,
+  );
+  const [hasOpenedPlanningDesktop, setHasOpenedPlanningDesktop] = useState(
+    !isMobile && showPlanningPanel,
+  );
+
+  if (!isMobile && showWorkspacePanel && !hasOpenedWorkspaceDesktop) {
+    setHasOpenedWorkspaceDesktop(true);
+  }
+  if (!isMobile && showPlanningPanel && !hasOpenedPlanningDesktop) {
+    setHasOpenedPlanningDesktop(true);
+  }
+
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
   const assistantId = session?.assistant?.id;
@@ -261,18 +271,6 @@ function AgentChatInner() {
     setSearchParams,
     workflowStatus,
   ]);
-
-  useEffect(() => {
-    if (!isMobile && showWorkspacePanel) {
-      setHasOpenedWorkspaceDesktop(true);
-    }
-  }, [isMobile, showWorkspacePanel]);
-
-  useEffect(() => {
-    if (!isMobile && showPlanningPanel) {
-      setHasOpenedPlanningDesktop(true);
-    }
-  }, [isMobile, showPlanningPanel]);
 
   const handleWorkspaceSheetOpenChange = useCallback(
     (nextOpen: boolean) => {
