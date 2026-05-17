@@ -127,6 +127,15 @@
   "theme": {
     "toggle": "테마 전환"
   },
+  "notifications": {
+    "open": "알림 열기",
+    "title": "알림",
+    "empty": "주의가 필요한 세션이나 보류 중인 승인이 없습니다.",
+    "recurringStop": "반복 중지",
+    "pendingApprovals_one": "승인 {{count}}건",
+    "pendingApprovals_other": "승인 {{count}}건",
+    "viewSession": "세션 {{name}} 열기"
+  },
   "sidebar": {
     "mobileTitle": "사이드바",
     "mobileDescription": "모바일 사이드바를 표시합니다.",
@@ -167,10 +176,15 @@
     },
     "tabs": {
       "all": "전체",
+      "bookmarked": "북마크",
       "busy": "진행 중",
       "idle": "대기 중",
       "paused": "일시 중지",
       "error": "오류"
+    },
+    "statusFilter": {
+      "label": "상태",
+      "all": "모든 상태"
     },
     "lineageHint": {
       "child": "↳ {{parentName}}의 하위 세션",
@@ -190,10 +204,15 @@
       "child": "하위",
       "parent": "상위",
       "root": "루트",
+      "descendants": "하위 세션 {{count}}개",
       "parentBadge": "상위: {{id}}",
       "lineageBadge": "리니지: {{id}}",
       "lineageFilterAria": "리니지 {{id}}(으)로 필터링",
       "statusAriaLabel": "세션 상태: {{status}}",
+      "descendantBusy": "진행 중: {{count}}",
+      "descendantIdle": "대기 중: {{count}}",
+      "descendantPaused": "일시 중지: {{count}}",
+      "descendantError": "오류: {{count}}",
       "model": "모델:",
       "createdAt": "생성됨 {{time}}",
       "updatedAt": "업데이트됨 {{time}}",
@@ -209,6 +228,8 @@
       "viewAria": "세션 {{name}} 보기",
       "continueAria": "세션 {{name}} 계속",
       "resumeAria": "세션 {{name}} 재개",
+      "expandChildrenAria": "{{name}}의 하위 세션 펼치기",
+      "collapseChildrenAria": "{{name}}의 하위 세션 접기",
       "groupAria": "세션 작업",
       "deleteTooltip": "세션 삭제",
       "deleteAria": "세션 {{name}} 삭제",
@@ -504,6 +525,10 @@
       "saveFirst": "스킬을 관리하려면 먼저 어시스턴트를 저장하세요.",
       "fetchFailed": "스킬을 불러오는데 실패했습니다",
       "importing": "스킬 가져오는 중...",
+      "importSuccess_one": "스킬 {{count}}개를 가져왔습니다",
+      "importSuccess_other": "스킬 {{count}}개를 가져왔습니다",
+      "importSuccessWithOverwrite_one": "스킬 {{count}}개를 가져왔습니다 ({{overwrittenCount}}개 덮어씀)",
+      "importSuccessWithOverwrite_other": "스킬 {{count}}개를 가져왔습니다 ({{overwrittenCount}}개 덮어씀)",
       "importSuccess": "스킬 가져오기 성공",
       "importFailed": "스킬 가져오기 실패",
       "overrideSuccess": "스킬 재정의 성공",
@@ -513,6 +538,8 @@
       "resetSuccess": "어시스턴트 스킬 초기화 성공",
       "resetFailed": "스킬 초기화 실패",
       "deleteUserSkill": "{{name}} 삭제",
+      "userSkillDeleted": "사용자 스킬이 삭제되었습니다.",
+      "userSkillsReset": "사용자 스킬이 초기화되었습니다.",
       "dragDropDesc": "스킬을 재정의하려면 zip 파일이나 폴더를 드래그 앤 드롭하세요.",
       "resetTooltip": "모든 어시스턴트 전용 스킬 제거",
       "reset": "재정의 초기화",
@@ -668,6 +695,10 @@
     "description": "자동화된 워크플로우를 찾아보고 실행하세요",
     "searchPlaceholder": "플레이북 검색...",
     "loading": "플레이북 로딩 중...",
+    "list": {
+      "refreshAria": "플레이북 새로고침",
+      "refreshTooltip": "플레이북 새로고침"
+    },
     "emptyState": {
       "title": "플레이북(Playbook) 시작하기",
       "description": "플레이북은 Agent가 성공적으로 실행한 복잡한 요청을 다시할 수 있도록 기록한 것입니다.",

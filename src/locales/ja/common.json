@@ -126,6 +126,15 @@
   "theme": {
     "toggle": "テーマを切り替え"
   },
+  "notifications": {
+    "open": "通知を開く",
+    "title": "通知",
+    "empty": "要確認のセッションまたは保留中の承認はありません。",
+    "recurringStop": "定期停止",
+    "pendingApprovals_one": "{{count}} 件の承認",
+    "pendingApprovals_other": "{{count}} 件の承認",
+    "viewSession": "セッション {{name}} を開く"
+  },
   "sidebar": {
     "mobileTitle": "サイドバー",
     "mobileDescription": "モバイルサイドバーを表示します。",
@@ -169,7 +178,8 @@
       "busy": "実行中",
       "idle": "待機中",
       "paused": "一時停止中",
-      "error": "エラー"
+      "error": "エラー",
+      "bookmarked": "ブックマーク"
     },
     "lineageHint": {
       "child": "↳ {{parentName}} の子",
@@ -199,7 +209,12 @@
       "justNow": "たった今",
       "subagentsCount_one": "+{{count}} 個のサブエージェント",
       "subagentsCount_other": "+{{count}} 個のサブエージェント",
-      "subagentsKept": "保持されたサブエージェント"
+      "subagentsKept": "保持されたサブエージェント",
+      "descendantBusy": "実行中: {{count}}",
+      "descendantError": "エラー: {{count}}",
+      "descendantIdle": "待機中: {{count}}",
+      "descendantPaused": "一時停止中: {{count}}",
+      "descendants": "子孫セッション {{count}} 件"
     },
     "actions": {
       "view": "表示",
@@ -219,11 +234,17 @@
       "confirmDelete": "削除を確定",
       "confirmDeleteAria": "削除を確定",
       "cancel": "キャンセル",
-      "cancelDeletionAria": "削除をキャンセル"
+      "cancelDeletionAria": "削除をキャンセル",
+      "collapseChildrenAria": "「{{name}}」の子セッションを折りたたむ",
+      "expandChildrenAria": "「{{name}}」の子セッションを展開"
     },
     "emptyState": {
       "title": "セッションはまだありません",
       "subtitle": "会話を開始して最初のセッションを作成してください"
+    },
+    "statusFilter": {
+      "all": "すべてのステータス",
+      "label": "ステータス"
     }
   },
   "settings": {
@@ -251,7 +272,8 @@
       "mcpServers": "MCPサーバー",
       "advanced": "高度な設定",
       "extensions": "拡張機能",
-      "dev": "開発"
+      "dev": "開発",
+      "system": "システム"
     },
     "llmPreference": "デフォルトLLM",
     "messageWindowSize": "メッセージウィンドウサイズ",
@@ -283,7 +305,11 @@
       "fallbackModelDescription": "すべての再試行後にプライマリモデルが不正または空の応答を返した場合の最終手段として使用されます。",
       "agentHub": "エージェントハブ",
       "agentHubUrlLabel": "エージェントハブURL",
-      "agentHubUrlDescription": "リモートエージェントハブサーバーのURL。設定すると、アシスタントはこのサーバーと同期されます。"
+      "agentHubUrlDescription": "リモートエージェントハブサーバーのURL。設定すると、アシスタントはこのサーバーと同期されます。",
+      "agentHubUrlPlaceholder": "https://api.agenthub.com",
+      "decreaseRetries": "再試行回数を減らす",
+      "increaseRetries": "再試行回数を増やす",
+      "responseBehavior": "応答の挙動"
     },
     "provider": {
       "apiKey": "APIキー",
@@ -300,7 +326,9 @@
     "chatInterface": {
       "diffContextLines": "Diffコンテキスト行数",
       "diffContextLinesPlaceholder": "例: 3",
-      "diffContextLinesDescription": "ファイル編集のDiffに表示するコンテキスト行数 (1-10)。"
+      "diffContextLinesDescription": "ファイル編集のDiffに表示するコンテキスト行数 (1-10)。",
+      "decreaseDiffLines": "Diffコンテキスト行数を減らす",
+      "increaseDiffLines": "Diffコンテキスト行数を増やす"
     },
     "display": {
       "metricsTitle": "パフォーマンス指標",
@@ -320,7 +348,16 @@
       "toolDetailLevel": "ツール詳細レベル",
       "toolDetailSimple": "簡易（ツール名のみ）",
       "toolDetailDeveloper": "開発者（パラメータ、エラー、タイミング）",
-      "toolDetailLevelDescription": "簡易モードはツール名とステータスアイコンのみを表示します。開発者モードは完全なパラメータ、エラー詳細、実行時間を表示します。"
+      "toolDetailLevelDescription": "簡易モードはツール名とステータスアイコンのみを表示します。開発者モードは完全なパラメータ、エラー詳細、実行時間を表示します。",
+      "fontFamily": "フォントファミリー",
+      "fontFamilyDescription": "UI のデフォルトフォントファミリーを変更します。",
+      "fontFamilyOptions": {
+        "d2coding": "D2Coding (開発者向け等幅)",
+        "inter": "Inter (クリーンなUI向けサンセリフ)",
+        "nanumSquareNeo": "NanumSquare Neo (モダンな幾何学系)",
+        "pretendard": "Pretendard (標準サンセリフ)"
+      },
+      "uiVisualsTitle": "UI 表示"
     },
     "advanced": {
       "maxRetries": "最大再試行回数",
@@ -349,7 +386,22 @@
         "medium": "中 - 制限されたPATH（バランス）",
         "high": "高 - サンドボックス化（最も安全）"
       },
-      "shellIsolationDescription": "シェルコマンドの環境分離を制御します。基本はユーザーがインストールしたツールを許可し、高は最大のセキュリティを提供します。"
+      "shellIsolationDescription": "シェルコマンドの環境分離を制御します。基本はユーザーがインストールしたツールを許可し、高は最大のセキュリティを提供します。",
+      "defaultSessionMaxDepthPlaceholder": "例: 3",
+      "defaultSessionMaxFanoutPlaceholder": "0 = 無制限",
+      "loopPreventionThreshold": "ループ防止しきい値",
+      "loopPreventionThresholdDescription": "同一のツール結果が繰り返された回数です。これを超えると、エージェントは自然回復を試みるか強制停止を行います。",
+      "maxConcurrentActiveProcessesPlaceholder": "例: 10",
+      "maxConcurrentActiveSessionsPlaceholder": "例: 4",
+      "maxSuspendedProcessesPlaceholder": "例: 20",
+      "maxSuspendedSessionsPlaceholder": "例: 8",
+      "performance": "パフォーマンスと並行実行",
+      "performanceDescription": "これらの実行時制限は、同時に実行できるエージェント数とワークスペースプロセス数を制御します。",
+      "summary": "これらの設定は、実行時の安全策、マルチエージェントの制限、シェル分離を変更します。ほとんどのユーザーは変更しないままで構いません。",
+      "title": "高度な実行時制御",
+      "toolResultInlineLimit": "ツール結果のインライン上限 (KB)",
+      "toolResultInlineLimitDescription": "ツール出力をどれだけインライン表示するかを制御します。この値を超えると LibrAgent は完全な結果をワークスペースファイルに退避します。値を小さくするとエージェントのコンテキストをより軽く保てます。",
+      "toolResultInlineLimitPlaceholder": "例: 16"
     },
     "system": {
       "title": "システムとパフォーマンス",
@@ -390,8 +442,18 @@
         "mcpServerStartupTimeout": "例: 60",
         "mcpToolTimeout": "0 (無効)",
         "activeSessionRetention": "例: 24",
-        "httpServerPort": "例: 3030"
-      }
+        "httpServerPort": "例: 3030",
+        "maxScheduledTaskGroups": "例: 10",
+        "scheduledTaskMinimumInterval": "0 = 無効"
+      },
+      "automation": "自動化ガバナンス",
+      "description": "アプリの実行時設定、バックグラウンドワーカー、自動化の上限、ネットワーク動作を制御します。",
+      "maxScheduledTaskGroups": "スケジュール済みタスクグループの最大数",
+      "maxScheduledTaskGroupsDescription": "定期的なチームワーク自動化全体で許可される、異なるスケジュール済みタスクグループの最大数です。",
+      "networkRestartPending": "ネットワーク設定を変更しました。変更を保存してからアプリを再起動して適用してください。",
+      "restartRequired": "保存後に再起動が必要です",
+      "scheduledTaskMinimumInterval": "スケジュール済みタスクの最小間隔 (分)",
+      "scheduledTaskMinimumIntervalDescription": "新規または再有効化されたスケジュール済みタスクに許可される最小間隔です。ガードを無効にするには 0 に設定してください。"
     },
     "about": {
       "title": "このアプリについて",
@@ -405,7 +467,8 @@
       "checkForUpdates": "アップデートを確認"
     },
     "dangerZone": {
-      "title": "⚠️ 危険ゾーン"
+      "title": "⚠️ 危険ゾーン",
+      "description": "これらの操作はローカルデータを完全に削除します。続行する前に対象範囲をよく確認してください。"
     },
     "factoryReset": {
       "title": "工場出荷時設定にリセット",
@@ -416,7 +479,9 @@
       "confirmButton": "すべてをリセット",
       "resetting": "リセット中...",
       "success": "工場リセットが完了しました。変更を完全に適用するには再起動が必要です。",
-      "error": "工場リセットに失敗しました。詳細はログを確認してください。"
+      "error": "工場リセットに失敗しました。詳細はログを確認してください。",
+      "typeReset": "工場出荷時リセットを有効にするには RESET と入力してください。",
+      "typeResetPlaceholder": "RESET と入力"
     },
     "dataReset": {
       "title": "データとリセット",
@@ -452,8 +517,51 @@
       "override": "このアシスタント用に上書き",
       "revert": "グローバルに戻す",
       "resetTitle": "スキル上書きをリセットしますか？",
-      "resetConfirm": "これにより、すべてのアシスタント固有のスキルが削除され、グローバルのデフォルトに戻ります。この操作は取り消せません。"
-    }
+      "resetConfirm": "これにより、すべてのアシスタント固有のスキルが削除され、グローバルのデフォルトに戻ります。この操作は取り消せません。",
+      "deleteUserSkill": "{{name}} を削除",
+      "importSuccessWithOverwrite_one": "{{count}} 個のスキルをインポートしました（{{overwrittenCount}} 個を上書き）",
+      "importSuccessWithOverwrite_other": "{{count}} 個のスキルをインポートしました（{{overwrittenCount}} 個を上書き）",
+      "importSuccess_one": "{{count}} 個のスキルをインポートしました",
+      "importSuccess_other": "{{count}} 個のスキルをインポートしました",
+      "userSkillDeleted": "ユーザースキルを削除しました。",
+      "userSkillsReset": "ユーザースキルをリセットしました。"
+    },
+    "contextStrategy": {
+      "compact": "コンパクト",
+      "compactDescription": "古いターンを要約しつつ、最近のウィンドウを保持します。長いセッションに向いています。",
+      "window": "スライディングウィンドウ",
+      "windowDescription": "直近 N 件のメッセージを保持します。シンプルで予測しやすい方法です。"
+    },
+    "contextStrategyLabel": "コンテキスト管理戦略",
+    "decreaseToolCallCount": "表示するツール呼び出し数を減らす",
+    "dev": {
+      "compactUses": "compact() は {{count}} 件のサンプルメッセージを使用します:",
+      "devOnly": "開発専用",
+      "emptyResponse": "（空の応答）",
+      "error": "エラー",
+      "model": "モデル: {{model}}",
+      "noKey": " （キーなし）",
+      "ok": "OK",
+      "promptLabel": "プロンプト（sampleText 用）",
+      "promptPlaceholder": "テスト用プロンプトを入力...",
+      "provider": "プロバイダー",
+      "runCompact": "compact() を実行",
+      "runSampleText": "sampleText() を実行",
+      "running": "実行中…",
+      "testerTitle": "sampleText / compact テスター",
+      "tokensInfo": "トークン: プロンプト {{promptTokens}} + 補完 {{completionTokens}} = 合計 {{totalTokens}}"
+    },
+    "discardAndLeave": "破棄して移動",
+    "discardChanges": "破棄",
+    "discardDescription": "このページの未保存の変更をすべて、最後に保存された状態へ戻します。",
+    "discardTitle": "未保存の変更を破棄しますか？",
+    "increaseToolCallCount": "表示するツール呼び出し数を増やす",
+    "leaveDescription": "未保存の変更があります。移動前に保存するか、破棄してこのページを離れてください。",
+    "leaveTitle": "保存せずに移動しますか？",
+    "pendingChanges": "{{count}} セクションが変更されました",
+    "saveAndLeave": "保存して移動",
+    "saveChanges": "変更を保存",
+    "versionLabel": "{{appName}} v{{version}}"
   },
   "mcpServer": {
     "title": "拡張機能",
@@ -548,6 +656,16 @@
       "toggleFailed": "拡張機能の切り替えに失敗しました: {{error}}",
       "activated": "有効",
       "deactivated": "無効"
+    },
+    "toolsModal": {
+      "connecting": "サーバーに接続中…",
+      "description": "MCPサーバーから返されたツール名と説明です。",
+      "failedToLoad": "ツールの読み込みに失敗しました",
+      "inputSchema": "入力スキーマ",
+      "noTools": "ツールが返されませんでした。",
+      "toolListAria": "ツール一覧",
+      "toolsCount_one": "({{count}} 個のツール)",
+      "toolsCount_other": "({{count}} 個のツール)"
     }
   },
   "playbook": {
@@ -604,6 +722,10 @@
       "bookmarkFailed": "ブックマークの更新に失敗しました",
       "deleted": "プレイブックを削除しました",
       "deleteFailed": "プレイブックの削除に失敗しました"
+    },
+    "list": {
+      "refreshAria": "プレイブックを更新",
+      "refreshTooltip": "プレイブックを更新"
     }
   },
   "agent": {
@@ -623,7 +745,17 @@
       "basicToolsDescription": "ファイルの読み取り、タスクの管理、コードの実行などのコア機能が含まれています。いつでもあなたを助けます！",
       "addTools": "+ ツールを追加",
       "addMoreCapabilities": "設定でさらに機能を追加",
-      "localContext": "ローカルコンテキスト"
+      "localContext": "ローカルコンテキスト",
+      "attachFiles": "ファイルを添付",
+      "attachedFiles": "添付ファイル",
+      "dropFilesHint": "ここにファイルをドロップ...",
+      "filesWillBeListedAfterStart": "ファイルはセッション開始後に一覧表示されます",
+      "placeholder": "{{name}} にメッセージ...",
+      "removeFile": "{{name}} を削除",
+      "removeWorkspaceOverride": "ワークスペース上書きを削除",
+      "send": "メッセージを送信",
+      "unsupportedFile": "サポートされていないファイルです！",
+      "uploading": "アップロード中..."
     },
     "header": {
       "copySuccess": "会話をクリップボードにコピーしました",
@@ -680,7 +812,7 @@
       "resumeError": "セッションの再開に失敗しました",
       "loadingTools": "ツールを読み込み中...",
       "toolsError": "ツールエラー",
-      "toolsCount": "利用可能 {{totalCount}}({{mcpCount}}) \u2022 組み込み {{builtinCount}}",
+      "toolsCount": "利用可能 {{totalCount}}({{mcpCount}}) • 組み込み {{builtinCount}}",
       "statusCompacting": "バックグラウンドで会話コンテキストを圧縮中...",
       "statusAwaitingCompact": "コンテキストの圧縮完了を待機中...",
       "statusError": "エラーが発生しました: {{error}}",
@@ -750,7 +882,7 @@
     },
     "toolsModal": {
       "title": "利用可能なツール",
-      "subtitleWithCounts": "組み込みツール: {{builtinCount}} \u2022 MCPツール: {{mcpCount}}",
+      "subtitleWithCounts": "組み込みツール: {{builtinCount}} • MCPツール: {{mcpCount}}",
       "subtitleDefault": "このエージェントセッションで利用可能なツールのリスト。",
       "loading": "ツールを読み込み中...",
       "errorTitle": "ツールの読み込みエラー",
@@ -774,6 +906,48 @@
       "untitledNote": "無題のメモ",
       "moreTasks": "件の追加タスク",
       "updated": "更新済み"
+    },
+    "bubble": {
+      "notification": "通知",
+      "channel": "チャンネル",
+      "assistant": "アシスタント",
+      "youQueued": "あなた（待機中）",
+      "you": "あなた",
+      "filesAttached_one": "1 件のファイルを添付",
+      "filesAttached_other": "{{count}} 件のファイルを添付",
+      "attachedFilesAria": "添付ファイル",
+      "lines_one": "1 行",
+      "lines_other": "{{count}} 行",
+      "noContent": "内容なし",
+      "thinkingProcess": "思考プロセス",
+      "thinkingProcessWithTime": "思考プロセス {{time}}",
+      "thinking": "思考中..."
+    },
+    "chat": {
+      "failedToStartPlaybookWorkflow": "プレイブックワークフローの開始に失敗しました",
+      "loadingSession": "セッションを読み込み中...",
+      "playbookStartedAutomatically": "プレイブックが自動的に開始されました",
+      "sessionContextUnavailable": "セッションコンテキストを利用できません。",
+      "sessionNotFoundOrFailed": "セッションが見つからないか、読み込みに失敗しました。"
+    },
+    "messages": {
+      "loadingOlder": "過去のメッセージを読み込み中...",
+      "scrollToLoadOlder": "上にスクロールして過去のメッセージを読み込む"
+    },
+    "start": {
+      "assistantNotFound": "アシスタントが見つかりません",
+      "assistantsLoadFailed": "アシスタントの読み込みに失敗しました。",
+      "builtinAssistants": "組み込みアシスタント",
+      "createAssistant": "アシスタントを作成",
+      "failedToStartPlaybookSession": "プレイブックセッションの開始に失敗しました",
+      "heroSubtitle": "新しい自律セッションを開始するアシスタントを選択してください。",
+      "heroTitle": "今日は何をしますか？",
+      "manageAssistants": "+ アシスタントを管理",
+      "myAssistants": "マイアシスタント",
+      "noAssistantsAvailable": "利用可能なアシスタントはまだありません。",
+      "playbookNotFound": "プレイブックが見つかりません",
+      "startingPlaybook": "プレイブックを開始中: {{goal}}",
+      "startingSession": "セッションを開始中..."
     }
   },
   "scheduledTasks": {
@@ -784,7 +958,7 @@
     "createFirst": "最初のタスクを作成",
     "disabled": "無効",
     "nextRun": "次回の実行: {{time}}",
-    "nextRunNone": "\u2014",
+    "nextRunNone": "—",
     "editTask": "タスクを編集",
     "deleteTask": "タスクを削除",
     "editTaskAria": "タスクを編集: {{name}}",
@@ -795,7 +969,7 @@
       "nameLabel": "タスク名",
       "namePlaceholder": "デイリースタンドアップの要約",
       "assistantLabel": "アシスタント",
-      "assistantPlaceholder": "アシスタントを選択\u2026",
+      "assistantPlaceholder": "アシスタントを選択…",
       "scheduleLabel": "スケジュール",
       "workspaceLabel": "ワークスペース",
       "workspaceOptional": "任意によるワークスペースの上書き",
@@ -810,11 +984,12 @@
       "workspaceClearAria": "ワークスペースの上書きをクリア",
       "messageLabel": "メッセージ",
       "messageHint": "オートコンプリートには <1>@playbook:</1> または <3>@skill:</3> を使用してください",
-      "messagePlaceholder": "メッセージを入力\u2026 オートコンプリートには @playbook: または @skill: を使用してください",
+      "messagePlaceholder": "メッセージを入力… オートコンプリートには @playbook: または @skill: を使用してください",
       "cancel": "キャンセル",
       "saveChanges": "変更を保存",
       "createTask": "タスクを作成",
-      "saving": "保存中\u2026"
+      "saving": "保存中…",
+      "workspaceAutocompleteHint": "ワークスペース上書きを有効にすると @skill: と @file: のオートコンプリートが使えます。"
     },
     "schedule": {
       "repeat": "繰り返し",
@@ -861,5 +1036,82 @@
     "unknownError": "不明なエラーが発生しました。",
     "retrying": "再試行中...",
     "tryAgain": "もう一度試す"
+  },
+  "appName": "LibrAgent",
+  "knowledge": {
+    "assistantFilterAll": "すべてのアシスタント",
+    "assistantFilterPlaceholder": "アシスタントで絞り込む",
+    "browserDescription": "まずチャンクを見つけてから、その根拠とグラフ上の近傍を確認します。",
+    "browserTitle": "ナレッジブラウザー",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "confirmDelete": "このナレッジエントリを削除し、孤立したグラフデータも整理しますか？",
+    "confirmDeleteTitle": "ナレッジエントリを削除",
+    "delete": "削除",
+    "deleteFailed": "ナレッジエントリの削除に失敗しました。",
+    "deleteSuccess": "ナレッジエントリを削除しました。",
+    "deleteSuccessDescription": "孤立エンティティ {{entities}} 件と孤立リレーション {{relationships}} 件を削除しました。",
+    "detailDescription": "選択したエントリ、その根拠、およびローカルグラフを確認します。",
+    "detailTitle": "ナレッジ詳細",
+    "emptyState": "現在のフィルターに一致するナレッジエントリはありません。",
+    "endOfResults": "現在の結果はここまでです。",
+    "entitiesTitle": "エンティティ",
+    "excerpt": "抜粋",
+    "fields": {
+      "createdAt": "作成日",
+      "primaryEntities": "主要エンティティ",
+      "relationships": "リレーション"
+    },
+    "graph": {
+      "empty": "このナレッジエントリに紐づくグラフデータはありません。",
+      "primaryEntity": "主要エンティティ",
+      "relatedEntity": "関連エンティティ"
+    },
+    "loadDetailFailed": "ナレッジ詳細の読み込みに失敗しました。",
+    "loadListFailed": "グローバルナレッジエントリの読み込みに失敗しました。",
+    "loadMore": "さらに読み込む",
+    "loadMoreFailed": "ナレッジエントリの追加読み込みに失敗しました。",
+    "metadataTitle": "メタデータ",
+    "noEntities": "このエントリに紐づくエンティティはありません。",
+    "noRelationships": "このエントリに紐づくリレーションはありません。",
+    "pageSubtitle": "共有メモリを検索し、根拠を確認し、古くなったナレッジを整理します。",
+    "pageTitle": "グローバルナレッジ",
+    "primaryEntity": "主要",
+    "refresh": "更新",
+    "relationshipListTitle": "リレーション",
+    "searchPlaceholder": "コンテンツ、タグ、またはソースを検索...",
+    "tabs": {
+      "graph": "グラフ",
+      "overview": "概要"
+    },
+    "untitledEntry": "無題のナレッジエントリ"
+  },
+  "mentions": {
+    "skillSourceAssistant": "アシスタント",
+    "skillSourceGlobal": "グローバル",
+    "skillSourceSystem": "システム",
+    "skillSourceUser": "ユーザー",
+    "skillSourceWorkspace": "ワークスペース"
+  },
+  "orgHistory": {
+    "cardLabel": "明示的な Org",
+    "delete": "組織を削除",
+    "deleteConfirm": {
+      "description": "この組織と、それに関連するすべてのメンバーセッション、ファイル、履歴が完全に削除されます。この操作は元に戻せません。",
+      "title": "組織を削除しますか？"
+    },
+    "description": "明示的に作成された Org 系統のみを表示します。単発の委譲セッションは通常の履歴に残ります。",
+    "emptyState": {
+      "subtitle": "まず明示的に Org を作成し、その後 Org 対応ツールでメンバーを生成してください。通常のサブエージェント系統はここには表示されません。",
+      "title": "Org 系統はまだありません"
+    },
+    "heading": "Org ビュー",
+    "resumeRoot": "ルートセッションを再開",
+    "rootLabel": "ルートセッション",
+    "toasts": {
+      "deleteFailed": "組織の削除に失敗しました",
+      "deleted": "組織を削除しました"
+    },
+    "updatedLabel": "更新日"
   }
 }
