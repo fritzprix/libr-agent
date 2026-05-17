@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +11,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback ?? key,
   }),
+}));
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  TooltipTrigger: ({ children, asChild }: { children?: React.ReactNode; asChild?: boolean }) => <div>{children}</div>,
+  TooltipContent: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock('../workspace-panel/useDraftWorkspacePreviewTree', () => ({
@@ -93,5 +100,7 @@ describe('AgentDraftWorkspacePreviewPanel', () => {
 
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(onClear).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('agent.workspace.refreshAria')).toBeInTheDocument();
+    expect(screen.getByText('Close')).toBeInTheDocument();
   });
 });

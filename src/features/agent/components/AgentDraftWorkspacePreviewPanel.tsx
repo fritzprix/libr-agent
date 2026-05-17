@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, RefreshCw, X } from 'lucide-react';
 
@@ -27,26 +28,36 @@ export function AgentDraftWorkspacePreviewPanel({
             <span>{t('agent.workspace.title')}</span>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={() => void refresh()}
-              aria-label={t('agent.workspace.refreshAria')}
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}
-              />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={onClear}
-              aria-label={t('common:close', 'Close')}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => void refresh()}
+                  aria-label={t('agent.workspace.refreshAria')}
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('agent.workspace.refreshAria')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={onClear}
+                  aria-label={t('common:close', 'Close')}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('common:close', 'Close')}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
