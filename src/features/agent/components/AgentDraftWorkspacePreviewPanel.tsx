@@ -1,5 +1,9 @@
 import { Button } from '@/components/ui';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, RefreshCw, X } from 'lucide-react';
 
@@ -42,7 +46,9 @@ export function AgentDraftWorkspacePreviewPanel({
                   />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{t('agent.workspace.refreshAria')}</TooltipContent>
+              <TooltipContent>
+                {t('agent.workspace.refreshAria')}
+              </TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
