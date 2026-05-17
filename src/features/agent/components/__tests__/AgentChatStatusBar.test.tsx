@@ -3,6 +3,8 @@ import '@testing-library/jest-dom';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TokenUsage } from '@/lib/ai-service/types';
+import type { Message } from '@/models/chat';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { AgentChatStatusBar } from '../AgentChatStatusBar';
 
@@ -50,12 +52,17 @@ const mockAgentSession = {
 };
 
 const mockAgentChat = {
+  messages: [] as Message[],
   workflowStatus: 'idle' as WorkflowStatus,
   error: null,
   llmError: null,
   retryMessage: mocks.retryMessage,
   resume: mocks.resume,
 };
+
+const tokenMetricsState = vi.hoisted(() => ({
+  metrics: null as TokenUsage | null,
+}));
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSession: () => mockAgentSession,
@@ -91,7 +98,7 @@ vi.mock('@/hooks/use-agent-tools', () => ({
 
 vi.mock('@/hooks/use-token-metrics', () => ({
   useTokenMetrics: () => ({
-    metrics: null,
+    metrics: tokenMetricsState.metrics,
   }),
 }));
 
@@ -131,10 +138,6 @@ vi.mock('@/components/ui', () => ({
 
 vi.mock('../AgentToolsModal', () => ({
   default: () => null,
-}));
-
-vi.mock('./TokenMetricsBadge', () => ({
-  TokenMetricsBadge: () => null,
 }));
 
 vi.mock('@/components/ui/LoadingSpinner', () => ({
@@ -188,9 +191,11 @@ describe('AgentChatStatusBar', () => {
     mockAgentSession.executionMode = 'normal';
     mockAgentSession.yoloModeEnabled = false;
     mockAgentSession.unsafeModeEnabled = false;
+    mockAgentChat.messages = [];
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = null;
     mockAgentChat.llmError = null;
+    tokenMetricsState.metrics = null;
     mocks.safeInvoke.mockResolvedValue({
       success: true,
       message: 'updated',
@@ -280,5 +285,27 @@ describe('AgentChatStatusBar', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
       'Model updated. Retry to recover the session.',
     );
+  });
+
+  it('keeps showing the last token metrics when streaming clears before persistence catches up', () => {
+    tokenMetricsState.metrics = {
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      details: {
+        evalDuration: 321,
+      },
+    };
+
+    const { rerender } = render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('120');
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('45');
+
+    tokenMetricsState.metrics = null;
+    rerender(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('120');
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('45');
   });
 });
