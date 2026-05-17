@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
 import { useAgentDraftChat } from './hooks/useAgentDraftChat';
 import { useWorkspaceFiles } from './hooks/useWorkspaceFiles';
+import { AGENT_ATTACHMENT_PICKER_ACCEPT } from './lib/attachment-picker';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 
 const textareaStyle = {
@@ -284,7 +285,7 @@ function DraftChatInner() {
                     compact={true}
                     disabled={isSubmitting || isAttachmentLoading}
                     showFileCount={false}
-                    allowedExtensions={[]}
+                    accept={AGENT_ATTACHMENT_PICKER_ACCEPT}
                     buttonClassName="mb-1 h-8 w-8 hover:text-primary hover:bg-primary/5 transition-colors"
                   />
 
