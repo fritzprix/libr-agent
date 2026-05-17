@@ -745,7 +745,8 @@
       "provider": "プロバイダー",
       "model": "モデル",
       "loading": "読み込み中...",
-      "refreshModels": "モデルを更新"
+      "refreshModels": "モデルを更新",
+      "refreshRequiresApiKey": "モデルの更新を有効にするには API キーを追加してください"
     },
     "toolsModal": {
       "title": "利用可能なツール",
