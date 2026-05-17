@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.27] - 2026-05-18
+
+### 🚀 Features
+
+- **Agent Chat Workflow Upgrades**: Added pasted image attachments in agent chat, refreshed model picker UX, and improved mobile/status-bar responsiveness so day-to-day agent use feels smoother.
+- **Expanded Skill Library**: Added new diagnostic and analysis skills including computer diagnosis, log extraction/debugging, code-audit guidance, and broader React/React Native skill packs for richer agent assistance.
+- **UI Discoverability & Localization**: Added tooltip polish for draft workspace previews and expanded locale parity for common agent and scheduled-task guidance across translations.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Security: Path Traversal Hardening**: Closed a path traversal bypass in `SecurityValidator` to better protect workspace file operations.
+- **Agent Chat Reliability**: Fixed bottom-scroll anchoring, token metrics behavior, and status bar layout regressions so chat sessions stay readable during streaming and resume flows.
+- **Model & Translation Consistency**: Fixed model refresh UX, locale parity gaps, and scheduled-task `@file:` autocomplete hints to reduce confusing agent UI edge cases.
+
+### 🔧 Internal
+
+- **LLM Completion Architecture Refactor**: Split the completion request pipeline into focused Rust modules, cleaned up technical debt suppressions, and hardened compaction/request review follow-ups.
+- **Testing & Maintenance**: Expanded AgentSession/LLMService/provider coverage, stabilized pagination and tooltip mocks, and applied release-branch cleanup across generated assets and formatting.
+
 ## [0.7.26] - 2026-05-16
 
 ### 🚀 Features
