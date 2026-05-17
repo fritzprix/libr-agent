@@ -18,7 +18,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -32,12 +32,14 @@ import { mergeDisplayTokenUsage } from './token-metrics';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
 import { useSettings } from '@/context/SettingsContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
   const { value: settings } = useSettings();
+  const isMobile = useIsMobile();
   const { session, executionMode, setExecutionMode, updateSessionConfig } =
     useAgentSession();
   const { workflowStatus, error, llmError, retryMessage, resume } =
@@ -213,6 +215,64 @@ export function AgentChatStatusBar() {
     }
   };
 
+  const handleConfigUpdate = useCallback(
+    async (model: string, provider: string) => {
+      if (!session?.id || !session.assistant || !canUpdateSessionConfig) {
+        return;
+      }
+
+      logger.info(`Updating session config to ${provider}/${model}`);
+
+      try {
+        const { enforceRuntimeBuiltinAliases } = await import(
+          '@/lib/assistant/runtime-builtins'
+        );
+
+        const updatedConfig = {
+          ...session.assistant,
+          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+            session.assistant.allowedBuiltInServiceAliases,
+          ),
+          // Note: We keep these for completeness but the backend will prioritize top-level model/provider
+          name: session.assistant.name || 'Assistant',
+          systemPrompt:
+            session.assistant.systemPrompt || 'You are a helpful assistant.',
+        };
+
+        // Dynamically import safeInvoke to avoid circular dependencies if any (though it ultimately wraps Tauri invoke)
+        const { safeInvoke } = await import('@/lib/backend/core');
+
+        await safeInvoke<AgentResponse>('agent_update_session_config', {
+          request: {
+            sessionId: session.id,
+            model,
+            provider,
+            agentConfig: updatedConfig,
+          },
+        });
+
+        updateSessionConfig(model, provider);
+        if (workflowStatus === 'error') {
+          toast.success(
+            t(
+              'agent.statusBar.configUpdatedRecoveryHint',
+              'Model updated. Retry to recover the session.',
+            ),
+          );
+        }
+      } catch (e) {
+        logger.error('Failed to update session config', e);
+        toast.error(
+          t(
+            'agent.statusBar.configUpdateError',
+            'Failed to update the model configuration.',
+          ),
+        );
+      }
+    },
+    [canUpdateSessionConfig, session, t, updateSessionConfig, workflowStatus],
+  );
+
   const getToolsDisplayText = () => {
     if (toolsLoading) return t('agent.statusBar.loadingTools');
     if (toolsError) return t('agent.statusBar.toolsError');
@@ -323,6 +383,7 @@ export function AgentChatStatusBar() {
   };
 
   const config = getStatusConfig();
+  const badgeCompactionPressure = isMobile ? undefined : compactionPressure;
 
   return (
     <>
@@ -373,82 +434,22 @@ export function AgentChatStatusBar() {
       </div>
 
       {/* Model and tools status bar (matches ChatStatusBar) */}
-      <div className="px-4 py-2 border-t flex items-center justify-between">
-        <div>
+      <div className="px-4 py-2 border-t flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
+        <div className="min-w-0 md:flex-1">
           {session && (
             <AgentModelPicker
               currentModel={session.model}
               currentProvider={session.provider}
+              className="max-w-full"
               disabled={!canUpdateSessionConfig}
-              onConfigUpdate={async (model, provider) => {
-                if (
-                  !session.id ||
-                  !session.assistant ||
-                  !canUpdateSessionConfig
-                )
-                  return;
-
-                // Session config update logging
-                logger.info(`Updating session config to ${provider}/${model}`);
-
-                try {
-                  const { enforceRuntimeBuiltinAliases } = await import(
-                    '@/lib/assistant/runtime-builtins'
-                  );
-
-                  const updatedConfig = {
-                    ...session.assistant,
-                    allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
-                      session.assistant.allowedBuiltInServiceAliases,
-                    ),
-                    // Note: We keep these for completeness but the backend will prioritize top-level model/provider
-                    name: session.assistant.name || 'Assistant',
-                    systemPrompt:
-                      session.assistant.systemPrompt ||
-                      'You are a helpful assistant.',
-                  };
-
-                  // Dynamically import safeInvoke to avoid circular dependencies if any (though it ultimately wraps Tauri invoke)
-                  const { safeInvoke } = await import('@/lib/backend/core');
-
-                  await safeInvoke<AgentResponse>(
-                    'agent_update_session_config',
-                    {
-                      request: {
-                        sessionId: session.id,
-                        model,
-                        provider,
-                        agentConfig: updatedConfig,
-                      },
-                    },
-                  );
-
-                  // Update local session state
-                  updateSessionConfig(model, provider);
-                  if (workflowStatus === 'error') {
-                    toast.success(
-                      t(
-                        'agent.statusBar.configUpdatedRecoveryHint',
-                        'Model updated. Retry to recover the session.',
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  logger.error('Failed to update session config', e);
-                  toast.error(
-                    t(
-                      'agent.statusBar.configUpdateError',
-                      'Failed to update the model configuration.',
-                    ),
-                  );
-                }
-              }}
+              onConfigUpdate={handleConfigUpdate}
             />
           )}
         </div>
-        <div className="flex items-center gap-4">
+
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2 md:ml-auto md:justify-end">
           <div
-            className="flex items-center gap-2"
+            className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start"
             data-testid="execution-mode-control"
           >
             <span className="text-xs text-muted-foreground">Execution</span>
@@ -482,12 +483,12 @@ export function AgentChatStatusBar() {
             </div>
           </div>
 
-          {/* Token Metrics Badge - Show if metrics exist */}
           {displayMetrics && (
-            <div className="hidden md:block">
+            <div className="w-full sm:w-auto">
               <TokenMetricsBadge
                 usage={displayMetrics}
-                compactionPressure={compactionPressure}
+                compact={isMobile}
+                compactionPressure={badgeCompactionPressure}
               />
             </div>
           )}
