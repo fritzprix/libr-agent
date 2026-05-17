@@ -91,8 +91,7 @@ use commands::settings_commands::{
 };
 use commands::skill_commands::{
     get_aggregated_skills, get_default_skills_directory, get_managed_skills_overview,
-    get_skill_content, list_workspace_file_paths, list_workspace_file_paths_for_path,
-    open_skills_directory_in_explorer, scan_skills_directory,
+    get_skill_content, open_skills_directory_in_explorer, scan_skills_directory,
 };
 use commands::skill_management::{
     copy_global_to_assistant, delete_assistant_skill, delete_user_skill, import_assistant_skills,
@@ -102,9 +101,10 @@ use commands::skill_management::{
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
     cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_update_install_capability,
-    get_workspace_dir, get_workspace_override, greet, list_workspace_files,
-    open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
-    read_local_file_as_base64, restart_app, set_workspace_override,
+    get_workspace_dir, get_workspace_override, greet, list_workspace_file_paths,
+    list_workspace_file_paths_for_path, list_workspace_files, open_workspace_file_with_default_app,
+    open_workspace_in_explorer, open_workspace_in_terminal, read_local_file_as_base64, restart_app,
+    set_workspace_override,
 };
 
 // Re-export state management functions
