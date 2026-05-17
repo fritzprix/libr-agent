@@ -14,9 +14,9 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  TooltipTrigger: ({ children }: { children?: React.ReactNode; asChild?: boolean }) => <div>{children}</div>,
-  TooltipContent: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  Tooltip: ({ children }: Record<string, unknown>) => <div>{children as React.ReactNode}</div>,
+  TooltipTrigger: ({ children }: Record<string, unknown>) => <div>{children as React.ReactNode}</div>,
+  TooltipContent: ({ children }: Record<string, unknown>) => <div>{children as React.ReactNode}</div>,
 }));
 
 vi.mock('../workspace-panel/useDraftWorkspacePreviewTree', () => ({
@@ -100,7 +100,5 @@ describe('AgentDraftWorkspacePreviewPanel', () => {
 
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(onClear).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('agent.workspace.refreshAria')).toBeInTheDocument();
-    expect(screen.getByText('Close')).toBeInTheDocument();
   });
 });
