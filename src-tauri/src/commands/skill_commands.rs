@@ -60,20 +60,3 @@ pub async fn get_skill_content(
 ) -> Result<String, String> {
     skill_service::get_skill_content(skill_path, assistant_id, session_id, workspace_path).await
 }
-
-#[tauri::command]
-pub async fn list_workspace_file_paths(
-    session_id: String,
-    max_depth: usize,
-) -> Result<Vec<String>, String> {
-    crate::agent::references::list_workspace_relative_paths(&session_id, max_depth).await
-}
-
-#[tauri::command]
-pub async fn list_workspace_file_paths_for_path(
-    workspace_path: String,
-    max_depth: usize,
-) -> Result<Vec<String>, String> {
-    crate::agent::references::list_relative_paths_in_root(Path::new(&workspace_path), max_depth)
-        .await
-}
