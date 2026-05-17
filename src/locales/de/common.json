@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "Name des Assistenten *",
     "namePlaceholder": "Name des Assistenten eingeben...",
@@ -126,6 +127,15 @@
   "theme": {
     "toggle": "Design umschalten"
   },
+  "notifications": {
+    "open": "Benachrichtigungen öffnen",
+    "title": "Benachrichtigungen",
+    "empty": "Keine Sitzungen mit Aufmerksamkeitsbedarf oder ausstehenden Genehmigungen.",
+    "recurringStop": "Wiederkehrender Stopp",
+    "pendingApprovals_one": "{{count}} Genehmigung",
+    "pendingApprovals_other": "{{count}} Genehmigungen",
+    "viewSession": "Sitzung {{name}} öffnen"
+  },
   "sidebar": {
     "mobileTitle": "Seitenleiste",
     "mobileDescription": "Zeigt die mobile Seitenleiste an.",
@@ -166,10 +176,15 @@
     },
     "tabs": {
       "all": "Alle",
+      "bookmarked": "Favoriten",
       "busy": "Beschäftigt",
       "idle": "Leerlauf",
       "paused": "Pausiert",
       "error": "Fehler"
+    },
+    "statusFilter": {
+      "label": "Status",
+      "all": "Alle Status"
     },
     "lineageHint": {
       "child": "↳ Kind von {{parentName}}",
@@ -189,10 +204,15 @@
       "child": "Kind",
       "parent": "Elternteil",
       "root": "Wurzel",
+      "descendants": "{{count}} Nachkommen",
       "parentBadge": "Elternteil: {{id}}",
       "lineageBadge": "Abstammung: {{id}}",
       "lineageFilterAria": "Nach Abstammung {{id}} filtern",
       "statusAriaLabel": "Sitzungsstatus: {{status}}",
+      "descendantBusy": "Aktiv: {{count}}",
+      "descendantIdle": "Leerlauf: {{count}}",
+      "descendantPaused": "Pausiert: {{count}}",
+      "descendantError": "Fehler: {{count}}",
       "model": "Modell:",
       "createdAt": "Erstellt am {{time}}",
       "updatedAt": "Aktualisiert am {{time}}",
@@ -208,6 +228,8 @@
       "viewAria": "Sitzung {{name}} ansehen",
       "continueAria": "Sitzung {{name}} weiterführen",
       "resumeAria": "Sitzung {{name}} fortsetzen",
+      "expandChildrenAria": "Untergeordnete Sitzungen für {{name}} ausklappen",
+      "collapseChildrenAria": "Untergeordnete Sitzungen für {{name}} einklappen",
       "groupAria": "Sitzungsaktionen",
       "deleteTooltip": "Sitzung löschen",
       "deleteAria": "Sitzung {{name}} löschen",
@@ -226,8 +248,30 @@
       "subtitle": "Starten Sie eine Konversation, um Ihre erste Sitzung zu erstellen"
     }
   },
+  "orgHistory": {
+    "heading": "Organisationsansicht",
+    "description": "Nur ausdrücklich organisationsbezogen erstellte Abstammungslinien. Einmalig delegierte Sitzungen bleiben im normalen Verlauf.",
+    "cardLabel": "Explizite Organisation",
+    "rootLabel": "Wurzelsitzung",
+    "updatedLabel": "Aktualisiert",
+    "resumeRoot": "Wurzelsitzung fortsetzen",
+    "delete": "Organisation löschen",
+    "deleteConfirm": {
+      "title": "Organisation löschen?",
+      "description": "Dadurch werden diese Organisation und alle zugehörigen Mitgliedssitzungen einschließlich aller Dateien und Verläufe dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+    },
+    "toasts": {
+      "deleted": "Organisation gelöscht",
+      "deleteFailed": "Organisation konnte nicht gelöscht werden"
+    },
+    "emptyState": {
+      "title": "Noch keine Organisations-Abstammungslinien",
+      "subtitle": "Erstellen Sie explizit eine Organisation und erzeugen Sie anschließend Organisationsmitglieder mit den organisationsbewussten Tools. Gewöhnliche Subagent-Abstammung gehört nicht hierher."
+    }
+  },
   "settings": {
     "title": "Einstellungen",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "Nicht gespeichert",
     "saved": "Einstellungen erfolgreich gespeichert",
     "saving": "Speichervorgang...",
@@ -251,7 +295,8 @@
       "mcpServers": "MCP-Server",
       "advanced": "Erweitert",
       "extensions": "Erweiterungen",
-      "dev": "Entwickler"
+      "dev": "Entwickler",
+      "system": "System"
     },
     "llmPreference": "Standard-LLM",
     "messageWindowSize": "Fenstergröße für Nachrichten",
@@ -262,6 +307,8 @@
     "toolCallGroupVisibleCount": "Anzahl sichtbarer Werkzeugaufrufe",
     "toolCallGroupVisibleCountDescription": "Anzahl der Werkzeugaufrufe, die in der minimierten Gruppenansicht angezeigt werden sollen",
     "toolCallGroupVisibleCountPlaceholder": "z.B. 4",
+    "decreaseToolCallCount": "Anzahl der Tool-Aufrufe verringern",
+    "increaseToolCallCount": "Anzahl der Tool-Aufrufe erhöhen",
     "general": {
       "skillsDirectory": "Skills-Verzeichnis",
       "skillsDirectorySelectTitle": "Skills-Verzeichnis auswählen",
@@ -283,7 +330,11 @@
       "fallbackModelDescription": "Wird als letztes Mittel verwendet, wenn das primäre Modell nach allen Versuchen fehlerhafte oder leere Antworten liefert.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "Agent Hub URL",
-      "agentHubUrlDescription": "URL des entfernten Agent Hub Servers. Wenn gesetzt, werden Assistenten mit diesem Server synchronisiert."
+      "agentHubUrlDescription": "URL des entfernten Agent Hub Servers. Wenn gesetzt, werden Assistenten mit diesem Server synchronisiert.",
+      "agentHubUrlPlaceholder": "https://api.agenthub.com",
+      "responseBehavior": "Antwortverhalten",
+      "decreaseRetries": "Wiederholungsversuche verringern",
+      "increaseRetries": "Wiederholungsversuche erhöhen"
     },
     "provider": {
       "apiKey": "API-Schlüssel",
@@ -300,9 +351,17 @@
     "chatInterface": {
       "diffContextLines": "Diff-Kontextzeilen",
       "diffContextLinesPlaceholder": "z.B. 3",
-      "diffContextLinesDescription": "Anzahl der Kontextzeilen, die in Datei-Edit-Diffs angezeigt werden sollen (1-10)."
+      "diffContextLinesDescription": "Anzahl der Kontextzeilen, die in Datei-Edit-Diffs angezeigt werden sollen (1-10).",
+      "decreaseDiffLines": "Diff-Kontextzeilen verringern",
+      "increaseDiffLines": "Diff-Kontextzeilen erhöhen"
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "Pretendard (Standard-Sans)",
+        "inter": "Inter (klare UI-Sans)",
+        "nanumSquareNeo": "NanumSquare Neo (modern geometrisch)",
+        "d2coding": "D2Coding (Entwickler-Mono)"
+      },
       "metricsTitle": "Leistungskennzahlen",
       "metricDisplayMode": "Anzeigemodus für Kennzahlen",
       "inline": "Inline (in der Nachricht anzeigen)",
@@ -320,7 +379,10 @@
       "toolDetailLevel": "Werkzeug-Detailtiefe",
       "toolDetailSimple": "Einfach (nur Werkzeugname)",
       "toolDetailDeveloper": "Entwickler (Parameter, Fehler, Timing)",
-      "toolDetailLevelDescription": "Der einfache Modus zeigt nur Werkzeugnamen und Status-Icons an. Der Entwickler-Modus zeigt alle Parameter, Fehlerdetails und die Ausführungszeit an."
+      "toolDetailLevelDescription": "Der einfache Modus zeigt nur Werkzeugnamen und Status-Icons an. Der Entwickler-Modus zeigt alle Parameter, Fehlerdetails und die Ausführungszeit an.",
+      "uiVisualsTitle": "UI-Darstellung",
+      "fontFamily": "Schriftfamilie",
+      "fontFamilyDescription": "Ändert die Standardschriftfamilie der Oberfläche."
     },
     "advanced": {
       "maxRetries": "Max. Wiederholungsversuche",
@@ -333,23 +395,38 @@
       "maxOutputTokensDescription": "Standardmäßige maximale Ausgabe-Token für neue Sitzungen, falls vom Assistenten nicht anders angegeben.",
       "defaultSessionMaxDepth": "Sitzungsverzweigungs-Limit (Erweitert)",
       "defaultSessionMaxDepthDescription": "Steuert, wie viele Ebenen von Kind-Sitzungen standardmäßig erlaubt sind. Auf 0 für unbegrenzt setzen. Die meisten Benutzer können dies so lassen.",
+      "defaultSessionMaxDepthPlaceholder": "z. B. 3",
       "defaultSessionMaxFanout": "Sitzungskind-Limit (Erweitert)",
       "defaultSessionMaxFanoutDescription": "Steuert, wie viele direkte Kind-Sitzungen jedes Elternteil standardmäßig erstellen kann. Auf 0 für unbegrenzt setzen. Die meisten Benutzer können dies so lassen.",
+      "defaultSessionMaxFanoutPlaceholder": "0 = unbegrenzt",
       "maxConcurrentActiveSessions": "Max. gleichzeitige Agenten-Sitzungen",
       "maxConcurrentActiveSessionsDescription": "Maximale Anzahl von Agenten-Sitzungen, die ihren LLM-Loop gleichzeitig ausführen. Höhere Werte verbrauchen mehr API-Kontingent und Speicher.",
+      "maxConcurrentActiveSessionsPlaceholder": "z. B. 4",
       "maxSuspendedSessions": "Max. suspendierte Agenten-Sitzungen",
-      "maxSuspendedSessionsDescription": "Maximale Anzahl von Agenten-Sitzungen, die pausiert sein können, während sie auf ein Ende einer Kind-Sitzung warten. Sollte \u2265 aktive Sitzungen sein.",
+      "maxSuspendedSessionsDescription": "Maximale Anzahl von Agenten-Sitzungen, die pausiert sein können, während sie auf ein Ende einer Kind-Sitzung warten. Sollte ≥ aktive Sitzungen sein.",
+      "maxSuspendedSessionsPlaceholder": "z. B. 8",
       "maxConcurrentActiveProcesses": "Max. gleichzeitige Shell-Prozesse",
       "maxConcurrentActiveProcessesDescription": "Maximale Anzahl von Shell-/Code-Prozessen, die gleichzeitig über alle Agenten-Sitzungen hinweg ausgeführt werden.",
+      "maxConcurrentActiveProcessesPlaceholder": "z. B. 10",
       "maxSuspendedProcesses": "Max. suspendierte Shell-Prozesse",
-      "maxSuspendedProcessesDescription": "Maximale Anzahl von Prozessen, die pausiert sein können, während sie auf pollProcess warten. Sollte \u2265 aktive Prozesse sein.",
+      "maxSuspendedProcessesDescription": "Maximale Anzahl von Prozessen, die pausiert sein können, während sie auf pollProcess warten. Sollte ≥ aktive Prozesse sein.",
+      "maxSuspendedProcessesPlaceholder": "z. B. 20",
+      "toolResultInlineLimit": "Inline-Limit für Tool-Ergebnisse (KB)",
+      "toolResultInlineLimitPlaceholder": "z. B. 16",
+      "toolResultInlineLimitDescription": "Steuert, wie viel Tool-Ausgabe inline bleibt, bevor LibrAgent das vollständige Ergebnis in eine Arbeitsbereichsdatei auslagert. Niedrigere Werte halten den Agentenkontext schlanker.",
       "shellIsolation": "Shell-Isolationsstufe",
       "shellIsolationModes": {
         "basic": "Basis - Voller PATH-Zugriff (weniger sicher)",
         "medium": "Mittel - Eingeschränkter PATH (ausgewogen)",
         "high": "Hoch - Sandbox (am sichersten)"
       },
-      "shellIsolationDescription": "Steuert die Umgebungsisolation für Shell-Befehle. Basis erlaubt vom Benutzer installierte Werkzeuge, Hoch bietet maximale Sicherheit."
+      "shellIsolationDescription": "Steuert die Umgebungsisolation für Shell-Befehle. Basis erlaubt vom Benutzer installierte Werkzeuge, Hoch bietet maximale Sicherheit.",
+      "performance": "Leistung und Parallelität",
+      "performanceDescription": "Diese Laufzeitlimits steuern, wie viele Agenten und Arbeitsbereichsprozesse gleichzeitig laufen können.",
+      "title": "Erweiterte Laufzeitsteuerung",
+      "summary": "Diese Einstellungen ändern Laufzeitschutz, Multi-Agent-Limits und die Shell-Isolation. Die meisten Nutzer sollten sie unverändert lassen.",
+      "loopPreventionThreshold": "Schwelle zur Schleifenvermeidung",
+      "loopPreventionThresholdDescription": "Anzahl identischer, wiederholter Tool-Ergebnisse, bevor der Agent eine natürliche Wiederherstellung versucht oder einen harten Stopp auslöst."
     },
     "system": {
       "title": "System & Leistung",
@@ -368,6 +445,11 @@
       "maxFileUploadSizeDescription": "Maximale Größe für einen einzelnen Datei-Upload. Erhöhen Sie dies, wenn Sie oft mit großen Dokumenten arbeiten.",
       "workspaceCapacity": "Arbeitsbereichskapazität (MB)",
       "workspaceCapacityDescription": "Gesamtlimit für den Textinhalt Ihres aktuellen Arbeitsbereichs.",
+      "automation": "Automatisierungs-Governance",
+      "scheduledTaskMinimumInterval": "Mindestintervall geplanter Aufgaben (Min.)",
+      "scheduledTaskMinimumIntervalDescription": "Minimal zulässiges Intervall für neue oder wieder aktivierte geplante Aufgaben. Auf 0 setzen, um diese Schutzfunktion zu deaktivieren.",
+      "maxScheduledTaskGroups": "Maximale Anzahl geplanter Aufgabengruppen",
+      "maxScheduledTaskGroupsDescription": "Maximale Anzahl unterschiedlicher geplanter Aufgabengruppen, die in wiederkehrender Teamwork-Automatisierung erlaubt sind.",
       "backgroundTasks": "Hintergrundaufgaben",
       "searchIndexFrequency": "Suchindex-Frequenz (Min)",
       "searchIndexFrequencyDescription": "Wie oft die KI ihre Gedächtnissuche aktualisiert. Schnellere Updates halten die Suche aktuell, verbrauchen aber mehr Akku/CPU.",
@@ -383,6 +465,8 @@
       "networkRestartFailed": "App konnte nicht neu gestartet werden. Bitte manuell neu starten.",
       "networkRestartNotice": "Änderungen an den HTTP-Server-Netzwerkeinstellungen werden nach dem Neustart der App wirksam.",
       "placeholders": {
+        "scheduledTaskMinimumInterval": "0 = deaktiviert",
+        "maxScheduledTaskGroups": "z. B. 10",
         "maxFileUploadSize": "z.B. 50",
         "workspaceCapacity": "z.B. 10",
         "searchIndexFrequency": "z.B. 5",
@@ -391,7 +475,10 @@
         "mcpToolTimeout": "0 (deaktiviert)",
         "activeSessionRetention": "z.B. 24",
         "httpServerPort": "z.B. 3030"
-      }
+      },
+      "description": "Steuern Sie App-Laufzeit, Hintergrund-Worker, Automatisierungslimits und Netzwerkverhalten.",
+      "restartRequired": "Neustart nach dem Speichern erforderlich",
+      "networkRestartPending": "Sie haben Netzwerkeinstellungen geändert. Speichern Sie die Änderungen und starten Sie dann die App neu, um sie anzuwenden."
     },
     "about": {
       "title": "Über",
@@ -405,7 +492,8 @@
       "checkForUpdates": "Nach Updates suchen"
     },
     "dangerZone": {
-      "title": "\u26a0\ufe0f Gefahrenzone"
+      "title": "⚠️ Gefahrenzone",
+      "description": "Diese Aktionen löschen lokale Daten dauerhaft. Prüfen Sie den Umfang vor dem Fortfahren sorgfältig."
     },
     "factoryReset": {
       "title": "Werkseinstellungen",
@@ -413,6 +501,8 @@
       "button": "Alle Daten & Einstellungen zurücksetzen",
       "confirmTitle": "Bestätigung der Werkseinstellungen",
       "confirmDescription": "Dies löscht unwiderruflich ALLE Daten einschließlich Sitzungen, Assistenten, MCP-Servern und Playbooks. Sind Sie sicher?",
+      "typeReset": "Geben Sie RESET ein, um das Zurücksetzen auf Werkseinstellungen zu aktivieren.",
+      "typeResetPlaceholder": "RESET eingeben",
       "confirmButton": "Alles zurücksetzen",
       "resetting": "Wird zurückgesetzt...",
       "success": "Werkseinstellungen erfolgreich wiederhergestellt. Neustart erforderlich, um Änderungen vollständig zu übernehmen.",
@@ -435,7 +525,10 @@
       "saveFirst": "Bitte speichern Sie den Assistenten zuerst, um Skills zu verwalten.",
       "fetchFailed": "Fehler beim Abrufen der Skills",
       "importing": "Skills werden importiert...",
-      "importSuccess": "Skills erfolgreich importiert",
+      "importSuccess_one": "{{count}} Skill importiert",
+      "importSuccess_other": "{{count}} Skills importiert",
+      "importSuccessWithOverwrite_one": "{{count}} Skill importiert ({{overwrittenCount}} überschrieben)",
+      "importSuccessWithOverwrite_other": "{{count}} Skills importiert ({{overwrittenCount}} überschrieben)",
       "importFailed": "Fehler beim Importieren der Skills",
       "overrideSuccess": "Skill erfolgreich überschrieben",
       "overrideFailed": "Fehler beim Überschreiben des Skills",
@@ -443,6 +536,9 @@
       "revertFailed": "Fehler beim Zurücksetzen des Skills",
       "resetSuccess": "Assistenten-Skills erfolgreich zurückgesetzt",
       "resetFailed": "Fehler beim Zurücksetzen der Skills",
+      "deleteUserSkill": "{{name}} löschen",
+      "userSkillDeleted": "Benutzer-Skill gelöscht.",
+      "userSkillsReset": "Benutzer-Skills zurückgesetzt.",
       "dragDropDesc": "Ziehen Sie eine ZIP-Datei oder einen Ordner hierher, um Skills zu überschreiben.",
       "resetTooltip": "Alle assistentenspezifischen Skills entfernen",
       "reset": "Überschreiben zurücksetzen",
@@ -452,7 +548,41 @@
       "override": "Für diesen Assistenten überschreiben",
       "revert": "Auf Global zurücksetzen",
       "resetTitle": "Skill-Überschreibung zurücksetzen?",
-      "resetConfirm": "Dies entfernt alle assistentenspezifischen Skills und setzt sie auf die globalen Standardwerte zurück. Diese Aktion kann nicht rückgängig gemacht werden."
+      "resetConfirm": "Dies entfernt alle assistentenspezifischen Skills und setzt sie auf die globalen Standardwerte zurück. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "importSuccess": "Skills erfolgreich importiert"
+    },
+    "dev": {
+      "devOnly": "NUR ENTWICKLUNG",
+      "testerTitle": "sampleText / compact-Tester",
+      "provider": "Anbieter",
+      "noKey": " (kein Schlüssel)",
+      "promptLabel": "Prompt (für sampleText)",
+      "promptPlaceholder": "Test-Prompt eingeben...",
+      "compactUses": "compact() verwendet {{count}} Beispielnachrichten:",
+      "running": "Wird ausgeführt…",
+      "runSampleText": "sampleText() ausführen",
+      "runCompact": "compact() ausführen",
+      "error": "FEHLER",
+      "ok": "OK",
+      "model": "Modell: {{model}}",
+      "tokensInfo": "Tokens: {{promptTokens}} Eingabe + {{completionTokens}} Ausgabe = {{totalTokens}} gesamt",
+      "emptyResponse": "(leere Antwort)"
+    },
+    "pendingChanges": "{{count}} geänderte Bereiche",
+    "discardChanges": "Verwerfen",
+    "saveChanges": "Änderungen speichern",
+    "discardTitle": "Nicht gespeicherte Änderungen verwerfen?",
+    "discardDescription": "Dadurch werden alle ausstehenden Änderungen auf dieser Seite auf den zuletzt gespeicherten Stand zurückgesetzt.",
+    "leaveTitle": "Ohne Speichern verlassen?",
+    "leaveDescription": "Sie haben nicht gespeicherte Änderungen. Speichern Sie sie vor dem Verlassen oder verwerfen Sie sie und verlassen Sie diese Seite.",
+    "discardAndLeave": "Verwerfen und verlassen",
+    "saveAndLeave": "Speichern und verlassen",
+    "contextStrategyLabel": "Strategie zur Kontextverwaltung",
+    "contextStrategy": {
+      "window": "Gleitendes Fenster",
+      "compact": "Kompakt",
+      "windowDescription": "Behalte die letzten N Nachrichten. Einfach und vorhersehbar.",
+      "compactDescription": "Fasst alte Turns zusammen und behält ein aktuelles Fenster. Besser für lange Sitzungen."
     }
   },
   "mcpServer": {
@@ -548,6 +678,16 @@
       "toggleFailed": "Fehler beim Umschalten der Erweiterung: {{error}}",
       "activated": "aktiviert",
       "deactivated": "deaktiviert"
+    },
+    "toolsModal": {
+      "description": "Tool-Namen und Beschreibungen, wie vom MCP-Server zurückgegeben.",
+      "connecting": "Verbindung zum Server…",
+      "failedToLoad": "Tools konnten nicht geladen werden",
+      "noTools": "Keine Tools zurückgegeben.",
+      "toolListAria": "Tool-Liste",
+      "inputSchema": "Eingabeschema",
+      "toolsCount_one": "({{count}} Tool)",
+      "toolsCount_other": "({{count}} Tools)"
     }
   },
   "playbook": {
@@ -555,6 +695,10 @@
     "description": "Automatisierte Workflows durchsuchen und ausführen",
     "searchPlaceholder": "Playbooks suchen...",
     "loading": "Playbooks werden geladen...",
+    "list": {
+      "refreshAria": "Playbooks aktualisieren",
+      "refreshTooltip": "Playbooks aktualisieren"
+    },
     "emptyState": {
       "title": "Playbook starten",
       "description": "Ein Playbook ist eine Aufzeichnung komplexer Anfragen, die der Agent erfolgreich ausgeführt hat.",
@@ -607,6 +751,10 @@
     }
   },
   "agent": {
+    "messages": {
+      "loadingOlder": "Ältere Nachrichten werden geladen...",
+      "scrollToLoadOlder": "Nach oben scrollen, um ältere Nachrichten zu laden"
+    },
     "draft": {
       "send": "Nachricht senden",
       "attachFiles": "Dateien anhängen",
@@ -690,7 +838,7 @@
       "resumeError": "Sitzung konnte nicht fortgesetzt werden",
       "loadingTools": "Werkzeuge werden geladen...",
       "toolsError": "Werkzeug-Fehler",
-      "toolsCount": "{{totalCount}}({{mcpCount}}) verfügbar \u2022 integriert {{builtinCount}}",
+      "toolsCount": "{{totalCount}}({{mcpCount}}) verfügbar • integriert {{builtinCount}}",
       "statusCompacting": "Konversationskontext wird im Hintergrund komprimiert...",
       "statusAwaitingCompact": "Warten auf Abschluss der Kontextkomprimierung...",
       "statusError": "Ein Fehler ist aufgetreten: {{error}}",
@@ -760,7 +908,7 @@
     },
     "toolsModal": {
       "title": "Verfügbare Werkzeuge",
-      "subtitleWithCounts": "Integrierte Werkzeuge: {{builtinCount}} \u2022 MCP-Werkzeuge: {{mcpCount}}",
+      "subtitleWithCounts": "Integrierte Werkzeuge: {{builtinCount}} • MCP-Werkzeuge: {{mcpCount}}",
       "subtitleDefault": "Liste der für diese Agenten-Sitzung verfügbaren Werkzeuge.",
       "loading": "Werkzeuge werden geladen...",
       "errorTitle": "Fehler beim Laden der Werkzeuge",
@@ -784,6 +932,44 @@
       "untitledNote": "Unbenannte Notiz",
       "moreTasks": "weitere Aufgaben",
       "updated": "aktualisiert"
+    },
+    "bubble": {
+      "notification": "Benachrichtigung",
+      "channel": "KANAL",
+      "assistant": "ASSISTENT",
+      "youQueued": "Du (wartend)",
+      "you": "Du",
+      "filesAttached_one": "1 Datei angehängt",
+      "filesAttached_other": "{{count}} Dateien angehängt",
+      "attachedFilesAria": "Angehängte Dateien",
+      "lines_one": "1 Zeile",
+      "lines_other": "{{count}} Zeilen",
+      "noContent": "Kein Inhalt",
+      "thinkingProcess": "Denkprozess",
+      "thinkingProcessWithTime": "Denkprozess {{time}}",
+      "thinking": "Denke..."
+    },
+    "start": {
+      "heroTitle": "Was möchten Sie heute tun?",
+      "heroSubtitle": "Wählen Sie einen Assistenten, um eine neue autonome Sitzung zu starten.",
+      "builtinAssistants": "Integrierte Assistenten",
+      "myAssistants": "Meine Assistenten",
+      "assistantsLoadFailed": "Assistenten konnten nicht geladen werden.",
+      "noAssistantsAvailable": "Noch keine Assistenten verfügbar.",
+      "createAssistant": "Assistent erstellen",
+      "manageAssistants": "+ Assistenten verwalten",
+      "playbookNotFound": "Playbook nicht gefunden",
+      "assistantNotFound": "Assistent nicht gefunden",
+      "startingPlaybook": "Playbook wird gestartet: {{goal}}",
+      "failedToStartPlaybookSession": "Playbook-Sitzung konnte nicht gestartet werden",
+      "startingSession": "Sitzung wird gestartet..."
+    },
+    "chat": {
+      "loadingSession": "Sitzung wird geladen...",
+      "playbookStartedAutomatically": "Playbook automatisch gestartet",
+      "failedToStartPlaybookWorkflow": "Playbook-Workflow konnte nicht gestartet werden",
+      "sessionContextUnavailable": "Sitzungskontext ist nicht verfügbar.",
+      "sessionNotFoundOrFailed": "Sitzung nicht gefunden oder Laden fehlgeschlagen."
     }
   },
   "scheduledTasks": {
@@ -794,7 +980,7 @@
     "createFirst": "Erstellen Sie Ihre erste Aufgabe",
     "disabled": "deaktiviert",
     "nextRun": "Nächste Ausführung: {{time}}",
-    "nextRunNone": "\u2014",
+    "nextRunNone": "—",
     "editTask": "Aufgabe bearbeiten",
     "deleteTask": "Aufgabe löschen",
     "editTaskAria": "Aufgabe bearbeiten: {{name}}",
@@ -805,7 +991,7 @@
       "nameLabel": "Aufgabenname",
       "namePlaceholder": "Tägliche Standup-Zusammenfassung",
       "assistantLabel": "Assistent",
-      "assistantPlaceholder": "Assistenten auswählen\u2026",
+      "assistantPlaceholder": "Assistenten auswählen…",
       "scheduleLabel": "Zeitplan",
       "workspaceLabel": "Arbeitsbereich",
       "workspaceOptional": "Optionale Arbeitsbereich-Überschreibung",
@@ -819,12 +1005,13 @@
       "workspaceRegisterFailed": "Abgelegte Ordnerpfade konnten nicht registriert werden",
       "workspaceClearAria": "Arbeitsbereich-Überschreibung aufheben",
       "messageLabel": "Nachricht",
-      "messageHint": "Verwenden Sie <1>@playbook:</1> oder <3>@skill:</3> für Autovervollständigung",
-      "messagePlaceholder": "Nachricht eingeben\u2026 @playbook: oder @skill: für Autovervollständigung verwenden",
+      "messageHint": "Verwenden Sie @playbook:, @skill: oder @file: für Autovervollständigung",
+      "workspaceAutocompleteHint": "Die Arbeitsbereichsüberschreibung aktiviert die Autovervollständigung für @skill: und @file:.",
+      "messagePlaceholder": "Nachricht eingeben… @playbook:, @skill: oder @file: für Autovervollständigung verwenden",
       "cancel": "Abbrechen",
       "saveChanges": "Änderungen speichern",
       "createTask": "Aufgabe erstellen",
-      "saving": "Speichervorgang\u2026"
+      "saving": "Speichervorgang…"
     },
     "schedule": {
       "repeat": "Wiederholen",
@@ -866,10 +1053,65 @@
       }
     }
   },
+  "mentions": {
+    "skillSourceWorkspace": "Arbeitsbereich",
+    "skillSourceAssistant": "Assistent",
+    "skillSourceUser": "Benutzer",
+    "skillSourceSystem": "System",
+    "skillSourceGlobal": "Global"
+  },
   "errorBubble": {
     "title": "Fehler",
     "unknownError": "Ein unbekannter Fehler ist aufgetreten.",
     "retrying": "Wird wiederholt...",
     "tryAgain": "Erneut versuchen"
+  },
+  "knowledge": {
+    "untitledEntry": "Unbenannter Wissenseintrag",
+    "detailTitle": "Wissensdetails",
+    "detailDescription": "Untersuchen Sie den ausgewählten Eintrag, seine Belege und seinen lokalen Graphen.",
+    "close": "Schließen",
+    "delete": "Löschen",
+    "tabs": {
+      "overview": "Übersicht",
+      "graph": "Graph"
+    },
+    "metadataTitle": "Metadaten",
+    "fields": {
+      "createdAt": "Erstellt",
+      "primaryEntities": "Primäre Entitäten",
+      "relationships": "Beziehungen"
+    },
+    "entitiesTitle": "Entitäten",
+    "noEntities": "Keine verknüpften Entitäten für diesen Eintrag.",
+    "primaryEntity": "Primär",
+    "relationshipListTitle": "Beziehungen",
+    "noRelationships": "Keine Beziehungen mit diesem Eintrag verknüpft.",
+    "loadListFailed": "Globale Wissenseinträge konnten nicht geladen werden.",
+    "loadDetailFailed": "Wissensdetails konnten nicht geladen werden.",
+    "loadMoreFailed": "Weitere Wissenseinträge konnten nicht geladen werden.",
+    "deleteSuccess": "Wissenseintrag gelöscht.",
+    "deleteSuccessDescription": "{{entities}} verwaiste Entitäten und {{relationships}} verwaiste Beziehungen wurden entfernt.",
+    "deleteFailed": "Wissenseintrag konnte nicht gelöscht werden.",
+    "pageTitle": "Globales Wissen",
+    "pageSubtitle": "Durchsuchen Sie geteiltes Gedächtnis, prüfen Sie Belege und bereinigen Sie veraltetes Wissen.",
+    "refresh": "Aktualisieren",
+    "browserTitle": "Wissensbrowser",
+    "browserDescription": "Finden Sie zuerst Fragmente und untersuchen Sie dann deren Belege und Graph-Nachbarschaft.",
+    "searchPlaceholder": "Inhalt, Tags oder Quelle suchen...",
+    "assistantFilterPlaceholder": "Nach Assistent filtern",
+    "assistantFilterAll": "Alle Assistenten",
+    "emptyState": "Keine Wissenseinträge entsprechen den aktuellen Filtern.",
+    "loadMore": "Mehr laden",
+    "endOfResults": "Sie haben das Ende der aktuellen Ergebnisse erreicht.",
+    "confirmDeleteTitle": "Wissenseintrag löschen",
+    "confirmDelete": "Diesen Wissenseintrag löschen und verwaiste Graphdaten bereinigen?",
+    "cancel": "Abbrechen",
+    "graph": {
+      "empty": "Mit diesem Wissenseintrag sind keine Graphdaten verknüpft.",
+      "primaryEntity": "Primäre Entität",
+      "relatedEntity": "Verknüpfte Entität"
+    },
+    "excerpt": "Auszug"
   }
 }

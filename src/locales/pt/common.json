@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "Nome do Assistente *",
     "namePlaceholder": "Digite o nome do assistente...",
@@ -126,6 +127,15 @@
   "theme": {
     "toggle": "Alternar tema"
   },
+  "notifications": {
+    "open": "Abrir notificações",
+    "title": "Notificações",
+    "empty": "Não há sessões que precisem de atenção nem aprovações pendentes.",
+    "recurringStop": "Parada recorrente",
+    "pendingApprovals_one": "{{count}} aprovação",
+    "pendingApprovals_other": "{{count}} aprovações",
+    "viewSession": "Abrir sessão {{name}}"
+  },
   "sidebar": {
     "mobileTitle": "Barra lateral",
     "mobileDescription": "Exibe a barra lateral móvel.",
@@ -166,10 +176,15 @@
     },
     "tabs": {
       "all": "Todas",
+      "bookmarked": "Favoritas",
       "busy": "Ocupado",
       "idle": "Inativo",
       "paused": "Pausado",
       "error": "Erro"
+    },
+    "statusFilter": {
+      "label": "Status",
+      "all": "Todos os status"
     },
     "lineageHint": {
       "child": "↳ Filho de {{parentName}}",
@@ -189,10 +204,15 @@
       "child": "Filho",
       "parent": "Pai",
       "root": "Raiz",
+      "descendants": "{{count}} descendentes",
       "parentBadge": "Pai: {{id}}",
       "lineageBadge": "Linhagem: {{id}}",
       "lineageFilterAria": "Filtrar por linhagem {{id}}",
       "statusAriaLabel": "Status da sessão: {{status}}",
+      "descendantBusy": "Ativas: {{count}}",
+      "descendantIdle": "Inativas: {{count}}",
+      "descendantPaused": "Pausadas: {{count}}",
+      "descendantError": "Erro: {{count}}",
       "model": "Modelo:",
       "createdAt": "Criado em {{time}}",
       "updatedAt": "Atualizado em {{time}}",
@@ -208,6 +228,8 @@
       "viewAria": "Ver sessão {{name}}",
       "continueAria": "Continuar sessão {{name}}",
       "resumeAria": "Retomar sessão {{name}}",
+      "expandChildrenAria": "Expandir sessões filhas de {{name}}",
+      "collapseChildrenAria": "Recolher sessões filhas de {{name}}",
       "groupAria": "Ações da sessão",
       "deleteTooltip": "Excluir sessão",
       "deleteAria": "Excluir sessão {{name}}",
@@ -226,8 +248,30 @@
       "subtitle": "Inicie uma conversa para criar sua primeira sessão"
     }
   },
+  "orgHistory": {
+    "heading": "Visão da organização",
+    "description": "Apenas linhagens criadas explicitamente pela organização. Sessões delegadas pontuais permanecem no histórico comum.",
+    "cardLabel": "Organização explícita",
+    "rootLabel": "Sessão raiz",
+    "updatedLabel": "Atualizado",
+    "resumeRoot": "Retomar sessão raiz",
+    "delete": "Excluir organização",
+    "deleteConfirm": {
+      "title": "Excluir organização?",
+      "description": "Isso excluirá permanentemente esta organização e todas as sessões de membros associadas, incluindo todos os arquivos e históricos. Esta ação não pode ser desfeita."
+    },
+    "toasts": {
+      "deleted": "Organização excluída",
+      "deleteFailed": "Falha ao excluir organização"
+    },
+    "emptyState": {
+      "title": "Ainda não há linhagens de organização",
+      "subtitle": "Crie uma organização explicitamente e depois gere membros por meio das ferramentas com reconhecimento de organização. A linhagem comum de subagentes não pertence aqui."
+    }
+  },
   "settings": {
     "title": "Configurações",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "Não salvo",
     "saved": "Configurações salvas com sucesso",
     "saving": "Salvando...",
@@ -251,7 +295,8 @@
       "mcpServers": "Servidores MCP",
       "advanced": "Avançado",
       "extensions": "Extensões",
-      "dev": "Dev"
+      "dev": "Dev",
+      "system": "Sistema"
     },
     "llmPreference": "LLM Padrão",
     "messageWindowSize": "Tamanho da Janela de Mensagens",
@@ -262,6 +307,8 @@
     "toolCallGroupVisibleCount": "Contagem de Chamadas de Ferramentas Visíveis",
     "toolCallGroupVisibleCountDescription": "Número de chamadas de ferramentas para mostrar na visualização de grupo recolhida",
     "toolCallGroupVisibleCountPlaceholder": "ex: 4",
+    "decreaseToolCallCount": "Diminuir contagem de chamadas de ferramenta",
+    "increaseToolCallCount": "Aumentar contagem de chamadas de ferramenta",
     "general": {
       "skillsDirectory": "Diretório de Habilidades",
       "skillsDirectorySelectTitle": "Selecionar Diretório de Habilidades",
@@ -283,7 +330,11 @@
       "fallbackModelDescription": "Usado como último recurso quando o modelo primário retorna respostas malformadas ou vazias após todas as tentativas.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "URL do Agent Hub",
-      "agentHubUrlDescription": "URL do servidor remoto Agent Hub. Se definido, os assistentes serão sincronizados com este servidor."
+      "agentHubUrlDescription": "URL do servidor remoto Agent Hub. Se definido, os assistentes serão sincronizados com este servidor.",
+      "agentHubUrlPlaceholder": "https://api.agenthub.com",
+      "responseBehavior": "Comportamento da resposta",
+      "decreaseRetries": "Diminuir tentativas de repetição",
+      "increaseRetries": "Aumentar tentativas de repetição"
     },
     "provider": {
       "apiKey": "Chave de API",
@@ -300,9 +351,17 @@
     "chatInterface": {
       "diffContextLines": "Linhas de Contexto de Diff",
       "diffContextLinesPlaceholder": "ex: 3",
-      "diffContextLinesDescription": "Número de linhas de contexto para mostrar em diffs de edição de arquivo (1-10)."
+      "diffContextLinesDescription": "Número de linhas de contexto para mostrar em diffs de edição de arquivo (1-10).",
+      "decreaseDiffLines": "Diminuir linhas de contexto do diff",
+      "increaseDiffLines": "Aumentar linhas de contexto do diff"
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "Pretendard (sans padrão)",
+        "inter": "Inter (sans clean para UI)",
+        "nanumSquareNeo": "NanumSquare Neo (geométrica moderna)",
+        "d2coding": "D2Coding (mono para desenvolvedores)"
+      },
       "metricsTitle": "Métricas de Desempenho",
       "metricDisplayMode": "Modo de Exibição de Métricas",
       "inline": "Em linha (mostrar na mensagem)",
@@ -320,7 +379,10 @@
       "toolDetailLevel": "Nível de Detalhe da Ferramenta",
       "toolDetailSimple": "Simples (apenas nome da ferramenta)",
       "toolDetailDeveloper": "Desenvolvedor (parâmetros, erros, tempo)",
-      "toolDetailLevelDescription": "O modo Simples mostra apenas nomes de ferramentas e ícones de status. O modo Desenvolvedor mostra parâmetros completos, detalhes de erros e tempo de execução."
+      "toolDetailLevelDescription": "O modo Simples mostra apenas nomes de ferramentas e ícones de status. O modo Desenvolvedor mostra parâmetros completos, detalhes de erros e tempo de execução.",
+      "uiVisualsTitle": "Visuais da interface",
+      "fontFamily": "Família da fonte",
+      "fontFamilyDescription": "Altera a família de fonte padrão da interface."
     },
     "advanced": {
       "maxRetries": "Máximo de Tentativas",
@@ -333,23 +395,38 @@
       "maxOutputTokensDescription": "Máximo de tokens de saída padrão para novas sessões, se não especificado pelo assistente.",
       "defaultSessionMaxDepth": "Limite de Ramificação de Sessão (Avançado)",
       "defaultSessionMaxDepthDescription": "Controla quantos níveis de sessão-filho são permitidos por padrão. Defina 0 para ilimitado. A maioria dos usuários pode deixar como está.",
+      "defaultSessionMaxDepthPlaceholder": "ex: 3",
       "defaultSessionMaxFanout": "Limite de Filhos da Sessão (Avançado)",
       "defaultSessionMaxFanoutDescription": "Controla quantas sessões-filho diretas cada pai pode criar por padrão. Defina 0 para ilimitado. A maioria dos usuários pode deixar como está.",
+      "defaultSessionMaxFanoutPlaceholder": "0 = ilimitado",
       "maxConcurrentActiveSessions": "Máximo de Sessões de Agente Simultâneas",
       "maxConcurrentActiveSessionsDescription": "Número máximo de sessões de agente executando seu loop de LLM simultaneamente. Valores mais altos usam mais cota de API e memória.",
+      "maxConcurrentActiveSessionsPlaceholder": "ex: 4",
       "maxSuspendedSessions": "Máximo de Sessões de Agente Suspensas",
-      "maxSuspendedSessionsDescription": "Número máximo de sessões de agente que podem ser pausadas aguardando a conclusão de um agente filho. Deve ser \u2265 sessões ativas.",
+      "maxSuspendedSessionsDescription": "Número máximo de sessões de agente que podem ser pausadas aguardando a conclusão de um agente filho. Deve ser ≥ sessões ativas.",
+      "maxSuspendedSessionsPlaceholder": "ex: 8",
       "maxConcurrentActiveProcesses": "Máximo de Processos Shell Simultâneos",
       "maxConcurrentActiveProcessesDescription": "Número máximo de processos de shell/código executando simultaneamente em todas as sessões de agente.",
+      "maxConcurrentActiveProcessesPlaceholder": "ex: 10",
       "maxSuspendedProcesses": "Máximo de Processos Shell Suspensos",
-      "maxSuspendedProcessesDescription": "Número máximo de processos que podem ser pausados aguardando o pollProcess. Deve ser \u2265 processos ativos.",
+      "maxSuspendedProcessesDescription": "Número máximo de processos que podem ser pausados aguardando o pollProcess. Deve ser ≥ processos ativos.",
+      "maxSuspendedProcessesPlaceholder": "ex: 20",
+      "toolResultInlineLimit": "Limite inline de resultado de ferramenta (KB)",
+      "toolResultInlineLimitPlaceholder": "ex: 16",
+      "toolResultInlineLimitDescription": "Controla quanto da saída da ferramenta permanece inline antes de o LibrAgent despejar o resultado completo em um arquivo do espaço de trabalho. Valores menores mantêm o contexto do agente mais enxuto.",
       "shellIsolation": "Nível de Isolamento do Shell",
       "shellIsolationModes": {
         "basic": "Básico - Acesso total ao PATH (menos seguro)",
         "medium": "Médio - PATH restrito (equilibrado)",
         "high": "Alto - Sandbox (mais seguro)"
       },
-      "shellIsolationDescription": "Controla o isolamento do ambiente para comandos shell. O Básico permite ferramentas instaladas pelo usuário, o Alto oferece segurança máxima."
+      "shellIsolationDescription": "Controla o isolamento do ambiente para comandos shell. O Básico permite ferramentas instaladas pelo usuário, o Alto oferece segurança máxima.",
+      "performance": "Desempenho e concorrência",
+      "performanceDescription": "Esses limites de execução controlam quantos agentes e processos do espaço de trabalho podem rodar ao mesmo tempo.",
+      "title": "Controles avançados de execução",
+      "summary": "Essas configurações alteram as proteções de execução, os limites multiagente e o isolamento do shell. A maioria dos usuários deve deixá-las como estão.",
+      "loopPreventionThreshold": "Limite de prevenção de loop",
+      "loopPreventionThresholdDescription": "Número de resultados idênticos e repetidos de ferramentas antes de o agente tentar uma recuperação natural ou acionar uma parada forçada."
     },
     "system": {
       "title": "Sistema e Desempenho",
@@ -368,6 +445,11 @@
       "maxFileUploadSizeDescription": "Tamanho máximo para o upload de um único arquivo. Aumente se você costuma trabalhar com documentos grandes.",
       "workspaceCapacity": "Capacidade do Espaço de Trabalho (MB)",
       "workspaceCapacityDescription": "Limite total para o conteúdo de texto do seu espaço de trabalho atual.",
+      "automation": "Governança de automação",
+      "scheduledTaskMinimumInterval": "Intervalo mínimo de tarefa agendada (min)",
+      "scheduledTaskMinimumIntervalDescription": "Intervalo mínimo permitido para tarefas agendadas novas ou reativadas. Defina 0 para desativar essa proteção.",
+      "maxScheduledTaskGroups": "Máximo de grupos de tarefas agendadas",
+      "maxScheduledTaskGroupsDescription": "Número máximo de grupos distintos de tarefas agendadas permitidos na automação recorrente de trabalho em equipe.",
       "backgroundTasks": "Tarefas em Segundo Plano",
       "searchIndexFrequency": "Frequência do Índice de Busca (Min)",
       "searchIndexFrequencyDescription": "Com que frequência a IA atualiza sua busca na memória. Atualizações mais rápidas mantêm a busca atualizada, mas usam mais bateria/CPU.",
@@ -383,6 +465,8 @@
       "networkRestartFailed": "Falha ao reiniciar o aplicativo. Reinicie manualmente.",
       "networkRestartNotice": "As alterações nas configurações de rede do servidor HTTP são aplicadas após reiniciar o aplicativo.",
       "placeholders": {
+        "scheduledTaskMinimumInterval": "0 = desativado",
+        "maxScheduledTaskGroups": "ex: 10",
         "maxFileUploadSize": "ex: 50",
         "workspaceCapacity": "ex: 10",
         "searchIndexFrequency": "ex: 5",
@@ -391,7 +475,10 @@
         "mcpToolTimeout": "0 (desativado)",
         "activeSessionRetention": "ex: 24",
         "httpServerPort": "ex: 3030"
-      }
+      },
+      "description": "Controle a execução do app, os workers em segundo plano, os limites de automação e o comportamento de rede.",
+      "restartRequired": "Reinicialização necessária após salvar",
+      "networkRestartPending": "Você alterou as configurações de rede. Salve as mudanças e depois reinicie o app para aplicá-las."
     },
     "about": {
       "title": "Sobre",
@@ -405,7 +492,8 @@
       "checkForUpdates": "Verificar Atualizações"
     },
     "dangerZone": {
-      "title": "⚠️ Zona de Perigo"
+      "title": "⚠️ Zona de Perigo",
+      "description": "Essas ações excluem permanentemente os dados locais. Confira bem o escopo antes de continuar."
     },
     "factoryReset": {
       "title": "Redefinição de Fábrica",
@@ -413,6 +501,8 @@
       "button": "Redefinir Todos os Dados e Configurações",
       "confirmTitle": "Confirmação de Redefinição de Fábrica",
       "confirmDescription": "Isso excluirá permanentemente TODOS os dados, incluindo sessões, assistentes, servidores MCP e roteiros. Você tem certeza?",
+      "typeReset": "Digite RESET para habilitar a redefinição de fábrica.",
+      "typeResetPlaceholder": "Digite RESET",
       "confirmButton": "Redefinir Tudo",
       "resetting": "Redefinindo...",
       "success": "Redefinição de fábrica concluída. É necessário reiniciar para aplicar as alterações totalmente.",
@@ -435,7 +525,10 @@
       "saveFirst": "Por favor, salve o assistente para gerenciar habilidades.",
       "fetchFailed": "Falha ao buscar habilidades",
       "importing": "Importando habilidades...",
-      "importSuccess": "Habilidades importadas com sucesso",
+      "importSuccess_one": "Importada {{count}} habilidade",
+      "importSuccess_other": "Importadas {{count}} habilidades",
+      "importSuccessWithOverwrite_one": "Importada {{count}} habilidade ({{overwrittenCount}} substituída)",
+      "importSuccessWithOverwrite_other": "Importadas {{count}} habilidades ({{overwrittenCount}} substituídas)",
       "importFailed": "Falha ao importar habilidades",
       "overrideSuccess": "Habilidade substituída com sucesso",
       "overrideFailed": "Falha ao substituir habilidade",
@@ -443,6 +536,9 @@
       "revertFailed": "Falha ao reverter habilidade",
       "resetSuccess": "Habilidades do assistente redefinidas com sucesso",
       "resetFailed": "Falha ao redefinir habilidades",
+      "deleteUserSkill": "Excluir {{name}}",
+      "userSkillDeleted": "Habilidade do usuário excluída.",
+      "userSkillsReset": "Habilidades do usuário redefinidas.",
       "dragDropDesc": "Arraste e solte um arquivo zip ou pasta para substituir habilidades.",
       "resetTooltip": "Remover todas as habilidades específicas do assistente",
       "reset": "Redefinir Substituição",
@@ -452,7 +548,41 @@
       "override": "Substituir para este assistente",
       "revert": "Reverter para global",
       "resetTitle": "Redefinir Substituição de Habilidades?",
-      "resetConfirm": "Isso removerá todas as habilidades específicas do assistente e reverterá para os padrões globais. Esta ação não pode ser desfeita."
+      "resetConfirm": "Isso removerá todas as habilidades específicas do assistente e reverterá para os padrões globais. Esta ação não pode ser desfeita.",
+      "importSuccess": "Habilidades importadas com sucesso"
+    },
+    "dev": {
+      "devOnly": "SOMENTE DEV",
+      "testerTitle": "Testador de sampleText / compact",
+      "provider": "Provedor",
+      "noKey": " (sem chave)",
+      "promptLabel": "Prompt (para sampleText)",
+      "promptPlaceholder": "Digite um prompt de teste...",
+      "compactUses": "compact() usa {{count}} mensagens de exemplo:",
+      "running": "Executando…",
+      "runSampleText": "Executar sampleText()",
+      "runCompact": "Executar compact()",
+      "error": "ERRO",
+      "ok": "OK",
+      "model": "modelo: {{model}}",
+      "tokensInfo": "tokens: {{promptTokens}} entrada + {{completionTokens}} saída = {{totalTokens}} total",
+      "emptyResponse": "(resposta vazia)"
+    },
+    "pendingChanges": "{{count}} seções alteradas",
+    "discardChanges": "Descartar",
+    "saveChanges": "Salvar alterações",
+    "discardTitle": "Descartar alterações não salvas?",
+    "discardDescription": "Isso reverterá todas as alterações pendentes nesta página para o último estado salvo.",
+    "leaveTitle": "Sair sem salvar?",
+    "leaveDescription": "Você tem alterações não salvas. Salve-as antes de sair, ou descarte-as e deixe esta página.",
+    "discardAndLeave": "Descartar e sair",
+    "saveAndLeave": "Salvar e sair",
+    "contextStrategyLabel": "Estratégia de gerenciamento de contexto",
+    "contextStrategy": {
+      "window": "Janela deslizante",
+      "compact": "Compacto",
+      "windowDescription": "Mantém as N mensagens mais recentes. Simples e previsível.",
+      "compactDescription": "Resume turnos antigos e mantém uma janela recente. Melhor para sessões longas."
     }
   },
   "mcpServer": {
@@ -548,6 +678,16 @@
       "toggleFailed": "Falha ao alternar extensão: {{error}}",
       "activated": "ativada",
       "deactivated": "desativada"
+    },
+    "toolsModal": {
+      "description": "Nomes e descrições das ferramentas conforme retornados pelo servidor MCP.",
+      "connecting": "Conectando ao servidor…",
+      "failedToLoad": "Falha ao carregar ferramentas",
+      "noTools": "Nenhuma ferramenta retornada.",
+      "toolListAria": "Lista de ferramentas",
+      "inputSchema": "Esquema de entrada",
+      "toolsCount_one": "({{count}} ferramenta)",
+      "toolsCount_other": "({{count}} ferramentas)"
     }
   },
   "playbook": {
@@ -555,6 +695,10 @@
     "description": "Navegue e execute fluxos de trabalho automatizados",
     "searchPlaceholder": "Pesquisar roteiros...",
     "loading": "Carregando roteiros...",
+    "list": {
+      "refreshAria": "Atualizar roteiros",
+      "refreshTooltip": "Atualizar roteiros"
+    },
     "emptyState": {
       "title": "Iniciar Roteiro",
       "description": "Um roteiro é um registro de solicitações complexas que o Agente executou com sucesso.",
@@ -607,6 +751,10 @@
     }
   },
   "agent": {
+    "messages": {
+      "loadingOlder": "Carregando mensagens antigas...",
+      "scrollToLoadOlder": "Role para cima para carregar mensagens antigas"
+    },
     "draft": {
       "send": "Enviar mensagem",
       "attachFiles": "Anexar arquivos",
@@ -690,7 +838,7 @@
       "resumeError": "Falha ao retomar a sessão",
       "loadingTools": "Carregando ferramentas...",
       "toolsError": "Erro nas ferramentas",
-      "toolsCount": "{{totalCount}}({{mcpCount}}) disponíveis \u2022 integradas {{builtinCount}}",
+      "toolsCount": "{{totalCount}}({{mcpCount}}) disponíveis • integradas {{builtinCount}}",
       "statusCompacting": "Comprimindo o contexto da conversa em segundo plano...",
       "statusAwaitingCompact": "Aguardando a conclusão da compressão do contexto...",
       "statusError": "Ocorreu um erro: {{error}}",
@@ -760,7 +908,7 @@
     },
     "toolsModal": {
       "title": "Ferramentas Disponíveis",
-      "subtitleWithCounts": "Ferramentas integradas: {{builtinCount}} \u2022 Ferramentas MCP: {{mcpCount}}",
+      "subtitleWithCounts": "Ferramentas integradas: {{builtinCount}} • Ferramentas MCP: {{mcpCount}}",
       "subtitleDefault": "Lista de ferramentas disponíveis para esta sessão de agente.",
       "loading": "Carregando ferramentas...",
       "errorTitle": "Erro ao carregar ferramentas",
@@ -784,6 +932,44 @@
       "untitledNote": "Nota sem título",
       "moreTasks": "tarefas a mais",
       "updated": "atualizado"
+    },
+    "bubble": {
+      "notification": "Notificação",
+      "channel": "CANAL",
+      "assistant": "ASSISTENTE",
+      "youQueued": "Você (na fila)",
+      "you": "Você",
+      "filesAttached_one": "1 arquivo anexado",
+      "filesAttached_other": "{{count}} arquivos anexados",
+      "attachedFilesAria": "Arquivos anexados",
+      "lines_one": "1 linha",
+      "lines_other": "{{count}} linhas",
+      "noContent": "Sem conteúdo",
+      "thinkingProcess": "Processo de pensamento",
+      "thinkingProcessWithTime": "Processo de pensamento {{time}}",
+      "thinking": "Pensando..."
+    },
+    "start": {
+      "heroTitle": "O que você gostaria de fazer hoje?",
+      "heroSubtitle": "Selecione um assistente para iniciar uma nova sessão autônoma.",
+      "builtinAssistants": "Assistentes integrados",
+      "myAssistants": "Meus assistentes",
+      "assistantsLoadFailed": "Falha ao carregar assistentes.",
+      "noAssistantsAvailable": "Ainda não há assistentes disponíveis.",
+      "createAssistant": "Criar assistente",
+      "manageAssistants": "+ Gerenciar assistentes",
+      "playbookNotFound": "Roteiro não encontrado",
+      "assistantNotFound": "Assistente não encontrado",
+      "startingPlaybook": "Iniciando roteiro: {{goal}}",
+      "failedToStartPlaybookSession": "Falha ao iniciar a sessão do roteiro",
+      "startingSession": "Iniciando sessão..."
+    },
+    "chat": {
+      "loadingSession": "Carregando sessão...",
+      "playbookStartedAutomatically": "Roteiro iniciado automaticamente",
+      "failedToStartPlaybookWorkflow": "Falha ao iniciar o fluxo do roteiro",
+      "sessionContextUnavailable": "O contexto da sessão não está disponível.",
+      "sessionNotFoundOrFailed": "Sessão não encontrada ou falha ao carregar."
     }
   },
   "scheduledTasks": {
@@ -794,7 +980,7 @@
     "createFirst": "Crie sua primeira tarefa",
     "disabled": "desativado",
     "nextRun": "Próxima execução: {{time}}",
-    "nextRunNone": "\u2014",
+    "nextRunNone": "—",
     "editTask": "Editar Tarefa",
     "deleteTask": "Excluir Tarefa",
     "editTaskAria": "Editar tarefa: {{name}}",
@@ -805,7 +991,7 @@
       "nameLabel": "Nome da tarefa",
       "namePlaceholder": "Resumo do standup diário",
       "assistantLabel": "Assistente",
-      "assistantPlaceholder": "Selecione um assistente\u2026",
+      "assistantPlaceholder": "Selecione um assistente…",
       "scheduleLabel": "Agendamento",
       "workspaceLabel": "Espaço de Trabalho",
       "workspaceOptional": "Substituição opcional de espaço de trabalho",
@@ -819,12 +1005,13 @@
       "workspaceRegisterFailed": "Falha ao registrar caminhos de pastas soltas",
       "workspaceClearAria": "Limpar substituição de espaço de trabalho",
       "messageLabel": "Mensagem",
-      "messageHint": "Use <1>@playbook:</1> ou <3>@skill:</3> para preenchimento automático",
-      "messagePlaceholder": "Digite uma mensagem\u2026 use @playbook: ou @skill: para preenchimento automático",
+      "messageHint": "Use @playbook:, @skill: ou @file: para preenchimento automático",
+      "workspaceAutocompleteHint": "A substituição do espaço de trabalho habilita o preenchimento automático de @skill: e @file:.",
+      "messagePlaceholder": "Digite uma mensagem… use @playbook:, @skill: ou @file: para preenchimento automático",
       "cancel": "Cancelar",
       "saveChanges": "Salvar alterações",
       "createTask": "Criar tarefa",
-      "saving": "Salvando\u2026"
+      "saving": "Salvando…"
     },
     "schedule": {
       "repeat": "Repetir",
@@ -866,10 +1053,65 @@
       }
     }
   },
+  "mentions": {
+    "skillSourceWorkspace": "Espaço de trabalho",
+    "skillSourceAssistant": "Assistente",
+    "skillSourceUser": "Usuário",
+    "skillSourceSystem": "Sistema",
+    "skillSourceGlobal": "Global"
+  },
   "errorBubble": {
     "title": "Erro",
     "unknownError": "Ocorreu um erro desconhecido.",
     "retrying": "Tentando novamente...",
     "tryAgain": "Tentar Novamente"
+  },
+  "knowledge": {
+    "untitledEntry": "Entrada de conhecimento sem título",
+    "detailTitle": "Detalhe do conhecimento",
+    "detailDescription": "Inspecione a entrada selecionada, suas evidências e seu grafo local.",
+    "close": "Fechar",
+    "delete": "Excluir",
+    "tabs": {
+      "overview": "Visão geral",
+      "graph": "Grafo"
+    },
+    "metadataTitle": "Metadados",
+    "fields": {
+      "createdAt": "Criado",
+      "primaryEntities": "Entidades principais",
+      "relationships": "Relacionamentos"
+    },
+    "entitiesTitle": "Entidades",
+    "noEntities": "Nenhuma entidade vinculada a esta entrada.",
+    "primaryEntity": "Principal",
+    "relationshipListTitle": "Relacionamentos",
+    "noRelationships": "Nenhum relacionamento vinculado a esta entrada.",
+    "loadListFailed": "Falha ao carregar entradas de conhecimento global.",
+    "loadDetailFailed": "Falha ao carregar detalhes do conhecimento.",
+    "loadMoreFailed": "Falha ao carregar mais entradas de conhecimento.",
+    "deleteSuccess": "Entrada de conhecimento excluída.",
+    "deleteSuccessDescription": "{{entities}} entidades órfãs e {{relationships}} relacionamentos órfãos foram removidos.",
+    "deleteFailed": "Falha ao excluir entrada de conhecimento.",
+    "pageTitle": "Conhecimento global",
+    "pageSubtitle": "Pesquise memória compartilhada, inspecione evidências e elimine conhecimento desatualizado.",
+    "refresh": "Atualizar",
+    "browserTitle": "Navegador de conhecimento",
+    "browserDescription": "Encontre primeiro os trechos e depois inspecione suas evidências e a vizinhança no grafo.",
+    "searchPlaceholder": "Pesquisar conteúdo, tags ou fonte...",
+    "assistantFilterPlaceholder": "Filtrar por assistente",
+    "assistantFilterAll": "Todos os assistentes",
+    "emptyState": "Nenhuma entrada de conhecimento corresponde aos filtros atuais.",
+    "loadMore": "Carregar mais",
+    "endOfResults": "Você chegou ao fim dos resultados atuais.",
+    "confirmDeleteTitle": "Excluir entrada de conhecimento",
+    "confirmDelete": "Excluir esta entrada de conhecimento e limpar dados órfãos do grafo?",
+    "cancel": "Cancelar",
+    "graph": {
+      "empty": "Nenhum dado de grafo vinculado a esta entrada de conhecimento.",
+      "primaryEntity": "Entidade principal",
+      "relatedEntity": "Entidade relacionada"
+    },
+    "excerpt": "Trecho"
   }
 }
