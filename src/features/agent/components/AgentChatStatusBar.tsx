@@ -95,7 +95,7 @@ function findLatestAssistantUsage(messages: Message[]): TokenUsage | null {
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
   const { value: settings } = useSettings();
-  const isMobile = useIsMobile();
+  const isCompactStatusBar = useIsMobile(640);
   const { session, executionMode, setExecutionMode, updateSessionConfig } =
     useAgentSession();
   const { messages, workflowStatus, error, llmError, retryMessage, resume } =
@@ -453,7 +453,9 @@ export function AgentChatStatusBar() {
   };
 
   const config = getStatusConfig();
-  const badgeCompactionPressure = isMobile ? undefined : compactionPressure;
+  const badgeCompactionPressure = isCompactStatusBar
+    ? undefined
+    : compactionPressure;
 
   return (
     <>
@@ -504,92 +506,97 @@ export function AgentChatStatusBar() {
       </div>
 
       {/* Model and tools status bar (matches ChatStatusBar) */}
-      <div className="px-4 py-2 border-t flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
-        <div className="min-w-0 md:flex-1">
-          {session && (
-            <AgentModelPicker
-              currentModel={session.model}
-              currentProvider={session.provider}
-              className="max-w-full"
-              disabled={!canUpdateSessionConfig}
-              onConfigUpdate={handleConfigUpdate}
-            />
-          )}
-        </div>
-
-        <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2 md:ml-auto md:justify-end">
-          <div
-            className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start"
-            data-testid="execution-mode-control"
-          >
-            <span className="text-xs text-muted-foreground">Execution</span>
-            <div className="flex items-center rounded-md border border-border/70 bg-background/60 p-0.5">
-              {executionModeOptions.map((option) => {
-                const Icon = option.icon;
-                const isActive = executionMode === option.mode;
-
-                return (
-                  <Button
-                    key={option.mode}
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void setExecutionMode(option.mode)}
-                    className={cn(
-                      'h-6 rounded-sm px-2 text-xs flex items-center gap-1',
-                      isActive
-                        ? option.activeClass
-                        : 'text-muted-foreground hover:bg-muted',
-                    )}
-                    title={option.title}
-                  >
-                    <Icon
-                      size={14}
-                      className={isActive ? option.iconClass : 'text-current'}
-                    />
-                    {option.label}
-                  </Button>
-                );
-              })}
-            </div>
+      <div className="border-t px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          <div className="min-w-0 w-full sm:w-auto">
+            {session && (
+              <AgentModelPicker
+                currentModel={session.model}
+                currentProvider={session.provider}
+                className="w-full sm:w-auto"
+                disabled={!canUpdateSessionConfig}
+                onConfigUpdate={handleConfigUpdate}
+              />
+            )}
           </div>
 
-          {displayMetrics && (
-            <div className="w-full sm:w-auto">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 md:ml-auto md:justify-end">
+            <div
+              className="flex flex-wrap items-center gap-1.5 sm:gap-2"
+              data-testid="execution-mode-control"
+            >
+              <span className="shrink-0 text-[11px] text-muted-foreground sm:text-xs">
+                Execution
+              </span>
+              <div className="inline-flex shrink-0 items-center rounded-md border border-border/70 bg-background/60 p-0.5">
+                {executionModeOptions.map((option) => {
+                  const Icon = option.icon;
+                  const isActive = executionMode === option.mode;
+
+                  return (
+                    <Button
+                      key={option.mode}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void setExecutionMode(option.mode)}
+                      className={cn(
+                        'flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] sm:px-2 sm:text-xs',
+                        isActive
+                          ? option.activeClass
+                          : 'text-muted-foreground hover:bg-muted',
+                      )}
+                      title={option.title}
+                    >
+                      <Icon
+                        size={14}
+                        className={isActive ? option.iconClass : 'text-current'}
+                      />
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {displayMetrics && (
               <TokenMetricsBadge
                 usage={displayMetrics}
-                compact={isMobile}
+                className="shrink-0"
+                compact={isCompactStatusBar}
                 compactionPressure={badgeCompactionPressure}
               />
-            </div>
-          )}
+            )}
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs">{t('agent.statusBar.toolsLabel')}</span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className={cn(
-                    'inline-block',
-                    toolsLoading && 'cursor-not-allowed',
-                  )}
-                >
-                  <button
-                    onClick={() => setShowToolsModal(true)}
+            <div className="flex items-center gap-2">
+              <span className="text-xs">{t('agent.statusBar.toolsLabel')}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
                     className={cn(
-                      'text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                      getToolsColor(),
-                      toolsLoading && 'opacity-50',
+                      'inline-block',
+                      toolsLoading && 'cursor-not-allowed',
                     )}
-                    disabled={toolsLoading}
                   >
-                    {getToolsIcon()} {getToolsDisplayText()}
-                  </button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')}
-              </TooltipContent>
-            </Tooltip>
+                    <button
+                      onClick={() => setShowToolsModal(true)}
+                      className={cn(
+                        'text-xs flex items-center gap-1 cursor-pointer rounded-sm transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                        getToolsColor(),
+                        toolsLoading && 'opacity-50',
+                      )}
+                      disabled={toolsLoading}
+                    >
+                      {getToolsIcon()} {getToolsDisplayText()}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {toolsError
+                    ? toolsError
+                    : t('agent.statusBar.viewToolsTitle')}
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </div>
       </div>

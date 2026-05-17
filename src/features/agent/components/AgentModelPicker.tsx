@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { llmConfigManager } from '@/lib/llm-config-manager';
+import { cn } from '@/lib/utils';
 import { useAgentModels } from '../hooks/useAgentModels';
 
 interface AgentModelPickerProps {
@@ -98,9 +99,11 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
 
   return (
     <div
-      className={`flex items-center space-x-2 bg-muted/50 border border-primary/20 rounded-lg px-2 py-1 font-mono text-xs ${
-        disabled ? 'opacity-50 pointer-events-none' : ''
-      } ${className}`}
+      className={cn(
+        'flex max-w-full items-center gap-1.5 overflow-hidden rounded-lg border border-primary/20 bg-muted/50 px-2 py-1 font-mono text-xs',
+        disabled && 'pointer-events-none opacity-50',
+        className,
+      )}
     >
       <div className="w-2 h-2 rounded-full bg-primary/40" />
 
@@ -110,7 +113,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         onValueChange={handleProviderChange}
         disabled={disabled}
       >
-        <SelectTrigger className="w-24 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
+        <SelectTrigger className="h-6 w-[5.5rem] shrink-0 border-none bg-transparent px-1 text-xs shadow-none gap-1 focus:ring-0 [&>span]:truncate">
           <SelectValue placeholder={t('agent.modelPicker.provider')} />
         </SelectTrigger>
         <SelectContent>
@@ -130,7 +133,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         onValueChange={handleModelChange}
         disabled={disabled || isRefreshing || !currentProvider}
       >
-        <SelectTrigger className="min-w-32 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
+        <SelectTrigger className="h-6 min-w-0 flex-1 border-none bg-transparent px-1 text-xs shadow-none gap-1 focus:ring-0 sm:w-[10.5rem] sm:flex-none [&>span]:truncate">
           <SelectValue
             placeholder={
               isRefreshing
