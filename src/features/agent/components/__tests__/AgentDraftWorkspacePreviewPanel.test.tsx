@@ -15,7 +15,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  TooltipTrigger: ({ children, asChild }: { children?: React.ReactNode; asChild?: boolean }) => <div>{children}</div>,
+  TooltipTrigger: ({ children }: { children?: React.ReactNode; asChild?: boolean }) => <div>{children}</div>,
   TooltipContent: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
