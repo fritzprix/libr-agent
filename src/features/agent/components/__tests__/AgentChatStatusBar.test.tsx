@@ -18,6 +18,20 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
+const viewportState = vi.hoisted(() => ({
+  isMobile: false,
+}));
+
+const metricsBadgeState = vi.hoisted(() => ({
+  usage: null as TokenUsage | null,
+  compact: false,
+  hasCompactionPressure: false,
+}));
+
+const tokenMetricsState = vi.hoisted(() => ({
+  metrics: null as TokenUsage | null,
+}));
+
 type WorkflowStatus = 'idle' | 'busy' | 'paused' | 'error';
 
 interface MockSession {
@@ -60,10 +74,6 @@ const mockAgentChat = {
   resume: mocks.resume,
 };
 
-const tokenMetricsState = vi.hoisted(() => ({
-  metrics: null as TokenUsage | null,
-}));
-
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSession: () => mockAgentSession,
 }));
@@ -100,6 +110,10 @@ vi.mock('@/hooks/use-token-metrics', () => ({
   useTokenMetrics: () => ({
     metrics: tokenMetricsState.metrics,
   }),
+}));
+
+vi.mock('@/hooks/use-mobile', () => ({
+  useIsMobile: () => viewportState.isMobile,
 }));
 
 interface MockAgentModelPickerProps {
@@ -140,6 +154,30 @@ vi.mock('../AgentToolsModal', () => ({
   default: () => null,
 }));
 
+vi.mock('../TokenMetricsBadge', () => ({
+  TokenMetricsBadge: ({
+    usage,
+    compact,
+    compactionPressure,
+  }: {
+    usage: TokenUsage;
+    compact?: boolean;
+    compactionPressure?: unknown;
+  }) => {
+    metricsBadgeState.usage = usage;
+    metricsBadgeState.compact = compact ?? false;
+    metricsBadgeState.hasCompactionPressure = compactionPressure !== undefined;
+    return (
+      <div
+        data-testid="metrics-badge"
+        data-compact={compact ? 'true' : 'false'}
+        data-has-pressure={compactionPressure ? 'true' : 'false'}
+      >
+        {usage.promptTokens} {usage.completionTokens}
+      </div>
+    );
+  },
+}));
 vi.mock('@/components/ui/LoadingSpinner', () => ({
   default: () => <div>spinner</div>,
 }));
@@ -187,6 +225,11 @@ vi.mock('react-i18next', () => ({
 describe('AgentChatStatusBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    viewportState.isMobile = false;
+    metricsBadgeState.usage = null;
+    metricsBadgeState.compact = false;
+    metricsBadgeState.hasCompactionPressure = false;
+    tokenMetricsState.metrics = null;
     mockAgentSession.session = { ...mockSession };
     mockAgentSession.executionMode = 'normal';
     mockAgentSession.yoloModeEnabled = false;
@@ -284,6 +327,30 @@ describe('AgentChatStatusBar', () => {
     );
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
       'Model updated. Retry to recover the session.',
+    );
+  });
+
+  it('renders a compact metrics badge without compaction pressure on mobile', () => {
+    viewportState.isMobile = true;
+
+    tokenMetricsState.metrics = {
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      details: {
+        evalDuration: 321,
+      },
+    };
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveAttribute(
+      'data-compact',
+      'true',
+    );
+    expect(screen.getByTestId('metrics-badge')).toHaveAttribute(
+      'data-has-pressure',
+      'false',
     );
   });
 
