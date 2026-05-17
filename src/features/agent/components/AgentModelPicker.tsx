@@ -30,8 +30,13 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   onConfigUpdate,
 }) => {
   const { t } = useTranslation('common');
-  const { availableModels, isRefreshing, refreshModels } =
-    useAgentModels(currentProvider);
+  const {
+    availableModels,
+    isRefreshing,
+    refreshModels,
+    canRefresh,
+    refreshBlockedReason,
+  } = useAgentModels(currentProvider);
 
   const modelOptions = useMemo(() => {
     return Object.entries(availableModels).map(([key, value]) => ({
@@ -47,6 +52,24 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       value: key,
     }));
   }, []);
+
+  const showRefreshButton =
+    Boolean(currentProvider) &&
+    (canRefresh || refreshBlockedReason === 'missing-api-key');
+
+  const refreshButtonLabel = useMemo(() => {
+    if (canRefresh) {
+      return t('agent.modelPicker.refreshModels');
+    }
+
+    if (refreshBlockedReason === 'missing-api-key') {
+      return t('agent.modelPicker.refreshRequiresApiKey', {
+        defaultValue: 'Add an API key to enable model refresh',
+      });
+    }
+
+    return '';
+  }, [canRefresh, refreshBlockedReason, t]);
 
   const handleProviderChange = useCallback(
     (newProvider: string) => {
@@ -125,15 +148,14 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         </SelectContent>
       </Select>
 
-      {/* Refresh Button — available for all providers */}
-      {currentProvider && (
+      {showRefreshButton && (
         <button
           type="button"
           onClick={() => refreshModels()}
-          disabled={disabled || isRefreshing}
+          disabled={disabled || isRefreshing || !canRefresh}
           className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          title={t('agent.modelPicker.refreshModels')}
-          aria-label={t('agent.modelPicker.refreshModels')}
+          title={refreshButtonLabel}
+          aria-label={refreshButtonLabel}
         >
           <RefreshCw
             className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}

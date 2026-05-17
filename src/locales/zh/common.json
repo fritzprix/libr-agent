@@ -755,7 +755,8 @@
       "provider": "提供商",
       "model": "模型",
       "loading": "正在加载...",
-      "refreshModels": "刷新模型"
+      "refreshModels": "刷新模型",
+      "refreshRequiresApiKey": "添加 API 密钥以启用模型刷新"
     },
     "toolsModal": {
       "title": "可用工具",

@@ -872,7 +872,8 @@
       "provider": "제공자",
       "model": "모델",
       "loading": "로딩 중...",
-      "refreshModels": "모델 새로고침"
+      "refreshModels": "모델 새로고침",
+      "refreshRequiresApiKey": "모델 새로고침을 사용하려면 API 키를 추가하세요"
     },
     "toolsModal": {
       "title": "사용 가능한 도구",

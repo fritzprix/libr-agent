@@ -755,7 +755,8 @@
       "provider": "Provedor",
       "model": "Modelo",
       "loading": "Carregando...",
-      "refreshModels": "Atualizar modelos"
+      "refreshModels": "Atualizar modelos",
+      "refreshRequiresApiKey": "Adicione uma chave de API para habilitar a atualização de modelos"
     },
     "toolsModal": {
       "title": "Ferramentas Disponíveis",
