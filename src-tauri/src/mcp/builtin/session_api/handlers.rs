@@ -575,7 +575,12 @@ pub async fn handle_tool_call(
                     let name_clean = resp.name.replace('|', "\\|").replace('\n', " ");
                     let id_clean = resp.id.replace('|', "\\|").replace('\n', " ");
                     let status_clean = resp.status.replace('|', "\\|").replace('\n', " ");
-                    let result_clean = resp.latest_result.as_deref().unwrap_or("").replace('|', "\\|").replace('\n', " ");
+                    let result_clean = resp
+                        .latest_result
+                        .as_deref()
+                        .unwrap_or("")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
 
                     message.push_str(&format!(
                         "| {} | `{}` | {} | {} |\n",
@@ -620,7 +625,11 @@ pub async fn handle_tool_call(
             let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
             let total = all_assistants.len();
-            let paged_assistants: Vec<_> = all_assistants.into_iter().skip(offset).take(limit).collect();
+            let paged_assistants: Vec<_> = all_assistants
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .collect();
 
             let data = serde_json::to_value(&paged_assistants)
                 .map_err(|e| format!("Failed to serialize assistants: {}", e))?;
