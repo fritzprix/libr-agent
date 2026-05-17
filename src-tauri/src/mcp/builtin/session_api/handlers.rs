@@ -501,13 +501,25 @@ pub async fn handle_tool_call(
                 .clone()
                 .ok_or_else(|| "getChildAgents requires a caller session context".to_string())?;
             let session_repo = crate::state::get_session_repository();
-            let child_ids = session_repo
+            let all_child_ids = session_repo
                 .get_child_session_ids(&parent_session_id)
                 .await
                 .map_err(|e| format!("Failed to fetch child sessions: {}", e))?;
+
+            let limit = args
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|value| value.max(1) as usize)
+                .unwrap_or(20);
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+            let total = all_child_ids.len();
+            let child_ids: Vec<_> = all_child_ids.into_iter().skip(offset).take(limit).collect();
+
             let data = json!({
                 "parentSessionId": parent_session_id,
                 "count": child_ids.len(),
+                "total": total,
                 "children": child_ids,
             });
 
@@ -540,25 +552,54 @@ pub async fn handle_tool_call(
             }
 
             let mut message = format!(
-                "Fetched {} direct sub-agents for commander session {}",
+                "Fetched {} direct sub-agents for commander session {}.\n\n",
                 session_responses.len(),
                 parent_session_id
             );
 
             if session_responses.is_empty() {
-                message.push_str(
-                    "\n\nNo direct sub-agents online. Next step: spawnAgent to deploy a worker.",
-                );
-            } else {
-                message.push_str("\n\nDirect unit roster:\n");
-                for resp in &session_responses {
+                if total > 0 {
                     message.push_str(&format!(
-                        "- {} (ID: {}) status={}\n",
-                        resp.name, resp.id, resp.status
+                        "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+                        offset, limit
                     ));
-                    if let Some(summary) = &resp.latest_result {
-                        message.push_str(&format!("  latest assistant: {}\n", summary));
-                    }
+                } else {
+                    message.push_str(
+                        "No direct sub-agents online. Next step: spawnAgent to deploy a worker.",
+                    );
+                }
+            } else {
+                message.push_str("| Name | ID | Status | Latest Result |\n");
+                message.push_str("|---|---|---|---|\n");
+                for resp in &session_responses {
+                    let name_clean = resp.name.replace('|', "\\|").replace('\n', " ");
+                    let id_clean = resp.id.replace('|', "\\|").replace('\n', " ");
+                    let status_clean = resp.status.replace('|', "\\|").replace('\n', " ");
+                    let result_clean = resp.latest_result.as_deref().unwrap_or("").replace('|', "\\|").replace('\n', " ");
+
+                    message.push_str(&format!(
+                        "| {} | `{}` | {} | {} |\n",
+                        name_clean, id_clean, status_clean, result_clean
+                    ));
+                }
+            }
+
+            if !session_responses.is_empty() {
+                let start = offset + 1;
+                let end = offset + session_responses.len();
+                if end < total {
+                    message.push_str(&format!(
+                        "\n\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+                        start,
+                        end,
+                        total,
+                        offset + limit
+                    ));
+                } else if offset > 0 {
+                    message.push_str(&format!(
+                        "\n\n*(Showing {} to {} of {} items)*",
+                        start, end, total
+                    ));
                 }
             }
 
@@ -566,11 +607,22 @@ pub async fn handle_tool_call(
         }
         "listAgentTypes" => {
             let assistant_repo = crate::state::get_assistant_repository();
-            let assistants = assistant_repo
+            let all_assistants = assistant_repo
                 .list_assistants()
                 .await
                 .map_err(|e| format!("Failed to list assistants: {}", e))?;
-            let data = serde_json::to_value(&assistants)
+
+            let limit = args
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|value| value.max(1) as usize)
+                .unwrap_or(20);
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+            let total = all_assistants.len();
+            let paged_assistants: Vec<_> = all_assistants.into_iter().skip(offset).take(limit).collect();
+
+            let data = serde_json::to_value(&paged_assistants)
                 .map_err(|e| format!("Failed to serialize assistants: {}", e))?;
             let assistants = data
                 .as_array()
@@ -579,10 +631,20 @@ pub async fn handle_tool_call(
                 .or_else(|| data.get("items").and_then(|v| v.as_array()).cloned())
                 .unwrap_or_default();
 
-            let message = if assistants.is_empty() {
-                "No assistant types available.".to_string()
+            let mut message = format!("Available assistant types ({}):\n\n", total);
+
+            if assistants.is_empty() {
+                if total > 0 {
+                    message.push_str(&format!(
+                        "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+                        offset, limit
+                    ));
+                } else {
+                    message = "No assistant types available.".to_string();
+                }
             } else {
-                let mut lines = vec![format!("Available assistant types ({}):", assistants.len())];
+                message.push_str("| Name | ID | Model | Description |\n");
+                message.push_str("|---|---|---|---|\n");
 
                 for assistant in &assistants {
                     let id = assistant
@@ -606,14 +668,34 @@ pub async fn handle_tool_call(
                         .and_then(|v| v.as_str())
                         .unwrap_or("Unknown");
 
-                    lines.push(format!(
-                        "- {} [ID: {}]\n  model: {}\n  description: {}",
-                        name, id, model, description
+                    let name_clean = name.replace('|', "\\|").replace('\n', " ");
+                    let id_clean = id.replace('|', "\\|").replace('\n', " ");
+                    let model_clean = model.replace('|', "\\|").replace('\n', " ");
+                    let desc_clean = description.replace('|', "\\|").replace('\n', " ");
+
+                    message.push_str(&format!(
+                        "| {} | `{}` | {} | {} |\n",
+                        name_clean, id_clean, model_clean, desc_clean
                     ));
                 }
 
-                lines.join("\n")
-            };
+                let start = offset + 1;
+                let end = offset + assistants.len();
+                if end < total {
+                    message.push_str(&format!(
+                        "\n\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+                        start,
+                        end,
+                        total,
+                        offset + limit
+                    ));
+                } else if offset > 0 {
+                    message.push_str(&format!(
+                        "\n\n*(Showing {} to {} of {} items)*",
+                        start, end, total
+                    ));
+                }
+            }
 
             Ok(success_result(message, data))
         }

@@ -1,6 +1,3 @@
-## 2024-05-24 - Initial Setup
-**Learning:** Initializing distill journal to document any critical learnings about LLM parsing and pagination.
-**Action:** Use this file only for highly specific, critical insights that change our approach.
-## 2024-05-24 - Prevent Pagination Bypass
-**Learning:** Returning a full unpaginated entity (e.g., `rawMessage`) alongside its chunked or paginated representation defeats pagination parameters (such as `offsetChars`/`maxChars` for `readMessage` or `page`/`pageSize` for `readSession`/`search`), causing massive context window bloat.
-**Action:** When implementing chunked read or pagination tools, ensure the JSON response strictly mirrors the distilled DTO and never includes the raw database record.
+## 2024-05-17 - Optimize Legacy Session API Responses
+**Learning:** Legacy swarm/session API endpoints (getChildAgents, listAgentTypes) return unpaginated lists. If an org scales to 100+ agents, this instantly bloats the context window. Converting these directly into heavily sanitized markdown tables with explicit pagination protects the token budget while keeping data actionable.
+**Action:** Always wrap dynamically generated external lists and configuration dumps in a `skip(offset).take(limit)` iterator and sanitize pipes/newlines before emitting a Markdown table.
