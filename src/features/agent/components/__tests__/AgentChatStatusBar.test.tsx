@@ -3,8 +3,9 @@ import '@testing-library/jest-dom';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ExecutionMode } from '@/context/agent-session/types';
 import type { TokenUsage } from '@/lib/ai-service/types';
+import type { Message } from '@/models/chat';
+import type { ExecutionMode } from '@/context/agent-session/types';
 import { AgentChatStatusBar } from '../AgentChatStatusBar';
 
 const mocks = vi.hoisted(() => ({
@@ -65,6 +66,7 @@ const mockAgentSession = {
 };
 
 const mockAgentChat = {
+  messages: [] as Message[],
   workflowStatus: 'idle' as WorkflowStatus,
   error: null,
   llmError: null,
@@ -170,11 +172,12 @@ vi.mock('../TokenMetricsBadge', () => ({
         data-testid="metrics-badge"
         data-compact={compact ? 'true' : 'false'}
         data-has-pressure={compactionPressure ? 'true' : 'false'}
-      />
+      >
+        {usage.promptTokens} {usage.completionTokens}
+      </div>
     );
   },
 }));
-
 vi.mock('@/components/ui/LoadingSpinner', () => ({
   default: () => <div>spinner</div>,
 }));
@@ -231,9 +234,11 @@ describe('AgentChatStatusBar', () => {
     mockAgentSession.executionMode = 'normal';
     mockAgentSession.yoloModeEnabled = false;
     mockAgentSession.unsafeModeEnabled = false;
+    mockAgentChat.messages = [];
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = null;
     mockAgentChat.llmError = null;
+    tokenMetricsState.metrics = null;
     mocks.safeInvoke.mockResolvedValue({
       success: true,
       message: 'updated',
@@ -327,6 +332,7 @@ describe('AgentChatStatusBar', () => {
 
   it('renders a compact metrics badge without compaction pressure on mobile', () => {
     viewportState.isMobile = true;
+
     tokenMetricsState.metrics = {
       promptTokens: 120,
       completionTokens: 45,
@@ -346,5 +352,27 @@ describe('AgentChatStatusBar', () => {
       'data-has-pressure',
       'false',
     );
+  });
+
+  it('keeps showing the last token metrics when streaming clears before persistence catches up', () => {
+    tokenMetricsState.metrics = {
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      details: {
+        evalDuration: 321,
+      },
+    };
+
+    const { rerender } = render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('120');
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('45');
+
+    tokenMetricsState.metrics = null;
+    rerender(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('120');
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('45');
   });
 });
