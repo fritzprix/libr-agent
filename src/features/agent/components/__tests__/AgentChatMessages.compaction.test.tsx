@@ -134,7 +134,7 @@ vi.mock('@/features/agent/hooks/useFileRefetcher', () => ({
 
 vi.mock('@/hooks/useMessageGrouping', () => ({
   useMessageGrouping: () => ({
-    groupedMessages: groupedMessagesMock,
+    groupedMessages: groupedMessagesMock.slice(),
     toolResultsMap: new Map(),
   }),
 }));
@@ -186,7 +186,7 @@ vi.mock('react-virtuoso', () => ({
               scrollToIndex: scrollToIndexMock,
             }
           : (null as unknown as { scrollToIndex: typeof scrollToIndexMock }),
-      [ref],
+      [ref, hasVirtuosoHandle.current],
     );
     return virtuosoMock(props);
   }),
@@ -296,14 +296,120 @@ describe('AgentChatMessages compaction rendering', () => {
 
     const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
       firstItemIndex: number;
-      initialTopMostItemIndex: number;
+      initialTopMostItemIndex:
+        | number
+        | {
+            index: number;
+            align: 'center' | 'end' | 'start';
+          };
     };
 
-    expect(virtuosoProps.initialTopMostItemIndex).toBe(
-      virtuosoProps.firstItemIndex,
+    expect(virtuosoProps.firstItemIndex).toBe(10_000);
+    expect(virtuosoProps.initialTopMostItemIndex).toEqual({
+      index: 10_000,
+      align: 'end',
+    });
+    expect(getInitialTopMostItemIndex(10_000, 1)).toEqual({
+      index: 10_000,
+      align: 'end',
+    });
+    expect(getInitialTopMostItemIndex(10_000, 3)).toEqual({
+      index: 10_002,
+      align: 'end',
+    });
+  });
+
+  it('resets the initial firstItemIndex synchronously when the session changes', () => {
+    const { rerender } = render(<AgentChatMessages />);
+
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'older-tool-group',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'older-user',
+            role: 'user',
+          },
+        ],
+        coveredMessageIds: ['older-user'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'newer-assistant',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'newer-assistant',
+          },
+        ],
+        coveredMessageIds: ['newer-assistant'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
     );
-    expect(getInitialTopMostItemIndex(10_000, 1)).toBe(10_000);
-    expect(getInitialTopMostItemIndex(10_000, 3)).toBe(10_002);
+
+    rerender(<AgentChatMessages />);
+
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'session-2-message',
+          sessionId: 'session-2',
+          threadId: 'session-2',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'session-2-message',
+            sessionId: 'session-2',
+            threadId: 'session-2',
+          },
+        ],
+        coveredMessageIds: ['session-2-message'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
+    );
+    sessionState.session = { id: 'session-2', assistant: { name: 'Agent' } };
+    rerender(<AgentChatMessages />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      firstItemIndex: number;
+      initialTopMostItemIndex:
+        | number
+        | {
+            index: number;
+            align: 'center' | 'end' | 'start';
+          };
+    };
+
+    expect(virtuosoProps.firstItemIndex).toBe(10_000);
+    expect(virtuosoProps.initialTopMostItemIndex).toEqual({
+      index: 10_000,
+      align: 'end',
+    });
   });
 
   it('keeps prepend index adjustments monotonic at zero instead of rebounding to list length', () => {
@@ -435,6 +541,124 @@ describe('AgentChatMessages compaction rendering', () => {
     }
   });
 
+  it('retries bottom alignment after delayed Virtuoso readiness changes the list height', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+    hasVirtuosoHandle.current = false;
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      const { rerender } = render(<AgentChatMessages />);
+
+      expect(scrollToIndexMock).not.toHaveBeenCalled();
+      expect(scrollIntoView).toHaveBeenCalled();
+
+      scrollToIndexMock.mockClear();
+      scrollIntoView.mockClear();
+      hasVirtuosoHandle.current = true;
+      rerender(<AgentChatMessages />);
+
+      const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+        totalListHeightChanged?: (height: number) => void;
+      };
+
+      act(() => {
+        virtuosoProps.totalListHeightChanged?.(512);
+      });
+
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('keeps retrying bottom alignment when list height grows after an early atBottom signal', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const originalSetTimeout = global.setTimeout;
+    const originalClearTimeout = global.clearTimeout;
+    const timeoutQueue: Array<() => void> = [];
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    global.setTimeout = ((callback: TimerHandler) => {
+      if (typeof callback === 'function') {
+        timeoutQueue.push(callback as () => void);
+      }
+      return timeoutQueue.length as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout;
+    global.clearTimeout = vi.fn() as typeof clearTimeout;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      render(<AgentChatMessages />);
+
+      scrollToIndexMock.mockClear();
+      scrollIntoView.mockClear();
+
+      const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+        atBottomStateChange?: (atBottom: boolean) => void;
+        totalListHeightChanged?: (height: number) => void;
+      };
+
+      act(() => {
+        virtuosoProps.atBottomStateChange?.(true);
+        virtuosoProps.totalListHeightChanged?.(6_899);
+        virtuosoProps.atBottomStateChange?.(false);
+        virtuosoProps.totalListHeightChanged?.(9_726);
+      });
+
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
+      const scrollCallCountBeforeSettle = scrollToIndexMock.mock.calls.length;
+
+      act(() => {
+        while (timeoutQueue.length > 0) {
+          const callback = timeoutQueue.shift();
+          callback?.();
+        }
+      });
+
+      act(() => {
+        virtuosoProps.totalListHeightChanged?.(12_000);
+      });
+
+      expect(scrollToIndexMock.mock.calls.length).toBe(
+        scrollCallCountBeforeSettle + 1,
+      );
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      global.setTimeout = originalSetTimeout;
+      global.clearTimeout = originalClearTimeout;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
   it('scrolls to the bottom again when the resumed session changes', () => {
     const scrollIntoView = vi.fn();
     const originalRequestAnimationFrame = global.requestAnimationFrame;
@@ -514,6 +738,189 @@ describe('AgentChatMessages compaction rendering', () => {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('keeps following bottom when streaming updates arrive during prepend stabilization', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalSetTimeout = global.setTimeout;
+    const originalClearTimeout = global.clearTimeout;
+    const frameQueue: FrameRequestCallback[] = [];
+    const timeoutQueue: Array<() => void> = [];
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-stream',
+        content: [{ type: 'text', text: 'streaming output' }],
+        isStreaming: true,
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'single',
+        message: {
+          ...baseMessage,
+          id: 'assistant-stream',
+          content: [{ type: 'text', text: 'streaming output' }],
+          isStreaming: true,
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'assistant-stream',
+            content: [{ type: 'text', text: 'streaming output' }],
+            isStreaming: true,
+          },
+        ],
+        coveredMessageIds: ['assistant-stream'],
+      } as GroupedMessage,
+    );
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    global.setTimeout = ((callback: TimerHandler) => {
+      if (typeof callback === 'function') {
+        timeoutQueue.push(callback as () => void);
+      }
+      return timeoutQueue.length as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout;
+    global.clearTimeout = vi.fn() as typeof clearTimeout;
+
+    try {
+      const { rerender } = render(<AgentChatMessages />);
+
+      act(() => {
+        while (frameQueue.length > 0) {
+          frameQueue.shift()?.(0);
+        }
+      });
+
+      scrollToIndexMock.mockClear();
+
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'older-user',
+            role: 'user',
+            content: [{ type: 'text', text: 'Older user message' }],
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'older-user',
+              role: 'user',
+              content: [{ type: 'text', text: 'Older user message' }],
+            },
+          ],
+          coveredMessageIds: ['older-user'],
+        } as GroupedMessage,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'assistant-stream',
+            content: [{ type: 'text', text: 'streaming output' }],
+            isStreaming: true,
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'assistant-stream',
+              content: [{ type: 'text', text: 'streaming output' }],
+              isStreaming: true,
+            },
+          ],
+          coveredMessageIds: ['assistant-stream'],
+        } as GroupedMessage,
+      );
+      rerender(<AgentChatMessages />);
+
+      const virtuosoPropsAfterPrepend = virtuosoMock.mock.lastCall?.[0] as {
+        firstItemIndex: number;
+      };
+
+      expect(virtuosoPropsAfterPrepend.firstItemIndex).toBe(9_999);
+
+      scrollToIndexMock.mockClear();
+
+      chatState.messages = [
+        {
+          ...baseMessage,
+          id: 'assistant-stream',
+          content: [{ type: 'text', text: 'streaming output extended' }],
+          isStreaming: true,
+        },
+      ];
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'older-user',
+            role: 'user',
+            content: [{ type: 'text', text: 'Older user message' }],
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'older-user',
+              role: 'user',
+              content: [{ type: 'text', text: 'Older user message' }],
+            },
+          ],
+          coveredMessageIds: ['older-user'],
+        } as GroupedMessage,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'assistant-stream',
+            content: [{ type: 'text', text: 'streaming output extended' }],
+            isStreaming: true,
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'assistant-stream',
+              content: [{ type: 'text', text: 'streaming output extended' }],
+              isStreaming: true,
+            },
+          ],
+          coveredMessageIds: ['assistant-stream'],
+        } as GroupedMessage,
+      );
+      rerender(<AgentChatMessages />);
+
+      act(() => {
+        while (frameQueue.length > 0) {
+          frameQueue.shift()?.(0);
+        }
+      });
+
+      expect(scrollToIndexMock).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'auto',
+      });
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      global.setTimeout = originalSetTimeout;
+      global.clearTimeout = originalClearTimeout;
     }
   });
 
