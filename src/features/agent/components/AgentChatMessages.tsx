@@ -394,6 +394,7 @@ export function AgentChatMessages() {
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const isPinnedToBottomRef = useRef(true);
   const autoScrollFrameRef = useRef<number | null>(null);
+  const groupedMessageCountRef = useRef(groupedMessages.length);
   const hasHydratedMessagesRef = useRef<{
     sessionId: string | undefined;
     hasMessages: boolean;
@@ -452,17 +453,19 @@ export function AgentChatMessages() {
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
+  groupedMessageCountRef.current = groupedMessages.length;
 
   const scrollToBottomNow = useCallback(() => {
+    const itemCount = groupedMessageCountRef.current;
     const scrolledWithVirtuoso = scrollVirtuosoToBottom(
       virtuosoRef.current,
-      groupedMessages.length,
+      itemCount,
     );
 
-    if (!scrolledWithVirtuoso || groupedMessages.length === 0) {
+    if (!scrolledWithVirtuoso || itemCount === 0) {
       scrollFooterSentinelIntoView(footerEndRef.current);
     }
-  }, [groupedMessages.length]);
+  }, []);
 
   useEffect(() => {
     const previous = previousListStateRef.current;

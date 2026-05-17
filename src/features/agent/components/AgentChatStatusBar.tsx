@@ -18,13 +18,14 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
 import { useTokenMetrics } from '@/hooks/use-token-metrics';
 import { TokenMetricsBadge } from './TokenMetricsBadge';
 import { TokenUsage } from '@/lib/ai-service/types';
+import type { Message } from '@/models/chat';
 import { toast } from 'sonner';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
 import { useTranslation } from 'react-i18next';
@@ -35,12 +36,67 @@ import { useSettings } from '@/context/SettingsContext';
 
 const logger = getLogger('AgentChatStatusBar');
 
+function hasTokenUsageData(
+  usage: TokenUsage | null | undefined,
+): usage is TokenUsage {
+  if (!usage) {
+    return false;
+  }
+
+  return (
+    usage.promptTokens > 0 ||
+    usage.completionTokens > 0 ||
+    usage.totalTokens > 0 ||
+    (usage.cachedPromptTokens ?? 0) > 0
+  );
+}
+
+function mergePersistedTokenUsage(
+  previousUsage: TokenUsage | null,
+  nextUsage: TokenUsage,
+): TokenUsage {
+  if (!previousUsage) {
+    return nextUsage;
+  }
+
+  return {
+    ...previousUsage,
+    ...nextUsage,
+    details: {
+      ...previousUsage.details,
+      ...nextUsage.details,
+      evalDuration:
+        nextUsage.details?.evalDuration ?? previousUsage.details?.evalDuration,
+      timeToFirstToken:
+        nextUsage.details?.timeToFirstToken ??
+        previousUsage.details?.timeToFirstToken,
+      promptEvalDuration:
+        nextUsage.details?.promptEvalDuration ??
+        previousUsage.details?.promptEvalDuration,
+      loadDuration:
+        nextUsage.details?.loadDuration ?? previousUsage.details?.loadDuration,
+    },
+  };
+}
+
+function findLatestAssistantUsage(messages: Message[]): TokenUsage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+
+    if (message?.role === 'assistant' && hasTokenUsageData(message.usage)) {
+      return message.usage;
+    }
+  }
+
+  return null;
+}
+
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
   const { value: settings } = useSettings();
   const { session, executionMode, setExecutionMode, updateSessionConfig } =
     useAgentSession();
-  const { workflowStatus, error, llmError, retryMessage, resume } =
+  const { messages, workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
   const { isCompacting, isAwaitingCompact, getCompactionPressure } =
     useLLMService();
@@ -63,69 +119,83 @@ export function AgentChatStatusBar() {
     sessionId,
     usage: null,
   });
+  const lastObservedMetricsRef = useRef<{
+    sessionId?: string;
+    usage: TokenUsage | null;
+  }>({
+    sessionId,
+    usage: null,
+  });
 
-  useEffect(() => {
-    if (!sessionId || !metrics) {
-      return;
-    }
-
-    const hasData =
-      metrics.promptTokens > 0 ||
-      metrics.completionTokens > 0 ||
-      (metrics.cachedPromptTokens ?? 0) > 0;
-
-    if (!hasData) {
-      return;
-    }
-
-    setPersistedMetrics((previous) => {
-      const previousUsage =
-        previous.sessionId === sessionId ? previous.usage : null;
-
-      if (!previousUsage) {
-        return {
-          sessionId,
-          usage: metrics,
-        };
+  const persistMetrics = useCallback(
+    (usage: TokenUsage) => {
+      if (!sessionId) {
+        return;
       }
 
-      return {
+      setPersistedMetrics((previous) => ({
         sessionId,
-        usage: {
-          ...previousUsage,
-          ...metrics,
-          details: {
-            ...previousUsage.details,
-            ...metrics.details,
-            evalDuration:
-              metrics.details?.evalDuration ||
-              previousUsage.details?.evalDuration,
-            timeToFirstToken:
-              metrics.details?.timeToFirstToken ||
-              previousUsage.details?.timeToFirstToken,
-            promptEvalDuration:
-              metrics.details?.promptEvalDuration ||
-              previousUsage.details?.promptEvalDuration,
-            loadDuration:
-              metrics.details?.loadDuration ||
-              previousUsage.details?.loadDuration,
-          },
-        },
+        usage: mergePersistedTokenUsage(
+          previous.sessionId === sessionId ? previous.usage : null,
+          usage,
+        ),
+      }));
+    },
+    [sessionId],
+  );
+
+  useEffect(() => {
+    if (!sessionId) {
+      lastObservedMetricsRef.current = {
+        sessionId: undefined,
+        usage: null,
       };
-    });
-  }, [metrics, sessionId]);
+      return;
+    }
+
+    const previousObserved = lastObservedMetricsRef.current;
+
+    if (previousObserved.sessionId !== sessionId) {
+      lastObservedMetricsRef.current = {
+        sessionId,
+        usage: metrics,
+      };
+
+      if (hasTokenUsageData(metrics)) {
+        persistMetrics(metrics);
+      }
+
+      return;
+    }
+
+    if (hasTokenUsageData(metrics)) {
+      persistMetrics(metrics);
+    } else if (!metrics && hasTokenUsageData(previousObserved.usage)) {
+      persistMetrics(previousObserved.usage);
+    }
+
+    lastObservedMetricsRef.current = {
+      sessionId,
+      usage: metrics,
+    };
+  }, [metrics, persistMetrics, sessionId]);
+
+  const latestAssistantUsage = useMemo(
+    () => findLatestAssistantUsage(messages),
+    [messages],
+  );
+  const sessionPersistedUsage =
+    persistedMetrics.sessionId === sessionId ? persistedMetrics.usage : null;
 
   // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
   // without mutating state during render.
   const displayMetrics = useMemo(
     () =>
       mergeDisplayTokenUsage(
-        persistedMetrics.sessionId === sessionId
-          ? persistedMetrics.usage
-          : null,
+        mergeDisplayTokenUsage(sessionPersistedUsage, latestAssistantUsage),
         metrics,
       ),
-    [metrics, persistedMetrics, sessionId],
+    [latestAssistantUsage, metrics, sessionPersistedUsage],
   );
 
   // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
