@@ -199,10 +199,6 @@ pub async fn list_workspace_file_paths(
     session_id: String,
     max_depth: usize,
 ) -> Result<Vec<String>, String> {
-    // 🚪 Airlock: Moved from `skill_commands.rs`
-    // Listing workspace files correctly belongs in workspace_commands.rs,
-    // severing an improper domain boundary where workspace operations were
-    // bundled under skill logic.
     crate::agent::references::list_workspace_relative_paths(&session_id, max_depth).await
 }
 
@@ -211,10 +207,6 @@ pub async fn list_workspace_file_paths_for_path(
     workspace_path: String,
     max_depth: usize,
 ) -> Result<Vec<String>, String> {
-    // 🚪 Airlock: Moved from `skill_commands.rs`
-    // Listing workspace files correctly belongs in workspace_commands.rs,
-    // severing an improper domain boundary where workspace operations were
-    // bundled under skill logic.
     crate::agent::references::list_relative_paths_in_root(Path::new(&workspace_path), max_depth)
         .await
 }
