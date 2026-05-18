@@ -11,7 +11,7 @@ use sea_orm::DatabaseConnection;
 
 use super::super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
-    format_external_server_refs,
+    format_external_server_refs, resolve_external_server_labels,
 };
 use super::super::AgentServer;
 use super::normalize_agent_config_result;
@@ -208,8 +208,10 @@ async fn list_agent_configs_from_db(
             .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("No description");
+        let builtins = extract_string_list(config.get("allowedBuiltInServiceAliases"));
         let effective_builtins = runtime_allowed_builtin_service_aliases_from_value(&config);
         let external_ids = extract_string_list(config.get("mcpServerIds"));
+        let external_labels = resolve_external_server_labels(&external_ids, &server_name_lookup);
 
         let desc_clean = desc.replace('|', "\\|").replace('\n', " ");
         let desc_trunc = if !verbose && desc_clean.chars().count() > 100 {
@@ -231,7 +233,16 @@ async fn list_agent_configs_from_db(
             name_clean, agent.id, capabilities, servers, desc_trunc
         ));
 
-        results.push(Value::String(agent.id.clone()));
+        results.push(json!({
+            "id": agent.id,
+            "name": agent.name,
+            "description": desc,
+            "configuredBuiltinCapabilities": builtins,
+            "builtinCapabilities": effective_builtins.clone(),
+            "effectiveBuiltinCapabilities": effective_builtins,
+            "externalMcpServers": external_ids,
+            "externalMcpServerLabels": external_labels
+        }));
     }
 
     let pagination_note = build_pagination_note(offset, results.len(), total, limit);
@@ -300,29 +311,35 @@ async fn list_delegated_sessions(
     let paged_child_ids: Vec<_> = child_ids.into_iter().skip(offset).take(limit).collect();
 
     let mut paged_results = Vec::new();
-    let mut session_summaries = Vec::new();
-
     for child_id in paged_child_ids {
         if let Ok(Some(child_data)) = session_repo.get_session(&child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
-            let name = child_data.name.unwrap_or_else(|| "Unnamed".to_string());
-            session_summaries.push((child_id.clone(), name, status));
-            paged_results.push(Value::String(child_id));
+            paged_results.push(json!({
+                "id": child_id,
+                "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
+                "status": status
+            }));
         }
     }
 
     let mut message = format!("Found {} sub-agent sessions.\n\n", total);
-    if !session_summaries.is_empty() {
+    if !paged_results.is_empty() {
         message.push_str("| Name | Session ID | Status |\n");
         message.push_str("|---|---|---|\n");
-        for (child_id, name, status) in &session_summaries {
-            let name_clean = name
+        for result in &paged_results {
+            let name_clean = result["name"]
+                .as_str()
+                .unwrap_or("")
                 .replace('|', "\\|")
                 .replace('\n', " ");
-            let id_clean = child_id
+            let id_clean = result["id"]
+                .as_str()
+                .unwrap_or("")
                 .replace('|', "\\|")
                 .replace('\n', " ");
-            let status_clean = status
+            let status_clean = result["status"]
+                .as_str()
+                .unwrap_or("")
                 .replace('|', "\\|")
                 .replace('\n', " ");
             message.push_str(&format!(
