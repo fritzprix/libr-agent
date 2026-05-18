@@ -1080,7 +1080,7 @@ export function AgentChatMessages() {
         )}
         atBottomThreshold={bottomThreshold}
         atBottomStateChange={handleVirtuosoAtBottomStateChange}
-        followOutput={false}
+        followOutput={'auto'}
         increaseViewportBy={{ top: 640, bottom: 960 }}
         startReached={handleReachTop}
         totalListHeightChanged={handleTotalListHeightChanged}
