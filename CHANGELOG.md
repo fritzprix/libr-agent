@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.28] - 2026-05-18
+
+### 🚀 Features
+
+- **MediaContentRenderer Localization (Rosetta)**: Expanded multi-language support (EN, KO, FR, ES, DE, ZH, JA, PT) for the MediaContentRenderer, ensuring a consistent international experience across all supported locales.
+- **Improved External Tool Guidance**: Enhanced documentation and guidance for external tool recovery and design principles, helping developers build more resilient MCP integrations.
+
+### 🐛 Fixes
+
+- **Agent Chat Scroll & Latch Stability**: Refined bottom-latch logic and increased the default scroll threshold to 50px, ensuring more reliable message anchoring and smoother scrolling during active streaming.
+- **Proxy & Connectivity Reliability**: Resolved regressions in proxy readiness resume and fixed configured proxy reuse for external tools, improving connection stability for remote MCP services.
+- **Reliable Streaming Scroll**: Switched to Virtuoso `followOutput='auto'` for more predictable scroll behavior during high-volume message streaming.
+- **Context Canonicalization**: Backported stable context canonicalization fixes to prevent intermittent state drift in long-running agent sessions.
+
+### 🔧 Internal
+
+- **Dependency Updates**: Bumped various backend dependencies including `tauri`, `handlebars`, `dashmap`, and `jsonschema` to their latest versions for improved security and performance.
+- **MediaContentRenderer & AgentChat Polish**: Addressed PR feedback for MediaContentRenderer and AgentChatMessages to improve code quality and maintainability.
+
 ## [0.7.27] - 2026-05-18
 
 ### 🚀 Features
