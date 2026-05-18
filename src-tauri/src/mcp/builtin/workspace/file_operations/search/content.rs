@@ -8,17 +8,37 @@ use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use std::path::Path;
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct SearchContentRequest<'a> {
+    pub display_path: &'a str,
+    pub regex: &'a regex::Regex,
+    pub query: &'a str,
+    pub show_hashes: bool,
+    pub ignore_case: bool,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+pub(super) struct SearchDirectoryRequest<'a> {
+    pub workspace_root: &'a Path,
+    pub dir: &'a Path,
+    pub file_pattern: Option<&'a glob::Pattern>,
+    pub search: SearchContentRequest<'a>,
+}
+
 pub(super) async fn search_content_in_file(
     file_path: &Path,
-    display_path: &str,
-    regex: &regex::Regex,
-    query: &str,
-    show_hashes: bool,
-    ignore_case: bool,
-    limit: usize,
-    offset: usize,
+    request: SearchContentRequest<'_>,
 ) -> Result<MCPResult, String> {
+    let SearchContentRequest {
+        display_path,
+        regex,
+        query,
+        show_hashes,
+        ignore_case,
+        limit,
+        offset,
+    } = request;
+
     let max_size = effective_search_content_file_size_limit();
     if let Ok(metadata) = tokio::fs::metadata(file_path).await {
         let file_size = metadata.len() as usize;
@@ -177,20 +197,26 @@ pub(super) async fn search_content_in_file(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn search_content_in_dir(
-    workspace_root: &Path,
-    dir: &Path,
-    display_path: &str,
-    regex: &regex::Regex,
-    query: &str,
-    file_pattern: Option<&glob::Pattern>,
-    show_hashes: bool,
-    ignore_case: bool,
-    limit: usize,
-    offset: usize,
+    request: SearchDirectoryRequest<'_>,
 ) -> Result<MCPResult, String> {
     use walkdir::WalkDir;
+
+    let SearchDirectoryRequest {
+        workspace_root,
+        dir,
+        file_pattern,
+        search:
+            SearchContentRequest {
+                display_path,
+                regex,
+                query,
+                show_hashes,
+                ignore_case,
+                limit,
+                offset,
+            },
+    } = request;
 
     struct FileMatch {
         rel_path: String,

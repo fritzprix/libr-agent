@@ -156,7 +156,7 @@ export default function AppSidebar() {
                 : 'opacity-100 w-auto',
             )}
           >
-            LibrAgent
+            {t('appName')}
           </span>
         </div>
       </SidebarHeader>

@@ -156,6 +156,9 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         ScheduledTaskEntity::find()
             .filter(scheduled_task::Column::Enabled.eq(true))
             .filter(scheduled_task::Column::NextRunAt.lte(now_ms))
+            .order_by(scheduled_task::Column::NextRunAt, Order::Asc)
+            .order_by(scheduled_task::Column::CreatedAt, Order::Asc)
+            .order_by(scheduled_task::Column::Id, Order::Asc)
             .all(&self.db)
             .await
     }

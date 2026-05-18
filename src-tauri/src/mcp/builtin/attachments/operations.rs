@@ -1,6 +1,6 @@
 use super::server::AttachmentsServer;
 use super::types::*;
-use super::{helpers, parsers, search};
+use super::{helpers, parsers, search, storage::AddContentInput};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -154,15 +154,15 @@ pub async fn add_content(
     // Store the content
     let mut storage = server.storage.lock().await;
     let content_item = match storage
-        .add_content(
+        .add_content(AddContentInput {
             session_id,
-            &final_filename,
-            &mime_type,
-            final_size as usize,
-            &content_text,
+            filename: &final_filename,
+            mime_type: &mime_type,
+            size: final_size as usize,
+            content: &content_text,
             chunks,
-            args.src_url.clone(),
-        )
+            src_url: args.src_url.clone(),
+        })
         .await
     {
         Ok(item) => item,
@@ -223,7 +223,6 @@ pub async fn add_content(
             filename: content_item.filename.clone(),
             mime_type: content_item.mime_type.clone(),
             line_count: content_item.line_count,
-            uploaded_at: content_item.uploaded_at.clone(),
         });
 
         // Keep only last 10 uploads

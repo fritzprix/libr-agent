@@ -6,6 +6,8 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHi
 use crate::mcp::builtin::session_api::utils::build_agent_tool_data;
 use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::repositories::session_repository::SessionRepository;
+use sea_orm::DatabaseConnection;
 
 use super::super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
@@ -98,7 +100,7 @@ pub async fn list_agents_or_sessions(
 
     match list_type {
         "configs" => list_agent_configs(server, &args).await,
-        "sessions" => list_delegated_sessions(caller_session_id).await,
+        "sessions" => list_delegated_sessions(caller_session_id, &args).await,
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
             format!(
@@ -115,10 +117,58 @@ pub async fn list_agents_or_sessions(
     }
 }
 
+fn extract_pagination_args(args: &Value) -> (usize, usize) {
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|value| value.max(1) as usize)
+        .unwrap_or(20);
+    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+    (limit, offset)
+}
+
+fn build_pagination_note(offset: usize, page_len: usize, total: usize, limit: usize) -> String {
+    if page_len == 0 {
+        return String::new();
+    }
+
+    let start = offset + 1;
+    let end = offset + page_len;
+
+    if end < total {
+        format!(
+            "*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*\n",
+            start,
+            end,
+            total,
+            offset + limit
+        )
+    } else if offset > 0 {
+        format!("*(Showing {} to {} of {} items)*\n", start, end, total)
+    } else {
+        String::new()
+    }
+}
+
 async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPResult, String> {
+    list_agent_configs_from_db(server.get_db(), args).await
+}
+
+pub async fn list_agent_configs_for_test(
+    db: &DatabaseConnection,
+    args: &Value,
+) -> Result<MCPResult, String> {
+    list_agent_configs_from_db(db, args).await
+}
+
+async fn list_agent_configs_from_db(
+    db: &DatabaseConnection,
+    args: &Value,
+) -> Result<MCPResult, String> {
     use crate::repositories::AssistantRepository;
 
-    let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
+    let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
     let mut agents = repo.list_assistants().await.map_err(|e| e.to_string())?;
 
     if let Some(query) = args.get("query").and_then(|v| v.as_str()) {
@@ -127,8 +177,7 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
             .retain(|a| a.name.to_lowercase().contains(&q) || a.config.to_lowercase().contains(&q));
     }
 
-    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
-    let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let (limit, offset) = extract_pagination_args(args);
     let verbose = args
         .get("verbose")
         .and_then(|value| value.as_bool())
@@ -196,6 +245,12 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
         }));
     }
 
+    let pagination_note = build_pagination_note(offset, results.len(), total, limit);
+    if !pagination_note.is_empty() {
+        text_summary.push('\n');
+        text_summary.push_str(&pagination_note);
+    }
+
     let mut hint_lines = vec!["Use startSession(agentId=\"...\") to delegate work".to_string()];
     if any_truncated {
         hint_lines.push(
@@ -221,9 +276,18 @@ async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPRes
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
 
-async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, String> {
+pub async fn list_delegated_sessions_for_test(
+    caller_session_id: &str,
+    args: &Value,
+) -> Result<MCPResult, String> {
+    list_delegated_sessions(caller_session_id, args).await
+}
+
+async fn list_delegated_sessions(
+    caller_session_id: &str,
+    args: &Value,
+) -> Result<MCPResult, String> {
     let session_repo = crate::state::get_session_repository();
-    use crate::repositories::session_repository::SessionRepository;
 
     let child_ids = match session_repo.get_child_session_ids(caller_session_id).await {
         Ok(ids) => ids,
@@ -242,11 +306,15 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     };
 
-    let mut results = Vec::new();
-    for child_id in &child_ids {
-        if let Ok(Some(child_data)) = session_repo.get_session(child_id).await {
+    let (limit, offset) = extract_pagination_args(args);
+    let total = child_ids.len();
+    let paged_child_ids: Vec<_> = child_ids.into_iter().skip(offset).take(limit).collect();
+
+    let mut paged_results = Vec::new();
+    for child_id in paged_child_ids {
+        if let Ok(Some(child_data)) = session_repo.get_session(&child_id).await {
             let status = format!("{:?}", child_data.status).to_lowercase();
-            results.push(json!({
+            paged_results.push(json!({
                 "id": child_id,
                 "name": child_data.name.unwrap_or_else(|| "Unnamed".to_string()),
                 "status": status
@@ -254,11 +322,11 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         }
     }
 
-    let mut message = format!("Found {} sub-agent sessions.\n\n", results.len());
-    if !results.is_empty() {
+    let mut message = format!("Found {} sub-agent sessions.\n\n", total);
+    if !paged_results.is_empty() {
         message.push_str("| Name | Session ID | Status |\n");
         message.push_str("|---|---|---|\n");
-        for result in &results {
+        for result in &paged_results {
             let name_clean = result["name"]
                 .as_str()
                 .unwrap_or("")
@@ -279,6 +347,17 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
                 name_clean, id_clean, status_clean
             ));
         }
+    } else if total > 0 {
+        message.push_str(&format!(
+            "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
+            offset, limit
+        ));
+    }
+
+    let pagination_note = build_pagination_note(offset, paged_results.len(), total, limit);
+    if !pagination_note.is_empty() {
+        message.push('\n');
+        message.push_str(&pagination_note);
     }
 
     let hint = SuccessHint::new(
@@ -298,7 +377,7 @@ async fn list_delegated_sessions(caller_session_id: &str) -> Result<MCPResult, S
         })],
     );
     response_data.insert("type".to_string(), Value::String("sessions".to_string()));
-    response_data.insert("sessions".to_string(), Value::Array(results));
-    response_data.insert("total".to_string(), json!(child_ids.len()));
+    response_data.insert("sessions".to_string(), Value::Array(paged_results));
+    response_data.insert("total".to_string(), json!(total));
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
 }

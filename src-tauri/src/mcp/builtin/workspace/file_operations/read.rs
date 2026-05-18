@@ -120,9 +120,9 @@ impl WorkspaceServer {
 
         // 4. Path security validation
         let file_manager = self.get_file_manager(session_id.clone());
-        let safe_path = match file_manager
-            .get_security_validator()
-            .validate_path_for_read(path_str)
+        let safe_path = match self
+            .validate_read_path_with_skill_access(path_str, session_id.clone())
+            .await
         {
             Ok(path) => path,
             Err(e) => {

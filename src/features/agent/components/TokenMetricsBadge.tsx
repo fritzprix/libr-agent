@@ -92,6 +92,7 @@ export function TokenMetricsBadge({
   // Use settings or props (props take precedence for backward compatibility)
   const showSpeed = showSpeedProp ?? displaySettings.showTokenSpeed;
   const compact = compactProp ?? displaySettings.compactMetrics;
+  const showInlineSpeed = compact ? showSpeedProp === true : showSpeed;
 
   // Calculate speed if duration is available (either from provider or context-estimated)
   const tokensPerSec =
@@ -151,7 +152,11 @@ export function TokenMetricsBadge({
       className={`flex flex-col text-xs font-mono tabular-nums ${className}`}
       data-testid="metrics-badge"
     >
-      <div className="flex items-center gap-2">
+      <div
+        className={
+          compact ? 'flex items-center gap-1.5' : 'flex items-center gap-2'
+        }
+      >
         {/* Input Tokens */}
         <span
           className="flex items-center gap-0.5 text-primary"
@@ -186,8 +191,8 @@ export function TokenMetricsBadge({
           </span>
         )}
 
-        {/* Speed (if available) - Hide on compact unless specifically requested */}
-        {showSpeed && tpsFormatted && (
+        {/* Speed (if available) - Compact mode only shows it when explicitly requested. */}
+        {showInlineSpeed && tpsFormatted && (
           <>
             <span className="text-muted-foreground mx-0.5">•</span>
             <span

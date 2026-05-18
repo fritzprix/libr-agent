@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useRef,
-  useState,
   type ReactNode,
   type CSSProperties,
 } from 'react';
@@ -188,10 +187,26 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
-  const [hasOpenedWorkspaceDesktop, setHasOpenedWorkspaceDesktop] =
-    useState(showWorkspacePanel);
-  const [hasOpenedPlanningDesktop, setHasOpenedPlanningDesktop] =
-    useState(showPlanningPanel);
+  const hasOpenedWorkspaceRef = useRef(!isMobile && showWorkspacePanel);
+  const hasOpenedPlanningRef = useRef(!isMobile && showPlanningPanel);
+
+  useEffect(() => {
+    if (!isMobile && showWorkspacePanel) {
+      hasOpenedWorkspaceRef.current = true;
+    }
+  }, [isMobile, showWorkspacePanel]);
+
+  useEffect(() => {
+    if (!isMobile && showPlanningPanel) {
+      hasOpenedPlanningRef.current = true;
+    }
+  }, [isMobile, showPlanningPanel]);
+
+  const hasOpenedWorkspaceDesktop =
+    !isMobile && (showWorkspacePanel || hasOpenedWorkspaceRef.current);
+  const hasOpenedPlanningDesktop =
+    !isMobile && (showPlanningPanel || hasOpenedPlanningRef.current);
+
   const playbookId = searchParams.get('playbookId');
   const sessionId = session?.id;
   const assistantId = session?.assistant?.id;
@@ -261,18 +276,6 @@ function AgentChatInner() {
     setSearchParams,
     workflowStatus,
   ]);
-
-  useEffect(() => {
-    if (!isMobile && showWorkspacePanel) {
-      setHasOpenedWorkspaceDesktop(true);
-    }
-  }, [isMobile, showWorkspacePanel]);
-
-  useEffect(() => {
-    if (!isMobile && showPlanningPanel) {
-      setHasOpenedPlanningDesktop(true);
-    }
-  }, [isMobile, showPlanningPanel]);
 
   const handleWorkspaceSheetOpenChange = useCallback(
     (nextOpen: boolean) => {

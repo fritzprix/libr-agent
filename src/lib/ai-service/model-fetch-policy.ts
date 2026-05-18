@@ -7,14 +7,28 @@ interface DynamicModelFetchPolicyArgs {
   customModelId?: string;
 }
 
-export function shouldFetchDynamicModels({
+export type DynamicModelFetchPolicyReason =
+  | 'missing-provider'
+  | 'missing-api-key'
+  | 'custom-openai-model'
+  | 'allowed';
+
+export interface DynamicModelFetchPolicyDecision {
+  canFetch: boolean;
+  reason: DynamicModelFetchPolicyReason;
+}
+
+export function getDynamicModelFetchPolicy({
   provider,
   apiKey,
   use3rdParty,
   customModelId,
-}: DynamicModelFetchPolicyArgs): boolean {
+}: DynamicModelFetchPolicyArgs): DynamicModelFetchPolicyDecision {
   if (!provider) {
-    return false;
+    return {
+      canFetch: false,
+      reason: 'missing-provider',
+    };
   }
 
   if (
@@ -22,15 +36,45 @@ export function shouldFetchDynamicModels({
     use3rdParty &&
     customModelId?.trim()
   ) {
-    return false;
+    return {
+      canFetch: false,
+      reason: 'custom-openai-model',
+    };
   }
 
   if (
     provider === AIServiceProvider.Ollama ||
     provider === AIServiceProvider.OpenRouter
   ) {
-    return true;
+    return {
+      canFetch: true,
+      reason: 'allowed',
+    };
   }
 
-  return Boolean(apiKey?.trim());
+  if (apiKey?.trim()) {
+    return {
+      canFetch: true,
+      reason: 'allowed',
+    };
+  }
+
+  return {
+    canFetch: false,
+    reason: 'missing-api-key',
+  };
+}
+
+export function shouldFetchDynamicModels({
+  provider,
+  apiKey,
+  use3rdParty,
+  customModelId,
+}: DynamicModelFetchPolicyArgs): boolean {
+  return getDynamicModelFetchPolicy({
+    provider,
+    apiKey,
+    use3rdParty,
+    customModelId,
+  }).canFetch;
 }

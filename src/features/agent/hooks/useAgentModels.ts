@@ -4,13 +4,15 @@ import { toast } from 'sonner';
 
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
-import { shouldFetchDynamicModels } from '@/lib/ai-service/model-fetch-policy';
+import { getDynamicModelFetchPolicy } from '@/lib/ai-service/model-fetch-policy';
 import type { AIModelLookupService } from '@/lib/ai-service/types';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('useAgentModels');
+type DynamicModelMap = Record<string, ModelInfo>;
+type ModelSWRKey = readonly [string, string, string, string];
 
 export const useAgentModels = (provider?: string) => {
   const {
@@ -36,11 +38,30 @@ export const useAgentModels = (provider?: string) => {
     return providerConfig.baseUrl || '';
   }, [providerConfig]);
 
+  const dynamicModelPolicy = useMemo(
+    () =>
+      getDynamicModelFetchPolicy({
+        provider,
+        apiKey,
+        use3rdParty: providerConfig.use3rdParty,
+        customModelId: providerConfig.customModelId,
+      }),
+    [apiKey, provider, providerConfig],
+  );
+
+  const swrKey = useMemo<ModelSWRKey | null>(() => {
+    if (!provider || !dynamicModelPolicy.canFetch) {
+      return null;
+    }
+
+    return ['local-models', provider, apiKey, baseUrl] as const;
+  }, [apiKey, baseUrl, dynamicModelPolicy.canFetch, provider]);
+
   // Fetcher for models — delegates entirely to service.listModels().
   // Each provider's implementation decides static vs dynamic;
   // no hardcoded allowlist needed here.
   const fetchDynamicModels = useCallback(
-    async ([, p, key]: [string, string, string]) => {
+    async ([, p, key]: ModelSWRKey) => {
       // Use a non-empty placeholder so validateApiKey() doesn't throw.
       // Services that need a real key will fail gracefully in their API calls;
       // services using public endpoints (OpenRouter) or no key (Ollama) work normally.
@@ -73,23 +94,20 @@ export const useAgentModels = (provider?: string) => {
 
   const {
     data: dynamicModels = {},
-    mutate: refreshModels,
+    mutate: mutateModels,
     isValidating: isRefreshing,
-  } = useSWR(
-    shouldFetchDynamicModels({
-      provider,
-      apiKey,
-      use3rdParty: providerConfig.use3rdParty,
-      customModelId: providerConfig.customModelId,
-    })
-      ? ['local-models', provider, apiKey, baseUrl]
-      : null,
-    fetchDynamicModels,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 30000,
-    },
-  );
+  } = useSWR<DynamicModelMap>(swrKey, fetchDynamicModels, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30000,
+  });
+
+  const refreshModels = useCallback(async () => {
+    if (!dynamicModelPolicy.canFetch) {
+      return dynamicModels;
+    }
+
+    return await mutateModels();
+  }, [dynamicModelPolicy.canFetch, dynamicModels, mutateModels]);
 
   // Combine static and dynamic models
   const availableModels = useMemo(() => {
@@ -132,5 +150,7 @@ export const useAgentModels = (provider?: string) => {
     availableModels,
     isRefreshing,
     refreshModels,
+    canRefresh: dynamicModelPolicy.canFetch,
+    refreshBlockedReason: dynamicModelPolicy.reason,
   };
 };

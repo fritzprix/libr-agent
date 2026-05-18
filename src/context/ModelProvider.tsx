@@ -122,14 +122,12 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         const modelList = await withTimeout(service.listModels(), 20000);
 
         // Convert ModelInfo[] into Record<string, ModelInfo>
-        const modelsRecord = modelList.reduce(
-          (acc, modelInfo) => {
-            const key = modelInfo.id || modelInfo.name;
-            acc[key] = modelInfo;
-            return acc;
-          },
-          {} as Record<string, ModelInfo>,
-        );
+        // ⚡ Bolt: Replaced .reduce() with a single-pass loop to reduce per-element callback overhead.
+        const modelsRecord = Object.create(null) as Record<string, ModelInfo>;
+        for (const modelInfo of modelList) {
+          const key = modelInfo.id || modelInfo.name;
+          modelsRecord[key] = modelInfo;
+        }
 
         logger.info(`Fetched ${modelList.length} models from ${provider}`);
         return modelsRecord;

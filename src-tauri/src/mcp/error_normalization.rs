@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use crate::mcp::types::{MCPContent, MCPResult, ServiceInfo};
+use crate::repositories::MCPServerRepository;
 
 /// Normalized error category for external MCP failures.
 ///
@@ -91,6 +92,72 @@ pub fn external_tool_error_result(
           }
         })),
         is_error: Some(true),
+    }
+}
+
+/// Build a guided external-tool error when the target server is unavailable to the current session.
+///
+/// This teaches the agent about the current tool environment instead of leaking a raw
+/// session-manager error like `Server not found: <server>`.
+pub async fn missing_external_tool_result(
+    server_name: &str,
+    tool_name: &str,
+    session_id: &str,
+) -> MCPResult {
+    let full_tool_name = format!("{server_name}__{tool_name}");
+    let repo = crate::state::get_mcp_server_repository();
+
+    match repo.get_by_name(server_name).await {
+        Ok(Some(server)) => external_tool_error_result(
+            "Call External Tool",
+            server_name,
+            tool_name,
+            ExternalMcpErrorCategory::PermissionDenied,
+            &format!(
+                "Tool '{}' belongs to registered external server '{}' (Server ID: {}), but that server is not attached to session '{}'.",
+                full_tool_name, server_name, server.id, session_id
+            ),
+            vec![
+                "Use tool__list({\"availability\":\"session\"}) to inspect the tools callable right now in this session.".to_string(),
+                "Use tool__list({\"availability\":\"inventory\"}) to inspect registered external servers, inventory, and Server IDs.".to_string(),
+                format!(
+                    "If this session should gain access, attach Server ID \"{}\" with agent__update(id:\"<agentId>\", externalMcpServers:[\"{}\", ...]).",
+                    server.id, server.id
+                ),
+                "If changing the current agent is the wrong move, use agent__list(type=\"configs\") to find a better-equipped agent and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
+            ],
+        ),
+        Ok(None) => external_tool_error_result(
+            "Call External Tool",
+            server_name,
+            tool_name,
+            ExternalMcpErrorCategory::NotFound,
+            &format!(
+                "Tool '{}' is not callable in session '{}' and no registered external server named '{}' was found.",
+                full_tool_name, session_id, server_name
+            ),
+            vec![
+                "Use tool__list({\"availability\":\"session\"}) to inspect the tools callable in the current session.".to_string(),
+                "Use tool__list({\"availability\":\"inventory\"}) to inspect all registered external servers and tool inventory.".to_string(),
+                "Verify the server name and tool name match the registered inventory exactly.".to_string(),
+                "If you expected another agent environment to provide this tool, use agent__list(type=\"configs\") and delegate with agent__startSession(agentId:\"<agentId>\", task:\"...\").".to_string(),
+            ],
+        ),
+        Err(error) => external_tool_error_result(
+            "Call External Tool",
+            server_name,
+            tool_name,
+            ExternalMcpErrorCategory::Internal,
+            &format!(
+                "Could not verify whether external server '{}' is registered: {}",
+                server_name, error
+            ),
+            vec![
+                "Use tool__list({\"availability\":\"session\"}) to inspect currently callable tools.".to_string(),
+                "Use tool__list({\"availability\":\"inventory\"}) to inspect registered external servers if repository access recovers.".to_string(),
+                "Retry the operation or delegate to another agent with a known-good tool environment if the task is urgent.".to_string(),
+            ],
+        ),
     }
 }
 

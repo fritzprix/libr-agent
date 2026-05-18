@@ -205,10 +205,10 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows：** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+- **Windows：** [`LibrAgent_0.7.28_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_x64-setup.exe) · [`LibrAgent_0.7.28_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.7.28_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.7.28_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_amd64.AppImage) · [`LibrAgent_0.7.28_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_amd64.deb) · [`LibrAgent-0.7.28-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent-0.7.28-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.28)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **开发者设置：**
@@ -263,13 +263,13 @@ pnpm tauri dev
 
 ## LibrAgent 最适合什么场景
 
-| 如果你想要…… | LibrAgent 的优势在于…… |
-| --- | --- |
-| **一台本地 AI 工作站** | 文件、会话、工作空间和浏览器状态默认都保留在你的机器上 |
-| **真正 MCP 原生的桌面产品** | 你可以直接在产品里安装、导入和管理 MCP 服务器，而不是把它当成一个薄壳 |
-| **能真正干活的代理** | Workspace、Shell、Browser 和 Knowledge 工具都是为长时间执行设计的 |
-| **不用先造框架的多代理工作流** | `delegate`、`teamwork`、`org` 和 `schedule` 已经是产品内建能力 |
-| **兼顾 GUI 易用性和高级深度** | 你得到桌面 UI，同时不丢失扩展性和控制力 |
+| 如果你想要……                   | LibrAgent 的优势在于……                                                |
+| ------------------------------ | --------------------------------------------------------------------- |
+| **一台本地 AI 工作站**         | 文件、会话、工作空间和浏览器状态默认都保留在你的机器上                |
+| **真正 MCP 原生的桌面产品**    | 你可以直接在产品里安装、导入和管理 MCP 服务器，而不是把它当成一个薄壳 |
+| **能真正干活的代理**           | Workspace、Shell、Browser 和 Knowledge 工具都是为长时间执行设计的     |
+| **不用先造框架的多代理工作流** | `delegate`、`teamwork`、`org` 和 `schedule` 已经是产品内建能力        |
+| **兼顾 GUI 易用性和高级深度**  | 你得到桌面 UI，同时不丢失扩展性和控制力                               |
 
 ---
 

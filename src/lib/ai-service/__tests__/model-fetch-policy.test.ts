@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { AIServiceProvider } from '../types';
-import { shouldFetchDynamicModels } from '../model-fetch-policy';
+import {
+  getDynamicModelFetchPolicy,
+  shouldFetchDynamicModels,
+} from '../model-fetch-policy';
 
 describe('shouldFetchDynamicModels', () => {
   it('skips providers without enough configuration', () => {
@@ -54,5 +57,43 @@ describe('shouldFetchDynamicModels', () => {
         customModelId: 'local-model',
       }),
     ).toBe(false);
+  });
+
+  it('returns a missing api key reason for providers gated by credentials', () => {
+    expect(
+      getDynamicModelFetchPolicy({
+        provider: AIServiceProvider.Anthropic,
+        apiKey: '',
+      }),
+    ).toEqual({
+      canFetch: false,
+      reason: 'missing-api-key',
+    });
+  });
+
+  it('returns a custom model reason for openai-compatible custom model setups', () => {
+    expect(
+      getDynamicModelFetchPolicy({
+        provider: AIServiceProvider.OpenAI,
+        apiKey: '',
+        use3rdParty: true,
+        customModelId: 'local-model',
+      }),
+    ).toEqual({
+      canFetch: false,
+      reason: 'custom-openai-model',
+    });
+  });
+
+  it('returns allowed for providers with dynamic discovery enabled', () => {
+    expect(
+      getDynamicModelFetchPolicy({
+        provider: AIServiceProvider.Ollama,
+        apiKey: '',
+      }),
+    ).toEqual({
+      canFetch: true,
+      reason: 'allowed',
+    });
   });
 });

@@ -205,10 +205,10 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
-- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+- **Windows:** [`LibrAgent_0.7.28_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_x64-setup.exe) · [`LibrAgent_0.7.28_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.7.28_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.7.28_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_amd64.AppImage) · [`LibrAgent_0.7.28_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_amd64.deb) · [`LibrAgent-0.7.28-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent-0.7.28-1.x86_64.rpm)
+- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.28)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Entwickler-Setup:**
@@ -263,13 +263,13 @@ pnpm tauri dev
 
 ## Wo LibrAgent besonders gut passt
 
-| Wenn du willst... | LibrAgent ist stark, weil... |
-| --- | --- |
-| **eine lokale KI-Workstation** | Dateien, Sitzungen, Workspaces und Browser-Zustand standardmäßig auf deiner Maschine bleiben |
-| **ein wirklich MCP-natives Desktop-Produkt** | du MCP-Server installieren, importieren und verwalten kannst, ohne die App als dünnen Wrapper zu behandeln |
-| **Agenten, die echte Arbeit erledigen** | Workspace, Shell, Browser und Knowledge für langlaufende Ausführung gebaut sind |
-| **Multi-Agenten-Workflows ohne erst ein Framework zu bauen** | `delegate`, `teamwork`, `org` und `schedule` bereits Teil des Produkts sind |
-| **eine Brücke zwischen GUI-Komfort und Power-User-Tiefe** | du eine Desktop-Oberfläche bekommst, ohne Erweiterbarkeit oder Kontrolle zu verlieren |
+| Wenn du willst...                                            | LibrAgent ist stark, weil...                                                                               |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| **eine lokale KI-Workstation**                               | Dateien, Sitzungen, Workspaces und Browser-Zustand standardmäßig auf deiner Maschine bleiben               |
+| **ein wirklich MCP-natives Desktop-Produkt**                 | du MCP-Server installieren, importieren und verwalten kannst, ohne die App als dünnen Wrapper zu behandeln |
+| **Agenten, die echte Arbeit erledigen**                      | Workspace, Shell, Browser und Knowledge für langlaufende Ausführung gebaut sind                            |
+| **Multi-Agenten-Workflows ohne erst ein Framework zu bauen** | `delegate`, `teamwork`, `org` und `schedule` bereits Teil des Produkts sind                                |
+| **eine Brücke zwischen GUI-Komfort und Power-User-Tiefe**    | du eine Desktop-Oberfläche bekommst, ohne Erweiterbarkeit oder Kontrolle zu verlieren                      |
 
 ---
 

@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.28] - 2026-05-18
+
+### 🚀 Features
+
+- **MediaContentRenderer Localization (Rosetta)**: Expanded multi-language support (EN, KO, FR, ES, DE, ZH, JA, PT) for the MediaContentRenderer, ensuring a consistent international experience across all supported locales.
+- **Improved External Tool Guidance**: Enhanced documentation and guidance for external tool recovery and design principles, helping developers build more resilient MCP integrations.
+
+### 🐛 Fixes
+
+- **Agent Chat Scroll & Latch Stability**: Refined bottom-latch logic and increased the default scroll threshold to 50px, ensuring more reliable message anchoring and smoother scrolling during active streaming.
+- **Proxy & Connectivity Reliability**: Resolved regressions in proxy readiness resume and fixed configured proxy reuse for external tools, improving connection stability for remote MCP services.
+- **Reliable Streaming Scroll**: Switched to Virtuoso `followOutput='auto'` for more predictable scroll behavior during high-volume message streaming.
+- **Context Canonicalization**: Backported stable context canonicalization fixes to prevent intermittent state drift in long-running agent sessions.
+
+### 🔧 Internal
+
+- **Dependency Updates**: Bumped various backend dependencies including `tauri`, `handlebars`, `dashmap`, and `jsonschema` to their latest versions for improved security and performance.
+- **MediaContentRenderer & AgentChat Polish**: Addressed PR feedback for MediaContentRenderer and AgentChatMessages to improve code quality and maintainability.
+
+## [0.7.27] - 2026-05-18
+
+### 🚀 Features
+
+- **Agent Chat Workflow Upgrades**: Added pasted image attachments in agent chat, refreshed model picker UX, and improved mobile/status-bar responsiveness so day-to-day agent use feels smoother.
+- **Expanded Skill Library**: Added new diagnostic and analysis skills including computer diagnosis, log extraction/debugging, code-audit guidance, and broader React/React Native skill packs for richer agent assistance.
+- **UI Discoverability & Localization**: Added tooltip polish for draft workspace previews and expanded locale parity for common agent and scheduled-task guidance across translations.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Security: Path Traversal Hardening**: Closed a path traversal bypass in `SecurityValidator` to better protect workspace file operations.
+- **Agent Chat Reliability**: Fixed bottom-scroll anchoring, token metrics behavior, and status bar layout regressions so chat sessions stay readable during streaming and resume flows.
+- **Model & Translation Consistency**: Fixed model refresh UX, locale parity gaps, and scheduled-task `@file:` autocomplete hints to reduce confusing agent UI edge cases.
+
+### 🔧 Internal
+
+- **LLM Completion Architecture Refactor**: Split the completion request pipeline into focused Rust modules, cleaned up technical debt suppressions, and hardened compaction/request review follow-ups.
+- **Testing & Maintenance**: Expanded AgentSession/LLMService/provider coverage, stabilized pagination and tooltip mocks, and applied release-branch cleanup across generated assets and formatting.
+
 ## [0.7.26] - 2026-05-16
 
 ### 🚀 Features

@@ -902,7 +902,8 @@
       "provider": "Provider",
       "model": "Model",
       "loading": "Loading...",
-      "refreshModels": "Refresh models"
+      "refreshModels": "Refresh models",
+      "refreshRequiresApiKey": "Add an API key to enable model refresh"
     },
     "toolsModal": {
       "title": "Available Tools",
@@ -968,6 +969,23 @@
       "failedToStartPlaybookWorkflow": "Failed to start playbook workflow",
       "sessionContextUnavailable": "Session context is unavailable.",
       "sessionNotFoundOrFailed": "Session not found or failed to load."
+    },
+    "mediaRenderer": {
+      "failedToLoadImage": "Failed to load image",
+      "failedToLoadAudio": "Failed to load audio",
+      "failedToLoadVideo": "Failed to load video",
+      "unsupportedClipboard": "Image clipboard is not supported in this environment",
+      "copySuccess": "Image copied to clipboard",
+      "copyError": "Failed to copy image to clipboard",
+      "copyAria": "Copy image to clipboard",
+      "copyTooltip": "Copy Image",
+      "downloadCancelled": "Download cancelled",
+      "downloadError": "Failed to download image",
+      "downloadAria": "Download image",
+      "downloadTooltip": "Download Image",
+      "imageAlt": "Tool output",
+      "unsupportedAudio": "Your browser does not support the audio element.",
+      "unsupportedVideo": "Your browser does not support the video element."
     }
   },
   "scheduledTasks": {

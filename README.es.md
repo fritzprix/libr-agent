@@ -205,10 +205,10 @@ _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente ju
 Descarga el último instalador para tu plataforma desde la **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.7.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64-setup.exe) · [`LibrAgent_0.7.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.7.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.7.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.AppImage) · [`LibrAgent_0.7.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent_0.7.26_amd64.deb) · [`LibrAgent-0.7.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.26/LibrAgent-0.7.26-1.x86_64.rpm)
-- **Todos los archivos de la release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.26)
+- **Windows:** [`LibrAgent_0.7.28_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_x64-setup.exe) · [`LibrAgent_0.7.28_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.7.28_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.7.28_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_amd64.AppImage) · [`LibrAgent_0.7.28_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent_0.7.28_amd64.deb) · [`LibrAgent-0.7.28-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.28/LibrAgent-0.7.28-1.x86_64.rpm)
+- **Todos los archivos de la release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.7.28)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Configuración para desarrolladores:**
@@ -263,13 +263,13 @@ pnpm tauri dev
 
 ## Dónde encaja mejor LibrAgent
 
-| Si quieres... | LibrAgent destaca porque... |
-| --- | --- |
-| **Una estación de trabajo IA local** | archivos, sesiones, workspaces y estado del navegador se quedan en tu máquina por defecto |
-| **Un producto desktop realmente nativo MCP** | puedes instalar, importar y gestionar servidores MCP sin tratar la app como un wrapper fino |
-| **Agentes que hagan trabajo real** | Workspace, Shell, Browser y Knowledge están diseñados para ejecución prolongada |
-| **Workflows multi-agente sin construir antes un framework** | `delegate`, `teamwork`, `org` y `schedule` ya vienen dentro del producto |
-| **Un equilibrio entre GUI usable y profundidad para power users** | consigues una interfaz desktop sin perder extensibilidad ni control |
+| Si quieres...                                                     | LibrAgent destaca porque...                                                                 |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Una estación de trabajo IA local**                              | archivos, sesiones, workspaces y estado del navegador se quedan en tu máquina por defecto   |
+| **Un producto desktop realmente nativo MCP**                      | puedes instalar, importar y gestionar servidores MCP sin tratar la app como un wrapper fino |
+| **Agentes que hagan trabajo real**                                | Workspace, Shell, Browser y Knowledge están diseñados para ejecución prolongada             |
+| **Workflows multi-agente sin construir antes un framework**       | `delegate`, `teamwork`, `org` y `schedule` ya vienen dentro del producto                    |
+| **Un equilibrio entre GUI usable y profundidad para power users** | consigues una interfaz desktop sin perder extensibilidad ni control                         |
 
 ---
 

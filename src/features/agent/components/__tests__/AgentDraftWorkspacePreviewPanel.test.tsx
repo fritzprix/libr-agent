@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +11,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback ?? key,
   }),
+}));
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: Record<string, unknown>) => <div>{children as React.ReactNode}</div>,
+  TooltipTrigger: ({ children }: Record<string, unknown>) => <div>{children as React.ReactNode}</div>,
+  TooltipContent: ({ children }: Record<string, unknown>) => <div>{children as React.ReactNode}</div>,
 }));
 
 vi.mock('../workspace-panel/useDraftWorkspacePreviewTree', () => ({

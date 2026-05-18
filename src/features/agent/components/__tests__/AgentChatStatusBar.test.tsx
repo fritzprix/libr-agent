@@ -3,6 +3,8 @@ import '@testing-library/jest-dom';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TokenUsage } from '@/lib/ai-service/types';
+import type { Message } from '@/models/chat';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { AgentChatStatusBar } from '../AgentChatStatusBar';
 
@@ -14,6 +16,20 @@ const mocks = vi.hoisted(() => ({
   resume: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+}));
+
+const viewportState = vi.hoisted(() => ({
+  isMobile: false,
+}));
+
+const metricsBadgeState = vi.hoisted(() => ({
+  usage: null as TokenUsage | null,
+  compact: false,
+  hasCompactionPressure: false,
+}));
+
+const tokenMetricsState = vi.hoisted(() => ({
+  metrics: null as TokenUsage | null,
 }));
 
 type WorkflowStatus = 'idle' | 'busy' | 'paused' | 'error';
@@ -50,6 +66,7 @@ const mockAgentSession = {
 };
 
 const mockAgentChat = {
+  messages: [] as Message[],
   workflowStatus: 'idle' as WorkflowStatus,
   error: null,
   llmError: null,
@@ -91,8 +108,12 @@ vi.mock('@/hooks/use-agent-tools', () => ({
 
 vi.mock('@/hooks/use-token-metrics', () => ({
   useTokenMetrics: () => ({
-    metrics: null,
+    metrics: tokenMetricsState.metrics,
   }),
+}));
+
+vi.mock('@/hooks/use-mobile', () => ({
+  useIsMobile: () => viewportState.isMobile,
 }));
 
 interface MockAgentModelPickerProps {
@@ -133,10 +154,30 @@ vi.mock('../AgentToolsModal', () => ({
   default: () => null,
 }));
 
-vi.mock('./TokenMetricsBadge', () => ({
-  TokenMetricsBadge: () => null,
+vi.mock('../TokenMetricsBadge', () => ({
+  TokenMetricsBadge: ({
+    usage,
+    compact,
+    compactionPressure,
+  }: {
+    usage: TokenUsage;
+    compact?: boolean;
+    compactionPressure?: unknown;
+  }) => {
+    metricsBadgeState.usage = usage;
+    metricsBadgeState.compact = compact ?? false;
+    metricsBadgeState.hasCompactionPressure = compactionPressure !== undefined;
+    return (
+      <div
+        data-testid="metrics-badge"
+        data-compact={compact ? 'true' : 'false'}
+        data-has-pressure={compactionPressure ? 'true' : 'false'}
+      >
+        {usage.promptTokens} {usage.completionTokens}
+      </div>
+    );
+  },
 }));
-
 vi.mock('@/components/ui/LoadingSpinner', () => ({
   default: () => <div>spinner</div>,
 }));
@@ -184,13 +225,20 @@ vi.mock('react-i18next', () => ({
 describe('AgentChatStatusBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    viewportState.isMobile = false;
+    metricsBadgeState.usage = null;
+    metricsBadgeState.compact = false;
+    metricsBadgeState.hasCompactionPressure = false;
+    tokenMetricsState.metrics = null;
     mockAgentSession.session = { ...mockSession };
     mockAgentSession.executionMode = 'normal';
     mockAgentSession.yoloModeEnabled = false;
     mockAgentSession.unsafeModeEnabled = false;
+    mockAgentChat.messages = [];
     mockAgentChat.workflowStatus = 'idle';
     mockAgentChat.error = null;
     mockAgentChat.llmError = null;
+    tokenMetricsState.metrics = null;
     mocks.safeInvoke.mockResolvedValue({
       success: true,
       message: 'updated',
@@ -280,5 +328,51 @@ describe('AgentChatStatusBar', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
       'Model updated. Retry to recover the session.',
     );
+  });
+
+  it('renders a compact metrics badge without compaction pressure on mobile', () => {
+    viewportState.isMobile = true;
+
+    tokenMetricsState.metrics = {
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      details: {
+        evalDuration: 321,
+      },
+    };
+
+    render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveAttribute(
+      'data-compact',
+      'true',
+    );
+    expect(screen.getByTestId('metrics-badge')).toHaveAttribute(
+      'data-has-pressure',
+      'false',
+    );
+  });
+
+  it('keeps showing the last token metrics when streaming clears before persistence catches up', () => {
+    tokenMetricsState.metrics = {
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      details: {
+        evalDuration: 321,
+      },
+    };
+
+    const { rerender } = render(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('120');
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('45');
+
+    tokenMetricsState.metrics = null;
+    rerender(<AgentChatStatusBar />);
+
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('120');
+    expect(screen.getByTestId('metrics-badge')).toHaveTextContent('45');
   });
 });

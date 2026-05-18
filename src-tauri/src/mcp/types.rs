@@ -264,7 +264,6 @@ pub struct MCPResult {
 
 impl MCPResult {
     /// Creates a successful MCPResult with text content.
-    #[allow(dead_code)]
     pub fn success(text: &str) -> Self {
         Self {
             content: Some(vec![MCPContent::Text {
@@ -277,7 +276,6 @@ impl MCPResult {
     }
 
     /// Creates a successful MCPResult with text and structured content.
-    #[allow(dead_code)]
     pub fn success_with_data(text: &str, data: serde_json::Value) -> Self {
         Self {
             content: Some(vec![MCPContent::Text {
@@ -290,19 +288,16 @@ impl MCPResult {
     }
 
     /// Creates a non-error informational MCPResult.
-    #[allow(dead_code)]
     pub fn informational(message: &str) -> Self {
         Self::success(message)
     }
 
     /// Creates a non-error informational MCPResult with structured data.
-    #[allow(dead_code)]
     pub fn informational_with_data(message: &str, data: serde_json::Value) -> Self {
         Self::success_with_data(message, data)
     }
 
     /// Creates an error MCPResult.
-    #[allow(dead_code)]
     pub fn error(message: &str) -> Self {
         Self {
             content: Some(vec![MCPContent::Text {
@@ -310,21 +305,6 @@ impl MCPResult {
                 is_error: Some(true),
             }]),
             structured_content: None,
-            is_error: Some(true),
-        }
-    }
-
-    /// Creates an error MCPResult with additional structured data.
-    #[allow(dead_code)]
-    pub fn error_with_data(message: &str, data: serde_json::Value) -> Self {
-        Self {
-            content: Some(vec![MCPContent::Text {
-                text: message.to_string(),
-                is_error: Some(true),
-            }]),
-            structured_content: Some(serde_json::json!({
-                "error": data
-            })),
             is_error: Some(true),
         }
     }
@@ -498,6 +478,11 @@ pub struct ServiceContextOptions {
 #[serde(rename_all = "camelCase")]
 pub enum ContextVolatility {
     /// Rarely changes during a session; keep earlier to maximize cached prefix reuse.
+    ///
+    /// Stable contexts become part of the cacheable prompt prefix, so their rendered
+    /// text must be deterministic for equivalent state. Canonicalize unordered inputs
+    /// such as `HashMap`, `HashSet`, directory scans, and similar listings before
+    /// formatting them into `context_prompt`.
     Stable,
     /// Changes occasionally, but still worth keeping ahead of the most volatile state.
     #[default]

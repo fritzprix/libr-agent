@@ -265,7 +265,7 @@ export function calculateContextSafetyMargin(effectiveLimit: number): number {
 }
 
 export function estimateMCPContentTokens(content: MCPContent[]): number {
-  // ⚡ Bolt: Replace .reduce() with for-loop for better token estimation performance on hot paths
+  // ⚡ Bolt: Replace .reduce() with a loop to reduce per-element callback overhead on hot paths.
   let total = 0;
   for (const item of content) {
     switch (item.type) {
@@ -278,7 +278,9 @@ export function estimateMCPContentTokens(content: MCPContent[]): number {
         );
         break;
       case 'tool_call':
-        total += estimateTextTokens(`${item.name ?? ''} ${item.arguments ?? ''}`);
+        total += estimateTextTokens(
+          `${item.name ?? ''} ${item.arguments ?? ''}`,
+        );
         break;
       case 'thinking':
         total += estimateTextTokens(item.thinking ?? '');
@@ -324,10 +326,13 @@ export function estimatePayloadTokens(
   availableTools: unknown[] | undefined,
 ): number {
   const promptTokens = systemPrompt ? estimateTextTokens(systemPrompt) : 0;
-  const messageTokens = messages.reduce(
-    (sum, message) => sum + estimateMessageTokens(message),
-    0,
-  );
+
+  // ⚡ Bolt: Replace .reduce() with for-loop for better token estimation performance on hot paths
+  let messageTokens = 0;
+  for (const message of messages) {
+    messageTokens += estimateMessageTokens(message);
+  }
+
   const toolTokens = availableTools
     ? estimateTextTokens(JSON.stringify(availableTools))
     : 0;

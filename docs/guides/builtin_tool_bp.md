@@ -16,6 +16,7 @@ We design tools for an entity that has **High Reasoning** capabilities but **Zer
 1. **Cognitive Ergonomics:** The Agent is blind to JSON. It only "sees" text descriptions and text responses.
 2. **Zero Trust Architecture:** The Agent is an unreliable user. Validate everything (especially IDs) against the database before execution.
 3. **Course Correction:** Errors are not failures; they are navigational aids.
+4. **Environment Legibility:** A harness tool must teach the Agent what environment it is currently in (session-visible tools, platform inventory, permissions, attachment state) and which recovery paths remain open.
 
 ---
 
@@ -207,14 +208,88 @@ Context generation (e.g., DOM scraping) can be expensive.
 
 **Rule:** Never return a raw error. Always pair an error with a solution.
 
-### 6.2 Tool Group Isolation
+### 6.2 Environment Legibility
 
-**Rule:** Only suggest tools from the **same domain** (Tool Group).
+**Rule:** Recovery text must explain **why** the current path is blocked in harness terms, not just report the symptom.
+
+- Distinguish:
+  - **Unknown capability:** the server/tool does not exist in the registered inventory
+  - **Unavailable in this session:** the capability exists globally but is not attached to the current session
+  - **Permission / ownership violation:** the capability exists and is attached, but this operation is not allowed
+  - **Transport / internal failure:** the capability exists, but the underlying system failed
+- Surface the state the Agent needs to reason:
+  - current session visibility
+  - inventory visibility
+  - concrete IDs needed for repair (server ID, agent ID, session ID)
+- Never leak raw harness internals like `Server not found: grok` without interpretation.
+
+**Correct pattern:**
+
+```text
+✗ Call External Tool
+
+Source: External(grok)
+Tool: grok__search_web
+Category: PermissionDenied
+Cause: Tool 'grok__search_web' belongs to registered external server 'grok' (Server ID: srv_123),
+but that server is not attached to session 'sess_456'.
+
+Recovery:
+- Use tool__list({"availability":"session"}) to inspect tools callable right now.
+- Use tool__list({"availability":"inventory"}) to inspect registered servers and Server IDs.
+- Attach Server ID "srv_123" with agent__update(id:"<agentId>", externalMcpServers:["srv_123"]).
+- If changing this agent is the wrong move, use agent__list(type="configs") and
+  delegate with agent__startSession(agentId:"<agentId>", task:"...").
+```
+
+**Why This Matters:** In a harness, the error must teach the Agent whether it should repair the current session, inspect global inventory, or switch strategy entirely.
+
+### 6.3 Tool Group Isolation (Default) + Meta-Recovery Exception
+
+**Rule:** By default, suggest tools from the **same domain** (Tool Group).
 
 - _Correct:_ Browser Error → Suggest `scrollPage`.
 - _Incorrect:_ Browser Error → Suggest `createTodo` (Planning).
 
-### 6.3 Success/Error Channel Separation
+**Harness Exception:** When the failure is about the **tool environment itself** rather than the domain operation, meta-tools may be suggested across tool groups.
+
+Allowed cross-group recovery examples:
+
+- `tool__list(...)` to inspect current session visibility vs global inventory
+- `agent__update(...)` to attach missing external capabilities
+- `agent__list(type="configs")` to find a better-equipped agent
+- `agent__startSession(...)` to delegate when the current session should not be mutated
+
+This exception is for **environment repair / delegation only**. Do not use it to suggest unrelated business-domain actions.
+
+### 6.4 Alternatives Are Mandatory for Environment Failures
+
+**Rule:** If the current session lacks a capability, recovery guidance must expose at least one **repair path** and one **continuation path**.
+
+- **Repair path:** fix the current environment (`tool__list`, `agent__update`, reconnect, reattach)
+- **Continuation path:** continue the task elsewhere (`agent__list`, `agent__startSession`, delegated child session)
+
+**Anti-Pattern:**
+
+```text
+✗ Tool not available in this session.
+```
+
+**Correct Pattern:**
+
+```text
+✗ Tool not available in this session.
+
+Recovery:
+- Use tool__list({"availability":"session"}) to confirm the current callable set.
+- Use tool__list({"availability":"inventory"}) to inspect registered servers.
+- Attach the missing capability with agent__update(...).
+- Or delegate to another agent with agent__startSession(...).
+```
+
+The Agent must never be forced into a dead end when the system can still proceed by reconfiguration or delegation.
+
+### 6.5 Success/Error Channel Separation
 
 **Rule:** Never mix success hints with error responses.
 
@@ -254,7 +329,7 @@ match execute_script(...) {
 
 **Why This Matters:** If `clickElement` fails due to invalid CSS selector, suggesting "check for page changes" wastes AI tokens on non-existent changes.
 
-### 6.4 Implemented Builtin Error Semantics (March 2026)
+### 6.6 Implemented Builtin Error Semantics (March 2026)
 
 The current builtin behavior now follows MCP-style outcome semantics more closely than the older
 "only agent-fixable failures are hard errors" approach.
@@ -357,7 +432,9 @@ Before deploying a tool, validation against these checks is mandatory:
 - [ ] **Firewall:** All input IDs are validated (`db.exists()`) before use.
 - [ ] **Dual Channel:** Text output contains all IDs/Status needed for reasoning.
 - [ ] **Hints:** Errors provide actionable next steps.
-- [ ] **Isolation:** Hints only suggest tools from the same Tool Group.
+- [ ] **Environment Legibility:** Harness failures explain whether the capability is unknown, detached from the session, permission-blocked, or internally broken.
+- [ ] **Alternatives:** Environment failures expose both a repair path and a continuation path (for example, attach vs delegate).
+- [ ] **Isolation:** Hints stay within the same Tool Group by default; cross-group suggestions are limited to environment repair / delegation.
 - [ ] **Channel Separation:** Success hints only appear after confirmed operation success, never in error responses.
 - [ ] **Vocabulary:** Descriptions use "Extract/Target" instead of "Copy/Click".
 - [ ] **Testing:** Unit tests exist for Error Guidance formatting.

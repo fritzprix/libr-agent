@@ -5,6 +5,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -30,6 +31,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Virtuoso,
   type Components,
+  type IndexLocationWithAlign,
   type ListProps,
   type VirtuosoHandle,
 } from 'react-virtuoso';
@@ -43,8 +45,25 @@ import {
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
-const DEFAULT_BOTTOM_THRESHOLD = 4;
 const CHAT_COMPOSER_CLEARANCE = 24;
+// Visual bottom stays intentionally strict so the FAB only hides when the
+// viewport is truly pinned, while the streaming latch absorbs normal drift.
+const VISUAL_BOTTOM_THRESHOLD = 4;
+// A stream that is still within ~3 lines of the bottom should snap back into
+// the latch when the user scrolls downward again.
+const STREAMING_LATCH_ACQUIRE_DISTANCE = 48;
+// Small upward movement away from bottom should be enough to escape the latch.
+const STREAMING_LATCH_DIRECTIONAL_RELEASE_DISTANCE = 24;
+// A large distance from bottom always releases the latch, regardless of delta.
+const STREAMING_LATCH_RELEASE_DISTANCE = 120;
+// Ignore tiny wheel/touch jitter; require a real upward gesture before release.
+const STREAMING_LATCH_MIN_UPWARD_DELTA = 12;
+// Keep the latch briefly after busy->idle so the final token/layout settle
+// doesn't immediately drop the viewport.
+const STREAMING_LATCH_SETTLE_MS = 160;
+// Ignore scroll events caused by our own bottom-forcing scroll for one short
+// window so programmatic movement does not look like user intent.
+const SELF_SCROLL_IGNORE_WINDOW_MS = 160;
 
 export function getPrependedFirstItemIndex(
   current: number,
@@ -56,12 +75,17 @@ export function getPrependedFirstItemIndex(
 export function getInitialTopMostItemIndex(
   firstItemIndex: number,
   itemCount: number,
-): number {
-  return itemCount > 0 ? firstItemIndex + itemCount - 1 : firstItemIndex;
+): IndexLocationWithAlign | number {
+  return itemCount > 0
+    ? {
+        index: firstItemIndex + itemCount - 1,
+        align: 'end',
+      }
+    : firstItemIndex;
 }
 
 export function getVisualBottomThreshold(): number {
-  return DEFAULT_BOTTOM_THRESHOLD;
+  return VISUAL_BOTTOM_THRESHOLD;
 }
 
 export function shouldShowAnalysisLoader(
@@ -80,9 +104,27 @@ export function shouldShowAnalysisLoader(
 
 export function isPinnedToBottom(
   distanceFromBottom: number,
-  threshold = DEFAULT_BOTTOM_THRESHOLD,
+  threshold = VISUAL_BOTTOM_THRESHOLD,
 ): boolean {
   return distanceFromBottom <= threshold;
+}
+
+function isNearBottomForLatch(distanceFromBottom: number): boolean {
+  return distanceFromBottom <= STREAMING_LATCH_ACQUIRE_DISTANCE;
+}
+
+function shouldReleaseBottomLatch(
+  distanceFromBottom: number,
+  scrollDelta: number,
+): boolean {
+  if (distanceFromBottom > STREAMING_LATCH_RELEASE_DISTANCE) {
+    return true;
+  }
+
+  return (
+    scrollDelta <= -STREAMING_LATCH_MIN_UPWARD_DELTA &&
+    distanceFromBottom > STREAMING_LATCH_DIRECTIONAL_RELEASE_DISTANCE
+  );
 }
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
@@ -97,7 +139,13 @@ function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
 }
 
 function scrollFooterSentinelIntoView(sentinel: HTMLDivElement | null) {
-  sentinel?.scrollIntoView({
+  // Test doubles can replace the DOM node with a partial mock that lacks the
+  // real method, so keep the runtime guard instead of assuming browser-only DOM.
+  if (!sentinel || typeof sentinel.scrollIntoView !== 'function') {
+    return;
+  }
+
+  sentinel.scrollIntoView({
     block: 'end',
     inline: 'nearest',
     behavior: 'auto',
@@ -392,8 +440,19 @@ export function AgentChatMessages() {
   const footerEndRef = useRef<HTMLDivElement | null>(null);
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
+  const virtuosoAtBottomRef = useRef(false);
+  const visualBottomRef = useRef(true);
   const isPinnedToBottomRef = useRef(true);
+  const bottomLatchActiveRef = useRef(false);
+  const awaitingInitialBottomAlignmentRef = useRef(true);
+  const bottomAlignmentSettleTimeoutRef = useRef<number | null>(null);
+  const bottomLatchSettleTimeoutRef = useRef<number | null>(null);
+  const prependStabilizeTimeoutRef = useRef<number | null>(null);
+  const isPreservingPrependPositionRef = useRef(false);
   const autoScrollFrameRef = useRef<number | null>(null);
+  const selfScrollIgnoreUntilRef = useRef(0);
+  const previousScrollTopRef = useRef<number | null>(null);
+  const groupedMessageCountRef = useRef(groupedMessages.length);
   const hasHydratedMessagesRef = useRef<{
     sessionId: string | undefined;
     hasMessages: boolean;
@@ -405,7 +464,19 @@ export function AgentChatMessages() {
     INITIAL_FIRST_ITEM_INDEX,
   );
   const [isPinned, setIsPinned] = useState(true);
+  const [scrollerElement, setScrollerElement] = useState<HTMLDivElement | null>(
+    null,
+  );
   const bottomThreshold = getVisualBottomThreshold();
+  const forceBottomScrollReasons = useMemo(
+    () =>
+      new Set([
+        'manual-scroll-to-bottom',
+        'session-changed',
+        'hydrated-messages-arrived',
+      ]),
+    [],
+  );
   const previousListStateRef = useRef<{
     firstId: string | undefined;
     lastId: string | undefined;
@@ -417,6 +488,49 @@ export function AgentChatMessages() {
     length: 0,
     sessionId: undefined,
   });
+  const effectiveFirstItemIndex =
+    previousListStateRef.current.sessionId === session?.id
+      ? firstItemIndex
+      : INITIAL_FIRST_ITEM_INDEX;
+  const scrollDebugStateRef = useRef({
+    sessionId: session?.id,
+    firstItemIndex,
+    effectiveFirstItemIndex,
+  });
+  scrollDebugStateRef.current = {
+    sessionId: session?.id,
+    firstItemIndex,
+    effectiveFirstItemIndex,
+  };
+  const logScrollState = useCallback(
+    (
+      event: string,
+      extra: Record<string, boolean | number | string | undefined> = {},
+    ) => {
+      if (!import.meta.env.DEV) {
+        return;
+      }
+
+      const currentState = scrollDebugStateRef.current;
+      logger.debug('[scroll-debug] AgentChatMessages', {
+        event,
+        sessionId: currentState.sessionId,
+        groupedMessageCount: groupedMessageCountRef.current,
+        firstItemIndex: currentState.firstItemIndex,
+        effectiveFirstItemIndex: currentState.effectiveFirstItemIndex,
+        isPinned: isPinnedToBottomRef.current,
+        visualBottom: visualBottomRef.current,
+        bottomLatchActive: bottomLatchActiveRef.current,
+        awaitingInitialBottomAlignment:
+          awaitingInitialBottomAlignmentRef.current,
+        hasVirtuosoHandle: !!virtuosoRef.current,
+        hasScroller: !!scrollerElementRef.current,
+        hasFooterSentinel: !!footerEndRef.current,
+        ...extra,
+      });
+    },
+    [],
+  );
 
   const compactedEvent = useMemo(() => {
     if (!compactedRange) {
@@ -452,24 +566,107 @@ export function AgentChatMessages() {
   // Memoize references so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(() => error, [error]);
   const agentLlmError = useMemo(() => llmError, [llmError]);
+  groupedMessageCountRef.current = groupedMessages.length;
 
-  const scrollToBottomNow = useCallback(() => {
-    const scrolledWithVirtuoso = scrollVirtuosoToBottom(
-      virtuosoRef.current,
-      groupedMessages.length,
-    );
+  const setEffectivePinnedState = useCallback((nextPinned: boolean) => {
+    isPinnedToBottomRef.current = nextPinned;
+    setIsPinned(nextPinned);
+  }, []);
 
-    if (!scrolledWithVirtuoso || groupedMessages.length === 0) {
-      scrollFooterSentinelIntoView(footerEndRef.current);
+  const clearBottomLatchSettleTimeout = useCallback(() => {
+    if (bottomLatchSettleTimeoutRef.current !== null) {
+      window.clearTimeout(bottomLatchSettleTimeoutRef.current);
+      bottomLatchSettleTimeoutRef.current = null;
     }
-  }, [groupedMessages.length]);
+  }, []);
 
-  useEffect(() => {
+  const acquireBottomLatch = useCallback(
+    (reason: string) => {
+      clearBottomLatchSettleTimeout();
+      if (bottomLatchActiveRef.current) {
+        return;
+      }
+
+      bottomLatchActiveRef.current = true;
+      setEffectivePinnedState(true);
+      logScrollState('bottom-latch:acquire', {
+        reason,
+      });
+    },
+    [clearBottomLatchSettleTimeout, logScrollState, setEffectivePinnedState],
+  );
+
+  const releaseBottomLatch = useCallback(
+    (reason: string) => {
+      clearBottomLatchSettleTimeout();
+      if (!bottomLatchActiveRef.current) {
+        return;
+      }
+
+      bottomLatchActiveRef.current = false;
+      setEffectivePinnedState(visualBottomRef.current);
+      logScrollState('bottom-latch:release', {
+        reason,
+        visualBottom: visualBottomRef.current,
+      });
+    },
+    [clearBottomLatchSettleTimeout, logScrollState, setEffectivePinnedState],
+  );
+
+  const executeScrollToBottom = useCallback(
+    (reason: string) => {
+      const itemCount = groupedMessageCountRef.current;
+      selfScrollIgnoreUntilRef.current =
+        performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
+      logScrollState('executeScrollToBottom:start', {
+        itemCount,
+        reason,
+        bottomLatchActive: bottomLatchActiveRef.current,
+      });
+
+      if (footerEndRef.current) {
+        logScrollState('executeScrollToBottom:footer-sentinel', {
+          itemCount,
+          reason,
+        });
+        scrollFooterSentinelIntoView(footerEndRef.current);
+        return;
+      }
+
+      const scrolledWithVirtuoso = scrollVirtuosoToBottom(
+        virtuosoRef.current,
+        itemCount,
+      );
+
+      if (!scrolledWithVirtuoso) {
+        logScrollState('executeScrollToBottom:unavailable', {
+          itemCount,
+          reason,
+          scrolledWithVirtuoso,
+        });
+        return;
+      }
+
+      logScrollState('executeScrollToBottom:virtuoso-scroll', {
+        itemCount,
+        reason,
+        scrolledWithVirtuoso,
+      });
+    },
+    [logScrollState],
+  );
+
+  useLayoutEffect(() => {
     const previous = previousListStateRef.current;
     const firstId = groupedMessages[0]?.message.id;
     const lastId = groupedMessages[groupedMessages.length - 1]?.message.id;
 
     if (previous.sessionId !== session?.id) {
+      logScrollState('listState:session-changed', {
+        previousSessionId: previous.sessionId,
+        nextSessionId: session?.id,
+        groupedMessageCount: groupedMessages.length,
+      });
       setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
     } else if (
       groupedMessages.length > previous.length &&
@@ -477,6 +674,20 @@ export function AgentChatMessages() {
       previous.firstId !== firstId
     ) {
       const prependCount = groupedMessages.length - previous.length;
+      isPreservingPrependPositionRef.current = true;
+      if (prependStabilizeTimeoutRef.current !== null) {
+        window.clearTimeout(prependStabilizeTimeoutRef.current);
+      }
+      prependStabilizeTimeoutRef.current = window.setTimeout(() => {
+        prependStabilizeTimeoutRef.current = null;
+        isPreservingPrependPositionRef.current = false;
+        logScrollState('prepend-preservation:settled', {
+          prependCount,
+        });
+      }, 250);
+      logScrollState('prepend-preservation:start', {
+        prependCount,
+      });
       setFirstItemIndex((current) =>
         getPrependedFirstItemIndex(current, prependCount),
       );
@@ -488,28 +699,146 @@ export function AgentChatMessages() {
       length: groupedMessages.length,
       sessionId: session?.id,
     };
-  }, [groupedMessages, session?.id]);
+  }, [groupedMessages, logScrollState, session?.id]);
 
-  const scheduleScrollToBottom = useCallback(() => {
-    if (autoScrollFrameRef.current !== null) {
-      cancelAnimationFrame(autoScrollFrameRef.current);
-    }
+  const scheduleScrollToBottom = useCallback(
+    (reason: string) => {
+      const shouldForce =
+        forceBottomScrollReasons.has(reason) || bottomLatchActiveRef.current;
+      const shouldSuppressForPrepend =
+        isPreservingPrependPositionRef.current &&
+        !forceBottomScrollReasons.has(reason);
 
-    autoScrollFrameRef.current = requestAnimationFrame(() => {
-      autoScrollFrameRef.current = null;
-      scrollToBottomNow();
-    });
-  }, [scrollToBottomNow]);
+      const shouldSuppressForUserScroll =
+        !awaitingInitialBottomAlignmentRef.current &&
+        !visualBottomRef.current &&
+        !shouldForce;
+
+      if (shouldSuppressForPrepend || shouldSuppressForUserScroll) {
+        logScrollState('scheduleScrollToBottom:suppressed', {
+          reason,
+          shouldSuppressForPrepend,
+          shouldSuppressForUserScroll,
+          shouldForce,
+        });
+        return;
+      }
+
+      logScrollState('scheduleScrollToBottom', {
+        reason,
+      });
+      if (autoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(autoScrollFrameRef.current);
+      }
+
+      autoScrollFrameRef.current = requestAnimationFrame(() => {
+        autoScrollFrameRef.current = null;
+        logScrollState('scheduleScrollToBottom:frame-fired', {
+          reason,
+        });
+        executeScrollToBottom(reason);
+      });
+    },
+    [executeScrollToBottom, forceBottomScrollReasons, logScrollState],
+  );
+
+  const scheduleBottomAlignmentSettle = useCallback(
+    (reason: string) => {
+      if (bottomAlignmentSettleTimeoutRef.current !== null) {
+        window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
+      }
+
+      bottomAlignmentSettleTimeoutRef.current = window.setTimeout(() => {
+        bottomAlignmentSettleTimeoutRef.current = null;
+
+        if (!virtuosoAtBottomRef.current) {
+          logScrollState('bottom-alignment:settle-skipped', {
+            reason,
+          });
+          return;
+        }
+
+        awaitingInitialBottomAlignmentRef.current = false;
+        logScrollState('bottom-alignment:settled', {
+          reason,
+        });
+      }, 250);
+    },
+    [logScrollState],
+  );
+
+  const handleVirtuosoAtBottomStateChange = useCallback(
+    (atBottom: boolean) => {
+      virtuosoAtBottomRef.current = atBottom;
+      logScrollState('virtuoso:atBottomStateChange', {
+        atBottom,
+      });
+      if (atBottom) {
+        scheduleBottomAlignmentSettle('at-bottom-state-change');
+      }
+    },
+    [logScrollState, scheduleBottomAlignmentSettle],
+  );
+
+  const handleTotalListHeightChanged = useCallback(
+    (height: number) => {
+      logScrollState('virtuoso:totalListHeightChanged', {
+        height,
+      });
+      if (groupedMessageCountRef.current === 0) {
+        logScrollState('virtuoso:totalListHeightChanged:skip', {
+          height,
+        });
+        return;
+      }
+
+      scheduleBottomAlignmentSettle('total-list-height-changed');
+
+      if (
+        !awaitingInitialBottomAlignmentRef.current &&
+        !isPinnedToBottomRef.current
+      ) {
+        logScrollState('virtuoso:totalListHeightChanged:skip', {
+          height,
+        });
+        return;
+      }
+
+      scheduleScrollToBottom('total-list-height-changed');
+    },
+    [logScrollState, scheduleBottomAlignmentSettle, scheduleScrollToBottom],
+  );
 
   useEffect(() => {
-    isPinnedToBottomRef.current = true;
-    setIsPinned(true);
+    awaitingInitialBottomAlignmentRef.current = true;
+    virtuosoAtBottomRef.current = false;
+    visualBottomRef.current = true;
+    bottomLatchActiveRef.current = false;
+    isPreservingPrependPositionRef.current = false;
+    setEffectivePinnedState(true);
     if (autoScrollFrameRef.current !== null) {
       cancelAnimationFrame(autoScrollFrameRef.current);
       autoScrollFrameRef.current = null;
     }
-    scheduleScrollToBottom();
-  }, [scheduleScrollToBottom, session?.id]);
+    if (bottomAlignmentSettleTimeoutRef.current !== null) {
+      window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
+      bottomAlignmentSettleTimeoutRef.current = null;
+    }
+    if (prependStabilizeTimeoutRef.current !== null) {
+      window.clearTimeout(prependStabilizeTimeoutRef.current);
+      prependStabilizeTimeoutRef.current = null;
+    }
+    clearBottomLatchSettleTimeout();
+    previousScrollTopRef.current = null;
+    logScrollState('sessionEffect:reset-bottom-alignment');
+    scheduleScrollToBottom('session-changed');
+  }, [
+    clearBottomLatchSettleTimeout,
+    logScrollState,
+    scheduleScrollToBottom,
+    session?.id,
+    setEffectivePinnedState,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -517,34 +846,108 @@ export function AgentChatMessages() {
         cancelAnimationFrame(autoScrollFrameRef.current);
         autoScrollFrameRef.current = null;
       }
+      if (bottomAlignmentSettleTimeoutRef.current !== null) {
+        window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
+        bottomAlignmentSettleTimeoutRef.current = null;
+      }
+      if (prependStabilizeTimeoutRef.current !== null) {
+        window.clearTimeout(prependStabilizeTimeoutRef.current);
+        prependStabilizeTimeoutRef.current = null;
+      }
+      clearBottomLatchSettleTimeout();
     };
-  }, []);
+  }, [clearBottomLatchSettleTimeout]);
 
   useEffect(() => {
-    const scroller = scrollerElementRef.current;
-
-    if (!scroller) {
+    if (!scrollerElement) {
       return;
     }
 
     const updatePinnedState = () => {
+      const currentScrollTop = scrollerElement.scrollTop;
+      const previousScrollTop = previousScrollTopRef.current;
+      const scrollDelta =
+        previousScrollTop === null ? 0 : currentScrollTop - previousScrollTop;
+      previousScrollTopRef.current = currentScrollTop;
       const distanceFromBottom =
-        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-      const nextPinned = isPinnedToBottom(distanceFromBottom, bottomThreshold);
-      isPinnedToBottomRef.current = nextPinned;
-      setIsPinned((current) => (current === nextPinned ? current : nextPinned));
+        scrollerElement.scrollHeight -
+        currentScrollTop -
+        scrollerElement.clientHeight;
+      const visualPinned = isPinnedToBottom(
+        distanceFromBottom,
+        bottomThreshold,
+      );
+      const nearBottomForLatch = isNearBottomForLatch(distanceFromBottom);
+      const isSelfScroll = performance.now() < selfScrollIgnoreUntilRef.current;
+
+      visualBottomRef.current = visualPinned;
+
+      if (
+        bottomLatchActiveRef.current &&
+        !isSelfScroll &&
+        !isPreservingPrependPositionRef.current &&
+        shouldReleaseBottomLatch(distanceFromBottom, scrollDelta)
+      ) {
+        awaitingInitialBottomAlignmentRef.current = false;
+        virtuosoAtBottomRef.current = false;
+        if (autoScrollFrameRef.current !== null) {
+          cancelAnimationFrame(autoScrollFrameRef.current);
+          autoScrollFrameRef.current = null;
+        }
+        if (bottomAlignmentSettleTimeoutRef.current !== null) {
+          window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
+          bottomAlignmentSettleTimeoutRef.current = null;
+        }
+        releaseBottomLatch('scroll-release');
+      }
+
+      if (
+        !bottomLatchActiveRef.current &&
+        workflowStatus === 'busy' &&
+        nearBottomForLatch &&
+        scrollDelta >= 0 &&
+        !isPreservingPrependPositionRef.current
+      ) {
+        acquireBottomLatch('scroll-reacquire');
+      }
+
+      if (!visualPinned && !bottomLatchActiveRef.current) {
+        awaitingInitialBottomAlignmentRef.current = false;
+        virtuosoAtBottomRef.current = false;
+      }
+
+      setEffectivePinnedState(
+        bottomLatchActiveRef.current ? true : visualPinned,
+      );
+      logScrollState('scroll:updatePinnedState', {
+        currentScrollTop,
+        scrollDelta,
+        distanceFromBottom,
+        visualPinned,
+        nearBottomForLatch,
+        isSelfScroll,
+      });
     };
     const handleScroll = () => {
       updatePinnedState();
     };
 
-    scroller.addEventListener('scroll', handleScroll, { passive: true });
+    scrollerElement.addEventListener('scroll', handleScroll, { passive: true });
     updatePinnedState();
 
     return () => {
-      scroller.removeEventListener('scroll', handleScroll);
+      scrollerElement.removeEventListener('scroll', handleScroll);
     };
-  }, [bottomThreshold, session?.id]);
+  }, [
+    acquireBottomLatch,
+    bottomThreshold,
+    logScrollState,
+    releaseBottomLatch,
+    scrollerElement,
+    session?.id,
+    setEffectivePinnedState,
+    workflowStatus,
+  ]);
 
   useEffect(() => {
     const trackedSessionId = hasHydratedMessagesRef.current.sessionId;
@@ -554,6 +957,9 @@ export function AgentChatMessages() {
         sessionId: session?.id,
         hasMessages: groupedMessages.length > 0,
       };
+      logScrollState('hydration:tracked-session-changed', {
+        hasMessages: groupedMessages.length > 0,
+      });
       return;
     }
 
@@ -562,34 +968,65 @@ export function AgentChatMessages() {
       groupedMessages.length > 0 &&
       isPinnedToBottomRef.current
     ) {
-      scheduleScrollToBottom();
+      awaitingInitialBottomAlignmentRef.current = true;
+      virtuosoAtBottomRef.current = false;
+      isPreservingPrependPositionRef.current = false;
+      if (bottomAlignmentSettleTimeoutRef.current !== null) {
+        window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
+        bottomAlignmentSettleTimeoutRef.current = null;
+      }
+      if (prependStabilizeTimeoutRef.current !== null) {
+        window.clearTimeout(prependStabilizeTimeoutRef.current);
+        prependStabilizeTimeoutRef.current = null;
+      }
+      logScrollState('hydration:messages-arrived');
+      scheduleScrollToBottom('hydrated-messages-arrived');
     }
 
     if (groupedMessages.length > 0) {
       hasHydratedMessagesRef.current.hasMessages = true;
     }
-  }, [groupedMessages.length, scheduleScrollToBottom, session?.id]);
+  }, [
+    groupedMessages.length,
+    logScrollState,
+    scheduleScrollToBottom,
+    session?.id,
+  ]);
 
-  const scrollToBottom = useCallback(() => {
-    isPinnedToBottomRef.current = true;
-    setIsPinned(true);
-    scheduleScrollToBottom();
-  }, [scheduleScrollToBottom]);
+  const handleManualScrollToBottom = useCallback(() => {
+    visualBottomRef.current = true;
+    if (workflowStatus === 'busy') {
+      acquireBottomLatch('manual-scroll-to-bottom');
+    } else {
+      setEffectivePinnedState(true);
+    }
+    logScrollState('scrollToBottom:manual');
+    scheduleScrollToBottom('manual-scroll-to-bottom');
+  }, [
+    acquireBottomLatch,
+    logScrollState,
+    scheduleScrollToBottom,
+    setEffectivePinnedState,
+    workflowStatus,
+  ]);
 
   useEffect(() => {
-    const scroller = scrollerElementRef.current;
-    const content = getScrollContentElement(scroller);
+    const content = getScrollContentElement(scrollerElement);
 
     if (!content || typeof ResizeObserver === 'undefined') {
       return;
     }
 
     const observer = new ResizeObserver(() => {
-      if (!isPinnedToBottomRef.current) {
+      if (
+        !bottomLatchActiveRef.current &&
+        !visualBottomRef.current &&
+        !awaitingInitialBottomAlignmentRef.current
+      ) {
         return;
       }
 
-      scheduleScrollToBottom();
+      scheduleScrollToBottom('content-resize-observer');
     });
 
     observer.observe(content);
@@ -597,43 +1034,67 @@ export function AgentChatMessages() {
     return () => {
       observer.disconnect();
     };
-  }, [scheduleScrollToBottom, session?.id]);
+  }, [scheduleScrollToBottom, scrollerElement, session?.id]);
 
   useEffect(() => {
-    const scroller = scrollerElementRef.current;
-
-    if (!scroller || typeof ResizeObserver === 'undefined') {
+    if (!scrollerElement || typeof ResizeObserver === 'undefined') {
       return;
     }
 
     const observer = new ResizeObserver(() => {
-      if (!isPinnedToBottomRef.current) {
+      if (
+        !bottomLatchActiveRef.current &&
+        !visualBottomRef.current &&
+        !awaitingInitialBottomAlignmentRef.current
+      ) {
         return;
       }
 
-      scheduleScrollToBottom();
+      scheduleScrollToBottom('scroller-resize-observer');
     });
 
-    observer.observe(scroller);
+    observer.observe(scrollerElement);
 
     return () => {
       observer.disconnect();
     };
-  }, [scheduleScrollToBottom, session?.id]);
+  }, [scheduleScrollToBottom, scrollerElement, session?.id]);
 
   useEffect(() => {
-    if (!isPinnedToBottomRef.current) {
+    if (workflowStatus === 'busy') {
+      if (
+        !bottomLatchActiveRef.current &&
+        !isPreservingPrependPositionRef.current &&
+        groupedMessages.length > 0 &&
+        hasHydratedMessagesRef.current.hasMessages &&
+        (visualBottomRef.current || awaitingInitialBottomAlignmentRef.current)
+      ) {
+        acquireBottomLatch('workflow-busy');
+      }
+    } else if (bottomLatchActiveRef.current) {
+      clearBottomLatchSettleTimeout();
+      bottomLatchSettleTimeoutRef.current = window.setTimeout(() => {
+        bottomLatchSettleTimeoutRef.current = null;
+        releaseBottomLatch('workflow-settled');
+      }, STREAMING_LATCH_SETTLE_MS);
+    }
+
+    if (!bottomLatchActiveRef.current && !isPinnedToBottomRef.current) {
       return;
     }
 
-    scheduleScrollToBottom();
+    scheduleScrollToBottom('reactive-state-change');
   }, [
+    acquireBottomLatch,
     latestMessage,
     workflowStatus,
     pendingApprovals?.length,
     agentError,
     agentLlmError,
+    groupedMessages.length,
+    releaseBottomLatch,
     scheduleScrollToBottom,
+    clearBottomLatchSettleTimeout,
   ]);
 
   const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
@@ -688,6 +1149,12 @@ export function AgentChatMessages() {
           {...props}
           ref={(node) => {
             scrollerElementRef.current = node;
+            setScrollerElement((current) =>
+              current === node ? current : node,
+            );
+            logScrollState('scroller-ref:set', {
+              hasNode: !!node,
+            });
             setForwardedRef(ref, node);
           }}
           className={cn('agent-chat-scrollbar', className)}
@@ -705,7 +1172,7 @@ export function AgentChatMessages() {
       List: AgentChatMessagesList,
       Scroller: AgentChatMessagesScroller,
     };
-  }, []);
+  }, [logScrollState]);
 
   const renderMessageGroup = useCallback(
     (_index: number, groupedMessage: GroupedMessage) => {
@@ -820,15 +1287,18 @@ export function AgentChatMessages() {
         components={virtuosoComponents}
         computeItemKey={(_, groupedMessage) => groupedMessage.message.id}
         context={virtuosoContext}
-        firstItemIndex={firstItemIndex}
+        firstItemIndex={effectiveFirstItemIndex}
         initialTopMostItemIndex={getInitialTopMostItemIndex(
-          firstItemIndex,
+          effectiveFirstItemIndex,
           groupedMessages.length,
         )}
         atBottomThreshold={bottomThreshold}
+        atBottomStateChange={handleVirtuosoAtBottomStateChange}
+        // Disabled: the latch logic is the sole owner of bottom-follow behavior.
         followOutput={false}
         increaseViewportBy={{ top: 640, bottom: 960 }}
         startReached={handleReachTop}
+        totalListHeightChanged={handleTotalListHeightChanged}
         itemContent={renderMessageGroup}
       />
       {!isPinned && (
@@ -848,7 +1318,7 @@ export function AgentChatMessages() {
                   'agent.messages.scrollToLatest',
                   'Scroll to latest',
                 )}
-                onClick={scrollToBottom}
+                onClick={handleManualScrollToBottom}
               >
                 <ChevronDown className="size-4" />
               </Button>

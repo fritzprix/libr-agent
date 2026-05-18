@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::mcp::builtin::attachments::storage::AttachmentsStorage;
+    use crate::mcp::builtin::attachments::storage::{AddContentInput, AttachmentsStorage};
     use tempfile::TempDir;
 
     async fn setup_storage() -> (AttachmentsStorage, TempDir, String) {
@@ -56,15 +56,15 @@ mod tests {
         let src_url = Some("http://example.com/test".to_string());
 
         let content_item = storage
-            .add_content(
-                &session_id,
+            .add_content(AddContentInput {
+                session_id: &session_id,
                 filename,
                 mime_type,
                 size,
                 content,
                 chunks,
-                src_url.clone(),
-            )
+                src_url: src_url.clone(),
+            })
             .await
             .expect("Failed to add content");
 
@@ -111,15 +111,15 @@ mod tests {
         let src_url = Some("https://github.com/example/repo".to_string());
 
         let content_item = storage
-            .add_content(
-                &session_id,
-                "github_file.md",
-                "text/markdown",
-                100,
-                "# GitHub Content",
-                vec!["# GitHub Content".to_string()],
-                src_url.clone(),
-            )
+            .add_content(AddContentInput {
+                session_id: &session_id,
+                filename: "github_file.md",
+                mime_type: "text/markdown",
+                size: 100,
+                content: "# GitHub Content",
+                chunks: vec!["# GitHub Content".to_string()],
+                src_url: src_url.clone(),
+            })
             .await
             .expect("Failed to add content");
 

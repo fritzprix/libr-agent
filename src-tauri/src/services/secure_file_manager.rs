@@ -4,8 +4,8 @@ use tracing::{error, info};
 
 use crate::mcp::builtin::utils::SecurityValidator;
 
-/// Provides secure file system operations by ensuring that all paths are
-/// validated and constrained within a specific base directory.
+/// Provides secure file system operations with path validation and optional
+/// base-directory scoping depending on how the manager is constructed.
 pub struct SecureFileManager {
     security: SecurityValidator,
 }
@@ -14,10 +14,17 @@ impl SecureFileManager {
     /// Creates a new `SecureFileManager` with a specified base directory.
     ///
     /// # Arguments
-    /// * `base_dir` - The workspace anchor used for resolving relative paths.
+    /// * `base_dir` - The anchor used for resolving relative paths.
     pub fn new_with_base_dir(base_dir: std::path::PathBuf) -> Self {
         Self {
             security: SecurityValidator::new_with_base_dir(base_dir),
+        }
+    }
+
+    /// Creates a `SecureFileManager` that constrains both reads and writes to `base_dir`.
+    pub fn new_scoped_with_base_dir(base_dir: std::path::PathBuf) -> Self {
+        Self {
+            security: SecurityValidator::new_scoped_with_base_dir(base_dir),
         }
     }
 

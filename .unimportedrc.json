@@ -41,14 +41,16 @@
     "@remote-dom/core",
     "handlebars",
     "postcss",
+    "punycode",
     "remark-gfm",
-    "tailwindcss",
-    "punycode"
+    "tailwindcss"
   ],
   "ignoreUnimported": [
     "src/components/ui/alert-dialog.tsx",
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
+    "src/context/__tests__/agent-session-test-utils.tsx",
+    "src/context/__tests__/llm-service-test-utils.tsx",
     "src/hooks/__tests__/helpers.ts",
     "src/test/setup.ts"
   ],

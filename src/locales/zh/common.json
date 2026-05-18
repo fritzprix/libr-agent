@@ -1,4 +1,5 @@
 {
+  "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "助手名称 *",
     "namePlaceholder": "输入助手名称...",
@@ -126,6 +127,15 @@
   "theme": {
     "toggle": "切换主题"
   },
+  "notifications": {
+    "open": "打开通知",
+    "title": "通知",
+    "empty": "没有需要关注的会话或待批准项。",
+    "recurringStop": "定期停止",
+    "pendingApprovals_one": "{{count}} 个批准",
+    "pendingApprovals_other": "{{count}} 个批准",
+    "viewSession": "打开会话 {{name}}"
+  },
   "sidebar": {
     "mobileTitle": "侧边栏",
     "mobileDescription": "显示移动端侧边栏。",
@@ -166,10 +176,15 @@
     },
     "tabs": {
       "all": "全部",
+      "bookmarked": "已收藏",
       "busy": "忙碌",
       "idle": "空闲",
       "paused": "已暂停",
       "error": "错误"
+    },
+    "statusFilter": {
+      "label": "状态",
+      "all": "所有状态"
     },
     "lineageHint": {
       "child": "↳ {{parentName}} 的子级",
@@ -189,10 +204,15 @@
       "child": "子级",
       "parent": "父级",
       "root": "根级",
+      "descendants": "{{count}} 个后代会话",
       "parentBadge": "父级: {{id}}",
       "lineageBadge": "血统: {{id}}",
       "lineageFilterAria": "按血统 {{id}} 过滤",
       "statusAriaLabel": "会话状态: {{status}}",
+      "descendantBusy": "忙碌: {{count}}",
+      "descendantIdle": "空闲: {{count}}",
+      "descendantPaused": "已暂停: {{count}}",
+      "descendantError": "错误: {{count}}",
       "model": "模型:",
       "createdAt": "创建于 {{time}}",
       "updatedAt": "更新于 {{time}}",
@@ -208,6 +228,8 @@
       "viewAria": "查看会话 {{name}}",
       "continueAria": "继续会话 {{name}}",
       "resumeAria": "恢复会话 {{name}}",
+      "expandChildrenAria": "展开 {{name}} 的子会话",
+      "collapseChildrenAria": "折叠 {{name}} 的子会话",
       "groupAria": "会话操作",
       "deleteTooltip": "删除会话",
       "deleteAria": "删除会话 {{name}}",
@@ -226,8 +248,30 @@
       "subtitle": "开始对话以创建您的第一个会话"
     }
   },
+  "orgHistory": {
+    "heading": "组织视图",
+    "description": "仅显示显式创建的组织血统。一次性委派会话仍保留在常规历史记录中。",
+    "cardLabel": "显式组织",
+    "rootLabel": "根会话",
+    "updatedLabel": "已更新",
+    "resumeRoot": "恢复根会话",
+    "delete": "删除组织",
+    "deleteConfirm": {
+      "title": "删除组织？",
+      "description": "这将永久删除此组织及其所有关联成员会话，包括所有文件和历史记录。此操作无法撤销。"
+    },
+    "toasts": {
+      "deleted": "组织已删除",
+      "deleteFailed": "删除组织失败"
+    },
+    "emptyState": {
+      "title": "还没有组织血统",
+      "subtitle": "显式创建一个组织，然后通过组织感知工具生成组织成员。普通子代理血统不属于这里。"
+    }
+  },
   "settings": {
     "title": "设置",
+    "versionLabel": "{{appName}} v{{version}}",
     "unsaved": "未保存",
     "saved": "设置保存成功",
     "saving": "正在保存...",
@@ -251,7 +295,8 @@
       "mcpServers": "MCP 服务器",
       "advanced": "高级",
       "extensions": "扩展",
-      "dev": "开发"
+      "dev": "开发",
+      "system": "系统"
     },
     "llmPreference": "默认 LLM",
     "messageWindowSize": "消息窗口大小",
@@ -262,6 +307,8 @@
     "toolCallGroupVisibleCount": "工具调用可见数量",
     "toolCallGroupVisibleCountDescription": "折叠组视图中显示的工具调用数量",
     "toolCallGroupVisibleCountPlaceholder": "例如：4",
+    "decreaseToolCallCount": "减少工具调用数量",
+    "increaseToolCallCount": "增加工具调用数量",
     "general": {
       "skillsDirectory": "技能目录",
       "skillsDirectorySelectTitle": "选择技能目录",
@@ -283,7 +330,11 @@
       "fallbackModelDescription": "当主模型在所有重试后仍返回格式错误或为空的响应时，作为最后手段使用。",
       "agentHub": "代理中心 (Agent Hub)",
       "agentHubUrlLabel": "代理中心 URL",
-      "agentHubUrlDescription": "远程代理中心服务器的 URL。如果设置，助手将与此服务器同步。"
+      "agentHubUrlDescription": "远程代理中心服务器的 URL。如果设置，助手将与此服务器同步。",
+      "agentHubUrlPlaceholder": "https://api.agenthub.com",
+      "responseBehavior": "响应行为",
+      "decreaseRetries": "减少重试次数",
+      "increaseRetries": "增加重试次数"
     },
     "provider": {
       "apiKey": "API 密钥",
@@ -300,9 +351,17 @@
     "chatInterface": {
       "diffContextLines": "Diff 上下文行数",
       "diffContextLinesPlaceholder": "例如：3",
-      "diffContextLinesDescription": "文件编辑差异中显示的上下文行数 (1-10)。"
+      "diffContextLinesDescription": "文件编辑差异中显示的上下文行数 (1-10)。",
+      "decreaseDiffLines": "减少 diff 上下文行数",
+      "increaseDiffLines": "增加 diff 上下文行数"
     },
     "display": {
+      "fontFamilyOptions": {
+        "pretendard": "Pretendard（标准无衬线）",
+        "inter": "Inter（简洁界面无衬线）",
+        "nanumSquareNeo": "NanumSquare Neo（现代几何风格）",
+        "d2coding": "D2Coding（开发者等宽）"
+      },
       "metricsTitle": "性能指标",
       "metricDisplayMode": "指标显示模式",
       "inline": "内联（在消息中显示）",
@@ -320,7 +379,10 @@
       "toolDetailLevel": "工具详情级别",
       "toolDetailSimple": "简单（仅工具名称）",
       "toolDetailDeveloper": "开发者（参数、错误、耗时）",
-      "toolDetailLevelDescription": "简单模式仅显示工具名称和状态图标。开发者模式显示完整参数、错误详情和执行时间。"
+      "toolDetailLevelDescription": "简单模式仅显示工具名称和状态图标。开发者模式显示完整参数、错误详情和执行时间。",
+      "uiVisualsTitle": "界面视觉",
+      "fontFamily": "字体",
+      "fontFamilyDescription": "更改界面的默认字体。"
     },
     "advanced": {
       "maxRetries": "最大重试次数",
@@ -333,23 +395,38 @@
       "maxOutputTokensDescription": "如果助手中未指定，则为新会话使用的默认最大输出 token 数。",
       "defaultSessionMaxDepth": "会话分支限制 (高级)",
       "defaultSessionMaxDepthDescription": "控制默认允许的子会话层级数。设置为 0 为无限制。大多数用户可以保持原样。",
+      "defaultSessionMaxDepthPlaceholder": "例如：3",
       "defaultSessionMaxFanout": "会话子项限制 (高级)",
       "defaultSessionMaxFanoutDescription": "控制每个父级默认可以创建的直接子会话数。设置为 0 为无限制。大多数用户可以保持原样。",
+      "defaultSessionMaxFanoutPlaceholder": "0 = 不限",
       "maxConcurrentActiveSessions": "最大并发代理会话数",
       "maxConcurrentActiveSessionsDescription": "同时运行其 LLM 循环的代理会话的最大数量。较高的值会使用更多 API 配额和内存。",
+      "maxConcurrentActiveSessionsPlaceholder": "例如：4",
       "maxSuspendedSessions": "最大挂起代理会话数",
-      "maxSuspendedSessionsDescription": "可以暂停等待子代理完成的代理会话的最大数量。应 \u2265 活动会话数。",
+      "maxSuspendedSessionsDescription": "可以暂停等待子代理完成的代理会话的最大数量。应 ≥ 活动会话数。",
+      "maxSuspendedSessionsPlaceholder": "例如：8",
       "maxConcurrentActiveProcesses": "最大并发 Shell 进程数",
       "maxConcurrentActiveProcessesDescription": "跨所有代理会话同时运行的 shell/代码进程的最大数量。",
+      "maxConcurrentActiveProcessesPlaceholder": "例如：10",
       "maxSuspendedProcesses": "最大挂起 Shell 进程数",
-      "maxSuspendedProcessesDescription": "可以在 pollProcess 上暂停等待的进程的最大数量。应 \u2265 活动进程数。",
+      "maxSuspendedProcessesDescription": "可以在 pollProcess 上暂停等待的进程的最大数量。应 ≥ 活动进程数。",
+      "maxSuspendedProcessesPlaceholder": "例如：20",
+      "toolResultInlineLimit": "工具结果内联限制 (KB)",
+      "toolResultInlineLimitPlaceholder": "例如：16",
+      "toolResultInlineLimitDescription": "控制在 LibrAgent 将完整结果写入工作区文件之前，有多少工具输出会保留在内联中。较低的值可让代理上下文更精简。",
       "shellIsolation": "Shell 隔离级别",
       "shellIsolationModes": {
         "basic": "基础 - 完全 PATH 访问（安全性较低）",
         "medium": "中等 - 受限 PATH（均衡）",
         "high": "高等 - 沙箱（最安全）"
       },
-      "shellIsolationDescription": "控制 shell 命令的环境隔离。基础级别允许用户安装的工具，高等提供最大安全性。"
+      "shellIsolationDescription": "控制 shell 命令的环境隔离。基础级别允许用户安装的工具，高等提供最大安全性。",
+      "performance": "性能与并发",
+      "performanceDescription": "这些运行时限制控制可同时运行的代理和工作区进程数量。",
+      "title": "高级运行时控制",
+      "summary": "这些设置会更改运行时安全护栏、多代理限制和 shell 隔离。大多数用户应保持默认值。",
+      "loopPreventionThreshold": "循环预防阈值",
+      "loopPreventionThresholdDescription": "在代理尝试自然恢复或触发强制停止之前，允许重复出现相同工具结果的次数。"
     },
     "system": {
       "title": "系统与性能",
@@ -368,6 +445,11 @@
       "maxFileUploadSizeDescription": "单个文件上传的最大大小。如果您经常处理大型文档，请增大此值。",
       "workspaceCapacity": "工作区容量 (MB)",
       "workspaceCapacityDescription": "当前工作区文本内容的总限制。",
+      "automation": "自动化治理",
+      "scheduledTaskMinimumInterval": "计划任务最小间隔 (分钟)",
+      "scheduledTaskMinimumIntervalDescription": "新建或重新启用的计划任务允许的最小间隔。设置为 0 可禁用此保护。",
+      "maxScheduledTaskGroups": "最大计划任务组数",
+      "maxScheduledTaskGroupsDescription": "在重复团队协作自动化中允许的不同计划任务组的最大数量。",
       "backgroundTasks": "后台任务",
       "searchIndexFrequency": "搜索索引频率 (分钟)",
       "searchIndexFrequencyDescription": "AI 更新其内存搜索的频率。更快的更新保持搜索新鲜，但会消耗更多电池/CPU。",
@@ -383,6 +465,8 @@
       "networkRestartFailed": "无法重启应用。请手动重启。",
       "networkRestartNotice": "对 HTTP 服务器网络设置的更改将在重启应用后生效。",
       "placeholders": {
+        "scheduledTaskMinimumInterval": "0 = 已禁用",
+        "maxScheduledTaskGroups": "例如：10",
         "maxFileUploadSize": "例如：50",
         "workspaceCapacity": "例如：10",
         "searchIndexFrequency": "例如：5",
@@ -391,7 +475,10 @@
         "mcpToolTimeout": "0 (禁用)",
         "activeSessionRetention": "例如：24",
         "httpServerPort": "例如：3030"
-      }
+      },
+      "description": "控制应用运行时、后台工作线程、自动化限制和网络行为。",
+      "restartRequired": "保存后需要重启",
+      "networkRestartPending": "您已更改网络设置。请先保存更改，然后重启应用以使其生效。"
     },
     "about": {
       "title": "关于",
@@ -399,13 +486,14 @@
       "updateAvailable": "v{{version}} 可用",
       "upToDate": "已是最新",
       "checkFailed": "检查失败",
-      "installing": "正在安装\u2026",
+      "installing": "正在安装…",
       "downloading": "正在下载 {{pct}}%",
       "installUpdate": "安装更新",
       "checkForUpdates": "检查更新"
     },
     "dangerZone": {
-      "title": "\u26a0\ufe0f 危险区域"
+      "title": "⚠️ 危险区域",
+      "description": "这些操作会永久删除本地数据。继续前请再次确认范围。"
     },
     "factoryReset": {
       "title": "恢复出厂设置",
@@ -413,6 +501,8 @@
       "button": "重置所有数据和设置",
       "confirmTitle": "恢复出厂设置确认",
       "confirmDescription": "这将永久删除所有数据，包括会话、助手、MCP 服务器和剧本。您确定吗？",
+      "typeReset": "输入 RESET 以启用恢复出厂设置。",
+      "typeResetPlaceholder": "输入 RESET",
       "confirmButton": "重置一切",
       "resetting": "正在重置...",
       "success": "恢复出厂设置完成。需要重启以完全应用更改。",
@@ -435,7 +525,10 @@
       "saveFirst": "请先保存助手以管理技能。",
       "fetchFailed": "获取技能失败",
       "importing": "正在导入技能...",
-      "importSuccess": "技能导入成功",
+      "importSuccess_one": "导入了 {{count}} 个技能",
+      "importSuccess_other": "导入了 {{count}} 个技能",
+      "importSuccessWithOverwrite_one": "导入了 {{count}} 个技能（覆盖 {{overwrittenCount}} 个）",
+      "importSuccessWithOverwrite_other": "导入了 {{count}} 个技能（覆盖 {{overwrittenCount}} 个）",
       "importFailed": "导入技能失败",
       "overrideSuccess": "技能覆盖成功",
       "overrideFailed": "覆盖技能失败",
@@ -443,6 +536,9 @@
       "revertFailed": "还原技能失败",
       "resetSuccess": "助手技能重置成功",
       "resetFailed": "重置技能失败",
+      "deleteUserSkill": "删除 {{name}}",
+      "userSkillDeleted": "用户技能已删除。",
+      "userSkillsReset": "用户技能已重置。",
       "dragDropDesc": "拖放 zip 文件或文件夹以覆盖技能。",
       "resetTooltip": "移除所有助手特定的技能",
       "reset": "重置覆盖",
@@ -452,7 +548,41 @@
       "override": "为此助手覆盖",
       "revert": "还原到全局",
       "resetTitle": "重置技能覆盖？",
-      "resetConfirm": "这将移除所有助手特定的技能并还原到全局默认值。此操作无法撤销。"
+      "resetConfirm": "这将移除所有助手特定的技能并还原到全局默认值。此操作无法撤销。",
+      "importSuccess": "技能导入成功"
+    },
+    "dev": {
+      "devOnly": "仅限开发",
+      "testerTitle": "sampleText / compact 测试器",
+      "provider": "提供商",
+      "noKey": "（无密钥）",
+      "promptLabel": "提示词（用于 sampleText）",
+      "promptPlaceholder": "输入测试提示词...",
+      "compactUses": "compact() 使用 {{count}} 条示例消息：",
+      "running": "运行中…",
+      "runSampleText": "运行 sampleText()",
+      "runCompact": "运行 compact()",
+      "error": "错误",
+      "ok": "正常",
+      "model": "模型：{{model}}",
+      "tokensInfo": "token：{{promptTokens}} 提示 + {{completionTokens}} 补全 = {{totalTokens}} 总计",
+      "emptyResponse": "（空响应）"
+    },
+    "pendingChanges": "已更改 {{count}} 个部分",
+    "discardChanges": "放弃",
+    "saveChanges": "保存更改",
+    "discardTitle": "放弃未保存的更改？",
+    "discardDescription": "这会将此页面上的所有待保存更改恢复到上次保存的状态。",
+    "leaveTitle": "不保存就离开？",
+    "leaveDescription": "您有未保存的更改。离开前请先保存，或放弃更改并离开此页面。",
+    "discardAndLeave": "放弃并离开",
+    "saveAndLeave": "保存并离开",
+    "contextStrategyLabel": "上下文管理策略",
+    "contextStrategy": {
+      "window": "滑动窗口",
+      "compact": "紧凑摘要",
+      "windowDescription": "保留最近的 N 条消息。简单且可预测。",
+      "compactDescription": "总结旧轮次并保留最近的窗口。更适合长会话。"
     }
   },
   "mcpServer": {
@@ -548,6 +678,16 @@
       "toggleFailed": "切换扩展状态失败: {{error}}",
       "activated": "激活",
       "deactivated": "停用"
+    },
+    "toolsModal": {
+      "description": "工具名称和说明来自 MCP 服务器返回内容。",
+      "connecting": "正在连接服务器…",
+      "failedToLoad": "加载工具失败",
+      "noTools": "未返回任何工具。",
+      "toolListAria": "工具列表",
+      "inputSchema": "输入模式",
+      "toolsCount_one": "（{{count}} 个工具）",
+      "toolsCount_other": "（{{count}} 个工具）"
     }
   },
   "playbook": {
@@ -555,6 +695,10 @@
     "description": "浏览并执行自动化工作流",
     "searchPlaceholder": "搜索剧本...",
     "loading": "正在加载剧本...",
+    "list": {
+      "refreshAria": "刷新剧本",
+      "refreshTooltip": "刷新剧本"
+    },
     "emptyState": {
       "title": "启动剧本",
       "description": "剧本是代理已成功执行的复杂请求的记录。",
@@ -607,6 +751,10 @@
     }
   },
   "agent": {
+    "messages": {
+      "loadingOlder": "正在加载更早的消息...",
+      "scrollToLoadOlder": "向上滚动以加载更早的消息"
+    },
     "draft": {
       "send": "发送消息",
       "attachFiles": "附加文件",
@@ -690,7 +838,7 @@
       "resumeError": "恢复会话失败",
       "loadingTools": "正在加载工具...",
       "toolsError": "工具错误",
-      "toolsCount": "{{totalCount}}({{mcpCount}}) 个可用 \u2022 内置 {{builtinCount}}",
+      "toolsCount": "{{totalCount}}({{mcpCount}}) 个可用 • 内置 {{builtinCount}}",
       "statusCompacting": "正在后台压缩对话上下文...",
       "statusAwaitingCompact": "等待上下文压缩完成...",
       "statusError": "发生错误: {{error}}",
@@ -755,11 +903,12 @@
       "provider": "提供商",
       "model": "模型",
       "loading": "正在加载...",
-      "refreshModels": "刷新模型"
+      "refreshModels": "刷新模型",
+      "refreshRequiresApiKey": "添加 API 密钥以启用模型刷新"
     },
     "toolsModal": {
       "title": "可用工具",
-      "subtitleWithCounts": "内置工具: {{builtinCount}} \u2022 MCP 工具: {{mcpCount}}",
+      "subtitleWithCounts": "内置工具: {{builtinCount}} • MCP 工具: {{mcpCount}}",
       "subtitleDefault": "此代理会话可用的工具列表。",
       "loading": "正在加载工具...",
       "errorTitle": "加载工具时出错",
@@ -783,6 +932,44 @@
       "untitledNote": "未命名笔记",
       "moreTasks": "个更多任务",
       "updated": "已更新"
+    },
+    "bubble": {
+      "notification": "通知",
+      "channel": "频道",
+      "assistant": "助手",
+      "youQueued": "你（排队中）",
+      "you": "你",
+      "filesAttached_one": "已附加 1 个文件",
+      "filesAttached_other": "已附加 {{count}} 个文件",
+      "attachedFilesAria": "附加文件",
+      "lines_one": "1 行",
+      "lines_other": "{{count}} 行",
+      "noContent": "无内容",
+      "thinkingProcess": "思考过程",
+      "thinkingProcessWithTime": "思考过程 {{time}}",
+      "thinking": "正在思考..."
+    },
+    "start": {
+      "heroTitle": "今天想做什么？",
+      "heroSubtitle": "选择一个助手以开始新的自主会话。",
+      "builtinAssistants": "内置助手",
+      "myAssistants": "我的助手",
+      "assistantsLoadFailed": "加载助手失败。",
+      "noAssistantsAvailable": "还没有可用的助手。",
+      "createAssistant": "创建助手",
+      "manageAssistants": "+ 管理助手",
+      "playbookNotFound": "未找到剧本",
+      "assistantNotFound": "未找到助手",
+      "startingPlaybook": "正在启动剧本：{{goal}}",
+      "failedToStartPlaybookSession": "启动剧本会话失败",
+      "startingSession": "正在启动会话..."
+    },
+    "chat": {
+      "loadingSession": "正在加载会话...",
+      "playbookStartedAutomatically": "已自动启动剧本",
+      "failedToStartPlaybookWorkflow": "启动剧本工作流失败",
+      "sessionContextUnavailable": "会话上下文不可用。",
+      "sessionNotFoundOrFailed": "未找到会话或加载失败。"
     }
   },
   "scheduledTasks": {
@@ -793,7 +980,7 @@
     "createFirst": "创建您的第一个任务",
     "disabled": "已禁用",
     "nextRun": "下一次运行: {{time}}",
-    "nextRunNone": "\u2014",
+    "nextRunNone": "—",
     "editTask": "编辑任务",
     "deleteTask": "删除任务",
     "editTaskAria": "编辑任务: {{name}}",
@@ -804,7 +991,7 @@
       "nameLabel": "任务名称",
       "namePlaceholder": "每日站会总结",
       "assistantLabel": "助手",
-      "assistantPlaceholder": "选择助手\u2026",
+      "assistantPlaceholder": "选择助手…",
       "scheduleLabel": "计划",
       "workspaceLabel": "工作区",
       "workspaceOptional": "可选工作区覆盖",
@@ -818,12 +1005,13 @@
       "workspaceRegisterFailed": "注册拖放的文件夹路径失败",
       "workspaceClearAria": "清除工作区覆盖",
       "messageLabel": "消息",
-      "messageHint": "使用 <1>@playbook:</1> 或 <3>@skill:</3> 进行自动补全",
-      "messagePlaceholder": "输入消息\u2026 使用 @playbook: 或 @skill: 进行自动补全",
+      "messageHint": "使用 @playbook:、@skill: 或 @file: 进行自动补全",
+      "workspaceAutocompleteHint": "工作区覆盖可启用 @skill: 和 @file: 自动补全。",
+      "messagePlaceholder": "输入消息… 使用 @playbook:、@skill: 或 @file: 进行自动补全",
       "cancel": "取消",
       "saveChanges": "保存更改",
       "createTask": "创建任务",
-      "saving": "正在保存\u2026"
+      "saving": "正在保存…"
     },
     "schedule": {
       "repeat": "重复",
@@ -865,10 +1053,65 @@
       }
     }
   },
+  "mentions": {
+    "skillSourceWorkspace": "工作区",
+    "skillSourceAssistant": "助手",
+    "skillSourceUser": "用户",
+    "skillSourceSystem": "系统",
+    "skillSourceGlobal": "全局"
+  },
   "errorBubble": {
     "title": "错误",
     "unknownError": "发生未知错误。",
     "retrying": "正在重试...",
     "tryAgain": "重试"
+  },
+  "knowledge": {
+    "untitledEntry": "未命名知识条目",
+    "detailTitle": "知识详情",
+    "detailDescription": "检查所选条目、其证据及其本地图谱。",
+    "close": "关闭",
+    "delete": "删除",
+    "tabs": {
+      "overview": "概览",
+      "graph": "图谱"
+    },
+    "metadataTitle": "元数据",
+    "fields": {
+      "createdAt": "创建时间",
+      "primaryEntities": "主要实体",
+      "relationships": "关系"
+    },
+    "entitiesTitle": "实体",
+    "noEntities": "此条目没有关联实体。",
+    "primaryEntity": "主要",
+    "relationshipListTitle": "关系",
+    "noRelationships": "此条目没有关联关系。",
+    "loadListFailed": "加载全局知识条目失败。",
+    "loadDetailFailed": "加载知识详情失败。",
+    "loadMoreFailed": "加载更多知识条目失败。",
+    "deleteSuccess": "知识条目已删除。",
+    "deleteSuccessDescription": "已移除 {{entities}} 个孤立实体和 {{relationships}} 个孤立关系。",
+    "deleteFailed": "删除知识条目失败。",
+    "pageTitle": "全局知识",
+    "pageSubtitle": "搜索共享记忆、检查证据并清理过时知识。",
+    "refresh": "刷新",
+    "browserTitle": "知识浏览器",
+    "browserDescription": "先查找内容块，再查看其证据和图谱邻域。",
+    "searchPlaceholder": "搜索内容、标签或来源...",
+    "assistantFilterPlaceholder": "按助手筛选",
+    "assistantFilterAll": "所有助手",
+    "emptyState": "没有知识条目匹配当前筛选条件。",
+    "loadMore": "加载更多",
+    "endOfResults": "您已到达当前结果末尾。",
+    "confirmDeleteTitle": "删除知识条目",
+    "confirmDelete": "删除此知识条目并清理孤立的图谱数据？",
+    "cancel": "取消",
+    "graph": {
+      "empty": "此知识条目没有关联图谱数据。",
+      "primaryEntity": "主要实体",
+      "relatedEntity": "相关实体"
+    },
+    "excerpt": "摘录"
   }
 }

@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from 'react';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AgentWorkspaceContext');
@@ -52,12 +58,20 @@ export function AgentWorkspaceProvider({
     });
   }, []);
 
-  const value: AgentWorkspaceContextValue = {
-    showWorkspacePanel,
-    openWorkspacePanel,
-    closeWorkspacePanel,
-    toggleWorkspacePanel,
-  };
+  const value = useMemo<AgentWorkspaceContextValue>(
+    () => ({
+      showWorkspacePanel,
+      openWorkspacePanel,
+      closeWorkspacePanel,
+      toggleWorkspacePanel,
+    }),
+    [
+      showWorkspacePanel,
+      openWorkspacePanel,
+      closeWorkspacePanel,
+      toggleWorkspacePanel,
+    ],
+  );
 
   return (
     <AgentWorkspaceContext.Provider value={value}>

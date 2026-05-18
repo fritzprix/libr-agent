@@ -194,6 +194,23 @@ pub async fn read_local_file_as_base64(
     Ok(general_purpose::STANDARD.encode(bytes))
 }
 
+#[tauri::command]
+pub async fn list_workspace_file_paths(
+    session_id: String,
+    max_depth: usize,
+) -> Result<Vec<String>, String> {
+    crate::agent::references::list_workspace_relative_paths(&session_id, max_depth).await
+}
+
+#[tauri::command]
+pub async fn list_workspace_file_paths_for_path(
+    workspace_path: String,
+    max_depth: usize,
+) -> Result<Vec<String>, String> {
+    crate::agent::references::list_relative_paths_in_root(Path::new(&workspace_path), max_depth)
+        .await
+}
+
 pub async fn resolve_workspace_scoped_file_path(
     file_path: &Path,
     workspace_dir: &Path,

@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from 'react';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AgentPlanningContext');
@@ -52,12 +58,20 @@ export function AgentPlanningProvider({
     });
   }, []);
 
-  const value: AgentPlanningContextValue = {
-    showPlanningPanel,
-    openPlanningPanel,
-    closePlanningPanel,
-    togglePlanningPanel,
-  };
+  const value = useMemo<AgentPlanningContextValue>(
+    () => ({
+      showPlanningPanel,
+      openPlanningPanel,
+      closePlanningPanel,
+      togglePlanningPanel,
+    }),
+    [
+      showPlanningPanel,
+      openPlanningPanel,
+      closePlanningPanel,
+      togglePlanningPanel,
+    ],
+  );
 
   return (
     <AgentPlanningContext.Provider value={value}>

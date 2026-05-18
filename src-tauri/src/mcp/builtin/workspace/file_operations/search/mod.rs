@@ -92,10 +92,9 @@ impl WorkspaceServer {
         let workspace_root = self.get_workspace_dir(&target_session_id);
 
         // Security validation
-        let file_manager = self.get_file_manager(Some(target_session_id));
-        let safe_path = match file_manager
-            .get_security_validator()
-            .validate_path_for_read(search_path)
+        let safe_path = match self
+            .validate_read_path_with_skill_access(search_path, Some(target_session_id))
+            .await
         {
             Ok(path) => path,
             Err(e) => {
@@ -189,29 +188,33 @@ impl WorkspaceServer {
         };
 
         if safe_path.is_dir() {
-            content::search_content_in_dir(
-                &workspace_root,
-                &safe_path,
-                search_path,
-                &regex,
-                query_str,
-                glob_pat.as_ref(),
-                show_line_anchors,
-                ignore_case,
-                limit,
-                offset,
-            )
+            content::search_content_in_dir(content::SearchDirectoryRequest {
+                workspace_root: &workspace_root,
+                dir: &safe_path,
+                file_pattern: glob_pat.as_ref(),
+                search: content::SearchContentRequest {
+                    display_path: search_path,
+                    regex: &regex,
+                    query: query_str,
+                    show_hashes: show_line_anchors,
+                    ignore_case,
+                    limit,
+                    offset,
+                },
+            })
             .await
         } else {
             content::search_content_in_file(
                 &safe_path,
-                search_path,
-                &regex,
-                query_str,
-                show_line_anchors,
-                ignore_case,
-                limit,
-                offset,
+                content::SearchContentRequest {
+                    display_path: search_path,
+                    regex: &regex,
+                    query: query_str,
+                    show_hashes: show_line_anchors,
+                    ignore_case,
+                    limit,
+                    offset,
+                },
             )
             .await
         }
