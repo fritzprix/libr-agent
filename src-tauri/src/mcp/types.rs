@@ -478,6 +478,11 @@ pub struct ServiceContextOptions {
 #[serde(rename_all = "camelCase")]
 pub enum ContextVolatility {
     /// Rarely changes during a session; keep earlier to maximize cached prefix reuse.
+    ///
+    /// Stable contexts become part of the cacheable prompt prefix, so their rendered
+    /// text must be deterministic for equivalent state. Canonicalize unordered inputs
+    /// such as `HashMap`, `HashSet`, directory scans, and similar listings before
+    /// formatting them into `context_prompt`.
     Stable,
     /// Changes occasionally, but still worth keeping ahead of the most volatile state.
     #[default]

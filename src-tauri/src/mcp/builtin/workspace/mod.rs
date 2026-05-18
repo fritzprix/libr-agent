@@ -603,16 +603,19 @@ Internal paths: .libragent/tmp/ (process outputs), .libragent/exports/ (exported
         let (running_count, total_count, running_processes_text) = {
             match self.process_registry.try_read() {
                 Ok(reg) => {
-                    let processes: Vec<(String, String)> = reg
+                    let mut running_processes: Vec<(String, String)> = reg
                         .entries
                         .values()
                         .filter(|e| e.session_id == session_id)
                         .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
-                        .take(5) // Limit to prevent context bloat
                         .map(|e| (e.id.clone(), e.command.clone()))
                         .collect();
 
-                    let running_count = processes.len();
+                    running_processes.sort_by(|left, right| left.0.cmp(&right.0));
+                    let running_count = running_processes.len();
+                    let displayed_processes =
+                        running_processes.into_iter().take(5).collect::<Vec<_>>();
+
                     let total_count = reg
                         .entries
                         .values()
@@ -622,7 +625,7 @@ Internal paths: .libragent/tmp/ (process outputs), .libragent/exports/ (exported
                     let running_text = if running_count == 0 {
                         "None".to_string()
                     } else {
-                        let process_list = processes
+                        let process_list = displayed_processes
                             .iter()
                             .map(|(id, cmd)| {
                                 // Truncate command if too long (safe string slicing)
