@@ -970,6 +970,23 @@
       "failedToStartPlaybookWorkflow": "No se pudo iniciar el flujo del playbook",
       "sessionContextUnavailable": "El contexto de la sesión no está disponible.",
       "sessionNotFoundOrFailed": "No se encontró la sesión o no se pudo cargar."
+    },
+    "mediaRenderer": {
+      "failedToLoadImage": "Failed to load image",
+      "failedToLoadAudio": "Failed to load audio",
+      "failedToLoadVideo": "Failed to load video",
+      "unsupportedClipboard": "Image clipboard is not supported in this environment",
+      "copySuccess": "Image copied to clipboard",
+      "copyError": "Failed to copy image to clipboard",
+      "copyAria": "Copy image to clipboard",
+      "copyTooltip": "Copy Image",
+      "downloadCancelled": "Download cancelled",
+      "downloadError": "Failed to download image",
+      "downloadAria": "Download image",
+      "downloadTooltip": "Download Image",
+      "imageAlt": "Tool output",
+      "unsupportedAudio": "Your browser does not support the audio element.",
+      "unsupportedVideo": "Your browser does not support the video element."
     }
   },
   "scheduledTasks": {

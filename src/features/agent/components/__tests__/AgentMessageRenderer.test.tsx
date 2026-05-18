@@ -10,6 +10,12 @@ import { toast } from 'sonner';
 const downloadMediaFileMock = vi.fn();
 const openExternalUrlMock = vi.fn();
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
 vi.mock('@/lib/backend/workspace', () => ({
   readLocalFileAsBase64: vi.fn(),
 }));
@@ -168,7 +174,7 @@ describe('AgentMessageRenderer', () => {
     // Check if tool name is rendered
     expect(screen.getByText('test_tool')).toBeInTheDocument();
     // Check if "Tool Executions" header exists (from AgentToolCallGroup)
-    expect(screen.getByText(/Tool Executions/)).toBeInTheDocument();
+    expect(screen.getByText('agent.toolGroup.header')).toBeInTheDocument();
   });
 
   it('lazily materializes file URIs to data URLs for image rendering', async () => {
@@ -184,7 +190,7 @@ describe('AgentMessageRenderer', () => {
 
     render(<AgentMessageRenderer content={content} message={message} />);
 
-    const image = await screen.findByAltText('Tool output');
+    const image = await screen.findByAltText('agent.mediaRenderer.imageAlt');
     expect(readLocalFileAsBase64).toHaveBeenCalledWith(
       'test-session',
       'file:///tmp/tool-output.png',
@@ -211,7 +217,7 @@ describe('AgentMessageRenderer', () => {
       <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
     );
 
-    expect(await screen.findByText('Failed to load image')).toBeInTheDocument();
+    expect(await screen.findByText('agent.mediaRenderer.failedToLoadImage')).toBeInTheDocument();
     expect(screen.getByText('Permission denied')).toBeInTheDocument();
   });
 
@@ -229,7 +235,7 @@ describe('AgentMessageRenderer', () => {
       <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
     );
 
-    expect(await screen.findByAltText('Tool output')).toBeInTheDocument();
+    expect(await screen.findByAltText('agent.mediaRenderer.imageAlt')).toBeInTheDocument();
     firstRender.unmount();
 
     vi.mocked(readLocalFileAsBase64).mockReset();
@@ -239,7 +245,7 @@ describe('AgentMessageRenderer', () => {
 
     render(<AgentMessageRenderer content={content} message={buildImageMessage(content)} />);
 
-    expect(await screen.findByText('Failed to load image')).toBeInTheDocument();
+    expect(await screen.findByText('agent.mediaRenderer.failedToLoadImage')).toBeInTheDocument();
     expect(screen.getByText('Permission denied')).toBeInTheDocument();
   });
 
@@ -257,7 +263,7 @@ describe('AgentMessageRenderer', () => {
       <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
     );
 
-    fireEvent.click(await screen.findByLabelText('Copy image to clipboard'));
+    fireEvent.click(await screen.findByLabelText('agent.mediaRenderer.copyAria'));
 
     await waitFor(() => {
       expect(writeClipboardMock).toHaveBeenCalledTimes(1);
@@ -270,9 +276,7 @@ describe('AgentMessageRenderer', () => {
       | undefined;
     expect(clipboardPayload).toBeDefined();
     expect(clipboardPayload?.['image/png']).toBeInstanceOf(Blob);
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
-      'Image copied to clipboard',
-    );
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith('agent.mediaRenderer.copySuccess');
 
     fetchSpy.mockRestore();
   });
@@ -292,7 +296,7 @@ describe('AgentMessageRenderer', () => {
       <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
     );
 
-    fireEvent.click(await screen.findByLabelText('Download image'));
+    fireEvent.click(await screen.findByLabelText('agent.mediaRenderer.downloadAria'));
 
     await waitFor(() => {
       expect(downloadMediaFileMock).toHaveBeenCalledWith({
@@ -322,7 +326,7 @@ describe('AgentMessageRenderer', () => {
       <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
     );
 
-    fireEvent.click(await screen.findByLabelText('Download image'));
+    fireEvent.click(await screen.findByLabelText('agent.mediaRenderer.downloadAria'));
 
     await waitFor(() => {
       expect(downloadMediaFileMock).toHaveBeenCalledWith({
