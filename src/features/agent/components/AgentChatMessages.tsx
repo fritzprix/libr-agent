@@ -637,7 +637,7 @@ export function AgentChatMessages() {
       itemCount,
     );
 
-    if (!scrolledWithVirtuoso || itemCount === 0) {
+    if (!scrolledWithVirtuoso) {
       logScrollState('executeScrollToBottom:unavailable', {
         itemCount,
         reason,
@@ -712,7 +712,7 @@ export function AgentChatMessages() {
         !shouldForce;
 
       if (shouldSuppressForPrepend || shouldSuppressForUserScroll) {
-        logScrollState('scheduleScrollToBottom:skip-prepend-preservation', {
+        logScrollState('scheduleScrollToBottom:suppressed', {
           reason,
           shouldSuppressForPrepend,
           shouldSuppressForUserScroll,
