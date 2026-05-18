@@ -425,7 +425,7 @@ describe('AgentChatMessages compaction rendering', () => {
     };
 
     expect(virtuosoProps.atBottomThreshold).toBe(getVisualBottomThreshold());
-    expect(getVisualBottomThreshold()).toBe(4);
+    expect(getVisualBottomThreshold()).toBe(50);
   });
 
   it('uses horizontal list padding without a shorthand padding override', () => {
@@ -475,9 +475,10 @@ describe('AgentChatMessages compaction rendering', () => {
   });
 
   it('treats only tiny distances as pinned to the bottom', () => {
-    expect(isPinnedToBottom(0)).toBe(true);
-    expect(isPinnedToBottom(4)).toBe(true);
-    expect(isPinnedToBottom(5)).toBe(false);
+    expect(isPinnedToBottom(0, 50)).toBe(true);
+    expect(isPinnedToBottom(4, 50)).toBe(true);
+    expect(isPinnedToBottom(50, 50)).toBe(true);
+    expect(isPinnedToBottom(51, 50)).toBe(false);
   });
 
   it('keeps bottom alignment when the pinned content resizes after render', () => {
