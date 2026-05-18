@@ -215,11 +215,11 @@ impl MCPServiceProxyManager {
             .split_once("__")
             .map(|(server, _)| BuiltinServiceId::from_alias(server).is_some())
             .unwrap_or(false);
-        let proxy = match self.get_proxy(session_id).await {
-            Some(proxy) => proxy,
-            None => {
-                let active_sessions = self.list_sessions().await;
-                if is_builtin {
+        let active_sessions = self.list_sessions().await;
+        let proxy = if is_builtin {
+            match self.get_proxy(session_id).await {
+                Some(proxy) => proxy,
+                None => {
                     log::debug!(
                         "No proxy for session {}, attempting lazy builtin proxy init",
                         session_id
@@ -233,26 +233,26 @@ impl MCPServiceProxyManager {
                         );
                         format!("Session context not found or expired (ID: {})", session_id)
                     })?
-                } else {
-                    log::debug!(
-                        "No proxy for session {}, attempting config-aware proxy init for external tool '{}'",
-                        session_id,
-                        tool_name
-                    );
-                    self.ensure_configured_proxy(session_id, None)
-                        .await
-                        .map_err(|error| {
-                            log::error!(
-                                "Failed to lazily init configured proxy for session {} before external tool '{}': {}. Active sessions: {:?}",
-                                session_id,
-                                tool_name,
-                                error,
-                                active_sessions
-                            );
-                            error
-                        })?
                 }
             }
+        } else {
+            log::debug!(
+                "Ensuring config-aware proxy for session {} before external tool '{}'",
+                session_id,
+                tool_name
+            );
+            self.ensure_configured_proxy(session_id, None)
+                .await
+                .map_err(|error| {
+                    log::error!(
+                        "Failed to ensure configured proxy for session {} before external tool '{}': {}. Active sessions: {:?}",
+                        session_id,
+                        tool_name,
+                        error,
+                        active_sessions
+                    );
+                    error
+                })?
         };
 
         proxy.call_tool(tool_name, args).await
