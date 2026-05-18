@@ -477,9 +477,10 @@ describe('AgentChatMessages compaction rendering', () => {
   });
 
   it('treats only tiny distances as pinned to the bottom', () => {
-    expect(isPinnedToBottom(0)).toBe(true);
-    expect(isPinnedToBottom(4)).toBe(true);
-    expect(isPinnedToBottom(5)).toBe(false);
+    expect(isPinnedToBottom(0, 50)).toBe(true);
+    expect(isPinnedToBottom(4, 50)).toBe(true);
+    expect(isPinnedToBottom(50, 50)).toBe(true);
+    expect(isPinnedToBottom(51, 50)).toBe(false);
   });
 
   it('releases the bottom latch on a deliberate upward scroll before the hard cutoff', () => {

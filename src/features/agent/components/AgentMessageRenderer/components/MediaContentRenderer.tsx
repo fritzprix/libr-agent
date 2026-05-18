@@ -3,6 +3,7 @@ import { Check, Copy, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui';
+import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
 import { useResolvedMediaSource } from '../hooks/useResolvedMediaSource';
 
@@ -40,7 +41,7 @@ function dataUrlToBlob(dataUrl: string, fallbackMimeType: string): Blob {
   const resolvedMimeType = mimeTypeMatch?.[1] || fallbackMimeType;
 
   if (metadata.includes(';base64')) {
-    return new Blob([decodeBase64ToBytes(payload)], {
+    return new Blob([decodeBase64ToBytes(payload).buffer as ArrayBuffer], {
       type: resolvedMimeType,
     });
   }
@@ -58,7 +59,7 @@ async function resolveImageBlob(
   if (rawData) {
     return rawData.startsWith('data:')
       ? dataUrlToBlob(rawData, mimeType)
-      : new Blob([decodeBase64ToBytes(rawData)], { type: mimeType });
+      : new Blob([decodeBase64ToBytes(rawData).buffer as ArrayBuffer], { type: mimeType });
   }
 
   if (imageSrc.startsWith('data:')) {
@@ -99,13 +100,26 @@ function canWriteImagesToClipboard(): boolean {
   );
 }
 
-function MediaLoadError({ label, detail }: { label: string; detail?: string }) {
+function MediaLoadError({
+  label,
+  detail,
+}: {
+  label: 'image' | 'audio' | 'video';
+  detail?: string;
+}) {
+  const { t } = useTranslation();
+  const ERROR_MESSAGES: Record<'image' | 'audio' | 'video', string> = {
+    image: t('agent.mediaRenderer.failedToLoadImage'),
+    audio: t('agent.mediaRenderer.failedToLoadAudio'),
+    video: t('agent.mediaRenderer.failedToLoadVideo'),
+  };
+  const errorMessage = ERROR_MESSAGES[label];
   return (
     <div
       role="status"
       className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
     >
-      <div className="font-medium text-foreground/80">{`Failed to load ${label}`}</div>
+      <div className="font-medium text-foreground/80">{errorMessage}</div>
       {detail ? <div className="mt-1 text-xs">{detail}</div> : null}
     </div>
   );
@@ -118,6 +132,7 @@ export function ImageContentRenderer({
   itemKey,
   sessionId,
 }: MediaRendererProps) {
+  const { t } = useTranslation();
   const { downloadMediaFile } = useRustBackend();
   const { resolvedSrc: imageSrc, loadError } = useResolvedMediaSource(
     rawData,
@@ -138,7 +153,7 @@ export function ImageContentRenderer({
 
   const handleCopy = async () => {
     if (!canCopyImage) {
-      toast.error('Image clipboard is not supported in this environment');
+      toast.error(t('agent.mediaRenderer.unsupportedClipboard'));
       return;
     }
 
@@ -152,10 +167,10 @@ export function ImageContentRenderer({
       ]);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      toast.success('Image copied to clipboard');
+      toast.success(t('agent.mediaRenderer.copySuccess'));
     } catch (error) {
       logger.error('Failed to copy image to clipboard', error);
-      toast.error('Failed to copy image to clipboard');
+      toast.error(t('agent.mediaRenderer.copyError'));
     }
   };
 
@@ -182,14 +197,14 @@ export function ImageContentRenderer({
       });
 
       if (result === 'Download cancelled by user') {
-        toast.info('Download cancelled');
+        toast.info(t('agent.mediaRenderer.downloadCancelled'));
         return;
       }
 
       toast.success(result);
     } catch (error) {
       logger.error('Failed to download image', error);
-      toast.error('Failed to download image');
+      toast.error(t('agent.mediaRenderer.downloadError'));
     }
   };
 
@@ -199,7 +214,7 @@ export function ImageContentRenderer({
       onClick={handleCopy}
       disabled={!canCopyImage}
       className={copyButtonClassName}
-      aria-label="Copy image to clipboard"
+      aria-label={t('agent.mediaRenderer.copyAria')}
     >
       {copied ? (
         <Check size={16} className="text-emerald-500" />
@@ -220,7 +235,7 @@ export function ImageContentRenderer({
               <span
                 tabIndex={0}
                 role="button"
-                aria-label="Copy image to clipboard"
+                aria-label={t('agent.mediaRenderer.copyAria')}
                 aria-disabled="true"
                 className="flex items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -230,8 +245,8 @@ export function ImageContentRenderer({
           )}
           <TooltipContent>
             {canCopyImage
-              ? 'Copy Image'
-              : 'Image clipboard is not supported in this environment'}
+              ? t('agent.mediaRenderer.copyTooltip')
+              : t('agent.mediaRenderer.unsupportedClipboard')}
           </TooltipContent>
         </Tooltip>
 
@@ -241,19 +256,21 @@ export function ImageContentRenderer({
               type="button"
               onClick={handleDownload}
               className="flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Download image"
+              aria-label={t('agent.mediaRenderer.downloadAria')}
             >
               <Download size={16} />
             </button>
           </TooltipTrigger>
-          <TooltipContent>Download Image</TooltipContent>
+          <TooltipContent>
+            {t('agent.mediaRenderer.downloadTooltip')}
+          </TooltipContent>
         </Tooltip>
       </div>
 
       <img
         key={itemKey}
         src={imageSrc}
-        alt="Tool output"
+        alt={t('agent.mediaRenderer.imageAlt')}
         className="h-auto max-w-full rounded-lg border border-border/10 shadow-sm"
       />
     </div>
@@ -267,6 +284,7 @@ export function AudioContentRenderer({
   itemKey,
   sessionId,
 }: MediaRendererProps) {
+  const { t } = useTranslation();
   const { resolvedSrc: audioSrc, loadError } = useResolvedMediaSource(
     rawData,
     uri,
@@ -283,7 +301,7 @@ export function AudioContentRenderer({
   return (
     <audio key={itemKey} controls className="w-full">
       <source src={audioSrc} type={mimeType} />
-      Your browser does not support the audio element.
+      {t('agent.mediaRenderer.unsupportedAudio')}
     </audio>
   );
 }
@@ -295,6 +313,7 @@ export function VideoContentRenderer({
   itemKey,
   sessionId,
 }: MediaRendererProps) {
+  const { t } = useTranslation();
   const { resolvedSrc: videoSrc, loadError } = useResolvedMediaSource(
     rawData,
     uri,
@@ -311,7 +330,7 @@ export function VideoContentRenderer({
   return (
     <video key={itemKey} controls className="w-full rounded-lg shadow-sm">
       <source src={videoSrc} type={mimeType} />
-      Your browser does not support the video element.
+      {t('agent.mediaRenderer.unsupportedVideo')}
     </video>
   );
 }
