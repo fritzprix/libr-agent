@@ -184,10 +184,8 @@ impl MCPServiceProxyManager {
     /// Call a tool via the appropriate session proxy
     ///
     /// This is the primary entry point for tool execution from agent workflows.
-    /// It implements dual routing:
-    /// - Builtin tools -> session proxy
-    /// - External stdio tools -> session-specific stdio manager
-    /// - External HTTP tools -> shared HTTP manager
+    /// It routes both builtin and external tools through the session proxy so that
+    /// tool availability, guided recovery, and session-scoped MCP dispatch share one path.
     ///
     /// # Arguments
     /// * `session_id` - The session making the tool call
@@ -213,79 +211,51 @@ impl MCPServiceProxyManager {
         tool_name: &str,
         args: serde_json::Value,
     ) -> Result<MCPResponse, String> {
-        // Builtin tools route through proxy (identified by known service alias prefix)
         let is_builtin = tool_name
             .split_once("__")
             .map(|(server, _)| BuiltinServiceId::from_alias(server).is_some())
             .unwrap_or(false);
-        if is_builtin {
-            let proxy = match self.get_proxy(session_id).await {
+        let active_sessions = self.list_sessions().await;
+        let proxy = if is_builtin {
+            match self.get_proxy(session_id).await {
                 Some(proxy) => proxy,
                 None => {
-                    // No proxy exists yet — lazily initialise a builtin-only proxy so that
-                    // idle sessions (exist in DB but have not run a workflow in this app
-                    // session) can still serve builtin tool calls such as content-store
-                    // listing from AgentResourceAttachmentContext.
                     log::debug!(
                         "No proxy for session {}, attempting lazy builtin proxy init",
                         session_id
                     );
-                    match self.ensure_builtin_proxy(session_id).await {
-                        Ok(proxy) => proxy,
-                        Err(e) => {
-                            let active_sessions = self.list_sessions().await;
-                            log::error!(
-                                "Failed to lazily init proxy for session {}: {}. Active sessions: {:?}",
-                                session_id,
-                                e,
-                                active_sessions
-                            );
-                            return Err(format!(
-                                "Session context not found or expired (ID: {})",
-                                session_id
-                            ));
-                        }
-                    }
+                    self.ensure_builtin_proxy(session_id).await.map_err(|error| {
+                        log::error!(
+                            "Failed to lazily init builtin proxy for session {}: {}. Active sessions: {:?}",
+                            session_id,
+                            error,
+                            active_sessions
+                        );
+                        format!("Session context not found or expired (ID: {})", session_id)
+                    })?
                 }
-            };
-            return proxy.call_tool(tool_name, args).await;
-        }
-
-        // External tools: parse server__tool format
-        let (server_name, real_tool_name) = tool_name
-            .split_once("__")
-            .ok_or_else(|| format!("Invalid tool name format: {}", tool_name))?;
-
-        // Check if server exists in session-specific stdio manager first (primary check)
-        let stdio_managers = self.session_stdio_managers.read().await;
-        let has_stdio = stdio_managers
-            .get(session_id)
-            .map(|mgr| mgr.has_server(server_name))
-            .unwrap_or(false);
-
-        if has_stdio {
-            // Route to session-specific stdio manager
-            let manager = stdio_managers
-                .get(session_id)
-                .ok_or_else(|| format!("No stdio manager for session: {}", session_id))?;
-
-            return manager
-                .call_tool(server_name, real_tool_name, args)
+            }
+        } else {
+            log::debug!(
+                "Ensuring config-aware proxy for session {} before external tool '{}'",
+                session_id,
+                tool_name
+            );
+            self.ensure_configured_proxy(session_id, None)
                 .await
-                .map_err(|e| format!("{}", e));
-        }
-        drop(stdio_managers);
+                .map_err(|error| {
+                    log::error!(
+                        "Failed to ensure configured proxy for session {} before external tool '{}': {}. Active sessions: {:?}",
+                        session_id,
+                        tool_name,
+                        error,
+                        active_sessions
+                    );
+                    error
+                })?
+        };
 
-        // Otherwise, route to session-specific HTTP manager
-        let http_managers = self.session_http_managers.read().await;
-        let manager = http_managers
-            .get(session_id)
-            .ok_or_else(|| format!("No HTTP manager for session: {}", session_id))?;
-
-        manager
-            .call_tool(server_name, real_tool_name, args)
-            .await
-            .map_err(|e| format!("{}", e))
+        proxy.call_tool(tool_name, args).await
     }
 
     /// Get the number of active proxies

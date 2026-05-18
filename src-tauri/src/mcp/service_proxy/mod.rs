@@ -9,7 +9,6 @@ use super::builtin::BuiltinMCPServer;
 use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{ContextVolatility, MCPResponse, MCPTool, ServiceContext};
-use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::session::SessionManager;
 
 pub mod builder;
@@ -87,6 +86,20 @@ impl MCPServiceProxy {
                 }),
             ),
         ))
+    }
+
+    async fn missing_external_tool_response(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+    ) -> MCPResponse {
+        let result = crate::mcp::error_normalization::missing_external_tool_result(
+            server_name,
+            tool_name,
+            &self.session_id,
+        )
+        .await;
+        Self::tool_call_response(result)
     }
 
     /// Create a new session-bound proxy using builder
@@ -231,46 +244,9 @@ impl MCPServiceProxy {
                         return response;
                     }
 
-                    let repo = crate::state::get_mcp_server_repository();
-                    let is_global_server =
-                        matches!(repo.get_by_name(&server_name).await, Ok(Some(_)));
-
-                    let (error_msg, guidance) = if is_global_server {
-                        (
-                            format!(
-                                "Tool '{}' is not permitted for your current session.",
-                                tool_name
-                            ),
-                            vec![
-                                "This tool exists in the system, but your current session is not allowed to call it.".to_string(),
-                                "Use agent__list(type=\"configs\") to find an agent with the required capability, or update the responsible agent with agent__update(...).".to_string(),
-                            ],
-                        )
-                    } else {
-                        (
-                            format!(
-                                "Tool '{}' not found in session '{}'",
-                                tool_name, self.session_id
-                            ),
-                            vec![
-                                "Verify the server is enabled for this agent/session".to_string(),
-                                "Use tool__list to inspect the current session's callable tool set"
-                                    .to_string(),
-                                "Confirm the tool name matches the server tool list".to_string(),
-                            ],
-                        )
-                    };
-
-                    let result = external_tool_error_result(
-                        "Call External Tool",
-                        &server_name,
-                        &real_tool_name,
-                        ExternalMcpErrorCategory::NotFound,
-                        &error_msg,
-                        guidance,
-                    );
-
-                    Ok(Self::tool_call_response(result))
+                    Ok(self
+                        .missing_external_tool_response(&server_name, &real_tool_name)
+                        .await)
                 }
             };
         }
@@ -333,45 +309,9 @@ impl MCPServiceProxy {
                         return response;
                     }
 
-                    let repo = crate::state::get_mcp_server_repository();
-                    let is_global_server =
-                        matches!(repo.get_by_name(&server_name).await, Ok(Some(_)));
-
-                    let (error_msg, guidance) = if is_global_server {
-                        (
-                            format!(
-                                "Tool '{}' is not permitted for your current session.",
-                                tool_name
-                            ),
-                            vec![
-                                "This tool exists in the system, but your current session is not allowed to call it.".to_string(),
-                                "Use agent__list(type=\"configs\") to find an agent with the required capability, or update the responsible agent with agent__update(...).".to_string(),
-                            ],
-                        )
-                    } else {
-                        (
-                            format!(
-                                "Tool '{}' not found in session '{}'",
-                                tool_name, self.session_id
-                            ),
-                            vec![
-                                "Verify the server is enabled for this agent/session".to_string(),
-                                "Use tool__list to inspect the current session's callable tool set".to_string(),
-                                "Confirm the tool name matches the server tool list".to_string(),
-                            ],
-                        )
-                    };
-
-                    let result = external_tool_error_result(
-                        "Call External Tool",
-                        &server_name,
-                        &real_tool_name,
-                        ExternalMcpErrorCategory::NotFound,
-                        &error_msg,
-                        guidance,
-                    );
-
-                    Ok(Self::tool_call_response(result))
+                    Ok(self
+                        .missing_external_tool_response(&server_name, &real_tool_name)
+                        .await)
                 }
             }
         })
