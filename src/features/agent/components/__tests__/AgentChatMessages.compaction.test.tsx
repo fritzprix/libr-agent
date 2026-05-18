@@ -425,7 +425,7 @@ describe('AgentChatMessages compaction rendering', () => {
     };
 
     expect(virtuosoProps.atBottomThreshold).toBe(getVisualBottomThreshold());
-    expect(getVisualBottomThreshold()).toBe(50);
+    expect(getVisualBottomThreshold()).toBe(4);
   });
 
   it('uses horizontal list padding without a shorthand padding override', () => {

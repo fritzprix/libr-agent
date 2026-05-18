@@ -45,7 +45,7 @@ import {
 
 const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
-const DEFAULT_BOTTOM_THRESHOLD = 50;
+const DEFAULT_BOTTOM_THRESHOLD = 4;
 const CHAT_COMPOSER_CLEARANCE = 24;
 
 export function getPrependedFirstItemIndex(

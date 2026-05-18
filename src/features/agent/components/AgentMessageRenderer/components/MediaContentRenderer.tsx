@@ -41,7 +41,7 @@ function dataUrlToBlob(dataUrl: string, fallbackMimeType: string): Blob {
   const resolvedMimeType = mimeTypeMatch?.[1] || fallbackMimeType;
 
   if (metadata.includes(';base64')) {
-    return new Blob([decodeBase64ToBytes(payload)], {
+    return new Blob([decodeBase64ToBytes(payload).buffer as ArrayBuffer], {
       type: resolvedMimeType,
     });
   }
@@ -59,7 +59,7 @@ async function resolveImageBlob(
   if (rawData) {
     return rawData.startsWith('data:')
       ? dataUrlToBlob(rawData, mimeType)
-      : new Blob([decodeBase64ToBytes(rawData)], { type: mimeType });
+      : new Blob([decodeBase64ToBytes(rawData).buffer as ArrayBuffer], { type: mimeType });
   }
 
   if (imageSrc.startsWith('data:')) {
@@ -100,13 +100,20 @@ function canWriteImagesToClipboard(): boolean {
   );
 }
 
-function MediaLoadError({ label, detail }: { label: string; detail?: string }) {
+function MediaLoadError({
+  label,
+  detail,
+}: {
+  label: 'image' | 'audio' | 'video';
+  detail?: string;
+}) {
   const { t } = useTranslation();
-  const errorMessage = label === 'image'
-    ? t('agent.mediaRenderer.failedToLoadImage')
-    : label === 'audio'
-      ? t('agent.mediaRenderer.failedToLoadAudio')
-      : t('agent.mediaRenderer.failedToLoadVideo');
+  const ERROR_MESSAGES: Record<'image' | 'audio' | 'video', string> = {
+    image: t('agent.mediaRenderer.failedToLoadImage'),
+    audio: t('agent.mediaRenderer.failedToLoadAudio'),
+    video: t('agent.mediaRenderer.failedToLoadVideo'),
+  };
+  const errorMessage = ERROR_MESSAGES[label];
   return (
     <div
       role="status"
@@ -237,7 +244,9 @@ export function ImageContentRenderer({
             </TooltipTrigger>
           )}
           <TooltipContent>
-            {canCopyImage ? t('agent.mediaRenderer.copyTooltip') : t('agent.mediaRenderer.unsupportedClipboard')}
+            {canCopyImage
+              ? t('agent.mediaRenderer.copyTooltip')
+              : t('agent.mediaRenderer.unsupportedClipboard')}
           </TooltipContent>
         </Tooltip>
 
@@ -252,7 +261,9 @@ export function ImageContentRenderer({
               <Download size={16} />
             </button>
           </TooltipTrigger>
-          <TooltipContent>{t('agent.mediaRenderer.downloadTooltip')}</TooltipContent>
+          <TooltipContent>
+            {t('agent.mediaRenderer.downloadTooltip')}
+          </TooltipContent>
         </Tooltip>
       </div>
 
