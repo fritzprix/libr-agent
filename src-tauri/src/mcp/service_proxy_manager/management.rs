@@ -20,13 +20,16 @@ pub enum ProxyReadinessState {
 pub fn decide_proxy_readiness_state(
     proxy_exists: bool,
     has_readiness_signal: bool,
+    runtime_ready: bool,
 ) -> ProxyReadinessState {
     if !proxy_exists {
         ProxyReadinessState::MissingProxy
-    } else if has_readiness_signal {
-        ProxyReadinessState::AwaitSignal
-    } else {
+    } else if !has_readiness_signal || runtime_ready {
+        // A runtime-ready proxy must not block on a stale readiness entry left behind
+        // by an earlier background discovery cycle.
         ProxyReadinessState::Ready
+    } else {
+        ProxyReadinessState::AwaitSignal
     }
 }
 
@@ -134,6 +137,7 @@ impl MCPServiceProxyManager {
         session_id: &str,
         timeout_secs: u64,
     ) -> Result<(), String> {
+        let runtime_state = self.get_runtime_state(session_id).await;
         let readiness_signal = {
             let map = self.proxy_readiness.read().await;
             map.get(session_id).cloned()
@@ -142,6 +146,7 @@ impl MCPServiceProxyManager {
         match decide_proxy_readiness_state(
             self.get_proxy(session_id).await.is_some(),
             readiness_signal.is_some(),
+            runtime_state.proxy.ready,
         ) {
             ProxyReadinessState::MissingProxy => {
                 return Err(format!("No MCP proxy exists for session: {}", session_id));
