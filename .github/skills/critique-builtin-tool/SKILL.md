@@ -23,7 +23,7 @@ Use this skill when:
 
 ### Step 1: Understand the Tool Design Manifesto Rules
 
-Before auditing, internalize these 5 critical rules:
+Before auditing, internalize these 6 critical rules:
 
 #### **Rule 1: The Immutable ID Rule (Schema Design)**
 
@@ -57,6 +57,14 @@ Before auditing, internalize these 5 critical rules:
 - Format: "❌ Problem. 💡 Use toolName() to fix"
 - Never raw "Not Found" without context
 
+#### **Rule 6: Cache-Safe Stable Contexts (Prompt Prefix Stability)**
+
+- `ContextVolatility::Stable` content becomes part of the cacheable prompt prefix
+- Equivalent state must render **byte-for-byte identical** `context_prompt` text
+- Canonicalize unordered inputs before formatting text: `HashMap`, `HashSet`, directory scans, filesystem/API listings, DB queries without `ORDER BY`
+- Live or frequently changing state must **not** be marked `Stable`
+- If you limit a list (`take(5)`), sort first and truncate second
+
 ---
 
 ## Step 2: Gather Code Artifacts
@@ -77,6 +85,8 @@ src-tauri/src/mcp/builtin/your_server/
 2. **Tool Handlers** - Check for validation before mutations
 3. **Response Building** - Check dual-channel compliance
 4. **Error Messages** - Check for recovery hints
+5. **Service Context Builders** - Check `get_service_context()` text and volatility
+6. **Backing Repositories / Iterators** - Check ordering guarantees feeding service context text
 
 ---
 
@@ -486,6 +496,123 @@ return Ok(operation_failed_error(
 
 ---
 
+### 🧭 **Auditing Rule 6: Cache-Safe Stable Contexts**
+
+**Why this matters:**
+
+`ContextVolatility::Stable` is not just a UI hint. Stable service-context text is appended into the reusable prompt prefix, so nondeterministic rendering directly causes prompt cache misses even when message history is unchanged.
+
+**What to Look For:**
+
+```rust
+// ❌ VIOLATION: Stable context built from HashMap iteration
+async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    let installed: Vec<String> = platform
+        .installed_tools     // HashMap<String, ToolInfo>
+        .iter()              // ❌ Unordered
+        .filter(|(_, info)| info.installed)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    ServiceContext::new(format!(
+        "## Bootstrap\n\nInstalled Tools: {}",
+        installed.join(", ")
+    ))
+    .with_volatility(ContextVolatility::Stable)
+}
+```
+
+```rust
+// ✅ COMPLIANT: Canonicalize before rendering Stable text
+async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    let mut installed: Vec<String> = platform
+        .installed_tools
+        .iter()
+        .filter(|(_, info)| info.installed)
+        .map(|(name, _)| name.clone())
+        .collect();
+    installed.sort_unstable();
+
+    ServiceContext::new(format!(
+        "## Bootstrap\n\nInstalled Tools: {}",
+        installed.join(", ")
+    ))
+    .with_volatility(ContextVolatility::Stable)
+}
+```
+
+```rust
+// ❌ VIOLATION: Truncating before sorting makes the visible subset unstable
+let processes = registry
+    .entries
+    .values()
+    .filter(|entry| entry.running)
+    .take(5)   // ❌ Picks arbitrary five first
+    .map(|entry| (entry.id.clone(), entry.command.clone()))
+    .collect::<Vec<_>>();
+```
+
+```rust
+// ✅ COMPLIANT: Sort first, then truncate
+let mut processes = registry
+    .entries
+    .values()
+    .filter(|entry| entry.running)
+    .map(|entry| (entry.id.clone(), entry.command.clone()))
+    .collect::<Vec<_>>();
+processes.sort_by(|left, right| left.0.cmp(&right.0));
+let visible = processes.into_iter().take(5).collect::<Vec<_>>();
+```
+
+```rust
+// ❌ VIOLATION: Repository query feeding service context without ORDER BY
+ScheduledTaskEntity::find()
+    .filter(scheduled_task::Column::Enabled.eq(true))
+    .all(&self.db)   // ❌ Row order is not guaranteed
+    .await
+```
+
+```rust
+// ✅ COMPLIANT: Deterministic DB ordering with tie-breaker
+ScheduledTaskEntity::find()
+    .filter(scheduled_task::Column::Enabled.eq(true))
+    .order_by(scheduled_task::Column::NextRunAt, Order::Asc)
+    .order_by(scheduled_task::Column::CreatedAt, Order::Asc)
+    .order_by(scheduled_task::Column::Id, Order::Asc)
+    .all(&self.db)
+    .await
+```
+
+**Audit Checklist:**
+
+- [ ] Every `ContextVolatility::Stable` context uses deterministic text rendering
+- [ ] Unordered collections are sorted before joining into prompt text
+- [ ] Filesystem scans / directory walks are sorted before rendering
+- [ ] DB queries feeding stable context use explicit `ORDER BY` with tie-breakers when needed
+- [ ] `take()/limit` happens **after** sort, not before
+- [ ] Frequently changing state is marked `Medium` or `Volatile`, not `Stable`
+- [ ] If a service context claims "Stable", equivalent state really produces identical text
+
+**Lower-Priority Extension:**
+
+Even `Medium` / `Volatile` contexts benefit from deterministic ordering for prompt quality and compaction stability. These are not prompt-cache blockers, but they are still worth flagging as cleanup if ordering is obviously arbitrary.
+
+**Common Pitfalls:**
+
+- `HashMap::iter()` / `.values()` inside `Stable` service context text ❌
+- `WalkDir` / `read_dir()` output rendered without sorting ❌
+- Relying on implicit DB row order ❌
+- Sorting after `.take(5)` ❌
+- Marking live process lists, browser session state, or recent uploads as `Stable` ❌
+
+**Priority Guidance:**
+
+- **P1 (High):** Nondeterministic text inside `ContextVolatility::Stable`
+- **P2 (Medium):** Ordering instability in `Medium` / `Volatile` contexts
+- **P2 (Medium):** Repository helpers lacking explicit ordering that could later feed prompt text
+
+---
+
 ## Step 4: Document Findings
 
 ### Compliance Matrix Template
@@ -493,14 +620,15 @@ return Ok(operation_failed_error(
 ```markdown
 ## Compliance Audit: [ServerName] Builtin Tools
 
-| Rule                        | Status   | Grade | Evidence  |
-| --------------------------- | -------- | ----- | --------- |
-| 1. Immutable ID Rule        | ✅/⚠️/🔴 | A-F   | [Details] |
-| 2. Hallucination Firewall   | ✅/⚠️/🔴 | A-F   | [Details] |
-| 3. Dual-Channel Response    | ✅/⚠️/🔴 | A-F   | [Details] |
-| 4. AI-Native Descriptions   | ✅/⚠️/🔴 | A-F   | [Details] |
-| 4b. Description/Param Split | ✅/⚠️/🔴 | A-F   | [Details] |
-| 5. Success Hint Pattern     | ✅/⚠️/🔴 | A-F   | [Details] |
+| Rule                          | Status   | Grade | Evidence  |
+| ----------------------------- | -------- | ----- | --------- |
+| 1. Immutable ID Rule          | ✅/⚠️/🔴 | A-F   | [Details] |
+| 2. Hallucination Firewall     | ✅/⚠️/🔴 | A-F   | [Details] |
+| 3. Dual-Channel Response      | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4. AI-Native Descriptions     | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4b. Description/Param Split   | ✅/⚠️/🔴 | A-F   | [Details] |
+| 5. Success Hint Pattern       | ✅/⚠️/🔴 | A-F   | [Details] |
+| 6. Cache-Safe Stable Contexts | ✅/⚠️/🔴 | A-F   | [Details] |
 
 **Overall Grade:** [A-F] - [Summary]
 ```
@@ -557,10 +685,12 @@ return Ok(operation_failed_error(
 **P1 (High):** Should fix soon
 - Rule 2 partial violations (poor error messages)
 - Rule 5 violations (no recovery hints)
+- Rule 6 violations in `ContextVolatility::Stable`
 
 **P2 (Medium):** Nice to have
 - Rule 4 improvements (better descriptions)
 - Inconsistent error formatting
+- Ordering instability in non-stable service contexts
 
 **P3 (Low):** Optional polish
 - Documentation improvements
@@ -697,6 +827,7 @@ Before submitting audit findings:
 - [ ] Assigned appropriate priorities
 - [ ] Tested recommended fixes compile (if providing code)
 - [ ] Acknowledged what's already good (not just problems)
+- [ ] Checked `get_service_context()` volatility + ordering, not just tool handlers
 
 ---
 
@@ -807,6 +938,15 @@ rg 'MCPResult|SuccessHint::new|to_mcp_result'
 
 # Rule 5: Find raw Err returns
 rg 'Err\(format!\(".*not found'
+
+# Rule 6: Find Stable service contexts
+rg -n 'ContextVolatility::Stable|with_volatility\(ContextVolatility::Stable\)' src-tauri/src/mcp
+
+# Rule 6: Find likely unordered inputs near service-context builders
+rg -n 'get_service_context|HashMap|HashSet|WalkDir|read_dir|\.values\(\)|\.keys\(\)|join\(' src-tauri/src/mcp src-tauri/src/services src-tauri/src/repositories
+
+# Rule 6: Find DB queries without explicit ordering in prompt-adjacent code
+rg -n 'find\(\)|all\(&self\.db\)|all\(&db\)' src-tauri/src/repositories src-tauri/src/mcp | rg -v 'order_by'
 ````
 
 ### Code Review Checklist
@@ -821,6 +961,8 @@ When reviewing PR:
 - [ ] No human UI verbs in descriptions
 - [ ] Success/error hints are context-specific
 - [ ] Structured content mirrors text content
+- [ ] Stable service-context text is canonicalized before rendering
+- [ ] Live state is not mislabeled as `ContextVolatility::Stable`
 
 ---
 

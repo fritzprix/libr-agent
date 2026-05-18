@@ -41,6 +41,17 @@ impl BootstrapServer {
         }
     }
 
+    fn sorted_tool_names(platform: &platform::PlatformInfo, installed: bool) -> Vec<String> {
+        let mut tools: Vec<String> = platform
+            .installed_tools
+            .iter()
+            .filter(|(_, info)| info.installed == installed)
+            .map(|(name, _)| name.clone())
+            .collect();
+        tools.sort_unstable();
+        tools
+    }
+
     /// Build service context from platform info
     fn build_service_context(platform: &platform::PlatformInfo) -> ServiceContext {
         let mut context_parts = vec![
@@ -56,12 +67,7 @@ impl BootstrapServer {
             context_parts.push(format!("Package Manager: {}", pm));
         }
 
-        let installed: Vec<String> = platform
-            .installed_tools
-            .iter()
-            .filter(|(_, info)| info.installed)
-            .map(|(name, _)| name.clone())
-            .collect();
+        let installed = Self::sorted_tool_names(platform, true);
 
         if !installed.is_empty() {
             context_parts.push(format!("Installed Tools: {}", installed.join(", ")));
@@ -103,24 +109,13 @@ impl BootstrapServer {
         }
 
         // Add installed tools summary
-        let installed: Vec<&String> = platform
-            .installed_tools
-            .iter()
-            .filter(|(_, info)| info.installed)
-            .map(|(name, _)| name)
-            .collect();
-
-        let missing: Vec<&String> = platform
-            .installed_tools
-            .iter()
-            .filter(|(_, info)| !info.installed)
-            .map(|(name, _)| name)
-            .collect();
+        let installed = Self::sorted_tool_names(&platform, true);
+        let missing = Self::sorted_tool_names(&platform, false);
 
         if !installed.is_empty() {
             sections.push(format!("\nInstalled Tools ({}):", installed.len()));
             for tool in &installed {
-                if let Some(info) = platform.installed_tools.get(*tool) {
+                if let Some(info) = platform.installed_tools.get(tool) {
                     let version = info.version.as_deref().unwrap_or("unknown");
                     sections.push(format!("  ✓ {}: {}", tool, version));
                 }
@@ -308,6 +303,37 @@ impl BuiltinMCPServer for BootstrapServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn sample_platform(tool_order: &[(&str, bool, Option<&str>)]) -> platform::PlatformInfo {
+        let mut installed_tools = HashMap::new();
+        for (name, installed, version) in tool_order {
+            installed_tools.insert(
+                (*name).to_string(),
+                platform::ToolInfo {
+                    installed: *installed,
+                    version: version.map(str::to_string),
+                    path: Some(format!("/usr/bin/{name}")),
+                },
+            );
+        }
+
+        platform::PlatformInfo {
+            os: "linux".to_string(),
+            arch: "x64".to_string(),
+            shell: "bash".to_string(),
+            home_dir: Some("/home/test".to_string()),
+            temp_dir: "/tmp".to_string(),
+            distro: Some(platform::LinuxDistro {
+                name: "Ubuntu".to_string(),
+                id: "ubuntu".to_string(),
+                version: Some("24.04".to_string()),
+                pretty_name: Some("Ubuntu 24.04".to_string()),
+            }),
+            package_manager: Some("apt".to_string()),
+            installed_tools,
+        }
+    }
 
     #[tokio::test]
     async fn test_detect_platform() {
@@ -379,6 +405,47 @@ mod tests {
         let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         assert!(tool_names.contains(&"detectPlatform"));
         assert!(tool_names.contains(&"getBootstrapGuide"));
+    }
+
+    #[test]
+    fn test_build_service_context_sorts_installed_tools() {
+        let first = sample_platform(&[
+            ("python", true, Some("3.12.0")),
+            ("git", true, Some("2.47.0")),
+            ("node", true, Some("22.0.0")),
+        ]);
+        let second = sample_platform(&[
+            ("node", true, Some("22.0.0")),
+            ("python", true, Some("3.12.0")),
+            ("git", true, Some("2.47.0")),
+        ]);
+
+        let first_context = BootstrapServer::build_service_context(&first);
+        let second_context = BootstrapServer::build_service_context(&second);
+
+        assert_eq!(first_context.context_prompt, second_context.context_prompt);
+        assert!(first_context
+            .context_prompt
+            .contains("Installed Tools: git, node, python"));
+    }
+
+    #[test]
+    fn test_sorted_tool_names_are_deterministic_for_installed_and_missing_tools() {
+        let platform = sample_platform(&[
+            ("python", true, Some("3.12.0")),
+            ("docker", false, None),
+            ("git", true, Some("2.47.0")),
+            ("node", false, None),
+        ]);
+
+        assert_eq!(
+            BootstrapServer::sorted_tool_names(&platform, true),
+            vec!["git".to_string(), "python".to_string()]
+        );
+        assert_eq!(
+            BootstrapServer::sorted_tool_names(&platform, false),
+            vec!["docker".to_string(), "node".to_string()]
+        );
     }
 
     #[tokio::test]

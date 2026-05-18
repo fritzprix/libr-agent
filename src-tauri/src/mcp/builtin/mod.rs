@@ -94,6 +94,11 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     ) -> Result<MCPResult, String>;
 
     /// Returns a markdown-formatted string describing the server's current status and context.
+    ///
+    /// If the returned context is marked `ContextVolatility::Stable`, its text must be
+    /// canonicalized. Equivalent state must produce byte-for-byte identical prompt text,
+    /// so sort unordered collections and normalize filesystem/API listing order before
+    /// rendering `context_prompt`.
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         ServiceContext::new(format!(
             "## {}\n**Description**: {}",

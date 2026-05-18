@@ -613,45 +613,48 @@ export function AgentChatMessages() {
     [clearBottomLatchSettleTimeout, logScrollState, setEffectivePinnedState],
   );
 
-  const executeScrollToBottom = useCallback((reason: string) => {
-    const itemCount = groupedMessageCountRef.current;
-    selfScrollIgnoreUntilRef.current =
-      performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
-    logScrollState('executeScrollToBottom:start', {
-      itemCount,
-      reason,
-      bottomLatchActive: bottomLatchActiveRef.current,
-    });
-
-    if (footerEndRef.current) {
-      logScrollState('executeScrollToBottom:footer-sentinel', {
+  const executeScrollToBottom = useCallback(
+    (reason: string) => {
+      const itemCount = groupedMessageCountRef.current;
+      selfScrollIgnoreUntilRef.current =
+        performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
+      logScrollState('executeScrollToBottom:start', {
         itemCount,
         reason,
+        bottomLatchActive: bottomLatchActiveRef.current,
       });
-      scrollFooterSentinelIntoView(footerEndRef.current);
-      return;
-    }
 
-    const scrolledWithVirtuoso = scrollVirtuosoToBottom(
-      virtuosoRef.current,
-      itemCount,
-    );
+      if (footerEndRef.current) {
+        logScrollState('executeScrollToBottom:footer-sentinel', {
+          itemCount,
+          reason,
+        });
+        scrollFooterSentinelIntoView(footerEndRef.current);
+        return;
+      }
 
-    if (!scrolledWithVirtuoso) {
-      logScrollState('executeScrollToBottom:unavailable', {
+      const scrolledWithVirtuoso = scrollVirtuosoToBottom(
+        virtuosoRef.current,
+        itemCount,
+      );
+
+      if (!scrolledWithVirtuoso) {
+        logScrollState('executeScrollToBottom:unavailable', {
+          itemCount,
+          reason,
+          scrolledWithVirtuoso,
+        });
+        return;
+      }
+
+      logScrollState('executeScrollToBottom:virtuoso-scroll', {
         itemCount,
         reason,
         scrolledWithVirtuoso,
       });
-      return;
-    }
-
-    logScrollState('executeScrollToBottom:virtuoso-scroll', {
-      itemCount,
-      reason,
-      scrolledWithVirtuoso,
-    });
-  }, [logScrollState]);
+    },
+    [logScrollState],
+  );
 
   useLayoutEffect(() => {
     const previous = previousListStateRef.current;
@@ -870,7 +873,10 @@ export function AgentChatMessages() {
         scrollerElement.scrollHeight -
         currentScrollTop -
         scrollerElement.clientHeight;
-      const visualPinned = isPinnedToBottom(distanceFromBottom, bottomThreshold);
+      const visualPinned = isPinnedToBottom(
+        distanceFromBottom,
+        bottomThreshold,
+      );
       const nearBottomForLatch = isNearBottomForLatch(distanceFromBottom);
       const isSelfScroll = performance.now() < selfScrollIgnoreUntilRef.current;
 
