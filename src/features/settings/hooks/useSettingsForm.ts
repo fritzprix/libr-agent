@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -119,13 +119,21 @@ export function useSettingsForm() {
   const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
 
   const activeFormState = draftState ? draftState : globalSettings;
-  const activeDirtyState = draftState
-    ? getSettingsDirtyState(draftState, globalSettings)
-    : getEmptyDirtyState();
+  const activeDirtyState = useMemo(() => {
+    return draftState
+      ? getSettingsDirtyState(draftState, globalSettings)
+      : getEmptyDirtyState();
+  }, [draftState, globalSettings]);
 
   const isDirty = useMemo(() => {
     return Object.values(activeDirtyState).some(Boolean);
   }, [activeDirtyState]);
+
+  useEffect(() => {
+    if (draftState && equal(draftState, globalSettings)) {
+      setDraftState(null);
+    }
+  }, [draftState, globalSettings]);
 
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
@@ -215,9 +223,6 @@ export function useSettingsForm() {
   const save = useCallback(async () => {
     if (!draftState) return;
     await updateGlobal(draftState);
-    // Once save completes, the globalSettings will update shortly.
-    // We clear the draft so we are seamlessly back to mirroring global settings.
-    setDraftState(null);
   }, [draftState, updateGlobal]);
 
   return {
