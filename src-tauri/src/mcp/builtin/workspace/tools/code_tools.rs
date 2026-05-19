@@ -184,7 +184,8 @@ pub fn create_run_powershell_tool() -> MCPTool {
 Guidelines:
 - Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.
 - Access environment variables using '$env:VARNAME'.
-- Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell."
+- Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell.
+- For longer or non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -244,6 +245,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
                        - Use ';' to chain commands.\n\
                        - File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current location automatically.\n\
+                       - For longer work: spawnProcess.\n\
                        - For simple stateless commands: runPowerShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
