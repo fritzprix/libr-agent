@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
   getInitialTopMostItemIndex,
+  getGroupedMessageVirtuosoKey,
   getPrependedFirstItemIndex,
   isPinnedToBottom,
   getVisualBottomThreshold,
@@ -417,6 +418,322 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(getPrependedFirstItemIndex(2, 3)).toBe(0);
   });
 
+  it('applies prepend firstItemIndex compensation in the same render as older message insertion', () => {
+    const { rerender } = render(<AgentChatMessages />);
+
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'prepended-older-1',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'prepended-older-1',
+            role: 'user',
+          },
+        ],
+        coveredMessageIds: ['prepended-older-1'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'prepended-older-2',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'prepended-older-2',
+            role: 'assistant',
+          },
+        ],
+        coveredMessageIds: ['prepended-older-2'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
+      {
+        type: 'tool_group',
+        message: baseMessage,
+        messages: [baseMessage],
+        coveredMessageIds: ['assistant-1', 'tool-1'],
+        toolGroup: {
+          calls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: {
+                name: 'agent__compactSessionContext',
+                arguments: '{}',
+              },
+            },
+          ],
+          results: [],
+        },
+      },
+    );
+
+    rerender(<AgentChatMessages />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      firstItemIndex: number;
+    };
+
+    expect(virtuosoProps.firstItemIndex).toBe(9_998);
+  });
+
+  it('skips prepend compensation when the previous visible head is not preserved at the shifted offset', () => {
+    const { rerender } = render(<AgentChatMessages />);
+
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'new-head-group',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'new-head-group',
+            role: 'assistant',
+          },
+        ],
+        coveredMessageIds: ['new-head-group'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'merged-existing-group',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'merged-existing-group',
+            role: 'assistant',
+          },
+        ],
+        coveredMessageIds: ['merged-existing-group'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
+    );
+
+    rerender(<AgentChatMessages />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      firstItemIndex: number;
+    };
+
+    expect(virtuosoProps.firstItemIndex).toBe(10_000);
+  });
+
+  it('uses boundary membership to keep prepend compensation when the previous head is absorbed into a new group', () => {
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'tool_group',
+        message: baseMessage,
+        messages: [baseMessage],
+        coveredMessageIds: ['assistant-1', 'tool-1'],
+        toolGroup: {
+          calls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: {
+                name: 'agent__compactSessionContext',
+                arguments: '{}',
+              },
+            },
+          ],
+          results: [],
+        },
+      },
+      {
+        type: 'single',
+        message: {
+          ...baseMessage,
+          id: 'assistant-tail',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'assistant-tail',
+          },
+        ],
+        coveredMessageIds: ['assistant-tail'],
+      } as GroupedMessage,
+    );
+
+    const { rerender } = render(<AgentChatMessages />);
+
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'prepended-older-group',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'prepended-older-group',
+            role: 'assistant',
+          },
+        ],
+        coveredMessageIds: ['prepended-older-group'],
+        toolGroup: {
+          calls: [],
+          results: [],
+        },
+      },
+      {
+        type: 'tool_group',
+        message: {
+          ...baseMessage,
+          id: 'merged-head-group',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'merged-head-group',
+            role: 'assistant',
+          },
+          {
+            ...baseMessage,
+            id: 'assistant-1',
+            role: 'assistant',
+          },
+        ],
+        coveredMessageIds: ['merged-head-group', 'assistant-1', 'tool-1'],
+        toolGroup: {
+          calls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: {
+                name: 'agent__compactSessionContext',
+                arguments: '{}',
+              },
+            },
+          ],
+          results: [],
+        },
+      },
+      {
+        type: 'single',
+        message: {
+          ...baseMessage,
+          id: 'assistant-tail',
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'assistant-tail',
+          },
+        ],
+        coveredMessageIds: ['assistant-tail'],
+      } as GroupedMessage,
+    );
+
+    rerender(<AgentChatMessages />);
+
+    const virtuosoProps = virtuosoMock.mock.lastCall?.[0] as {
+      firstItemIndex: number;
+    };
+
+    expect(virtuosoProps.firstItemIndex).toBe(9_999);
+  });
+
+  it('changes Virtuoso item keys when a grouped row changes structural shape', () => {
+    const singleKey = getGroupedMessageVirtuosoKey({
+      type: 'single',
+      message: baseMessage,
+      messages: [baseMessage],
+      coveredMessageIds: ['assistant-1'],
+    } as GroupedMessage);
+
+    const toolGroupKey = getGroupedMessageVirtuosoKey({
+      type: 'tool_group',
+      message: baseMessage,
+      messages: [baseMessage],
+      coveredMessageIds: ['assistant-1', 'tool-1'],
+      toolGroup: {
+        calls: [
+          {
+            id: 'call-1',
+            type: 'function',
+            function: {
+              name: 'agent__compactSessionContext',
+              arguments: '{}',
+            },
+          },
+        ],
+        results: [],
+      },
+    });
+
+    const expandedToolGroupKey = getGroupedMessageVirtuosoKey({
+      type: 'tool_group',
+      message: baseMessage,
+      messages: [
+        baseMessage,
+        {
+          ...baseMessage,
+          id: 'assistant-2',
+        },
+      ],
+      coveredMessageIds: ['assistant-1', 'tool-1', 'assistant-2', 'tool-2'],
+      toolGroup: {
+        calls: [
+          {
+            id: 'call-1',
+            type: 'function',
+            function: {
+              name: 'agent__compactSessionContext',
+              arguments: '{}',
+            },
+          },
+          {
+            id: 'call-2',
+            type: 'function',
+            function: {
+              name: 'agent__compactSessionContext',
+              arguments: '{}',
+            },
+          },
+        ],
+        results: [],
+      },
+    });
+
+    expect(singleKey).not.toBe(toolGroupKey);
+    expect(toolGroupKey).not.toBe(expandedToolGroupKey);
+  });
+
   it('uses a tiny bottom threshold as scroll noise tolerance', () => {
     render(<AgentChatMessages />);
 
@@ -659,12 +976,179 @@ describe('AgentChatMessages compaction rendering', () => {
       });
 
       expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
     } finally {
       performanceNowSpy.mockRestore();
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('cancels a queued bottom-follow scroll once the user starts reading upward', () => {
+    const scrollIntoView = vi.fn();
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const frameQueue = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 1;
+
+    const flushAllFrames = () => {
+      while (frameQueue.size > 0) {
+        const callbacks = [...frameQueue.values()];
+        frameQueue.clear();
+        callbacks.forEach((callback) => callback(0));
+      }
+    };
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      const frameId = nextFrameId++;
+      frameQueue.set(frameId, callback);
+      return frameId;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = ((frameId: number) => {
+      frameQueue.delete(frameId);
+    }) as typeof cancelAnimationFrame;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      const { container } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+
+      expect(scroller).not.toBeNull();
+
+      Object.defineProperty(scroller, 'scrollHeight', {
+        value: 500,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'clientHeight', {
+        value: 100,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'scrollTop', {
+        value: 400,
+        writable: true,
+        configurable: true,
+      });
+
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+        flushAllFrames();
+      });
+
+      scrollIntoView.mockClear();
+
+      act(() => {
+        resizeObserverCallbacks.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
+      });
+
+      expect(frameQueue.size).toBeGreaterThan(0);
+
+      scroller!.scrollTop = 394;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      act(() => {
+        flushAllFrames();
+      });
+
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+    } finally {
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('releases bottom follow as soon as an upward user scroll leaves the visual bottom', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const performanceNowSpy = vi.spyOn(performance, 'now');
+    let currentTime = 0;
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-stream',
+        content: [{ type: 'text', text: 'streaming output' }],
+        isStreaming: true,
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'single',
+        message: {
+          ...baseMessage,
+          id: 'assistant-stream',
+          content: [{ type: 'text', text: 'streaming output' }],
+          isStreaming: true,
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'assistant-stream',
+            content: [{ type: 'text', text: 'streaming output' }],
+            isStreaming: true,
+          },
+        ],
+        coveredMessageIds: ['assistant-stream'],
+      } as GroupedMessage,
+    );
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    performanceNowSpy.mockImplementation(() => currentTime);
+
+    try {
+      const { container } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+
+      expect(scroller).not.toBeNull();
+
+      Object.defineProperty(scroller, 'scrollHeight', {
+        value: 500,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'clientHeight', {
+        value: 100,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'scrollTop', {
+        value: 400,
+        writable: true,
+        configurable: true,
+      });
+
+      currentTime = 300;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      scroller!.scrollTop = 394;
+
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+    } finally {
+      performanceNowSpy.mockRestore();
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
     }
   });
 
@@ -759,7 +1243,7 @@ describe('AgentChatMessages compaction rendering', () => {
         scrollToLatestButton.click();
       });
 
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
     } finally {
       performanceNowSpy.mockRestore();
@@ -791,8 +1275,8 @@ describe('AgentChatMessages compaction rendering', () => {
         );
       });
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -859,8 +1343,8 @@ describe('AgentChatMessages compaction rendering', () => {
         virtuosoProps.totalListHeightChanged?.(512);
       });
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -899,16 +1383,16 @@ describe('AgentChatMessages compaction rendering', () => {
         virtuosoProps.totalListHeightChanged?.(9_726);
       });
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
-      expect(scrollIntoView.mock.calls.length).toBe(2);
+      expect(scrollToIndexMock.mock.calls.length).toBe(2);
+      expect(scrollIntoView).not.toHaveBeenCalled();
 
       act(() => {
         virtuosoProps.atBottomStateChange?.(true);
         virtuosoProps.totalListHeightChanged?.(12_000);
       });
 
-      expect(scrollIntoView.mock.calls.length).toBe(3);
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
+      expect(scrollToIndexMock.mock.calls.length).toBe(3);
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -937,8 +1421,8 @@ describe('AgentChatMessages compaction rendering', () => {
       sessionState.session = { id: 'session-2', assistant: { name: 'Agent' } };
       rerender(<AgentChatMessages />);
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -981,8 +1465,8 @@ describe('AgentChatMessages compaction rendering', () => {
         nextFrame?.(0);
       });
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -1227,8 +1711,8 @@ describe('AgentChatMessages compaction rendering', () => {
         nextFrame?.(0);
       });
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -1283,8 +1767,8 @@ describe('AgentChatMessages compaction rendering', () => {
 
       rerender(<AgentChatMessages />);
 
-      expect(scrollToIndexMock).not.toHaveBeenCalled();
-      expect(scrollIntoView).toHaveBeenCalled();
+      expect(scrollToIndexMock).toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
