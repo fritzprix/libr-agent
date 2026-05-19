@@ -186,15 +186,14 @@ pub fn prune_knowledge_tool() -> MCPTool {
                     "target_ids".to_string(),
                     array_schema(
                         integer_prop(None, None, None),
-                        Some("Knowledge chunk IDs to delete. Copy these IDs from search_knowledge results."),
+                        Some(
+                            "Knowledge chunk IDs to delete. Use IDs returned by search_knowledge.",
+                        ),
                     ),
                 ),
                 (
                     "action".to_string(),
-                    enum_prop_required(
-                        vec!["delete"],
-                        "Delete the targeted knowledge chunks.",
-                    ),
+                    enum_prop_required(vec!["delete"], "Delete the targeted knowledge chunks."),
                 ),
             ],
             vec!["target_ids".to_string(), "action".to_string()],

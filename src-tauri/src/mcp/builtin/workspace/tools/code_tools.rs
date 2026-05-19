@@ -25,7 +25,7 @@ pub fn create_run_shell_tool() -> MCPTool {
             Some(1),
             Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
             crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
-            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
+            Some("Timeout in seconds for synchronous execution."),
         ),
     );
 
@@ -33,8 +33,8 @@ pub fn create_run_shell_tool() -> MCPTool {
         name: "runShell".to_string(),
         title: Some("Run Shell Command (Isolated)".to_string()),
         description: "Run a synchronous shell command (bash/sh). Stateless — each call starts fresh at workspace root.\n\
-                       Use 'cd dir && command' for subdirectories.\n\
-                      For persistent cd/env vars: runInPersistentShell. Sync execution is capped at 300 seconds; use spawnProcess for longer or non-blocking tasks."
+                        Use 'cd dir && command' for subdirectories.\n\
+                       For persistent cd/env vars: runInPersistentShell. For longer or non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -65,13 +65,13 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some(1),
             Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
             crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
-            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
+            Some("Timeout in seconds for synchronous execution."),
         ),
     );
     props.insert(
         "requireUserInput".to_string(),
         {
-            let mut schema = boolean_prop(Some("Request user input before execution (e.g., sudo password). Auto-detects sudo/su/doas/pkexec on Unix."));
+            let mut schema = boolean_prop(Some("Request user input before execution. Auto-detects privilege-escalation commands such as sudo, su, doas, and pkexec on Unix."));
             schema.default = Some(json!(false));
             schema
         },
@@ -97,9 +97,9 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "runInPersistentShell".to_string(),
         title: Some("Execute Shell Command (Persistent Session)".to_string()),
         description: "Run a shell command in a persistent session that preserves working directory and env vars across calls.\n\
-                       Use when you need 'cd' to stick, 'export' to carry forward, or interactive commands (sudo).\n\
+                       Use when you need 'cd' to stick, 'export' to carry forward, or commands that require user input such as sudo.\n\
                        File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current directory automatically.\n\
-                       Sync execution is capped at 300 seconds; use spawnProcess for longer work.\n\
+                       For longer work: spawnProcess.\n\
                        For simple stateless commands: runShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
@@ -138,7 +138,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
     MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
-        description: "Start a command as a non-blocking background process. Returns process_id immediately.\n\
+        description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require process_id.\n\
                        Stateless — starts from workspace root each call. No interactive input.\n\
                        Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
@@ -172,7 +172,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
             Some(1),
             Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
             crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
-            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
+            Some("Timeout in seconds for synchronous execution."),
         ),
     );
 
@@ -184,7 +184,8 @@ pub fn create_run_powershell_tool() -> MCPTool {
 Guidelines:
 - Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.
 - Access environment variables using '$env:VARNAME'.
-- Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell."
+- Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell.
+- For longer or non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -215,7 +216,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some(1),
             Some(crate::mcp::builtin::workspace::utils::max_sync_execution_timeout() as i64),
             crate::mcp::builtin::workspace::utils::default_sync_execution_timeout() as i64,
-            Some("Timeout in seconds for synchronous execution (max 300; use spawnProcess for longer work)"),
+            Some("Timeout in seconds for synchronous execution."),
         ),
     );
     props.insert("requireUserInput".to_string(), {
@@ -244,6 +245,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
                        - Use ';' to chain commands.\n\
                        - File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current location automatically.\n\
+                       - For longer work: spawnProcess.\n\
                        - For simple stateless commands: runPowerShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
@@ -282,7 +284,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
     MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
-        description: "Start a command as a non-blocking background process. Returns process_id immediately.\n\
+        description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; waitForProcess, stopProcess, and readProcessOutput still require process_id.\n\
                        Stateless — starts from workspace root each call. No interactive input.\n\
                        Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."

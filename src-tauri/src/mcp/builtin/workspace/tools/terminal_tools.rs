@@ -59,7 +59,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
             Some(3600),
             30,
             Some(
-                "Timeout in seconds. Use 0 to return current status immediately without blocking.",
+                "Maximum wait in seconds before returning. Use 0 to return current status immediately.",
             ),
         ),
     );

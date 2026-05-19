@@ -57,7 +57,7 @@ Behavior:
 
 Next Steps:
 - use `getPageContent({})` or listInteractable before another `navigateToUrl`
-- Use listInteractable to see clickable elements"
+- Use listInteractable to inspect actionable elements"
             .to_string(),
         input_schema: object_prop(
             vec![(
