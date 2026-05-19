@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -20,11 +20,6 @@ export type SettingsDirtyState = {
   system: boolean;
   advanced: boolean;
   dev: boolean;
-};
-
-type SettingsFormStore = {
-  formState: SettingsFormState;
-  dirtyState: SettingsDirtyState;
 };
 
 function getEmptyDirtyState(): SettingsDirtyState {
@@ -121,49 +116,34 @@ export function getSettingsDirtyState(
 export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
-  const [state, setState] = useState<SettingsFormStore>(() => ({
-    formState: globalSettings,
-    dirtyState: getEmptyDirtyState(),
-  }));
-  const [previousGlobalSettings, setPreviousGlobalSettings] =
-    useState(globalSettings);
-  const [shouldAcceptNextGlobalSync, setShouldAcceptNextGlobalSync] =
-    useState(false);
+  const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
+
+  const activeFormState = draftState ? draftState : globalSettings;
+  const activeDirtyState = useMemo(() => {
+    return draftState
+      ? getSettingsDirtyState(draftState, globalSettings)
+      : getEmptyDirtyState();
+  }, [draftState, globalSettings]);
+
+  const isDirty = useMemo(() => {
+    return Object.values(activeDirtyState).some(Boolean);
+  }, [activeDirtyState]);
+
+  useEffect(() => {
+    if (draftState && equal(draftState, globalSettings)) {
+      setDraftState(null);
+    }
+  }, [draftState, globalSettings]);
 
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
-      setState((previous) => {
-        const nextFormState = updater(previous.formState);
-        return {
-          formState: nextFormState,
-          dirtyState: getSettingsDirtyState(nextFormState, globalSettings),
-        };
+      setDraftState((prevDraft) => {
+        const previous = prevDraft ? prevDraft : globalSettings;
+        return updater(previous);
       });
     },
     [globalSettings],
   );
-
-  // Adjusting State During Render Pattern
-  if (globalSettings !== previousGlobalSettings) {
-    const shouldSyncFormState =
-      shouldAcceptNextGlobalSync ||
-      equal(state.formState, previousGlobalSettings);
-
-    setPreviousGlobalSettings(globalSettings);
-    setShouldAcceptNextGlobalSync(false);
-
-    if (shouldSyncFormState) {
-      setState({
-        formState: globalSettings,
-        dirtyState: getEmptyDirtyState(),
-      });
-    } else {
-      setState((previous) => ({
-        formState: previous.formState,
-        dirtyState: getSettingsDirtyState(previous.formState, globalSettings),
-      }));
-    }
-  }
 
   // Generic update for top-level keys
   const update = useCallback(
@@ -237,30 +217,17 @@ export function useSettingsForm() {
   );
 
   const reset = useCallback(() => {
-    setState({
-      formState: globalSettings,
-      dirtyState: getEmptyDirtyState(),
-    });
-  }, [globalSettings]);
+    setDraftState(null);
+  }, []);
 
   const save = useCallback(async () => {
-    setShouldAcceptNextGlobalSync(true);
-
-    try {
-      await updateGlobal(state.formState);
-    } catch (error) {
-      setShouldAcceptNextGlobalSync(false);
-      throw error;
-    }
-  }, [state.formState, updateGlobal]);
-
-  const isDirty = useMemo(() => {
-    return Object.values(state.dirtyState).some(Boolean);
-  }, [state.dirtyState]);
+    if (!draftState) return;
+    await updateGlobal(draftState);
+  }, [draftState, updateGlobal]);
 
   return {
-    formState: state.formState,
-    dirtyState: state.dirtyState,
+    formState: activeFormState,
+    dirtyState: activeDirtyState,
     update,
     updateServiceConfig,
     updateAdvanced,
