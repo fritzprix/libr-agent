@@ -139,6 +139,18 @@ impl SecurityValidator {
         let canonical_path = match absolute_path.canonicalize() {
             Ok(path) => path,
             Err(_) => {
+                // If canonicalize fails, it might be because the target doesn't exist yet.
+                // However, check if the exact target path itself is an unresolved symlink.
+                // If it is, we must reject it to prevent arbitrary file writes via dangling symlinks.
+                if let Ok(metadata) = std::fs::symlink_metadata(&absolute_path) {
+                    if metadata.file_type().is_symlink() {
+                        return Err(SecurityError::PathTraversal(format!(
+                            "Path '{}' is an unresolved symlink: {:?}",
+                            user_path, absolute_path
+                        )));
+                    }
+                }
+
                 // The full path may not exist yet during create/write flows, so walk upward until we
                 // find an existing parent. Reject unresolved symlink parents instead of skipping them,
                 // because a dangling symlink can later resolve outside base_dir.
