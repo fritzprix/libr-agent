@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.29] - 2026-05-21
+
+### 🐛 Fixes
+
+- **[CRITICAL] Fresh Install Startup Recovery**: Fixed a first-run SQLite migration crash that could terminate the app immediately for brand-new users, while preserving the `sessions.parent_session_id` cascade-delete schema on successful startup and interrupted-migration recovery.
+- **Security & UI Stability**: Hardened path traversal handling around broken symlinks, improved agent chat scroll anchoring, and stabilized settings draft synchronization to reduce frustrating edge-case regressions.
+
+### 🔧 Internal
+
+- **Release & Tooling Maintenance**: Refreshed generated files, README assets, and built-in tool descriptions to keep release metadata and developer guidance aligned with the current app behavior.
+
 ## [0.7.28] - 2026-05-18
 
 ### 🚀 Features
