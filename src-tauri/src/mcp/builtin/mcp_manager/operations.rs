@@ -486,6 +486,15 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(50) as usize;
+    let offset = args
+        .get("offset")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
+
     let include_internal = matches!(scope, "internal" | "all");
     let include_external = matches!(scope, "external" | "all");
     let session_view = availability == "session";
@@ -495,10 +504,22 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         load_session_tool_access(None).await
     };
 
-    let mut result_sections: Vec<String> = Vec::new();
-    let mut total_tools = 0usize;
-    let mut sections_added = 0usize;
+    struct ToolRow {
+        source: String,
+        server: String,
+        tool_name: String,
+        status: String,
+        description: String,
+    }
+
+    let mut all_tools: Vec<ToolRow> = Vec::new();
     let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
+    let mut total_tools = 0usize;
+
+    // Helper to sanitize markdown table text
+    let sanitize = |s: &str| {
+        s.replace('|', "\\|").replace('\n', " ")
+    };
 
     // --- Internal (builtin) tools ---
     if include_internal {
@@ -516,43 +537,22 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             })
             .collect();
 
-        if !matched.is_empty() {
-            let lines: Vec<String> = if query.is_empty() {
-                // Compact view when no query is specified
-                let names: Vec<String> = matched.iter().map(|(_, t)| t.name.clone()).collect();
-                vec![format!("Tools: {}", names.join(", "))]
+        for (service_alias, t) in matched {
+            let status_str = if session_view {
+                let (status, _) = access.builtin_status(service_alias);
+                status.to_string()
             } else {
-                // Detailed view
-                matched
-                    .iter()
-                    .map(|(service_alias, t)| {
-                        // Truncate description to keep output compact
-                        let desc = if t.description.len() > 80 {
-                            let mut end = 77;
-                            while end > 0 && !t.description.is_char_boundary(end) {
-                                end -= 1;
-                            }
-                            format!("{}...", &t.description[..end])
-                        } else {
-                            t.description.clone()
-                        };
-                        if session_view {
-                            let (status, _) = access.builtin_status(service_alias);
-                            format!("• {} {} — {}", t.name, status, desc)
-                        } else {
-                            format!("• {} — {}", t.name, desc)
-                        }
-                    })
-                    .collect()
+                "-".to_string()
             };
 
-            result_sections.push(format!(
-                "## Builtin Tools ({} matched)\n{}",
-                matched.len(),
-                lines.join("\n")
-            ));
-            total_tools += matched.len();
-            sections_added += 1;
+            all_tools.push(ToolRow {
+                source: "Builtin".to_string(),
+                server: service_alias.to_string(),
+                tool_name: t.name,
+                status: status_str,
+                description: sanitize(&t.description),
+            });
+            total_tools += 1;
         }
     }
 
@@ -619,73 +619,50 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                     .collect()
             };
 
-            // Display the server if it matches the query, even if no tools matched.
-            // If the server matches the query, matched_tools will contain ALL tools of that server due to `|| server_matches_query` above.
-            // However, if the server has NO tools cached/available, matched_tools is empty. We still want to show the server.
             let should_display = !matched_tools.is_empty() || server_matches_query;
 
             if should_display {
-                let verify_note = if force_verify { " [live]" } else { " [cached]" };
-
-                let server_desc = config_opt
-                    .as_ref()
-                    .and_then(|c| c.metadata.as_ref())
-                    .and_then(|m| m.description.as_deref())
-                    .map(|d| format!("  Description: {}\n", d))
-                    .unwrap_or_default();
-
-                let tool_list_str = if matched_tools.is_empty() {
-                    if tools_json_str.is_none() {
-                        "  (No tools cached. Run with forceVerify=true to discover tools)"
-                            .to_string()
-                    } else {
-                        "  (No tools provided by this server)".to_string()
-                    }
-                } else if query.is_empty() {
-                    // Compact view for tools
-                    let names: Vec<String> = matched_tools
-                        .iter()
-                        .map(|t| {
-                            let name = t["name"].as_str().unwrap_or("?");
-                            if session_view {
-                                let (status, _) = access.external_status(&model.id, &model.name);
-                                format!("{} {}", name, status)
-                            } else {
-                                name.to_string()
-                            }
-                        })
-                        .collect();
-                    format!("  Tools: {}", names.join(", "))
-                } else {
-                    // Detailed view
-                    let tool_lines: Vec<String> = matched_tools
-                        .iter()
-                        .map(|t| {
-                            let name = t["name"].as_str().unwrap_or("?");
-                            let desc = t["description"].as_str().unwrap_or("");
-                            if session_view {
-                                let (status, _) = access.external_status(&model.id, &model.name);
-                                format!("• {} {} — {}", name, status, desc)
-                            } else {
-                                format!("• {} — {}", name, desc)
-                            }
-                        })
-                        .collect();
-                    tool_lines.join("\n")
-                };
-
-                result_sections.push(format!(
-                    "## External: {}{} (ID: {})\n{}{}",
-                    model.name, verify_note, model.id, server_desc, tool_list_str
-                ));
-                total_tools += matched_tools.len();
-                sections_added += 1;
                 found_external_ids.push((model.name.clone(), model.id.clone()));
+
+                if matched_tools.is_empty() {
+                    let desc = if tools_json_str.is_none() {
+                        "(No tools cached. Run with forceVerify=true)"
+                    } else {
+                        "(No tools provided by this server)"
+                    };
+                    all_tools.push(ToolRow {
+                        source: "External".to_string(),
+                        server: model.name.clone(),
+                        tool_name: "-".to_string(),
+                        status: "-".to_string(),
+                        description: desc.to_string(),
+                    });
+                } else {
+                    for t in matched_tools {
+                        let name = t["name"].as_str().unwrap_or("?");
+                        let desc = t["description"].as_str().unwrap_or("");
+                        let status_str = if session_view {
+                            let (status, _) = access.external_status(&model.id, &model.name);
+                            status.to_string()
+                        } else {
+                            "-".to_string()
+                        };
+
+                        all_tools.push(ToolRow {
+                            source: "External".to_string(),
+                            server: model.name.clone(),
+                            tool_name: name.to_string(),
+                            status: status_str,
+                            description: sanitize(desc),
+                        });
+                        total_tools += 1;
+                    }
+                }
             }
         }
     }
 
-    if sections_added == 0 {
+    if all_tools.is_empty() {
         let hint_text = if query.is_empty() {
             "No tools found. Use registerServer to add external MCP servers.".to_string()
         } else {
@@ -717,7 +694,36 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         )
     };
 
-    let body = result_sections.join("\n\n");
+    let mut table = String::from("| Source | Server | Tool | Status | Description |\n|---|---|---|---|---|\n");
+
+    let paginated_tools: Vec<_> = all_tools.into_iter().skip(offset).take(limit).collect();
+    let displayed_count = paginated_tools.len();
+
+    for row in paginated_tools {
+        // Truncate description to keep output compact if it's too long
+        let mut desc = row.description;
+        if desc.len() > 150 {
+            let mut end = 147;
+            while end > 0 && !desc.is_char_boundary(end) {
+                end -= 1;
+            }
+            desc = format!("{}...", &desc[..end]);
+        }
+
+        table.push_str(&format!(
+            "| {} | {} | {} | {} | {} |\n",
+            row.source, row.server, row.tool_name, row.status, desc
+        ));
+    }
+
+    let pagination_hint = if offset + displayed_count < total_tools {
+        format!("\n\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+            offset + 1, offset + displayed_count, total_tools, offset + limit)
+    } else {
+        String::new()
+    };
+
+    let body = format!("{}{}", table, pagination_hint);
 
     // Build actionable next-step section for external servers
     let external_action = if !found_external_ids.is_empty() {
