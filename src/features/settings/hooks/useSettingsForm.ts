@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -10,7 +10,6 @@ import type {
 } from '@/context/SettingsContext';
 import equal from 'fast-deep-equal';
 
-// Define the form state shape, identical to Settings for now
 export type SettingsFormState = Settings;
 
 export type SettingsDirtyState = {
@@ -117,6 +116,15 @@ export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
   const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
+  const [prevGlobalSettings, setPrevGlobalSettings] = useState<SettingsFormState>(globalSettings);
+
+  if (globalSettings !== prevGlobalSettings) {
+    setPrevGlobalSettings(globalSettings);
+    // If we're dirty but globals changed from underneath us, reset the form if it exactly matches the new globals.
+    if (draftState && equal(draftState, globalSettings)) {
+      setDraftState(null);
+    }
+  }
 
   const activeFormState = draftState ? draftState : globalSettings;
   const activeDirtyState = useMemo(() => {
@@ -129,23 +137,17 @@ export function useSettingsForm() {
     return Object.values(activeDirtyState).some(Boolean);
   }, [activeDirtyState]);
 
-  useEffect(() => {
-    if (draftState && equal(draftState, globalSettings)) {
-      setDraftState(null);
-    }
-  }, [draftState, globalSettings]);
-
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
       setDraftState((prevDraft) => {
         const previous = prevDraft ? prevDraft : globalSettings;
-        return updater(previous);
+        const newState = updater(previous);
+        return equal(newState, globalSettings) ? null : newState;
       });
     },
     [globalSettings],
   );
 
-  // Generic update for top-level keys
   const update = useCallback(
     <K extends keyof SettingsFormState>(
       key: K,
@@ -159,7 +161,6 @@ export function useSettingsForm() {
     [updateFormStore],
   );
 
-  // Specialized updaters for nested objects to keep usage clean
   const updateServiceConfig = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
       updateFormStore((prev) => {
