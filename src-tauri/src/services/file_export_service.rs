@@ -77,7 +77,13 @@ impl FileExportService {
         // Sanitize package_name to prevent path traversal via malicious characters
         let safe_package_name = package_name
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect::<String>();
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
