@@ -89,16 +89,24 @@ fn validate_sqlite_identifier(identifier: &str) -> DatabaseResult<()> {
 }
 
 async fn connect_existing_database(db_file_path: &str) -> DatabaseResult<DatabaseConnection> {
+    connect_sqlite_database(db_file_path, false, SQLITE_POOL_MAX_CONNECTIONS).await
+}
+
+async fn connect_sqlite_database(
+    db_file_path: &str,
+    create_if_missing: bool,
+    max_connections: u32,
+) -> DatabaseResult<DatabaseConnection> {
     let db_url_formatted = crate::utils::sqlite::format_sqlite_url(db_file_path);
     let sqlite_opts = SqliteConnectOptions::from_str(&db_url_formatted)
         .map_err(|e| DatabaseError::ConnectionFailed(format!("Invalid SQLite path: {e}")))?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(Duration::from_secs(5))
-        .create_if_missing(false);
+        .create_if_missing(create_if_missing);
 
     let sqlx_pool = sea_orm::sqlx::sqlite::SqlitePoolOptions::new()
         .min_connections(SQLITE_POOL_MIN_CONNECTIONS)
-        .max_connections(SQLITE_POOL_MAX_CONNECTIONS)
+        .max_connections(max_connections)
         .acquire_timeout(Duration::from_secs(SQLITE_POOL_ACQUIRE_TIMEOUT_SECS))
         .connect_with(sqlite_opts)
         .await
@@ -265,16 +273,6 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
     // Create backup manager
     let backup_manager = BackupManager::new(db_file_path);
 
-    // Build SqliteConnectOptions with WAL mode and busy timeout.
-    // SeaORM's SQLite driver does NOT support journal_mode/busy_timeout as URL
-    // query parameters — they must be set via SqliteConnectOptions.
-    let db_url_formatted = crate::utils::sqlite::format_sqlite_url(db_file_path);
-    let sqlite_opts = SqliteConnectOptions::from_str(&db_url_formatted)
-        .map_err(|e| DatabaseError::ConnectionFailed(format!("Invalid SQLite path: {e}")))?
-        .journal_mode(SqliteJournalMode::Wal)
-        .busy_timeout(Duration::from_secs(5))
-        .create_if_missing(true);
-
     // Ensure parent directory exists before connecting
     if let Some(parent) = std::path::Path::new(db_file_path).parent() {
         if let Err(err) = std::fs::create_dir_all(parent) {
@@ -282,26 +280,17 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
         }
     }
 
-    // Connect via SqlxSqliteConnector which accepts SqliteConnectOptions directly.
-    // This is the correct way to use non-URL options (WAL, busy_timeout) with sea-orm.
-    // WAL still allows only one writer at a time, but multiple pooled connections
-    // are important here because request preparation fans out several read-heavy
-    // service-context queries in parallel.
-    let sqlx_pool = sea_orm::sqlx::sqlite::SqlitePoolOptions::new()
-        .min_connections(SQLITE_POOL_MIN_CONNECTIONS)
-        .max_connections(SQLITE_POOL_MAX_CONNECTIONS)
-        .acquire_timeout(Duration::from_secs(SQLITE_POOL_ACQUIRE_TIMEOUT_SECS))
-        .connect_with(sqlite_opts)
-        .await
-        .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
-
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(sqlx_pool);
+    // SQLite migration PRAGMAs are connection-local. Run startup migrations on a
+    // single connection so table-rebuild migrations don't hop across pooled
+    // connections and fail nondeterministically.
+    let migration_db =
+        connect_sqlite_database(db_file_path, true, SQLITE_POOL_MIN_CONNECTIONS).await?;
 
     info!("✅ Database connected (WAL mode): {db_file_path}");
 
     // Create backup before migration using VACUUM INTO (WAL-safe)
     info!("📦 Creating backup before migration...");
-    let backup_path = backup_manager.create_backup(&db).await.ok();
+    let backup_path = backup_manager.create_backup(&migration_db).await.ok();
 
     if let Some(ref path) = backup_path {
         info!("✅ Backup created: {}", path.display());
@@ -325,7 +314,7 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
         })
         .unwrap_or_else(|| "./migration/src".to_string());
 
-    let verifier = MigrationVerifier::new(db.clone(), migration_dir);
+    let verifier = MigrationVerifier::new(migration_db.clone(), migration_dir);
 
     // Verify existing migrations (skip on first run or when source dir is absent)
     match verifier.verify_all_migrations().await {
@@ -356,11 +345,11 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
     // Run migrations with timing
     info!("🚀 Running database migrations...");
     let start = Instant::now();
-    let migration_result = Migrator::up(&db, None).await;
+    let migration_result = Migrator::up(&migration_db, None).await;
     let execution_time_ms = start.elapsed().as_millis() as i64;
 
     // Handle migration result
-    let db = match migration_result {
+    let mut db = match migration_result {
         Ok(_) => {
             info!("✅ Database migrations applied ({}ms)", execution_time_ms);
 
@@ -392,7 +381,7 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
                 );
             }
 
-            db
+            migration_db
         }
         Err(e) => {
             error!("❌ Database migration failed: {}", e);
@@ -405,6 +394,16 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
             });
         }
     };
+
+    drop(verifier);
+
+    if SQLITE_POOL_MAX_CONNECTIONS > SQLITE_POOL_MIN_CONNECTIONS {
+        info!("🔄 Reopening database with pooled connections after migration initialization");
+        db.close().await.map_err(|e| {
+            DatabaseError::ConnectionFailed(format!("Failed to close migration DB connection: {e}"))
+        })?;
+        db = connect_sqlite_database(db_file_path, true, SQLITE_POOL_MAX_CONNECTIONS).await?;
+    }
 
     // Validate schema after migrations (warnings only, don't fail)
     if let Err(validation_err) = validate_schema(&db).await {
