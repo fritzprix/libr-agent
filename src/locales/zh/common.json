@@ -150,7 +150,9 @@
     "settings": "设置",
     "history": "历史记录",
     "scheduledTasks": "计划任务",
-    "session": "会话"
+    "session": "会话",
+    "knowledge": "知识",
+    "org": "组织"
   },
   "sessionHistory": {
     "heading": "会话历史",

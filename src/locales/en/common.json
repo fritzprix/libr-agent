@@ -150,7 +150,9 @@
     "settings": "Settings",
     "history": "History",
     "scheduledTasks": "Scheduled Tasks",
-    "session": "Session"
+    "session": "Session",
+    "knowledge": "Knowledge",
+    "org": "Org"
   },
   "sessionHistory": {
     "heading": "Session History",
