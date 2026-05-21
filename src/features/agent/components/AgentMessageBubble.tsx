@@ -152,7 +152,12 @@ function AgentMessageBubbleImpl({
                 >
                   {msg.attachments.map((attachment) => (
                     <li
-                      key={attachment.contentId}
+                      key={
+                        attachment.contentId ||
+                        attachment.workspacePath ||
+                        attachment.filename ||
+                        attachment.pendingId
+                      }
                       className="flex items-center justify-between p-2 bg-background/20 rounded border border-current/10"
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -164,11 +169,13 @@ function AgentMessageBubbleImpl({
                           ({Math.round(attachment.size / 1024)}KB)
                         </span>
                       </div>
-                      <div className="text-xs opacity-50 whitespace-nowrap ml-2">
-                        {t('agent.bubble.lines', {
-                          count: attachment.lineCount,
-                        })}
-                      </div>
+                      {attachment.lineCount && attachment.lineCount > 0 ? (
+                        <div className="text-xs opacity-50 whitespace-nowrap ml-2">
+                          {t('agent.bubble.lines', {
+                            count: attachment.lineCount,
+                          })}
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
