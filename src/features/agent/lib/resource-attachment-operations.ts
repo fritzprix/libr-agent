@@ -246,7 +246,7 @@ async function commitAttachmentToStore(
 
   const result = await saveAgentFile(sessionId, filename, {
     content,
-    fileUrl,
+    fileUrl: content ? undefined : fileUrl,
     metadata: {
       mimeType,
       size: fileSize,

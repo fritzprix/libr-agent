@@ -372,10 +372,9 @@ export function useAgentDraftChat() {
         const attachments: AttachmentReference[] = [];
         for (const file of pendingFiles) {
           try {
-            const blobUrl = URL.createObjectURL(file);
             const result = await addAgentAttachment({
               sessionId: newSessionId,
-              url: blobUrl,
+              url: '',
               mimeType: file.type || getMimeType(file.name),
               filename: file.name,
               file,
