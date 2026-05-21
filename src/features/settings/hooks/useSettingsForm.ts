@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -116,11 +116,11 @@ export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
   const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
-  const [prevGlobalSettings, setPrevGlobalSettings] = useState<SettingsFormState>(globalSettings);
 
-  if (globalSettings !== prevGlobalSettings) {
-    setPrevGlobalSettings(globalSettings);
-    // If we're dirty but globals changed from underneath us, reset the form if it exactly matches the new globals.
+  // Sync draftState during render using a ref if globals changed externally and match
+  const prevGlobalRef = useRef<SettingsFormState>(globalSettings);
+  if (globalSettings !== prevGlobalRef.current) {
+    prevGlobalRef.current = globalSettings;
     if (draftState && equal(draftState, globalSettings)) {
       setDraftState(null);
     }

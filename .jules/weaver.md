@@ -1,3 +1,3 @@
 ## 2025-02-20 - Computed State in useSettingsForm
 **Learning:** `useSettingsForm` used `useState` combined with a `useEffect` to manage and synchronize a draft form state with the global settings state. This is the "Derived State" anti-pattern which causes unnecessary re-renders when global settings update externally.
-**Action:** Replaced the `useState` full object draft with a declarative reducer-style list of explicit edits (actions). Computed the final `activeFormState` declaratively in `useMemo` by applying edits onto the `globalSettings`. No more `useEffect` needed for state synchronization.
+**Action:** Replaced the `useEffect`-based draft synchronization with a declarative computed state pattern. Computed `activeFormState` and `isDirty` dynamically in `useMemo` based on deep-equality between the draft state and global settings, resetting the draft synchronously when edits match global settings.
