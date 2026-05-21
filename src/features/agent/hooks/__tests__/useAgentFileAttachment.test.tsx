@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAgentFileAttachment } from '../useAgentFileAttachment';
+import { pathToFileUrl } from '@/lib/file-url';
 
 const mockResourceAttachment = vi.hoisted(() => ({
   pendingFiles: [],
@@ -11,6 +12,11 @@ const mockResourceAttachment = vi.hoisted(() => ({
   clearPendingFiles: vi.fn(),
   refetchSessionFiles: vi.fn(),
   isLoading: false,
+}));
+
+const mockRustBackend = vi.hoisted(() => ({
+  registerDroppedFiles: vi.fn(),
+  readDroppedFile: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -45,10 +51,7 @@ vi.mock('@/hooks/use-settings', () => ({
 }));
 
 vi.mock('@/hooks/use-rust-backend', () => ({
-  useRustBackend: () => ({
-    registerDroppedFiles: vi.fn(),
-    readDroppedFile: vi.fn(),
-  }),
+  useRustBackend: () => mockRustBackend,
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -69,6 +72,8 @@ vi.mock('sonner', () => ({
 describe('useAgentFileAttachment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRustBackend.registerDroppedFiles.mockResolvedValue(undefined);
+    mockRustBackend.readDroppedFile.mockResolvedValue([104, 101, 108, 108, 111]);
     mockResourceAttachment.addPendingFiles.mockImplementation(
       (
         files: Array<{
@@ -156,5 +161,27 @@ describe('useAgentFileAttachment', () => {
       }),
     );
     expect(mockResourceAttachment.updatePendingFile).not.toHaveBeenCalled();
+  });
+
+  it('uses pathToFileUrl for dropped-file placeholders on Windows paths', async () => {
+    const { result } = renderHook(() => useAgentFileAttachment());
+    const droppedPath =
+      '\\\\?\\C:\\Users\\SKTelecom\\Documents\\report?#1.md';
+
+    await act(async () => {
+      await result.current.processFileDrop([droppedPath]);
+    });
+
+    expect(mockResourceAttachment.addPendingFiles).toHaveBeenCalledWith([
+      expect.objectContaining({
+        url: pathToFileUrl(droppedPath),
+        filename: 'report?#1.md',
+        originalPath: droppedPath,
+        status: 'processing',
+      }),
+    ]);
+    expect(mockRustBackend.registerDroppedFiles).toHaveBeenCalledWith([
+      droppedPath,
+    ]);
   });
 });

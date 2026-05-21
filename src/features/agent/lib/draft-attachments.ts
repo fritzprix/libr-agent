@@ -156,9 +156,10 @@ export async function prepareDraftAttachments({
           });
           continue;
         }
-        const normalizedDir = cachedWorkspaceDir.replace(/\\/g, '/');
-        const normalizedRelative = workspacePath.replace(/\\/g, '/');
-        const fileUrl = `file:///${normalizedDir.replace(/^\//, '')}/${normalizedRelative}`;
+        const fileUrl = workspacePathToFileUrl(
+          cachedWorkspaceDir,
+          workspacePath,
+        );
         const result = await saveAgentFile(sessionId, file.name, {
           fileUrl,
           metadata: {
