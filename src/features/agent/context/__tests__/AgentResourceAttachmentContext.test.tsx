@@ -22,6 +22,9 @@ vi.mock('@/hooks/use-settings', () => ({
       system: {
         maxFileUploadSizeMB: 50,
       },
+      experimental: {
+        inlineAudioAttachment: true,
+      },
     },
   }),
 }));

@@ -64,7 +64,7 @@ export function AgentResourceAttachmentProvider({
   sessionId: string;
 }) {
   const {
-    value: { system },
+    value: { system, experimental },
   } = useSettings();
 
   const maxBytes = (system?.maxFileUploadSizeMB ?? 50) * 1024 * 1024;
@@ -211,9 +211,10 @@ export function AgentResourceAttachmentProvider({
         mimeType,
         filename,
         file,
+        inlineAudio: experimental?.inlineAudioAttachment !== false,
       });
     },
-    [sessionId],
+    [sessionId, experimental],
   );
 
   const commitPendingFiles = useCallback(async (): Promise<

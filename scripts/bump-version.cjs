@@ -122,6 +122,15 @@ function updateReadmeReleaseLinks(version) {
         `- **Todos os artefatos da release:** [página de Releases](${releasePageUrl})`,
       ],
     },
+    {
+      file: 'src/README.md',
+      lines: [
+        `- **Windows:** [\`${assets.windowsExe}\`](${buildReleaseUrl(releaseTag, assets.windowsExe)}) · [\`${assets.windowsMsi}\`](${buildReleaseUrl(releaseTag, assets.windowsMsi)})`,
+        `- **macOS (Apple Silicon):** [\`${assets.macosDmg}\`](${buildReleaseUrl(releaseTag, assets.macosDmg)})`,
+        `- **Linux:** [\`${assets.linuxAppImage}\`](${buildReleaseUrl(releaseTag, assets.linuxAppImage)}) · [\`${assets.linuxDeb}\`](${buildReleaseUrl(releaseTag, assets.linuxDeb)}) · [\`${assets.linuxRpm}\`](${buildReleaseUrl(releaseTag, assets.linuxRpm)})`,
+        `- **All release assets:** [Releases page](${releasePageUrl})`,
+      ],
+    },
   ];
 
   for (const { file, lines } of readmeConfigs) {

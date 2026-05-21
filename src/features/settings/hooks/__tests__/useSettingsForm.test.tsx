@@ -36,6 +36,7 @@ describe('useSettingsForm', () => {
       system: false,
       advanced: false,
       dev: false,
+      experimental: false,
     });
   });
 
@@ -270,4 +271,17 @@ describe('useSettingsForm', () => {
     expect(result.current.isDirty).toBe(false);
     expect(result.current.dirtyState['chat-interface']).toBe(false);
   });
+
+  it('should update experimental settings and track dirty state correctly', () => {
+    const { result } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.updateExperimental('inlineAudioAttachment', false);
+    });
+
+    expect(result.current.formState.experimental.inlineAudioAttachment).toBe(false);
+    expect(result.current.isDirty).toBe(true);
+    expect(result.current.dirtyState.experimental).toBe(true);
+  });
 });
+

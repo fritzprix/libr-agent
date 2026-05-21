@@ -24,7 +24,7 @@ import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useInputToken } from './useInputToken';
 import { useScopedSkills } from './useScopedSkills';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
-import { prepareDraftAttachments } from '../lib/draft-attachments';
+import { addAgentAttachment } from '../lib/resource-attachment-operations';
 
 const logger = getLogger('useAgentDraftChat');
 
@@ -369,15 +369,48 @@ export function useAgentDraftChat() {
           },
         });
 
-        const attachments: AttachmentReference[] =
-          await prepareDraftAttachments({
-            files: pendingFiles,
-            sessionId: newSessionId,
-            now,
-            getMimeType,
-            onAttachmentError: (file) => {
-              toast.error(t('agent.draft.failedToAttach', { file: file.name }));
-            },
+        const attachments: AttachmentReference[] = [];
+        for (const file of pendingFiles) {
+          try {
+            const result = await addAgentAttachment({
+              sessionId: newSessionId,
+              url: '',
+              mimeType: file.type || getMimeType(file.name),
+              filename: file.name,
+              file,
+              inlineAudio:
+                settings?.experimental?.inlineAudioAttachment !== false,
+            });
+            attachments.push(result);
+          } catch (err) {
+            logger.error('Failed to attach draft file', {
+              filename: file.name,
+              err,
+            });
+            toast.error(t('agent.draft.failedToAttach', { file: file.name }));
+          }
+        }
+
+        const inlineRefs = attachments.filter((r) => r.status === 'inline');
+        const textRefs = attachments.filter((r) => r.status !== 'inline');
+
+        const inlineContent = inlineRefs
+          .filter((r) => !!r.inlineContent)
+          .map((r) => {
+            if (r.inlineContent!.type === 'image') {
+              return {
+                type: 'image' as const,
+                data: r.inlineContent!.data,
+                uri: r.inlineContent!.uri,
+                mimeType: r.inlineContent!.mimeType,
+              };
+            }
+            return {
+              type: 'audio' as const,
+              data: r.inlineContent!.data,
+              uri: r.inlineContent!.uri,
+              mimeType: r.inlineContent!.mimeType,
+            };
           });
 
         const initialMessage: Message = {
@@ -385,11 +418,14 @@ export function useAgentDraftChat() {
           sessionId: newSessionId,
           threadId: newSessionId,
           role: 'user',
-          content: [{ type: 'text', text: resolvedInput }],
+          content: [{ type: 'text', text: resolvedInput }, ...inlineContent],
           createdAt: now,
           updatedAt: now,
-          ...(attachments.length > 0 ? { attachments } : {}),
         };
+
+        if (textRefs.length > 0) {
+          initialMessage.attachments = textRefs;
+        }
 
         const rustMessage = {
           ...initialMessage,
@@ -399,7 +435,7 @@ export function useAgentDraftChat() {
 
         const finalRustMessage = {
           ...rustMessage,
-          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(textRefs.length > 0 ? { attachments: textRefs } : {}),
         };
         await safeInvoke<AgentResponse>('agent_send_message', {
           request: {
