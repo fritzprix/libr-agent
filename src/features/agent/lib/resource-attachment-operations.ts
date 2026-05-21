@@ -347,15 +347,32 @@ export async function addAgentAttachment({
       );
     }
 
-    return await commitAttachmentToStore(
-      sessionId,
-      resolvedFilename,
-      source.actualMimeType,
-      source.fileUrl,
-      source.fileSize,
-      source.workspacePath,
-      file,
-    );
+    try {
+      return await commitAttachmentToStore(
+        sessionId,
+        resolvedFilename,
+        source.actualMimeType,
+        source.fileUrl,
+        source.fileSize,
+        source.workspacePath,
+        file,
+      );
+    } catch (error) {
+      logger.warn(
+        'Failed to commit attachment to search index store, falling back to workspace-only',
+        {
+          filename: resolvedFilename,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return toWorkspaceOnlyAttachment(
+        sessionId,
+        resolvedFilename,
+        source.actualMimeType,
+        source.fileSize,
+        source.workspacePath,
+      );
+    }
   } finally {
     if (source.fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(source.fileUrl);

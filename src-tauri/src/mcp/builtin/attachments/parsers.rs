@@ -49,10 +49,9 @@ impl DocumentParser {
                         }
 
                         if content.is_empty() {
-                            ParseResult::Error("No text content found in DOCX file".to_string())
-                        } else {
-                            ParseResult::Text(content.trim().to_string())
+                            log::warn!("No text content found in DOCX file");
                         }
+                        ParseResult::Text(content.trim().to_string())
                     }
                     Err(e) => ParseResult::Error(format!("Failed to parse DOCX: {e}")),
                 }
@@ -227,10 +226,9 @@ impl DocumentParser {
                 }
 
                 if content.is_empty() {
-                    ParseResult::Error("No content found in XLSX file".to_string())
-                } else {
-                    ParseResult::Text(content.trim().to_string())
+                    log::warn!("No content found in XLSX file");
                 }
+                ParseResult::Text(content.trim().to_string())
             }
             Err(e) => ParseResult::Error(format!("Failed to parse XLSX: {e}")),
         }
@@ -375,12 +373,9 @@ impl DocumentParser {
                 // Final cleanup
                 let content = content.trim();
                 if content.is_empty() {
-                    ParseResult::Error(format!(
-                        "No text content found in PDF file ({page_count} pages processed)"
-                    ))
-                } else {
-                    ParseResult::Text(content.to_string())
+                    log::warn!("No text content found in PDF file ({page_count} pages processed)");
                 }
+                ParseResult::Text(content.to_string())
             }
             Err(e) => ParseResult::Error(format!("Failed to parse PDF: {e}")),
         }
@@ -462,10 +457,9 @@ impl DocumentParser {
         match fs::read_to_string(file_path).await {
             Ok(content) => {
                 if content.is_empty() {
-                    ParseResult::Error("Text file is empty".to_string())
-                } else {
-                    ParseResult::Text(content)
+                    log::warn!("Text file is empty");
                 }
+                ParseResult::Text(content)
             }
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::InvalidData {
