@@ -117,14 +117,18 @@ export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
   const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
-  const [prevGlobalSettings, setPrevGlobalSettings] = useState<SettingsFormState>(globalSettings);
+  const [prevGlobalSettings, setPrevGlobalSettings] =
+    useState<SettingsFormState>(globalSettings);
 
   if (globalSettings !== prevGlobalSettings) {
     setPrevGlobalSettings(globalSettings);
-    if (!draftState || equal(draftState, globalSettings)) {
-        setDraftState(null);
-    }
-  } else if (draftState && equal(draftState, globalSettings)) {
+    // Only reset the draft state if the user hasn't made any edits yet, OR if the
+    // draft state happens to now be exactly what the new global settings are.
+    // Otherwise we'd clobber the user's edits if a background setting changed.
+    // Wait, the original code didn't reset on globalSettings change unless it equaled draft!
+  }
+
+  if (draftState && equal(draftState, globalSettings)) {
     setDraftState(null);
   }
 
