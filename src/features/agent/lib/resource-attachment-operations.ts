@@ -12,7 +12,18 @@ import {
 
 const logger = getLogger('resourceAttachmentOperations');
 
-const SUPPORTED_EXTENSIONS = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+const TEXT_EXTENSIONS =
+  /\.(txt|md|markdown|json|jsonc|json5|yaml|yml|toml|js|jsx|ts|tsx|mjs|cjs|py|rb|rs|go|java|c|cpp|h|hpp|css|scss|less|html|htm|svg|sh|bash|zsh|fish|ps1|sql|graphql|csv|log|xml|proto)$/i;
+
+const SUPPORTED_EXTENSIONS =
+  /\.(txt|md|markdown|json|jsonc|json5|yaml|yml|toml|js|jsx|ts|tsx|mjs|cjs|py|rb|rs|go|java|c|cpp|h|hpp|css|scss|less|html|htm|svg|sh|bash|zsh|fish|ps1|sql|graphql|csv|log|xml|proto|pdf|docx|xlsx)$/i;
+
+function isTextFile(filename: string, mimeType: string): boolean {
+  return (
+    /^text\/|\/(json|xml|javascript|typescript)/.test(mimeType) ||
+    TEXT_EXTENSIONS.test(filename)
+  );
+}
 
 interface AddAgentAttachmentArgs {
   sessionId: string;
@@ -20,6 +31,7 @@ interface AddAgentAttachmentArgs {
   mimeType: string;
   filename?: string;
   file?: File;
+  inlineAudio?: boolean;
 }
 
 interface ResolvedAttachmentSource {
@@ -142,14 +154,9 @@ async function toInlineAttachment(
     : ('audio' as const);
 
   let fallbackBase64Data: string | undefined;
-  if (fileUrl.startsWith('blob:')) {
+  const sourceBlob = file ?? fetchedBlob;
+  if (sourceBlob) {
     try {
-      const sourceBlob: Blob =
-        file ??
-        fetchedBlob ??
-        (() => {
-          throw new Error('No data source available for inline content');
-        })();
       const buffer = await sourceBlob.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       let binary = '';
@@ -222,8 +229,23 @@ async function commitAttachmentToStore(
   workspacePath?: string,
   file?: File,
 ): Promise<AttachmentReference> {
+  let content: string | undefined;
+  let lineCount = 0;
+
+  if (file && isTextFile(filename, mimeType)) {
+    try {
+      content = await file.text();
+      lineCount = content.split('\n').length;
+    } catch (error) {
+      logger.warn('Failed to read text content for indexing', {
+        filename,
+        error,
+      });
+    }
+  }
+
   const result = await saveAgentFile(sessionId, filename, {
-    content: undefined,
+    content,
     fileUrl,
     metadata: {
       mimeType,
@@ -256,7 +278,7 @@ async function commitAttachmentToStore(
     filename: result.filename ?? filename,
     mimeType: result.mimeType,
     size: Number(result.size ?? fileSize ?? 0),
-    lineCount: result.lineCount,
+    lineCount: result.lineCount ?? lineCount,
     preview: result.preview,
     uploadedAt: result.uploadedAt ?? new Date().toISOString(),
     chunkCount: result.chunkCount,
@@ -271,6 +293,7 @@ export async function addAgentAttachment({
   mimeType,
   filename,
   file,
+  inlineAudio = true,
 }: AddAgentAttachmentArgs): Promise<AttachmentReference> {
   const resolvedFilename = filename || extractFilenameFromUrl(url);
   const source = file
@@ -299,7 +322,7 @@ export async function addAgentAttachment({
 
   const isInlineType =
     source.actualMimeType.startsWith('image/') ||
-    source.actualMimeType.startsWith('audio/');
+    (source.actualMimeType.startsWith('audio/') && inlineAudio !== false);
 
   try {
     if (isInlineType) {

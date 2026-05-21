@@ -7,6 +7,7 @@ import type {
   DisplaySettings,
   SystemSettings,
   Settings,
+  ExperimentalSettings,
 } from '@/context/SettingsContext';
 import equal from 'fast-deep-equal';
 
@@ -18,6 +19,7 @@ export type SettingsDirtyState = {
   'chat-interface': boolean;
   system: boolean;
   advanced: boolean;
+  experimental: boolean;
   dev: boolean;
 };
 
@@ -28,6 +30,7 @@ function getEmptyDirtyState(): SettingsDirtyState {
     'chat-interface': false,
     system: false,
     advanced: false,
+    experimental: false,
     dev: false,
   };
 }
@@ -84,6 +87,12 @@ function getAdvancedComparableState(settings: SettingsFormState) {
   };
 }
 
+function getExperimentalComparableState(settings: SettingsFormState) {
+  return {
+    inlineAudioAttachment: settings.experimental.inlineAudioAttachment,
+  };
+}
+
 export function getSettingsDirtyState(
   formState: SettingsFormState,
   globalSettings: SettingsFormState,
@@ -107,6 +116,10 @@ export function getSettingsDirtyState(
     advanced: !equal(
       getAdvancedComparableState(formState),
       getAdvancedComparableState(globalSettings),
+    ),
+    experimental: !equal(
+      getExperimentalComparableState(formState),
+      getExperimentalComparableState(globalSettings),
     ),
     dev: false,
   };
@@ -217,6 +230,22 @@ export function useSettingsForm() {
     [updateFormStore],
   );
 
+  const updateExperimental = useCallback(
+    <K extends keyof ExperimentalSettings>(
+      key: K,
+      value: ExperimentalSettings[K],
+    ) => {
+      updateFormStore((prev) => ({
+        ...prev,
+        experimental: {
+          ...prev.experimental,
+          [key]: value,
+        },
+      }));
+    },
+    [updateFormStore],
+  );
+
   const reset = useCallback(() => {
     setDraftState(null);
   }, []);
@@ -234,6 +263,7 @@ export function useSettingsForm() {
     updateAdvanced,
     updateDisplay,
     updateSystem,
+    updateExperimental,
     reset,
     save,
     isDirty,
