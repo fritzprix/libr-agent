@@ -24,7 +24,10 @@ import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useInputToken } from './useInputToken';
 import { useScopedSkills } from './useScopedSkills';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
-import { addAgentAttachment } from '../lib/resource-attachment-operations';
+import {
+  addAgentAttachment,
+  toWorkspaceOnlyAttachment,
+} from '../lib/resource-attachment-operations';
 
 const logger = getLogger('useAgentDraftChat');
 
@@ -383,35 +386,59 @@ export function useAgentDraftChat() {
             });
             attachments.push(result);
           } catch (err) {
-            logger.error('Failed to attach draft file', {
-              filename: file.name,
-              err,
-            });
+            logger.error(
+              'Failed to attach draft file, falling back to workspace-only',
+              {
+                filename: file.name,
+                err,
+              },
+            );
             toast.error(t('agent.draft.failedToAttach', { file: file.name }));
+            try {
+              const fallback = toWorkspaceOnlyAttachment(
+                newSessionId,
+                file.name,
+                file.type || getMimeType(file.name),
+                file.size,
+              );
+              attachments.push(fallback);
+            } catch (fallbackErr) {
+              logger.error(
+                'Failed to create fallback workspace-only attachment',
+                fallbackErr,
+              );
+            }
           }
         }
 
-        const inlineRefs = attachments.filter((r) => r.status === 'inline');
-        const textRefs = attachments.filter((r) => r.status !== 'inline');
+        // Filter out valid inline attachments that successfully materialized base64 data to be sent inside message.content
+        const validInlineRefs = attachments.filter(
+          (r) =>
+            r.status === 'inline' && r.inlineContent && r.inlineContent.data,
+        );
+        // All other attachments (text, workspace-only, or inline attachments that failed inline data generation)
+        // should be placed in the message.attachments array.
+        const nonInlineRefs = attachments.filter(
+          (r) =>
+            r.status !== 'inline' || !r.inlineContent || !r.inlineContent.data,
+        );
 
-        const inlineContent = inlineRefs
-          .filter((r) => !!r.inlineContent)
-          .map((r) => {
-            if (r.inlineContent!.type === 'image') {
-              return {
-                type: 'image' as const,
-                data: r.inlineContent!.data,
-                uri: r.inlineContent!.uri,
-                mimeType: r.inlineContent!.mimeType,
-              };
-            }
+        const inlineContent = validInlineRefs.map((r) => {
+          if (r.inlineContent!.type === 'image') {
             return {
-              type: 'audio' as const,
+              type: 'image' as const,
               data: r.inlineContent!.data,
               uri: r.inlineContent!.uri,
               mimeType: r.inlineContent!.mimeType,
             };
-          });
+          }
+          return {
+            type: 'audio' as const,
+            data: r.inlineContent!.data,
+            uri: r.inlineContent!.uri,
+            mimeType: r.inlineContent!.mimeType,
+          };
+        });
 
         const initialMessage: Message = {
           id: createId(),
@@ -423,8 +450,8 @@ export function useAgentDraftChat() {
           updatedAt: now,
         };
 
-        if (textRefs.length > 0) {
-          initialMessage.attachments = textRefs;
+        if (nonInlineRefs.length > 0) {
+          initialMessage.attachments = nonInlineRefs;
         }
 
         const rustMessage = {
@@ -435,7 +462,7 @@ export function useAgentDraftChat() {
 
         const finalRustMessage = {
           ...rustMessage,
-          ...(textRefs.length > 0 ? { attachments: textRefs } : {}),
+          ...(nonInlineRefs.length > 0 ? { attachments: nonInlineRefs } : {}),
         };
         await safeInvoke<AgentResponse>('agent_send_message', {
           request: {

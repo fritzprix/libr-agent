@@ -55,11 +55,21 @@ function resolveMimeType(
 }
 
 async function resolveAttachmentSourceFromFile(
-  file: File,
+  file: File | undefined,
   sessionId: string,
   filename: string,
   mimeType: string,
 ): Promise<ResolvedAttachmentSource> {
+  if (!file) {
+    logger.warn('resolveAttachmentSourceFromFile received undefined file', {
+      filename,
+    });
+    return {
+      fileUrl: '',
+      actualMimeType: mimeType || getMimeTypeFromFilename(filename),
+      fileSize: 0,
+    };
+  }
   try {
     const workspacePath = await syncFileToWorkspace(file, sessionId);
     const workspaceDir = await getWorkspaceDir(sessionId);
@@ -154,7 +164,26 @@ async function toInlineAttachment(
     : ('audio' as const);
 
   let fallbackBase64Data: string | undefined;
-  const sourceBlob = file ?? fetchedBlob;
+  let sourceBlob = file ?? fetchedBlob;
+
+  if (!sourceBlob && fileUrl) {
+    try {
+      logger.info('Fetching fallback source blob from fileUrl', { fileUrl });
+      const response = await fetch(fileUrl);
+      if (response.ok) {
+        sourceBlob = await response.blob();
+      }
+    } catch (fetchError) {
+      logger.warn(
+        'Failed to fetch blob from fileUrl for inline data extraction',
+        {
+          fileUrl,
+          fetchError,
+        },
+      );
+    }
+  }
+
   if (sourceBlob) {
     try {
       const buffer = await sourceBlob.arrayBuffer();
@@ -193,7 +222,7 @@ async function toInlineAttachment(
   };
 }
 
-function toWorkspaceOnlyAttachment(
+export function toWorkspaceOnlyAttachment(
   sessionId: string,
   filename: string,
   mimeType: string,
@@ -326,15 +355,32 @@ export async function addAgentAttachment({
 
   try {
     if (isInlineType) {
-      return toInlineAttachment(
-        sessionId,
-        resolvedFilename,
-        source.actualMimeType,
-        source.fileUrl,
-        source.fileSize,
-        file,
-        source.fetchedBlob,
-      );
+      try {
+        return await toInlineAttachment(
+          sessionId,
+          resolvedFilename,
+          source.actualMimeType,
+          source.fileUrl,
+          source.fileSize,
+          file,
+          source.fetchedBlob,
+        );
+      } catch (error) {
+        logger.warn(
+          'Failed to build inline media attachment, falling back to workspace-only',
+          {
+            filename: resolvedFilename,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        return toWorkspaceOnlyAttachment(
+          sessionId,
+          resolvedFilename,
+          source.actualMimeType,
+          source.fileSize,
+          source.workspacePath,
+        );
+      }
     }
 
     if (!SUPPORTED_EXTENSIONS.test(resolvedFilename)) {
