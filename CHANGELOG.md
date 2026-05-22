@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.30] - 2026-05-22
+
+### 🚀 Features
+
+- **Experimental Audio Toggle & Unified Pipeline**: Added an experimental toggle for audio attachments in settings and unified the draft attachment pipeline to deliver a smoother file attachment experience.
+
+### 🐛 Fixes
+
+- **Draft Chat Attachment Reliability**: Fixed a critical issue where audio, PDF, and other binary attachments would fail or get lost when sent from Draft Chat. Improved ingestion robustness to handle empty/scanned files cleanly, and added base64 inline serialization and safe workspace-only fallback mechanisms.
+- **Visual Attachment Rendering**: Resolved visual rendering suppression for workspace-only attachments and eliminated duplicate React key conflicts in draft attachment previews.
+- **Cross-Platform Path & Resource Stability**: Resolved Windows-specific file URL parsing issues, fixed draft text `fileUrl` conflicts, and closed potential browser blob URL leaks during attachment cancellation or completion.
+- **Scroll Anchoring**: Fixed scrolling and bottom-follow behavior in the agent chat interface to ensure smooth tracking of streamed messages.
+
+### 🔧 Internal
+
+- **Weaver Refactor & Code Quality**: Refactored `useSettingsForm` to use computed state (removing redundant hooks) and synchronized release download links in `src/README.md`.
+
+## [0.7.29] - 2026-05-21
+
+### 🐛 Fixes
+
+- **[CRITICAL] Fresh Install Startup Recovery**: Fixed a first-run SQLite migration crash that could terminate the app immediately for brand-new users, while preserving the `sessions.parent_session_id` cascade-delete schema on successful startup and interrupted-migration recovery.
+- **Security & UI Stability**: Hardened path traversal handling around broken symlinks, improved agent chat scroll anchoring, and stabilized settings draft synchronization to reduce frustrating edge-case regressions.
+
+### 🔧 Internal
+
+- **Release & Tooling Maintenance**: Refreshed generated files, README assets, and built-in tool descriptions to keep release metadata and developer guidance aligned with the current app behavior.
+
 ## [0.7.28] - 2026-05-18
 
 ### 🚀 Features

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -7,10 +7,10 @@ import type {
   DisplaySettings,
   SystemSettings,
   Settings,
+  ExperimentalSettings,
 } from '@/context/SettingsContext';
 import equal from 'fast-deep-equal';
 
-// Define the form state shape, identical to Settings for now
 export type SettingsFormState = Settings;
 
 export type SettingsDirtyState = {
@@ -19,12 +19,8 @@ export type SettingsDirtyState = {
   'chat-interface': boolean;
   system: boolean;
   advanced: boolean;
+  experimental: boolean;
   dev: boolean;
-};
-
-type SettingsFormStore = {
-  formState: SettingsFormState;
-  dirtyState: SettingsDirtyState;
 };
 
 function getEmptyDirtyState(): SettingsDirtyState {
@@ -34,6 +30,7 @@ function getEmptyDirtyState(): SettingsDirtyState {
     'chat-interface': false,
     system: false,
     advanced: false,
+    experimental: false,
     dev: false,
   };
 }
@@ -90,6 +87,12 @@ function getAdvancedComparableState(settings: SettingsFormState) {
   };
 }
 
+function getExperimentalComparableState(settings: SettingsFormState) {
+  return {
+    inlineAudioAttachment: settings.experimental.inlineAudioAttachment,
+  };
+}
+
 export function getSettingsDirtyState(
   formState: SettingsFormState,
   globalSettings: SettingsFormState,
@@ -114,6 +117,10 @@ export function getSettingsDirtyState(
       getAdvancedComparableState(formState),
       getAdvancedComparableState(globalSettings),
     ),
+    experimental: !equal(
+      getExperimentalComparableState(formState),
+      getExperimentalComparableState(globalSettings),
+    ),
     dev: false,
   };
 }
@@ -121,51 +128,39 @@ export function getSettingsDirtyState(
 export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
-  const [state, setState] = useState<SettingsFormStore>(() => ({
-    formState: globalSettings,
-    dirtyState: getEmptyDirtyState(),
-  }));
-  const [previousGlobalSettings, setPreviousGlobalSettings] =
-    useState(globalSettings);
-  const [shouldAcceptNextGlobalSync, setShouldAcceptNextGlobalSync] =
-    useState(false);
+  const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
+
+  // Sync draftState during render using a ref if globals changed externally and match
+  const prevGlobalRef = useRef<SettingsFormState>(globalSettings);
+  if (globalSettings !== prevGlobalRef.current) {
+    prevGlobalRef.current = globalSettings;
+    if (draftState && equal(draftState, globalSettings)) {
+      setDraftState(null);
+    }
+  }
+
+  const activeFormState = draftState ? draftState : globalSettings;
+  const activeDirtyState = useMemo(() => {
+    return draftState
+      ? getSettingsDirtyState(draftState, globalSettings)
+      : getEmptyDirtyState();
+  }, [draftState, globalSettings]);
+
+  const isDirty = useMemo(() => {
+    return Object.values(activeDirtyState).some(Boolean);
+  }, [activeDirtyState]);
 
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
-      setState((previous) => {
-        const nextFormState = updater(previous.formState);
-        return {
-          formState: nextFormState,
-          dirtyState: getSettingsDirtyState(nextFormState, globalSettings),
-        };
+      setDraftState((prevDraft) => {
+        const previous = prevDraft ? prevDraft : globalSettings;
+        const newState = updater(previous);
+        return equal(newState, globalSettings) ? null : newState;
       });
     },
     [globalSettings],
   );
 
-  // Adjusting State During Render Pattern
-  if (globalSettings !== previousGlobalSettings) {
-    const shouldSyncFormState =
-      shouldAcceptNextGlobalSync ||
-      equal(state.formState, previousGlobalSettings);
-
-    setPreviousGlobalSettings(globalSettings);
-    setShouldAcceptNextGlobalSync(false);
-
-    if (shouldSyncFormState) {
-      setState({
-        formState: globalSettings,
-        dirtyState: getEmptyDirtyState(),
-      });
-    } else {
-      setState((previous) => ({
-        formState: previous.formState,
-        dirtyState: getSettingsDirtyState(previous.formState, globalSettings),
-      }));
-    }
-  }
-
-  // Generic update for top-level keys
   const update = useCallback(
     <K extends keyof SettingsFormState>(
       key: K,
@@ -179,7 +174,6 @@ export function useSettingsForm() {
     [updateFormStore],
   );
 
-  // Specialized updaters for nested objects to keep usage clean
   const updateServiceConfig = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
       updateFormStore((prev) => {
@@ -236,36 +230,40 @@ export function useSettingsForm() {
     [updateFormStore],
   );
 
+  const updateExperimental = useCallback(
+    <K extends keyof ExperimentalSettings>(
+      key: K,
+      value: ExperimentalSettings[K],
+    ) => {
+      updateFormStore((prev) => ({
+        ...prev,
+        experimental: {
+          ...prev.experimental,
+          [key]: value,
+        },
+      }));
+    },
+    [updateFormStore],
+  );
+
   const reset = useCallback(() => {
-    setState({
-      formState: globalSettings,
-      dirtyState: getEmptyDirtyState(),
-    });
-  }, [globalSettings]);
+    setDraftState(null);
+  }, []);
 
   const save = useCallback(async () => {
-    setShouldAcceptNextGlobalSync(true);
-
-    try {
-      await updateGlobal(state.formState);
-    } catch (error) {
-      setShouldAcceptNextGlobalSync(false);
-      throw error;
-    }
-  }, [state.formState, updateGlobal]);
-
-  const isDirty = useMemo(() => {
-    return Object.values(state.dirtyState).some(Boolean);
-  }, [state.dirtyState]);
+    if (!draftState) return;
+    await updateGlobal(draftState);
+  }, [draftState, updateGlobal]);
 
   return {
-    formState: state.formState,
-    dirtyState: state.dirtyState,
+    formState: activeFormState,
+    dirtyState: activeDirtyState,
     update,
     updateServiceConfig,
     updateAdvanced,
     updateDisplay,
     updateSystem,
+    updateExperimental,
     reset,
     save,
     isDirty,

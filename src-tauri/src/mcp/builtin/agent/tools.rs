@@ -145,7 +145,7 @@ fn start_session_tool() -> MCPTool {
         description: "Spawn a new child agent session to delegate a specific task. When the current session already belongs to an explicit org, the child joins that org automatically and, unless workspaceOverride is provided, shares the org root workspace by default. Set includeCurrentOrg=false to opt out. Returns immediately with session info unless waitForResult=true.".to_string(),
         input_schema: object_prop(
             vec![
-                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then copy the returned ID. Do not put the agent name here.")),
+                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then use the returned ID. Do not put the agent name here.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
                 ("model".to_string(), string_prop(None, None, Some("Optional model override for the child session. If omitted, the child inherits the caller session model."))),

@@ -210,6 +210,24 @@ fn test_dangling_symlink_parent_is_rejected() {
 }
 
 #[test]
+#[cfg(unix)]
+fn test_dangling_symlink_target_is_rejected_for_write() {
+    use std::os::unix::fs::symlink;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let validator = SecurityValidator::new_with_base_dir(temp_dir.path().to_path_buf());
+
+    let outside_dir = tempdir().expect("outside dir");
+    let missing_target_file = outside_dir.path().join("missing-target.txt");
+
+    let link_path = temp_dir.path().join("dangling_link_file");
+    symlink(&missing_target_file, &link_path).expect("create symlink");
+
+    let result = validator.validate_path_for_write("dangling_link_file");
+    assert!(matches!(result, Err(SecurityError::PathTraversal(_))));
+}
+
+#[test]
 fn test_scoped_validator_blocks_absolute_paths_outside_base_dir() {
     let temp_dir = tempdir().expect("temp dir");
     let validator = SecurityValidator::new_scoped_with_base_dir(temp_dir.path().to_path_buf());

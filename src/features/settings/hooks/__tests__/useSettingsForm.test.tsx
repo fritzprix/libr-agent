@@ -36,6 +36,7 @@ describe('useSettingsForm', () => {
       system: false,
       advanced: false,
       dev: false,
+      experimental: false,
     });
   });
 
@@ -119,6 +120,51 @@ describe('useSettingsForm', () => {
     );
     expect(result.current.formState.windowSize).toBe(50);
     expect(result.current.isDirty).toBe(false);
+  });
+
+  it('should keep the draft visible until saved globals catch up', async () => {
+    mockUpdateGlobal.mockResolvedValue(undefined);
+
+    const { result, rerender } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.update('windowSize', 50);
+    });
+
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(mockUpdateGlobal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        windowSize: 50,
+      }),
+    );
+    expect(result.current.formState.windowSize).toBe(50);
+    expect(result.current.isDirty).toBe(true);
+
+    act(() => {
+      currentGlobalSettings = {
+        ...cloneSettings(DEFAULT_SETTING),
+        windowSize: 50,
+      };
+      rerender();
+    });
+
+    expect(result.current.formState.windowSize).toBe(50);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it('should preserve dirtyState reference across rerenders when inputs are unchanged', () => {
+    const { result, rerender } = renderHook(() => useSettingsForm());
+
+    const initialDirtyState = result.current.dirtyState;
+
+    act(() => {
+      rerender();
+    });
+
+    expect(result.current.dirtyState).toBe(initialDirtyState);
   });
 
   it('should update display settings', () => {
@@ -225,4 +271,17 @@ describe('useSettingsForm', () => {
     expect(result.current.isDirty).toBe(false);
     expect(result.current.dirtyState['chat-interface']).toBe(false);
   });
+
+  it('should update experimental settings and track dirty state correctly', () => {
+    const { result } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.updateExperimental('inlineAudioAttachment', false);
+    });
+
+    expect(result.current.formState.experimental.inlineAudioAttachment).toBe(false);
+    expect(result.current.isDirty).toBe(true);
+    expect(result.current.dirtyState.experimental).toBe(true);
+  });
 });
+

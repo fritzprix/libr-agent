@@ -21,6 +21,7 @@ import ChatInterfaceTab from './tabs/ChatInterfaceTab';
 import SystemTab from './tabs/SystemTab';
 import AdvancedTab from './tabs/AdvancedTab';
 import DevTab from './tabs/DevTab';
+import ExperimentalTab from './tabs/ExperimentalTab';
 import {
   PROVIDER_ENTRIES,
   useSettingsPageController,
@@ -61,6 +62,7 @@ const SettingsPage: FC = function SettingsPage() {
     setIsLeaveDialogOpen,
     systemSettingsProps,
     tabNavigationItems,
+    updateExperimental,
   } = useSettingsPageController();
 
   return (
@@ -219,6 +221,13 @@ const SettingsPage: FC = function SettingsPage() {
                 onChange={updateAdvanced}
                 systemSettingsProps={systemSettingsProps}
                 dangerZoneProps={dangerZoneProps}
+              />
+            </TabsContent>
+
+            <TabsContent value="experimental">
+              <ExperimentalTab
+                localExperimentalSettings={formState.experimental}
+                onChange={updateExperimental}
               />
             </TabsContent>
 

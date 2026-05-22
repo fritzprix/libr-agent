@@ -24,6 +24,7 @@ const SETTINGS_TAB_VALUES = [
   'chat-interface',
   'system',
   'advanced',
+  'experimental',
   'dev',
 ] as const;
 
@@ -57,6 +58,7 @@ export function useSettingsPageController() {
     updateAdvanced,
     updateDisplay,
     updateSystem,
+    updateExperimental,
     reset,
     save,
     isDirty,
@@ -416,6 +418,11 @@ export function useSettingsPageController() {
         label: t('settings.tabs.advanced', 'Advanced'),
         isDirty: dirtyState.advanced,
       },
+      {
+        value: 'experimental',
+        label: t('settings.tabs.experimental', 'Experimental'),
+        isDirty: dirtyState.experimental,
+      },
     ];
 
     if (import.meta.env.DEV) {
@@ -464,5 +471,6 @@ export function useSettingsPageController() {
     tabNavigationItems,
     updateAdvanced,
     updateDisplay,
+    updateExperimental,
   };
 }

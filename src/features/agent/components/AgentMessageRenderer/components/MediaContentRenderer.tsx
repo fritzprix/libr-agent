@@ -59,7 +59,9 @@ async function resolveImageBlob(
   if (rawData) {
     return rawData.startsWith('data:')
       ? dataUrlToBlob(rawData, mimeType)
-      : new Blob([decodeBase64ToBytes(rawData).buffer as ArrayBuffer], { type: mimeType });
+      : new Blob([decodeBase64ToBytes(rawData).buffer as ArrayBuffer], {
+          type: mimeType,
+        });
   }
 
   if (imageSrc.startsWith('data:')) {

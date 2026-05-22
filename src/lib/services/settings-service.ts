@@ -67,6 +67,10 @@ export interface SystemSettings {
   skillsDirectory?: string;
 }
 
+export interface ExperimentalSettings {
+  inlineAudioAttachment: boolean;
+}
+
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
   preferredModel: ModelChoice;
@@ -80,6 +84,7 @@ export interface Settings {
   advanced: AdvancedSettings;
   display: DisplaySettings;
   system: SystemSettings;
+  experimental: ExperimentalSettings;
 }
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
@@ -137,6 +142,9 @@ export const DEFAULT_SETTING: Settings = {
     maxScheduledTaskGroups: 10,
     shellIsolationLevel: 'medium',
     skillsDirectory: '',
+  },
+  experimental: {
+    inlineAudioAttachment: true,
   },
 };
 

@@ -5,7 +5,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -47,23 +46,22 @@ const logger = getLogger('AgentChatMessages');
 const INITIAL_FIRST_ITEM_INDEX = 10_000;
 const CHAT_COMPOSER_CLEARANCE = 24;
 // Visual bottom stays intentionally strict so the FAB only hides when the
-// viewport is truly pinned, while the streaming latch absorbs normal drift.
+// viewport is truly pinned.
 const VISUAL_BOTTOM_THRESHOLD = 4;
-// A stream that is still within ~3 lines of the bottom should snap back into
-// the latch when the user scrolls downward again.
-const STREAMING_LATCH_ACQUIRE_DISTANCE = 48;
-// Small upward movement away from bottom should be enough to escape the latch.
-const STREAMING_LATCH_DIRECTIONAL_RELEASE_DISTANCE = 24;
-// A large distance from bottom always releases the latch, regardless of delta.
-const STREAMING_LATCH_RELEASE_DISTANCE = 120;
-// Ignore tiny wheel/touch jitter; require a real upward gesture before release.
-const STREAMING_LATCH_MIN_UPWARD_DELTA = 12;
-// Keep the latch briefly after busy->idle so the final token/layout settle
-// doesn't immediately drop the viewport.
-const STREAMING_LATCH_SETTLE_MS = 160;
+// Treat three explicit upward scroll gestures as "the user is reading history,
+// stop force-following the latest stream". The test harness uses ~12px per
+// gesture, so 36px is the practical threshold here.
+const BOTTOM_FOLLOW_RELEASE_SCROLL_DISTANCE = 36;
 // Ignore scroll events caused by our own bottom-forcing scroll for one short
 // window so programmatic movement does not look like user intent.
 const SELF_SCROLL_IGNORE_WINDOW_MS = 160;
+
+type BottomAlignmentPhase =
+  | 'idle'
+  | 'requesting'
+  | 'verifying'
+  | 'aligned'
+  | 'aborted';
 
 export function getPrependedFirstItemIndex(
   current: number,
@@ -109,22 +107,8 @@ export function isPinnedToBottom(
   return distanceFromBottom <= threshold;
 }
 
-function isNearBottomForLatch(distanceFromBottom: number): boolean {
-  return distanceFromBottom <= STREAMING_LATCH_ACQUIRE_DISTANCE;
-}
-
-function shouldReleaseBottomLatch(
-  distanceFromBottom: number,
-  scrollDelta: number,
-): boolean {
-  if (distanceFromBottom > STREAMING_LATCH_RELEASE_DISTANCE) {
-    return true;
-  }
-
-  return (
-    scrollDelta <= -STREAMING_LATCH_MIN_UPWARD_DELTA &&
-    distanceFromBottom > STREAMING_LATCH_DIRECTIONAL_RELEASE_DISTANCE
-  );
+function isBottomAlignmentActive(phase: BottomAlignmentPhase): boolean {
+  return phase === 'requesting' || phase === 'verifying';
 }
 
 function setForwardedRef<T>(ref: ForwardedRef<T>, value: T) {
@@ -384,6 +368,55 @@ function groupedMessageContainsBoundary(
   return groupedMessage.messages.some((message) => message.id === boundaryId);
 }
 
+function findGroupedMessageIndexByBoundary(
+  groupedMessages: GroupedMessage[],
+  boundaryId: string | undefined,
+): number {
+  if (!boundaryId) {
+    return -1;
+  }
+
+  return groupedMessages.findIndex((groupedMessage) =>
+    groupedMessageContainsBoundary(groupedMessage, boundaryId),
+  );
+}
+
+export function getGroupedMessageVirtuosoKey(
+  groupedMessage: GroupedMessage,
+): string {
+  if (groupedMessage.type === 'tool_group') {
+    const firstCoveredId = groupedMessage.coveredMessageIds[0] ?? 'none';
+    const lastCoveredId =
+      groupedMessage.coveredMessageIds[
+        groupedMessage.coveredMessageIds.length - 1
+      ] ?? firstCoveredId;
+
+    return [
+      'tool-group',
+      groupedMessage.message.id,
+      firstCoveredId,
+      lastCoveredId,
+      groupedMessage.coveredMessageIds.length,
+      groupedMessage.toolGroup.calls.length,
+    ].join(':');
+  }
+
+  if (groupedMessage.type === 'tool_error_group') {
+    const lastMessageId =
+      groupedMessage.messages[groupedMessage.messages.length - 1]?.id ??
+      groupedMessage.message.id;
+
+    return [
+      'tool-error-group',
+      groupedMessage.message.id,
+      lastMessageId,
+      groupedMessage.messages.length,
+    ].join(':');
+  }
+
+  return `single:${groupedMessage.message.id}`;
+}
+
 export function AgentChatMessages() {
   const { t } = useTranslation();
   const {
@@ -443,15 +476,17 @@ export function AgentChatMessages() {
   const virtuosoAtBottomRef = useRef(false);
   const visualBottomRef = useRef(true);
   const isPinnedToBottomRef = useRef(true);
-  const bottomLatchActiveRef = useRef(false);
-  const awaitingInitialBottomAlignmentRef = useRef(true);
-  const bottomAlignmentSettleTimeoutRef = useRef<number | null>(null);
-  const bottomLatchSettleTimeoutRef = useRef<number | null>(null);
+  const shouldFollowLatestRef = useRef(true);
+  const bottomAlignmentPhaseRef = useRef<BottomAlignmentPhase>('idle');
+  const bottomAlignmentLayoutVersionRef = useRef(0);
+  const bottomAlignmentRequestedVersionRef = useRef(0);
+  const bottomAlignmentVerifyFrameRef = useRef<number | null>(null);
   const prependStabilizeTimeoutRef = useRef<number | null>(null);
   const isPreservingPrependPositionRef = useRef(false);
   const autoScrollFrameRef = useRef<number | null>(null);
   const selfScrollIgnoreUntilRef = useRef(0);
   const previousScrollTopRef = useRef<number | null>(null);
+  const upwardReleaseDistanceRef = useRef(0);
   const groupedMessageCountRef = useRef(groupedMessages.length);
   const hasHydratedMessagesRef = useRef<{
     sessionId: string | undefined;
@@ -488,20 +523,79 @@ export function AgentChatMessages() {
     length: 0,
     sessionId: undefined,
   });
-  const effectiveFirstItemIndex =
-    previousListStateRef.current.sessionId === session?.id
-      ? firstItemIndex
-      : INITIAL_FIRST_ITEM_INDEX;
+  const previousListState = previousListStateRef.current;
+  const currentFirstGroupedMessageId = groupedMessages[0]?.message.id;
+  const currentLastGroupedMessageId =
+    groupedMessages[groupedMessages.length - 1]?.message.id;
+  const didSessionChangeForListState =
+    previousListState.sessionId !== session?.id;
+  const previousHeadIndexInCurrentList =
+    !didSessionChangeForListState &&
+    groupedMessages.length > previousListState.length &&
+    previousListState.lastId === currentLastGroupedMessageId
+      ? findGroupedMessageIndexByBoundary(
+          groupedMessages,
+          previousListState.firstId,
+        )
+      : -1;
+  const candidatePrependCount =
+    previousHeadIndexInCurrentList > 0 ? previousHeadIndexInCurrentList : 0;
+  const preservesPreviousVisibleHead = previousHeadIndexInCurrentList >= 0;
+  const prependCount = candidatePrependCount;
+  const effectiveFirstItemIndex = didSessionChangeForListState
+    ? INITIAL_FIRST_ITEM_INDEX
+    : prependCount > 0
+      ? getPrependedFirstItemIndex(firstItemIndex, prependCount)
+      : firstItemIndex;
   const scrollDebugStateRef = useRef({
     sessionId: session?.id,
     firstItemIndex,
     effectiveFirstItemIndex,
   });
+  const initialTopMostItemIndexRef = useRef<
+    ReturnType<typeof getInitialTopMostItemIndex>
+  >(
+    getInitialTopMostItemIndex(
+      INITIAL_FIRST_ITEM_INDEX,
+      groupedMessages.length,
+    ),
+  );
+  const initialTopMostItemSessionIdRef = useRef(session?.id);
+  if (initialTopMostItemSessionIdRef.current !== session?.id) {
+    initialTopMostItemSessionIdRef.current = session?.id;
+    initialTopMostItemIndexRef.current = getInitialTopMostItemIndex(
+      INITIAL_FIRST_ITEM_INDEX,
+      groupedMessages.length,
+    );
+  }
   scrollDebugStateRef.current = {
     sessionId: session?.id,
     firstItemIndex,
     effectiveFirstItemIndex,
   };
+  if (
+    import.meta.env.DEV &&
+    groupedMessages.length > previousListState.length &&
+    previousListState.lastId === currentLastGroupedMessageId &&
+    previousListState.firstId &&
+    !preservesPreviousVisibleHead
+  ) {
+    logger.warn('[scroll-debug] prepend-invariant-violated', {
+      sessionId: session?.id,
+      previousFirstId: previousListState.firstId,
+      previousLastId: previousListState.lastId,
+      currentFirstId: currentFirstGroupedMessageId,
+      currentLastId: currentLastGroupedMessageId,
+      candidatePrependCount,
+      currentCandidateAnchorId:
+        candidatePrependCount > 0
+          ? groupedMessages[candidatePrependCount]?.message.id
+          : undefined,
+      previousHeadIndexInCurrentList,
+      previousLength: previousListState.length,
+      currentLength: groupedMessages.length,
+    });
+  }
   const logScrollState = useCallback(
     (
       event: string,
@@ -520,9 +614,8 @@ export function AgentChatMessages() {
         effectiveFirstItemIndex: currentState.effectiveFirstItemIndex,
         isPinned: isPinnedToBottomRef.current,
         visualBottom: visualBottomRef.current,
-        bottomLatchActive: bottomLatchActiveRef.current,
-        awaitingInitialBottomAlignment:
-          awaitingInitialBottomAlignmentRef.current,
+        shouldFollowLatest: shouldFollowLatestRef.current,
+        bottomAlignmentPhase: bottomAlignmentPhaseRef.current,
         hasVirtuosoHandle: !!virtuosoRef.current,
         hasScroller: !!scrollerElementRef.current,
         hasFooterSentinel: !!footerEndRef.current,
@@ -573,107 +666,211 @@ export function AgentChatMessages() {
     setIsPinned(nextPinned);
   }, []);
 
-  const clearBottomLatchSettleTimeout = useCallback(() => {
-    if (bottomLatchSettleTimeoutRef.current !== null) {
-      window.clearTimeout(bottomLatchSettleTimeoutRef.current);
-      bottomLatchSettleTimeoutRef.current = null;
+  const clearBottomAlignmentVerifyFrame = useCallback(() => {
+    if (bottomAlignmentVerifyFrameRef.current !== null) {
+      cancelAnimationFrame(bottomAlignmentVerifyFrameRef.current);
+      bottomAlignmentVerifyFrameRef.current = null;
     }
   }, []);
 
-  const acquireBottomLatch = useCallback(
-    (reason: string) => {
-      clearBottomLatchSettleTimeout();
-      if (bottomLatchActiveRef.current) {
+  const clearScheduledAutoScroll = useCallback(() => {
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+  }, []);
+
+  const setBottomAlignmentPhase = useCallback(
+    (phase: BottomAlignmentPhase, reason: string) => {
+      if (bottomAlignmentPhaseRef.current === phase) {
         return;
       }
 
-      bottomLatchActiveRef.current = true;
+      bottomAlignmentPhaseRef.current = phase;
+      logScrollState('bottom-alignment:phase', {
+        reason,
+        phase,
+      });
+    },
+    [logScrollState],
+  );
+
+  const requestBottomAlignment = useCallback(
+    (reason: string) => {
+      clearBottomAlignmentVerifyFrame();
+      bottomAlignmentRequestedVersionRef.current =
+        bottomAlignmentLayoutVersionRef.current;
+      setBottomAlignmentPhase('requesting', reason);
+    },
+    [clearBottomAlignmentVerifyFrame, setBottomAlignmentPhase],
+  );
+
+  const abortBottomAlignment = useCallback(
+    (reason: string) => {
+      clearBottomAlignmentVerifyFrame();
+      setBottomAlignmentPhase('aborted', reason);
+    },
+    [clearBottomAlignmentVerifyFrame, setBottomAlignmentPhase],
+  );
+
+  const markBottomAlignmentLayoutChanged = useCallback(
+    (reason: string) => {
+      if (isPreservingPrependPositionRef.current) {
+        logScrollState('bottom-alignment:layout-change-skipped', {
+          reason,
+        });
+        return;
+      }
+
+      bottomAlignmentLayoutVersionRef.current += 1;
+      logScrollState('bottom-alignment:layout-change', {
+        reason,
+        layoutVersion: bottomAlignmentLayoutVersionRef.current,
+      });
+    },
+    [logScrollState],
+  );
+
+  const maybeCompleteBottomAlignment = useCallback(
+    (reason: string) => {
+      if (bottomAlignmentPhaseRef.current !== 'verifying') {
+        return;
+      }
+
+      if (isPreservingPrependPositionRef.current) {
+        return;
+      }
+
+      if (!visualBottomRef.current || !virtuosoAtBottomRef.current) {
+        logScrollState('bottom-alignment:pending', {
+          reason,
+          visualBottom: visualBottomRef.current,
+          virtuosoAtBottom: virtuosoAtBottomRef.current,
+        });
+        return;
+      }
+
+      const layoutVersion = bottomAlignmentLayoutVersionRef.current;
+      if (bottomAlignmentRequestedVersionRef.current !== layoutVersion) {
+        bottomAlignmentRequestedVersionRef.current = layoutVersion;
+        logScrollState('bottom-alignment:version-invalidated', {
+          reason,
+          layoutVersion,
+        });
+        bottomAlignmentVerifyFrameRef.current = requestAnimationFrame(() => {
+          bottomAlignmentVerifyFrameRef.current = null;
+          maybeCompleteBottomAlignment('version-invalidated');
+        });
+        return;
+      }
+
+      clearBottomAlignmentVerifyFrame();
+      setBottomAlignmentPhase('aligned', reason);
+    },
+    [clearBottomAlignmentVerifyFrame, logScrollState, setBottomAlignmentPhase],
+  );
+
+  const scheduleBottomAlignmentVerification = useCallback(
+    (reason: string) => {
+      if (!isBottomAlignmentActive(bottomAlignmentPhaseRef.current)) {
+        return;
+      }
+
+      clearBottomAlignmentVerifyFrame();
+      bottomAlignmentVerifyFrameRef.current = requestAnimationFrame(() => {
+        bottomAlignmentVerifyFrameRef.current = null;
+        maybeCompleteBottomAlignment(reason);
+      });
+    },
+    [clearBottomAlignmentVerifyFrame, maybeCompleteBottomAlignment],
+  );
+
+  const resumeBottomFollow = useCallback(
+    (reason: string) => {
+      upwardReleaseDistanceRef.current = 0;
+      if (shouldFollowLatestRef.current) {
+        return;
+      }
+
+      shouldFollowLatestRef.current = true;
       setEffectivePinnedState(true);
-      logScrollState('bottom-latch:acquire', {
+      logScrollState('bottom-follow:resume', {
         reason,
       });
     },
-    [clearBottomLatchSettleTimeout, logScrollState, setEffectivePinnedState],
+    [logScrollState, setEffectivePinnedState],
   );
 
-  const releaseBottomLatch = useCallback(
+  const pauseBottomFollow = useCallback(
     (reason: string) => {
-      clearBottomLatchSettleTimeout();
-      if (!bottomLatchActiveRef.current) {
+      upwardReleaseDistanceRef.current = 0;
+      if (!shouldFollowLatestRef.current) {
         return;
       }
 
-      bottomLatchActiveRef.current = false;
+      shouldFollowLatestRef.current = false;
       setEffectivePinnedState(visualBottomRef.current);
-      logScrollState('bottom-latch:release', {
+      logScrollState('bottom-follow:pause', {
         reason,
         visualBottom: visualBottomRef.current,
       });
     },
-    [clearBottomLatchSettleTimeout, logScrollState, setEffectivePinnedState],
+    [logScrollState, setEffectivePinnedState],
   );
 
   const executeScrollToBottom = useCallback(
-    (reason: string) => {
+    (reason: string): boolean => {
       const itemCount = groupedMessageCountRef.current;
       selfScrollIgnoreUntilRef.current =
         performance.now() + SELF_SCROLL_IGNORE_WINDOW_MS;
       logScrollState('executeScrollToBottom:start', {
         itemCount,
         reason,
-        bottomLatchActive: bottomLatchActiveRef.current,
+        shouldFollowLatest: shouldFollowLatestRef.current,
       });
-
-      if (footerEndRef.current) {
-        logScrollState('executeScrollToBottom:footer-sentinel', {
-          itemCount,
-          reason,
-        });
-        scrollFooterSentinelIntoView(footerEndRef.current);
-        return;
-      }
 
       const scrolledWithVirtuoso = scrollVirtuosoToBottom(
         virtuosoRef.current,
         itemCount,
       );
 
-      if (!scrolledWithVirtuoso) {
-        logScrollState('executeScrollToBottom:unavailable', {
+      if (scrolledWithVirtuoso) {
+        logScrollState('executeScrollToBottom:virtuoso-scroll', {
           itemCount,
           reason,
-          scrolledWithVirtuoso,
+          scrolledWithVirtuoso: true,
         });
-        return;
+        return true;
       }
 
-      logScrollState('executeScrollToBottom:virtuoso-scroll', {
+      if (footerEndRef.current) {
+        logScrollState('executeScrollToBottom:footer-sentinel-fallback', {
+          itemCount,
+          reason,
+        });
+        scrollFooterSentinelIntoView(footerEndRef.current);
+        return true;
+      }
+
+      logScrollState('executeScrollToBottom:unavailable', {
         itemCount,
         reason,
-        scrolledWithVirtuoso,
+        scrolledWithVirtuoso: false,
       });
+      return false;
     },
     [logScrollState],
   );
 
-  useLayoutEffect(() => {
-    const previous = previousListStateRef.current;
-    const firstId = groupedMessages[0]?.message.id;
-    const lastId = groupedMessages[groupedMessages.length - 1]?.message.id;
-
-    if (previous.sessionId !== session?.id) {
+  useEffect(() => {
+    if (didSessionChangeForListState) {
       logScrollState('listState:session-changed', {
-        previousSessionId: previous.sessionId,
+        previousSessionId: previousListState.sessionId,
         nextSessionId: session?.id,
         groupedMessageCount: groupedMessages.length,
       });
       setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
-    } else if (
-      groupedMessages.length > previous.length &&
-      previous.lastId === lastId &&
-      previous.firstId !== firstId
-    ) {
-      const prependCount = groupedMessages.length - previous.length;
+    } else if (prependCount > 0) {
       isPreservingPrependPositionRef.current = true;
       if (prependStabilizeTimeoutRef.current !== null) {
         window.clearTimeout(prependStabilizeTimeoutRef.current);
@@ -688,33 +885,42 @@ export function AgentChatMessages() {
       logScrollState('prepend-preservation:start', {
         prependCount,
       });
-      setFirstItemIndex((current) =>
-        getPrependedFirstItemIndex(current, prependCount),
-      );
+      setFirstItemIndex(effectiveFirstItemIndex);
     }
 
     previousListStateRef.current = {
-      firstId,
-      lastId,
+      firstId: currentFirstGroupedMessageId,
+      lastId: currentLastGroupedMessageId,
       length: groupedMessages.length,
       sessionId: session?.id,
     };
-  }, [groupedMessages, logScrollState, session?.id]);
+  }, [
+    currentFirstGroupedMessageId,
+    currentLastGroupedMessageId,
+    didSessionChangeForListState,
+    effectiveFirstItemIndex,
+    groupedMessages.length,
+    logScrollState,
+    prependCount,
+    previousListState.sessionId,
+    session?.id,
+  ]);
 
   const scheduleScrollToBottom = useCallback(
     (reason: string) => {
       const shouldForce =
-        forceBottomScrollReasons.has(reason) || bottomLatchActiveRef.current;
+        forceBottomScrollReasons.has(reason) || shouldFollowLatestRef.current;
       const shouldSuppressForPrepend =
         isPreservingPrependPositionRef.current &&
         !forceBottomScrollReasons.has(reason);
 
       const shouldSuppressForUserScroll =
-        !awaitingInitialBottomAlignmentRef.current &&
+        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current) &&
         !visualBottomRef.current &&
         !shouldForce;
 
       if (shouldSuppressForPrepend || shouldSuppressForUserScroll) {
+        clearScheduledAutoScroll();
         logScrollState('scheduleScrollToBottom:suppressed', {
           reason,
           shouldSuppressForPrepend,
@@ -727,44 +933,30 @@ export function AgentChatMessages() {
       logScrollState('scheduleScrollToBottom', {
         reason,
       });
-      if (autoScrollFrameRef.current !== null) {
-        cancelAnimationFrame(autoScrollFrameRef.current);
-      }
+      clearScheduledAutoScroll();
 
       autoScrollFrameRef.current = requestAnimationFrame(() => {
         autoScrollFrameRef.current = null;
         logScrollState('scheduleScrollToBottom:frame-fired', {
           reason,
         });
-        executeScrollToBottom(reason);
+        const didScroll = executeScrollToBottom(reason);
+        if (didScroll && bottomAlignmentPhaseRef.current === 'requesting') {
+          bottomAlignmentRequestedVersionRef.current =
+            bottomAlignmentLayoutVersionRef.current;
+          setBottomAlignmentPhase('verifying', `scroll-dispatched:${reason}`);
+          scheduleBottomAlignmentVerification(`scroll-dispatched:${reason}`);
+        }
       });
     },
-    [executeScrollToBottom, forceBottomScrollReasons, logScrollState],
-  );
-
-  const scheduleBottomAlignmentSettle = useCallback(
-    (reason: string) => {
-      if (bottomAlignmentSettleTimeoutRef.current !== null) {
-        window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
-      }
-
-      bottomAlignmentSettleTimeoutRef.current = window.setTimeout(() => {
-        bottomAlignmentSettleTimeoutRef.current = null;
-
-        if (!virtuosoAtBottomRef.current) {
-          logScrollState('bottom-alignment:settle-skipped', {
-            reason,
-          });
-          return;
-        }
-
-        awaitingInitialBottomAlignmentRef.current = false;
-        logScrollState('bottom-alignment:settled', {
-          reason,
-        });
-      }, 250);
-    },
-    [logScrollState],
+    [
+      clearScheduledAutoScroll,
+      executeScrollToBottom,
+      forceBottomScrollReasons,
+      logScrollState,
+      scheduleBottomAlignmentVerification,
+      setBottomAlignmentPhase,
+    ],
   );
 
   const handleVirtuosoAtBottomStateChange = useCallback(
@@ -774,10 +966,10 @@ export function AgentChatMessages() {
         atBottom,
       });
       if (atBottom) {
-        scheduleBottomAlignmentSettle('at-bottom-state-change');
+        scheduleBottomAlignmentVerification('at-bottom-state-change');
       }
     },
-    [logScrollState, scheduleBottomAlignmentSettle],
+    [logScrollState, scheduleBottomAlignmentVerification],
   );
 
   const handleTotalListHeightChanged = useCallback(
@@ -792,10 +984,19 @@ export function AgentChatMessages() {
         return;
       }
 
-      scheduleBottomAlignmentSettle('total-list-height-changed');
+      if (prependCount > 0 || isPreservingPrependPositionRef.current) {
+        logScrollState('virtuoso:totalListHeightChanged:prepend-skip', {
+          height,
+          prependCount,
+        });
+        return;
+      }
+
+      markBottomAlignmentLayoutChanged('total-list-height-changed');
+      scheduleBottomAlignmentVerification('total-list-height-changed');
 
       if (
-        !awaitingInitialBottomAlignmentRef.current &&
+        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current) &&
         !isPinnedToBottomRef.current
       ) {
         logScrollState('virtuoso:totalListHeightChanged:skip', {
@@ -806,57 +1007,56 @@ export function AgentChatMessages() {
 
       scheduleScrollToBottom('total-list-height-changed');
     },
-    [logScrollState, scheduleBottomAlignmentSettle, scheduleScrollToBottom],
+    [
+      logScrollState,
+      markBottomAlignmentLayoutChanged,
+      prependCount,
+      scheduleBottomAlignmentVerification,
+      scheduleScrollToBottom,
+    ],
   );
 
   useEffect(() => {
-    awaitingInitialBottomAlignmentRef.current = true;
+    setBottomAlignmentPhase('idle', 'session-reset');
+    clearBottomAlignmentVerifyFrame();
+    bottomAlignmentRequestedVersionRef.current =
+      bottomAlignmentLayoutVersionRef.current;
     virtuosoAtBottomRef.current = false;
     visualBottomRef.current = true;
-    bottomLatchActiveRef.current = false;
+    shouldFollowLatestRef.current = true;
     isPreservingPrependPositionRef.current = false;
+    upwardReleaseDistanceRef.current = 0;
     setEffectivePinnedState(true);
-    if (autoScrollFrameRef.current !== null) {
-      cancelAnimationFrame(autoScrollFrameRef.current);
-      autoScrollFrameRef.current = null;
-    }
-    if (bottomAlignmentSettleTimeoutRef.current !== null) {
-      window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
-      bottomAlignmentSettleTimeoutRef.current = null;
-    }
+    clearScheduledAutoScroll();
     if (prependStabilizeTimeoutRef.current !== null) {
       window.clearTimeout(prependStabilizeTimeoutRef.current);
       prependStabilizeTimeoutRef.current = null;
     }
-    clearBottomLatchSettleTimeout();
     previousScrollTopRef.current = null;
     logScrollState('sessionEffect:reset-bottom-alignment');
+    requestBottomAlignment('session-changed');
     scheduleScrollToBottom('session-changed');
   }, [
-    clearBottomLatchSettleTimeout,
+    clearBottomAlignmentVerifyFrame,
+    clearScheduledAutoScroll,
     logScrollState,
+    requestBottomAlignment,
     scheduleScrollToBottom,
     session?.id,
     setEffectivePinnedState,
+    setBottomAlignmentPhase,
   ]);
 
   useEffect(() => {
     return () => {
-      if (autoScrollFrameRef.current !== null) {
-        cancelAnimationFrame(autoScrollFrameRef.current);
-        autoScrollFrameRef.current = null;
-      }
-      if (bottomAlignmentSettleTimeoutRef.current !== null) {
-        window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
-        bottomAlignmentSettleTimeoutRef.current = null;
-      }
+      clearScheduledAutoScroll();
       if (prependStabilizeTimeoutRef.current !== null) {
         window.clearTimeout(prependStabilizeTimeoutRef.current);
         prependStabilizeTimeoutRef.current = null;
       }
-      clearBottomLatchSettleTimeout();
+      clearBottomAlignmentVerifyFrame();
     };
-  }, [clearBottomLatchSettleTimeout]);
+  }, [clearBottomAlignmentVerifyFrame, clearScheduledAutoScroll]);
 
   useEffect(() => {
     if (!scrollerElement) {
@@ -877,55 +1077,50 @@ export function AgentChatMessages() {
         distanceFromBottom,
         bottomThreshold,
       );
-      const nearBottomForLatch = isNearBottomForLatch(distanceFromBottom);
       const isSelfScroll = performance.now() < selfScrollIgnoreUntilRef.current;
 
       visualBottomRef.current = visualPinned;
 
-      if (
-        bottomLatchActiveRef.current &&
-        !isSelfScroll &&
-        !isPreservingPrependPositionRef.current &&
-        shouldReleaseBottomLatch(distanceFromBottom, scrollDelta)
-      ) {
-        awaitingInitialBottomAlignmentRef.current = false;
-        virtuosoAtBottomRef.current = false;
-        if (autoScrollFrameRef.current !== null) {
-          cancelAnimationFrame(autoScrollFrameRef.current);
-          autoScrollFrameRef.current = null;
+      if (visualPinned) {
+        upwardReleaseDistanceRef.current = 0;
+        resumeBottomFollow('bottom-reached');
+      } else {
+        if (scrollDelta > 0) {
+          upwardReleaseDistanceRef.current = 0;
+        } else if (
+          !isPreservingPrependPositionRef.current &&
+          scrollDelta < 0 &&
+          !isSelfScroll
+        ) {
+          upwardReleaseDistanceRef.current += Math.abs(scrollDelta);
+          if (
+            shouldFollowLatestRef.current &&
+            upwardReleaseDistanceRef.current >=
+              BOTTOM_FOLLOW_RELEASE_SCROLL_DISTANCE
+          ) {
+            abortBottomAlignment('explicit-scroll-up');
+            clearScheduledAutoScroll();
+            pauseBottomFollow('explicit-scroll-up');
+          }
         }
-        if (bottomAlignmentSettleTimeoutRef.current !== null) {
-          window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
-          bottomAlignmentSettleTimeoutRef.current = null;
-        }
-        releaseBottomLatch('scroll-release');
       }
 
-      if (
-        !bottomLatchActiveRef.current &&
-        workflowStatus === 'busy' &&
-        nearBottomForLatch &&
-        scrollDelta >= 0 &&
-        !isPreservingPrependPositionRef.current
-      ) {
-        acquireBottomLatch('scroll-reacquire');
-      }
-
-      if (!visualPinned && !bottomLatchActiveRef.current) {
-        awaitingInitialBottomAlignmentRef.current = false;
+      if (!visualPinned && !shouldFollowLatestRef.current) {
         virtuosoAtBottomRef.current = false;
+        abortBottomAlignment('visual-bottom-lost');
+        clearScheduledAutoScroll();
       }
 
-      setEffectivePinnedState(
-        bottomLatchActiveRef.current ? true : visualPinned,
-      );
+      scheduleBottomAlignmentVerification('scroll:updatePinnedState');
+
+      setEffectivePinnedState(visualPinned || shouldFollowLatestRef.current);
       logScrollState('scroll:updatePinnedState', {
         currentScrollTop,
         scrollDelta,
         distanceFromBottom,
         visualPinned,
-        nearBottomForLatch,
         isSelfScroll,
+        upwardReleaseDistance: upwardReleaseDistanceRef.current,
       });
     };
     const handleScroll = () => {
@@ -939,14 +1134,16 @@ export function AgentChatMessages() {
       scrollerElement.removeEventListener('scroll', handleScroll);
     };
   }, [
-    acquireBottomLatch,
+    abortBottomAlignment,
     bottomThreshold,
+    clearScheduledAutoScroll,
     logScrollState,
-    releaseBottomLatch,
+    pauseBottomFollow,
+    resumeBottomFollow,
+    scheduleBottomAlignmentVerification,
     scrollerElement,
     session?.id,
     setEffectivePinnedState,
-    workflowStatus,
   ]);
 
   useEffect(() => {
@@ -968,17 +1165,12 @@ export function AgentChatMessages() {
       groupedMessages.length > 0 &&
       isPinnedToBottomRef.current
     ) {
-      awaitingInitialBottomAlignmentRef.current = true;
-      virtuosoAtBottomRef.current = false;
       isPreservingPrependPositionRef.current = false;
-      if (bottomAlignmentSettleTimeoutRef.current !== null) {
-        window.clearTimeout(bottomAlignmentSettleTimeoutRef.current);
-        bottomAlignmentSettleTimeoutRef.current = null;
-      }
       if (prependStabilizeTimeoutRef.current !== null) {
         window.clearTimeout(prependStabilizeTimeoutRef.current);
         prependStabilizeTimeoutRef.current = null;
       }
+      requestBottomAlignment('hydrated-messages-arrived');
       logScrollState('hydration:messages-arrived');
       scheduleScrollToBottom('hydrated-messages-arrived');
     }
@@ -989,25 +1181,25 @@ export function AgentChatMessages() {
   }, [
     groupedMessages.length,
     logScrollState,
+    requestBottomAlignment,
     scheduleScrollToBottom,
     session?.id,
   ]);
 
   const handleManualScrollToBottom = useCallback(() => {
     visualBottomRef.current = true;
-    if (workflowStatus === 'busy') {
-      acquireBottomLatch('manual-scroll-to-bottom');
-    } else {
-      setEffectivePinnedState(true);
-    }
+    upwardReleaseDistanceRef.current = 0;
+    requestBottomAlignment('manual-scroll-to-bottom');
+    resumeBottomFollow('manual-scroll-to-bottom');
+    setEffectivePinnedState(true);
     logScrollState('scrollToBottom:manual');
     scheduleScrollToBottom('manual-scroll-to-bottom');
   }, [
-    acquireBottomLatch,
     logScrollState,
+    requestBottomAlignment,
+    resumeBottomFollow,
     scheduleScrollToBottom,
     setEffectivePinnedState,
-    workflowStatus,
   ]);
 
   useEffect(() => {
@@ -1018,10 +1210,16 @@ export function AgentChatMessages() {
     }
 
     const observer = new ResizeObserver(() => {
+      if (prependCount > 0 || isPreservingPrependPositionRef.current) {
+        return;
+      }
+
+      markBottomAlignmentLayoutChanged('content-resize-observer');
+      scheduleBottomAlignmentVerification('content-resize-observer');
       if (
-        !bottomLatchActiveRef.current &&
+        !shouldFollowLatestRef.current &&
         !visualBottomRef.current &&
-        !awaitingInitialBottomAlignmentRef.current
+        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current)
       ) {
         return;
       }
@@ -1034,7 +1232,14 @@ export function AgentChatMessages() {
     return () => {
       observer.disconnect();
     };
-  }, [scheduleScrollToBottom, scrollerElement, session?.id]);
+  }, [
+    markBottomAlignmentLayoutChanged,
+    prependCount,
+    scheduleBottomAlignmentVerification,
+    scheduleScrollToBottom,
+    scrollerElement,
+    session?.id,
+  ]);
 
   useEffect(() => {
     if (!scrollerElement || typeof ResizeObserver === 'undefined') {
@@ -1042,10 +1247,16 @@ export function AgentChatMessages() {
     }
 
     const observer = new ResizeObserver(() => {
+      if (prependCount > 0 || isPreservingPrependPositionRef.current) {
+        return;
+      }
+
+      markBottomAlignmentLayoutChanged('scroller-resize-observer');
+      scheduleBottomAlignmentVerification('scroller-resize-observer');
       if (
-        !bottomLatchActiveRef.current &&
+        !shouldFollowLatestRef.current &&
         !visualBottomRef.current &&
-        !awaitingInitialBottomAlignmentRef.current
+        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current)
       ) {
         return;
       }
@@ -1058,43 +1269,39 @@ export function AgentChatMessages() {
     return () => {
       observer.disconnect();
     };
-  }, [scheduleScrollToBottom, scrollerElement, session?.id]);
+  }, [
+    markBottomAlignmentLayoutChanged,
+    prependCount,
+    scheduleBottomAlignmentVerification,
+    scheduleScrollToBottom,
+    scrollerElement,
+    session?.id,
+  ]);
 
   useEffect(() => {
-    if (workflowStatus === 'busy') {
-      if (
-        !bottomLatchActiveRef.current &&
-        !isPreservingPrependPositionRef.current &&
-        groupedMessages.length > 0 &&
-        hasHydratedMessagesRef.current.hasMessages &&
-        (visualBottomRef.current || awaitingInitialBottomAlignmentRef.current)
-      ) {
-        acquireBottomLatch('workflow-busy');
-      }
-    } else if (bottomLatchActiveRef.current) {
-      clearBottomLatchSettleTimeout();
-      bottomLatchSettleTimeoutRef.current = window.setTimeout(() => {
-        bottomLatchSettleTimeoutRef.current = null;
-        releaseBottomLatch('workflow-settled');
-      }, STREAMING_LATCH_SETTLE_MS);
+    if (
+      groupedMessages.length > 0 &&
+      hasHydratedMessagesRef.current.hasMessages &&
+      (visualBottomRef.current ||
+        isBottomAlignmentActive(bottomAlignmentPhaseRef.current))
+    ) {
+      resumeBottomFollow('bottom-context-restored');
     }
 
-    if (!bottomLatchActiveRef.current && !isPinnedToBottomRef.current) {
+    if (!shouldFollowLatestRef.current && !isPinnedToBottomRef.current) {
       return;
     }
 
     scheduleScrollToBottom('reactive-state-change');
   }, [
-    acquireBottomLatch,
     latestMessage,
     workflowStatus,
     pendingApprovals?.length,
     agentError,
     agentLlmError,
     groupedMessages.length,
-    releaseBottomLatch,
+    resumeBottomFollow,
     scheduleScrollToBottom,
-    clearBottomLatchSettleTimeout,
   ]);
 
   const virtuosoContext = useMemo<AgentChatVirtuosoContext>(
@@ -1285,13 +1492,12 @@ export function AgentChatMessages() {
         style={{ height: '100%' }}
         data={groupedMessages}
         components={virtuosoComponents}
-        computeItemKey={(_, groupedMessage) => groupedMessage.message.id}
+        computeItemKey={(_, groupedMessage) =>
+          getGroupedMessageVirtuosoKey(groupedMessage)
+        }
         context={virtuosoContext}
         firstItemIndex={effectiveFirstItemIndex}
-        initialTopMostItemIndex={getInitialTopMostItemIndex(
-          effectiveFirstItemIndex,
-          groupedMessages.length,
-        )}
+        initialTopMostItemIndex={initialTopMostItemIndexRef.current}
         atBottomThreshold={bottomThreshold}
         atBottomStateChange={handleVirtuosoAtBottomStateChange}
         // Disabled: the latch logic is the sole owner of bottom-follow behavior.

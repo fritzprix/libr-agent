@@ -24,7 +24,10 @@ import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useInputToken } from './useInputToken';
 import { useScopedSkills } from './useScopedSkills';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
-import { prepareDraftAttachments } from '../lib/draft-attachments';
+import {
+  addAgentAttachment,
+  toWorkspaceOnlyAttachment,
+} from '../lib/resource-attachment-operations';
 
 const logger = getLogger('useAgentDraftChat');
 
@@ -369,27 +372,87 @@ export function useAgentDraftChat() {
           },
         });
 
-        const attachments: AttachmentReference[] =
-          await prepareDraftAttachments({
-            files: pendingFiles,
-            sessionId: newSessionId,
-            now,
-            getMimeType,
-            onAttachmentError: (file) => {
-              toast.error(t('agent.draft.failedToAttach', { file: file.name }));
-            },
-          });
+        const attachments: AttachmentReference[] = [];
+        for (const file of pendingFiles) {
+          try {
+            const result = await addAgentAttachment({
+              sessionId: newSessionId,
+              url: '',
+              mimeType: file.type || getMimeType(file.name),
+              filename: file.name,
+              file,
+              inlineAudio:
+                settings?.experimental?.inlineAudioAttachment !== false,
+            });
+            attachments.push(result);
+          } catch (err) {
+            logger.error(
+              'Failed to attach draft file, falling back to workspace-only',
+              {
+                filename: file.name,
+                err,
+              },
+            );
+            toast.error(t('agent.draft.failedToAttach', { file: file.name }));
+            try {
+              const fallback = toWorkspaceOnlyAttachment(
+                newSessionId,
+                file.name,
+                file.type || getMimeType(file.name),
+                file.size,
+              );
+              attachments.push(fallback);
+            } catch (fallbackErr) {
+              logger.error(
+                'Failed to create fallback workspace-only attachment',
+                fallbackErr,
+              );
+            }
+          }
+        }
+
+        // Filter out valid inline attachments that successfully materialized base64 data to be sent inside message.content
+        const validInlineRefs = attachments.filter(
+          (r) =>
+            r.status === 'inline' && r.inlineContent && r.inlineContent.data,
+        );
+        // All other attachments (text, workspace-only, or inline attachments that failed inline data generation)
+        // should be placed in the message.attachments array.
+        const nonInlineRefs = attachments.filter(
+          (r) =>
+            r.status !== 'inline' || !r.inlineContent || !r.inlineContent.data,
+        );
+
+        const inlineContent = validInlineRefs.map((r) => {
+          if (r.inlineContent!.type === 'image') {
+            return {
+              type: 'image' as const,
+              data: r.inlineContent!.data,
+              uri: r.inlineContent!.uri,
+              mimeType: r.inlineContent!.mimeType,
+            };
+          }
+          return {
+            type: 'audio' as const,
+            data: r.inlineContent!.data,
+            uri: r.inlineContent!.uri,
+            mimeType: r.inlineContent!.mimeType,
+          };
+        });
 
         const initialMessage: Message = {
           id: createId(),
           sessionId: newSessionId,
           threadId: newSessionId,
           role: 'user',
-          content: [{ type: 'text', text: resolvedInput }],
+          content: [{ type: 'text', text: resolvedInput }, ...inlineContent],
           createdAt: now,
           updatedAt: now,
-          ...(attachments.length > 0 ? { attachments } : {}),
         };
+
+        if (nonInlineRefs.length > 0) {
+          initialMessage.attachments = nonInlineRefs;
+        }
 
         const rustMessage = {
           ...initialMessage,
@@ -399,7 +462,7 @@ export function useAgentDraftChat() {
 
         const finalRustMessage = {
           ...rustMessage,
-          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(nonInlineRefs.length > 0 ? { attachments: nonInlineRefs } : {}),
         };
         await safeInvoke<AgentResponse>('agent_send_message', {
           request: {
