@@ -109,6 +109,7 @@ struct BrowserAutomationClientState {
     process: Mutex<Option<SidecarProcess>>,
     pending: dashmap::DashMap<String, oneshot::Sender<Result<Value, String>>>,
     request_timeout: Duration,
+    bootstrap_timeout: Duration,
     reset_guard: Mutex<()>,
 }
 
@@ -124,6 +125,7 @@ impl BrowserAutomationClient {
                 process: Mutex::new(None),
                 pending: dashmap::DashMap::new(),
                 request_timeout,
+                bootstrap_timeout: derive_bootstrap_timeout(request_timeout),
                 reset_guard: Mutex::new(()),
             }),
         }
@@ -136,7 +138,11 @@ impl BrowserAutomationClient {
         title: Option<&str>,
         visible: bool,
     ) -> Result<PageState, String> {
-        self.request(
+        debug!(
+            "Creating browser sidecar session {} with bootstrap timeout {:?}",
+            session_id, self.state.bootstrap_timeout
+        );
+        self.request_with_timeout(
             "createSession",
             CreateSessionParams {
                 session_id: session_id.to_string(),
@@ -144,6 +150,7 @@ impl BrowserAutomationClient {
                 title: title.map(ToString::to_string),
                 visible,
             },
+            self.state.bootstrap_timeout,
         )
         .await
     }
@@ -215,6 +222,10 @@ impl BrowserAutomationClient {
         self.state.request_timeout
     }
 
+    pub fn bootstrap_timeout(&self) -> Duration {
+        self.state.bootstrap_timeout
+    }
+
     pub async fn shutdown(&self) {
         let process = {
             let mut process_guard = self.state.process.lock().await;
@@ -256,6 +267,16 @@ impl BrowserAutomationClient {
         &self,
         method: &str,
         params: impl Serialize,
+    ) -> Result<T, String> {
+        self.request_with_timeout(method, params, self.state.request_timeout)
+            .await
+    }
+
+    async fn request_with_timeout<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: impl Serialize,
+        timeout: Duration,
     ) -> Result<T, String> {
         self.ensure_started().await?;
 
@@ -317,7 +338,7 @@ impl BrowserAutomationClient {
             }
         }
 
-        let response_value = match tokio::time::timeout(self.state.request_timeout, rx).await {
+        let response_value = match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(result)) => result?,
             Ok(Err(_)) => {
                 self.state.pending.remove(&request_id);
@@ -333,7 +354,7 @@ impl BrowserAutomationClient {
                     .await;
                 return Err(format!(
                     "Browser sidecar did not respond within {}ms",
-                    self.state.request_timeout.as_millis()
+                    timeout.as_millis()
                 ));
             }
         };
@@ -413,6 +434,12 @@ impl BrowserAutomationClient {
         *process_guard = Some(SidecarProcess { child, stdin });
         Ok(())
     }
+}
+
+const MIN_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(180);
+
+fn derive_bootstrap_timeout(request_timeout: Duration) -> Duration {
+    request_timeout.max(MIN_BOOTSTRAP_TIMEOUT)
 }
 
 fn spawn_sidecar_stdout_task(

@@ -1,7 +1,7 @@
 use serde_json::json;
 use tauri_mcp_agent_lib::browser_sidecar::{
     browser_runtime_profile_dir, browser_runtime_profile_root, classify_browser_page,
-    serialize_browser_result_value, PageClassification,
+    serialize_browser_result_value, BrowserAutomationClient, PageClassification,
 };
 use tauri_mcp_agent_lib::services::interactive_browser_server::{
     BrowserSession, NavigationUpdateOutcome, SessionStatus,
@@ -180,4 +180,15 @@ fn browser_runtime_profile_dirs_are_unique_and_not_the_chromiumoxide_default() {
     assert_ne!(second, chromiumoxide_default);
     assert!(first.starts_with(&profile_root));
     assert!(second.starts_with(&profile_root));
+}
+
+#[test]
+fn browser_automation_client_uses_a_longer_bootstrap_timeout() {
+    let client = BrowserAutomationClient::new(std::time::Duration::from_secs(30));
+
+    assert_eq!(client.request_timeout(), std::time::Duration::from_secs(30));
+    assert_eq!(
+        client.bootstrap_timeout(),
+        std::time::Duration::from_secs(180)
+    );
 }

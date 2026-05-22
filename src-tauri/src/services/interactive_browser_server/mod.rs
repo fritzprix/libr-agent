@@ -230,7 +230,9 @@ impl InteractiveBrowserServer {
             }
         };
 
-        self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
+        let outcome =
+            self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
+        self.require_applied_navigation("Navigation", session_id, next_generation, outcome)?;
 
         let message = format!(
             "Navigated active session to {} - ready for content extraction",
@@ -252,7 +254,9 @@ impl InteractiveBrowserServer {
                 return Err(format!("Back navigation failed: {error}"));
             }
         };
-        self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
+        let outcome =
+            self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
+        self.require_applied_navigation("Back navigation", session_id, next_generation, outcome)?;
         Ok(Self::describe_history_navigation("back", state))
     }
 
@@ -269,7 +273,14 @@ impl InteractiveBrowserServer {
                 return Err(format!("Forward navigation failed: {error}"));
             }
         };
-        self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
+        let outcome =
+            self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
+        self.require_applied_navigation(
+            "Forward navigation",
+            session_id,
+            next_generation,
+            outcome,
+        )?;
         Ok(Self::describe_history_navigation("forward", state))
     }
 
@@ -318,7 +329,7 @@ impl InteractiveBrowserServer {
         generation: u64,
         url: &str,
         title: Option<String>,
-    ) -> Result<(), String> {
+    ) -> Result<NavigationUpdateOutcome, String> {
         let mut sessions = self
             .sessions
             .write()
@@ -328,7 +339,8 @@ impl InteractiveBrowserServer {
                 session_id: session_id.to_string(),
             })
         })?;
-        match session.finish_navigation(generation, url, title) {
+        let outcome = session.finish_navigation(generation, url, title);
+        match outcome {
             NavigationUpdateOutcome::Applied => {}
             NavigationUpdateOutcome::IgnoredStale => {
                 warn!(
@@ -349,7 +361,7 @@ impl InteractiveBrowserServer {
                 );
             }
         }
-        Ok(())
+        Ok(outcome)
     }
 
     fn mark_navigation_error(
@@ -386,6 +398,30 @@ impl InteractiveBrowserServer {
             }
         }
         Ok(())
+    }
+
+    fn require_applied_navigation(
+        &self,
+        operation: &str,
+        session_id: &str,
+        generation: u64,
+        outcome: NavigationUpdateOutcome,
+    ) -> Result<(), String> {
+        match outcome {
+            NavigationUpdateOutcome::Applied => Ok(()),
+            NavigationUpdateOutcome::IgnoredStale => Err(format!(
+                "{} result for session {} was superseded by a newer navigation request (generation {})",
+                operation, session_id, generation
+            )),
+            NavigationUpdateOutcome::IgnoredSettled => Err(format!(
+                "{} result for session {} was ignored because the session had already settled generation {}",
+                operation, session_id, generation
+            )),
+            NavigationUpdateOutcome::RejectedFuture => Err(format!(
+                "{} result for session {} referenced an invalid future generation {}",
+                operation, session_id, generation
+            )),
+        }
     }
 }
 

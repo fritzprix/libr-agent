@@ -1,5 +1,5 @@
-/// Validates URL and returns normalized version.
-/// Supports: http://, https://
+/// Validates URL and returns a normalized version.
+/// Supports: http://, https://, about:
 ///
 /// # Arguments
 /// * `url` - The URL to validate
@@ -15,8 +15,8 @@ pub fn validate_and_normalize_url(url: &str) -> Result<String, String> {
             match parsed.scheme() {
                 "http" | "https" => Ok(url.to_string()),
                 "about" => {
-                    // Replace 'about:blank' with a minimal data URI to ensure webview lifecycle triggers correctly
-                    // about:blank specifically can fail to trigger 'PageLoad' events on some WebKit/WebView2 backends
+                    // Replace about:blank with a deterministic HTML document so the
+                    // sidecar-backed browser session always lands on a readable page.
                     Ok("data:text/html,<html><body><h1>Agent Ready</h1></body></html>".to_string())
                 }
                 scheme => Err(format!(
