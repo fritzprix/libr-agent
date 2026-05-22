@@ -827,17 +827,6 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         );
     }
 
-    let structured_results = paginated_tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "source": tool.source,
-                "name": tool.name,
-                "status": tool.status,
-                "description": tool.description,
-            })
-        })
-        .collect::<Vec<_>>();
     let mut external_servers = found_external_ids
         .iter()
         .map(|(name, id)| json!({ "name": name, "id": id }))
@@ -857,7 +846,6 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 "totalResults": total_results,
                 "totalTools": total_tools,
                 "totalServerRows": total_server_rows,
-                "results": structured_results,
                 "externalServers": external_servers,
             }))),
     )
