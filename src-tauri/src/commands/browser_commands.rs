@@ -1,6 +1,5 @@
 use crate::services::{BrowserSession, InteractiveBrowserServer};
 use log::{debug, error, info};
-use serde::Deserialize;
 use tauri::State;
 
 use serde::Serialize;
@@ -118,113 +117,6 @@ pub async fn navigate_to_url(
             Err(e)
         }
     }
-}
-
-/// Represents the payload received from the frontend when a browser script finishes executing.
-#[derive(Deserialize)]
-pub struct BrowserScriptPayload {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    token: String,
-    #[serde(rename = "requestId")]
-    request_id: String,
-    result: String,
-}
-
-#[derive(Deserialize)]
-pub struct BrowserRuntimeReadyPayload {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    token: String,
-    generation: u64,
-    url: String,
-    title: String,
-}
-
-#[derive(Deserialize)]
-pub struct BrowserNavigationStartedPayload {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    token: String,
-    generation: u64,
-    url: String,
-    title: String,
-}
-
-/// Receives the result of a JavaScript execution from the webview and stores it for polling.
-///
-/// # Arguments
-/// * `payload` - The `BrowserScriptPayload` containing the session ID, request ID, and result.
-/// * `server` - The `InteractiveBrowserServer` state.
-///
-/// # Returns
-/// An empty `Result` on success, or an error string on failure.
-#[tauri::command]
-pub async fn browser_script_result(
-    payload: BrowserScriptPayload,
-    server: State<'_, InteractiveBrowserServer>,
-) -> Result<(), String> {
-    debug!(
-        "Received script result for session {}, request_id {}: {}",
-        payload.session_id, payload.request_id, payload.result
-    );
-
-    server.handle_script_result(
-        &payload.session_id,
-        &payload.token,
-        payload.request_id,
-        payload.result,
-    )
-}
-
-/// Signals that a page has fully loaded in the browser.
-///
-/// # Arguments
-/// * `session_id` - The ID of the browser session.
-/// * `server` - The InteractiveBrowserServer state.
-#[tauri::command]
-pub async fn browser_page_loaded(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-) -> Result<(), String> {
-    info!("Command: browser_page_loaded called for session: {session_id}");
-    server.handle_page_loaded(&session_id)
-}
-
-#[tauri::command]
-pub async fn browser_runtime_ready(
-    payload: BrowserRuntimeReadyPayload,
-    server: State<'_, InteractiveBrowserServer>,
-) -> Result<(), String> {
-    info!(
-        "Command: browser_runtime_ready called for session: {}, generation: {}",
-        payload.session_id, payload.generation
-    );
-    server.handle_runtime_ready(
-        &payload.session_id,
-        &payload.token,
-        payload.generation,
-        payload.url,
-        payload.title,
-    )
-}
-
-#[tauri::command]
-pub async fn browser_navigation_started(
-    payload: BrowserNavigationStartedPayload,
-    server: State<'_, InteractiveBrowserServer>,
-) -> Result<(), String> {
-    info!(
-        "Command: browser_navigation_started called for session: {}, generation: {}",
-        payload.session_id, payload.generation
-    );
-    server.handle_navigation_started(
-        &payload.session_id,
-        &payload.token,
-        payload.generation,
-        payload.url,
-        payload.title,
-    )
 }
 
 /// Executes JavaScript in a browser session and returns the result directly.

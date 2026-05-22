@@ -1,18 +1,16 @@
 use serde_json::json;
-use std::time::Duration;
 use tauri_mcp_agent_lib::browser_sidecar::{
-    classify_browser_page, serialize_browser_result_value, PageClassification,
+    browser_runtime_profile_dir, browser_runtime_profile_root, classify_browser_page,
+    serialize_browser_result_value, PageClassification,
 };
 use tauri_mcp_agent_lib::services::interactive_browser_server::{
-    BrowserSession, InteractiveBrowserServer, NavigationUpdateOutcome, SessionStatus,
+    BrowserSession, NavigationUpdateOutcome, SessionStatus,
 };
 
 #[test]
 fn browser_session_runtime_ready_tracks_generation_match() {
     let ready_session = BrowserSession {
         id: "session-1".to_string(),
-        ipc_token: "token".to_string(),
-        window_label: "browser-session-1".to_string(),
         url: "about:blank".to_string(),
         current_title: Some("Ready".to_string()),
         created_at: chrono::Utc::now(),
@@ -34,8 +32,6 @@ fn browser_session_runtime_ready_tracks_generation_match() {
 fn browser_session_ignores_stale_navigation_updates() {
     let mut session = BrowserSession {
         id: "session-1".to_string(),
-        ipc_token: "token".to_string(),
-        window_label: "browser-session-1".to_string(),
         url: "https://example.com/start".to_string(),
         current_title: Some("Start".to_string()),
         created_at: chrono::Utc::now(),
@@ -77,8 +73,6 @@ fn browser_session_ignores_stale_navigation_updates() {
 fn browser_session_finalizes_current_generation_once() {
     let mut session = BrowserSession {
         id: "session-1".to_string(),
-        ipc_token: "token".to_string(),
-        window_label: "browser-session-1".to_string(),
         url: "https://example.com/start".to_string(),
         current_title: Some("Start".to_string()),
         created_at: chrono::Utc::now(),
@@ -112,8 +106,6 @@ fn browser_session_finalizes_current_generation_once() {
 fn browser_session_rejects_future_navigation_updates() {
     let mut session = BrowserSession {
         id: "session-1".to_string(),
-        ipc_token: "token".to_string(),
-        window_label: "browser-session-1".to_string(),
         url: "https://example.com/start".to_string(),
         current_title: Some("Start".to_string()),
         created_at: chrono::Utc::now(),
@@ -155,38 +147,6 @@ fn browser_result_serialization_matches_legacy_string_contract() {
 }
 
 #[test]
-fn legacy_browser_ipc_handlers_fail_closed_for_sidecar_sessions() {
-    let server = InteractiveBrowserServer::new(Duration::from_millis(50));
-
-    let runtime_ready = server.handle_runtime_ready(
-        "session-1",
-        "token",
-        1,
-        "https://example.com".to_string(),
-        "Example".to_string(),
-    );
-    let navigation_started = server.handle_navigation_started(
-        "session-1",
-        "token",
-        2,
-        "https://example.com/next".to_string(),
-        "Next".to_string(),
-    );
-    let page_loaded = server.handle_page_loaded("session-1");
-    let script_result = server.handle_script_result(
-        "session-1",
-        "token",
-        "request-1".to_string(),
-        "ok".to_string(),
-    );
-
-    assert!(runtime_ready.is_err());
-    assert!(navigation_started.is_err());
-    assert!(page_loaded.is_err());
-    assert!(script_result.is_err());
-}
-
-#[test]
 fn classify_browser_page_detects_google_sorry_interstitials() {
     let classification = classify_browser_page(
         "https://www.google.com/sorry/index?continue=https://example.com",
@@ -206,4 +166,18 @@ fn classify_browser_page_leaves_normal_pages_alone() {
     );
 
     assert_eq!(classification, PageClassification::Normal);
+}
+
+#[test]
+fn browser_runtime_profile_dirs_are_unique_and_not_the_chromiumoxide_default() {
+    let first = browser_runtime_profile_dir(uuid::Uuid::new_v4());
+    let second = browser_runtime_profile_dir(uuid::Uuid::new_v4());
+    let chromiumoxide_default = std::env::temp_dir().join("chromiumoxide-runner");
+    let profile_root = browser_runtime_profile_root();
+
+    assert_ne!(first, second);
+    assert_ne!(first, chromiumoxide_default);
+    assert_ne!(second, chromiumoxide_default);
+    assert!(first.starts_with(&profile_root));
+    assert!(second.starts_with(&profile_root));
 }

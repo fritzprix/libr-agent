@@ -36,6 +36,10 @@ impl InteractiveBrowserServer {
         }
     }
 
+    pub fn action_timeout(&self) -> Duration {
+        self.client.request_timeout()
+    }
+
     pub async fn create_browser_session(
         &self,
         url: &str,
@@ -48,11 +52,8 @@ impl InteractiveBrowserServer {
 
         let validated_url = validate_and_normalize_url(url)?;
         let session_id = generate_session_id();
-        let window_label = format!("browser-{session_id}");
         let session = BrowserSession {
             id: session_id.clone(),
-            ipc_token: String::new(),
-            window_label,
             url: validated_url.clone(),
             current_title: None,
             created_at: Utc::now(),
@@ -108,11 +109,20 @@ impl InteractiveBrowserServer {
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
         debug!("Executing browser script in session {session_id}: {script}");
         let session = self.get_session(session_id)?;
-        if !matches!(session.status, SessionStatus::Active) {
-            return Err(format!(
-                "Browser session {} is not ready for script execution",
-                session_id
-            ));
+        match &session.status {
+            SessionStatus::Active => {}
+            SessionStatus::Error(message) => {
+                return Err(format!(
+                    "Browser session {} is in an error state: {}. Close the session or create a new one.",
+                    session_id, message
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "Browser session {} is not ready for script execution",
+                    session_id
+                ));
+            }
         }
 
         self.client.evaluate(session_id, script).await
@@ -148,9 +158,20 @@ impl InteractiveBrowserServer {
 
     pub async fn close_session(&self, session_id: &str) -> Result<String, String> {
         info!("Closing browser session: {session_id}");
-        let session = self.get_session(session_id)?;
+        self.get_session(session_id)?;
 
-        self.client.close_session(session_id).await?;
+        let close_result = self.client.close_session(session_id).await;
+        let recovered = match close_result {
+            Ok(()) => false,
+            Err(error) if is_recoverable_sidecar_failure(&error) => {
+                warn!(
+                    "Recovering browser session {} after sidecar failure during close: {}",
+                    session_id, error
+                );
+                true
+            }
+            Err(error) => return Err(error),
+        };
 
         {
             let mut sessions = self
@@ -160,11 +181,16 @@ impl InteractiveBrowserServer {
             sessions.remove(session_id);
         }
 
+        let message = if recovered {
+            "Session closed after recovering from a browser sidecar failure".to_string()
+        } else {
+            "Session closed successfully".to_string()
+        };
         info!(
-            "Browser automation session closed successfully: {} ({})",
-            session_id, session.window_label
+            "Browser automation session closed successfully: {}",
+            session_id
         );
-        Ok("Session closed successfully".to_string())
+        Ok(message)
     }
 
     pub async fn close_all_sessions(&self) -> Result<(), String> {
@@ -213,49 +239,6 @@ impl InteractiveBrowserServer {
         Ok(message)
     }
 
-    pub fn handle_page_loaded(&self, session_id: &str) -> Result<(), String> {
-        Err(format!(
-            "Legacy browser_page_loaded event is disabled for sidecar-backed session {}",
-            session_id
-        ))
-    }
-
-    pub fn handle_runtime_ready(
-        &self,
-        session_id: &str,
-        _token: &str,
-        generation: u64,
-        url: String,
-        title: String,
-    ) -> Result<(), String> {
-        debug!(
-            "Rejecting legacy browser_runtime_ready event for sidecar session {} generation {} (url: {}, title: {})",
-            session_id, generation, url, title
-        );
-        Err(format!(
-            "Legacy browser_runtime_ready event is disabled for sidecar-backed session {}",
-            session_id
-        ))
-    }
-
-    pub fn handle_navigation_started(
-        &self,
-        session_id: &str,
-        _token: &str,
-        generation: u64,
-        url: String,
-        title: String,
-    ) -> Result<(), String> {
-        debug!(
-            "Rejecting legacy browser_navigation_started event for sidecar session {} generation {} (url: {}, title: {})",
-            session_id, generation, url, title
-        );
-        Err(format!(
-            "Legacy browser_navigation_started event is disabled for sidecar-backed session {}",
-            session_id
-        ))
-    }
-
     pub async fn navigate_back(&self, session_id: &str) -> Result<String, String> {
         let next_generation = self.begin_navigation(session_id, None)?;
         let state = match self.client.go_back(session_id).await {
@@ -288,19 +271,6 @@ impl InteractiveBrowserServer {
         };
         self.finish_navigation(session_id, next_generation, &state.url, state.title.clone())?;
         Ok(Self::describe_history_navigation("forward", state))
-    }
-
-    pub fn handle_script_result(
-        &self,
-        session_id: &str,
-        _token: &str,
-        _request_id: String,
-        _result: String,
-    ) -> Result<(), String> {
-        Err(format!(
-            "Legacy browser_script_result event is disabled for sidecar-backed session {}",
-            session_id
-        ))
     }
 
     fn describe_history_navigation(
@@ -417,6 +387,18 @@ impl InteractiveBrowserServer {
         }
         Ok(())
     }
+}
+
+fn is_recoverable_sidecar_failure(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("browser sidecar was reset")
+        || lower.contains("browser sidecar is not running")
+        || lower.contains("browser sidecar did not respond within")
+        || lower.contains("browser sidecar response channel closed unexpectedly")
+        || lower.contains("browser sidecar exited unexpectedly")
+        || lower.contains("browser sidecar closed its stdout")
+        || lower.contains("failed reading browser sidecar stdout")
+        || lower.contains("browser session not found")
 }
 
 fn resolve_target_url(url: &str, current_url: &str) -> Result<String, String> {

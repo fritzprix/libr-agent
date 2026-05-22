@@ -1,3 +1,4 @@
+use crate::browser_sidecar::BrowserAutomationClient;
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, ErrorGuidance, SuccessHint,
@@ -11,6 +12,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio::task;
+use uuid::Uuid;
 
 /// Smart routing: if `page` arg is provided, reads from cache; otherwise extracts fresh content.
 pub async fn smart_content(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
@@ -556,16 +558,24 @@ pub async fn fetch_url(
         .to_mcp_result());
     }
 
-    // HTML fallback: use InteractiveBrowserServer headless
+    // HTML fallback: use a temporary headless sidecar so fetch does not conflict
+    // with an already-running visible interactive browser runtime.
     let service = server.get_browser_service()?;
+    let action_timeout = service.action_timeout();
+    let fetch_client = BrowserAutomationClient::new(action_timeout);
+    let fetch_session_id = format!("fetch-{}", Uuid::new_v4().simple());
 
-    let session_id_result = service
-        .create_browser_session(&url, Some("Fetch Tool Session"), false)
+    let session_id_result = fetch_client
+        .create_session(&fetch_session_id, &url, Some("Fetch Tool Session"), false)
         .await;
 
-    let (session_id, status_msg) = match session_id_result {
-        Ok(res) => res,
+    let status_msg = match session_id_result {
+        Ok(state) => format!(
+            "Session created for {} - active session ready for content extraction",
+            state.url
+        ),
         Err(e) => {
+            fetch_client.shutdown().await;
             return Ok(handle_browser_op_error(
                 "Fetch URL",
                 e,
@@ -576,7 +586,8 @@ pub async fn fetch_url(
 
     // Check if error like 403 or network failure
     if status_msg.contains("Network Error") || status_msg.contains("Failed") {
-        let _ = service.close_session(&session_id).await;
+        let _ = fetch_client.close_session(&fetch_session_id).await;
+        fetch_client.shutdown().await;
         return Ok(handle_browser_op_error(
             "Fetch URL",
             status_msg,
@@ -585,21 +596,29 @@ pub async fn fetch_url(
     }
 
     // Extract HTML
-    let raw_html = match extract_html_from_page(&service, &session_id).await {
+    let raw_html = match fetch_client
+        .evaluate(
+            &fetch_session_id,
+            "document.body ? document.body.outerHTML : \"\"",
+        )
+        .await
+    {
         Ok(html) => html,
         Err(e) => {
-            let _ = service.close_session(&session_id).await;
+            let _ = fetch_client.close_session(&fetch_session_id).await;
+            fetch_client.shutdown().await;
             return Ok(handle_browser_op_error("Extract HTML", e, vec![]));
         }
     };
 
-    let page_title = service
-        .execute_script(&session_id, "document.title")
+    let page_title = fetch_client
+        .evaluate(&fetch_session_id, "document.title")
         .await
         .unwrap_or_default();
 
     // Close the session immediately
-    let _ = service.close_session(&session_id).await;
+    let _ = fetch_client.close_session(&fetch_session_id).await;
+    fetch_client.shutdown().await;
 
     // Convert to markdown off-thread
     let raw_html_clone = raw_html.clone();

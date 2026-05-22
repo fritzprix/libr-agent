@@ -3,6 +3,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::types::{ContextVolatility, MCPResult};
 use crate::mcp::MCPTool;
 use crate::services::InteractiveBrowserServer;
+use crate::services::SessionStatus;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
@@ -159,32 +160,6 @@ impl BuiltinMCPServer for BrowserServer {
             }
         };
 
-        // Check cache first (5 second TTL)
-        const CACHE_TTL_SECS: u64 = 5;
-        if let Ok(cache_guard) = self.state_cache.read() {
-            if let Some((cached_url, cached_title, last_update)) = cache_guard.as_ref() {
-                let elapsed = last_update.elapsed();
-                if elapsed.as_secs() < CACHE_TTL_SECS {
-                    // Use cached data with full session_id
-                    let context_prompt = format!(
-                        "## Browser\n\n### Live State\n- Session: {}\n- URL: {}\n- Title: {}",
-                        session_id, cached_url, cached_title
-                    );
-
-                    return crate::mcp::types::ServiceContext::new(context_prompt)
-                        .with_structured_state(json!({
-                            "active": true,
-                            "session_id": session_id,
-                            "url": cached_url,
-                            "title": cached_title,
-                            "cached": true
-                        }))
-                        .with_volatility(ContextVolatility::Volatile);
-                }
-            }
-        }
-
-        // Cache miss or expired - fetch fresh data via JS injection
         let service = match self.get_browser_service() {
             Ok(s) => s,
             Err(_) => {
@@ -213,18 +188,61 @@ impl BuiltinMCPServer for BrowserServer {
             }
         };
 
-        let url = session.url.clone();
-        let title = session.current_title.clone().unwrap_or_else(|| {
-            if session.is_runtime_ready() {
-                "Untitled page".to_string()
-            } else {
-                "Loading...".to_string()
+        // Check cache first (5 second TTL), but only for sessions that are still healthy.
+        const CACHE_TTL_SECS: u64 = 5;
+        if matches!(session.status, SessionStatus::Active) {
+            if let Ok(cache_guard) = self.state_cache.read() {
+                if let Some((cached_url, cached_title, last_update)) = cache_guard.as_ref() {
+                    let elapsed = last_update.elapsed();
+                    if elapsed.as_secs() < CACHE_TTL_SECS {
+                        let context_prompt = format!(
+                            "## Browser\n\n### Live State\n- Session: {}\n- Runtime: ready\n- URL: {}\n- Title: {}",
+                            session_id, cached_url, cached_title
+                        );
+
+                        return crate::mcp::types::ServiceContext::new(context_prompt)
+                            .with_structured_state(json!({
+                                "active": true,
+                                "session_id": session_id,
+                                "url": cached_url,
+                                "title": cached_title,
+                                "runtime_state": "ready",
+                                "runtime_ready": true,
+                                "error": Value::Null,
+                                "cached": true
+                            }))
+                            .with_volatility(ContextVolatility::Volatile);
+                    }
+                }
             }
-        });
-        let runtime_state = if session.is_runtime_ready() {
-            "ready"
-        } else {
-            "loading"
+        }
+
+        let url = session.url.clone();
+        let (runtime_state, title, error_message) = match &session.status {
+            SessionStatus::Active => (
+                "ready",
+                session
+                    .current_title
+                    .clone()
+                    .unwrap_or_else(|| "Untitled page".to_string()),
+                None,
+            ),
+            SessionStatus::Error(message) => (
+                "error",
+                session
+                    .current_title
+                    .clone()
+                    .unwrap_or_else(|| "Browser session error".to_string()),
+                Some(message.clone()),
+            ),
+            _ => (
+                "loading",
+                session
+                    .current_title
+                    .clone()
+                    .unwrap_or_else(|| "Loading...".to_string()),
+                None,
+            ),
         };
 
         // Update cache with fresh data
@@ -233,9 +251,13 @@ impl BuiltinMCPServer for BrowserServer {
         }
 
         // Use full session_id so AI can call browser tools with correct ID
+        let error_line = error_message
+            .as_ref()
+            .map(|message| format!("\n- Error: {}", message))
+            .unwrap_or_default();
         let context_prompt = format!(
-            "## Browser\n\n### Live State\n- Session: {}\n- Runtime: {}\n- URL: {}\n- Title: {}",
-            session_id, runtime_state, url, title
+            "## Browser\n\n### Live State\n- Session: {}\n- Runtime: {}\n- URL: {}\n- Title: {}{}",
+            session_id, runtime_state, url, title, error_line
         );
 
         crate::mcp::types::ServiceContext::new(context_prompt)
@@ -244,7 +266,9 @@ impl BuiltinMCPServer for BrowserServer {
                 "session_id": session_id,
                 "url": url,
                 "title": title,
+                "runtime_state": runtime_state,
                 "runtime_ready": session.is_runtime_ready(),
+                "error": error_message,
                 "cached": false
             }))
             .with_volatility(ContextVolatility::Volatile)

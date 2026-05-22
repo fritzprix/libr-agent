@@ -6,11 +6,6 @@ use serde::{Deserialize, Serialize};
 pub struct BrowserSession {
     /// A unique identifier for the session.
     pub id: String,
-    /// High-entropy token required for webview-to-Rust IPC messages for this session.
-    #[serde(skip_serializing, skip_deserializing)]
-    pub ipc_token: String,
-    /// The label used by Tauri to identify the window.
-    pub window_label: String,
     /// The current URL of the browser session.
     pub url: String,
     /// The last known page title reported by the browser runtime.

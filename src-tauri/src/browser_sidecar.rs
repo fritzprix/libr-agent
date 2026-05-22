@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,6 +16,7 @@ use log::{debug, warn};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot, Mutex, Notify};
@@ -27,6 +28,10 @@ const SESSION_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const BROWSER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 const HISTORY_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(4);
 const HISTORY_NAVIGATION_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+fn emit_sidecar_diagnostic(message: impl AsRef<str>) {
+    eprintln!("{}", message.as_ref());
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -97,13 +102,14 @@ struct EvaluateParams {
 
 struct SidecarProcess {
     child: Arc<Mutex<Child>>,
-    stdin: Arc<Mutex<ChildStdin>>,
+    stdin: Arc<Mutex<Option<ChildStdin>>>,
 }
 
 struct BrowserAutomationClientState {
     process: Mutex<Option<SidecarProcess>>,
     pending: dashmap::DashMap<String, oneshot::Sender<Result<Value, String>>>,
     request_timeout: Duration,
+    reset_guard: Mutex<()>,
 }
 
 #[derive(Clone)]
@@ -118,6 +124,7 @@ impl BrowserAutomationClient {
                 process: Mutex::new(None),
                 pending: dashmap::DashMap::new(),
                 request_timeout,
+                reset_guard: Mutex::new(()),
             }),
         }
     }
@@ -204,6 +211,47 @@ impl BrowserAutomationClient {
         .await
     }
 
+    pub fn request_timeout(&self) -> Duration {
+        self.state.request_timeout
+    }
+
+    pub async fn shutdown(&self) {
+        let process = {
+            let mut process_guard = self.state.process.lock().await;
+            process_guard.take()
+        };
+
+        if let Some(process) = process {
+            fail_all_pending_with_exclusions(
+                &self.state,
+                "Browser automation client shut down".to_string(),
+                HashSet::new(),
+            );
+
+            let stdin = {
+                let mut stdin_guard = process.stdin.lock().await;
+                stdin_guard.take()
+            };
+            drop(stdin);
+
+            let mut child = process.child.lock().await;
+            match tokio::time::timeout(self.state.request_timeout, child.wait()).await {
+                Ok(Ok(_)) => debug!("Browser sidecar exited gracefully during shutdown"),
+                Ok(Err(error)) => warn!("Failed waiting for browser sidecar shutdown: {error}"),
+                Err(_) => {
+                    warn!(
+                        "Browser sidecar did not exit gracefully during shutdown within {:?}; forcing kill",
+                        self.state.request_timeout
+                    );
+                    if let Err(error) = child.kill().await {
+                        warn!("Failed to kill browser sidecar during shutdown: {error}");
+                    }
+                    let _ = child.wait().await;
+                }
+            }
+        }
+    }
+
     async fn request<T: DeserializeOwned>(
         &self,
         method: &str,
@@ -236,20 +284,35 @@ impl BrowserAutomationClient {
 
         {
             let mut stdin_guard = stdin.lock().await;
-            if let Err(error) = stdin_guard.write_all(line.as_bytes()).await {
+            let stdin = stdin_guard
+                .as_mut()
+                .ok_or_else(|| "Browser sidecar stdin is closed".to_string())?;
+            if let Err(error) = stdin.write_all(line.as_bytes()).await {
                 self.state.pending.remove(&request_id);
+                self.reset_process(format!(
+                    "Browser sidecar stdin write failed for {method}: {error}"
+                ))
+                .await;
                 return Err(format!(
                     "Failed to write request to browser sidecar: {error}"
                 ));
             }
-            if let Err(error) = stdin_guard.write_all(b"\n").await {
+            if let Err(error) = stdin.write_all(b"\n").await {
                 self.state.pending.remove(&request_id);
+                self.reset_process(format!(
+                    "Browser sidecar request framing failed for {method}: {error}"
+                ))
+                .await;
                 return Err(format!(
                     "Failed to frame request to browser sidecar: {error}"
                 ));
             }
-            if let Err(error) = stdin_guard.flush().await {
+            if let Err(error) = stdin.flush().await {
                 self.state.pending.remove(&request_id);
+                self.reset_process(format!(
+                    "Browser sidecar flush failed for {method}: {error}"
+                ))
+                .await;
                 return Err(format!("Failed to flush browser sidecar request: {error}"));
             }
         }
@@ -258,10 +321,16 @@ impl BrowserAutomationClient {
             Ok(Ok(result)) => result?,
             Ok(Err(_)) => {
                 self.state.pending.remove(&request_id);
+                self.reset_process(format!(
+                    "Browser sidecar response channel closed while waiting for {method}"
+                ))
+                .await;
                 return Err("Browser sidecar response channel closed unexpectedly".to_string());
             }
             Err(_) => {
                 self.state.pending.remove(&request_id);
+                self.reset_process(format!("Browser sidecar timed out while handling {method}"))
+                    .await;
                 return Err(format!(
                     "Browser sidecar did not respond within {}ms",
                     self.state.request_timeout.as_millis()
@@ -273,6 +342,29 @@ impl BrowserAutomationClient {
             .map_err(|e| format!("Failed to decode browser sidecar response: {e}"))
     }
 
+    async fn reset_process(&self, reason: String) {
+        let _reset_guard = self.state.reset_guard.lock().await;
+        let process = {
+            let mut process_guard = self.state.process.lock().await;
+            process_guard.take()
+        };
+
+        if let Some(process) = process {
+            warn!("Resetting browser sidecar process: {reason}");
+            fail_all_pending_with_exclusions(
+                &self.state,
+                format!("Browser sidecar was reset: {reason}"),
+                HashSet::new(),
+            );
+
+            let mut child = process.child.lock().await;
+            if let Err(error) = child.kill().await {
+                warn!("Failed to kill browser sidecar during reset: {error}");
+            }
+            let _ = child.wait().await;
+        }
+    }
+
     async fn ensure_started(&self) -> Result<(), String> {
         let mut process_guard = self.state.process.lock().await;
         if process_guard.is_some() {
@@ -282,6 +374,10 @@ impl BrowserAutomationClient {
         let current_exe = std::env::current_exe().map_err(|e| {
             format!("Failed to resolve current executable for browser sidecar: {e}")
         })?;
+        debug!(
+            "Spawning browser sidecar process from executable {}",
+            current_exe.display()
+        );
         let mut command = Command::new(current_exe);
         command
             .arg(BROWSER_SIDECAR_FLAG)
@@ -308,7 +404,7 @@ impl BrowserAutomationClient {
             .ok_or_else(|| "Browser sidecar stderr unavailable".to_string())?;
 
         let child = Arc::new(Mutex::new(child));
-        let stdin = Arc::new(Mutex::new(stdin));
+        let stdin = Arc::new(Mutex::new(Some(stdin)));
 
         spawn_sidecar_stdout_task(self.state.clone(), stdout);
         spawn_sidecar_stderr_task(stderr);
@@ -342,15 +438,20 @@ fn spawn_sidecar_stdout_task(
                     }
                 },
                 Ok(None) => {
-                    fail_all_pending(&state, "Browser sidecar closed its stdout".to_string());
+                    fail_all_pending_with_exclusions(
+                        &state,
+                        "Browser sidecar closed its stdout".to_string(),
+                        HashSet::new(),
+                    );
                     let mut process_guard = state.process.lock().await;
                     *process_guard = None;
                     break;
                 }
                 Err(error) => {
-                    fail_all_pending(
+                    fail_all_pending_with_exclusions(
                         &state,
                         format!("Failed reading browser sidecar stdout: {error}"),
+                        HashSet::new(),
                     );
                     let mut process_guard = state.process.lock().await;
                     *process_guard = None;
@@ -375,16 +476,18 @@ fn spawn_sidecar_exit_task(state: Arc<BrowserAutomationClientState>, child: Arc<
         let wait_result = child.lock().await.wait().await;
         match wait_result {
             Ok(status) => {
-                debug!("Browser sidecar exited with status: {status}");
-                fail_all_pending(
+                warn!("Browser sidecar exited with status: {status}");
+                fail_all_pending_with_exclusions(
                     &state,
                     format!("Browser sidecar exited unexpectedly: {status}"),
+                    HashSet::new(),
                 );
             }
             Err(error) => {
-                fail_all_pending(
+                fail_all_pending_with_exclusions(
                     &state,
                     format!("Failed waiting for browser sidecar exit: {error}"),
+                    HashSet::new(),
                 );
             }
         }
@@ -393,13 +496,20 @@ fn spawn_sidecar_exit_task(state: Arc<BrowserAutomationClientState>, child: Arc<
     });
 }
 
-fn fail_all_pending(state: &BrowserAutomationClientState, error: String) {
+fn fail_all_pending_with_exclusions(
+    state: &BrowserAutomationClientState,
+    error: String,
+    excluded_request_ids: HashSet<String>,
+) {
     let pending_ids: Vec<String> = state
         .pending
         .iter()
         .map(|entry| entry.key().clone())
         .collect();
     for pending_id in pending_ids {
+        if excluded_request_ids.contains(&pending_id) {
+            continue;
+        }
         if let Some((_, sender)) = state.pending.remove(&pending_id) {
             let _ = sender.send(Err(error.clone()));
         }
@@ -424,6 +534,7 @@ struct SharedBrowserRuntime {
     browser: Arc<Mutex<Browser>>,
     handler_abort: AbortHandle,
     headed: bool,
+    user_data_dir: PathBuf,
 }
 
 #[derive(Clone)]
@@ -865,22 +976,47 @@ impl BrowserSidecarServer {
             }
 
             runtime.handler_abort.abort();
+            cleanup_browser_runtime_profile_dir(&runtime.user_data_dir).await;
         }
     }
 }
 
 async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
     let executable = resolve_browser_executable().await?;
-    let mut builder = BrowserConfig::builder().chrome_executable(executable);
+    let user_data_dir = create_browser_runtime_profile_dir().await?;
+    emit_sidecar_diagnostic(format!(
+        "Launching Chromium automation runtime in {} mode with executable: {} (profile: {})",
+        if visible { "visible" } else { "headless" },
+        executable.display(),
+        user_data_dir.display()
+    ));
+    let mut builder = BrowserConfig::builder()
+        .chrome_executable(executable)
+        .user_data_dir(&user_data_dir);
     if visible {
         builder = builder.with_head();
     }
-    let config = builder
-        .build()
-        .map_err(|e| format!("Failed to build browser config: {e}"))?;
-    let (browser, mut handler) = Browser::launch(config)
-        .await
-        .map_err(|e| format!("Failed to launch Chromium automation session: {e}"))?;
+    let config = match builder.build() {
+        Ok(config) => config,
+        Err(error) => {
+            cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+            return Err(format!("Failed to build browser config: {error}"));
+        }
+    };
+    let (browser, mut handler) = match Browser::launch(config).await {
+        Ok(browser) => browser,
+        Err(error) => {
+            emit_sidecar_diagnostic(format!(
+                "Chromium automation launch failed in {} mode: {}",
+                if visible { "visible" } else { "headless" },
+                error
+            ));
+            cleanup_browser_runtime_profile_dir(&user_data_dir).await;
+            return Err(format!(
+                "Failed to launch Chromium automation session: {error}"
+            ));
+        }
+    };
     let handler_task = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(error) = event {
@@ -894,6 +1030,7 @@ async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
         browser: Arc::new(Mutex::new(browser)),
         handler_abort: handler_task.abort_handle(),
         headed: visible,
+        user_data_dir,
     })
 }
 
@@ -1053,7 +1190,6 @@ async fn perform_history_navigation(
 fn navigation_snapshot_changed(before: &NavigationSnapshot, after: &NavigationSnapshot) -> bool {
     before.url != after.url
         || before.title != after.title
-        || before.ready_state != after.ready_state
         || before.history_length != after.history_length
         || before.history_state != after.history_state
 }
@@ -1128,22 +1264,43 @@ async fn resolve_browser_executable() -> Result<PathBuf, String> {
     if let Ok(path) = std::env::var("LIBRAGENT_BROWSER_EXECUTABLE") {
         let path = PathBuf::from(path);
         if path.exists() {
+            emit_sidecar_diagnostic(format!(
+                "Using browser executable from LIBRAGENT_BROWSER_EXECUTABLE: {}",
+                path.display()
+            ));
             return Ok(path);
         }
+        emit_sidecar_diagnostic(format!(
+            "LIBRAGENT_BROWSER_EXECUTABLE points to a missing path: {}",
+            path.display()
+        ));
         return Err(format!(
             "LIBRAGENT_BROWSER_EXECUTABLE points to a missing browser executable: {}",
             path.display()
         ));
     }
 
-    if let Ok(path) = default_executable(DetectionOptions::default()) {
-        return Ok(path);
+    match default_executable(DetectionOptions::default()) {
+        Ok(path) => {
+            emit_sidecar_diagnostic(format!(
+                "Resolved system browser executable: {}",
+                path.display()
+            ));
+            return Ok(path);
+        }
+        Err(error) => {
+            emit_sidecar_diagnostic(format!(
+                "System browser executable auto-detection failed; falling back to bundled Chromium download: {}",
+                error
+            ));
+        }
     }
 
-    let base_dir = dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("com.fritzprix.libragent")
-        .join("browser-runtime");
+    let base_dir = browser_runtime_cache_root();
+    emit_sidecar_diagnostic(format!(
+        "Preparing bundled Chromium runtime cache directory: {}",
+        base_dir.display()
+    ));
     tokio::fs::create_dir_all(&base_dir)
         .await
         .map_err(|e| format!("Failed to create browser runtime cache directory: {e}"))?;
@@ -1154,11 +1311,66 @@ async fn resolve_browser_executable() -> Result<PathBuf, String> {
             .build()
             .map_err(|e| format!("Failed to configure Chromium fetcher: {e}"))?,
     );
+    emit_sidecar_diagnostic(format!(
+        "Downloading or locating bundled Chromium runtime in: {}",
+        base_dir.display()
+    ));
     let info = fetcher
         .fetch()
         .await
         .map_err(|e| format!("Failed to download bundled Chromium runtime: {e}"))?;
+    emit_sidecar_diagnostic(format!(
+        "Using bundled Chromium runtime executable: {}",
+        info.executable_path.display()
+    ));
     Ok(info.executable_path)
+}
+
+pub fn browser_runtime_cache_root() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("com.fritzprix.libragent")
+        .join("browser-runtime")
+}
+
+pub fn browser_runtime_profile_root() -> PathBuf {
+    browser_runtime_cache_root().join("profiles")
+}
+
+pub fn browser_runtime_profile_dir(runtime_id: Uuid) -> PathBuf {
+    browser_runtime_profile_root().join(runtime_id.to_string())
+}
+
+async fn create_browser_runtime_profile_dir() -> Result<PathBuf, String> {
+    let user_data_dir = browser_runtime_profile_dir(Uuid::new_v4());
+    tokio::fs::create_dir_all(&user_data_dir)
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to create browser runtime profile directory '{}': {error}",
+                user_data_dir.display()
+            )
+        })?;
+    emit_sidecar_diagnostic(format!(
+        "Using isolated browser runtime profile directory: {}",
+        user_data_dir.display()
+    ));
+    Ok(user_data_dir)
+}
+
+async fn cleanup_browser_runtime_profile_dir(user_data_dir: &Path) {
+    match tokio::fs::remove_dir_all(user_data_dir).await {
+        Ok(()) => debug!(
+            "Cleaned up browser runtime profile directory: {}",
+            user_data_dir.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => warn!(
+            "Failed to clean up browser runtime profile directory {}: {}",
+            user_data_dir.display(),
+            error
+        ),
+    }
 }
 
 async fn cleanup_failed_context_launch(browser: Arc<Mutex<Browser>>, context_id: BrowserContextId) {
