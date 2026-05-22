@@ -6,6 +6,7 @@ use super::helpers::*;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 pub(super) struct SearchContentRequest<'a> {
@@ -23,6 +24,73 @@ pub(super) struct SearchDirectoryRequest<'a> {
     pub dir: &'a Path,
     pub file_pattern: Option<&'a glob::Pattern>,
     pub search: SearchContentRequest<'a>,
+}
+
+struct LineInfo {
+    start: usize,
+}
+
+fn collect_line_infos(content: &str) -> Vec<LineInfo> {
+    let mut line_infos = Vec::new();
+    let mut cursor = 0usize;
+
+    for line in content.lines() {
+        line_infos.push(LineInfo { start: cursor });
+
+        cursor += line.len();
+        let remainder = &content[cursor..];
+        if remainder.starts_with("\r\n") {
+            cursor += 2;
+        } else if remainder.starts_with('\n') || remainder.starts_with('\r') {
+            cursor += 1;
+        }
+    }
+
+    line_infos
+}
+
+fn line_index_for_offset(line_infos: &[LineInfo], offset: usize) -> Option<usize> {
+    if line_infos.is_empty() {
+        return None;
+    }
+
+    match line_infos.binary_search_by_key(&offset, |line| line.start) {
+        Ok(index) => Some(index),
+        Err(0) => Some(0),
+        Err(index) => Some(index - 1),
+    }
+}
+
+fn collect_matched_line_indices(content: &str, regex: &regex::Regex) -> BTreeSet<usize> {
+    let line_infos = collect_line_infos(content);
+    let mut matched_lines = BTreeSet::new();
+
+    if line_infos.is_empty() {
+        return matched_lines;
+    }
+
+    for matched in regex.find_iter(content) {
+        let start_line = match line_index_for_offset(&line_infos, matched.start()) {
+            Some(index) => index,
+            None => continue,
+        };
+
+        let end_offset = if matched.start() == matched.end() {
+            matched.start()
+        } else {
+            matched.end().saturating_sub(1)
+        };
+        let end_line = match line_index_for_offset(&line_infos, end_offset) {
+            Some(index) => index,
+            None => continue,
+        };
+
+        for line_index in start_line..=end_line {
+            matched_lines.insert(line_index);
+        }
+    }
+
+    matched_lines
 }
 
 pub(super) async fn search_content_in_file(
@@ -94,10 +162,11 @@ pub(super) async fn search_content_in_file(
         }
     };
 
+    let matched_lines = collect_matched_line_indices(&content, regex);
     let mut matches = Vec::new();
     let mut prefix_state = initial_prefix_hash_state();
     for (idx, line) in content.lines().enumerate() {
-        if regex.is_match(line) {
+        if matched_lines.contains(&idx) {
             if show_hashes {
                 let anchor = compute_anchor(line, &mut prefix_state);
                 matches.push(json!({
@@ -332,10 +401,11 @@ pub(super) async fn search_content_in_dir(
             p
         };
 
+        let matched_lines = collect_matched_line_indices(&content, regex);
         let mut hits = Vec::new();
         let mut prefix_state = initial_prefix_hash_state();
         for (idx, line) in content.lines().enumerate() {
-            if regex.is_match(line) {
+            if matched_lines.contains(&idx) {
                 if show_hashes {
                     let anchor = compute_anchor(line, &mut prefix_state);
                     hits.push(json!({

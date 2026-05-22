@@ -155,6 +155,7 @@ impl WorkspaceServer {
         let query_str = query.unwrap();
         let regex = match regex::RegexBuilder::new(query_str)
             .case_insensitive(ignore_case)
+            .multi_line(true)
             .build()
         {
             Ok(r) => r,

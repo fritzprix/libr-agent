@@ -254,6 +254,123 @@ async fn search_rejects_direct_internal_artifact_file_paths() {
 }
 
 #[tokio::test]
+async fn search_single_file_supports_multiline_regex_queries() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-single-file-multiline-regex";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("notes.txt"), "alpha\n  beta\ngamma\n")
+        .expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": "notes.txt",
+                "query": "alpha\\s+beta",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Line 1: alpha"),
+        "multiline regex should report the first covered line: {text}"
+    );
+    assert!(
+        text.contains("Line 2:   beta"),
+        "multiline regex should report the second covered line: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["total_matches"], json!(2));
+}
+
+#[tokio::test]
+async fn search_directory_supports_multiline_regex_queries() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-directory-multiline-regex";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(
+        workspace_dir.join("src/main.ts"),
+        "const alpha = true;\nconst beta = true;\n",
+    )
+    .expect("write matching file");
+    std::fs::write(workspace_dir.join("src/other.ts"), "const nope = true;\n")
+        .expect("write non-matching file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "alpha\\s*=\\s*true;\\s+const beta",
+                "filePattern": "*.ts",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("src/main.ts"),
+        "directory search should report the file containing the multiline match: {text}"
+    );
+    assert!(
+        text.contains("- L1: `const alpha = true;`"),
+        "directory search should include the first covered line: {text}"
+    );
+    assert!(
+        text.contains("- L2: `const beta = true;`"),
+        "directory search should include the second covered line: {text}"
+    );
+    assert!(
+        !text.contains("src/other.ts"),
+        "non-matching files should stay excluded: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_multiline_mode_keeps_line_anchored_regex_working() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-multiline-mode-line-anchors";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("notes.txt"), "first\nsecond\nthird\n")
+        .expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": "notes.txt",
+                "query": "^second$",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Line 2: second"),
+        "^ and $ should still work as line anchors after multiline regex support: {text}"
+    );
+    assert!(
+        !text.contains("Line 1: first") && !text.contains("Line 3: third"),
+        "line-anchored regex should not overmatch: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_respects_gitignore_rules_during_recursive_content_search() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-gitignore";

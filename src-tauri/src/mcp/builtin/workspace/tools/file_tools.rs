@@ -205,7 +205,7 @@ pub fn create_search_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Regular expression pattern to search for text inside files. If omitted, only searches for file names."),
+            Some("Regular expression pattern to search for text inside files. Matched against full file content with multiline mode enabled, so ^ and $ match line boundaries. '.' does not match newlines unless you opt into that in the regex itself (for example with (?s)). If omitted, only searches for file names."),
         ),
     );
     props.insert(
@@ -230,7 +230,7 @@ pub fn create_search_tool() -> MCPTool {
     MCPTool {
         name: "search".to_string(),
         title: Some("Search Workspace".to_string()),
-        description: "Search files by name or content. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.".to_string(),
+        description: "Search files by name or content. Content search uses regex against full file text with multiline mode enabled, while results are still reported as line-based hits. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
