@@ -557,6 +557,41 @@ async fn search_multiline_mode_keeps_line_anchored_regex_working() {
 }
 
 #[tokio::test]
+async fn search_multiline_mode_keeps_line_anchored_regex_working_on_crlf_files() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-multiline-mode-line-anchors-crlf";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(
+        workspace_dir.join("notes.txt"),
+        "first\r\nsecond\r\nthird\r\n",
+    )
+    .expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": "notes.txt",
+                "query": "^second$",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Line 2: second"),
+        "^ and $ should still work as line anchors on CRLF content: {text}"
+    );
+    assert!(
+        !text.contains("Line 1: first") && !text.contains("Line 3: third"),
+        "CRLF line-anchored regex should not overmatch: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_respects_gitignore_rules_during_recursive_content_search() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-gitignore";

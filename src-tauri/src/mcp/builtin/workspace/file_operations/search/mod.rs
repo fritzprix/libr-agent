@@ -180,6 +180,7 @@ impl WorkspaceServer {
         let regex = match regex::RegexBuilder::new(query_str)
             .case_insensitive(ignore_case)
             .multi_line(true)
+            .crlf(true)
             .build()
         {
             Ok(r) => r,
