@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -22,11 +22,13 @@ export function useKnowledgeDelete({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
 
-  useEffect(() => {
+  const [prevSelectedItem, setPrevSelectedItem] = useState(selectedItem);
+  if (selectedItem !== prevSelectedItem) {
+    setPrevSelectedItem(selectedItem);
     if (!selectedItem) {
       setIsDeleteConfirming(false);
     }
-  }, [selectedItem]);
+  }
 
   const requestDelete = useCallback(() => {
     if (!selectedItem || isDeleting) {

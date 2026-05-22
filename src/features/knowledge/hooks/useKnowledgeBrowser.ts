@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useKnowledgeDelete } from './useKnowledgeDelete';
 import { useKnowledgeDetail } from './useKnowledgeDetail';
 import { useKnowledgeList } from './useKnowledgeList';
@@ -30,6 +30,15 @@ export function useKnowledgeBrowser() {
     query,
     refreshToken: listRefreshToken,
   });
+
+  const [prevItems, setPrevItems] = useState(items);
+  if (items !== prevItems) {
+    setPrevItems(items);
+    if (selectedId !== null && !items.some((item) => item.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }
+
   const { detail, isDetailLoading } = useKnowledgeDetail(selectedId);
 
   const selectedItem = useMemo(
@@ -58,12 +67,6 @@ export function useKnowledgeBrowser() {
   const refresh = useCallback(() => {
     setListRefreshToken((current) => current + 1);
   }, []);
-
-  useEffect(() => {
-    if (selectedId !== null && !items.some((item) => item.id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [items, selectedId]);
 
   const handleDeleted = useCallback(() => {
     setSelectedId(null);
