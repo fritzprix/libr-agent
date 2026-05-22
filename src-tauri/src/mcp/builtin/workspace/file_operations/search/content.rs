@@ -427,6 +427,8 @@ pub(super) async fn search_content_in_dir(
         }
     }
 
+    file_matches.sort_by(|left, right| left.rel_path.cmp(&right.rel_path));
+
     let options_str = if ignore_case {
         "case-insensitive"
     } else {
@@ -476,13 +478,44 @@ pub(super) async fn search_content_in_dir(
     );
 
     let total_files = file_matches.len();
-    let paginated_files: Vec<_> = file_matches.into_iter().skip(offset).take(limit).collect();
-    let has_more = offset + paginated_files.len() < total_files;
+    let mut paginated_results: Vec<FileMatch> = Vec::new();
+    let mut skipped_matches = offset;
+    let mut taken_matches = 0usize;
 
-    let per_file_preview_limit = 5usize;
-    for fm in &paginated_files {
+    for file_match in &file_matches {
+        let mut paginated_hits = Vec::new();
+
+        for hit in &file_match.hits {
+            if skipped_matches > 0 {
+                skipped_matches -= 1;
+                continue;
+            }
+
+            if taken_matches == limit {
+                break;
+            }
+
+            paginated_hits.push(hit.clone());
+            taken_matches += 1;
+        }
+
+        if !paginated_hits.is_empty() {
+            paginated_results.push(FileMatch {
+                rel_path: file_match.rel_path.clone(),
+                hits: paginated_hits,
+            });
+        }
+
+        if taken_matches == limit {
+            break;
+        }
+    }
+
+    let has_more = offset + taken_matches < total_hits;
+
+    for fm in &paginated_results {
         text.push_str(&format!("### `{}`\n", fm.rel_path));
-        for hit in fm.hits.iter().take(per_file_preview_limit) {
+        for hit in &fm.hits {
             let line_num = hit.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
             let t = hit.get("text").and_then(|v| v.as_str()).unwrap_or("");
             if let Some(anchor) = hit.get("anchor").and_then(|v| v.as_str()) {
@@ -491,30 +524,28 @@ pub(super) async fn search_content_in_dir(
                 text.push_str(&format!("- L{}: `{}`\n", line_num, t.trim()));
             }
         }
-        if fm.hits.len() > per_file_preview_limit {
-            text.push_str(&format!(
-                "  ... and {} more matches in this file (showing first {} per file)\n",
-                fm.hits.len() - per_file_preview_limit,
-                per_file_preview_limit
-            ));
-        }
         text.push('\n');
     }
 
-    if has_more {
+    if taken_matches == 0 && offset > 0 {
         text.push_str(&format!(
-            "*(Showing {} to {} of {} total files with matches. Call search with offset: {} to see more)*\n",
+            "*(Offset {} is beyond {} total matches. Call search with a smaller offset.)*\n",
+            offset, total_hits
+        ));
+    } else if has_more {
+        text.push_str(&format!(
+            "*(Showing {} to {} of {} total matches. Call search with offset: {} to see more)*\n",
             offset + 1,
-            offset + paginated_files.len(),
-            total_files,
+            offset + taken_matches,
+            total_hits,
             offset + limit
         ));
     } else if offset > 0 {
         text.push_str(&format!(
-            "*(Showing {} to {} of {} total files with matches)*\n",
+            "*(Showing {} to {} of {} total matches)*\n",
             offset + 1,
-            offset + paginated_files.len(),
-            total_files
+            offset + taken_matches,
+            total_hits
         ));
     }
     if skipped_heavy_dirs > 0
@@ -571,7 +602,7 @@ pub(super) async fn search_content_in_dir(
         "skipped_binary_files": skipped_binary_files,
         "skipped_large_files": skipped_large_files,
         "max_file_size": max_size,
-        "results": paginated_files.iter().map(|fm| json!({
+        "results": paginated_results.iter().map(|fm| json!({
             "file": fm.rel_path,
             "matches": fm.hits,
         })).collect::<Vec<_>>(),

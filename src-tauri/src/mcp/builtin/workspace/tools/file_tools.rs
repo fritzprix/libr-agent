@@ -189,7 +189,7 @@ pub fn create_search_tool() -> MCPTool {
         integer_prop(
             Some(1),
             Some(1000),
-            Some("Maximum number of file entries to return (default: 50). For content search, this limits files with matches, not individual matching lines."),
+            Some("Maximum number of results to return (default: 50). For file-name search this limits matched files/directories; for content search this limits matching lines after regex expansion."),
         ),
     );
     props.insert(
@@ -230,7 +230,7 @@ pub fn create_search_tool() -> MCPTool {
     MCPTool {
         name: "search".to_string(),
         title: Some("Search Workspace".to_string()),
-        description: "Search files by name or content. Content search uses regex against full file text with multiline mode enabled, while results are still reported as line-based hits. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.".to_string(),
+        description: "Search files by name or content. Content search uses regex against full file text with multiline mode enabled, reports line-based hits, and paginates by matching lines rather than files. Relative paths resolve from the workspace; absolute paths are also allowed unless protected.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
