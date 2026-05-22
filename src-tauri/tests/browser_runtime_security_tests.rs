@@ -1,0 +1,209 @@
+use serde_json::json;
+use std::time::Duration;
+use tauri_mcp_agent_lib::browser_sidecar::{
+    classify_browser_page, serialize_browser_result_value, PageClassification,
+};
+use tauri_mcp_agent_lib::services::interactive_browser_server::{
+    BrowserSession, InteractiveBrowserServer, NavigationUpdateOutcome, SessionStatus,
+};
+
+#[test]
+fn browser_session_runtime_ready_tracks_generation_match() {
+    let ready_session = BrowserSession {
+        id: "session-1".to_string(),
+        ipc_token: "token".to_string(),
+        window_label: "browser-session-1".to_string(),
+        url: "about:blank".to_string(),
+        current_title: Some("Ready".to_string()),
+        created_at: chrono::Utc::now(),
+        status: SessionStatus::Active,
+        page_generation: 3,
+        runtime_ready_generation: Some(3),
+    };
+
+    let stale_session = BrowserSession {
+        runtime_ready_generation: Some(2),
+        ..ready_session.clone()
+    };
+
+    assert!(ready_session.is_runtime_ready());
+    assert!(!stale_session.is_runtime_ready());
+}
+
+#[test]
+fn browser_session_ignores_stale_navigation_updates() {
+    let mut session = BrowserSession {
+        id: "session-1".to_string(),
+        ipc_token: "token".to_string(),
+        window_label: "browser-session-1".to_string(),
+        url: "https://example.com/start".to_string(),
+        current_title: Some("Start".to_string()),
+        created_at: chrono::Utc::now(),
+        status: SessionStatus::Active,
+        page_generation: 1,
+        runtime_ready_generation: Some(1),
+    };
+
+    let stale_generation = session.begin_navigation(Some("https://example.com/older".to_string()));
+    let current_generation =
+        session.begin_navigation(Some("https://example.com/current".to_string()));
+
+    assert_eq!(stale_generation, 2);
+    assert_eq!(current_generation, 3);
+    assert_eq!(session.url, "https://example.com/current");
+    assert!(!session.is_runtime_ready());
+
+    assert_eq!(
+        session.finish_navigation(
+            stale_generation,
+            "https://example.com/older",
+            Some("Older".to_string()),
+        ),
+        NavigationUpdateOutcome::IgnoredStale
+    );
+    assert_eq!(session.page_generation, current_generation);
+    assert_eq!(session.url, "https://example.com/current");
+    assert!(matches!(session.status, SessionStatus::Creating));
+    assert!(!session.is_runtime_ready());
+
+    assert_eq!(
+        session.fail_navigation(stale_generation, "stale failure".to_string()),
+        NavigationUpdateOutcome::IgnoredStale
+    );
+    assert!(matches!(session.status, SessionStatus::Creating));
+}
+
+#[test]
+fn browser_session_finalizes_current_generation_once() {
+    let mut session = BrowserSession {
+        id: "session-1".to_string(),
+        ipc_token: "token".to_string(),
+        window_label: "browser-session-1".to_string(),
+        url: "https://example.com/start".to_string(),
+        current_title: Some("Start".to_string()),
+        created_at: chrono::Utc::now(),
+        status: SessionStatus::Active,
+        page_generation: 1,
+        runtime_ready_generation: Some(1),
+    };
+
+    let generation = session.begin_navigation(Some("https://example.com/next".to_string()));
+    assert_eq!(
+        session.finish_navigation(
+            generation,
+            "https://example.com/next",
+            Some("Next".to_string())
+        ),
+        NavigationUpdateOutcome::Applied
+    );
+    assert!(matches!(session.status, SessionStatus::Active));
+    assert!(session.is_runtime_ready());
+    assert_eq!(session.current_title.as_deref(), Some("Next"));
+
+    assert_eq!(
+        session.fail_navigation(generation, "late failure".to_string()),
+        NavigationUpdateOutcome::IgnoredSettled
+    );
+    assert!(matches!(session.status, SessionStatus::Active));
+    assert!(session.is_runtime_ready());
+}
+
+#[test]
+fn browser_session_rejects_future_navigation_updates() {
+    let mut session = BrowserSession {
+        id: "session-1".to_string(),
+        ipc_token: "token".to_string(),
+        window_label: "browser-session-1".to_string(),
+        url: "https://example.com/start".to_string(),
+        current_title: Some("Start".to_string()),
+        created_at: chrono::Utc::now(),
+        status: SessionStatus::Active,
+        page_generation: 4,
+        runtime_ready_generation: Some(4),
+    };
+
+    assert_eq!(
+        session.finish_navigation(5, "https://example.com/future", Some("Future".to_string())),
+        NavigationUpdateOutcome::RejectedFuture
+    );
+    assert_eq!(
+        session.fail_navigation(5, "future failure".to_string()),
+        NavigationUpdateOutcome::RejectedFuture
+    );
+    assert_eq!(session.url, "https://example.com/start");
+    assert_eq!(session.current_title.as_deref(), Some("Start"));
+    assert!(matches!(session.status, SessionStatus::Active));
+    assert!(session.is_runtime_ready());
+}
+
+#[test]
+fn browser_result_serialization_matches_legacy_string_contract() {
+    assert_eq!(
+        serialize_browser_result_value(None).expect("undefined should serialize"),
+        "undefined"
+    );
+    assert_eq!(
+        serialize_browser_result_value(Some(serde_json::Value::Null))
+            .expect("null should serialize"),
+        "null"
+    );
+    let serialized_object = serialize_browser_result_value(Some(json!({"ok": true, "count": 2})))
+        .expect("object should serialize");
+    let reparsed: serde_json::Value =
+        serde_json::from_str(&serialized_object).expect("serialized object should remain JSON");
+    assert_eq!(reparsed, json!({"ok": true, "count": 2}));
+}
+
+#[test]
+fn legacy_browser_ipc_handlers_fail_closed_for_sidecar_sessions() {
+    let server = InteractiveBrowserServer::new(Duration::from_millis(50));
+
+    let runtime_ready = server.handle_runtime_ready(
+        "session-1",
+        "token",
+        1,
+        "https://example.com".to_string(),
+        "Example".to_string(),
+    );
+    let navigation_started = server.handle_navigation_started(
+        "session-1",
+        "token",
+        2,
+        "https://example.com/next".to_string(),
+        "Next".to_string(),
+    );
+    let page_loaded = server.handle_page_loaded("session-1");
+    let script_result = server.handle_script_result(
+        "session-1",
+        "token",
+        "request-1".to_string(),
+        "ok".to_string(),
+    );
+
+    assert!(runtime_ready.is_err());
+    assert!(navigation_started.is_err());
+    assert!(page_loaded.is_err());
+    assert!(script_result.is_err());
+}
+
+#[test]
+fn classify_browser_page_detects_google_sorry_interstitials() {
+    let classification = classify_browser_page(
+        "https://www.google.com/sorry/index?continue=https://example.com",
+        "Google Search",
+        "Our systems have detected unusual traffic from your computer network.",
+    );
+
+    assert_eq!(classification, PageClassification::BlockedInterstitial);
+}
+
+#[test]
+fn classify_browser_page_leaves_normal_pages_alone() {
+    let classification = classify_browser_page(
+        "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+        "Rust (programming language) - Wikipedia",
+        "Rust is a multi-paradigm, general-purpose programming language.",
+    );
+
+    assert_eq!(classification, PageClassification::Normal);
+}

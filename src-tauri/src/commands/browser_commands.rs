@@ -125,9 +125,30 @@ pub async fn navigate_to_url(
 pub struct BrowserScriptPayload {
     #[serde(rename = "sessionId")]
     session_id: String,
+    token: String,
     #[serde(rename = "requestId")]
     request_id: String,
     result: String,
+}
+
+#[derive(Deserialize)]
+pub struct BrowserRuntimeReadyPayload {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    token: String,
+    generation: u64,
+    url: String,
+    title: String,
+}
+
+#[derive(Deserialize)]
+pub struct BrowserNavigationStartedPayload {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    token: String,
+    generation: u64,
+    url: String,
+    title: String,
 }
 
 /// Receives the result of a JavaScript execution from the webview and stores it for polling.
@@ -148,7 +169,12 @@ pub async fn browser_script_result(
         payload.session_id, payload.request_id, payload.result
     );
 
-    server.handle_script_result(&payload.session_id, payload.request_id, payload.result)
+    server.handle_script_result(
+        &payload.session_id,
+        &payload.token,
+        payload.request_id,
+        payload.result,
+    )
 }
 
 /// Signals that a page has fully loaded in the browser.
@@ -163,6 +189,42 @@ pub async fn browser_page_loaded(
 ) -> Result<(), String> {
     info!("Command: browser_page_loaded called for session: {session_id}");
     server.handle_page_loaded(&session_id)
+}
+
+#[tauri::command]
+pub async fn browser_runtime_ready(
+    payload: BrowserRuntimeReadyPayload,
+    server: State<'_, InteractiveBrowserServer>,
+) -> Result<(), String> {
+    info!(
+        "Command: browser_runtime_ready called for session: {}, generation: {}",
+        payload.session_id, payload.generation
+    );
+    server.handle_runtime_ready(
+        &payload.session_id,
+        &payload.token,
+        payload.generation,
+        payload.url,
+        payload.title,
+    )
+}
+
+#[tauri::command]
+pub async fn browser_navigation_started(
+    payload: BrowserNavigationStartedPayload,
+    server: State<'_, InteractiveBrowserServer>,
+) -> Result<(), String> {
+    info!(
+        "Command: browser_navigation_started called for session: {}, generation: {}",
+        payload.session_id, payload.generation
+    );
+    server.handle_navigation_started(
+        &payload.session_id,
+        &payload.token,
+        payload.generation,
+        payload.url,
+        payload.title,
+    )
 }
 
 /// Executes JavaScript in a browser session and returns the result directly.

@@ -1,6 +1,3 @@
-use reqwest;
-use std::time::Duration;
-
 /// Validates URL and returns normalized version.
 /// Supports: http://, https://
 ///
@@ -38,18 +35,4 @@ pub fn validate_and_normalize_url(url: &str) -> Result<String, String> {
             Err(format!("Invalid URL format: {}", url))
         }
     }
-}
-
-/// Checks the HTTP status of a URL using reqwest.
-pub async fn check_url_status(url: &str) -> Result<u16, String> {
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 LibrAgent Browser")
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    // We use GET instead of HEAD to be more robust against servers that block HEAD or return 405.
-    // reqwest does not download the body unless we consume the stream, so it's efficient.
-    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
-    Ok(response.status().as_u16())
 }

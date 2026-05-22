@@ -1,4 +1,3 @@
-use crate::mcp::builtin::browser::content::BROWSER_CONTENT_STORE;
 use crate::mcp::builtin::browser::interaction::create_rich_response;
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
@@ -94,7 +93,7 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
 
     // Invalidate state cache and content store after navigation
     server.invalidate_cache();
-    BROWSER_CONTENT_STORE.clear_session(&browser_session_id);
+    server.content_store.clear_session(&browser_session_id);
 
     // Return HTTP-error-specific recovery guidance when navigation signals a problem.
     // Only fall through to rich-response (title+URL page state) on genuine success.
@@ -205,7 +204,7 @@ pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPRe
 
     // Invalidate state cache and content store after navigation
     server.invalidate_cache();
-    BROWSER_CONTENT_STORE.clear_session(&browser_session_id);
+    server.content_store.clear_session(&browser_session_id);
 
     create_rich_response(&service, &browser_session_id, &result).await
 }
@@ -254,7 +253,7 @@ pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MC
 
     // Invalidate state cache and content store after navigation
     server.invalidate_cache();
-    BROWSER_CONTENT_STORE.clear_session(&browser_session_id);
+    server.content_store.clear_session(&browser_session_id);
 
     create_rich_response(&service, &browser_session_id, &result).await
 }
