@@ -536,7 +536,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
     let limit = args
         .get("limit")
         .and_then(|v| v.as_u64())
-        .map(|v| v.clamp(1, 200))
+        .map(|v| v.clamp(1, 100))
         .unwrap_or(50);
     let limit = limit.min(usize::MAX as u64) as usize;
 
@@ -557,10 +557,10 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         name: String,
         description: String,
         status: String,
+        external_server: Option<(String, String)>,
     }
 
     let mut all_matched_tools: Vec<MatchedTool> = Vec::new();
-    let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
 
     // --- Internal (builtin) tools ---
     if include_internal {
@@ -583,6 +583,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                         name: t.name.clone(),
                         description: t.description.clone(),
                         status,
+                        external_server: None,
                     });
                 }
             }
@@ -654,6 +655,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                         name: name.to_string(),
                         description: desc.to_string(),
                         status,
+                        external_server: Some((model.name.clone(), model.id.clone())),
                     });
                     matched_in_server = true;
                 }
@@ -678,11 +680,8 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                     name: "-".to_string(),
                     description: desc.to_string(),
                     status,
+                    external_server: Some((model.name.clone(), model.id.clone())),
                 });
-            }
-
-            if matched_in_server || server_matches_query {
-                found_external_ids.push((model.name.clone(), model.id.clone()));
             }
         }
     }
@@ -730,6 +729,12 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .skip(offset)
         .take(limit)
         .collect();
+    let mut visible_external_ids = paginated_tools
+        .iter()
+        .filter_map(|tool| tool.external_server.clone())
+        .collect::<Vec<_>>();
+    visible_external_ids.sort();
+    visible_external_ids.dedup();
 
     let result_summary = if total_server_rows > 0 {
         format!(
@@ -790,19 +795,14 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         ));
     }
 
-    let external_action = if !session_view && !found_external_ids.is_empty() {
-        // De-duplicate external ids just in case.
-        let mut unique_ids = found_external_ids.clone();
-        unique_ids.sort();
-        unique_ids.dedup();
-
-        let ids_list: Vec<String> = unique_ids
+    let external_action = if !session_view && !visible_external_ids.is_empty() {
+        let ids_list: Vec<String> = visible_external_ids
             .iter()
             .map(|(name, id)| format!("  • {} → \"{}\"", name, id))
             .collect();
         format!(
             "\n\n---\n📌 To enable these external servers:\n\
-             Server IDs found:\n{}\n\n\
+            Server IDs found:\n(this page only)\n{}\n\n\
             To assign them to an agent, call:\n  agent__update(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
             Use agent__list(type: \"configs\") to find your target agent ID.",
             ids_list.join("\n")
@@ -827,12 +827,21 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         );
     }
 
-    let mut external_servers = found_external_ids
+    let structured_results = paginated_tools
+        .iter()
+        .map(|tool| {
+            json!({
+                "source": tool.source,
+                "name": tool.name,
+                "status": tool.status,
+                "description": tool.description,
+            })
+        })
+        .collect::<Vec<_>>();
+    let external_servers = visible_external_ids
         .iter()
         .map(|(name, id)| json!({ "name": name, "id": id }))
         .collect::<Vec<_>>();
-    external_servers.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
-    external_servers.dedup_by(|left, right| left["id"] == right["id"]);
 
     Ok(
         SuccessHint::new(format!("{}{}{}", header, body, external_action), hints)
@@ -846,6 +855,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 "totalResults": total_results,
                 "totalTools": total_tools,
                 "totalServerRows": total_server_rows,
+                "results": structured_results,
                 "externalServers": external_servers,
             }))),
     )
