@@ -23,6 +23,11 @@ export function extractFilenameFromUrl(url: string): string {
   }
 }
 
+export function extractFilenameFromPath(path: string): string {
+  const normalizedPath = path.replace(/\\/g, '/');
+  return normalizedPath.split('/').pop() || 'unknown';
+}
+
 export async function convertToBlobUrl(url: string): Promise<{
   blobUrl: string;
   cleanup: () => void;

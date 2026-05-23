@@ -254,6 +254,344 @@ async fn search_rejects_direct_internal_artifact_file_paths() {
 }
 
 #[tokio::test]
+async fn search_rejects_empty_query_strings() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-empty-query";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("notes.txt"), "alpha\nbeta\n").expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": "notes.txt",
+                "query": "",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should return validation error");
+
+    let text = extract_text_content(&result);
+    assert_eq!(result.is_error, Some(true));
+    assert!(
+        text.contains("Invalid query: query must not be empty"),
+        "empty query should be rejected explicitly: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_rejects_empty_file_patterns() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-empty-file-pattern";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("notes.txt"), "alpha\nbeta\n").expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "filePattern": "",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should return validation error");
+
+    let text = extract_text_content(&result);
+    assert_eq!(result.is_error, Some(true));
+    assert!(
+        text.contains("Invalid filePattern: filePattern must not be empty"),
+        "empty filePattern should be rejected explicitly: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_single_file_supports_multiline_regex_queries() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-single-file-multiline-regex";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("notes.txt"), "alpha\n  beta\ngamma\n")
+        .expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": "notes.txt",
+                "query": "alpha\\s+beta",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Line 1: alpha"),
+        "multiline regex should report the first covered line: {text}"
+    );
+    assert!(
+        text.contains("Line 2:   beta"),
+        "multiline regex should report the second covered line: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["total_matches"], json!(2));
+}
+
+#[tokio::test]
+async fn search_directory_supports_multiline_regex_queries() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-directory-multiline-regex";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(
+        workspace_dir.join("src/main.ts"),
+        "const alpha = true;\nconst beta = true;\n",
+    )
+    .expect("write matching file");
+    std::fs::write(workspace_dir.join("src/other.ts"), "const nope = true;\n")
+        .expect("write non-matching file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "alpha\\s*=\\s*true;\\s+const beta",
+                "filePattern": "*.ts",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("src/main.ts"),
+        "directory search should report the file containing the multiline match: {text}"
+    );
+    assert!(
+        text.contains("- L1: `const alpha = true;`"),
+        "directory search should include the first covered line: {text}"
+    );
+    assert!(
+        text.contains("- L2: `const beta = true;`"),
+        "directory search should include the second covered line: {text}"
+    );
+    assert!(
+        !text.contains("src/other.ts"),
+        "non-matching files should stay excluded: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["files_with_matches"], json!(1));
+    assert_eq!(structured["total_matches"], json!(2));
+}
+
+#[tokio::test]
+async fn search_directory_paginates_content_results_by_match() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-directory-paginates-by-match";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(
+        workspace_dir.join("src/alpha.ts"),
+        "needle one\nneedle two\nneedle three\n",
+    )
+    .expect("write matching file");
+    std::fs::write(workspace_dir.join("src/beta.ts"), "needle four\n").expect("write other file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "needle",
+                "filePattern": "*.ts",
+                "limit": 2,
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("### `src/alpha.ts`"),
+        "first page should include the first matching file: {text}"
+    );
+    assert!(
+        text.contains("- L1: `needle one`") && text.contains("- L2: `needle two`"),
+        "first page should include the first two matches, not all matches from the file: {text}"
+    );
+    assert!(
+        !text.contains("needle three") && !text.contains("beta.ts"),
+        "match pagination should stop after the requested number of matches: {text}"
+    );
+    assert!(
+        text.contains("Showing 1 to 2 of 4 total matches"),
+        "pagination summary should be match-based: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["files_with_matches"], json!(2));
+    assert_eq!(structured["total_matches"], json!(4));
+    assert_eq!(structured["results"][0]["file"], json!("src/alpha.ts"));
+    assert_eq!(
+        structured["results"][0]["matches"].as_array().map(Vec::len),
+        Some(2)
+    );
+}
+
+#[tokio::test]
+async fn search_directory_match_pagination_can_cross_file_boundaries() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-directory-cross-file-pagination";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(
+        workspace_dir.join("src/alpha.ts"),
+        "needle one\nneedle two\n",
+    )
+    .expect("write first file");
+    std::fs::write(
+        workspace_dir.join("src/beta.ts"),
+        "needle three\nneedle four\n",
+    )
+    .expect("write second file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": ".",
+                "query": "needle",
+                "filePattern": "*.ts",
+                "limit": 2,
+                "offset": 1,
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("### `src/alpha.ts`") && text.contains("### `src/beta.ts`"),
+        "offset inside one file should still continue into the next file when needed: {text}"
+    );
+    assert!(
+        text.contains("- L2: `needle two`") && text.contains("- L1: `needle three`"),
+        "second page should contain the second and third matches overall: {text}"
+    );
+    assert!(
+        !text.contains("- L1: `needle one`") && !text.contains("- L2: `needle four`"),
+        "pagination should exclude matches outside the requested match window: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["results"].as_array().map(Vec::len), Some(2));
+    assert_eq!(structured["results"][0]["file"], json!("src/alpha.ts"));
+    assert_eq!(
+        structured["results"][0]["matches"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(structured["results"][1]["file"], json!("src/beta.ts"));
+    assert_eq!(
+        structured["results"][1]["matches"].as_array().map(Vec::len),
+        Some(1)
+    );
+}
+
+#[tokio::test]
+async fn search_multiline_mode_keeps_line_anchored_regex_working() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-multiline-mode-line-anchors";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("notes.txt"), "first\nsecond\nthird\n")
+        .expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": "notes.txt",
+                "query": "^second$",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Line 2: second"),
+        "^ and $ should still work as line anchors after multiline regex support: {text}"
+    );
+    assert!(
+        !text.contains("Line 1: first") && !text.contains("Line 3: third"),
+        "line-anchored regex should not overmatch: {text}"
+    );
+}
+
+#[tokio::test]
+async fn search_multiline_mode_keeps_line_anchored_regex_working_on_crlf_files() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "search-multiline-mode-line-anchors-crlf";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(
+        workspace_dir.join("notes.txt"),
+        "first\r\nsecond\r\nthird\r\n",
+    )
+    .expect("write test file");
+
+    let result = server
+        .handle_search(
+            json!({
+                "path": "notes.txt",
+                "query": "^second$",
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("search should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Line 2: second"),
+        "^ and $ should still work as line anchors on CRLF content: {text}"
+    );
+    assert!(
+        !text.contains("Line 1: first") && !text.contains("Line 3: third"),
+        "CRLF line-anchored regex should not overmatch: {text}"
+    );
+}
+
+#[tokio::test]
 async fn search_respects_gitignore_rules_during_recursive_content_search() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "search-gitignore";

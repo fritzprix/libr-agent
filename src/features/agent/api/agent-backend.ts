@@ -5,7 +5,33 @@ import {
   type AddAttachmentMetadata,
   type AttachmentItem,
 } from '@/models/attachments';
+import type { MCPContent } from '@/lib/mcp/protocol/content';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isTextContent(
+  value: unknown,
+): value is Extract<MCPContent, { type: 'text' }> {
+  return (
+    isRecord(value) && value.type === 'text' && typeof value.text === 'string'
+  );
+}
+
+function extractMcpTextMessage(result: MCPResult): string | null {
+  if (!Array.isArray(result.content)) {
+    return null;
+  }
+
+  const messages = result.content
+    .filter(isTextContent)
+    .map((item) => item.text.trim())
+    .filter((text) => text.length > 0);
+
+  return messages.length > 0 ? messages.join('\n\n') : null;
+}
 
 /**
  * Call a builtin tool specifically for a given agent session.
@@ -48,13 +74,21 @@ export async function saveAgentFile(
     },
   });
 
+  const backendMessage = extractMcpTextMessage(response);
+
+  if (response.isError) {
+    throw new Error(backendMessage ?? 'agent_add_attachment failed');
+  }
+
   const structuredContent = response.structuredContent;
   if (isAttachmentItem(structuredContent)) {
     return structuredContent;
   }
 
   throw new Error(
-    'agent_add_attachment returned an invalid attachment payload',
+    backendMessage
+      ? `agent_add_attachment returned an invalid attachment payload: ${backendMessage}`
+      : 'agent_add_attachment returned an invalid attachment payload',
   );
 }
 

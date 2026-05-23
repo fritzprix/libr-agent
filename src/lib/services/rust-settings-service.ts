@@ -9,6 +9,7 @@ import {
   type AdvancedSettings,
   type DisplaySettings,
   type SystemSettings,
+  type ExperimentalSettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
 
@@ -24,6 +25,7 @@ type SettingValue =
   | AdvancedSettings // advancedSettings
   | DisplaySettings // displaySettings
   | SystemSettings // systemSettings
+  | ExperimentalSettings // experimentalSettings
   | undefined; // agentHubUrl can be undefined
 
 interface SettingDto {
@@ -104,6 +106,10 @@ function mapDtosToSettings(dtos: SettingDto[]): Settings {
       ...DEFAULT_SETTING.system,
       ...storedSystem,
     },
+    experimental: getTypedValue(
+      'experimentalSettings',
+      DEFAULT_SETTING.experimental,
+    ),
   };
 }
 
@@ -223,6 +229,10 @@ export class RustSettingsService implements ISettingsService {
 
       if (settings.system) {
         changes['systemSettings'] = settings.system;
+      }
+
+      if (settings.experimental) {
+        changes['experimentalSettings'] = settings.experimental;
       }
 
       // Perform a single batch update

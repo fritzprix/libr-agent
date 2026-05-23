@@ -4,6 +4,7 @@ use tauri::Manager;
 use crate::services::InteractiveBrowserServer;
 
 pub mod agent; // pub for integration tests (cancel_logic.rs)
+pub mod browser_sidecar;
 pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity
@@ -217,8 +218,6 @@ pub fn run() {
                 close_browser_session,
                 list_browser_sessions,
                 navigate_to_url,
-                browser_script_result,
-                browser_page_loaded,
                 execute_script,
                 navigate_back,
                 navigate_forward,

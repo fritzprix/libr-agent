@@ -149,7 +149,9 @@
     "settings": "設定",
     "history": "履歴",
     "scheduledTasks": "スケジュール済みタスク",
-    "session": "セッション"
+    "session": "セッション",
+    "knowledge": "知識",
+    "org": "組織"
   },
   "sessionHistory": {
     "heading": "セッション履歴",
@@ -309,7 +311,45 @@
       "agentHubUrlPlaceholder": "https://api.agenthub.com",
       "decreaseRetries": "再試行回数を減らす",
       "increaseRetries": "再試行回数を増やす",
-      "responseBehavior": "応答の挙動"
+      "responseBehavior": "応答の挙動",
+      "providers": {
+        "openai": {
+          "name": "OpenAI",
+          "description": "GPT-4o, o3, o4-mini and more"
+        },
+        "anthropic": {
+          "name": "Anthropic",
+          "description": "Claude 3.5 Sonnet, Haiku and more"
+        },
+        "gemini": {
+          "name": "Google Gemini",
+          "description": "Gemini 2.5 Pro, Flash and more"
+        },
+        "ollama": {
+          "name": "Ollama",
+          "description": "Run open models locally on your machine"
+        },
+        "groq": {
+          "name": "Groq",
+          "description": "Ultra-fast inference via Groq LPU chips"
+        },
+        "fireworks": {
+          "name": "Fireworks AI",
+          "description": "Fast hosting for open-source models"
+        },
+        "cerebras": {
+          "name": "Cerebras",
+          "description": "World's fastest AI inference chips"
+        },
+        "openrouter": {
+          "name": "OpenRouter",
+          "description": "Access 200+ models through one API key"
+        },
+        "empty": {
+          "name": "None",
+          "description": ""
+        }
+      }
     },
     "provider": {
       "apiKey": "APIキー",

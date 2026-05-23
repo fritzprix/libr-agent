@@ -150,7 +150,9 @@
     "settings": "설정",
     "history": "기록",
     "scheduledTasks": "예약된 작업",
-    "session": "세션"
+    "session": "세션",
+    "knowledge": "지식",
+    "org": "조직"
   },
   "sessionHistory": {
     "heading": "세션 기록",
@@ -296,7 +298,8 @@
       "advanced": "고급",
       "extensions": "확장 기능",
       "dev": "개발자",
-      "system": "시스템"
+      "system": "시스템",
+      "experimental": "실험적 기능"
     },
     "llmPreference": "기본 LLM",
     "messageWindowSize": "메시지 윈도우 크기",
@@ -334,7 +337,45 @@
       "agentHubUrlPlaceholder": "https://api.agenthub.com",
       "responseBehavior": "응답 동작",
       "decreaseRetries": "재시도 횟수 줄이기",
-      "increaseRetries": "재시도 횟수 늘리기"
+      "increaseRetries": "재시도 횟수 늘리기",
+      "providers": {
+        "openai": {
+          "name": "OpenAI",
+          "description": "GPT-4o, o3, o4-mini 등"
+        },
+        "anthropic": {
+          "name": "Anthropic",
+          "description": "Claude 3.5 Sonnet, Haiku 등"
+        },
+        "gemini": {
+          "name": "Google Gemini",
+          "description": "Gemini 2.5 Pro, Flash 등"
+        },
+        "ollama": {
+          "name": "Ollama",
+          "description": "로컬 환경에서 오픈 모델 실행"
+        },
+        "groq": {
+          "name": "Groq",
+          "description": "Groq LPU 칩을 통한 초고속 추론"
+        },
+        "fireworks": {
+          "name": "Fireworks AI",
+          "description": "오픈소스 모델을 위한 빠른 호스팅"
+        },
+        "cerebras": {
+          "name": "Cerebras",
+          "description": "세계에서 가장 빠른 AI 추론 칩"
+        },
+        "openrouter": {
+          "name": "OpenRouter",
+          "description": "하나의 API 키로 200개 이상의 모델 접근"
+        },
+        "empty": {
+          "name": "없음",
+          "description": ""
+        }
+      }
     },
     "provider": {
       "apiKey": "API 키",
@@ -583,6 +624,14 @@
       "compact": "컴팩트",
       "windowDescription": "최근 N개의 메시지를 유지합니다. 간단하고 예측 가능합니다.",
       "compactDescription": "오래된 대화를 요약하고 최근 윈도우를 유지합니다. 긴 세션에 적합합니다."
+    },
+    "experimental": {
+      "title": "실험적 기능",
+      "summary": "현재 개발 중인 기능입니다. 초기 기능들을 미리 확인해 보려면 활성화하되, 불안정할 수 있음에 유의하십시오.",
+      "inlineAudioAttachment": {
+        "title": "인라인 오디오 첨부",
+        "description": "첨부된 오디오 파일을 LLM 요청용 base64 인라인 콘텐츠로 변환합니다. 이 기능을 비활성화하면 오디오 파일이 워크스페이스 전용 참조로 유지되어 대규모 컨텍스트 토큰을 절약할 수 있습니다."
+      }
     }
   },
   "mcpServer": {

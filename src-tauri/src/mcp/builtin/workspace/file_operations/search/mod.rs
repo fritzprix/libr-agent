@@ -23,6 +23,30 @@ impl WorkspaceServer {
 
         let query = args.get("query").and_then(|v| v.as_str());
         let file_pattern = args.get("filePattern").and_then(|v| v.as_str());
+        if matches!(query, Some("")) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Invalid query: query must not be empty".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Provide a non-empty regex pattern for content search".to_string(),
+                "Omit query and use filePattern when you only want to find files".to_string(),
+            ])
+            .to_mcp_result());
+        }
+        if matches!(file_pattern, Some("")) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Invalid filePattern: filePattern must not be empty".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Provide a non-empty glob like `*.rs` or `src/**/*.ts`".to_string(),
+                "Omit filePattern when you want content search across all files".to_string(),
+            ])
+            .to_mcp_result());
+        }
         let ignore_case = args
             .get("ignoreCase")
             .and_then(|v| v.as_bool())
@@ -155,6 +179,8 @@ impl WorkspaceServer {
         let query_str = query.unwrap();
         let regex = match regex::RegexBuilder::new(query_str)
             .case_insensitive(ignore_case)
+            .multi_line(true)
+            .crlf(true)
             .build()
         {
             Ok(r) => r,

@@ -16,6 +16,7 @@ import {
   DisplaySettings,
   SystemSettings,
   ContextStrategy,
+  ExperimentalSettings,
   DEFAULT_SETTING,
 } from '@/lib/services/settings-service';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
@@ -30,6 +31,7 @@ export type {
   DisplaySettings,
   SystemSettings,
   ContextStrategy,
+  ExperimentalSettings,
 };
 export { DEFAULT_SETTING };
 

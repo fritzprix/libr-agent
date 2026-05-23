@@ -65,7 +65,7 @@ $newVersion = $newVersionOutput | Select-Object -Last 1
 Write-Host "New Version: $newVersion"
 
 Write-Host ">>> Committing and Tagging..."
-git add CHANGELOG.md README*.md package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json aur/PKGBUILD snap/snapcraft.yaml
+git add CHANGELOG.md README*.md src/README.md package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json aur/PKGBUILD snap/snapcraft.yaml
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error: git add failed"
     exit 1
