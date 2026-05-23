@@ -4,6 +4,10 @@ import { recordStartupIpcCall } from '@/lib/performance/startup-metrics';
 
 const logger = getLogger('RustBackendClient');
 
+interface SafeInvokeOptions {
+  shouldSuppressErrorLogging?: (error: unknown) => boolean;
+}
+
 /**
  * A wrapper around Tauri's `invoke` function that provides centralized
  * logging and error handling for all backend calls.
@@ -18,6 +22,7 @@ const logger = getLogger('RustBackendClient');
 export async function safeInvoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
+  options?: SafeInvokeOptions,
 ): Promise<T> {
   const startedAt =
     typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -35,7 +40,11 @@ export async function safeInvoke<T>(
       (typeof performance !== 'undefined' ? performance.now() : Date.now()) -
       startedAt;
     recordStartupIpcCall(cmd, durationMs, false);
-    logger.error('invoke failed', { cmd, err });
+    if (options?.shouldSuppressErrorLogging?.(err) === true) {
+      logger.info('invoke ended without error-level logging', { cmd, err });
+    } else {
+      logger.error('invoke failed', { cmd, err });
+    }
     throw err;
   }
 }

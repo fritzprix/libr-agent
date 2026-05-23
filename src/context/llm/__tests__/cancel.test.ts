@@ -85,6 +85,11 @@ describe('request lifecycle helper errors', () => {
     expect(
       isWorkflowCancelledError({ displayMessage: 'LLM response superseded' }),
     ).toBe(true);
+    expect(
+      isWorkflowCancelledError(
+        new Error('UI tool result orphaned (workflow inactive)'),
+      ),
+    ).toBe(true);
   });
 
   it('returns false for unrelated workflow errors', () => {

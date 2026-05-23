@@ -30,9 +30,14 @@ export function isSupersededRequestError(error: unknown): boolean {
 }
 
 export function isWorkflowCancelledError(error: unknown): boolean {
+  const orphanedUiToolResultMessage =
+    'UI tool result orphaned (workflow inactive)';
+
   if (typeof error === 'string') {
     return (
-      error === 'Workflow was cancelled' || error === 'LLM response superseded'
+      error === 'Workflow was cancelled' ||
+      error === 'LLM response superseded' ||
+      error === orphanedUiToolResultMessage
     );
   }
 
@@ -44,8 +49,10 @@ export function isWorkflowCancelledError(error: unknown): boolean {
   return (
     e['message'] === 'Workflow was cancelled' ||
     e['message'] === 'LLM response superseded' ||
+    e['message'] === orphanedUiToolResultMessage ||
     e['displayMessage'] === 'Workflow was cancelled' ||
-    e['displayMessage'] === 'LLM response superseded'
+    e['displayMessage'] === 'LLM response superseded' ||
+    e['displayMessage'] === orphanedUiToolResultMessage
   );
 }
 

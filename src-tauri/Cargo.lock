@@ -18,6 +18,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-response-guards"
+version = "0.1.0"
+
+[[package]]
 name = "ahash"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4019,6 +4023,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 name = "libragent"
 version = "0.7.30"
 dependencies = [
+ "agent-response-guards",
  "ammonia",
  "anyhow",
  "async-trait",

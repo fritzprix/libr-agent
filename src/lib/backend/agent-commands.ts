@@ -1,4 +1,5 @@
 import { safeInvoke } from '@/lib/backend/core';
+import { isWorkflowCancelledError } from '@/context/llm/types';
 import type {
   AgentResponse,
   AgentRuntimeError,
@@ -35,6 +36,9 @@ export async function handleLLMResponse(
     {
       sessionId,
       assistantMessage,
+    },
+    {
+      shouldSuppressErrorLogging: isWorkflowCancelledError,
     },
   );
 }

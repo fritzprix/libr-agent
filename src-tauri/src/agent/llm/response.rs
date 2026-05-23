@@ -4,6 +4,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
+use agent_response_guards::is_internal_ui_callback_tool_name;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -120,18 +121,6 @@ pub fn build_post_response_compaction_snapshot(
     snapshot
 }
 
-pub fn validate_expected_response_id(
-    session_id: &str,
-    expected_response_id: Option<&str>,
-    received_message_id: &str,
-) -> Result<(), String> {
-    response_admission::validate_expected_response_id(
-        session_id,
-        expected_response_id,
-        received_message_id,
-    )
-}
-
 struct AssistantMessageShape {
     has_content: bool,
     has_thinking: bool,
@@ -170,6 +159,19 @@ fn assistant_message_has_only_ui_tool_calls(message: &Message) -> bool {
                 && tool_calls
                     .iter()
                     .all(|tool_call| tool_call.function.name.starts_with("ui__"))
+        })
+        .unwrap_or(false)
+}
+
+fn assistant_message_has_only_internal_ui_callback_tool_calls(message: &Message) -> bool {
+    message
+        .tool_calls
+        .as_ref()
+        .map(|tool_calls| {
+            !tool_calls.is_empty()
+                && tool_calls.iter().all(|tool_call| {
+                    is_internal_ui_callback_tool_name(tool_call.function.name.as_str())
+                })
         })
         .unwrap_or(false)
 }
@@ -260,12 +262,15 @@ pub async fn handle_llm_response(
         .map(|calls| !calls.is_empty())
         .unwrap_or(false);
     let is_ui_tool = assistant_message_has_only_ui_tool_calls(&assistant_message);
+    let is_internal_ui_callback =
+        assistant_message_has_only_internal_ui_callback_tool_calls(&assistant_message);
 
     let admission = response_admission::inspect_response_admission(
         active_sessions,
         &session_id,
         allow_idle_tool_entry,
         is_ui_tool,
+        is_internal_ui_callback,
     )
     .await?;
 
@@ -289,12 +294,15 @@ pub async fn handle_llm_response(
     }
 
     // [Message ID Matching] Use pre-generated ID if available
-    response_admission::consume_expected_response_id(
-        active_sessions,
-        &session_id,
-        &assistant_message.id,
-    )
-    .await?;
+    if !admission.skip_expected_response_id_check {
+        response_admission::consume_expected_response_id(
+            active_sessions,
+            &session_id,
+            &assistant_message.id,
+            is_ui_tool,
+        )
+        .await?;
+    }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
     response_circuit_breaker::preprocess_assistant_tool_calls(

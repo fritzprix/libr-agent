@@ -50,6 +50,34 @@ async fn read_file_returns_empty_content_for_empty_file() {
 }
 
 #[tokio::test]
+async fn read_file_allows_explicit_start_line_one_for_empty_file() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-file-empty-file-start-line-one";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("empty.txt"), "").expect("write empty file");
+
+    let result = server
+        .handle_read_file(
+            json!({
+                "path": "empty.txt",
+                "startLine": 1
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readFile should return MCPResult");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("no lines shown"),
+        "startLine=1 should still succeed for empty files: {text}"
+    );
+}
+
+#[tokio::test]
 async fn read_file_rejects_zero_start_line_without_end_line() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "read-file-zero-start-line";
