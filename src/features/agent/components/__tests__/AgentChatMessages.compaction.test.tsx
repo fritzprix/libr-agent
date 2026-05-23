@@ -800,7 +800,7 @@ describe('AgentChatMessages compaction rendering', () => {
     expect(isPinnedToBottom(51, 50)).toBe(false);
   });
 
-  it('releases the bottom latch on a deliberate upward scroll before the hard cutoff', () => {
+  it('pauses bottom follow after three explicit upward scrolls', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
     const performanceNowSpy = vi.spyOn(performance, 'now');
@@ -873,8 +873,21 @@ describe('AgentChatMessages compaction rendering', () => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      scroller!.scrollTop = 360;
+      scroller!.scrollTop = 388;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
 
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      scroller!.scrollTop = 376;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      scroller!.scrollTop = 364;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
@@ -887,7 +900,7 @@ describe('AgentChatMessages compaction rendering', () => {
     }
   });
 
-  it('keeps the latch released after an upward user scroll inside the self-scroll ignore window', () => {
+  it('ignores upward deltas inside the self-scroll ignore window', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
@@ -963,19 +976,27 @@ describe('AgentChatMessages compaction rendering', () => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      scroller!.scrollTop = 360;
+      scroller!.scrollTop = 388;
 
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
+      scroller!.scrollTop = 376;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      scroller!.scrollTop = 364;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
       expect(scrollToIndexMock).toHaveBeenCalled();
     } finally {
       performanceNowSpy.mockRestore();
@@ -985,7 +1006,299 @@ describe('AgentChatMessages compaction rendering', () => {
     }
   });
 
-  it('cancels a queued bottom-follow scroll once the user starts reading upward', () => {
+  it('resets upward release accumulation after a downward self-scroll returns toward bottom', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const performanceNowSpy = vi.spyOn(performance, 'now');
+    const scrollIntoView = vi.fn();
+    let currentTime = 0;
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-stream',
+        content: [{ type: 'text', text: 'streaming output' }],
+        isStreaming: true,
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'single',
+        message: {
+          ...baseMessage,
+          id: 'assistant-stream',
+          content: [{ type: 'text', text: 'streaming output' }],
+          isStreaming: true,
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'assistant-stream',
+            content: [{ type: 'text', text: 'streaming output' }],
+            isStreaming: true,
+          },
+        ],
+        coveredMessageIds: ['assistant-stream'],
+      } as GroupedMessage,
+    );
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    performanceNowSpy.mockImplementation(() => currentTime);
+
+    try {
+      const { container } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+
+      expect(scroller).not.toBeNull();
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      Object.defineProperty(scroller, 'scrollHeight', {
+        value: 500,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'clientHeight', {
+        value: 100,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'scrollTop', {
+        value: 400,
+        writable: true,
+        configurable: true,
+      });
+
+      currentTime = 50;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      currentTime = 250;
+      scroller!.scrollTop = 388;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      currentTime = 260;
+      act(() => {
+        resizeObserverCallbacks.forEach((callback) =>
+          callback([], {} as ResizeObserver),
+        );
+      });
+
+      currentTime = 300;
+      scroller!.scrollTop = 400;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      currentTime = 500;
+      scroller!.scrollTop = 388;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      currentTime = 700;
+      scroller!.scrollTop = 376;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      currentTime = 900;
+      scroller!.scrollTop = 364;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+    } finally {
+      performanceNowSpy.mockRestore();
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('resets upward release accumulation on downward scrolls during prepend preservation', () => {
+    const originalRequestAnimationFrame = global.requestAnimationFrame;
+    const originalCancelAnimationFrame = global.cancelAnimationFrame;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const originalSetTimeout = global.setTimeout;
+    const originalClearTimeout = global.clearTimeout;
+    const performanceNowSpy = vi.spyOn(performance, 'now');
+    const timeoutQueue: Array<() => void> = [];
+    const scrollIntoView = vi.fn();
+    let currentTime = 0;
+
+    chatState.messages = [
+      {
+        ...baseMessage,
+        id: 'assistant-stream',
+        content: [{ type: 'text', text: 'streaming output' }],
+        isStreaming: true,
+      },
+    ];
+    chatState.workflowStatus = 'busy';
+    groupedMessagesMock.splice(
+      0,
+      groupedMessagesMock.length,
+      {
+        type: 'single',
+        message: {
+          ...baseMessage,
+          id: 'assistant-stream',
+          content: [{ type: 'text', text: 'streaming output' }],
+          isStreaming: true,
+        },
+        messages: [
+          {
+            ...baseMessage,
+            id: 'assistant-stream',
+            content: [{ type: 'text', text: 'streaming output' }],
+            isStreaming: true,
+          },
+        ],
+        coveredMessageIds: ['assistant-stream'],
+      } as GroupedMessage,
+    );
+
+    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    global.cancelAnimationFrame = vi.fn();
+    global.setTimeout = ((callback: TimerHandler) => {
+      if (typeof callback === 'function') {
+        timeoutQueue.push(callback as () => void);
+      }
+      return timeoutQueue.length as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout;
+    global.clearTimeout = vi.fn() as typeof clearTimeout;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    performanceNowSpy.mockImplementation(() => currentTime);
+
+    try {
+      const { container, rerender } = render(<AgentChatMessages />);
+      const scroller = container.querySelector(
+        '.agent-chat-scrollbar',
+      ) as HTMLDivElement | null;
+
+      expect(scroller).not.toBeNull();
+
+      Object.defineProperty(scroller, 'scrollHeight', {
+        value: 500,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'clientHeight', {
+        value: 100,
+        configurable: true,
+      });
+      Object.defineProperty(scroller, 'scrollTop', {
+        value: 400,
+        writable: true,
+        configurable: true,
+      });
+
+      currentTime = 50;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      currentTime = 250;
+      scroller!.scrollTop = 370;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      groupedMessagesMock.splice(
+        0,
+        groupedMessagesMock.length,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'older-user',
+            role: 'user',
+            content: [{ type: 'text', text: 'Older user message' }],
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'older-user',
+              role: 'user',
+              content: [{ type: 'text', text: 'Older user message' }],
+            },
+          ],
+          coveredMessageIds: ['older-user'],
+        } as GroupedMessage,
+        {
+          type: 'single',
+          message: {
+            ...baseMessage,
+            id: 'assistant-stream',
+            content: [{ type: 'text', text: 'streaming output' }],
+            isStreaming: true,
+          },
+          messages: [
+            {
+              ...baseMessage,
+              id: 'assistant-stream',
+              content: [{ type: 'text', text: 'streaming output' }],
+              isStreaming: true,
+            },
+          ],
+          coveredMessageIds: ['assistant-stream'],
+        } as GroupedMessage,
+      );
+      rerender(<AgentChatMessages />);
+
+      currentTime = 300;
+      scroller!.scrollTop = 380;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      act(() => {
+        timeoutQueue.splice(0).forEach((callback) => callback());
+      });
+
+      currentTime = 500;
+      scroller!.scrollTop = 370;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      currentTime = 700;
+      scroller!.scrollTop = 344;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+    } finally {
+      performanceNowSpy.mockRestore();
+      global.requestAnimationFrame = originalRequestAnimationFrame;
+      global.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      global.setTimeout = originalSetTimeout;
+      global.clearTimeout = originalClearTimeout;
+    }
+  });
+
+  it('keeps a queued bottom-follow scroll despite upward noise inside the self-scroll window', () => {
     const scrollIntoView = vi.fn();
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
@@ -1048,7 +1361,17 @@ describe('AgentChatMessages compaction rendering', () => {
 
       expect(frameQueue.size).toBeGreaterThan(0);
 
-      scroller!.scrollTop = 394;
+      scroller!.scrollTop = 388;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      scroller!.scrollTop = 376;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      scroller!.scrollTop = 364;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
@@ -1057,8 +1380,7 @@ describe('AgentChatMessages compaction rendering', () => {
         flushAllFrames();
       });
 
-      expect(scrollIntoView).not.toHaveBeenCalled();
-      expect(screen.getByLabelText('Scroll to latest')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
     } finally {
       global.requestAnimationFrame = originalRequestAnimationFrame;
       global.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -1066,7 +1388,7 @@ describe('AgentChatMessages compaction rendering', () => {
     }
   });
 
-  it('releases bottom follow as soon as an upward user scroll leaves the visual bottom', () => {
+  it('keeps bottom follow until three explicit upward scrolls leave the visual bottom', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
     const performanceNowSpy = vi.spyOn(performance, 'now');
@@ -1138,8 +1460,21 @@ describe('AgentChatMessages compaction rendering', () => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
 
-      scroller!.scrollTop = 394;
+      scroller!.scrollTop = 388;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
 
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      scroller!.scrollTop = 376;
+      act(() => {
+        scroller?.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
+
+      scroller!.scrollTop = 364;
       act(() => {
         scroller?.dispatchEvent(new Event('scroll'));
       });
@@ -1152,7 +1487,7 @@ describe('AgentChatMessages compaction rendering', () => {
     }
   });
 
-  it('reacquires the bottom latch when the user manually returns to latest during busy streaming', () => {
+  it('resumes bottom follow when the user manually returns to latest during busy streaming', () => {
     const originalRequestAnimationFrame = global.requestAnimationFrame;
     const originalCancelAnimationFrame = global.cancelAnimationFrame;
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -7,10 +7,10 @@ import type {
   DisplaySettings,
   SystemSettings,
   Settings,
+  ExperimentalSettings,
 } from '@/context/SettingsContext';
 import equal from 'fast-deep-equal';
 
-// Define the form state shape, identical to Settings for now
 export type SettingsFormState = Settings;
 
 export type SettingsDirtyState = {
@@ -19,6 +19,7 @@ export type SettingsDirtyState = {
   'chat-interface': boolean;
   system: boolean;
   advanced: boolean;
+  experimental: boolean;
   dev: boolean;
 };
 
@@ -29,6 +30,7 @@ function getEmptyDirtyState(): SettingsDirtyState {
     'chat-interface': false,
     system: false,
     advanced: false,
+    experimental: false,
     dev: false,
   };
 }
@@ -85,6 +87,12 @@ function getAdvancedComparableState(settings: SettingsFormState) {
   };
 }
 
+function getExperimentalComparableState(settings: SettingsFormState) {
+  return {
+    inlineAudioAttachment: settings.experimental.inlineAudioAttachment,
+  };
+}
+
 export function getSettingsDirtyState(
   formState: SettingsFormState,
   globalSettings: SettingsFormState,
@@ -109,6 +117,10 @@ export function getSettingsDirtyState(
       getAdvancedComparableState(formState),
       getAdvancedComparableState(globalSettings),
     ),
+    experimental: !equal(
+      getExperimentalComparableState(formState),
+      getExperimentalComparableState(globalSettings),
+    ),
     dev: false,
   };
 }
@@ -117,6 +129,15 @@ export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
   const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
+  const [prevGlobal, setPrevGlobal] = useState<SettingsFormState>(globalSettings);
+
+  // Sync draftState during render using Adjusting State pattern
+  if (globalSettings !== prevGlobal) {
+    setPrevGlobal(globalSettings);
+    if (!draftState || equal(draftState, globalSettings)) {
+      setDraftState(null);
+    }
+  }
 
   const activeFormState = draftState ? draftState : globalSettings;
   const activeDirtyState = useMemo(() => {
@@ -129,23 +150,17 @@ export function useSettingsForm() {
     return Object.values(activeDirtyState).some(Boolean);
   }, [activeDirtyState]);
 
-  useEffect(() => {
-    if (draftState && equal(draftState, globalSettings)) {
-      setDraftState(null);
-    }
-  }, [draftState, globalSettings]);
-
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
       setDraftState((prevDraft) => {
         const previous = prevDraft ? prevDraft : globalSettings;
-        return updater(previous);
+        const newState = updater(previous);
+        return equal(newState, globalSettings) ? null : newState;
       });
     },
     [globalSettings],
   );
 
-  // Generic update for top-level keys
   const update = useCallback(
     <K extends keyof SettingsFormState>(
       key: K,
@@ -159,7 +174,6 @@ export function useSettingsForm() {
     [updateFormStore],
   );
 
-  // Specialized updaters for nested objects to keep usage clean
   const updateServiceConfig = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
       updateFormStore((prev) => {
@@ -216,6 +230,22 @@ export function useSettingsForm() {
     [updateFormStore],
   );
 
+  const updateExperimental = useCallback(
+    <K extends keyof ExperimentalSettings>(
+      key: K,
+      value: ExperimentalSettings[K],
+    ) => {
+      updateFormStore((prev) => ({
+        ...prev,
+        experimental: {
+          ...prev.experimental,
+          [key]: value,
+        },
+      }));
+    },
+    [updateFormStore],
+  );
+
   const reset = useCallback(() => {
     setDraftState(null);
   }, []);
@@ -233,6 +263,7 @@ export function useSettingsForm() {
     updateAdvanced,
     updateDisplay,
     updateSystem,
+    updateExperimental,
     reset,
     save,
     isDirty,

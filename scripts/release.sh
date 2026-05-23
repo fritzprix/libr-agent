@@ -38,7 +38,7 @@ echo "New Version: $NEW_VERSION"
 
 echo ">>> Committing and Tagging..."
 # Include CHANGELOG.md if it was modified
-git add CHANGELOG.md README*.md package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json aur/PKGBUILD snap/snapcraft.yaml
+git add CHANGELOG.md README*.md src/README.md package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json aur/PKGBUILD snap/snapcraft.yaml
 git commit -m "chore(release): bump to v$NEW_VERSION"
 git tag "v$NEW_VERSION"
 

@@ -664,13 +664,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let mcp_enabled =
         std::env::var("LIBRAGENT_MCP_ENABLE").is_ok() || std::env::args().any(|a| a == "--mcp");
 
-    let browser_env = Arc::new(
-        crate::services::interactive_browser_server::tauri_env::TauriBrowserEnvironment::new(
-            app.handle().clone(),
-        ),
-    );
-    let browser_server =
-        InteractiveBrowserServer::new(browser_env, startup_settings.web_action_timeout);
+    let browser_server = InteractiveBrowserServer::new(startup_settings.web_action_timeout);
     app.manage(browser_server);
     info!(
         "✅ Interactive Browser Server initialized with timeout: {:?}",

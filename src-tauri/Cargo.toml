@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.7.29"
+version = "0.7.30"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -64,6 +64,7 @@ dashmap = "6.2"
 regex = "1"
 cuid2 = "0.1.6"
 dirs = "6.0"
+chromiumoxide = { version = "0.9.1", features = ["fetcher", "rustls", "zip8"] }
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
 ammonia = "4.0"

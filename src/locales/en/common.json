@@ -296,7 +296,8 @@
       "advanced": "Advanced",
       "extensions": "Extensions",
       "dev": "Dev",
-      "system": "System"
+      "system": "System",
+      "experimental": "Experimental"
     },
     "llmPreference": "Default LLM",
     "messageWindowSize": "Message Window Size",
@@ -620,6 +621,14 @@
       "compact": "Compact",
       "windowDescription": "Keep the N most recent messages. Simple and predictable.",
       "compactDescription": "Summarize old turns and keep a recent window. Better for long sessions."
+    },
+    "experimental": {
+      "title": "Experimental Features",
+      "summary": "These features are in development. Turn them on to preview early capabilities, but keep in mind they might be unstable.",
+      "inlineAudioAttachment": {
+        "title": "Inline Audio Attachments",
+        "description": "Convert attached audio files into base64 inline content for LLM requests. Disabling this saves significant context window tokens by keeping audio files as workspace-only references."
+      }
     }
   },
   "mcpServer": {

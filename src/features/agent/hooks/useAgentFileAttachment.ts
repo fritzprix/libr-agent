@@ -4,6 +4,7 @@ import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
+import { pathToFileUrl } from '@/lib/file-url';
 import {
   validateFileSize,
   createFileSizeErrorMessage,
@@ -12,6 +13,7 @@ import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import type React from 'react';
+import { extractFilenameFromPath } from '@/features/agent/lib/resource-attachment-utils';
 
 const logger = getLogger('AgentFileAttachment');
 const CLIPBOARD_IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
@@ -182,10 +184,9 @@ export function useAgentFileAttachment() {
 
       // --- STEP 1: Optimistic UI - Add placeholders immediately ---
       const placeholders = filePaths.map((filePath) => {
-        const filename =
-          filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
+        const filename = extractFilenameFromPath(filePath);
         return {
-          url: `file://${filePath}`,
+          url: pathToFileUrl(filePath),
           filename,
           mimeType: getMimeType(filename),
           originalPath: filePath,
@@ -292,7 +293,7 @@ export function useAgentFileAttachment() {
 
   const validateFiles = useCallback((paths: string[]): boolean => {
     return paths.every((path: string) => {
-      const filename = path.split('/').pop() || path.split('\\').pop() || '';
+      const filename = extractFilenameFromPath(path);
       const isValid = true;
       logger.info('Validating file extension', {
         path,

@@ -90,7 +90,8 @@ Finally, use the provided scripts to handle mechanical steps: tests, build check
 ```
 
 - **Checks**: Scripts abort on failed checks (`pnpm test:run`, `pnpm rust:test`, `pnpm build`, `cargo check`).
-- **Automation**: Scripts run `scripts/bump-version.cjs`, update release files (`package.json`, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`, packaging manifests), commit, tag, and push.
+- **Automation**: Scripts run `scripts/bump-version.cjs`, which automatically synchronizes direct download links inside both the root READMEs (including localized `README.ko.md`, `README.zh.md`, etc.) and the frontend integration README `src/README.md`. It also updates release files (`package.json`, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`, packaging manifests), commits, tags, and pushes.
+
 - **Tagging**: The resulting tag format is `v<NEW_VERSION>`.
 
 ## Quick Release Checklist
