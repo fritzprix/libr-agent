@@ -150,7 +150,9 @@
     "settings": "Einstellungen",
     "history": "Verlauf",
     "scheduledTasks": "Geplante Aufgaben",
-    "session": "Sitzung"
+    "session": "Sitzung",
+    "knowledge": "Wissen",
+    "org": "Organisation"
   },
   "sessionHistory": {
     "heading": "Sitzungsverlauf",

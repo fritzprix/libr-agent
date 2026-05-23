@@ -149,7 +149,9 @@
     "settings": "設定",
     "history": "履歴",
     "scheduledTasks": "スケジュール済みタスク",
-    "session": "セッション"
+    "session": "セッション",
+    "knowledge": "知識",
+    "org": "組織"
   },
   "sessionHistory": {
     "heading": "セッション履歴",
