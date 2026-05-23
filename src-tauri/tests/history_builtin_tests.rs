@@ -18,6 +18,7 @@ use tauri_mcp_agent_lib::{set_message_repository, set_session_repository};
 use tokio::sync::{Mutex, OnceCell};
 
 static TEST_DB: OnceCell<Arc<sea_orm::DatabaseConnection>> = OnceCell::const_new();
+static FIXTURE_READY: OnceCell<()> = OnceCell::const_new();
 static TEST_GUARD: Mutex<()> = Mutex::const_new(());
 
 fn extract_text_content(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
@@ -69,206 +70,210 @@ async fn get_or_create_test_db() -> Arc<sea_orm::DatabaseConnection> {
 
 async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
     let db = get_or_create_test_db().await;
-    let session_repo = SqliteSessionRepository::new((*db).clone());
-    let message_repo = SqliteMessageRepository::new((*db).clone());
+    FIXTURE_READY
+        .get_or_init(|| async {
+            let session_repo = SqliteSessionRepository::new((*db).clone());
+            let message_repo = SqliteMessageRepository::new((*db).clone());
 
-    session_repo
-        .upsert_session(&SessionMetadata {
-            id: "history-session-a".to_string(),
-            name: Some("History Session A".to_string()),
-            status: SessionStatus::Idle,
-            model: "gpt-4.1".to_string(),
-            provider: "openai".to_string(),
-            agent_config: Some(r#"{"assistantId":"agent-alpha"}"#.to_string()),
-            parent_session_id: None,
-            lineage_id: Some("lineage-alpha".to_string()),
-            depth: Some(0),
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: 1_700_000_000_000,
-            updated_at: 1_700_000_100_000,
-            last_viewed_at: None,
-            last_message_at: Some(1_700_000_120_000),
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
-            workspace_override: None,
-        })
-        .await
-        .expect("session A should upsert");
+            session_repo
+                .upsert_session(&SessionMetadata {
+                    id: "history-session-a".to_string(),
+                    name: Some("History Session A".to_string()),
+                    status: SessionStatus::Idle,
+                    model: "gpt-4.1".to_string(),
+                    provider: "openai".to_string(),
+                    agent_config: Some(r#"{"assistantId":"agent-alpha"}"#.to_string()),
+                    parent_session_id: None,
+                    lineage_id: Some("lineage-alpha".to_string()),
+                    depth: Some(0),
+                    max_depth: None,
+                    max_fanout: None,
+                    org_id: None,
+                    org_name: None,
+                    org_root_session_id: None,
+                    created_at: 1_700_000_000_000,
+                    updated_at: 1_700_000_100_000,
+                    last_viewed_at: None,
+                    last_message_at: Some(1_700_000_120_000),
+                    last_attention_at: None,
+                    last_attention_reason: None,
+                    is_bookmarked: false,
+                    yolo_mode: false,
+                    unsafe_mode: false,
+                    workspace_override: None,
+                })
+                .await
+                .expect("session A should upsert");
 
-    session_repo
-        .upsert_session(&SessionMetadata {
-            id: "history-session-b".to_string(),
-            name: Some("History Session B".to_string()),
-            status: SessionStatus::Busy,
-            model: "gpt-4.1".to_string(),
-            provider: "openai".to_string(),
-            agent_config: Some(r#"{"assistantId":"agent-beta"}"#.to_string()),
-            parent_session_id: None,
-            lineage_id: Some("lineage-beta".to_string()),
-            depth: Some(0),
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: 1_700_001_000_000,
-            updated_at: 1_700_001_100_000,
-            last_viewed_at: None,
-            last_message_at: Some(1_700_001_120_000),
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            yolo_mode: false,
-            unsafe_mode: false,
-            workspace_override: None,
-        })
-        .await
-        .expect("session B should upsert");
+            session_repo
+                .upsert_session(&SessionMetadata {
+                    id: "history-session-b".to_string(),
+                    name: Some("History Session B".to_string()),
+                    status: SessionStatus::Busy,
+                    model: "gpt-4.1".to_string(),
+                    provider: "openai".to_string(),
+                    agent_config: Some(r#"{"assistantId":"agent-beta"}"#.to_string()),
+                    parent_session_id: None,
+                    lineage_id: Some("lineage-beta".to_string()),
+                    depth: Some(0),
+                    max_depth: None,
+                    max_fanout: None,
+                    org_id: None,
+                    org_name: None,
+                    org_root_session_id: None,
+                    created_at: 1_700_001_000_000,
+                    updated_at: 1_700_001_100_000,
+                    last_viewed_at: None,
+                    last_message_at: Some(1_700_001_120_000),
+                    last_attention_at: None,
+                    last_attention_reason: None,
+                    is_bookmarked: false,
+                    yolo_mode: false,
+                    unsafe_mode: false,
+                    workspace_override: None,
+                })
+                .await
+                .expect("session B should upsert");
 
-    message_repo
-        .insert(&Message {
-            id: "history-message-a1".to_string(),
-            session_id: "history-session-a".to_string(),
-            role: "user".to_string(),
-            content: vec![MCPContent::Text {
-                text: "Need batch knowledge extraction from the daily history.".to_string(),
-                is_error: None,
-            }],
-            tool_calls: None,
-            tool_call_id: None,
-            is_streaming: None,
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: Some("agent-alpha".to_string()),
-            attachments: None,
-            tool_use: None,
-            usage: None,
-            created_at: 1_700_000_110_000,
-            updated_at: 1_700_000_110_000,
-            source: None,
-            error: None,
-            metadata: None,
-        })
-        .await
-        .expect("message a1 should insert");
+            message_repo
+                .insert(&Message {
+                    id: "history-message-a1".to_string(),
+                    session_id: "history-session-a".to_string(),
+                    role: "user".to_string(),
+                    content: vec![MCPContent::Text {
+                        text: "Need batch knowledge extraction from the daily history.".to_string(),
+                        is_error: None,
+                    }],
+                    tool_calls: None,
+                    tool_call_id: None,
+                    is_streaming: None,
+                    thinking: None,
+                    thinking_signature: None,
+                    assistant_id: Some("agent-alpha".to_string()),
+                    attachments: None,
+                    tool_use: None,
+                    usage: None,
+                    created_at: 1_700_000_110_000,
+                    updated_at: 1_700_000_110_000,
+                    source: None,
+                    error: None,
+                    metadata: None,
+                })
+                .await
+                .expect("message a1 should insert");
 
-    message_repo
-        .insert(&Message {
-            id: "history-message-a2".to_string(),
-            session_id: "history-session-a".to_string(),
-            role: "assistant".to_string(),
-            content: vec![MCPContent::Text {
-                text: "Knowledge extraction summary: user wants persistent history search."
-                    .to_string(),
-                is_error: None,
-            }],
-            tool_calls: None,
-            tool_call_id: None,
-            is_streaming: None,
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: Some("agent-alpha".to_string()),
-            attachments: None,
-            tool_use: None,
-            usage: None,
-            created_at: 1_700_000_120_000,
-            updated_at: 1_700_000_120_000,
-            source: None,
-            error: None,
-            metadata: None,
-        })
-        .await
-        .expect("message a2 should insert");
+            message_repo
+                .insert(&Message {
+                    id: "history-message-a2".to_string(),
+                    session_id: "history-session-a".to_string(),
+                    role: "assistant".to_string(),
+                    content: vec![MCPContent::Text {
+                        text: "Knowledge extraction summary: user wants persistent history search."
+                            .to_string(),
+                        is_error: None,
+                    }],
+                    tool_calls: None,
+                    tool_call_id: None,
+                    is_streaming: None,
+                    thinking: None,
+                    thinking_signature: None,
+                    assistant_id: Some("agent-alpha".to_string()),
+                    attachments: None,
+                    tool_use: None,
+                    usage: None,
+                    created_at: 1_700_000_120_000,
+                    updated_at: 1_700_000_120_000,
+                    source: None,
+                    error: None,
+                    metadata: None,
+                })
+                .await
+                .expect("message a2 should insert");
 
-    message_repo
-        .insert(&Message {
-            id: "history-message-b1".to_string(),
-            session_id: "history-session-b".to_string(),
-            role: "assistant".to_string(),
-            content: vec![MCPContent::Text {
-                text: "Unrelated beta session content.".to_string(),
-                is_error: None,
-            }],
-            tool_calls: None,
-            tool_call_id: None,
-            is_streaming: None,
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: Some("agent-beta".to_string()),
-            attachments: None,
-            tool_use: None,
-            usage: None,
-            created_at: 1_700_001_120_000,
-            updated_at: 1_700_001_120_000,
-            source: None,
-            error: None,
-            metadata: None,
-        })
-        .await
-        .expect("message b1 should insert");
+            message_repo
+                .insert(&Message {
+                    id: "history-message-b1".to_string(),
+                    session_id: "history-session-b".to_string(),
+                    role: "assistant".to_string(),
+                    content: vec![MCPContent::Text {
+                        text: "Unrelated beta session content.".to_string(),
+                        is_error: None,
+                    }],
+                    tool_calls: None,
+                    tool_call_id: None,
+                    is_streaming: None,
+                    thinking: None,
+                    thinking_signature: None,
+                    assistant_id: Some("agent-beta".to_string()),
+                    attachments: None,
+                    tool_use: None,
+                    usage: None,
+                    created_at: 1_700_001_120_000,
+                    updated_at: 1_700_001_120_000,
+                    source: None,
+                    error: None,
+                    metadata: None,
+                })
+                .await
+                .expect("message b1 should insert");
 
-    let unicode_heavy_text = format!("HEADER {}{}", "A".repeat(93), "낮".repeat(100));
-    message_repo
-        .insert(&Message {
-            id: "history-message-unicode".to_string(),
-            session_id: "history-session-a".to_string(),
-            role: "assistant".to_string(),
-            content: vec![MCPContent::Text {
-                text: unicode_heavy_text,
-                is_error: None,
-            }],
-            tool_calls: None,
-            tool_call_id: None,
-            is_streaming: None,
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: Some("agent-alpha".to_string()),
-            attachments: None,
-            tool_use: None,
-            usage: None,
-            created_at: 1_700_000_125_000,
-            updated_at: 1_700_000_125_000,
-            source: None,
-            error: None,
-            metadata: None,
-        })
-        .await
-        .expect("unicode message should insert");
+            let unicode_heavy_text = format!("HEADER {}{}", "A".repeat(93), "낮".repeat(100));
+            message_repo
+                .insert(&Message {
+                    id: "history-message-unicode".to_string(),
+                    session_id: "history-session-a".to_string(),
+                    role: "assistant".to_string(),
+                    content: vec![MCPContent::Text {
+                        text: unicode_heavy_text,
+                        is_error: None,
+                    }],
+                    tool_calls: None,
+                    tool_call_id: None,
+                    is_streaming: None,
+                    thinking: None,
+                    thinking_signature: None,
+                    assistant_id: Some("agent-alpha".to_string()),
+                    attachments: None,
+                    tool_use: None,
+                    usage: None,
+                    created_at: 1_700_000_125_000,
+                    updated_at: 1_700_000_125_000,
+                    source: None,
+                    error: None,
+                    metadata: None,
+                })
+                .await
+                .expect("unicode message should insert");
 
-    let large_text = "L".repeat(3_500);
-    message_repo
-        .insert(&Message {
-            id: "history-message-large".to_string(),
-            session_id: "history-session-a".to_string(),
-            role: "tool".to_string(),
-            content: vec![MCPContent::Text {
-                text: large_text,
-                is_error: None,
-            }],
-            tool_calls: None,
-            tool_call_id: None,
-            is_streaming: None,
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: Some("agent-alpha".to_string()),
-            attachments: None,
-            tool_use: None,
-            usage: None,
-            created_at: 1_700_000_130_000,
-            updated_at: 1_700_000_130_000,
-            source: None,
-            error: None,
-            metadata: None,
+            let large_text = "L".repeat(3_500);
+            message_repo
+                .insert(&Message {
+                    id: "history-message-large".to_string(),
+                    session_id: "history-session-a".to_string(),
+                    role: "tool".to_string(),
+                    content: vec![MCPContent::Text {
+                        text: large_text,
+                        is_error: None,
+                    }],
+                    tool_calls: None,
+                    tool_call_id: None,
+                    is_streaming: None,
+                    thinking: None,
+                    thinking_signature: None,
+                    assistant_id: Some("agent-alpha".to_string()),
+                    attachments: None,
+                    tool_use: None,
+                    usage: None,
+                    created_at: 1_700_000_130_000,
+                    updated_at: 1_700_000_130_000,
+                    source: None,
+                    error: None,
+                    metadata: None,
+                })
+                .await
+                .expect("large message should insert");
         })
-        .await
-        .expect("large message should insert");
+        .await;
 
     db
 }

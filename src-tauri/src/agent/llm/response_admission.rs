@@ -56,12 +56,10 @@ pub(crate) async fn inspect_response_admission(
         Ok(ResponseAdmissionDecision {
             should_mark_busy,
             skip_expected_response_id_check,
-        }) => {
-            return Ok(ResponseAdmission {
-                should_mark_busy,
-                skip_expected_response_id_check,
-            });
-        }
+        }) => Ok(ResponseAdmission {
+            should_mark_busy,
+            skip_expected_response_id_check,
+        }),
         Err(ORPHANED_UI_TOOL_RESULT_ERROR) => {
             if token_cancelled || cancel_pending {
                 log::info!(
@@ -79,7 +77,7 @@ pub(crate) async fn inspect_response_admission(
                     allow_idle_tool_entry
                 );
             }
-            return Err(ORPHANED_UI_TOOL_RESULT_ERROR.to_string());
+            Err(ORPHANED_UI_TOOL_RESULT_ERROR.to_string())
         }
         Err(error) if is_ui_tool => {
             log::info!(
@@ -89,7 +87,7 @@ pub(crate) async fn inspect_response_admission(
                 allow_idle_tool_entry,
                 error
             );
-            return Err(ORPHANED_UI_TOOL_RESULT_ERROR.to_string());
+            Err(ORPHANED_UI_TOOL_RESULT_ERROR.to_string())
         }
         Err(error) => {
             if token_cancelled || cancel_pending {
@@ -109,7 +107,7 @@ pub(crate) async fn inspect_response_admission(
                     is_ui_tool
                 );
             }
-            return Err(error.to_string());
+            Err(error.to_string())
         }
     }
 }
