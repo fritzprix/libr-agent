@@ -42,11 +42,11 @@ impl BuiltinMCPServer for ToolServer {
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "list" | "listTools" => operations::list_tools(args, session_id.as_deref()).await,
-            "register" | "registerServer" => operations::register_server(self, args).await,
-            "update" | "updateServer" => operations::update_server(self, args).await,
-            "delete" | "deleteServer" => operations::delete_server(self, args).await,
-            "verify" | "verifyServer" => operations::verify_server(self, args).await,
+            "list" => operations::list_tools(args, session_id.as_deref()).await,
+            "register" => operations::register_server(self, args).await,
+            "update" => operations::update_server(self, args).await,
+            "delete" => operations::delete_server(self, args).await,
+            "verify" => operations::verify_server(self, args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
         .or_else(|e| {
