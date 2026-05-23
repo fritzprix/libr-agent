@@ -2,7 +2,7 @@ import { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp/protocol/content';
 import { getLogger } from './logger';
 import { stringToMCPContentArray } from './utils';
-import type { AttachmentReference } from '@/models/chat';
+import type { AttachmentAgentAccess, AttachmentReference } from '@/models/chat';
 import { readLocalFileAsBase64 } from '@/lib/backend/workspace';
 
 const logger = getLogger('message-preprocessor');
@@ -31,17 +31,132 @@ function truncateText(value: string, maxLength: number): string {
 function createAttachmentHintPayload(
   attachment: AttachmentReference,
 ): AttachmentReference {
-  if (
+  const preview =
     typeof attachment.preview === 'string' &&
     attachment.preview.length > ATTACHMENT_PREVIEW_CHAR_LIMIT
+      ? truncateText(attachment.preview, ATTACHMENT_PREVIEW_CHAR_LIMIT)
+      : attachment.preview;
+
+  return {
+    ...attachment,
+    preview,
+    agentAccess: deriveAttachmentAgentAccess(attachment),
+  };
+}
+
+function isWorkspaceTextReadable(attachment: AttachmentReference): boolean {
+  if (
+    /^text\/|\/(json|xml|javascript|typescript)/.test(attachment.mimeType) ||
+    /\.(txt|md|markdown|json|jsonc|json5|yaml|yml|toml|js|jsx|ts|tsx|mjs|cjs|py|rb|rs|go|java|c|cpp|h|hpp|css|scss|less|html|htm|svg|sh|bash|zsh|fish|ps1|sql|graphql|csv|log|xml|proto)$/i.test(
+      attachment.filename,
+    )
   ) {
+    return true;
+  }
+
+  return false;
+}
+
+function deriveAttachmentAgentAccess(
+  attachment: AttachmentReference,
+): AttachmentAgentAccess {
+  if (attachment.agentAccess) {
+    return attachment.agentAccess;
+  }
+
+  if (attachment.contentId || attachment.status === 'committed') {
     return {
-      ...attachment,
-      preview: truncateText(attachment.preview, ATTACHMENT_PREVIEW_CHAR_LIMIT),
+      mode: 'indexed',
+      reason: 'indexed',
+      note: 'Indexed in the attachments store. Use attachments tools such as list/read/search.',
     };
   }
 
-  return attachment;
+  if (attachment.status === 'inline' || attachment.inlineContent) {
+    return {
+      mode: 'inline-media',
+      reason: 'inline_media',
+      note: 'Inline media attachment. Use the media payload already present in the message instead of attachments or workspace text tools.',
+    };
+  }
+
+  if (attachment.workspacePath) {
+    return isWorkspaceTextReadable(attachment)
+      ? {
+          mode: 'workspace-text',
+          reason: 'workspace_only',
+          note: 'Workspace-only attachment. attachments tools will not find it; use workspace__readFile if you need the text content.',
+        }
+      : {
+          mode: 'workspace-binary',
+          reason: 'workspace_only',
+          note: 'Workspace-only binary/media attachment. attachments tools will not find it, and workspace__readFile is not appropriate.',
+        };
+  }
+
+  return {
+    mode: 'metadata-only',
+    reason: 'metadata_only',
+    note: 'Only metadata is available. Do not assume this attachment is readable until the storage mode is clarified.',
+  };
+}
+
+function buildAttachmentGuidanceLines(
+  attachment: AttachmentReference,
+  access: AttachmentAgentAccess,
+): string[] {
+  const lines = [
+    'Agent guidance:',
+    `- Access mode: ${access.mode}`,
+    `- Reason: ${access.reason}`,
+    `- ${access.note}`,
+  ];
+
+  if (attachment.workspacePath) {
+    lines.push(`- Workspace path: ${attachment.workspacePath}`);
+  }
+
+  switch (access.mode) {
+    case 'indexed':
+      if (attachment.contentId) {
+        lines.push(
+          '- Valid tools: attachments list/read/search',
+          `- Read full content: read(contentId: "${attachment.contentId}", fromLine: 1, toLine: 200)`,
+          '- Search indexed content: search(query: "your search query")',
+          '- List indexed attachments: list()',
+        );
+      }
+      break;
+    case 'workspace-text':
+      if (attachment.workspacePath) {
+        lines.push(
+          '- attachments tools: do not use them for this file',
+          `- Read text via workspace: workspace__readFile(path: "${attachment.workspacePath}")`,
+        );
+      }
+      break;
+    case 'workspace-binary':
+      lines.push(
+        '- attachments tools: do not use them for this file',
+        '- workspace__readFile: do not use it; this is binary/non-text',
+        '- Refer to the file by filename/path or use a media/specialized tool if one exists',
+      );
+      break;
+    case 'inline-media':
+      lines.push(
+        '- The media payload is already part of the message content',
+        '- Do not call attachments tools or workspace__readFile for this attachment',
+      );
+      break;
+    case 'metadata-only':
+      lines.push(
+        '- File metadata only — do not guess a read path',
+        '- Clarify storage mode before attempting tool calls',
+      );
+      break;
+  }
+
+  return lines;
 }
 
 function estimateTextTokens(text: string): number {
@@ -164,6 +279,7 @@ function summarizeInlineAttachment(
   index: number,
 ): string {
   const source = attachment.inlineContent;
+  const access = deriveAttachmentAgentAccess(attachment);
   return buildHistoricalMediaSummary(index, {
     kind: source?.type ?? 'unknown',
     filename: attachment.filename,
@@ -172,6 +288,8 @@ function summarizeInlineAttachment(
     uploadedAt: attachment.uploadedAt,
     uri: source?.uri,
     hasInlineBytes: typeof source?.data === 'string' && source.data.length > 0,
+    agentAccess: access,
+    note: 'Inline media history item. Do not call attachments tools or workspace__readFile for it.',
   });
 }
 
@@ -188,6 +306,7 @@ function summarizeHistoricalMediaItem(
     mimeType: item.mimeType ?? source?.mimeType,
     uri,
     embeddedBytes: rawData ? estimateBase64Bytes(rawData) : undefined,
+    note: 'Historical media item. Do not call attachments tools or workspace__readFile for it.',
   });
 }
 
@@ -436,23 +555,15 @@ export async function prepareMessageForLLM(
     // Build text hint blocks for workspace/committed attachments
     const attachmentHintBlocks = textAttachments.map((attachment, i) => {
       const safeAttachment = createAttachmentHintPayload(attachment);
-      const accessHints = attachment.contentId
-        ? `To read the full content of this file, use:
-- read(contentId: "${attachment.contentId}", fromLine: 1, toLine: 200)
-- For keyword search: search(query: "your search query")
-- For file list: list()`
-        : attachment.workspacePath
-          ? `This file is in your workspace (may not be indexed in content store yet):
-- To read it via workspace: workspace__readFile(path: "${attachment.workspacePath}")
-- To check if it has been indexed: list()
-- If listed, use read(contentId: <id from list>, fromLine: 1, toLine: 200)`
-          : `File metadata only — use list() to find available files`;
+      const access = deriveAttachmentAgentAccess(safeAttachment);
+      const guidance = buildAttachmentGuidanceLines(
+        safeAttachment,
+        access,
+      ).join('\n');
 
       return `<attachment_${i}>
 ${JSON.stringify(safeAttachment, null, 2)}
-<!--
-${accessHints}
--->
+${guidance}
 </attachment_${i}>`;
     });
 

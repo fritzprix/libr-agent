@@ -247,6 +247,8 @@ impl AttachmentsServer {
                 "- {} available, 5 tools\n",
                 Self::format_file_count(total_count)
             ),
+            "- This service shows indexed attachments only. Workspace-only files and inline media do not appear here.\n".to_string(),
+            "- If a referenced file is missing here, it was likely kept in the workspace instead; use workspace tools for text-readable files.\n".to_string(),
         ];
 
         if !recent_files.is_empty() {

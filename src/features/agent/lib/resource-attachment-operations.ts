@@ -4,7 +4,7 @@ import { getWorkspaceDir } from '@/lib/backend/workspace';
 import { workspacePathToFileUrl } from '@/lib/file-url';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import { saveAgentFile } from '@/features/agent/api/agent-backend';
-import type { AttachmentReference } from '@/models/chat';
+import type { AttachmentAgentAccess, AttachmentReference } from '@/models/chat';
 import {
   convertToBlobUrl,
   extractFilenameFromUrl,
@@ -18,11 +18,75 @@ const TEXT_EXTENSIONS =
 const SUPPORTED_EXTENSIONS =
   /\.(txt|md|markdown|json|jsonc|json5|yaml|yml|toml|js|jsx|ts|tsx|mjs|cjs|py|rb|rs|go|java|c|cpp|h|hpp|css|scss|less|html|htm|svg|sh|bash|zsh|fish|ps1|sql|graphql|csv|log|xml|proto|pdf|docx|xlsx)$/i;
 
+const BINARY_WORKSPACE_EXTENSIONS = /\.(pdf|docx|xlsx)$/i;
+
 function isTextFile(filename: string, mimeType: string): boolean {
   return (
     /^text\/|\/(json|xml|javascript|typescript)/.test(mimeType) ||
     TEXT_EXTENSIONS.test(filename)
   );
+}
+
+function classifyWorkspaceAccessMode(
+  filename: string,
+  mimeType: string,
+): 'workspace-text' | 'workspace-binary' {
+  if (isTextFile(filename, mimeType)) {
+    return 'workspace-text';
+  }
+
+  if (
+    BINARY_WORKSPACE_EXTENSIONS.test(filename) ||
+    /^(image|audio|video)\//.test(mimeType)
+  ) {
+    return 'workspace-binary';
+  }
+
+  return 'workspace-binary';
+}
+
+function buildIndexedAgentAccess(): AttachmentAgentAccess {
+  return {
+    mode: 'indexed',
+    reason: 'indexed',
+    note: 'Indexed in the attachments store. Use attachments tools such as list/read/search instead of guessing via workspace tools.',
+  };
+}
+
+function buildInlineAgentAccess(): AttachmentAgentAccess {
+  return {
+    mode: 'inline-media',
+    reason: 'inline_media',
+    note: 'Inline media attachment. The model should use the media payload already attached to the message, not attachments or workspace text tools.',
+  };
+}
+
+function buildWorkspaceOnlyAgentAccess(
+  filename: string,
+  mimeType: string,
+  reason: 'unsupported_extension' | 'processing_failed',
+): AttachmentAgentAccess {
+  const mode = classifyWorkspaceAccessMode(filename, mimeType);
+
+  if (mode === 'workspace-text') {
+    return {
+      mode,
+      reason,
+      note:
+        reason === 'processing_failed'
+          ? 'Stored in the workspace because normal attachment processing failed. Do not use attachments tools for this file; use workspace__readFile if you need the text content.'
+          : 'Stored in the workspace only. It is not indexed in the attachments store, so attachments tools will not find it. Use workspace__readFile for text inspection.',
+    };
+  }
+
+  return {
+    mode,
+    reason,
+    note:
+      reason === 'processing_failed'
+        ? 'Stored in the workspace because normal attachment processing failed. It is a binary/non-text artifact, so attachments tools will not find it and workspace__readFile is not the right tool.'
+        : 'Stored in the workspace only because this binary/media type is not indexed in the attachments store. attachments tools will not find it, and workspace__readFile should not be used on it.',
+  };
 }
 
 interface AddAgentAttachmentArgs {
@@ -213,6 +277,7 @@ async function toInlineAttachment(
     lineCount: 0,
     preview: filename,
     uploadedAt: new Date().toISOString(),
+    agentAccess: buildInlineAgentAccess(),
     inlineContent: {
       type: inlineType,
       data: fallbackBase64Data,
@@ -228,6 +293,9 @@ export function toWorkspaceOnlyAttachment(
   mimeType: string,
   fileSize: number,
   workspacePath?: string,
+  reason:
+    | 'unsupported_extension'
+    | 'processing_failed' = 'unsupported_extension',
 ): AttachmentReference {
   logger.info(
     'File type not supported by Attachments, saving to workspace only',
@@ -246,6 +314,7 @@ export function toWorkspaceOnlyAttachment(
     preview: filename,
     uploadedAt: new Date().toISOString(),
     workspacePath,
+    agentAccess: buildWorkspaceOnlyAgentAccess(filename, mimeType, reason),
   };
 }
 
@@ -313,6 +382,7 @@ async function commitAttachmentToStore(
     chunkCount: result.chunkCount,
     lastAccessedAt: new Date().toISOString(),
     workspacePath: resolvedWorkspacePath,
+    agentAccess: buildIndexedAgentAccess(),
   };
 }
 
@@ -379,6 +449,7 @@ export async function addAgentAttachment({
           source.actualMimeType,
           source.fileSize,
           source.workspacePath,
+          'processing_failed',
         );
       }
     }
@@ -390,6 +461,7 @@ export async function addAgentAttachment({
         source.actualMimeType,
         source.fileSize,
         source.workspacePath,
+        'unsupported_extension',
       );
     }
 
@@ -417,6 +489,7 @@ export async function addAgentAttachment({
         source.actualMimeType,
         source.fileSize,
         source.workspacePath,
+        'processing_failed',
       );
     }
   } finally {

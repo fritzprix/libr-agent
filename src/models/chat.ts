@@ -28,6 +28,23 @@ export interface UIResource {
   blob?: string; // base64-encoded content when used
 }
 
+export interface AttachmentAgentAccess {
+  mode:
+    | 'indexed'
+    | 'workspace-text'
+    | 'workspace-binary'
+    | 'inline-media'
+    | 'metadata-only';
+  reason:
+    | 'indexed'
+    | 'workspace_only'
+    | 'unsupported_extension'
+    | 'processing_failed'
+    | 'inline_media'
+    | 'metadata_only';
+  note: string;
+}
+
 // MCP file attachment reference type
 export interface AttachmentReference {
   sessionId: string; // MCP file store ID (same as session ID)
@@ -43,6 +60,12 @@ export interface AttachmentReference {
   workspacePath?: string; // File path where it's saved in the workspace
   // Explicit state tracking (replaces brittle contentId prefix checking)
   status: 'pending' | 'committed' | 'workspace-only' | 'inline' | 'processing'; // File upload/storage status
+  /**
+   * AI-facing access guidance for this attachment.
+   * This is intentionally separate from lifecycle status so prompts can tell the
+   * model which tool family is valid without guessing from contentId/workspacePath.
+   */
+  agentAccess?: AttachmentAgentAccess;
   pendingId?: string; // Temporary ID for pending files (before commit)
   // For pending files only - used during upload process
   originalUrl?: string; // Original URL or blob URL
