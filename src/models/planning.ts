@@ -144,12 +144,7 @@ export function parsePlanningState(value: unknown): PlanningState | undefined {
     return undefined;
   }
 
-  const goal =
-    typeof value.goal === 'string'
-      ? value.goal
-      : value.goal === null
-        ? null
-        : null;
+  const goal = typeof value.goal === 'string' ? value.goal : null;
 
   // ⚡ Bolt: Replace .map().filter() with a single-pass loop to avoid intermediate array allocations.
   const todos: SimpleTodo[] = [];
