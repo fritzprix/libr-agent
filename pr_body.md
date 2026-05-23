@@ -1,6 +1,6 @@
 ### 💡 What
 
-- Added `limit` and `offset` schema parameters to the `listTools` MCP tool in `mcp_manager`.
+- Added `limit` and `offset` schema parameters to the builtin `tool__list` discovery tool in the `tool` server.
 - Mapped the raw JSON list response to a dense, paginated Markdown table.
 - Sanitized descriptions by escaping pipe characters and replacing newlines.
 
@@ -16,4 +16,4 @@
 
 ### 🛠️ Error Recovery
 
-- Includes actionable pagination hints at the bottom of the table, explicitly directing the LLM to call the tool again with `offset` to fetch the next block of results if more tools exist.
+- Includes actionable pagination hints at the bottom of the table, explicitly directing the LLM to call `tool__list` again with `offset` to fetch the next block of results if more tools exist.

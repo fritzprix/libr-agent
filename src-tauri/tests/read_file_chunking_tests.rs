@@ -160,6 +160,50 @@ async fn read_file_followup_chunk_uses_guided_line_range() {
 }
 
 #[tokio::test]
+async fn read_file_empty_file_preserves_standard_success_shape() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "read-file-empty";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let path = "empty.txt";
+    std::fs::write(workspace_dir.join(path), "").expect("write empty file");
+
+    let result = server
+        .handle_read_file(json!({ "path": path }), Some(session_id.to_string()))
+        .await
+        .expect("empty readFile should succeed");
+
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("📄 **`empty.txt`**"),
+        "empty-file response should still use the standard readFile success wrapper: {text}"
+    );
+    assert!(
+        text.contains("no lines shown"),
+        "empty-file response should explain that the file has no readable lines: {text}"
+    );
+    assert!(
+        !text.contains("Next chunk: readFile("),
+        "empty-file response should not suggest a nonexistent follow-up chunk: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+    assert_eq!(structured["path"], json!(path));
+    assert_eq!(structured["content"], json!(""));
+    assert_eq!(structured["size"], json!(0));
+    assert_eq!(structured["lines"], json!(0));
+    assert_eq!(structured["startLine"], json!(1));
+    assert_eq!(structured["endLine"], json!(1));
+    assert_eq!(structured["truncated"], json!(false));
+    assert_eq!(structured["nextStartLine"], serde_json::Value::Null);
+    assert_eq!(structured["suggestedEndLine"], serde_json::Value::Null);
+    assert_eq!(structured["nextLineTooLarge"], json!(false));
+}
+
+#[tokio::test]
 async fn read_file_with_anchors_uses_more_conservative_line_budget() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "read-file-anchors";

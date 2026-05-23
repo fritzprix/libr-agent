@@ -201,9 +201,10 @@ impl ErrorGuidance {
 
             // MCP Manager tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Tool) => vec![
-                "Use listTools to see available MCP servers".to_string(),
+                "Use tool__list({\"availability\":\"inventory\"}) to see available MCP servers"
+                    .to_string(),
                 "Verify the server name is correct".to_string(),
-                "Use listTools with a query to search servers by name".to_string(),
+                "Use tool__list({\"availability\":\"inventory\",\"query\":\"<name>\"}) to search servers by name".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Tool) => vec![
                 "Ensure server name is provided".to_string(),
@@ -213,7 +214,8 @@ impl ErrorGuidance {
             (ErrorCategory::OperationFailed, ToolGroup::Tool) => vec![
                 "Check server configuration is correct".to_string(),
                 "Verify the server binary/command exists".to_string(),
-                "Use listTools to see server status".to_string(),
+                "Use tool__list({\"availability\":\"inventory\"}) to see server status"
+                    .to_string(),
             ],
 
             // Playbook tool errors

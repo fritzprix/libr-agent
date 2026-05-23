@@ -339,39 +339,39 @@
       "decreaseRetries": "Decrease retry attempts",
       "increaseRetries": "Increase retry attempts",
       "providers": {
-        "OpenAI": {
+        "openai": {
           "name": "OpenAI",
           "description": "GPT-4o, o3, o4-mini and more"
         },
-        "Anthropic": {
+        "anthropic": {
           "name": "Anthropic",
           "description": "Claude 3.5 Sonnet, Haiku and more"
         },
-        "Google Gemini": {
+        "gemini": {
           "name": "Google Gemini",
           "description": "Gemini 2.5 Pro, Flash and more"
         },
-        "Ollama": {
+        "ollama": {
           "name": "Ollama",
           "description": "Run open models locally on your machine"
         },
-        "Groq": {
+        "groq": {
           "name": "Groq",
           "description": "Ultra-fast inference via Groq LPU chips"
         },
-        "Fireworks AI": {
+        "fireworks": {
           "name": "Fireworks AI",
           "description": "Fast hosting for open-source models"
         },
-        "Cerebras": {
+        "cerebras": {
           "name": "Cerebras",
           "description": "World's fastest AI inference chips"
         },
-        "OpenRouter": {
+        "openrouter": {
           "name": "OpenRouter",
           "description": "Access 200+ models through one API key"
         },
-        "None": {
+        "empty": {
           "name": "None",
           "description": ""
         }

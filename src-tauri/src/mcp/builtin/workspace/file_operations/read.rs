@@ -160,8 +160,6 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Use the file_manager initialized earlier
-
         // Security check: validate file size before reading
         if let Err(e) = file_manager
             .get_security_validator()
@@ -490,6 +488,19 @@ where
         if current_line >= end {
             break;
         }
+    }
+
+    if total_lines == 0 && start <= 1 {
+        return Ok(ReadFileChunk {
+            content: String::new(),
+            displayed_start_line: start,
+            displayed_end_line: start,
+            displayed_line_count: 0,
+            truncated: false,
+            next_start_line: None,
+            suggested_end_line: None,
+            next_line_too_large: false,
+        });
     }
 
     if result_lines.is_empty() && start > total_lines {

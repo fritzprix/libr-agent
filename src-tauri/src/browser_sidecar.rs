@@ -33,6 +33,8 @@ fn emit_sidecar_diagnostic(message: impl AsRef<str>) {
     eprintln!("{}", message.as_ref());
 }
 
+const SIDECAR_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PageClassification {
@@ -296,18 +298,22 @@ impl BrowserAutomationClient {
 
         let stdin = {
             let process_guard = self.state.process.lock().await;
-            let process = process_guard
-                .as_ref()
-                .ok_or_else(|| "Browser sidecar is not running".to_string())?;
-            let _child = process.child.clone();
+            let process = process_guard.as_ref().ok_or_else(|| {
+                self.state.pending.remove(&request_id);
+                "Browser sidecar is not running".to_string()
+            })?;
             process.stdin.clone()
         };
 
         {
             let mut stdin_guard = stdin.lock().await;
-            let stdin = stdin_guard
-                .as_mut()
-                .ok_or_else(|| "Browser sidecar stdin is closed".to_string())?;
+            let stdin = match stdin_guard.as_mut() {
+                Some(stdin) => stdin,
+                None => {
+                    self.state.pending.remove(&request_id);
+                    return Err("Browser sidecar stdin is closed".to_string());
+                }
+            };
             if let Err(error) = stdin.write_all(line.as_bytes()).await {
                 self.state.pending.remove(&request_id);
                 self.reset_process(format!(
@@ -427,7 +433,7 @@ impl BrowserAutomationClient {
         let child = Arc::new(Mutex::new(child));
         let stdin = Arc::new(Mutex::new(Some(stdin)));
 
-        spawn_sidecar_stdout_task(self.state.clone(), stdout);
+        spawn_sidecar_stdout_task(self.state.clone(), child.clone(), stdout);
         spawn_sidecar_stderr_task(stderr);
         spawn_sidecar_exit_task(self.state.clone(), child.clone());
 
@@ -442,8 +448,49 @@ fn derive_bootstrap_timeout(request_timeout: Duration) -> Duration {
     request_timeout.max(MIN_BOOTSTRAP_TIMEOUT)
 }
 
+async fn clear_process_if_matches(state: &BrowserAutomationClientState, child: &Arc<Mutex<Child>>) {
+    let mut process_guard = state.process.lock().await;
+    let matches_current_process = process_guard
+        .as_ref()
+        .map(|process| Arc::ptr_eq(&process.child, child))
+        .unwrap_or(false);
+    if matches_current_process {
+        *process_guard = None;
+    }
+}
+
+async fn process_matches_current(
+    state: &BrowserAutomationClientState,
+    child: &Arc<Mutex<Child>>,
+) -> bool {
+    state
+        .process
+        .lock()
+        .await
+        .as_ref()
+        .map(|process| Arc::ptr_eq(&process.child, child))
+        .unwrap_or(false)
+}
+
+async fn fail_pending_if_process_matches(
+    state: &BrowserAutomationClientState,
+    child: &Arc<Mutex<Child>>,
+    error: String,
+) -> bool {
+    let process_guard = state.process.lock().await;
+    let matches_current_process = process_guard
+        .as_ref()
+        .map(|process| Arc::ptr_eq(&process.child, child))
+        .unwrap_or(false);
+    if matches_current_process {
+        fail_all_pending_with_exclusions(state, error, HashSet::new());
+    }
+    matches_current_process
+}
+
 fn spawn_sidecar_stdout_task(
     state: Arc<BrowserAutomationClientState>,
+    child: Arc<Mutex<Child>>,
     stdout: tokio::process::ChildStdout,
 ) {
     tokio::spawn(async move {
@@ -465,23 +512,23 @@ fn spawn_sidecar_stdout_task(
                     }
                 },
                 Ok(None) => {
-                    fail_all_pending_with_exclusions(
+                    fail_pending_if_process_matches(
                         &state,
+                        &child,
                         "Browser sidecar closed its stdout".to_string(),
-                        HashSet::new(),
-                    );
-                    let mut process_guard = state.process.lock().await;
-                    *process_guard = None;
+                    )
+                    .await;
+                    clear_process_if_matches(&state, &child).await;
                     break;
                 }
                 Err(error) => {
-                    fail_all_pending_with_exclusions(
+                    fail_pending_if_process_matches(
                         &state,
+                        &child,
                         format!("Failed reading browser sidecar stdout: {error}"),
-                        HashSet::new(),
-                    );
-                    let mut process_guard = state.process.lock().await;
-                    *process_guard = None;
+                    )
+                    .await;
+                    clear_process_if_matches(&state, &child).await;
                     break;
                 }
             }
@@ -500,26 +547,41 @@ fn spawn_sidecar_stderr_task(stderr: tokio::process::ChildStderr) {
 
 fn spawn_sidecar_exit_task(state: Arc<BrowserAutomationClientState>, child: Arc<Mutex<Child>>) {
     tokio::spawn(async move {
-        let wait_result = child.lock().await.wait().await;
-        match wait_result {
-            Ok(status) => {
-                warn!("Browser sidecar exited with status: {status}");
-                fail_all_pending_with_exclusions(
-                    &state,
-                    format!("Browser sidecar exited unexpectedly: {status}"),
-                    HashSet::new(),
-                );
-            }
-            Err(error) => {
-                fail_all_pending_with_exclusions(
-                    &state,
-                    format!("Failed waiting for browser sidecar exit: {error}"),
-                    HashSet::new(),
-                );
+        loop {
+            let wait_result = {
+                let mut child_guard = child.lock().await;
+                child_guard.try_wait()
+            };
+
+            match wait_result {
+                Ok(Some(status)) => {
+                    warn!("Browser sidecar exited with status: {status}");
+                    fail_pending_if_process_matches(
+                        &state,
+                        &child,
+                        format!("Browser sidecar exited unexpectedly: {status}"),
+                    )
+                    .await;
+                    break;
+                }
+                Ok(None) => {
+                    if !process_matches_current(&state, &child).await {
+                        break;
+                    }
+                    tokio::time::sleep(SIDECAR_EXIT_POLL_INTERVAL).await;
+                }
+                Err(error) => {
+                    fail_pending_if_process_matches(
+                        &state,
+                        &child,
+                        format!("Failed waiting for browser sidecar exit: {error}"),
+                    )
+                    .await;
+                    break;
+                }
             }
         }
-        let mut process_guard = state.process.lock().await;
-        *process_guard = None;
+        clear_process_if_matches(&state, &child).await;
     });
 }
 

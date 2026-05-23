@@ -41,6 +41,8 @@ impl BuiltinMCPServer for ToolServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        // Legacy tool-name aliases are intentionally unsupported.
+        // Do not reintroduce deprecated names for backward compatibility here.
         match tool_name {
             "list" => operations::list_tools(args, session_id.as_deref()).await,
             "register" => operations::register_server(self, args).await,
