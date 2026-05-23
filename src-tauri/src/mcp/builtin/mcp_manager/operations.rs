@@ -486,7 +486,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let limit = args
+    let mut limit = args
         .get("limit")
         .and_then(|v| v.as_u64())
         .unwrap_or(50) as usize;
@@ -494,6 +494,9 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .get("offset")
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as usize;
+
+    // Clamp limit to [1, 100] to prevent context window bloat and invalid 0 values
+    limit = limit.clamp(1, 100);
 
     let include_internal = matches!(scope, "internal" | "all");
     let include_external = matches!(scope, "external" | "all");
@@ -514,10 +517,9 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     let mut all_tools: Vec<ToolRow> = Vec::new();
     let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
-    let mut total_tools = 0usize;
 
-    // Helper to sanitize markdown table text
-    let sanitize = |s: &str| {
+    // Helper to sanitize markdown table text to prevent injection or formatting breaks
+    let sanitize = |s: &str| -> String {
         s.replace('|', "\\|").replace('\n', " ")
     };
 
@@ -547,12 +549,11 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
             all_tools.push(ToolRow {
                 source: "Builtin".to_string(),
-                server: service_alias.to_string(),
-                tool_name: t.name,
-                status: status_str,
+                server: sanitize(service_alias),
+                tool_name: sanitize(&t.name),
+                status: sanitize(&status_str),
                 description: sanitize(&t.description),
             });
-            total_tools += 1;
         }
     }
 
@@ -604,19 +605,19 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 cached_tools.iter().collect()
             } else {
                 cached_tools
-                    .iter()
-                    .filter(|t| {
-                        let name_match = t["name"]
-                            .as_str()
-                            .map(|n| n.to_lowercase().contains(&query))
-                            .unwrap_or(false);
-                        let desc_match = t["description"]
-                            .as_str()
-                            .map(|d| d.to_lowercase().contains(&query))
-                            .unwrap_or(false);
-                        name_match || desc_match || server_matches_query
-                    })
-                    .collect()
+                     .iter()
+                     .filter(|t| {
+                         let name_match = t["name"]
+                             .as_str()
+                             .map(|n| n.to_lowercase().contains(&query))
+                             .unwrap_or(false);
+                         let desc_match = t["description"]
+                             .as_str()
+                             .map(|d| d.to_lowercase().contains(&query))
+                             .unwrap_or(false);
+                         name_match || desc_match || server_matches_query
+                     })
+                     .collect()
             };
 
             let should_display = !matched_tools.is_empty() || server_matches_query;
@@ -632,10 +633,10 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                     };
                     all_tools.push(ToolRow {
                         source: "External".to_string(),
-                        server: model.name.clone(),
+                        server: sanitize(&model.name),
                         tool_name: "-".to_string(),
                         status: "-".to_string(),
-                        description: desc.to_string(),
+                        description: sanitize(desc),
                     });
                 } else {
                     for t in matched_tools {
@@ -650,17 +651,18 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
                         all_tools.push(ToolRow {
                             source: "External".to_string(),
-                            server: model.name.clone(),
-                            tool_name: name.to_string(),
-                            status: status_str,
+                            server: sanitize(&model.name),
+                            tool_name: sanitize(name),
+                            status: sanitize(&status_str),
                             description: sanitize(desc),
                         });
-                        total_tools += 1;
                     }
                 }
             }
         }
     }
+
+    let total_tools = all_tools.len();
 
     if all_tools.is_empty() {
         let hint_text = if query.is_empty() {
