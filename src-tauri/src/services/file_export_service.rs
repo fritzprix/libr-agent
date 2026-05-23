@@ -75,16 +75,7 @@ impl FileExportService {
             tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
 
         // Sanitize package_name to prevent path traversal via malicious characters
-        let safe_package_name = package_name
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect::<String>();
+        let safe_package_name = Self::sanitize_package_name(package_name);
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let zip_filename = format!("{safe_package_name}_{timestamp}.zip");
@@ -196,5 +187,42 @@ impl FileExportService {
             content: zip_content,
             file_count: Some(processed_files.len()),
         })
+    }
+
+    /// Sanitizes package_name to prevent path traversal via malicious characters.
+    pub fn sanitize_package_name(package_name: &str) -> String {
+        package_name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_package_name_safe_inputs() {
+        assert_eq!(FileExportService::sanitize_package_name("my-awesome-package"), "my-awesome-package");
+        assert_eq!(FileExportService::sanitize_package_name("package_name_123"), "package_name_123");
+    }
+
+    #[test]
+    fn test_sanitize_package_name_directory_traversal() {
+        assert_eq!(FileExportService::sanitize_package_name("../../../evil"), "_________evil");
+        assert_eq!(FileExportService::sanitize_package_name("..\\..\\..\\evil"), "_________evil");
+    }
+
+    #[test]
+    fn test_sanitize_package_name_special_characters() {
+        assert_eq!(FileExportService::sanitize_package_name("package!@#name"), "package___name");
+        assert_eq!(FileExportService::sanitize_package_name("  trimmed package  "), "__trimmed_package__");
     }
 }
