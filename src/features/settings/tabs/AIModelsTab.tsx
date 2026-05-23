@@ -11,8 +11,6 @@ const OUTPUT_TOKEN_PRESETS = [
 ] as const;
 const RETRY_DELAY_PRESETS = [1000, 3000, 5000, 10000] as const;
 
-
-
 function findNearestPresetIndex(value: number): number {
   return OUTPUT_TOKEN_PRESETS.reduce((bestIndex, preset, index) => {
     const bestDistance = Math.abs(OUTPUT_TOKEN_PRESETS[bestIndex] - value);
@@ -66,39 +64,66 @@ function AIModelsTabComponent({
   > = {
     [AIServiceProvider.OpenAI]: {
       name: t('settings.aiModels.providers.OpenAI.name', 'OpenAI'),
-      description: t('settings.aiModels.providers.OpenAI.description', 'GPT-4o, o3, o4-mini and more'),
+      description: t(
+        'settings.aiModels.providers.OpenAI.description',
+        'GPT-4o, o3, o4-mini and more',
+      ),
     },
     [AIServiceProvider.Anthropic]: {
       name: t('settings.aiModels.providers.Anthropic.name', 'Anthropic'),
-      description: t('settings.aiModels.providers.Anthropic.description', 'Claude 3.5 Sonnet, Haiku and more'),
+      description: t(
+        'settings.aiModels.providers.Anthropic.description',
+        'Claude 3.5 Sonnet, Haiku and more',
+      ),
     },
     [AIServiceProvider.Gemini]: {
-      name: t('settings.aiModels.providers.Google Gemini.name', 'Google Gemini'),
-      description: t('settings.aiModels.providers.Google Gemini.description', 'Gemini 2.5 Pro, Flash and more'),
+      name: t(
+        'settings.aiModels.providers.Google Gemini.name',
+        'Google Gemini',
+      ),
+      description: t(
+        'settings.aiModels.providers.Google Gemini.description',
+        'Gemini 2.5 Pro, Flash and more',
+      ),
     },
     [AIServiceProvider.Ollama]: {
       name: t('settings.aiModels.providers.Ollama.name', 'Ollama'),
-      description: t('settings.aiModels.providers.Ollama.description', 'Run open models locally on your machine'),
+      description: t(
+        'settings.aiModels.providers.Ollama.description',
+        'Run open models locally on your machine',
+      ),
     },
     [AIServiceProvider.Groq]: {
       name: t('settings.aiModels.providers.Groq.name', 'Groq'),
-      description: t('settings.aiModels.providers.Groq.description', 'Ultra-fast inference via Groq LPU chips'),
+      description: t(
+        'settings.aiModels.providers.Groq.description',
+        'Ultra-fast inference via Groq LPU chips',
+      ),
     },
     [AIServiceProvider.Fireworks]: {
       name: t('settings.aiModels.providers.Fireworks AI.name', 'Fireworks AI'),
-      description: t('settings.aiModels.providers.Fireworks AI.description', 'Fast hosting for open-source models'),
+      description: t(
+        'settings.aiModels.providers.Fireworks AI.description',
+        'Fast hosting for open-source models',
+      ),
     },
     [AIServiceProvider.Cerebras]: {
       name: t('settings.aiModels.providers.Cerebras.name', 'Cerebras'),
-      description: t('settings.aiModels.providers.Cerebras.description', "World's fastest AI inference chips"),
+      description: t(
+        'settings.aiModels.providers.Cerebras.description',
+        "World's fastest AI inference chips",
+      ),
     },
     [AIServiceProvider.OpenRouter]: {
       name: t('settings.aiModels.providers.OpenRouter.name', 'OpenRouter'),
-      description: t('settings.aiModels.providers.OpenRouter.description', 'Access 200+ models through one API key'),
+      description: t(
+        'settings.aiModels.providers.OpenRouter.description',
+        'Access 200+ models through one API key',
+      ),
     },
     [AIServiceProvider.Empty]: {
       name: t('settings.aiModels.providers.None.name', 'None'),
-      description: t('settings.aiModels.providers.None.description', '')
+      description: t('settings.aiModels.providers.None.description', ''),
     },
   };
   const selectedOutputTokenIndex = findNearestPresetIndex(
