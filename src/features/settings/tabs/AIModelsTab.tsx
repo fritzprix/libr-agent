@@ -63,67 +63,94 @@ function AIModelsTabComponent({
     { name: string; description: string }
   > = {
     [AIServiceProvider.OpenAI]: {
-      name: t('settings.aiModels.providers.OpenAI.name', 'OpenAI'),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.OpenAI}.name`,
+        'OpenAI',
+      ),
       description: t(
-        'settings.aiModels.providers.OpenAI.description',
+        `settings.aiModels.providers.${AIServiceProvider.OpenAI}.description`,
         'GPT-4o, o3, o4-mini and more',
       ),
     },
     [AIServiceProvider.Anthropic]: {
-      name: t('settings.aiModels.providers.Anthropic.name', 'Anthropic'),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.Anthropic}.name`,
+        'Anthropic',
+      ),
       description: t(
-        'settings.aiModels.providers.Anthropic.description',
+        `settings.aiModels.providers.${AIServiceProvider.Anthropic}.description`,
         'Claude 3.5 Sonnet, Haiku and more',
       ),
     },
     [AIServiceProvider.Gemini]: {
       name: t(
-        'settings.aiModels.providers.Google Gemini.name',
+        `settings.aiModels.providers.${AIServiceProvider.Gemini}.name`,
         'Google Gemini',
       ),
       description: t(
-        'settings.aiModels.providers.Google Gemini.description',
+        `settings.aiModels.providers.${AIServiceProvider.Gemini}.description`,
         'Gemini 2.5 Pro, Flash and more',
       ),
     },
     [AIServiceProvider.Ollama]: {
-      name: t('settings.aiModels.providers.Ollama.name', 'Ollama'),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.Ollama}.name`,
+        'Ollama',
+      ),
       description: t(
-        'settings.aiModels.providers.Ollama.description',
+        `settings.aiModels.providers.${AIServiceProvider.Ollama}.description`,
         'Run open models locally on your machine',
       ),
     },
     [AIServiceProvider.Groq]: {
-      name: t('settings.aiModels.providers.Groq.name', 'Groq'),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.Groq}.name`,
+        'Groq',
+      ),
       description: t(
-        'settings.aiModels.providers.Groq.description',
+        `settings.aiModels.providers.${AIServiceProvider.Groq}.description`,
         'Ultra-fast inference via Groq LPU chips',
       ),
     },
     [AIServiceProvider.Fireworks]: {
-      name: t('settings.aiModels.providers.Fireworks AI.name', 'Fireworks AI'),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.Fireworks}.name`,
+        'Fireworks AI',
+      ),
       description: t(
-        'settings.aiModels.providers.Fireworks AI.description',
+        `settings.aiModels.providers.${AIServiceProvider.Fireworks}.description`,
         'Fast hosting for open-source models',
       ),
     },
     [AIServiceProvider.Cerebras]: {
-      name: t('settings.aiModels.providers.Cerebras.name', 'Cerebras'),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.Cerebras}.name`,
+        'Cerebras',
+      ),
       description: t(
-        'settings.aiModels.providers.Cerebras.description',
+        `settings.aiModels.providers.${AIServiceProvider.Cerebras}.description`,
         "World's fastest AI inference chips",
       ),
     },
     [AIServiceProvider.OpenRouter]: {
-      name: t('settings.aiModels.providers.OpenRouter.name', 'OpenRouter'),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.OpenRouter}.name`,
+        'OpenRouter',
+      ),
       description: t(
-        'settings.aiModels.providers.OpenRouter.description',
+        `settings.aiModels.providers.${AIServiceProvider.OpenRouter}.description`,
         'Access 200+ models through one API key',
       ),
     },
     [AIServiceProvider.Empty]: {
-      name: t('settings.aiModels.providers.None.name', 'None'),
-      description: t('settings.aiModels.providers.None.description', ''),
+      name: t(
+        `settings.aiModels.providers.${AIServiceProvider.Empty}.name`,
+        'None',
+      ),
+      description: t(
+        `settings.aiModels.providers.${AIServiceProvider.Empty}.description`,
+        '',
+      ),
     },
   };
   const selectedOutputTokenIndex = findNearestPresetIndex(

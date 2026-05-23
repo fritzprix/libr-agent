@@ -160,8 +160,6 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Use the file_manager initialized earlier
-
         // Security check: validate file size before reading
         if let Err(e) = file_manager
             .get_security_validator()
@@ -548,8 +546,8 @@ where
 
         return Ok(ReadFileChunk {
             content: String::new(),
-            displayed_start_line: 1,
-            displayed_end_line: 1,
+            displayed_start_line: start,
+            displayed_end_line: start,
             displayed_line_count: 0,
             truncated: false,
             next_start_line: None,
