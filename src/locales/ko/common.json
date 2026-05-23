@@ -150,7 +150,9 @@
     "settings": "설정",
     "history": "기록",
     "scheduledTasks": "예약된 작업",
-    "session": "세션"
+    "session": "세션",
+    "knowledge": "지식",
+    "org": "조직"
   },
   "sessionHistory": {
     "heading": "세션 기록",

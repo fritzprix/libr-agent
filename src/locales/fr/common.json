@@ -150,7 +150,9 @@
     "settings": "Paramètres",
     "history": "Historique",
     "scheduledTasks": "Tâches planifiées",
-    "session": "Session"
+    "session": "Session",
+    "knowledge": "Connaissance",
+    "org": "Organisation"
   },
   "sessionHistory": {
     "heading": "Historique des sessions",

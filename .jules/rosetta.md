@@ -4,3 +4,6 @@
 ## 2025-02-12 - AIModelsTab
 **Extracted:** 18 Strings
 **Languages updated:** EN, KO, DE, ES, FR, JA, PT, ZH
+## 2026-05-20 - [AppSidebar]
+**Extracted:** 2 Strings
+**Languages updated:** EN, KO, ZH, JA, FR, ES, DE, PT

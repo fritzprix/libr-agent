@@ -208,14 +208,14 @@ export default function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={location.pathname.startsWith('/knowledge')}
-                  tooltip={t('sidebar.knowledge', 'Knowledge')}
+                  tooltip={t('sidebar.knowledge')}
                 >
                   <Link
                     to="/knowledge"
                     className="flex w-full items-center gap-2"
                   >
                     <Database className="shrink-0" />
-                    <span>{t('sidebar.knowledge', 'Knowledge')}</span>
+                    <span>{t('sidebar.knowledge')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -268,11 +268,11 @@ export default function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={location.pathname.startsWith('/org')}
-                  tooltip={t('sidebar.org', 'Org')}
+                  tooltip={t('sidebar.org')}
                 >
                   <Link to="/org" className="flex w-full items-center gap-2">
                     <Network className="shrink-0" />
-                    <span>{t('sidebar.org', 'Org')}</span>
+                    <span>{t('sidebar.org')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
