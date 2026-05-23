@@ -70,10 +70,15 @@ export function calculatePlanningMetadata(
   }
 
   const totalTodos = state.todos.length;
-  const completedTodos = state.todos.reduce(
-    (acc, t) => (t.checked ? acc + 1 : acc),
-    0,
-  );
+
+  // ⚡ Bolt: Replaced .reduce() with a single-pass loop to reduce per-element callback overhead.
+  let completedTodos = 0;
+  for (let i = 0; i < state.todos.length; i++) {
+    if (state.todos[i].checked) {
+      completedTodos++;
+    }
+  }
+
   const activeTodos = totalTodos - completedTodos;
 
   return {
@@ -107,11 +112,17 @@ function parseTodo(value: unknown): SimpleTodo | null {
     return null;
   }
 
-  const parsedSubtasks = Array.isArray(subtasks)
-    ? subtasks
-        .map((item) => parseTodo(item))
-        .filter((item): item is SimpleTodo => item !== null)
-    : undefined;
+  let parsedSubtasks: SimpleTodo[] | undefined;
+  if (Array.isArray(subtasks)) {
+    // ⚡ Bolt: Replace .map().filter() with a single-pass loop to avoid intermediate array allocations.
+    parsedSubtasks = [];
+    for (let i = 0; i < subtasks.length; i++) {
+      const parsed = parseTodo(subtasks[i]);
+      if (parsed !== null) {
+        parsedSubtasks.push(parsed);
+      }
+    }
+  }
 
   return {
     id,
@@ -133,18 +144,18 @@ export function parsePlanningState(value: unknown): PlanningState | undefined {
     return undefined;
   }
 
-  const goal =
-    typeof value.goal === 'string'
-      ? value.goal
-      : value.goal === null
-        ? null
-        : null;
+  const goal = typeof value.goal === 'string' ? value.goal : null;
 
-  const todos = Array.isArray(value.todos)
-    ? value.todos
-        .map((todo) => parseTodo(todo))
-        .filter((todo): todo is SimpleTodo => todo !== null)
-    : [];
+  // ⚡ Bolt: Replace .map().filter() with a single-pass loop to avoid intermediate array allocations.
+  const todos: SimpleTodo[] = [];
+  if (Array.isArray(value.todos)) {
+    for (let i = 0; i < value.todos.length; i++) {
+      const parsed = parseTodo(value.todos[i]);
+      if (parsed !== null) {
+        todos.push(parsed);
+      }
+    }
+  }
 
   const lastUpdated =
     typeof value.lastUpdated === 'string' ? value.lastUpdated : undefined;
@@ -181,11 +192,16 @@ export function parseScratchpadState(
     return undefined;
   }
 
-  const items = Array.isArray(value.items)
-    ? value.items
-        .map((item) => parseScratchpadNote(item))
-        .filter((item): item is ScratchpadNote => item !== null)
-    : [];
+  // ⚡ Bolt: Replace .map().filter() with a single-pass loop to avoid intermediate array allocations.
+  const items: ScratchpadNote[] = [];
+  if (Array.isArray(value.items)) {
+    for (let i = 0; i < value.items.length; i++) {
+      const parsed = parseScratchpadNote(value.items[i]);
+      if (parsed !== null) {
+        items.push(parsed);
+      }
+    }
+  }
 
   const count = typeof value.count === 'number' ? value.count : items.length;
 
