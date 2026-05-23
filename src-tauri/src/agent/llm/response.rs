@@ -161,6 +161,19 @@ fn inspect_assistant_message_shape(message: &Message) -> AssistantMessageShape {
     }
 }
 
+fn assistant_message_has_only_ui_tool_calls(message: &Message) -> bool {
+    message
+        .tool_calls
+        .as_ref()
+        .map(|tool_calls| {
+            !tool_calls.is_empty()
+                && tool_calls
+                    .iter()
+                    .all(|tool_call| tool_call.function.name.starts_with("ui__"))
+        })
+        .unwrap_or(false)
+}
+
 async fn cache_assistant_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -246,11 +259,13 @@ pub async fn handle_llm_response(
         .as_ref()
         .map(|calls| !calls.is_empty())
         .unwrap_or(false);
+    let is_ui_tool = assistant_message_has_only_ui_tool_calls(&assistant_message);
 
     let admission = response_admission::inspect_response_admission(
         active_sessions,
         &session_id,
         allow_idle_tool_entry,
+        is_ui_tool,
     )
     .await?;
 

@@ -13,6 +13,7 @@ pub(crate) async fn inspect_response_admission(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
     allow_idle_tool_entry: bool,
+    is_ui_tool: bool,
 ) -> Result<ResponseAdmission, String> {
     let active = active_sessions.read().await;
     let Some(session) = active.get(session_id) else {
@@ -42,17 +43,18 @@ pub(crate) async fn inspect_response_admission(
         });
     }
 
-    if status == SessionStatus::Idle && allow_idle_tool_entry {
+    if status == SessionStatus::Idle && allow_idle_tool_entry && is_ui_tool {
         return Ok(ResponseAdmission {
             should_mark_busy: true,
         });
     }
 
     log::info!(
-        "Rejecting LLM response for session {} (status={:?}, has_tool_calls={})",
+        "Rejecting LLM response for session {} (status={:?}, has_tool_calls={}, is_ui_tool={})",
         session_id,
         status,
-        allow_idle_tool_entry
+        allow_idle_tool_entry,
+        is_ui_tool
     );
     Err("Workflow was cancelled".to_string())
 }

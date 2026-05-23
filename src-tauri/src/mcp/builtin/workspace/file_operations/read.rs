@@ -160,6 +160,11 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
+        // 7. Empty file check — return early to avoid startLine > file_length error
+        if safe_path.metadata().map(|m| m.len() == 0).unwrap_or(false) {
+            return Ok(MCPResult::success("File is empty"));
+        }
+
         // Use the file_manager initialized earlier
 
         // Security check: validate file size before reading

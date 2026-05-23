@@ -253,3 +253,36 @@ async fn list_returns_structured_results_for_ui_consumers() {
             && entry["name"].as_str() == Some("github-structured-list")
     }));
 }
+
+#[tokio::test]
+async fn legacy_tool_aliases_dispatch_without_unknown_tool_errors() {
+    let _ = repo().await;
+    let server = ToolServer::new();
+
+    let list_result = server
+        .call_tool("listTools", json!({}), None)
+        .await
+        .expect("listTools alias should return an MCP result");
+    assert_ne!(
+        extract_text(&list_result),
+        "Unknown tool: listTools",
+        "listTools alias should dispatch to the canonical list handler"
+    );
+
+    for alias in [
+        "registerServer",
+        "updateServer",
+        "deleteServer",
+        "verifyServer",
+    ] {
+        let result = server
+            .call_tool(alias, json!({}), None)
+            .await
+            .expect("legacy alias should return an MCP result");
+        let text = extract_text(&result);
+        assert!(
+            !text.contains("Unknown tool"),
+            "{alias} should dispatch to its canonical handler instead of failing as unknown: {text}"
+        );
+    }
+}

@@ -565,15 +565,11 @@ pub async fn fetch_url(
     let fetch_client = BrowserAutomationClient::new(action_timeout);
     let fetch_session_id = format!("fetch-{}", Uuid::new_v4().simple());
 
-    let session_id_result = fetch_client
+    match fetch_client
         .create_session(&fetch_session_id, &url, Some("Fetch Tool Session"), false)
-        .await;
-
-    let status_msg = match session_id_result {
-        Ok(state) => format!(
-            "Session created for {} - active session ready for content extraction",
-            state.url
-        ),
+        .await
+    {
+        Ok(_) => {}
         Err(e) => {
             fetch_client.shutdown().await;
             return Ok(handle_browser_op_error(
@@ -582,17 +578,6 @@ pub async fn fetch_url(
                 vec!["Check URL", "Try a different site"],
             ));
         }
-    };
-
-    // Check if error like 403 or network failure
-    if status_msg.contains("Network Error") || status_msg.contains("Failed") {
-        let _ = fetch_client.close_session(&fetch_session_id).await;
-        fetch_client.shutdown().await;
-        return Ok(handle_browser_op_error(
-            "Fetch URL",
-            status_msg,
-            vec!["Check URL", "Try a different site"],
-        ));
     }
 
     // Extract HTML
