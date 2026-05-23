@@ -86,6 +86,19 @@ impl WorkspaceServer {
             .unwrap_or(false); // Default OFF: reduce noise unless precise editing is needed
 
         // 3. Line range validation (moved before file access for efficiency)
+        if matches!(start_line, Some(0)) || matches!(end_line, Some(0)) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Line numbers must be >= 1 (1-indexed)",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Line numbering starts at 1, not 0".to_string(),
+                "Use startLine: 1 for the first line".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
                 return Ok(guided_error(
@@ -99,20 +112,6 @@ impl WorkspaceServer {
                         end, start
                     ),
                     "Or omit both parameters to read the entire file".to_string(),
-                ])
-                .to_mcp_result());
-            }
-
-            // Line numbers must be 1-indexed
-            if start == 0 || end == 0 {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    "Line numbers must be ≥ 1 (1-indexed)",
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Line numbering starts at 1, not 0".to_string(),
-                    "Use startLine: 1 for the first line".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -490,6 +489,26 @@ where
         if current_line >= end {
             break;
         }
+    }
+
+    if total_lines == 0 {
+        if start > 1 {
+            return Err(format!(
+                "Requested start line {} exceeds file length of {} lines",
+                start, total_lines
+            ));
+        }
+
+        return Ok(ReadFileChunk {
+            content: String::new(),
+            displayed_start_line: 1,
+            displayed_end_line: 1,
+            displayed_line_count: 0,
+            truncated: false,
+            next_start_line: None,
+            suggested_end_line: None,
+            next_line_too_large: false,
+        });
     }
 
     if result_lines.is_empty() && start > total_lines {

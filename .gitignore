@@ -59,6 +59,7 @@ src-tauri/.cargo/
 coverage/
 playwright-report/
 scripts/artifacts/
+/.refactor-logs/
 
 # pnpm & node caches
 .pnpm-store/
