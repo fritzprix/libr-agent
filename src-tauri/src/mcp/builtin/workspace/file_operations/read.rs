@@ -160,13 +160,6 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // 7. Empty file check — return early to avoid startLine > file_length error
-        if safe_path.metadata().map(|m| m.len() == 0).unwrap_or(false) {
-            return Ok(MCPResult::success("File is empty"));
-        }
-
-        // Use the file_manager initialized earlier
-
         // Security check: validate file size before reading
         if let Err(e) = file_manager
             .get_security_validator()
@@ -495,6 +488,19 @@ where
         if current_line >= end {
             break;
         }
+    }
+
+    if total_lines == 0 && start <= 1 {
+        return Ok(ReadFileChunk {
+            content: String::new(),
+            displayed_start_line: start,
+            displayed_end_line: start,
+            displayed_line_count: 0,
+            truncated: false,
+            next_start_line: None,
+            suggested_end_line: None,
+            next_line_too_large: false,
+        });
     }
 
     if result_lines.is_empty() && start > total_lines {
