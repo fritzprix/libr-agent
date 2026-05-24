@@ -321,7 +321,7 @@ function GeneralTabComponent({
                   onChange={(e) =>
                     onDisplaySettingsChange('showTokenSpeed', e.target.checked)
                   }
-                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
                 />
                 <span className="text-muted-foreground font-medium">
                   {t('settings.display.showTokenSpeed', 'Show Token Speed')}
@@ -343,7 +343,7 @@ function GeneralTabComponent({
                   onChange={(e) =>
                     onDisplaySettingsChange('compactMetrics', e.target.checked)
                   }
-                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
                 />
                 <span className="text-muted-foreground font-medium">
                   {t('settings.display.compactMetrics', 'Compact Metrics')}
