@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,51 @@ const MAX_FAILURE_TAIL_LINES = 120;
 const MAX_LOG_RUN_DIRS = 10;
 const FAILURE_PATTERN =
   /\b(error|errors|failed|failure|panic|panicked|fatal|segfault|exception|✗|ELIFECYCLE)\b/i;
+const PROCESS_PRIORITY = 10;
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getCpuCount() {
+  if (typeof os.availableParallelism === 'function') {
+    return os.availableParallelism();
+  }
+
+  return os.cpus().length;
+}
+
+function getTotalMemGiB() {
+  return os.totalmem() / 1024 ** 3;
+}
+
+export function deriveResourceCaps({
+  cpuCount = Math.max(1, getCpuCount()),
+  totalMemGiB = getTotalMemGiB(),
+} = {}) {
+  const vitestMaxWorkers = clamp(
+    Math.min(Math.floor(cpuCount / 4), Math.floor(totalMemGiB / 6)),
+    1,
+    6,
+  );
+  const cargoBuildJobs = clamp(
+    Math.min(Math.floor(cpuCount / 5), Math.floor(totalMemGiB / 8)),
+    1,
+    4,
+  );
+  const uvThreadpoolSize = clamp(Math.floor(cpuCount / 6), 1, 4);
+
+  return {
+    processPriority: PROCESS_PRIORITY,
+    vitestMaxWorkers,
+    vitestMinWorkers: 1,
+    cargoBuildJobs,
+    rustTestThreads: 1,
+    uvThreadpoolSize,
+  };
+}
+
+const resourceCaps = deriveResourceCaps();
 
 const PREPARE_STAGES = [
   {
@@ -45,34 +91,87 @@ const VALIDATE_STAGES = [
     name: 'format:check:all',
     command: pnpmCommand,
     args: ['format:check:all'],
-    env: { nodeHeapMb: 768 },
+    env: {
+      nodeHeapMb: 768,
+      uvThreadpoolSize: resourceCaps.uvThreadpoolSize,
+      processPriority: resourceCaps.processPriority,
+    },
   },
   {
     name: 'test:run',
     command: pnpmCommand,
     args: ['test:run'],
-    env: { nodeHeapMb: 768 },
+    env: {
+      nodeHeapMb: 768,
+      uvThreadpoolSize: resourceCaps.uvThreadpoolSize,
+      vitestMaxWorkers: resourceCaps.vitestMaxWorkers,
+      vitestMinWorkers: resourceCaps.vitestMinWorkers,
+      processPriority: resourceCaps.processPriority,
+    },
   },
-  { name: 'rust:fmt:check', command: pnpmCommand, args: ['rust:fmt:check'] },
-  { name: 'rust:clippy:all', command: pnpmCommand, args: ['rust:clippy:all'] },
-  { name: 'rust:test', command: pnpmCommand, args: ['rust:test'] },
+  {
+    name: 'rust:fmt:check',
+    command: pnpmCommand,
+    args: ['rust:fmt:check'],
+    env: { processPriority: resourceCaps.processPriority },
+  },
+  {
+    name: 'rust:clippy:all',
+    command: pnpmCommand,
+    args: ['rust:clippy:all'],
+    env: {
+      cargoBuildJobs: resourceCaps.cargoBuildJobs,
+      processPriority: resourceCaps.processPriority,
+    },
+  },
+  {
+    name: 'rust:test',
+    command: pnpmCommand,
+    args: ['rust:test'],
+    env: {
+      cargoBuildJobs: resourceCaps.cargoBuildJobs,
+      rustTestThreads: resourceCaps.rustTestThreads,
+      processPriority: resourceCaps.processPriority,
+    },
+  },
+  {
+    name: 'rust:check:all',
+    command: pnpmCommand,
+    args: ['rust:check:all'],
+    env: {
+      cargoBuildJobs: resourceCaps.cargoBuildJobs,
+      processPriority: resourceCaps.processPriority,
+    },
+  },
   {
     name: 'build:nosync',
     command: pnpmCommand,
     args: ['build:nosync'],
-    env: { nodeHeapMb: 768 },
+    env: {
+      nodeHeapMb: 768,
+      uvThreadpoolSize: resourceCaps.uvThreadpoolSize,
+      processPriority: resourceCaps.processPriority,
+    },
   },
   {
     name: 'perf:bundle',
     command: pnpmCommand,
     args: ['perf:bundle'],
-    env: { nodeHeapMb: 512 },
+    env: {
+      nodeHeapMb: 512,
+      uvThreadpoolSize: resourceCaps.uvThreadpoolSize,
+      processPriority: resourceCaps.processPriority,
+    },
   },
   {
     name: 'dead-code',
     command: pnpmCommand,
     args: ['dead-code'],
-    env: { nodeHeapMb: 512 },
+    env: {
+      nodeHeapMb: 512,
+      uvThreadpoolSize: resourceCaps.uvThreadpoolSize,
+      processPriority: resourceCaps.processPriority,
+    },
   },
 ];
 
@@ -124,7 +223,7 @@ export function pruneRunDirectories(entries, maxKeep) {
     .map((entry) => entry.path);
 }
 
-function getStages(mode) {
+export function getStages(mode) {
   if (mode === 'prepare') {
     return PREPARE_STAGES;
   }
@@ -191,7 +290,15 @@ function appendNodeOption(existingValue, nextValue) {
   return `${existingValue} ${nextValue}`;
 }
 
-function applyStageEnvironment(baseEnv, stage) {
+function appendEnvValue(env, key, value) {
+  if (value === undefined || value === null) {
+    return;
+  }
+
+  env[key] = String(value);
+}
+
+export function applyStageEnvironment(baseEnv, stage) {
   const env = { ...baseEnv };
 
   if (stage.env?.nodeHeapMb) {
@@ -201,7 +308,31 @@ function applyStageEnvironment(baseEnv, stage) {
     );
   }
 
+  appendEnvValue(env, 'UV_THREADPOOL_SIZE', stage.env?.uvThreadpoolSize);
+  appendEnvValue(env, 'CARGO_BUILD_JOBS', stage.env?.cargoBuildJobs);
+  appendEnvValue(env, 'RUST_TEST_THREADS', stage.env?.rustTestThreads);
+  appendEnvValue(env, 'VITEST_MAX_WORKERS', stage.env?.vitestMaxWorkers);
+  appendEnvValue(env, 'VITEST_MIN_WORKERS', stage.env?.vitestMinWorkers);
+  appendEnvValue(
+    env,
+    'VITEST_FILE_PARALLELISM',
+    stage.env?.vitestFileParallelism,
+  );
+
   return env;
+}
+
+export function trySetProcessPriority(pid, priority) {
+  if (priority === undefined || priority === null) {
+    return false;
+  }
+
+  try {
+    os.setPriority(pid, priority);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function renderStageCommand(stage) {
@@ -223,6 +354,7 @@ async function runStage(stage, stageIndex, totalStages, runDir) {
       env: applyStageEnvironment(buildStageEnvironment(), stage),
       stdio: ['inherit', 'pipe', 'pipe'],
     });
+    trySetProcessPriority(child.pid, stage.env?.processPriority);
   } catch (error) {
     logStream.end();
     throw error;

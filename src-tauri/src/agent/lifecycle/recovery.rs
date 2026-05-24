@@ -7,7 +7,7 @@ use crate::repositories::message_repository::MessageRepository as MessageReposit
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU8};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
@@ -21,13 +21,19 @@ use super::management::update_session_status_with_dispatcher;
 async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
     let message_repo = crate::state::get_message_repository();
 
-    // Load messages for the session (up to MAX_CACHED_MESSAGES)
-    let page = message_repo
-        .get_page(session_id, 1, MAX_CACHED_MESSAGES as u64)
+    // Inspect the most recent messages because unresolved tool calls only matter
+    // near the active tail after crash recovery.
+    let recent_slice = message_repo
+        .get_recent_slice(session_id, MAX_CACHED_MESSAGES as u64)
         .await
-        .map_err(|e| format!("Failed to load messages for tombstone check: {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to load messages for session {} during tombstone check: {}",
+                session_id, e
+            )
+        })?;
 
-    let messages = page.items;
+    let messages = recent_slice.items;
 
     // Collect all resolved tool_call_ids (role="tool" messages with a tool_call_id)
     let resolved_ids: HashSet<String> = messages
@@ -117,13 +123,18 @@ fn build_recovered_session(
         cancel_pending: Arc::new(AtomicBool::new(false)),
         pending_execution: None,
         messages: Arc::new(RwLock::new(Vec::new())),
-        cache_initialized: Arc::new(AtomicBool::new(false)),
+        cache_state: Arc::new(AtomicU8::new(
+            crate::agent::state::CacheInitializationState::Uninitialized as u8,
+        )),
         last_synced_at: Arc::new(RwLock::new(None)),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
         context_registry,
         compact_context: Arc::new(RwLock::new(None)),
+        compact_repair_state: Arc::new(AtomicU8::new(
+            crate::agent::state::CompactRepairState::NotNeeded as u8,
+        )),
         compaction: crate::agent::state::CompactionRuntimeState::new(),
         expected_response_id: Arc::new(RwLock::new(None)),
         cached_stable_prompt: Arc::new(RwLock::new(None)),

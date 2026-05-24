@@ -1,7 +1,7 @@
 use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::lifecycle::update_session_status_with_dispatcher;
 use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent, CompactStatePhase};
-use crate::agent::state::AgentSession;
+use crate::agent::state::{AgentSession, CompactRepairState};
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -73,6 +73,7 @@ pub async fn handle_compact_error_state(
         .unwrap_or("none");
 
     clear_compaction_state(active_sessions, &session_id, true).await;
+    rearm_compact_repair_after_failure(active_sessions, &session_id).await;
 
     let state_event = CompactStateEvent {
         session_id: session_id.clone(),
@@ -117,4 +118,16 @@ pub async fn handle_compact_error_state(
     }
 
     Ok(())
+}
+
+async fn rearm_compact_repair_after_failure(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let active = active_sessions.read().await;
+    if let Some(session) = active.get(session_id) {
+        if session.compact_repair_state() == CompactRepairState::Attempted {
+            session.set_compact_repair_state(CompactRepairState::Needed);
+        }
+    }
 }

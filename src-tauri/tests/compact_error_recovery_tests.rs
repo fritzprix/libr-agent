@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU8};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -15,8 +15,8 @@ use tauri_mcp_agent_lib::agent::llm::types::{
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
 use tauri_mcp_agent_lib::agent::state::{
-    AgentSession, CompactionKind, CompactionPhase, DeferredWorkflowStep, InFlightCompaction,
-    PendingEventManager,
+    AgentSession, CacheInitializationState, CompactRepairState, CompactionKind, CompactionPhase,
+    DeferredWorkflowStep, InFlightCompaction, PendingEventManager,
 };
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
@@ -126,13 +126,14 @@ fn build_agent_session(
         cancel_pending: Arc::new(AtomicBool::new(false)),
         pending_execution: None,
         messages: Arc::new(RwLock::new(Vec::new())),
-        cache_initialized: Arc::new(AtomicBool::new(true)),
+        cache_state: Arc::new(AtomicU8::new(CacheInitializationState::Ready as u8)),
         last_synced_at: Arc::new(RwLock::new(Some(SystemTime::now()))),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
+        compact_repair_state: Arc::new(AtomicU8::new(CompactRepairState::NotNeeded as u8)),
         compaction: tauri_mcp_agent_lib::agent::state::CompactionRuntimeState::with_test_state(
             CompactionPhase::InFlight(InFlightCompaction {
                 kind,
@@ -159,9 +160,11 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
         .expect("session upsert should succeed");
     let session_repo: Arc<dyn SessionRepository> = repo.clone();
 
+    let session = build_agent_session(metadata.clone(), true);
+    session.set_compact_repair_state(CompactRepairState::Attempted);
     let active_sessions = Arc::new(RwLock::new(HashMap::from([(
         session_id.to_string(),
-        build_agent_session(metadata.clone(), true),
+        session,
     )])));
     let dispatcher = RecordingDispatcher::default();
     let error = AgentRuntimeError::new(AgentRuntimeErrorType::RateLimitError, "LLM rate limit hit");
@@ -186,6 +189,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
     let active = active_sessions.read().await;
     let session = active.get(session_id).expect("active session should exist");
     assert_eq!(session.metadata.status, SessionStatus::Error);
+    assert_eq!(session.compact_repair_state(), CompactRepairState::Needed);
     let snapshot = session.compaction.snapshot().await;
     assert!(matches!(snapshot.phase, CompactionPhase::Idle));
     assert_eq!(snapshot.last_compacted_tail_id, None);
@@ -236,9 +240,11 @@ async fn manual_compact_failure_clears_flags_without_failing_workflow() {
         .expect("session upsert should succeed");
     let session_repo: Arc<dyn SessionRepository> = repo.clone();
 
+    let session = build_agent_session(metadata.clone(), false);
+    session.set_compact_repair_state(CompactRepairState::Attempted);
     let active_sessions = Arc::new(RwLock::new(HashMap::from([(
         session_id.to_string(),
-        build_agent_session(metadata.clone(), false),
+        session,
     )])));
     let dispatcher = RecordingDispatcher::default();
 
@@ -262,6 +268,7 @@ async fn manual_compact_failure_clears_flags_without_failing_workflow() {
     let active = active_sessions.read().await;
     let session = active.get(session_id).expect("active session should exist");
     assert_eq!(session.metadata.status, SessionStatus::Busy);
+    assert_eq!(session.compact_repair_state(), CompactRepairState::Needed);
     let snapshot = session.compaction.snapshot().await;
     assert!(matches!(snapshot.phase, CompactionPhase::Idle));
     assert_eq!(snapshot.last_compacted_tail_id, None);

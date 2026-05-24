@@ -5,7 +5,7 @@ use crate::agent::types::ToolCall;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::oneshot;
@@ -201,6 +201,49 @@ pub enum CompactionResumeAction {
     RunDeferred(DeferredWorkflowStep),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CacheInitializationState {
+    Uninitialized = 0,
+    Initializing = 1,
+    Ready = 2,
+}
+
+impl CacheInitializationState {
+    fn from_raw(value: u8) -> Self {
+        match value {
+            1 => Self::Initializing,
+            2 => Self::Ready,
+            _ => Self::Uninitialized,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheInitializationClaim {
+    Claimed,
+    InProgress,
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CompactRepairState {
+    NotNeeded = 0,
+    Needed = 1,
+    Attempted = 2,
+}
+
+impl CompactRepairState {
+    fn from_raw(value: u8) -> Self {
+        match value {
+            1 => Self::Needed,
+            2 => Self::Attempted,
+            _ => Self::NotNeeded,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CompactionRuntimeState {
     /// Closed runtime phase model for active compaction work.
@@ -352,8 +395,8 @@ pub struct AgentSession {
     /// Thread-safe: Arc allows shared ownership, RwLock allows concurrent reads
     pub messages: Arc<RwLock<Vec<Message>>>,
 
-    /// Flag indicating if cache has been initialized from DB
-    pub cache_initialized: Arc<AtomicBool>,
+    /// Explicit cache lifecycle state, used to prevent double initialization races.
+    pub cache_state: Arc<AtomicU8>,
 
     /// Last DB sync timestamp (for debugging/monitoring)
     pub last_synced_at: Arc<RwLock<Option<SystemTime>>>,
@@ -377,6 +420,9 @@ pub struct AgentSession {
     /// Compact context for the session (SP17)
     pub compact_context: Arc<RwLock<Option<CompactContextRecord>>>,
 
+    /// Explicit repair lifecycle state for rebuilding lost compact summaries.
+    pub compact_repair_state: Arc<AtomicU8>,
+
     /// Transient runtime-only compaction orchestration state.
     pub compaction: CompactionRuntimeState,
 
@@ -393,6 +439,62 @@ pub struct AgentSession {
     /// Exact prompt-layout fields from the latest emitted completion request.
     /// Reused by compaction so the summarization call preserves provider cache prefixes.
     pub last_completion_request: Arc<RwLock<Option<CompactionParentRequest>>>,
+}
+
+impl AgentSession {
+    pub fn cache_initialization_state(&self) -> CacheInitializationState {
+        CacheInitializationState::from_raw(self.cache_state.load(Ordering::Acquire))
+    }
+
+    pub fn try_claim_cache_initialization(&self) -> CacheInitializationClaim {
+        match self.cache_state.compare_exchange(
+            CacheInitializationState::Uninitialized as u8,
+            CacheInitializationState::Initializing as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => CacheInitializationClaim::Claimed,
+            Err(current) => match CacheInitializationState::from_raw(current) {
+                CacheInitializationState::Uninitialized => {
+                    unreachable!("compare_exchange cannot fail while leaving state uninitialized")
+                }
+                CacheInitializationState::Initializing => CacheInitializationClaim::InProgress,
+                CacheInitializationState::Ready => CacheInitializationClaim::Ready,
+            },
+        }
+    }
+
+    pub fn mark_cache_initialized(&self) {
+        self.cache_state
+            .store(CacheInitializationState::Ready as u8, Ordering::Release);
+    }
+
+    pub fn reset_cache_initialization(&self) {
+        self.cache_state.store(
+            CacheInitializationState::Uninitialized as u8,
+            Ordering::Release,
+        );
+    }
+
+    pub fn compact_repair_state(&self) -> CompactRepairState {
+        CompactRepairState::from_raw(self.compact_repair_state.load(Ordering::Acquire))
+    }
+
+    pub fn set_compact_repair_state(&self, state: CompactRepairState) {
+        self.compact_repair_state
+            .store(state as u8, Ordering::Release);
+    }
+
+    pub fn claim_compact_repair_attempt(&self) -> bool {
+        self.compact_repair_state
+            .compare_exchange(
+                CompactRepairState::Needed as u8,
+                CompactRepairState::Attempted as u8,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
 }
 
 #[cfg(test)]

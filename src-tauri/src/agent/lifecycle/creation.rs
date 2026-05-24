@@ -5,7 +5,7 @@ use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::{SessionMetadata, SessionStatus};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU8};
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
@@ -226,7 +226,9 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 cancel_pending: Arc::new(AtomicBool::new(false)),
                 pending_execution: None,
                 messages: Arc::new(RwLock::new(Vec::new())),
-                cache_initialized: Arc::new(AtomicBool::new(false)),
+                cache_state: Arc::new(AtomicU8::new(
+                    crate::agent::state::CacheInitializationState::Uninitialized as u8,
+                )),
                 last_synced_at: Arc::new(RwLock::new(None)),
                 repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
                 pending_events: Arc::new(RwLock::new(
@@ -235,6 +237,9 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 context_registry,
                 compact_context: Arc::new(RwLock::new(compact_context_record)),
+                compact_repair_state: Arc::new(AtomicU8::new(
+                    crate::agent::state::CompactRepairState::NotNeeded as u8,
+                )),
                 compaction: crate::agent::state::CompactionRuntimeState::new(),
                 expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),

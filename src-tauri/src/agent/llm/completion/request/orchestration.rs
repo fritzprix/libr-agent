@@ -84,6 +84,42 @@ pub async fn request_llm_completion(
     let system_prompt_tokens = token_counts.system_prompt_tokens;
     let tools_tokens = token_counts.tools_tokens;
     let raw_messages = normalized_messages.clone();
+    let compaction_parent_request = Some(CompactionParentRequest {
+        model: snapshot.model.clone(),
+        provider: snapshot.provider.clone(),
+        system_prompt: system_prompt.clone(),
+        session_context: session_context.clone(),
+        available_tools: available_tools.clone(),
+    });
+
+    store_last_completion_request(active_sessions, &session_id, &compaction_parent_request).await;
+
+    if uses_compaction_strategy(&context_settings.context_strategy)
+        && claim_compact_repair_attempt(active_sessions, &session_id).await
+    {
+        match trigger_preflight_compaction_for_messages_or_error(
+            active_sessions,
+            app_handle,
+            &session_id,
+            &snapshot.session_name,
+            &normalized_messages,
+            compaction_parent_request.clone(),
+        )
+        .await
+        {
+            Ok(true) => {
+                log::info!(
+                    "Triggered compact repair before completion request for session {}",
+                    session_id
+                );
+                return Ok(());
+            }
+            Ok(false) => {
+                reset_compact_repair_attempt(active_sessions, &session_id).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
 
     // 8. Inject Compact Summary
     let (messages_with_summary, compact_summary_injected) = inject_compact_summary(
@@ -104,16 +140,6 @@ pub async fn request_llm_completion(
     // 9. Select Final Messages
     let final_messages =
         select_final_messages(messages_with_summary, &snapshot.provider, &context_settings);
-
-    let compaction_parent_request = Some(CompactionParentRequest {
-        model: snapshot.model.clone(),
-        provider: snapshot.provider.clone(),
-        system_prompt: system_prompt.clone(),
-        session_context: session_context.clone(),
-        available_tools: available_tools.clone(),
-    });
-
-    store_last_completion_request(active_sessions, &session_id, &compaction_parent_request).await;
 
     // 10. Check empty messages
     match check_empty_messages(
@@ -515,6 +541,27 @@ async fn store_last_completion_request(
     if let Some(session) = active.get(session_id) {
         let mut last_completion_request = session.last_completion_request.write().await;
         *last_completion_request = request.clone();
+    }
+}
+
+async fn claim_compact_repair_attempt(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> bool {
+    let active = active_sessions.read().await;
+    active
+        .get(session_id)
+        .map(|session| session.claim_compact_repair_attempt())
+        .unwrap_or(false)
+}
+
+async fn reset_compact_repair_attempt(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let active = active_sessions.read().await;
+    if let Some(session) = active.get(session_id) {
+        session.set_compact_repair_state(crate::agent::state::CompactRepairState::Needed);
     }
 }
 

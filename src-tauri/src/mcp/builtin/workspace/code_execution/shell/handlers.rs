@@ -334,11 +334,14 @@ impl WorkspaceServer {
 mod tests {
     use super::*;
     use crate::agent::context::registry::ContextRegistry;
-    use crate::agent::state::{AgentSession, CompactionRuntimeState, PendingEventManager};
+    use crate::agent::state::{
+        AgentSession, CacheInitializationState, CompactRepairState, CompactionRuntimeState,
+        PendingEventManager,
+    };
     use crate::repositories::{SessionMetadata, SessionStatus};
     use crate::session::SessionManager;
     use std::collections::HashMap;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, AtomicU8};
     use std::sync::Arc;
     use tempfile::tempdir;
     use tokio::sync::RwLock;
@@ -387,13 +390,14 @@ mod tests {
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
             messages: Arc::new(RwLock::new(Vec::new())),
-            cache_initialized: Arc::new(AtomicBool::new(true)),
+            cache_state: Arc::new(AtomicU8::new(CacheInitializationState::Ready as u8)),
             last_synced_at: Arc::new(RwLock::new(None)),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),
             compact_context: Arc::new(RwLock::new(None)),
+            compact_repair_state: Arc::new(AtomicU8::new(CompactRepairState::NotNeeded as u8)),
             compaction: CompactionRuntimeState::new(),
             expected_response_id: Arc::new(RwLock::new(None)),
             cached_stable_prompt: Arc::new(RwLock::new(None)),
