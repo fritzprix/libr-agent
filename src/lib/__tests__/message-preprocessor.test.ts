@@ -89,11 +89,14 @@ describe('message-preprocessor', () => {
 
       expect(text).toContain('<attachment_0>');
       expect(text).toContain('"filename": "test.txt"');
+      expect(text).toContain('"mode": "indexed"');
       expect(text).toContain(
-        'read(contentId: "content-1", fromLine: 1, toLine: 200)',
+        'attachments__read(contentId: "content-1", fromLine: 1, toLine: 200)',
       );
-      expect(text).toContain('search(query: "your search query")');
-      expect(text).toContain('list()');
+      expect(text).toContain(
+        'attachments__search(query: "your search query")',
+      );
+      expect(text).toContain('attachments__list()');
     });
 
     it('logs the effective default for includeLatestMediaPayload', async () => {
@@ -148,10 +151,8 @@ describe('message-preprocessor', () => {
       const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('workspace__readFile(path: "/path/to/file.txt")');
-      expect(text).toContain('list()');
-      expect(text).toContain(
-        'read(contentId: <id from list>, fromLine: 1, toLine: 200)',
-      );
+      expect(text).toContain('"mode": "workspace-text"');
+      expect(text).toContain('attachments tools: do not use them for this file');
     });
 
     it('should append attachment hints for metadata-only files', async () => {
@@ -176,7 +177,31 @@ describe('message-preprocessor', () => {
       const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('File metadata only');
-      expect(text).toContain('list()');
+      expect(text).toContain('"mode": "metadata-only"');
+    });
+
+    it('marks workspace-only binary attachments as not readable through text tools', async () => {
+      const message = createMessage({
+        attachments: [
+          {
+            sessionId: 'session-1',
+            workspacePath: '/path/to/video.mp4',
+            filename: 'video.mp4',
+            mimeType: 'video/mp4',
+            size: 1024,
+            lineCount: 0,
+            preview: 'video.mp4',
+            uploadedAt: new Date().toISOString(),
+            status: 'workspace-only',
+          },
+        ],
+      });
+
+      const processed = await prepareMessageForLLM(message);
+      const text = (processed.content[1] as MCPTextContent).text;
+
+      expect(text).toContain('"mode": "workspace-binary"');
+      expect(text).toContain('workspace__readFile: do not use it; this is binary/non-text');
     });
 
     it('should handle multiple attachments', async () => {
@@ -553,6 +578,11 @@ describe('message-preprocessor', () => {
       ) as MCPTextContent[];
       expect(
         olderTextBlocks.some((c) => c.text.includes('<historical_media_0>')),
+      ).toBe(true);
+      expect(
+        olderTextBlocks.some((c) =>
+          c.text.includes('Do not call attachments tools or workspace__readFile'),
+        ),
       ).toBe(true);
 
       const latestImageBlocks = processedLatest.content.filter(
