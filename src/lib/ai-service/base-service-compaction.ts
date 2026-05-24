@@ -1,25 +1,14 @@
 import type { Message } from '@/models/chat';
 import { AIServiceError, type AIServiceProvider } from './types';
 import type { CompactOptions } from './base-service-shared';
-import { assembleRequestLayout } from './base-service-context';
 
 interface CompactionContext {
   options?: CompactOptions;
-  prepareContextInjection: (
-    systemPrompt: string | undefined,
-    sessionContext: string | undefined,
-    messages: Message[],
-  ) => {
-    systemPrompt: string | undefined;
-    sessionContext?: string;
-    messages: Message[];
-  };
   streamChat: (
     messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
-      sessionContext?: string;
       availableTools?: CompactOptions['availableTools'];
       config?: CompactOptions['config'];
       forceToolUse: false;
@@ -35,25 +24,9 @@ export async function compactMessages(
   messages: Message[],
   context: CompactionContext,
 ): Promise<string> {
-  const {
-    systemPrompt: effectiveSystemPrompt,
-    sessionContext: effectiveSessionContext,
-    messages: effectiveMessages,
-  } = assembleRequestLayout(
-    {
-      systemPrompt: context.options?.systemPrompt,
-      sessionContext: context.options?.sessionContext,
-      messages,
-    },
-    {
-      prepareContextInjection: context.prepareContextInjection,
-    },
-  );
-
-  const streamGenerator = context.streamChat(effectiveMessages, {
+  const streamGenerator = context.streamChat(messages, {
     modelName: context.options?.modelName,
-    systemPrompt: effectiveSystemPrompt,
-    sessionContext: effectiveSessionContext,
+    systemPrompt: context.options?.systemPrompt,
     availableTools: context.options?.availableTools,
     config: context.options?.config,
     forceToolUse: false,

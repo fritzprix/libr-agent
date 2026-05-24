@@ -5,7 +5,6 @@ import type { AIServiceConfig, SamplingOptions } from './types';
 export interface StreamChatOptions {
   modelName?: string;
   systemPrompt?: string;
-  sessionContext?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
   forceToolUse?: boolean;
@@ -16,7 +15,6 @@ export interface StreamChatOptions {
 export interface PrepareStreamChatOptions {
   modelName?: string;
   systemPrompt?: string;
-  sessionContext?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
   disableToolUse?: boolean;
@@ -39,7 +37,6 @@ export interface CompactOptions {
   modelName?: string;
   config?: AIServiceConfig;
   systemPrompt?: string;
-  sessionContext?: string;
   availableTools?: MCPTool[];
   signal?: AbortSignal;
 }
@@ -49,13 +46,4 @@ export interface SampleTextOptions {
   samplingOptions?: SamplingOptions;
   config?: AIServiceConfig;
   signal?: AbortSignal;
-}
-
-export interface SyntheticSessionContextMessageOptions {
-  idPrefix?: string;
-  contentText?: string;
-  metadata?: Record<string, unknown>;
-  sessionIdFallback?: string;
-  threadIdFallback?: string;
-  createdAt?: Date;
 }

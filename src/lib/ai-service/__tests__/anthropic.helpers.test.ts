@@ -21,21 +21,14 @@ import { buildAnthropicToolResultBlocks } from '../anthropic/format';
 import { parseAnthropicToolInput } from '../anthropic/tool-input';
 
 describe('Anthropic helper modules', () => {
-  it('builds separate stable and volatile Anthropic system blocks', () => {
-    const blocks = buildAnthropicSystemBlocks(
-      'Stable header',
-      '# Current Context Information\nvolatile bits',
-    );
+  it('builds a single cacheable Anthropic system block', () => {
+    const blocks = buildAnthropicSystemBlocks('Stable header');
 
-    expect(blocks).toHaveLength(2);
+    expect(blocks).toHaveLength(1);
     expect(blocks?.[0]).toMatchObject({
       type: 'text',
       text: 'Stable header',
       cache_control: { type: 'ephemeral' },
-    });
-    expect(blocks?.[1]).toMatchObject({
-      type: 'text',
-      text: '# Current Context Information\nvolatile bits',
     });
   });
 
@@ -340,10 +333,8 @@ describe('Anthropic helper modules', () => {
         sessionId: 'session-1',
         threadId: 'session-1',
         role: 'user',
+        source: 'session-context',
         content: [{ type: 'text', text: '# Current Context Information\nvolatile' }],
-        metadata: {
-          anthropicSyntheticSessionContext: true,
-        },
       },
     ];
 
@@ -415,10 +406,8 @@ describe('Anthropic helper modules', () => {
         sessionId: 'session-1',
         threadId: 'session-1',
         role: 'user',
+        source: 'session-context',
         content: [{ type: 'text', text: '# Current Context Information\nvolatile' }],
-        metadata: {
-          anthropicSyntheticSessionContext: true,
-        },
       },
     ];
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import { BaseAIService, stableStringify } from '../base-service';
-import { assembleRequestLayout } from '../base-service-context';
 import { AIServiceError, AIServiceProvider } from '../types';
 
 class TestBaseAIService extends BaseAIService<string, string> {
@@ -45,7 +44,6 @@ class TestBaseAIService extends BaseAIService<string, string> {
     options?: {
       modelName?: string;
       systemPrompt?: string;
-      sessionContext?: string;
     },
   ): AsyncGenerator<string, void, void> {
     void messages;
@@ -223,35 +221,3 @@ describe('BaseAIService.compact', () => {
   });
 });
 
-describe('assembleRequestLayout', () => {
-  it('passes completion requests through unchanged before provider injection', () => {
-    const messages: Message[] = [
-      {
-        id: 'user-1',
-        sessionId: 'session-1',
-        threadId: 'session-1',
-        role: 'user',
-        content: [{ type: 'text', text: 'Hello' }],
-      },
-    ];
-
-    const prepared = assembleRequestLayout(
-      {
-        systemPrompt: 'stable',
-        sessionContext: 'volatile',
-        messages,
-      },
-      {
-        prepareContextInjection: (systemPrompt, sessionContext, requestMessages) => ({
-          systemPrompt,
-          sessionContext,
-          messages: requestMessages,
-        }),
-      },
-    );
-
-    expect(prepared.systemPrompt).toBe('stable');
-    expect(prepared.sessionContext).toBe('volatile');
-    expect(prepared.messages).toEqual(messages);
-  });
-});

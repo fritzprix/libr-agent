@@ -2,12 +2,13 @@ use crate::agent::llm::completion::context::load_context_management_settings;
 use crate::agent::llm::completion::request::normalize_request_messages;
 use crate::agent::llm::types::{CompactRequest, CompactStatePhase, CompactionParentRequest};
 use crate::agent::state::{
-    AgentSession, CompactionBeginOutcome, CompactionKind, CompactionReuseOutcome,
-    DeferredWorkflowStep,
+    AgentSession, CompactionBeginOutcome, CompactionKind, CompactionRecoveryPhase,
+    CompactionReuseOutcome, DeferredWorkflowStep,
 };
 use crate::agent::tauri_events::{
     emit_compact_finished, emit_compact_request, emit_compact_started,
 };
+use crate::mcp::types::MCPTool;
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 use std::collections::HashMap;
@@ -16,7 +17,8 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::payload::{
-    build_compaction_request_payload, estimate_compaction_non_message_tokens,
+    apply_compaction_retry_budget, build_compaction_request_payload,
+    build_overflow_recovery_compaction_messages, estimate_compaction_non_message_tokens,
     fit_compaction_request_messages_to_limit, CompactionRequestPayload,
 };
 
@@ -165,6 +167,42 @@ struct PreparedCompactionRequest {
     reused_prior_summary: bool,
 }
 
+struct PreparedCompactionAttempt {
+    prepared: PreparedCompactionRequest,
+    recovery_phase: CompactionRecoveryPhase,
+    retry_attempt: u32,
+}
+
+const MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS: u32 = 3;
+
+fn advance_compaction_overflow_recovery_step(
+    recovery_phase: CompactionRecoveryPhase,
+    retry_attempt: u32,
+) -> Option<(CompactionRecoveryPhase, u32)> {
+    match recovery_phase {
+        CompactionRecoveryPhase::CacheAligned
+            if retry_attempt < MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS =>
+        {
+            Some((CompactionRecoveryPhase::CacheAligned, retry_attempt + 1))
+        }
+        CompactionRecoveryPhase::CacheAligned => {
+            Some((CompactionRecoveryPhase::OverflowRecovery, 0))
+        }
+        CompactionRecoveryPhase::OverflowRecovery => {
+            Some((CompactionRecoveryPhase::DegradedTools, 0))
+        }
+        CompactionRecoveryPhase::DegradedTools => None,
+    }
+}
+
+pub fn advance_compaction_overflow_recovery_step_for_testing(
+    recovery_phase: CompactionRecoveryPhase,
+    retry_attempt: u32,
+) -> Option<(CompactionRecoveryPhase, u32)> {
+    advance_compaction_overflow_recovery_step(recovery_phase, retry_attempt)
+}
+
+#[derive(Clone)]
 struct PrepareCompactionRequestInput<'a> {
     session_id: &'a str,
     session_name: &'a str,
@@ -174,6 +212,22 @@ struct PrepareCompactionRequestInput<'a> {
     compact_context_record: Option<CompactContextRecord>,
     started_at_ms: i64,
     resume_completion_after_compact: bool,
+    recovery_phase: CompactionRecoveryPhase,
+    retry_attempt: u32,
+}
+
+fn degrade_tools_for_overflow_recovery(tools: &[MCPTool]) -> Vec<MCPTool> {
+    tools
+        .iter()
+        .map(|tool| MCPTool {
+            name: tool.name.clone(),
+            title: tool.title.clone(),
+            description: tool.description.clone(),
+            input_schema: crate::mcp::schema::MCPToolInputSchema::default(),
+            output_schema: None,
+            annotations: tool.annotations.clone(),
+        })
+        .collect()
 }
 
 async fn prepare_compaction_request(
@@ -189,6 +243,8 @@ async fn prepare_compaction_request(
         compact_context_record,
         started_at_ms,
         resume_completion_after_compact,
+        recovery_phase,
+        retry_attempt,
     } = input;
 
     let Some(CompactionRequestPayload {
@@ -211,20 +267,83 @@ async fn prepare_compaction_request(
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let effective_input_token_limit =
+        apply_compaction_retry_budget(safe_input_token_limit, retry_attempt);
     let resolved_parent_request =
         resolve_parent_request(active_sessions, session_id, parent_request).await;
+    let request_layout = resolved_parent_request.as_ref().map(|request| {
+        crate::agent::llm::build_request_layout(
+            &request.provider,
+            session_id,
+            request.system_prompt.clone(),
+            request.session_context.clone(),
+            compact_messages.clone(),
+        )
+    });
+    let final_compact_messages = request_layout
+        .as_ref()
+        .map(|layout| layout.messages.clone())
+        .unwrap_or_else(|| compact_messages.clone());
+    let final_parent_request = match (resolved_parent_request, request_layout.as_ref()) {
+        (Some(mut request), Some(layout)) => {
+            request.system_prompt = layout.system_prompt.clone();
+            Some(request)
+        }
+        (None, Some(_)) => None,
+        (request, None) => request,
+    };
+    let final_parent_request = match (recovery_phase, final_parent_request) {
+        (CompactionRecoveryPhase::DegradedTools, Some(mut request)) => {
+            request.available_tools = request
+                .available_tools
+                .as_ref()
+                .map(|tools| degrade_tools_for_overflow_recovery(tools));
+            Some(request)
+        }
+        (_, request) => request,
+    };
     let (system_prompt_tokens, tools_tokens) =
-        estimate_compaction_non_message_tokens(resolved_parent_request.as_ref());
-    let compact_messages = fit_compaction_request_messages_to_limit(
-        &compact_messages,
-        resolved_parent_request
-            .as_ref()
-            .map(|request| request.provider.as_str())
-            .unwrap_or("openai"),
-        safe_input_token_limit,
-        system_prompt_tokens,
-        tools_tokens,
-    )?;
+        estimate_compaction_non_message_tokens(final_parent_request.as_ref());
+    let provider_id = final_parent_request
+        .as_ref()
+        .map(|request| request.provider.as_str())
+        .unwrap_or("openai");
+    let compact_messages = match recovery_phase {
+        CompactionRecoveryPhase::CacheAligned => fit_compaction_request_messages_to_limit(
+            &final_compact_messages,
+            provider_id,
+            effective_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+        )?,
+        CompactionRecoveryPhase::OverflowRecovery | CompactionRecoveryPhase::DegradedTools => {
+            build_overflow_recovery_compaction_messages(
+                &final_compact_messages,
+                provider_id,
+                effective_input_token_limit,
+                system_prompt_tokens,
+                tools_tokens,
+            )?
+        }
+    };
+
+    if retry_attempt > 0 {
+        log::warn!(
+            "🔧 Applying compaction retry budget: session={}, retry_attempt={}, safe_input_token_limit={}, effective_input_token_limit={}",
+            session_id,
+            retry_attempt,
+            safe_input_token_limit,
+            effective_input_token_limit
+        );
+    }
+    if !matches!(recovery_phase, CompactionRecoveryPhase::CacheAligned) {
+        log::warn!(
+            "🩹 Applying compaction overflow recovery: session={}, recovery_phase={:?}, tools_degraded={}",
+            session_id,
+            recovery_phase,
+            matches!(recovery_phase, CompactionRecoveryPhase::DegradedTools)
+        );
+    }
 
     Ok(Some(PreparedCompactionRequest {
         compact_event: CompactRequest {
@@ -233,7 +352,7 @@ async fn prepare_compaction_request(
             messages: compact_messages,
             from_id,
             to_id,
-            parent_request: resolved_parent_request,
+            parent_request: final_parent_request,
             resume_completion_after_compact,
         },
         started_at_ms,
@@ -241,6 +360,55 @@ async fn prepare_compaction_request(
         compacted_delta_count,
         reused_prior_summary,
     }))
+}
+
+async fn prepare_compaction_request_with_recovery_ladder(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    input: PrepareCompactionRequestInput<'_>,
+    initial_recovery_phase: CompactionRecoveryPhase,
+    initial_retry_attempt: u32,
+) -> Result<Option<PreparedCompactionAttempt>, String> {
+    let mut recovery_phase = initial_recovery_phase;
+    let mut retry_attempt = initial_retry_attempt;
+
+    loop {
+        match prepare_compaction_request(
+            active_sessions,
+            PrepareCompactionRequestInput {
+                recovery_phase,
+                retry_attempt,
+                ..input.clone()
+            },
+        )
+        .await
+        {
+            Ok(Some(prepared)) => {
+                return Ok(Some(PreparedCompactionAttempt {
+                    prepared,
+                    recovery_phase,
+                    retry_attempt,
+                }));
+            }
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                let Some((next_recovery_phase, next_retry_attempt)) =
+                    advance_compaction_overflow_recovery_step(recovery_phase, retry_attempt)
+                else {
+                    return Err(error);
+                };
+                log::warn!(
+                    "🪜 Advancing local compaction overflow recovery before emit: session={}, from_phase={:?}, from_retry_attempt={}, to_phase={:?}, to_retry_attempt={}",
+                    input.session_id,
+                    recovery_phase,
+                    retry_attempt,
+                    next_recovery_phase,
+                    next_retry_attempt
+                );
+                recovery_phase = next_recovery_phase;
+                retry_attempt = next_retry_attempt;
+            }
+        }
+    }
 }
 
 async fn trigger_post_response_blocking_compaction(
@@ -294,7 +462,9 @@ async fn trigger_post_response_blocking_compaction(
 
     let started_at_ms = chrono::Utc::now().timestamp_millis();
 
-    let Some(prepared) = prepare_compaction_request(
+    let initial_retry_attempt = compaction_state.retry_attempt().await;
+    let initial_recovery_phase = compaction_state.recovery_phase().await;
+    let Some(prepared_attempt) = prepare_compaction_request_with_recovery_ladder(
         active_sessions,
         PrepareCompactionRequestInput {
             session_id,
@@ -305,7 +475,11 @@ async fn trigger_post_response_blocking_compaction(
             compact_context_record,
             started_at_ms,
             resume_completion_after_compact: false,
+            recovery_phase: initial_recovery_phase,
+            retry_attempt: initial_retry_attempt,
         },
+        initial_recovery_phase,
+        initial_retry_attempt,
     )
     .await?
     else {
@@ -316,6 +490,11 @@ async fn trigger_post_response_blocking_compaction(
         );
         return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
     };
+    let PreparedCompactionAttempt {
+        prepared,
+        recovery_phase,
+        retry_attempt,
+    } = prepared_attempt;
 
     let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
@@ -334,6 +513,9 @@ async fn trigger_post_response_blocking_compaction(
         .await
     {
         CompactionBeginOutcome::Started => {
+            compaction_state
+                .set_recovery_progress(recovery_phase, retry_attempt)
+                .await;
             if let Err(error) = emit_compact_started(
                 app_handle,
                 session_id.to_string(),
@@ -341,11 +523,13 @@ async fn trigger_post_response_blocking_compaction(
                 true,
             ) {
                 compaction_state.clear_runtime_state(true).await;
+                compaction_state.reset_recovery_progress().await;
                 return Err(error);
             }
 
             if let Err(error) = emit_compact_request(app_handle, compact_event) {
                 compaction_state.clear_runtime_state(true).await;
+                compaction_state.reset_recovery_progress().await;
                 if let Err(emit_error) = emit_compact_finished(
                     app_handle,
                     session_id.to_string(),
@@ -516,7 +700,9 @@ pub(crate) async fn try_trigger_preflight_compaction(
 
     let started_at_ms = chrono::Utc::now().timestamp_millis();
     let compact_context_record = compact_context_handle.read().await.clone();
-    let Some(prepared) = prepare_compaction_request(
+    let initial_retry_attempt = compaction.retry_attempt().await;
+    let initial_recovery_phase = compaction.recovery_phase().await;
+    let Some(prepared_attempt) = prepare_compaction_request_with_recovery_ladder(
         active_sessions,
         PrepareCompactionRequestInput {
             session_id,
@@ -527,7 +713,11 @@ pub(crate) async fn try_trigger_preflight_compaction(
             compact_context_record,
             started_at_ms,
             resume_completion_after_compact,
+            recovery_phase: initial_recovery_phase,
+            retry_attempt: initial_retry_attempt,
         },
+        initial_recovery_phase,
+        initial_retry_attempt,
     )
     .await?
     else {
@@ -539,6 +729,11 @@ pub(crate) async fn try_trigger_preflight_compaction(
         );
         return Ok(false);
     };
+    let PreparedCompactionAttempt {
+        prepared,
+        recovery_phase,
+        retry_attempt,
+    } = prepared_attempt;
 
     let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
@@ -557,6 +752,9 @@ pub(crate) async fn try_trigger_preflight_compaction(
         .await
     {
         CompactionBeginOutcome::Started => {
+            compaction
+                .set_recovery_progress(recovery_phase, retry_attempt)
+                .await;
             if let Err(error) = emit_compact_started(
                 app_handle,
                 session_id.to_string(),
@@ -564,10 +762,12 @@ pub(crate) async fn try_trigger_preflight_compaction(
                 resume_completion_after_compact,
             ) {
                 compaction.clear_runtime_state(true).await;
+                compaction.reset_recovery_progress().await;
                 return Err(error);
             }
             if let Err(error) = emit_compact_request(app_handle, compact_event) {
                 compaction.clear_runtime_state(true).await;
+                compaction.reset_recovery_progress().await;
                 return Err(error);
             }
         }

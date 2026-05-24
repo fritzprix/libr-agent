@@ -138,12 +138,6 @@ describe('AgentChatContext', () => {
       listModels: mockListModels,
       dispose: mockDispose,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
-      prepareContextInjection: vi.fn(
-        (systemPrompt, _sessionContext, messages) => ({
-          systemPrompt,
-          messages,
-        }),
-      ),
     });
 
     mockListModels.mockResolvedValue([

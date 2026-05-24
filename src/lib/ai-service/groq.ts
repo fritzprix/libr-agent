@@ -88,7 +88,6 @@ export class GroqService extends BaseAIService<
     options: {
       modelName?: string;
       systemPrompt?: string;
-      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       signal?: AbortSignal;

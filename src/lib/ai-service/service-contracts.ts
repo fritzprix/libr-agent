@@ -1,15 +1,10 @@
 import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
-import type {
-  AIServiceConfig,
-  ContextInjectionResult,
-  ModelInfo,
-} from './types';
+import type { AIServiceConfig, ModelInfo } from './types';
 
 export interface AIStreamChatOptions {
   modelName?: string;
   systemPrompt?: string;
-  sessionContext?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
   forceToolUse?: boolean;
@@ -28,7 +23,6 @@ export interface AICompactOptions {
   modelName?: string;
   config?: AIServiceConfig;
   systemPrompt?: string;
-  sessionContext?: string;
   availableTools?: MCPTool[];
   signal?: AbortSignal;
 }
@@ -63,14 +57,6 @@ export interface AICompactionService {
   compact(messages: Message[], options?: AICompactOptions): Promise<string>;
 }
 
-export interface AIContextInjectionService {
-  prepareContextInjection(
-    systemPrompt: string | undefined,
-    sessionContext: string | undefined,
-    messages: Message[],
-  ): ContextInjectionResult;
-}
-
 export interface AIMessageSanitizationService {
   sanitizeMessages(messages: Message[]): Message[];
   sanitizeSingleMessage(message: Message): Message | null;
@@ -82,7 +68,6 @@ export interface AIServiceLifecycle {
 
 export type AICompletionExecutionService = AIStreamingService &
   AIModelDiscoveryService &
-  AIContextInjectionService &
   AIMessageSanitizationService &
   AIServiceLifecycle;
 
@@ -96,6 +81,5 @@ export interface IAIService
     AIModelDiscoveryService,
     AIToolSupportService,
     AICompactionService,
-    AIContextInjectionService,
     AIMessageSanitizationService,
     AIServiceLifecycle {}

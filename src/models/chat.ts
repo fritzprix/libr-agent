@@ -191,6 +191,7 @@ export const MESSAGE_SOURCES = [
   'tool',
   'compact-summary',
   'recovery',
+  'session-context',
   'scheduled_task',
 ] as const;
 

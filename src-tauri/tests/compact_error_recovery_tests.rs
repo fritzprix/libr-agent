@@ -14,9 +14,10 @@ use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
+use tauri_mcp_agent_lib::agent::session_manager::should_retry_budget_related_blocking_compaction;
 use tauri_mcp_agent_lib::agent::state::{
-    AgentSession, CompactionKind, CompactionPhase, DeferredWorkflowStep, InFlightCompaction,
-    PendingEventManager,
+    AgentSession, CompactionKind, CompactionPhase, CompactionRecoveryPhase, DeferredWorkflowStep,
+    InFlightCompaction, PendingEventManager,
 };
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
@@ -269,6 +270,50 @@ async fn manual_compact_failure_clears_flags_without_failing_workflow() {
 
     assert_eq!(dispatcher.compact_states().len(), 1);
     assert!(dispatcher.agent_events().is_empty());
+}
+
+#[test]
+fn preflight_context_limit_failure_is_retryable() {
+    let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
+        phase: CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Preflight,
+            current_tail_id: Some("tail".to_string()),
+            started_at_ms: 1234,
+        }),
+        last_compacted_tail_id: Some("tail".to_string()),
+        retry_attempt: 0,
+        recovery_phase: CompactionRecoveryPhase::CacheAligned,
+    };
+    let error = AgentRuntimeError::new(
+        AgentRuntimeErrorType::ContextLimitError,
+        "Prompt too long: 146228 tokens exceeds max context window of 131072 tokens",
+    );
+
+    assert!(should_retry_budget_related_blocking_compaction(
+        &snapshot, &error
+    ));
+}
+
+#[test]
+fn degraded_tool_phase_stops_retrying_preflight_compaction() {
+    let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
+        phase: CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Preflight,
+            current_tail_id: Some("tail".to_string()),
+            started_at_ms: 1234,
+        }),
+        last_compacted_tail_id: Some("tail".to_string()),
+        retry_attempt: 0,
+        recovery_phase: CompactionRecoveryPhase::DegradedTools,
+    };
+    let error = AgentRuntimeError::new(
+        AgentRuntimeErrorType::ContextLimitError,
+        "Prompt too long: 146228 tokens exceeds max context window of 131072 tokens",
+    );
+
+    assert!(!should_retry_budget_related_blocking_compaction(
+        &snapshot, &error
+    ));
 }
 
 #[tokio::test]

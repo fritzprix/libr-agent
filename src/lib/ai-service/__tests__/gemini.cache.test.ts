@@ -83,6 +83,17 @@ function createUserMessage(text: string): Message {
   };
 }
 
+function createSessionContextMessage(text: string): Message {
+  return {
+    id: 'gemini-session-context-msg-hello',
+    sessionId: 'session-1',
+    threadId: 'thread-1',
+    role: 'user',
+    source: 'session-context',
+    content: [{ type: 'text', text }],
+  };
+}
+
 function createAssistantMessage(id: string, text: string): Message {
   return {
     id,
@@ -254,41 +265,22 @@ describe('GeminiService request assembly', () => {
     );
   });
 
-  it('moves volatile session context into a synthetic tail message for Gemini', () => {
-    const service = new GeminiService('test-key');
-
-    const prepared = service.prepareContextInjection(
-      'Stable system prompt',
-      '# Current Context Information\nvolatile bits',
-      [createUserMessage('hello')],
-    );
-
-    expect(prepared.systemPrompt).toBe('Stable system prompt');
-    expect(prepared.sessionContext).toBeUndefined();
-    expect(prepared.messages).toHaveLength(2);
-    expect(prepared.messages[1]).toMatchObject({
-      id: 'gemini-session-context-msg-hello',
-      sessionId: 'session-1',
-      threadId: 'thread-1',
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]`,
-        },
-      ],
-    });
-  });
-
   it('keeps Gemini session context as a synthetic tail message in the provider request', async () => {
     const service = new GeminiService('test-key');
 
     await consumeStream(
-      service.streamChat([createUserMessage('hello')], {
-        modelName: 'gemini-2.5-flash',
-        systemPrompt: 'Stable system prompt',
-        sessionContext: '# Current Context Information\nvolatile bits',
-      }),
+      service.streamChat(
+        [
+          createUserMessage('hello'),
+          createSessionContextMessage(
+            `[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]`,
+          ),
+        ],
+        {
+          modelName: 'gemini-2.5-flash',
+          systemPrompt: 'Stable system prompt',
+        },
+      ),
     );
 
     const request = generateContentStreamMock.mock.calls[0]?.[0] as {

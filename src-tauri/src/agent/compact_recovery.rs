@@ -57,6 +57,8 @@ pub async fn handle_compact_error_state(
                 crate::agent::state::CompactionSnapshot {
                     phase: crate::agent::state::CompactionPhase::Idle,
                     last_compacted_tail_id: None,
+                    retry_attempt: 0,
+                    recovery_phase: crate::agent::state::CompactionRecoveryPhase::CacheAligned,
                 },
                 session_id.chars().take(8).collect::<String>(),
             )
@@ -72,7 +74,16 @@ pub async fn handle_compact_error_state(
         .and_then(|details| details.error_code.as_deref())
         .unwrap_or("none");
 
+    let compaction = {
+        let active = active_sessions.read().await;
+        active
+            .get(&session_id)
+            .map(|session| session.compaction.clone())
+    };
     clear_compaction_state(active_sessions, &session_id, true).await;
+    if let Some(compaction) = compaction {
+        compaction.reset_recovery_progress().await;
+    }
 
     let state_event = CompactStateEvent {
         session_id: session_id.clone(),

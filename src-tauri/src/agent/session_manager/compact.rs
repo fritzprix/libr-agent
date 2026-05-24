@@ -1,7 +1,11 @@
 use crate::agent::compact_recovery::handle_compact_error_state;
 use crate::agent::events::AgentEventDispatcher;
-use crate::agent::llm::types::CompactStatePhase;
-use crate::agent::state::{AgentSession, CompactionResumeAction, DeferredWorkflowStep};
+use crate::agent::llm::types::{
+    AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
+};
+use crate::agent::state::{
+    AgentSession, CompactionRecoveryPhase, CompactionResumeAction, DeferredWorkflowStep,
+};
 use crate::agent::tauri_events::emit_compact_finished;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::compact_context_repository::CompactContextRepository;
@@ -10,6 +14,42 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
+
+const MAX_COMPACTION_RETRY_ATTEMPTS: u32 = 3;
+
+pub fn should_retry_budget_related_blocking_compaction(
+    snapshot: &crate::agent::state::CompactionSnapshot,
+    error: &AgentRuntimeError,
+) -> bool {
+    if !snapshot.blocks_workflow()
+        || matches!(
+            snapshot.recovery_phase,
+            CompactionRecoveryPhase::DegradedTools
+        )
+    {
+        return false;
+    }
+
+    if matches!(error.error_type, AgentRuntimeErrorType::ContextLimitError) {
+        return true;
+    }
+
+    let error_code = error
+        .details
+        .as_ref()
+        .and_then(|details| details.error_code.as_deref());
+    if matches!(
+        error_code,
+        Some("CONTEXT_LIMIT_EXCEEDED") | Some("RUST_PREFLIGHT_CONTEXT_LIMIT")
+    ) {
+        return true;
+    }
+
+    let normalized_message = error.display_message.to_lowercase();
+    normalized_message.contains("prompt too long")
+        || normalized_message.contains("exceeds max context window")
+        || normalized_message.contains("maximum context length")
+}
 
 fn spawn_resume_completion(
     session_repo: &Arc<dyn SessionRepository>,
@@ -99,10 +139,76 @@ async fn finalize_workflow_completion(
 pub async fn handle_compact_error_with_dispatcher(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
     dispatcher: &dyn AgentEventDispatcher,
     session_id: String,
     error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<(), String> {
+    let (compaction, snapshot, session_name) = {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            (
+                Some(session.compaction.clone()),
+                Some(session.compaction.snapshot().await),
+                session
+                    .metadata
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
+            )
+        } else {
+            (None, None, session_id.chars().take(8).collect::<String>())
+        }
+    };
+
+    if let (Some(compaction), Some(snapshot)) = (compaction, snapshot) {
+        if should_retry_budget_related_blocking_compaction(&snapshot, &error) {
+            let transition_label = match snapshot.recovery_phase {
+                CompactionRecoveryPhase::CacheAligned
+                    if snapshot.retry_attempt < MAX_COMPACTION_RETRY_ATTEMPTS =>
+                {
+                    let retry_attempt = compaction.increment_retry_attempt().await;
+                    format!("budget-retry-{}", retry_attempt)
+                }
+                CompactionRecoveryPhase::CacheAligned => {
+                    compaction.transition_to_overflow_recovery().await;
+                    "overflow-recovery".to_string()
+                }
+                CompactionRecoveryPhase::OverflowRecovery => {
+                    compaction.transition_to_degraded_tools().await;
+                    "degraded-tools".to_string()
+                }
+                CompactionRecoveryPhase::DegradedTools => unreachable!(),
+            };
+            compaction.clear_runtime_state(false).await;
+            dispatcher.emit_compact_state(CompactStateEvent {
+                session_id: session_id.clone(),
+                session_name: Some(session_name),
+                compacting: false,
+                awaiting_compact: false,
+                phase: CompactStatePhase::Failed,
+                error: Some(error.display_message.clone()),
+            })?;
+            log::warn!(
+                "🔁 Advancing compaction overflow recovery after budget-related failure: session={}, next_step={}",
+                session_id,
+                transition_label
+            );
+            spawn_resume_completion(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                &session_id,
+                "LLM completion after compaction overflow",
+            );
+            return Ok(());
+        }
+
+        compaction.reset_recovery_progress().await;
+    }
+
     handle_compact_error_state(session_repo, active_sessions, dispatcher, session_id, error).await
 }
 

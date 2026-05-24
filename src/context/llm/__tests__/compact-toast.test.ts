@@ -37,7 +37,6 @@ interface CompactPayload {
     model: string;
     provider: string;
     systemPrompt?: string;
-    sessionContext?: string;
     availableTools?: Array<{ name: string }>;
   };
 }
@@ -74,7 +73,6 @@ async function handleCompactEvent(
       opts: {
         modelName: string;
         systemPrompt?: string;
-        sessionContext?: string;
         availableTools?: Array<{ name: string }>;
       },
     ) => Promise<string>;
@@ -112,7 +110,6 @@ async function handleCompactEvent(
     const summary = await service.compact(normalizedMessages, {
       modelName: model,
       systemPrompt: payload.parentRequest?.systemPrompt,
-      sessionContext: payload.parentRequest?.sessionContext,
       availableTools: payload.parentRequest?.availableTools,
     });
     await handleCompactResponse(sessionId, fromId, toId, summary);
@@ -327,7 +324,6 @@ describe('compact request handler', () => {
           provider: 'anthropic',
           model: 'claude-sonnet-4-6',
           systemPrompt: 'Stable system prompt',
-          sessionContext: 'Volatile context',
           availableTools: [{ name: 'workspace__readFile' }],
         },
       },
@@ -355,7 +351,6 @@ describe('compact request handler', () => {
       expect.objectContaining({
         modelName: 'claude-sonnet-4-6',
         systemPrompt: 'Stable system prompt',
-        sessionContext: 'Volatile context',
         availableTools: [{ name: 'workspace__readFile' }],
       }),
     );
