@@ -5,7 +5,8 @@
 // require all vi.mock() and vi.hoisted() declarations to reside in the
 // test file that uses them.
 
-import React from 'react';
+import React, { forwardRef, useImperativeHandle } from 'react';
+import type { Mock } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 
@@ -119,6 +120,22 @@ interface VirtuosoMockProps {
   ) => React.ReactElement | null;
 }
 
+export interface AgentChatMessagesTestHarness {
+  virtuosoMock: Mock;
+  scrollToIndexMock: Mock;
+  sessionState: {
+    session: {
+      id: string;
+      assistant: { name: string };
+    };
+  };
+  chatState: {
+    messages: Message[];
+    workflowStatus: 'idle' | 'busy';
+  };
+  hasVirtuosoHandle: { current: boolean };
+}
+
 /**
  * Applies the standard Virtuoso mock implementation to a vitest mock function.
  * The mock renders list items through the component's own itemContent and
@@ -164,4 +181,213 @@ export function applyVirtuosoMockImpl(virtuosoMock: {
       );
     },
   );
+}
+
+const noop = (): void => {};
+
+export function installMockResizeObserver(callbacks: {
+  current: ResizeObserverCallback[];
+}): void {
+  class MockResizeObserver implements ResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      callbacks.current.push(callback);
+    }
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+
+  global.ResizeObserver = MockResizeObserver;
+}
+
+export function createAgentChatContextMock(
+  chatState: AgentChatMessagesTestHarness['chatState'],
+) {
+  return {
+    useAgentChat: () => ({
+      messages: chatState.messages,
+      pendingMessages: [],
+      error: undefined,
+      llmError: undefined,
+      retryMessage: noop,
+      workflowStatus: chatState.workflowStatus,
+    }),
+  };
+}
+
+export function createAgentSessionContextMock(
+  sessionState: AgentChatMessagesTestHarness['sessionState'],
+) {
+  return {
+    useAgentSession: () => ({
+      session: sessionState.session,
+      pendingApprovals: [],
+      respondToToolApproval: noop,
+    }),
+  };
+}
+
+export const llmServiceContextMock = {
+  useLLMService: () => ({
+    getCompactedRange: () => ({
+      fromId: 'earlier-user',
+      toId: 'tool-1',
+      summary: 'Compacted summary',
+    }),
+  }),
+};
+
+export const agentResourceAttachmentMock = {
+  useAgentResourceAttachment: () => ({ refetchSessionFiles: noop }),
+};
+
+export const fileRefetcherMock = {
+  useFileRefetcher: noop,
+};
+
+export function createMessageGroupingMock(
+  groupedMessagesMock: GroupedMessage[],
+) {
+  return {
+    useMessageGrouping: () => ({
+      groupedMessages: groupedMessagesMock.slice(),
+      toolResultsMap: new Map(),
+    }),
+  };
+}
+
+export const agentMessageBubbleMock = {
+  AgentMessageBubble: () => <div>message bubble</div>,
+};
+
+export const sharedComponentsMock = {
+  AnalysisLoader: () => <div>analysis loader</div>,
+};
+
+export const compactEventDividerMock = {
+  CompactEventDivider: ({ summary }: { summary?: string }) => (
+    <div>{summary ?? 'compact divider'}</div>
+  ),
+};
+
+export const pendingApprovalWidgetMock = {
+  PendingApprovalWidget: () => <div>pending approvals</div>,
+};
+
+export const errorBubbleMock = {
+  ErrorBubble: () => <div>error bubble</div>,
+};
+
+export const tooltipMock = {
+  Tooltip: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  TooltipContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+};
+
+export function createVirtuosoModuleMock(
+  harness: Pick<
+    AgentChatMessagesTestHarness,
+    'hasVirtuosoHandle' | 'scrollToIndexMock' | 'virtuosoMock'
+  >,
+) {
+  return {
+    Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
+      useImperativeHandle(
+        ref,
+        () =>
+          harness.hasVirtuosoHandle.current
+            ? { scrollToIndex: harness.scrollToIndexMock }
+            : (null as unknown as {
+                scrollToIndex: AgentChatMessagesTestHarness['scrollToIndexMock'];
+              }),
+        [ref, harness.hasVirtuosoHandle.current],
+      );
+      return harness.virtuosoMock(props);
+    }),
+  };
+}
+
+export function resetAgentChatMessagesHarness(args: {
+  harness: AgentChatMessagesTestHarness;
+  groupedMessagesMock: GroupedMessage[];
+  resizeObserverCallbacks: { current: ResizeObserverCallback[] };
+}): void {
+  const { harness, groupedMessagesMock, resizeObserverCallbacks } = args;
+
+  harness.virtuosoMock.mockClear();
+  harness.scrollToIndexMock.mockClear();
+  resizeObserverCallbacks.current = [];
+  harness.hasVirtuosoHandle.current = true;
+  harness.sessionState.session = {
+    id: 'session-1',
+    assistant: { name: 'Agent' },
+  };
+  harness.chatState.messages = groupedToolMessages.slice(1);
+  harness.chatState.workflowStatus = 'idle';
+  groupedMessagesMock.splice(
+    0,
+    groupedMessagesMock.length,
+    makeCompactToolGroupEntry(),
+  );
+  applyVirtuosoMockImpl(harness.virtuosoMock);
+}
+
+export function installImmediateAnimationFrameMock(): () => void {
+  const originalRequestAnimationFrame = global.requestAnimationFrame;
+  const originalCancelAnimationFrame = global.cancelAnimationFrame;
+
+  global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  }) as typeof requestAnimationFrame;
+  global.cancelAnimationFrame = (() =>
+    undefined) as typeof cancelAnimationFrame;
+
+  return () => {
+    global.requestAnimationFrame = originalRequestAnimationFrame;
+    global.cancelAnimationFrame = originalCancelAnimationFrame;
+  };
+}
+
+export function installScrollIntoViewMock(
+  scrollIntoView: typeof HTMLElement.prototype.scrollIntoView,
+): () => void {
+  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+  return () => {
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+  };
+}
+
+export function setScrollerMetrics(
+  scroller: HTMLDivElement,
+  metrics: {
+    scrollHeight: number;
+    clientHeight: number;
+    scrollTop: number;
+  },
+): void {
+  Object.defineProperty(scroller, 'scrollHeight', {
+    value: metrics.scrollHeight,
+    configurable: true,
+  });
+  Object.defineProperty(scroller, 'clientHeight', {
+    value: metrics.clientHeight,
+    configurable: true,
+  });
+  Object.defineProperty(scroller, 'scrollTop', {
+    value: metrics.scrollTop,
+    writable: true,
+    configurable: true,
+  });
 }

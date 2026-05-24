@@ -1,17 +1,18 @@
 import '@testing-library/jest-dom';
 import { act, render, screen } from '@testing-library/react';
-import React, { forwardRef, useImperativeHandle } from 'react';
+import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChatMessages } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import {
+  installMockResizeObserver,
+  resetAgentChatMessagesHarness,
+  setScrollerMetrics,
   baseMessage,
-  groupedToolMessages,
-  makeCompactToolGroupEntry,
-  makeStreamingMessage,
   makeStreamingGroupEntry,
-  applyVirtuosoMockImpl,
+  makeStreamingMessage,
+  type AgentChatMessagesTestHarness,
 } from './AgentChatMessages.compaction-setup';
 
 // ---------------------------------------------------------------------------
@@ -28,22 +29,21 @@ const { virtuosoMock, scrollToIndexMock, sessionState, chatState, hasVirtuosoHan
   }));
 
 let groupedMessagesMock: GroupedMessage[] = [];
-let resizeObserverCallbacks: ResizeObserverCallback[] = [];
+const resizeObserverCallbacks = { current: [] as ResizeObserverCallback[] };
 
-class MockResizeObserver implements ResizeObserver {
-  constructor(callback: ResizeObserverCallback) {
-    resizeObserverCallbacks.push(callback);
-  }
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-
-global.ResizeObserver = MockResizeObserver;
+installMockResizeObserver(resizeObserverCallbacks);
 
 // ---------------------------------------------------------------------------
 // Module mocks
 // ---------------------------------------------------------------------------
+
+const harness: AgentChatMessagesTestHarness = {
+  virtuosoMock,
+  scrollToIndexMock,
+  sessionState,
+  chatState,
+  hasVirtuosoHandle,
+};
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
@@ -119,8 +119,8 @@ vi.mock('@/components/ui/tooltip', () => ({
 }));
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
-    useImperativeHandle(
+  Virtuoso: React.forwardRef(function MockVirtuoso(props, ref) {
+    React.useImperativeHandle(
       ref,
       () =>
         hasVirtuosoHandle.current
@@ -137,15 +137,11 @@ vi.mock('react-virtuoso', () => ({
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  virtuosoMock.mockClear();
-  scrollToIndexMock.mockClear();
-  resizeObserverCallbacks = [];
-  hasVirtuosoHandle.current = true;
-  sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
-  chatState.messages = groupedToolMessages.slice(1);
-  chatState.workflowStatus = 'idle';
-  groupedMessagesMock.splice(0, groupedMessagesMock.length, makeCompactToolGroupEntry());
-  applyVirtuosoMockImpl(virtuosoMock);
+  resetAgentChatMessagesHarness({
+    harness,
+    groupedMessagesMock,
+    resizeObserverCallbacks,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -179,18 +175,10 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       expect(scroller).not.toBeNull();
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
-      Object.defineProperty(scroller, 'scrollHeight', {
-        value: 500,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'clientHeight', {
-        value: 100,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'scrollTop', {
-        value: 400,
-        writable: true,
-        configurable: true,
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
       });
 
       currentTime = 300;
@@ -254,18 +242,10 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       expect(scroller).not.toBeNull();
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
-      Object.defineProperty(scroller, 'scrollHeight', {
-        value: 500,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'clientHeight', {
-        value: 100,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'scrollTop', {
-        value: 400,
-        writable: true,
-        configurable: true,
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
       });
 
       currentTime = 50;
@@ -332,18 +312,10 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       expect(scroller).not.toBeNull();
       expect(screen.queryByLabelText('Scroll to latest')).not.toBeInTheDocument();
 
-      Object.defineProperty(scroller, 'scrollHeight', {
-        value: 500,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'clientHeight', {
-        value: 100,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'scrollTop', {
-        value: 400,
-        writable: true,
-        configurable: true,
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
       });
 
       currentTime = 50;
@@ -359,7 +331,7 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
 
       currentTime = 260;
       act(() => {
-        resizeObserverCallbacks.forEach((callback) =>
+        resizeObserverCallbacks.current.forEach((callback) =>
           callback([], {} as ResizeObserver),
         );
       });
@@ -437,18 +409,10 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
 
       expect(scroller).not.toBeNull();
 
-      Object.defineProperty(scroller, 'scrollHeight', {
-        value: 500,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'clientHeight', {
-        value: 100,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'scrollTop', {
-        value: 400,
-        writable: true,
-        configurable: true,
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
       });
 
       currentTime = 50;
@@ -561,18 +525,10 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
 
       expect(scroller).not.toBeNull();
 
-      Object.defineProperty(scroller, 'scrollHeight', {
-        value: 500,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'clientHeight', {
-        value: 100,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'scrollTop', {
-        value: 400,
-        writable: true,
-        configurable: true,
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
       });
 
       act(() => {
@@ -583,7 +539,7 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
       scrollIntoView.mockClear();
 
       act(() => {
-        resizeObserverCallbacks.forEach((callback) =>
+        resizeObserverCallbacks.current.forEach((callback) =>
           callback([], {} as ResizeObserver),
         );
       });
@@ -642,18 +598,10 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
 
       expect(scroller).not.toBeNull();
 
-      Object.defineProperty(scroller, 'scrollHeight', {
-        value: 500,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'clientHeight', {
-        value: 100,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'scrollTop', {
-        value: 400,
-        writable: true,
-        configurable: true,
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
       });
 
       currentTime = 300;
@@ -716,18 +664,10 @@ describe('AgentChatMessages – scroll-follow intent detection', () => {
 
       expect(scroller).not.toBeNull();
 
-      Object.defineProperty(scroller, 'scrollHeight', {
-        value: 500,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'clientHeight', {
-        value: 100,
-        configurable: true,
-      });
-      Object.defineProperty(scroller, 'scrollTop', {
-        value: 400,
-        writable: true,
-        configurable: true,
+      setScrollerMetrics(scroller!, {
+        scrollHeight: 500,
+        clientHeight: 100,
+        scrollTop: 400,
       });
 
       currentTime = 300;

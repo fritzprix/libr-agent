@@ -1,17 +1,20 @@
 import '@testing-library/jest-dom';
 import { act, render } from '@testing-library/react';
-import React, { forwardRef, useImperativeHandle } from 'react';
+import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChatMessages } from '../AgentChatMessages';
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import {
+  installImmediateAnimationFrameMock,
+  installMockResizeObserver,
+  installScrollIntoViewMock,
+  resetAgentChatMessagesHarness,
   baseMessage,
   groupedToolMessages,
-  makeCompactToolGroupEntry,
-  makeStreamingMessage,
   makeStreamingGroupEntry,
-  applyVirtuosoMockImpl,
+  makeStreamingMessage,
+  type AgentChatMessagesTestHarness,
 } from './AgentChatMessages.compaction-setup';
 
 // ---------------------------------------------------------------------------
@@ -28,22 +31,21 @@ const { virtuosoMock, scrollToIndexMock, sessionState, chatState, hasVirtuosoHan
   }));
 
 let groupedMessagesMock: GroupedMessage[] = [];
-let resizeObserverCallbacks: ResizeObserverCallback[] = [];
+const resizeObserverCallbacks = { current: [] as ResizeObserverCallback[] };
 
-class MockResizeObserver implements ResizeObserver {
-  constructor(callback: ResizeObserverCallback) {
-    resizeObserverCallbacks.push(callback);
-  }
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-
-global.ResizeObserver = MockResizeObserver;
+installMockResizeObserver(resizeObserverCallbacks);
 
 // ---------------------------------------------------------------------------
 // Module mocks
 // ---------------------------------------------------------------------------
+
+const harness: AgentChatMessagesTestHarness = {
+  virtuosoMock,
+  scrollToIndexMock,
+  sessionState,
+  chatState,
+  hasVirtuosoHandle,
+};
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
@@ -119,8 +121,8 @@ vi.mock('@/components/ui/tooltip', () => ({
 }));
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
-    useImperativeHandle(
+  Virtuoso: React.forwardRef(function MockVirtuoso(props, ref) {
+    React.useImperativeHandle(
       ref,
       () =>
         hasVirtuosoHandle.current
@@ -137,15 +139,11 @@ vi.mock('react-virtuoso', () => ({
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  virtuosoMock.mockClear();
-  scrollToIndexMock.mockClear();
-  resizeObserverCallbacks = [];
-  hasVirtuosoHandle.current = true;
-  sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
-  chatState.messages = groupedToolMessages.slice(1);
-  chatState.workflowStatus = 'idle';
-  groupedMessagesMock.splice(0, groupedMessagesMock.length, makeCompactToolGroupEntry());
-  applyVirtuosoMockImpl(virtuosoMock);
+  resetAgentChatMessagesHarness({
+    harness,
+    groupedMessagesMock,
+    resizeObserverCallbacks,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -155,22 +153,14 @@ beforeEach(() => {
 describe('AgentChatMessages – bottom alignment and retry', () => {
   it('keeps bottom alignment when the pinned content resizes after render', () => {
     const scrollIntoView = vi.fn();
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const restoreAnimationFrame = installImmediateAnimationFrameMock();
+    const restoreScrollIntoView = installScrollIntoViewMock(scrollIntoView);
 
     try {
       render(<AgentChatMessages />);
 
       act(() => {
-        resizeObserverCallbacks.forEach((callback) =>
+        resizeObserverCallbacks.current.forEach((callback) =>
           callback([], {} as ResizeObserver),
         );
       });
@@ -178,25 +168,16 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       expect(scrollToIndexMock).toHaveBeenCalled();
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      restoreAnimationFrame();
+      restoreScrollIntoView();
     }
   });
 
   it('falls back to the footer sentinel when Virtuoso is not ready yet', () => {
     const scrollIntoView = vi.fn();
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-
     hasVirtuosoHandle.current = false;
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const restoreAnimationFrame = installImmediateAnimationFrameMock();
+    const restoreScrollIntoView = installScrollIntoViewMock(scrollIntoView);
 
     try {
       render(<AgentChatMessages />);
@@ -204,25 +185,16 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       expect(scrollToIndexMock).not.toHaveBeenCalled();
       expect(scrollIntoView).toHaveBeenCalled();
     } finally {
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      restoreAnimationFrame();
+      restoreScrollIntoView();
     }
   });
 
   it('retries bottom alignment after delayed Virtuoso readiness changes the list height', () => {
     const scrollIntoView = vi.fn();
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-
     hasVirtuosoHandle.current = false;
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const restoreAnimationFrame = installImmediateAnimationFrameMock();
+    const restoreScrollIntoView = installScrollIntoViewMock(scrollIntoView);
 
     try {
       const { rerender } = render(<AgentChatMessages />);
@@ -246,24 +218,15 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       expect(scrollToIndexMock).toHaveBeenCalled();
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      restoreAnimationFrame();
+      restoreScrollIntoView();
     }
   });
 
   it('keeps retrying bottom alignment when list height grows after an early atBottom signal', () => {
     const scrollIntoView = vi.fn();
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const restoreAnimationFrame = installImmediateAnimationFrameMock();
+    const restoreScrollIntoView = installScrollIntoViewMock(scrollIntoView);
 
     try {
       render(<AgentChatMessages />);
@@ -294,24 +257,15 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       expect(scrollToIndexMock.mock.calls.length).toBe(3);
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      restoreAnimationFrame();
+      restoreScrollIntoView();
     }
   });
 
   it('scrolls to the bottom again when the resumed session changes', () => {
     const scrollIntoView = vi.fn();
-    const originalRequestAnimationFrame = global.requestAnimationFrame;
-    const originalCancelAnimationFrame = global.cancelAnimationFrame;
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
-    global.cancelAnimationFrame = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const restoreAnimationFrame = installImmediateAnimationFrameMock();
+    const restoreScrollIntoView = installScrollIntoViewMock(scrollIntoView);
 
     try {
       const { rerender } = render(<AgentChatMessages />);
@@ -324,9 +278,8 @@ describe('AgentChatMessages – bottom alignment and retry', () => {
       expect(scrollToIndexMock).toHaveBeenCalled();
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      global.requestAnimationFrame = originalRequestAnimationFrame;
-      global.cancelAnimationFrame = originalCancelAnimationFrame;
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      restoreAnimationFrame();
+      restoreScrollIntoView();
     }
   });
 

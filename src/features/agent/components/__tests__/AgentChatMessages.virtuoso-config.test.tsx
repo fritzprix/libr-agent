@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { render } from '@testing-library/react';
-import React, { forwardRef, useImperativeHandle } from 'react';
+import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentChatMessages,
@@ -13,10 +13,10 @@ import {
 import type { Message } from '@/models/chat';
 import type { GroupedMessage } from '@/hooks/useMessageGrouping';
 import {
+  installMockResizeObserver,
+  resetAgentChatMessagesHarness,
   baseMessage,
-  groupedToolMessages,
-  makeCompactToolGroupEntry,
-  applyVirtuosoMockImpl,
+  type AgentChatMessagesTestHarness,
 } from './AgentChatMessages.compaction-setup';
 
 // ---------------------------------------------------------------------------
@@ -33,22 +33,21 @@ const { virtuosoMock, scrollToIndexMock, sessionState, chatState, hasVirtuosoHan
   }));
 
 let groupedMessagesMock: GroupedMessage[] = [];
-let resizeObserverCallbacks: ResizeObserverCallback[] = [];
+const resizeObserverCallbacks = { current: [] as ResizeObserverCallback[] };
 
-class MockResizeObserver implements ResizeObserver {
-  constructor(callback: ResizeObserverCallback) {
-    resizeObserverCallbacks.push(callback);
-  }
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-
-global.ResizeObserver = MockResizeObserver;
+installMockResizeObserver(resizeObserverCallbacks);
 
 // ---------------------------------------------------------------------------
 // Module mocks
 // ---------------------------------------------------------------------------
+
+const harness: AgentChatMessagesTestHarness = {
+  virtuosoMock,
+  scrollToIndexMock,
+  sessionState,
+  chatState,
+  hasVirtuosoHandle,
+};
 
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChat: () => ({
@@ -124,8 +123,8 @@ vi.mock('@/components/ui/tooltip', () => ({
 }));
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef(function MockVirtuoso(props, ref) {
-    useImperativeHandle(
+  Virtuoso: React.forwardRef(function MockVirtuoso(props, ref) {
+    React.useImperativeHandle(
       ref,
       () =>
         hasVirtuosoHandle.current
@@ -142,15 +141,11 @@ vi.mock('react-virtuoso', () => ({
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  virtuosoMock.mockClear();
-  scrollToIndexMock.mockClear();
-  resizeObserverCallbacks = [];
-  hasVirtuosoHandle.current = true;
-  sessionState.session = { id: 'session-1', assistant: { name: 'Agent' } };
-  chatState.messages = groupedToolMessages.slice(1);
-  chatState.workflowStatus = 'idle';
-  groupedMessagesMock.splice(0, groupedMessagesMock.length, makeCompactToolGroupEntry());
-  applyVirtuosoMockImpl(virtuosoMock);
+  resetAgentChatMessagesHarness({
+    harness,
+    groupedMessagesMock,
+    resizeObserverCallbacks,
+  });
 });
 
 // ---------------------------------------------------------------------------
