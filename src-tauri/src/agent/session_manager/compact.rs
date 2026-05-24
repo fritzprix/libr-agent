@@ -313,6 +313,7 @@ pub async fn save_compact_context(
         if let Some(session) = active.get(session_id) {
             let mut compact = session.compact_context.write().await;
             *compact = Some(record.clone());
+            session.set_compact_repair_state(crate::agent::state::CompactRepairState::NotNeeded);
         }
     }
 
