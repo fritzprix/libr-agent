@@ -114,10 +114,6 @@ pub struct CompletionRequest {
     /// Stable system prompt (sections 1–4 plus stable service-context blocks).
     /// Cacheable across turns within a session.
     pub system_prompt: Option<String>,
-    /// Per-turn session context (context providers + non-stable service tool state).
-    /// Rebuilt on every LLM call. The frontend AI service layer decides how to inject this
-    /// via `prepareContextInjection`.
-    pub session_context: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
@@ -156,8 +152,8 @@ pub struct PostResponseCompactionPressure {
     pub model_max_context: usize,
 }
 
-/// Prompt-layout fields from the parent workflow request that should be reused
-/// for frontend-driven compaction calls to preserve provider prompt-cache hits.
+/// Prompt-layout inputs from the parent workflow request reused by Rust when it
+/// reassembles the provider-facing compaction request layout.
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactionParentRequest {
@@ -165,7 +161,10 @@ pub struct CompactionParentRequest {
     pub provider: String,
     /// Stable system prompt (sections 1–4 plus stable service-context blocks).
     pub system_prompt: Option<String>,
-    /// Per-turn session context (context providers + non-stable service tool state).
+    /// Per-turn volatile context retained only in Rust so compaction
+    /// retries/replays can rebuild the final provider-facing request layout.
+    /// This must never cross the IPC boundary back to the frontend.
+    #[serde(skip_serializing)]
     pub session_context: Option<String>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
 }
@@ -192,7 +191,8 @@ pub struct CompactRequest {
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,
-    /// The exact parent workflow request layout to replay for cache-friendly compaction.
+    /// The frontend-visible parent workflow request layout to replay for
+    /// cache-friendly compaction. Rust-only volatile state stays server-side.
     pub parent_request: Option<CompactionParentRequest>,
     /// When true, Rust is waiting for this compaction to complete before retrying
     /// the blocked LLM turn.

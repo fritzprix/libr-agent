@@ -422,6 +422,72 @@ Important clarification:
 
 ---
 
+## 10A. Compaction Overflow Recovery Contract
+
+If a compaction request still overflows for **any** reason, the recovery goal
+changes.
+
+At that point, preserving prompt-cache alignment is no longer the top priority.
+The top priority becomes: **reconstruct the most useful compactable state
+possible, even if that causes a prompt-cache miss**.
+
+Intended recovery shape:
+
+```text
+overflow_compaction_recovery(
+  latest_real_user_request,
+  prev_compaction_summary?,
+  active_message_fifo_subset
+)
+```
+
+### Essential recovery inputs
+
+When overflow recovery is required, Rust should preserve these inputs in this
+priority order:
+
+1. **Latest real user request**
+   - This is the highest-priority payload element.
+   - It must refer to an actual user-authored request, not an internal synthetic
+     user message.
+   - The implementation must distinguish this using message source
+     classification, not by `role == "user"` alone.
+   - In particular, synthetic compact-mode/user-like messages such as
+     `compact-summary`, `compaction-instruction`, `recovery`, and
+     `session-context` must not be mistaken for the latest real user request.
+2. **Previous compaction summary, if one exists**
+   - If a prior compact summary is available, it should be preserved as the
+     compressed history anchor whenever possible.
+3. **Active message set as a partial FIFO subset**
+   - The remaining live context may be reduced, but reduction should behave as a
+     FIFO drop of older active messages so the newest active context survives as
+     long as possible.
+
+### Contract
+
+1. Compaction overflow recovery is an **exception-only** path used after the
+   normal cache-aligned compaction request still cannot fit.
+2. A prompt-cache miss is acceptable in this path if that is what allows the
+   system to preserve more useful recovery information.
+3. Rust owns the recovery ordering and reduction policy.
+4. The latest real user request must be preserved if it is at all possible to
+   build any valid recovery payload.
+5. If a previous compact summary exists, it should be preferred over re-sending
+   older raw history.
+6. Active messages may be reduced with FIFO semantics, but the recovery path
+   should preserve the freshest active context rather than arbitrarily dropping
+   recent turns first.
+7. Tool schema may be degraded in this exception path when needed to make the
+   recovery payload fit; for example, tool parameter schemas may be removed while
+   retaining tool identity and any still-useful high-level tool visibility.
+8. The system must not pretend this recovery payload is cache-aligned with the
+   normal request shape once such degradation has occurred.
+9. If even this ordered recovery contract cannot fit, the system should fail
+   explicitly with a context-limit error rather than silently discarding the
+   essential inputs above.
+
+---
+
 ## 11. Compact Summary Persistence
 
 Compaction state is session-scoped and persisted.

@@ -6,12 +6,7 @@ import {
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
-import {
-  AIServiceProvider,
-  AIServiceConfig,
-  type ContextInjectionResult,
-  TokenUsage,
-} from './types';
+import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
@@ -34,7 +29,6 @@ import {
   createEmptyAnthropicUsage,
   ToolCallAccumulator,
 } from './anthropic/types';
-import { createEphemeralSessionContextInjection } from './base-service-context';
 import {
   createSerializableToolCallArgumentDelta,
   serializeToolCallArgumentDeltas,
@@ -44,9 +38,6 @@ import { ensureSchemaTypeField } from './utils';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
-const ANTHROPIC_SESSION_CONTEXT_METADATA_KEY =
-  'anthropicSyntheticSessionContext';
-
 /**
  * An AI service implementation for interacting with Anthropic's language models (e.g., Claude).
  * It handles the specifics of the Anthropic API, including message formatting,
@@ -254,7 +245,6 @@ export class AnthropicService extends BaseAIService<
     options: {
       modelName?: string;
       systemPrompt?: string;
-      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
@@ -286,10 +276,7 @@ export class AnthropicService extends BaseAIService<
         }
       }
 
-      const systemBlocks = buildAnthropicSystemBlocks(
-        options.systemPrompt,
-        options.sessionContext,
-      );
+      const systemBlocks = buildAnthropicSystemBlocks(options.systemPrompt);
       const requestTools = tools;
       const toolChoice = options.disableToolUse
         ? { type: 'none' as const }
@@ -513,27 +500,6 @@ export class AnthropicService extends BaseAIService<
     }
   }
 
-  override prepareContextInjection(
-    systemPrompt: string | undefined,
-    sessionContext: string | undefined,
-    messages: Message[],
-  ): ContextInjectionResult {
-    if (!sessionContext) {
-      return { systemPrompt, sessionContext, messages };
-    }
-
-    return createEphemeralSessionContextInjection(
-      systemPrompt,
-      sessionContext,
-      messages,
-      {
-        idPrefix: 'anthropic-session-context',
-        metadata: {
-          [ANTHROPIC_SESSION_CONTEXT_METADATA_KEY]: true,
-        },
-      },
-    );
-  }
   /**
    * @inheritdoc
    */

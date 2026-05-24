@@ -85,10 +85,6 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
       listModels: mockListModels,
       dispose: mockDispose,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
-      prepareContextInjection: vi.fn((systemPrompt, _sessionContext, messages) => ({
-        systemPrompt,
-        messages,
-      })),
     });
 
     // Setup mockListModels to return test models

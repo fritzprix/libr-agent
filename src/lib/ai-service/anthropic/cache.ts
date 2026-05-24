@@ -19,35 +19,16 @@ export function getAnthropicPromptTokens(
 
 export function buildAnthropicSystemBlocks(
   systemPrompt: string | undefined,
-  sessionContext?: string,
 ): TextBlockParam[] | undefined {
-  if (!systemPrompt && !sessionContext) {
+  if (!systemPrompt) {
     return undefined;
-  }
-
-  if (systemPrompt && !sessionContext) {
-    return [
-      {
-        type: 'text',
-        text: systemPrompt,
-        cache_control: { type: 'ephemeral' },
-      },
-    ];
-  }
-
-  if (!systemPrompt && sessionContext) {
-    return [{ type: 'text', text: sessionContext }];
   }
 
   return [
     {
       type: 'text',
-      text: systemPrompt!,
+      text: systemPrompt,
       cache_control: { type: 'ephemeral' },
-    },
-    {
-      type: 'text',
-      text: sessionContext!,
     },
   ];
 }

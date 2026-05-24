@@ -13,6 +13,27 @@ pub(super) struct CompactionRequestPayload {
     pub(super) reused_prior_summary: bool,
 }
 
+fn apply_compaction_retry_budget(safe_input_token_limit: usize, retry_attempt: u32) -> usize {
+    let reduction_percent = match retry_attempt {
+        0 => 100,
+        1 => 85,
+        2 => 70,
+        _ => 55,
+    };
+    let minimum_floor = safe_input_token_limit.min(1024);
+    std::cmp::max(
+        safe_input_token_limit.saturating_mul(reduction_percent) / 100,
+        minimum_floor,
+    )
+}
+
+pub fn apply_compaction_retry_budget_for_testing(
+    safe_input_token_limit: usize,
+    retry_attempt: u32,
+) -> usize {
+    apply_compaction_retry_budget(safe_input_token_limit, retry_attempt)
+}
+
 fn build_incremental_compact_summary_message(
     session_id: &str,
     summary: &str,
@@ -181,20 +202,142 @@ pub fn fit_compaction_request_messages_to_limit(
     ))
 }
 
+fn latest_real_user_request_block_range(messages: &[Message]) -> Option<(usize, usize)> {
+    let latest_request_idx = messages
+        .iter()
+        .rposition(Message::is_external_request_message)?;
+
+    let mut block_start = latest_request_idx;
+    while block_start > 0 && messages[block_start - 1].is_external_request_message() {
+        block_start -= 1;
+    }
+
+    let mut block_end = latest_request_idx + 1;
+    while block_end < messages.len() && messages[block_end].is_external_request_message() {
+        block_end += 1;
+    }
+
+    Some((block_start, block_end))
+}
+
+fn provider_cleanup_compaction_messages(messages: Vec<Message>, provider_id: &str) -> Vec<Message> {
+    if provider_requires_compaction_tool_chain_cleanup(provider_id) {
+        crate::agent::llm::context_selector::remove_incomplete_tool_chains(messages)
+    } else {
+        messages
+    }
+}
+
+fn candidate_compaction_total(
+    messages: &[Message],
+    provider_id: &str,
+    safe_input_token_limit: usize,
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+    preserved_calibration_ratio: Option<f64>,
+) -> Option<(Vec<Message>, usize)> {
+    let cleaned = provider_cleanup_compaction_messages(messages.to_vec(), provider_id);
+    let conservative_total =
+        crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+            &cleaned,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        );
+
+    if conservative_total < safe_input_token_limit {
+        Some((cleaned, conservative_total))
+    } else {
+        None
+    }
+}
+
+pub fn build_overflow_recovery_compaction_messages(
+    messages: &[Message],
+    provider_id: &str,
+    safe_input_token_limit: usize,
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+) -> Result<Vec<Message>, String> {
+    let preserved_calibration_ratio =
+        crate::agent::llm::token_utils::try_derive_bpe_calibration_ratio(
+            messages,
+            system_prompt_tokens,
+            tools_tokens,
+        );
+
+    let (instruction, body_messages) = match messages.last() {
+        Some(message) if message.is_compaction_instruction() => {
+            (Some(message.clone()), &messages[..messages.len() - 1])
+        }
+        _ => (None, messages),
+    };
+
+    let (latest_request_start, latest_request_end) =
+        latest_real_user_request_block_range(body_messages).ok_or_else(|| {
+            "Compaction overflow recovery requires a latest real user request anchor, but none was found."
+                .to_string()
+        })?;
+
+    let previous_summary_idx = body_messages
+        .iter()
+        .position(|message| message.is_compact_summary());
+    let remaining_indices = (0..body_messages.len())
+        .filter(|index| {
+            !matches!(previous_summary_idx, Some(summary_idx) if summary_idx == *index)
+                && (*index < latest_request_start || *index >= latest_request_end)
+                && !body_messages[*index].is_internal_synthetic_user_message()
+        })
+        .collect::<Vec<_>>();
+
+    let attempt_with_summary = previous_summary_idx
+        .into_iter()
+        .map(Some)
+        .chain(std::iter::once(None));
+
+    for summary_idx in attempt_with_summary {
+        for suffix_start in 0..=remaining_indices.len() {
+            let mut selected_indices = Vec::new();
+            if let Some(summary_idx) = summary_idx {
+                selected_indices.push(summary_idx);
+            }
+            selected_indices.extend(latest_request_start..latest_request_end);
+            selected_indices.extend(remaining_indices[suffix_start..].iter().copied());
+            selected_indices.sort_unstable();
+            selected_indices.dedup();
+
+            let mut candidate = selected_indices
+                .into_iter()
+                .map(|index| body_messages[index].clone())
+                .collect::<Vec<_>>();
+            if let Some(instruction) = &instruction {
+                candidate.push(instruction.clone());
+            }
+
+            if let Some((cleaned, _)) = candidate_compaction_total(
+                &candidate,
+                provider_id,
+                safe_input_token_limit,
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio,
+            ) {
+                return Ok(cleaned);
+            }
+        }
+    }
+
+    Err(
+        "Compaction overflow recovery could not fit the latest real user request anchor, previous summary preference, and freshest active FIFO subset within the effective context limit."
+            .to_string(),
+    )
+}
+
 pub(super) fn estimate_compaction_non_message_tokens(
     parent_request: Option<&CompactionParentRequest>,
 ) -> (usize, usize) {
-    let combined_system_prompt = parent_request.and_then(|request| {
-        match (&request.system_prompt, &request.session_context) {
-            (Some(system_prompt), Some(session_context)) => {
-                Some(format!("{}\n\n{}", system_prompt, session_context))
-            }
-            (Some(system_prompt), None) => Some(system_prompt.clone()),
-            (None, Some(session_context)) => Some(session_context.clone()),
-            (None, None) => None,
-        }
-    });
-    let system_prompt_tokens = combined_system_prompt
+    let system_prompt_tokens = parent_request
+        .and_then(|request| request.system_prompt.as_ref())
         .as_ref()
         .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
         .unwrap_or(0);

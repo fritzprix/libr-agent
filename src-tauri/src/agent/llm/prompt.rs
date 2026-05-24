@@ -65,8 +65,9 @@ async fn load_soul_instruction(session_id: &str) -> Option<(String, String)> {
 /// - `session_context` — rebuilt fresh on every LLM call: context providers plus
 ///   non-stable service tool state.
 ///
-/// Callers decide how to combine the two parts. The frontend AI service layer uses
-/// `prepareContextInjection` to inject them via the channel best suited to each provider.
+/// Rust owns the final request layout. Callers pass both parts into the backend
+/// request-layout builder, which decides whether volatile context becomes part
+/// of the stable prompt or a synthetic tail message for the target provider.
 pub(crate) async fn build_session_system_prompt_split(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,

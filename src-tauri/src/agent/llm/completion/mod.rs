@@ -4,7 +4,9 @@ pub(crate) mod orchestration;
 pub(crate) mod request;
 
 pub use compaction::{
-    build_compaction_preservation_hints, fit_compaction_request_messages_to_limit,
+    advance_compaction_overflow_recovery_step_for_testing,
+    apply_compaction_retry_budget_for_testing, build_compaction_preservation_hints,
+    build_overflow_recovery_compaction_messages, fit_compaction_request_messages_to_limit,
     preview_background_compaction_selection, preview_preflight_compaction_selection,
     should_skip_same_tail_compaction, should_trigger_background_compaction,
     should_trigger_post_response_compaction, trigger_manual_compaction_for_session,

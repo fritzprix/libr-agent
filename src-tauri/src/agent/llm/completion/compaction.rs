@@ -4,13 +4,16 @@ mod payload;
 mod trigger;
 
 pub use hints::{build_compaction_preservation_hints, CompactionPreservationHints};
-pub use payload::fit_compaction_request_messages_to_limit;
+pub use payload::{
+    apply_compaction_retry_budget_for_testing, build_overflow_recovery_compaction_messages,
+    fit_compaction_request_messages_to_limit,
+};
 pub(crate) use trigger::try_trigger_preflight_compaction;
 pub use trigger::{
-    preview_background_compaction_selection, preview_preflight_compaction_selection,
-    should_skip_same_tail_compaction, trigger_manual_compaction_for_session,
-    trigger_post_response_compaction_if_needed, trigger_preflight_compaction_for_session,
-    CompactionSelectionPreview,
+    advance_compaction_overflow_recovery_step_for_testing, preview_background_compaction_selection,
+    preview_preflight_compaction_selection, should_skip_same_tail_compaction,
+    trigger_manual_compaction_for_session, trigger_post_response_compaction_if_needed,
+    trigger_preflight_compaction_for_session, CompactionSelectionPreview,
 };
 
 use super::context::uses_compaction_strategy;

@@ -1,8 +1,10 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    build_compact_context_selection_options, build_compact_summary_message_for_messages,
-    build_compact_summary_text, build_compaction_preservation_hints,
+    advance_compaction_overflow_recovery_step_for_testing,
+    apply_compaction_retry_budget_for_testing, build_compact_context_selection_options,
+    build_compact_summary_message_for_messages, build_compact_summary_text,
+    build_compaction_preservation_hints, build_overflow_recovery_compaction_messages,
     fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
     normalize_request_messages, preview_background_compaction_selection,
     preview_preflight_compaction_selection, resolve_context_management_settings,
@@ -13,6 +15,7 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_snapshot;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
+use tauri_mcp_agent_lib::agent::llm::types::CompactionParentRequest;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
@@ -50,6 +53,12 @@ fn make_message_simple(role: &str, text: &str) -> Message {
 fn make_compact_summary_message(id: &str, role: &str, text: &str) -> Message {
     let mut message = make_message(id, role, text);
     message.source = Some(MessageSource::CompactSummary);
+    message
+}
+
+fn make_compaction_instruction_message(id: &str, text: &str) -> Message {
+    let mut message = make_message(id, "user", text);
+    message.source = Some(MessageSource::CompactionInstruction);
     message
 }
 
@@ -217,6 +226,24 @@ fn test_find_background_compaction_split_index_ignores_internal_synthetic_user_m
 }
 
 #[test]
+fn test_compaction_parent_request_does_not_serialize_internal_session_context() {
+    let request = CompactionParentRequest {
+        model: "gpt-4o".to_string(),
+        provider: "openai".to_string(),
+        system_prompt: Some("Stable prompt".to_string()),
+        session_context: Some("volatile session context".to_string()),
+        available_tools: None,
+    };
+
+    let serialized = serde_json::to_value(&request).expect("request should serialize");
+
+    assert_eq!(serialized["model"], "gpt-4o");
+    assert_eq!(serialized["provider"], "openai");
+    assert_eq!(serialized["systemPrompt"], "Stable prompt");
+    assert!(serialized.get("sessionContext").is_none());
+}
+
+#[test]
 fn test_lossy_main_request_fallback_drops_oldest_messages_until_within_limit() {
     let messages = vec![
         make_message("m1", "user", &"older context ".repeat(800)),
@@ -267,6 +294,106 @@ fn test_lossy_main_request_fallback_truncates_single_oversized_message() {
 }
 
 #[test]
+fn test_apply_compaction_retry_budget_progressively_reduces_limit() {
+    assert_eq!(
+        apply_compaction_retry_budget_for_testing(128_000, 0),
+        128_000
+    );
+    assert_eq!(
+        apply_compaction_retry_budget_for_testing(128_000, 1),
+        108_800
+    );
+    assert_eq!(
+        apply_compaction_retry_budget_for_testing(128_000, 2),
+        89_600
+    );
+    assert_eq!(
+        apply_compaction_retry_budget_for_testing(128_000, 3),
+        70_400
+    );
+    assert_eq!(apply_compaction_retry_budget_for_testing(512, 3), 512);
+}
+
+#[test]
+fn test_compaction_overflow_recovery_ladder_progresses_from_budget_to_recovery_to_degraded_tools() {
+    assert_eq!(
+        advance_compaction_overflow_recovery_step_for_testing(
+            tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase::CacheAligned,
+            0,
+        ),
+        Some((
+            tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase::CacheAligned,
+            1,
+        ))
+    );
+    assert_eq!(
+        advance_compaction_overflow_recovery_step_for_testing(
+            tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase::CacheAligned,
+            3,
+        ),
+        Some((
+            tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase::OverflowRecovery,
+            0,
+        ))
+    );
+    assert_eq!(
+        advance_compaction_overflow_recovery_step_for_testing(
+            tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase::OverflowRecovery,
+            0,
+        ),
+        Some((
+            tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase::DegradedTools,
+            0,
+        ))
+    );
+    assert_eq!(
+        advance_compaction_overflow_recovery_step_for_testing(
+            tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase::DegradedTools,
+            0,
+        ),
+        None
+    );
+}
+
+#[test]
+fn test_overflow_recovery_preserves_latest_real_ui_request_summary_and_recent_fifo_subset() {
+    let summary = make_compact_summary_message("m0", "assistant", "previous summary");
+    let mut synthetic = make_message("m1", "user", "synthetic session context");
+    synthetic.source = Some(MessageSource::SessionContext);
+    let older = make_message("m2", "assistant", "older assistant context");
+    let mut latest_request = make_message("m3", "user", "latest real request from ui");
+    latest_request.source = Some(MessageSource::Ui);
+    let fresh_assistant = make_message("m4", "assistant", "fresh assistant context");
+    let instruction = make_compaction_instruction_message("m5", "compact this safely");
+
+    let selected = build_overflow_recovery_compaction_messages(
+        &[
+            summary.clone(),
+            synthetic,
+            older,
+            latest_request.clone(),
+            fresh_assistant.clone(),
+            instruction.clone(),
+        ],
+        "openai",
+        10_000,
+        0,
+        0,
+    )
+    .expect("overflow recovery payload should fit");
+
+    let selected_ids = selected
+        .iter()
+        .map(|message| message.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(selected_ids.contains(&summary.id.as_str()));
+    assert!(selected_ids.contains(&latest_request.id.as_str()));
+    assert!(selected_ids.contains(&fresh_assistant.id.as_str()));
+    assert!(selected_ids.contains(&instruction.id.as_str()));
+    assert!(!selected_ids.contains(&"m1"));
+}
+
+#[test]
 fn test_internal_synthetic_user_message_uses_compaction_instruction_id_fallback() {
     let synthetic = make_message(
         "compaction-instruction-legacy",
@@ -313,15 +440,15 @@ fn test_find_background_compaction_split_index_preserves_scheduled_task_request_
 }
 
 #[test]
-fn test_find_background_compaction_split_index_does_not_treat_ui_messages_as_external_requests() {
+fn test_find_background_compaction_split_index_treats_ui_messages_as_external_requests() {
     let mut request = make_message("m0", "user", "UI-triggered helper event");
     request.source = Some(MessageSource::Ui);
 
-    assert!(!request.is_external_request_message());
+    assert!(request.is_external_request_message());
 
     let preview = preview_background_compaction_selection(&[request]);
-    assert_eq!(preview.compacted_ids, vec!["m0"]);
-    assert!(preview.preserved_ids.is_empty());
+    assert!(preview.compacted_ids.is_empty());
+    assert_eq!(preview.preserved_ids, vec!["m0"]);
 }
 
 #[test]

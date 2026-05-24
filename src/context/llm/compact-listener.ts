@@ -100,7 +100,6 @@ export async function setupCompactRequestListener({
         const summary = await service.compact(messages, {
           modelName: model,
           systemPrompt: parentRequest?.systemPrompt,
-          sessionContext: parentRequest?.sessionContext,
           availableTools: parentRequest?.availableTools,
           config: runtimeConfig,
         });

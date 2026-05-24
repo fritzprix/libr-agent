@@ -68,12 +68,6 @@ export interface CompletionRequest {
   apiKey?: string;
   /** Stable system prompt (base sections plus stable service-context blocks). */
   systemPrompt?: string;
-  /**
-   * Per-turn session context (context providers + non-stable service tool states).
-   * Rebuilt on every LLM call. Each AI service decides how to inject this via
-   * `prepareContextInjection`.
-   */
-  sessionContext?: string;
   temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
@@ -85,7 +79,6 @@ export interface CompactionParentRequest {
   model: string;
   provider: string;
   systemPrompt?: string;
-  sessionContext?: string;
   availableTools?: MCPTool[];
 }
 
@@ -137,7 +130,6 @@ export interface LLMServiceContextValue {
     provider: string,
     apiKey?: string,
     systemPrompt?: string,
-    sessionContext?: string,
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],

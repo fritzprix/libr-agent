@@ -48,10 +48,10 @@ const VALIDATE_STAGES = [
     env: { nodeHeapMb: 768 },
   },
   {
-    name: 'test:run',
+    name: 'test:run:validate',
     command: pnpmCommand,
-    args: ['test:run'],
-    env: { nodeHeapMb: 768 },
+    args: ['test:run:validate'],
+    env: { nodeHeapMb: 512 },
   },
   { name: 'rust:fmt:check', command: pnpmCommand, args: ['rust:fmt:check'] },
   { name: 'rust:clippy:all', command: pnpmCommand, args: ['rust:clippy:all'] },
