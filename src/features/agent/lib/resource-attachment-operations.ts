@@ -49,7 +49,7 @@ function buildIndexedAgentAccess(): AttachmentAgentAccess {
   return {
     mode: 'indexed',
     reason: 'indexed',
-    note: 'Indexed in the attachments store. Use attachments tools such as list/read/search instead of guessing via workspace tools.',
+    note: 'Indexed in the attachments store. Use attachments__list, attachments__read, and attachments__search instead of guessing via workspace tools.',
   };
 }
 

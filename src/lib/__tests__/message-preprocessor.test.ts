@@ -91,10 +91,12 @@ describe('message-preprocessor', () => {
       expect(text).toContain('"filename": "test.txt"');
       expect(text).toContain('"mode": "indexed"');
       expect(text).toContain(
-        'read(contentId: "content-1", fromLine: 1, toLine: 200)',
+        'attachments__read(contentId: "content-1", fromLine: 1, toLine: 200)',
       );
-      expect(text).toContain('search(query: "your search query")');
-      expect(text).toContain('list()');
+      expect(text).toContain(
+        'attachments__search(query: "your search query")',
+      );
+      expect(text).toContain('attachments__list()');
     });
 
     it('logs the effective default for includeLatestMediaPayload', async () => {
