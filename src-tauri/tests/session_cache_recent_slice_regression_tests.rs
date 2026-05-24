@@ -19,6 +19,7 @@ use tauri_mcp_agent_lib::repositories::{
     SessionRepository, SessionStatus, SqliteCompactContextRepository, SqliteMessageRepository,
     SqliteSessionRepository,
 };
+use tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url;
 use tauri_mcp_agent_lib::{set_compact_context_repository, set_message_repository};
 use tokio::sync::{Mutex, OnceCell, RwLock};
 use tokio_util::sync::CancellationToken;
@@ -37,7 +38,7 @@ fn test_db_url() -> &'static str {
             "libragent_session_cache_recent_slice_regression_{}.db",
             uuid::Uuid::new_v4()
         ));
-        format!("sqlite://{}?mode=rwc", db_path.display())
+        format!("{}?mode=rwc", format_sqlite_url(&db_path.to_string_lossy()))
     })
 }
 
