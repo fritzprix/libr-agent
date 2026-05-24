@@ -5,7 +5,7 @@ mod trigger;
 
 pub use hints::{build_compaction_preservation_hints, CompactionPreservationHints};
 pub use payload::{
-    apply_compaction_retry_budget_for_testing, build_overflow_recovery_compaction_messages,
+    apply_compaction_retry_budget, build_overflow_recovery_compaction_messages,
     fit_compaction_request_messages_to_limit,
 };
 pub(crate) use trigger::try_trigger_preflight_compaction;

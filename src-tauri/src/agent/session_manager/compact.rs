@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 
 const MAX_COMPACTION_RETRY_ATTEMPTS: u32 = 3;
 
-pub fn should_retry_budget_related_preflight_compaction(
+pub fn should_retry_budget_related_blocking_compaction(
     snapshot: &crate::agent::state::CompactionSnapshot,
     error: &AgentRuntimeError,
 ) -> bool {
@@ -163,7 +163,7 @@ pub async fn handle_compact_error_with_dispatcher(
     };
 
     if let (Some(compaction), Some(snapshot)) = (compaction, snapshot) {
-        if should_retry_budget_related_preflight_compaction(&snapshot, &error) {
+        if should_retry_budget_related_blocking_compaction(&snapshot, &error) {
             let transition_label = match snapshot.recovery_phase {
                 CompactionRecoveryPhase::CacheAligned
                     if snapshot.retry_attempt < MAX_COMPACTION_RETRY_ATTEMPTS =>

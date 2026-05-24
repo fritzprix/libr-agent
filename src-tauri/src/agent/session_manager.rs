@@ -29,7 +29,7 @@ mod message_injection;
 
 pub use channel::format_channel_payload_for_test;
 pub use compact::handle_compact_error_with_dispatcher;
-pub use compact::should_retry_budget_related_preflight_compaction;
+pub use compact::should_retry_budget_related_blocking_compaction;
 pub use execution_mode::ExecutionMode;
 
 /// Manages agent sessions and their workflows

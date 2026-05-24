@@ -1,16 +1,16 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    advance_compaction_overflow_recovery_step_for_testing,
-    apply_compaction_retry_budget_for_testing, build_compact_context_selection_options,
-    build_compact_summary_message_for_messages, build_compact_summary_text,
-    build_compaction_preservation_hints, build_overflow_recovery_compaction_messages,
-    fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
-    normalize_request_messages, preview_background_compaction_selection,
-    preview_preflight_compaction_selection, resolve_context_management_settings,
-    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
-    should_trigger_background_compaction, should_trigger_post_response_compaction,
-    try_apply_lossy_main_request_fallback, uses_compaction_strategy,
+    advance_compaction_overflow_recovery_step_for_testing, apply_compaction_retry_budget,
+    build_compact_context_selection_options, build_compact_summary_message_for_messages,
+    build_compact_summary_text, build_compaction_preservation_hints,
+    build_overflow_recovery_compaction_messages, fit_compaction_request_messages_to_limit,
+    merge_consecutive_user_messages, normalize_request_messages,
+    preview_background_compaction_selection, preview_preflight_compaction_selection,
+    resolve_context_management_settings, resolve_preserved_calibration_ratio,
+    should_skip_same_tail_compaction, should_trigger_background_compaction,
+    should_trigger_post_response_compaction, try_apply_lossy_main_request_fallback,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_snapshot;
@@ -295,23 +295,11 @@ fn test_lossy_main_request_fallback_truncates_single_oversized_message() {
 
 #[test]
 fn test_apply_compaction_retry_budget_progressively_reduces_limit() {
-    assert_eq!(
-        apply_compaction_retry_budget_for_testing(128_000, 0),
-        128_000
-    );
-    assert_eq!(
-        apply_compaction_retry_budget_for_testing(128_000, 1),
-        108_800
-    );
-    assert_eq!(
-        apply_compaction_retry_budget_for_testing(128_000, 2),
-        89_600
-    );
-    assert_eq!(
-        apply_compaction_retry_budget_for_testing(128_000, 3),
-        70_400
-    );
-    assert_eq!(apply_compaction_retry_budget_for_testing(512, 3), 512);
+    assert_eq!(apply_compaction_retry_budget(128_000, 0), 128_000);
+    assert_eq!(apply_compaction_retry_budget(128_000, 1), 108_800);
+    assert_eq!(apply_compaction_retry_budget(128_000, 2), 89_600);
+    assert_eq!(apply_compaction_retry_budget(128_000, 3), 70_400);
+    assert_eq!(apply_compaction_retry_budget(512, 3), 512);
 }
 
 #[test]

@@ -13,7 +13,7 @@ pub(super) struct CompactionRequestPayload {
     pub(super) reused_prior_summary: bool,
 }
 
-fn apply_compaction_retry_budget(safe_input_token_limit: usize, retry_attempt: u32) -> usize {
+pub fn apply_compaction_retry_budget(safe_input_token_limit: usize, retry_attempt: u32) -> usize {
     let reduction_percent = match retry_attempt {
         0 => 100,
         1 => 85,
@@ -25,13 +25,6 @@ fn apply_compaction_retry_budget(safe_input_token_limit: usize, retry_attempt: u
         safe_input_token_limit.saturating_mul(reduction_percent) / 100,
         minimum_floor,
     )
-}
-
-pub fn apply_compaction_retry_budget_for_testing(
-    safe_input_token_limit: usize,
-    retry_attempt: u32,
-) -> usize {
-    apply_compaction_retry_budget(safe_input_token_limit, retry_attempt)
 }
 
 fn build_incremental_compact_summary_message(

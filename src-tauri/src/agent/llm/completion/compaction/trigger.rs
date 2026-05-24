@@ -17,7 +17,7 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::payload::{
-    apply_compaction_retry_budget_for_testing, build_compaction_request_payload,
+    apply_compaction_retry_budget, build_compaction_request_payload,
     build_overflow_recovery_compaction_messages, estimate_compaction_non_message_tokens,
     fit_compaction_request_messages_to_limit, CompactionRequestPayload,
 };
@@ -268,7 +268,7 @@ async fn prepare_compaction_request(
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
     let effective_input_token_limit =
-        apply_compaction_retry_budget_for_testing(safe_input_token_limit, retry_attempt);
+        apply_compaction_retry_budget(safe_input_token_limit, retry_attempt);
     let resolved_parent_request =
         resolve_parent_request(active_sessions, session_id, parent_request).await;
     let request_layout = resolved_parent_request.as_ref().map(|request| {
