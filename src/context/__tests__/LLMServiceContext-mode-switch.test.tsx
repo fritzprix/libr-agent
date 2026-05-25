@@ -138,20 +138,6 @@ describe('SP17 Regression: Context Strategy Mode-Switch', () => {
   });
 
   describe('compact → window switch', () => {
-    it('resets getCompactionPressure to undefined for all sessions', async () => {
-      const sessionId = 'session-a';
-      const { hook, setStrategy } = renderWithStrategy('compact');
-
-      // clearAllCompactState resets everything — call it to simulate prior state,
-      // then verify the switch also resets (the observable side-effect is
-      // that no stale context usage leaks into window mode).
-      await setStrategy('window');
-
-      // After switching to window, compaction pressure state is cleared —
-      // the hook returns undefined for any session.
-      expect(hook.result.current.getCompactionPressure(sessionId)).toBeUndefined();
-    });
-
     it('resets getCompactedRange to undefined for all sessions', async () => {
       const sessionId = 'session-b';
       const { hook, setStrategy } = renderWithStrategy('compact');
@@ -179,7 +165,6 @@ describe('SP17 Regression: Context Strategy Mode-Switch', () => {
 
       await setStrategy('compact');
 
-      expect(hook.result.current.getCompactionPressure(sessionId)).toBeUndefined();
       expect(hook.result.current.getCompactedRange(sessionId)).toBeUndefined();
       expect(hook.result.current.isCompacting(sessionId)).toBe(false);
       expect(hook.result.current.isAwaitingCompact(sessionId)).toBe(false);
@@ -198,7 +183,6 @@ describe('SP17 Regression: Context Strategy Mode-Switch', () => {
       await setStrategy('window');
 
       // After all the toggling, state must still be clean
-      expect(hook.result.current.getCompactionPressure(sessionId)).toBeUndefined();
       expect(hook.result.current.getCompactedRange(sessionId)).toBeUndefined();
       expect(hook.result.current.isCompacting(sessionId)).toBe(false);
       expect(hook.result.current.isAwaitingCompact(sessionId)).toBe(false);
@@ -232,7 +216,6 @@ describe('SP17 Regression: Context Strategy Mode-Switch', () => {
       });
 
       for (const sid of ['s1', 's2', 's3']) {
-        expect(hook.result.current.getCompactionPressure(sid)).toBeUndefined();
         expect(hook.result.current.getCompactedRange(sid)).toBeUndefined();
         expect(hook.result.current.isCompacting(sid)).toBe(false);
         expect(hook.result.current.isAwaitingCompact(sid)).toBe(false);

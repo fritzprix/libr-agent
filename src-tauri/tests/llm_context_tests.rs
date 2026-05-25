@@ -6,14 +6,11 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_summary_text, build_compaction_preservation_hints,
     build_overflow_recovery_compaction_messages, fit_compaction_request_messages_to_limit,
     merge_consecutive_user_messages, normalize_request_messages,
-    preview_background_compaction_selection, preview_preflight_compaction_selection,
-    resolve_context_management_settings, resolve_preserved_calibration_ratio,
-    should_skip_same_tail_compaction, should_trigger_background_compaction,
-    should_trigger_post_response_compaction, try_apply_lossy_main_request_fallback,
-    uses_compaction_strategy,
+    preview_preflight_compaction_selection, resolve_context_management_settings,
+    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
+    try_apply_lossy_main_request_fallback, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
-use tauri_mcp_agent_lib::agent::llm::response::build_post_response_compaction_snapshot;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::llm::types::CompactionParentRequest;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
@@ -194,38 +191,6 @@ fn test_find_preflight_compaction_split_index_keeps_unresolved_tool_chain_tail()
 }
 
 #[test]
-fn test_find_background_compaction_split_index_preserves_active_request_before_deferred_tool_execution(
-) {
-    let request = make_message("m0", "user", "Refactor auth to JWT");
-
-    let mut assistant = make_message("m1", "assistant", "Calling tools");
-    assistant.tool_calls = Some(vec![AgentToolCall {
-        id: "call_A".to_string(),
-        r#type: "function".to_string(),
-        function: ToolCallFunction {
-            name: "toolA".to_string(),
-            arguments: "{}".to_string(),
-        },
-    }]);
-
-    let preview = preview_background_compaction_selection(&[request, assistant]);
-    assert!(preview.compacted_ids.is_empty());
-    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
-}
-
-#[test]
-fn test_find_background_compaction_split_index_ignores_internal_synthetic_user_messages() {
-    let mut synthetic = make_message("m1", "user", "Synthetic compaction prompt");
-    synthetic.source = Some(MessageSource::CompactionInstruction);
-
-    assert!(!synthetic.is_external_request_message());
-
-    let preview = preview_background_compaction_selection(&[synthetic]);
-    assert_eq!(preview.compacted_ids, vec!["m1"]);
-    assert!(preview.preserved_ids.is_empty());
-}
-
-#[test]
 fn test_compaction_parent_request_does_not_serialize_internal_session_context() {
     let request = CompactionParentRequest {
         model: "gpt-4o".to_string(),
@@ -394,52 +359,6 @@ fn test_internal_synthetic_user_message_uses_compaction_instruction_id_fallback(
 }
 
 #[test]
-fn test_find_background_compaction_split_index_preserves_latest_external_request_block() {
-    let older = make_message("m0", "user", "Older request");
-
-    let newer = make_message("m1", "user", "Latest real request");
-    let assistant = make_message("m2", "assistant", "Working on latest request");
-
-    let preview = preview_background_compaction_selection(&[older, newer, assistant]);
-    assert!(preview.compacted_ids.is_empty());
-    assert_eq!(preview.preserved_ids, vec!["m0", "m1", "m2"]);
-}
-
-#[test]
-fn test_find_background_compaction_split_index_preserves_channel_request_block() {
-    let mut request = make_message("m0", "user", "Request from channel");
-    request.source = Some(MessageSource::Channel);
-    let assistant = make_message("m1", "assistant", "Working on channel request");
-
-    let preview = preview_background_compaction_selection(&[request, assistant]);
-    assert!(preview.compacted_ids.is_empty());
-    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
-}
-
-#[test]
-fn test_find_background_compaction_split_index_preserves_scheduled_task_request_block() {
-    let mut request = make_message("m0", "user", "Run scheduled sync");
-    request.source = Some(MessageSource::ScheduledTask);
-    let assistant = make_message("m1", "assistant", "Working on scheduled task");
-
-    let preview = preview_background_compaction_selection(&[request, assistant]);
-    assert!(preview.compacted_ids.is_empty());
-    assert_eq!(preview.preserved_ids, vec!["m0", "m1"]);
-}
-
-#[test]
-fn test_find_background_compaction_split_index_treats_ui_messages_as_external_requests() {
-    let mut request = make_message("m0", "user", "UI-triggered helper event");
-    request.source = Some(MessageSource::Ui);
-
-    assert!(request.is_external_request_message());
-
-    let preview = preview_background_compaction_selection(&[request]);
-    assert!(preview.compacted_ids.is_empty());
-    assert_eq!(preview.preserved_ids, vec!["m0"]);
-}
-
-#[test]
 fn test_build_compaction_preservation_hints_capture_active_request_and_references() {
     let mut read_file = make_message("m0", "assistant", "Reading types file");
     read_file.tool_calls = Some(vec![AgentToolCall {
@@ -491,6 +410,42 @@ fn test_build_compaction_preservation_hints_capture_active_request_and_reference
             .iter()
             .any(|hint| hint.contains("InterfaceC")),
         "required references should keep the requested target symbol"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_capture_consecutive_external_request_block() {
+    let mut first_request = make_message("m0", "user", "Refactor the compaction contract.");
+    first_request.source = Some(MessageSource::Ui);
+    let mut second_request = make_message(
+        "m1",
+        "user",
+        "Specifically update `docs/specs/message-compaction.md` and keep `Active Request` semantic.",
+    );
+    second_request.source = Some(MessageSource::Ui);
+
+    let hints = build_compaction_preservation_hints(&[first_request, second_request]);
+
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("Refactor the compaction contract")),
+        "the first message in a contiguous external request block should remain in the distillation seed"
+    );
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("Active Request")),
+        "the latest message in the contiguous external request block should also remain in the distillation seed"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("docs/specs/message-compaction.md")),
+        "required references should still be extracted from the contiguous request block"
     );
 }
 
@@ -632,17 +587,6 @@ fn test_build_compaction_preservation_hints_filter_non_identifier_backticks_and_
             .any(|hint| hint.contains("18.3")),
         "bare dotted values should not be treated as file paths"
     );
-}
-
-#[test]
-fn test_build_post_response_compaction_snapshot_appends_pending_message_once() {
-    let request = make_message("m0", "user", "Latest real request");
-    let pending = make_message("m1", "assistant", "Pending assistant turn");
-
-    let snapshot = build_post_response_compaction_snapshot(&[request], Some(&pending));
-    assert_eq!(snapshot.len(), 2);
-    assert_eq!(snapshot[0].id, "m0");
-    assert_eq!(snapshot[1].id, "m1");
 }
 
 #[test]
@@ -1093,61 +1037,6 @@ fn test_estimate_text_tokens() {
     let text = "Hello, world! This is a test.";
     let tokens = estimate_text_tokens(text);
     assert!(tokens > 0);
-}
-
-#[test]
-fn test_calculate_compact_threshold() {
-    assert_eq!(calculate_compact_threshold(10000), 9500);
-}
-
-#[test]
-fn test_background_compaction_trigger_uses_threshold_boundary() {
-    let safe_limit = 49152;
-    let threshold = calculate_compact_threshold(safe_limit);
-
-    assert!(!should_trigger_background_compaction(
-        threshold, safe_limit, "compact"
-    ));
-    assert!(should_trigger_background_compaction(
-        threshold + 1,
-        safe_limit,
-        "compact"
-    ));
-}
-
-#[test]
-fn test_background_compaction_trigger_respects_strategy() {
-    let safe_limit = 49152;
-    let threshold = calculate_compact_threshold(safe_limit);
-
-    assert!(!should_trigger_background_compaction(
-        threshold + 500,
-        safe_limit,
-        "window"
-    ));
-}
-
-#[test]
-fn test_post_response_compaction_trigger_matches_background_threshold_contract() {
-    let safe_limit = 49152;
-    let threshold = calculate_compact_threshold(safe_limit);
-
-    assert!(!should_trigger_post_response_compaction(
-        threshold, safe_limit, "compact"
-    ));
-    assert!(should_trigger_post_response_compaction(
-        threshold + 1,
-        safe_limit,
-        "compact"
-    ));
-    assert!(should_trigger_post_response_compaction(
-        safe_limit, safe_limit, "compact"
-    ));
-    assert!(!should_trigger_post_response_compaction(
-        threshold + 1,
-        safe_limit,
-        "window"
-    ));
 }
 
 #[test]

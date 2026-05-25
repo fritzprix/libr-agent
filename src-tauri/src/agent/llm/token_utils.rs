@@ -84,13 +84,6 @@ pub fn estimate_text_tokens(text: &str) -> usize {
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 
-/// Calculates the post-response compaction trigger threshold using a 5% margin
-/// below the effective compact-mode request budget. Corresponds to
-/// `calculateCompactThreshold` in TS.
-pub fn calculate_compact_threshold(effective_limit: usize) -> usize {
-    (effective_limit as f64 * 0.95).floor() as usize
-}
-
 /// Reserves extra headroom for provider-side tokenization drift and frontend-side
 /// payload expansion (attachments, context injection, multimodal wrappers).
 pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
@@ -449,34 +442,4 @@ pub fn calculate_conservative_preflight_prompt_tokens(
     }
 
     (full_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize
-}
-
-/// Computes the post-response compaction trigger total from the provider-reported
-/// input size plus a slightly conservative output estimate. This keeps the
-/// compaction decision anchored to real prompt usage while biasing the output side
-/// upward enough to avoid awkward near-limit misses.
-pub fn calculate_post_response_compaction_tokens(message: &Message) -> Option<usize> {
-    if message.role != "assistant" {
-        return None;
-    }
-
-    let usage = message.usage.as_ref()?;
-    let prompt_tokens = usage_metric_as_usize(usage, "promptTokens")?;
-    if prompt_tokens == 0 {
-        return None;
-    }
-
-    let measured_output_tokens = usage_metric_as_usize(usage, "completionTokens").or_else(|| {
-        usage_metric_as_usize(usage, "totalTokens")
-            .and_then(|total_tokens| total_tokens.checked_sub(prompt_tokens))
-    });
-
-    let conservative_output_tokens = if let Some(output_tokens) = measured_output_tokens {
-        let safety_bias = (output_tokens as f64 * 0.05).ceil() as usize;
-        output_tokens.saturating_add(safety_bias)
-    } else {
-        estimate_tokens_bpe(message)
-    };
-
-    Some(prompt_tokens.saturating_add(conservative_output_tokens))
 }

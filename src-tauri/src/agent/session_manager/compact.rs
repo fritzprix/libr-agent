@@ -3,13 +3,11 @@ use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
-use crate::agent::state::{
-    AgentSession, CompactionRecoveryPhase, CompactionResumeAction, DeferredWorkflowStep,
-};
+use crate::agent::state::{AgentSession, CompactionRecoveryPhase, CompactionResumeAction};
 use crate::agent::tauri_events::emit_compact_finished;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::compact_context_repository::CompactContextRepository;
-use crate::repositories::{CompactContextRecord, SessionRepository, SessionStatus};
+use crate::repositories::{CompactContextRecord, SessionRepository};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -83,57 +81,6 @@ fn spawn_resume_completion(
             );
         }
     });
-}
-
-fn spawn_resume_tool_execution(
-    session_repo: &Arc<dyn SessionRepository>,
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
-    session_id: &str,
-    tool_calls: Vec<crate::agent::types::ToolCall>,
-) {
-    let session_repo = session_repo.clone();
-    let active_sessions = active_sessions.clone();
-    let proxy_manager = proxy_manager.clone();
-    let app_handle = app_handle.clone();
-    let resume_session_id = session_id.to_string();
-
-    tokio::spawn(async move {
-        crate::agent::llm::tool_execution::execute_tool_calls(
-            session_repo,
-            active_sessions,
-            proxy_manager,
-            app_handle,
-            resume_session_id,
-            tool_calls,
-        )
-        .await;
-    });
-}
-
-async fn finalize_workflow_completion(
-    session_repo: &Arc<dyn SessionRepository>,
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
-    session_id: &str,
-    reason: crate::agent::events::WorkflowCompletionReason,
-) -> Result<(), String> {
-    crate::agent::lifecycle::update_session_status(
-        session_repo,
-        active_sessions,
-        app_handle,
-        session_id,
-        SessionStatus::Idle,
-    )
-    .await?;
-
-    let event = crate::agent::events::AgentEvent::WorkflowCompleted {
-        session_id: session_id.to_string(),
-        reason,
-    };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
-        .map_err(|e| format!("Failed to emit event: {}", e))
 }
 
 pub async fn handle_compact_error_with_dispatcher(
@@ -287,7 +234,6 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
         match &resume_action {
             CompactionResumeAction::Nothing => "nothing",
             CompactionResumeAction::ResumeCompletion => "resume_completion",
-            CompactionResumeAction::RunDeferred(_) => "run_deferred",
         }
     );
     if let Err(error) = emit_compact_finished(
@@ -305,72 +251,6 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
     }
 
     match resume_action {
-        CompactionResumeAction::RunDeferred(deferred_workflow_step) => match deferred_workflow_step
-        {
-            DeferredWorkflowStep::RequestCompletion => {
-                log::info!(
-                    "▶️ Resuming deferred LLM completion after compaction for session {}",
-                    session_id
-                );
-                spawn_resume_completion(
-                    session_repo,
-                    active_sessions,
-                    proxy_manager,
-                    app_handle,
-                    session_id,
-                    "deferred LLM completion",
-                );
-            }
-            DeferredWorkflowStep::ExecuteToolCalls {
-                assistant_message_id,
-                tool_calls,
-            } => {
-                log::info!(
-                    "▶️ Resuming deferred tool execution after compaction for session {} (assistant_message={}, tool_calls={})",
-                    session_id,
-                    assistant_message_id,
-                    tool_calls.len()
-                );
-
-                {
-                    let mut active = active_sessions.write().await;
-                    if let Some(session) = active.get_mut(session_id) {
-                        let expected_tool_call_ids: std::collections::HashSet<String> =
-                            tool_calls.iter().map(|tc| tc.id.clone()).collect();
-                        session.pending_execution =
-                            Some(crate::agent::state::PendingToolExecution {
-                                message_id: assistant_message_id.clone(),
-                                total_expected: tool_calls.len(),
-                                results: Vec::new(),
-                                tool_names: tool_calls
-                                    .iter()
-                                    .map(|tc| (tc.id.clone(), tc.function.name.clone()))
-                                    .collect(),
-                                expected_tool_call_ids,
-                                completed_tool_call_ids: std::collections::HashSet::new(),
-                            });
-                    }
-                }
-                spawn_resume_tool_execution(
-                    session_repo,
-                    active_sessions,
-                    proxy_manager,
-                    app_handle,
-                    session_id,
-                    tool_calls,
-                );
-            }
-            DeferredWorkflowStep::FinalizeWorkflow { reason } => {
-                finalize_workflow_completion(
-                    session_repo,
-                    active_sessions,
-                    app_handle,
-                    session_id,
-                    reason,
-                )
-                .await?;
-            }
-        },
         CompactionResumeAction::ResumeCompletion => {
             log::info!(
                 "▶️ Resuming blocked LLM completion after compaction for session {}",

@@ -21,7 +21,6 @@ const logger = getLogger('compact-listener');
 
 interface CompactRequestListenerOptions {
   settingsRef: MutableRefObject<Settings>;
-  clearCompactionPressureForSession: (sessionId: string) => void;
   setCompactedRangeForSession: (
     sessionId: string,
     range: CompactedRange | undefined,
@@ -48,7 +47,6 @@ interface CompactStateListenerOptions {
 
 export async function setupCompactRequestListener({
   settingsRef,
-  clearCompactionPressureForSession,
   setCompactedRangeForSession,
   isMounted,
   onRegistered,
@@ -109,7 +107,6 @@ export async function setupCompactRequestListener({
           toId,
           summary,
         });
-        clearCompactionPressureForSession(sessionId);
         logger.info(`✅ Compact summary stored: session=${sessionId}`);
       } catch (error) {
         const compactRuntimeError = toAgentRuntimeError(error);

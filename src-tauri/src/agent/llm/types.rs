@@ -144,14 +144,6 @@ pub struct CompletionCancelRequest {
     pub reason: String,
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PostResponseCompactionPressure {
-    pub total_tokens: usize,
-    pub context_window: usize,
-    pub model_max_context: usize,
-}
-
 /// Prompt-layout inputs from the parent workflow request reused by Rust when it
 /// reassembles the provider-facing compaction request layout.
 #[derive(Clone, Debug, serde::Serialize)]

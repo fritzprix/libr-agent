@@ -1,13 +1,11 @@
-use crate::agent::llm::completion::context::load_context_management_settings;
 use crate::agent::llm::completion::request::normalize_request_messages;
-use crate::agent::llm::types::{CompactRequest, CompactStatePhase, CompactionParentRequest};
+use crate::agent::llm::load_context_management_settings;
+use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
 use crate::agent::state::{
     AgentSession, CompactionBeginOutcome, CompactionKind, CompactionRecoveryPhase,
-    CompactionReuseOutcome, DeferredWorkflowStep,
+    CompactionReuseOutcome,
 };
-use crate::agent::tauri_events::{
-    emit_compact_finished, emit_compact_request, emit_compact_started,
-};
+use crate::agent::tauri_events::{emit_compact_request, emit_compact_started};
 use crate::mcp::types::MCPTool;
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
@@ -21,20 +19,6 @@ use super::payload::{
     build_overflow_recovery_compaction_messages, estimate_compaction_non_message_tokens,
     fit_compaction_request_messages_to_limit, CompactionRequestPayload,
 };
-
-enum PostResponseCompactionTriggerOutcome {
-    Triggered,
-    ReusedInFlight,
-    SkippedNoWork,
-}
-
-struct PostResponseCompactionInput<'a> {
-    session_id: &'a str,
-    session_name: &'a str,
-    messages: &'a [Message],
-    parent_request: Option<CompactionParentRequest>,
-    deferred_step: DeferredWorkflowStep,
-}
 
 async fn resolve_parent_request(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -84,10 +68,6 @@ pub fn preview_preflight_compaction_selection(messages: &[Message]) -> Compactio
     build_compaction_selection_preview(messages, find_preflight_compaction_split_index(messages))
 }
 
-pub fn preview_background_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
-    build_compaction_selection_preview(messages, find_background_compaction_split_index(messages))
-}
-
 fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
     if messages.is_empty() {
         return 0;
@@ -101,18 +81,6 @@ fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
         Some(_) => std::cmp::min(messages.len().saturating_sub(1), unresolved_boundary),
         None => 0,
     }
-}
-
-fn find_background_compaction_split_index(messages: &[Message]) -> usize {
-    let unresolved_boundary =
-        crate::agent::llm::context_selector::find_compaction_split_index(messages);
-
-    let Some(active_request_start) = super::find_latest_external_request_block_start(messages)
-    else {
-        return unresolved_boundary;
-    };
-
-    std::cmp::min(unresolved_boundary, active_request_start)
 }
 
 pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
@@ -223,6 +191,10 @@ fn degrade_tools_for_overflow_recovery(tools: &[MCPTool]) -> Vec<MCPTool> {
             name: tool.name.clone(),
             title: tool.title.clone(),
             description: tool.description.clone(),
+            // Overflow recovery is the last-resort fit path. We intentionally keep
+            // only high-signal tool identity/description and drop verbose schemas so
+            // the model still sees what tools exist while the payload stays small
+            // enough to survive the degraded-tools phase.
             input_schema: crate::mcp::schema::MCPToolInputSchema::default(),
             output_schema: None,
             annotations: tool.annotations.clone(),
@@ -408,244 +380,6 @@ async fn prepare_compaction_request_with_recovery_ladder(
                 retry_attempt = next_retry_attempt;
             }
         }
-    }
-}
-
-async fn trigger_post_response_blocking_compaction(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
-    input: PostResponseCompactionInput<'_>,
-) -> Result<PostResponseCompactionTriggerOutcome, String> {
-    let PostResponseCompactionInput {
-        session_id,
-        session_name,
-        messages,
-        parent_request,
-        deferred_step,
-    } = input;
-    let split_idx = find_background_compaction_split_index(messages);
-    if split_idx == 0 {
-        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
-    }
-
-    let current_tail_id = messages.last().map(|message| message.id.clone());
-
-    let compact_context_handles = {
-        let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| (session.compact_context.clone(), session.compaction.clone()))
-    };
-    let (compact_context_record, compaction_state) =
-        if let Some((compact_context_handle, compaction_state)) = compact_context_handles {
-            (
-                compact_context_handle.read().await.clone(),
-                Some(compaction_state),
-            )
-        } else {
-            (None, None)
-        };
-    let Some(compaction_state) = compaction_state else {
-        return Err(format!("Session not found: {}", session_id));
-    };
-    let last_compacted_tail = compaction_state.last_compacted_tail_id().await;
-    let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
-
-    if same_tail && should_skip_same_tail_compaction(messages, split_idx) {
-        log::debug!(
-            "⏭️ Compaction skipped (same tail): session={}, tail={}",
-            session_id,
-            current_tail_id.as_deref().unwrap_or("?")
-        );
-        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
-    }
-
-    let started_at_ms = chrono::Utc::now().timestamp_millis();
-
-    let initial_retry_attempt = compaction_state.retry_attempt().await;
-    let initial_recovery_phase = compaction_state.recovery_phase().await;
-    let Some(prepared_attempt) = prepare_compaction_request_with_recovery_ladder(
-        active_sessions,
-        PrepareCompactionRequestInput {
-            session_id,
-            session_name,
-            messages,
-            split_idx,
-            parent_request,
-            compact_context_record,
-            started_at_ms,
-            resume_completion_after_compact: false,
-            recovery_phase: initial_recovery_phase,
-            retry_attempt: initial_retry_attempt,
-        },
-        initial_recovery_phase,
-        initial_retry_attempt,
-    )
-    .await?
-    else {
-        log::debug!(
-            "⏭️ Compaction skipped (no new delta beyond previous summary): session={}, tail={}",
-            session_id,
-            current_tail_id.as_deref().unwrap_or("?")
-        );
-        return Ok(PostResponseCompactionTriggerOutcome::SkippedNoWork);
-    };
-    let PreparedCompactionAttempt {
-        prepared,
-        recovery_phase,
-        retry_attempt,
-    } = prepared_attempt;
-
-    let log_from_id = prepared.compact_event.from_id.clone();
-    let log_to_id = prepared.compact_event.to_id.clone();
-    let tail_id_for_task = prepared.current_tail_id.clone();
-    let compact_event = prepared.compact_event;
-    let started_at_ms = prepared.started_at_ms;
-
-    match compaction_state
-        .try_begin(
-            CompactionKind::PostResponse {
-                deferred_step: deferred_step.clone(),
-            },
-            tail_id_for_task,
-            started_at_ms,
-        )
-        .await
-    {
-        CompactionBeginOutcome::Started => {
-            compaction_state
-                .set_recovery_progress(recovery_phase, retry_attempt)
-                .await;
-            if let Err(error) = emit_compact_started(
-                app_handle,
-                session_id.to_string(),
-                Some(session_name.to_string()),
-                true,
-            ) {
-                compaction_state.clear_runtime_state(true).await;
-                compaction_state.reset_recovery_progress().await;
-                return Err(error);
-            }
-
-            if let Err(error) = emit_compact_request(app_handle, compact_event) {
-                compaction_state.clear_runtime_state(true).await;
-                compaction_state.reset_recovery_progress().await;
-                if let Err(emit_error) = emit_compact_finished(
-                    app_handle,
-                    session_id.to_string(),
-                    Some(session_name.to_string()),
-                    CompactStatePhase::Failed,
-                    Some(error.clone()),
-                ) {
-                    log::warn!(
-                        "Failed to emit post-response compaction failure state for session {}: {}",
-                        session_id,
-                        emit_error
-                    );
-                }
-                return Err(error);
-            }
-        }
-        CompactionBeginOutcome::AlreadyInFlight => {
-            match compaction_state
-                .attach_deferred_workflow_step(deferred_step)
-                .await
-            {
-                CompactionReuseOutcome::Promoted => log::info!(
-                    "⏳ Reusing in-flight compaction and preserving post-response continuation: session={}",
-                    session_id
-                ),
-                CompactionReuseOutcome::NoChange => log::warn!(
-                    "Post-response compaction reused an in-flight compaction that already had a deferred continuation: session={}",
-                    session_id
-                ),
-                CompactionReuseOutcome::NotInFlight => {
-                    return Err(format!(
-                        "Compaction phase unexpectedly became idle while reusing post-response compaction for session {}",
-                        session_id
-                    ));
-                }
-            }
-            return Ok(PostResponseCompactionTriggerOutcome::ReusedInFlight);
-        }
-    }
-
-    log::info!(
-        "🔧 Post-response compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
-        session_id,
-        log_from_id,
-        log_to_id,
-        split_idx,
-        prepared.compacted_delta_count,
-        prepared.reused_prior_summary,
-        current_tail_id.as_deref().unwrap_or("?"),
-        started_at_ms
-    );
-
-    Ok(PostResponseCompactionTriggerOutcome::Triggered)
-}
-
-pub async fn trigger_post_response_compaction_if_needed(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
-    session_id: &str,
-    session_name: &str,
-    messages: &[Message],
-    usage_total_tokens: usize,
-    deferred_step: DeferredWorkflowStep,
-) -> Result<bool, String> {
-    let settings = load_context_management_settings().await;
-    let safe_input_token_limit =
-        std::cmp::min(settings.max_input_context, settings.model_max_limit);
-    let trigger_threshold =
-        crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
-    let should_trigger = super::should_trigger_post_response_compaction(
-        usage_total_tokens,
-        safe_input_token_limit,
-        &settings.context_strategy,
-    );
-
-    log::info!(
-        "🧮 Post-response compaction evaluation: session={}, total_tokens={}, strategy={}, configured_max_input_context={}, model_max_limit={}, safe_input_token_limit={}, trigger_threshold={}, should_trigger={}",
-        session_id,
-        usage_total_tokens,
-        settings.context_strategy,
-        settings.max_input_context,
-        settings.model_max_limit,
-        safe_input_token_limit,
-        trigger_threshold,
-        should_trigger
-    );
-
-    if !should_trigger {
-        return Ok(false);
-    }
-
-    let outcome = trigger_post_response_blocking_compaction(
-        active_sessions,
-        app_handle,
-        PostResponseCompactionInput {
-            session_id,
-            session_name,
-            messages,
-            parent_request: None,
-            deferred_step,
-        },
-    )
-    .await?;
-
-    match outcome {
-        PostResponseCompactionTriggerOutcome::Triggered => {
-            log::info!(
-                "🧹 Blocking post-response compaction armed from completed response usage: session={}, total_tokens={}, limit={}",
-                session_id,
-                usage_total_tokens,
-                safe_input_token_limit
-            );
-            Ok(true)
-        }
-        PostResponseCompactionTriggerOutcome::ReusedInFlight => Ok(true),
-        PostResponseCompactionTriggerOutcome::SkippedNoWork => Ok(false),
     }
 }
 

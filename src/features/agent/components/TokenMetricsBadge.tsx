@@ -4,73 +4,12 @@ import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 import { calculateCacheHitPercent } from './token-metrics';
 import { formatNumber } from '@/lib/utils';
-import { useTranslation } from 'react-i18next';
-import type { CompactionPressure } from '@/models/agent-ipc';
 
 interface TokenMetricsBadgeProps {
   usage: TokenUsage;
   showSpeed?: boolean;
   className?: string;
   compact?: boolean;
-  /** When provided, renders the Rust SSOT compaction-pressure gauge below the metrics. */
-  compactionPressure?: CompactionPressure;
-}
-
-function CompactionPressureGauge({
-  totalTokens,
-  contextWindow,
-  modelMaxContext,
-}: CompactionPressure) {
-  const { t } = useTranslation();
-  const pct = Math.min(totalTokens / contextWindow, 1);
-  const pctDisplay = (pct * 100).toFixed(0);
-
-  let barColor: string;
-  if (pct >= 0.9) {
-    // 90% matches the compaction trigger
-    barColor = 'bg-destructive';
-  } else if (pct >= 0.8) {
-    barColor = 'bg-warning';
-  } else {
-    barColor = 'bg-success';
-  }
-
-  const tooltipTitle =
-    modelMaxContext && modelMaxContext !== contextWindow
-      ? t('agent.statusBar.compactionPressureTooltipWithModelMax', {
-          totalTokens: formatNumber(totalTokens),
-          contextWindow: formatNumber(contextWindow),
-          modelMaxContext: formatNumber(modelMaxContext),
-          pctDisplay,
-          defaultValue:
-            'Compaction Pressure: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nEffective Limit: {{contextWindow}} tokens\nModel Max: {{modelMaxContext}} tokens\nSource of truth: Rust post-response compaction threshold value.',
-        })
-      : t('agent.statusBar.compactionPressureTooltip', {
-          totalTokens: formatNumber(totalTokens),
-          contextWindow: formatNumber(contextWindow),
-          pctDisplay,
-          defaultValue:
-            'Compaction Pressure: {{totalTokens}} / {{contextWindow}} tokens ({{pctDisplay}}%)\nSource of truth: Rust post-response compaction threshold value.',
-        });
-
-  return (
-    <div className="flex items-center gap-1.5 mt-0.5" title={tooltipTitle}>
-      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-        {t('agent.statusBar.compactionPressureLabel', {
-          defaultValue: 'Compaction Pressure',
-        })}
-      </span>
-      <div className="h-1 w-20 rounded-full bg-muted overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-          style={{ width: `${pct * 100}%` }}
-        />
-      </div>
-      <span className="text-[10px] text-muted-foreground tabular-nums">
-        {pctDisplay}%
-      </span>
-    </div>
-  );
 }
 
 export function TokenMetricsBadge({
@@ -78,7 +17,6 @@ export function TokenMetricsBadge({
   showSpeed: showSpeedProp,
   className = '',
   compact: compactProp,
-  compactionPressure,
 }: TokenMetricsBadgeProps) {
   // Get display preferences from settings
   const { value: settings } = useSettings();
@@ -215,10 +153,6 @@ export function TokenMetricsBadge({
           </span>
         )}
       </div>
-
-      {compactionPressure && (
-        <CompactionPressureGauge {...compactionPressure} />
-      )}
     </div>
   );
 }

@@ -25,7 +25,6 @@ const viewportState = vi.hoisted(() => ({
 const metricsBadgeState = vi.hoisted(() => ({
   usage: null as TokenUsage | null,
   compact: false,
-  hasCompactionPressure: false,
 }));
 
 const tokenMetricsState = vi.hoisted(() => ({
@@ -86,7 +85,6 @@ vi.mock('@/context/LLMServiceContext', () => ({
   useLLMService: () => ({
     isCompacting: vi.fn(() => false),
     isAwaitingCompact: vi.fn(() => false),
-    getCompactionPressure: vi.fn(() => undefined),
   }),
 }));
 
@@ -158,21 +156,14 @@ vi.mock('../TokenMetricsBadge', () => ({
   TokenMetricsBadge: ({
     usage,
     compact,
-    compactionPressure,
   }: {
     usage: TokenUsage;
     compact?: boolean;
-    compactionPressure?: unknown;
   }) => {
     metricsBadgeState.usage = usage;
     metricsBadgeState.compact = compact ?? false;
-    metricsBadgeState.hasCompactionPressure = compactionPressure !== undefined;
     return (
-      <div
-        data-testid="metrics-badge"
-        data-compact={compact ? 'true' : 'false'}
-        data-has-pressure={compactionPressure ? 'true' : 'false'}
-      >
+      <div data-testid="metrics-badge" data-compact={compact ? 'true' : 'false'}>
         {usage.promptTokens} {usage.completionTokens}
       </div>
     );
@@ -228,7 +219,6 @@ describe('AgentChatStatusBar', () => {
     viewportState.isMobile = false;
     metricsBadgeState.usage = null;
     metricsBadgeState.compact = false;
-    metricsBadgeState.hasCompactionPressure = false;
     tokenMetricsState.metrics = null;
     mockAgentSession.session = { ...mockSession };
     mockAgentSession.executionMode = 'normal';
@@ -330,7 +320,7 @@ describe('AgentChatStatusBar', () => {
     );
   });
 
-  it('renders a compact metrics badge without compaction pressure on mobile', () => {
+  it('renders a compact metrics badge on mobile', () => {
     viewportState.isMobile = true;
 
     tokenMetricsState.metrics = {
@@ -347,10 +337,6 @@ describe('AgentChatStatusBar', () => {
     expect(screen.getByTestId('metrics-badge')).toHaveAttribute(
       'data-compact',
       'true',
-    );
-    expect(screen.getByTestId('metrics-badge')).toHaveAttribute(
-      'data-has-pressure',
-      'false',
     );
   });
 

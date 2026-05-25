@@ -1,7 +1,6 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::llm::types::CompactionParentRequest;
-use crate::agent::types::ToolCall;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
@@ -103,22 +102,9 @@ pub enum SessionStatusTransition {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeferredWorkflowStep {
-    RequestCompletion,
-    ExecuteToolCalls {
-        assistant_message_id: String,
-        tool_calls: Vec<ToolCall>,
-    },
-    FinalizeWorkflow {
-        reason: crate::agent::events::WorkflowCompletionReason,
-    },
-}
-
-#[derive(Debug, Clone)]
 pub enum CompactionKind {
     Manual,
     Preflight,
-    PostResponse { deferred_step: DeferredWorkflowStep },
 }
 
 impl CompactionKind {
@@ -126,7 +112,6 @@ impl CompactionKind {
         match self {
             Self::Manual => "manual",
             Self::Preflight => "preflight",
-            Self::PostResponse { .. } => "post-response",
         }
     }
 
@@ -200,7 +185,6 @@ pub enum CompactionReuseOutcome {
 pub enum CompactionResumeAction {
     Nothing,
     ResumeCompletion,
-    RunDeferred(DeferredWorkflowStep),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,26 +321,7 @@ impl CompactionRuntimeState {
                     in_flight.kind = CompactionKind::Preflight;
                     CompactionReuseOutcome::Promoted
                 }
-                CompactionKind::Preflight | CompactionKind::PostResponse { .. } => {
-                    CompactionReuseOutcome::NoChange
-                }
-            },
-        }
-    }
-
-    pub async fn attach_deferred_workflow_step(
-        &self,
-        deferred_step: DeferredWorkflowStep,
-    ) -> CompactionReuseOutcome {
-        let mut phase = self.phase.write().await;
-        match &mut *phase {
-            CompactionPhase::Idle => CompactionReuseOutcome::NotInFlight,
-            CompactionPhase::InFlight(in_flight) => match &in_flight.kind {
-                CompactionKind::PostResponse { .. } => CompactionReuseOutcome::NoChange,
-                CompactionKind::Manual | CompactionKind::Preflight => {
-                    in_flight.kind = CompactionKind::PostResponse { deferred_step };
-                    CompactionReuseOutcome::Promoted
-                }
+                CompactionKind::Preflight => CompactionReuseOutcome::NoChange,
             },
         }
     }
@@ -368,9 +333,6 @@ impl CompactionRuntimeState {
             CompactionPhase::InFlight(in_flight) => match in_flight.kind {
                 CompactionKind::Manual => CompactionResumeAction::Nothing,
                 CompactionKind::Preflight => CompactionResumeAction::ResumeCompletion,
-                CompactionKind::PostResponse { deferred_step } => {
-                    CompactionResumeAction::RunDeferred(deferred_step)
-                }
             },
         }
     }

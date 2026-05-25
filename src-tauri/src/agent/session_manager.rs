@@ -277,7 +277,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         assistant_message: Message,
-    ) -> Result<Option<crate::agent::llm::types::PostResponseCompactionPressure>, String> {
+    ) -> Result<(), String> {
         crate::agent::llm::handle_llm_response(
             &self.session_repo,
             &self.active_sessions,
