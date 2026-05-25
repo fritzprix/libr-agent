@@ -536,14 +536,14 @@ pub async fn handle_tool_call(
 
             for child_id in &child_ids {
                 // Fetch each child session data to map it properly
-                if let Ok(Some(session)) = session_repo.get_session(&child_id).await {
+                if let Ok(Some(session)) = session_repo.get_session(child_id).await {
                     let child_data = match session_metadata_to_value(&session) {
                         Ok(value) => value,
                         Err(_) => continue,
                     };
-                    let turn_count = count_session_turns(&child_id).await;
+                    let turn_count = count_session_turns(child_id).await;
                     let preview = latest_assistant_preview_for_session(
-                        &child_id,
+                        child_id,
                         SWARM_MESSAGE_PREVIEW_MAX_CHARS,
                     )
                     .await;
