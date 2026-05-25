@@ -90,7 +90,7 @@ sea-orm = { version = "1.1", features = ["sqlx-sqlite", "runtime-tokio-rustls", 
 sea-orm-migration = { version = "1.1", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
 migration = { path = "migration" }
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
-tauri-plugin-mcp-bridge = "0.11.1"
+tauri-plugin-mcp-bridge = "0.11.2"
 sqlite-vec = "0.1.9"
 fastembed = "5.13.4"
 
