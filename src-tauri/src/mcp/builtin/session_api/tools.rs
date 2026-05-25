@@ -1,4 +1,4 @@
-﻿use crate::mcp::types::MCPTool;
+use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
 pub fn all_tools() -> Vec<MCPTool> {
@@ -222,11 +222,21 @@ pub fn get_child_sessions_tool() -> MCPTool {
             vec![
                 (
                     "limit".to_string(),
-                    integer_prop_with_default(Some(1), Some(100), 20, Some("Maximum number of items to return.")),
+                    integer_prop_with_default(
+                        Some(1),
+                        Some(100),
+                        20,
+                        Some("Maximum number of items to return."),
+                    ),
                 ),
                 (
                     "offset".to_string(),
-                    integer_prop_with_default(Some(0), None, 0, Some("Pagination offset (0-based).")),
+                    integer_prop_with_default(
+                        Some(0),
+                        None,
+                        0,
+                        Some("Pagination offset (0-based)."),
+                    ),
                 ),
             ],
             vec![],

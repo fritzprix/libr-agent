@@ -553,8 +553,7 @@ pub async fn handle_tool_call(
 
             let mut message = format!(
                 "Fetched {} direct sub-agents for commander session {}",
-                total,
-                parent_session_id
+                total, parent_session_id
             );
 
             if total == 0 {
@@ -574,7 +573,12 @@ pub async fn handle_tool_call(
                     let name_clean = resp.name.replace('|', "\\|").replace('\n', " ");
                     let id_clean = resp.id.replace('|', "\\|").replace('\n', " ");
                     let status_clean = resp.status.replace('|', "\\|").replace('\n', " ");
-                    let summary_clean = resp.latest_result.as_deref().unwrap_or("None").replace('|', "\\|").replace('\n', " ");
+                    let summary_clean = resp
+                        .latest_result
+                        .as_deref()
+                        .unwrap_or("None")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
 
                     message.push_str(&format!(
                         "| {} | `{}` | {} | {} |\n",
@@ -593,7 +597,10 @@ pub async fn handle_tool_call(
                         offset + limit
                     ));
                 } else if offset > 0 {
-                    message.push_str(&format!("\n*(Showing {} to {} of {} items)*", start, end, total));
+                    message.push_str(&format!(
+                        "\n*(Showing {} to {} of {} items)*",
+                        start, end, total
+                    ));
                 }
             }
 
@@ -623,12 +630,19 @@ pub async fn handle_tool_call(
                 .unwrap_or_default();
 
             let total = assistants.len();
-            let paged_assistants = assistants.into_iter().skip(offset).take(limit).collect::<Vec<_>>();
+            let paged_assistants = assistants
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .collect::<Vec<_>>();
 
             let message = if total == 0 {
                 "No assistant types available.".to_string()
             } else if paged_assistants.is_empty() {
-                format!("No results for this page (offset {}, limit {}). Try a smaller offset.", offset, limit)
+                format!(
+                    "No results for this page (offset {}, limit {}). Try a smaller offset.",
+                    offset, limit
+                )
             } else {
                 let mut lines = vec![format!("Available assistant types ({}):", total)];
                 lines.push("\n| Name | ID | Model | Description |".to_string());
@@ -678,7 +692,10 @@ pub async fn handle_tool_call(
                         offset + limit
                     ));
                 } else if offset > 0 {
-                    lines.push(format!("\n*(Showing {} to {} of {} items)*", start, end, total));
+                    lines.push(format!(
+                        "\n*(Showing {} to {} of {} items)*",
+                        start, end, total
+                    ));
                 }
 
                 lines.join("\n")

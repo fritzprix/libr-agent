@@ -153,7 +153,10 @@ pub async fn list_assistants(
                 let id_clean = id.replace('|', "\\|").replace('\n', " ");
                 let description_clean = description.replace('|', "\\|").replace('\n', " ");
 
-                assistants_text.push_str(&format!("| {} | `{}` | {} |\n", name_clean, id_clean, description_clean));
+                assistants_text.push_str(&format!(
+                    "| {} | `{}` | {} |\n",
+                    name_clean, id_clean, description_clean
+                ));
             }
 
             let hint = SuccessHint::new(
@@ -290,7 +293,10 @@ pub async fn search_assistant(
                     let id_clean = id.replace('|', "\\|").replace('\n', " ");
                     let description_clean = description.replace('|', "\\|").replace('\n', " ");
 
-                    assistants_text.push_str(&format!("| {} | `{}` | {} |\n", name_clean, id_clean, description_clean));
+                    assistants_text.push_str(&format!(
+                        "| {} | `{}` | {} |\n",
+                        name_clean, id_clean, description_clean
+                    ));
                 }
             }
 
@@ -301,7 +307,10 @@ pub async fn search_assistant(
                 if total == 0 {
                     format!("Found 0 assistants matching '{}'", query)
                 } else {
-                    format!("No results for this page (offset {}, limit {}). Try a smaller offset.", offset, limit)
+                    format!(
+                        "No results for this page (offset {}, limit {}). Try a smaller offset.",
+                        offset, limit
+                    )
                 }
             } else if end < total as u64 {
                 format!(
@@ -317,19 +326,12 @@ pub async fn search_assistant(
             } else if offset > 0 {
                 format!(
                     "Found {} assistants matching '{}':\n\n{}\n*(Showing {} to {} of {} items)*",
-                    total,
-                    query,
-                    assistants_text,
-                    start,
-                    end,
-                    total
+                    total, query, assistants_text, start, end, total
                 )
             } else {
                 format!(
                     "Found {} assistants matching '{}':\n\n{}",
-                    total,
-                    query,
-                    assistants_text
+                    total, query, assistants_text
                 )
             };
 
