@@ -1,6 +1,5 @@
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
-import type { CompactionPressure } from '@/models/agent-ipc';
 import type { CompletionCancelRequest } from '@/models/agent-ipc';
 
 /**
@@ -161,9 +160,6 @@ export interface LLMServiceContextValue {
 
   /** Returns true if the session is blocked waiting for compaction to finish */
   isAwaitingCompact: (sessionId: string) => boolean;
-
-  /** Last post-response compaction pressure emitted by Rust for this session. */
-  getCompactionPressure: (sessionId: string) => CompactionPressure | undefined;
 
   /** Compacted message range for the session, used to render a compaction event card */
   getCompactedRange: (sessionId: string) => CompactedRange | undefined;

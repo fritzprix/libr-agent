@@ -1,13 +1,7 @@
 import type { CompactedRange } from './types';
-import type { CompactionPressure } from '@/models/agent-ipc';
 import { useCallback, useState } from 'react';
 
 export function useLLMExecutionState() {
-  // Last post-response compaction-pressure SSOT per session for the status-bar gauge.
-  const [compactionPressureMap, setCompactionPressureMap] = useState<
-    ReadonlyMap<string, CompactionPressure>
-  >(new Map());
-
   // Tracks which sessions have an async compaction in-flight
   const [compactingMap, setCompactingMap] = useState<
     ReadonlyMap<string, boolean>
@@ -62,11 +56,6 @@ export function useLLMExecutionState() {
   );
 
   const clearSessionState = useCallback((sessionId: string) => {
-    setCompactionPressureMap((prev) => {
-      const next = new Map(prev);
-      next.delete(sessionId);
-      return next;
-    });
     setCompactingMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
@@ -89,28 +78,12 @@ export function useLLMExecutionState() {
    * Called when the global context strategy changes.
    */
   const clearAllCompactState = useCallback(() => {
-    setCompactionPressureMap(new Map());
     setCompactingMap(new Map());
     setCompactedRangeMap(new Map());
     setAwaitingCompactMap(new Map());
   }, []);
 
-  /**
-   * Clears the last post-response compaction pressure after compaction completes.
-   * The old pre-compaction pressure would be stale and misleading at that point.
-   */
-  const clearCompactionPressureForSession = useCallback((sessionId: string) => {
-    setCompactionPressureMap((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Map(prev);
-      next.delete(sessionId);
-      return next;
-    });
-  }, []);
-
   return {
-    compactionPressureMap,
-    setCompactionPressureMap,
     compactingMap,
     setCompactingMap,
     compactedRangeMap,
@@ -122,12 +95,9 @@ export function useLLMExecutionState() {
     setAwaitingCompact,
     clearSessionState,
     clearAllCompactState,
-    clearCompactionPressureForSession,
     isCompacting: (sessionId: string) => compactingMap.get(sessionId) === true,
     isAwaitingCompact: (sessionId: string) =>
       awaitingCompactMap.get(sessionId) === true,
-    getCompactionPressure: (sessionId: string) =>
-      compactionPressureMap.get(sessionId),
     getCompactedRange: (sessionId: string) => compactedRangeMap.get(sessionId),
   };
 }

@@ -6,10 +6,8 @@ pub(crate) mod request;
 pub use compaction::{
     advance_compaction_overflow_recovery_step_for_testing, apply_compaction_retry_budget,
     build_compaction_preservation_hints, build_overflow_recovery_compaction_messages,
-    fit_compaction_request_messages_to_limit, preview_background_compaction_selection,
-    preview_preflight_compaction_selection, should_skip_same_tail_compaction,
-    should_trigger_background_compaction, should_trigger_post_response_compaction,
-    trigger_manual_compaction_for_session, trigger_post_response_compaction_if_needed,
+    fit_compaction_request_messages_to_limit, preview_preflight_compaction_selection,
+    should_skip_same_tail_compaction, trigger_manual_compaction_for_session,
     trigger_preflight_compaction_for_session, CompactionPreservationHints,
     CompactionSelectionPreview,
 };

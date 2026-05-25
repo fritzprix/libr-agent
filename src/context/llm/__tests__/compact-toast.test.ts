@@ -84,7 +84,6 @@ async function handleCompactEvent(
     summary: string,
   ) => Promise<void>,
   handleCompactError: (sessionId: string, error: unknown) => Promise<void>,
-  clearCompactionPressureForSession: (sessionId: string) => void,
   setCompactedRangeForSession: (
     sessionId: string,
     range: CompactedRange,
@@ -114,7 +113,6 @@ async function handleCompactEvent(
     });
     await handleCompactResponse(sessionId, fromId, toId, summary);
     setCompactedRangeForSession(sessionId, { fromId, toId, summary });
-    clearCompactionPressureForSession(sessionId);
   } catch {
     await handleCompactError(sessionId, {} as unknown);
   }
@@ -303,7 +301,6 @@ describe('compact request handler', () => {
       vi.fn().mockResolvedValue(undefined),
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
-      vi.fn(),
     );
 
     expect(compactService).toHaveBeenCalledWith(MESSAGES, { modelName: 'gpt-4o' });
@@ -314,7 +311,6 @@ describe('compact request handler', () => {
     const getService = vi.fn().mockReturnValue({ compact: compactService });
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     const handleCompactError = vi.fn().mockResolvedValue(undefined);
-    const clearCompactionPressureForSession = vi.fn();
     const setCompactedRangeForSession = vi.fn();
 
     await handleCompactEvent(
@@ -337,7 +333,6 @@ describe('compact request handler', () => {
       getService,
       handleCompactResponse,
       handleCompactError,
-      clearCompactionPressureForSession,
       setCompactedRangeForSession,
     );
 
@@ -400,7 +395,6 @@ describe('compact request handler', () => {
       vi.fn().mockResolvedValue(undefined),
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
-      vi.fn(),
     );
 
     expect(compactService).toHaveBeenCalledWith(
@@ -431,7 +425,6 @@ describe('compact request handler', () => {
       vi.fn().mockResolvedValue(undefined),
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
-      vi.fn(),
     );
 
     expect(getService).toHaveBeenCalledWith('openai', 'sk-test', {
@@ -455,7 +448,6 @@ describe('compact request handler', () => {
       getService,
       handleCompactResponse,
       vi.fn().mockResolvedValue(undefined),
-      vi.fn(),
       setCompactedRangeForSession,
     );
 
@@ -485,7 +477,6 @@ describe('compact request handler', () => {
       vi.fn().mockResolvedValue(undefined),
       handleCompactError,
       vi.fn(),
-      vi.fn(),
     );
 
     expect(handleCompactError).toHaveBeenCalledWith(SESSION_ID, expect.anything());
@@ -500,7 +491,6 @@ describe('compact request handler', () => {
       vi.fn(),
       vi.fn().mockResolvedValue(undefined),
       handleCompactError,
-      vi.fn(),
       vi.fn(),
     );
 

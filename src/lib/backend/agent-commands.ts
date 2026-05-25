@@ -4,7 +4,6 @@ import type {
   AgentResponse,
   AgentRuntimeError,
   CompletionCancelRequest,
-  HandleLLMResponseData,
   ExecuteUiTauriActionRequest,
   AgentOpenSessionResponse,
   StreamingIssueReport,
@@ -30,8 +29,8 @@ export interface CompactContextRecord {
 export async function handleLLMResponse(
   sessionId: string,
   assistantMessage: RustMessage,
-): Promise<AgentResponse<HandleLLMResponseData>> {
-  return safeInvoke<AgentResponse<HandleLLMResponseData>>(
+): Promise<AgentResponse> {
+  return safeInvoke<AgentResponse>(
     'agent_handle_llm_response',
     {
       sessionId,
