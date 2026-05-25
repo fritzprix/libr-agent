@@ -5,6 +5,7 @@ import type { useAgentSession } from '@/context/AgentSessionContext';
 
 export const INITIAL_FIRST_ITEM_INDEX = 10_000;
 export const CHAT_COMPOSER_CLEARANCE = 24;
+export const SCROLL_TO_LATEST_BUTTON_OFFSET = CHAT_COMPOSER_CLEARANCE + 16;
 // Visual bottom stays intentionally strict so the FAB only hides when the
 // viewport is truly pinned.
 export const VISUAL_BOTTOM_THRESHOLD = 4;

@@ -90,7 +90,7 @@ vi.mock('../AgentMessageBubble', () => ({
   AgentMessageBubble: () => <div>message bubble</div>,
 }));
 
-vi.mock('../shared', () => ({
+vi.mock('@/features/agent/components/shared', () => ({
   AnalysisLoader: () => <div>analysis loader</div>,
 }));
 
@@ -100,7 +100,7 @@ vi.mock('../shared/CompactEventDivider', () => ({
   ),
 }));
 
-vi.mock('../PendingApprovalWidget', () => ({
+vi.mock('@/features/agent/components/PendingApprovalWidget', () => ({
   PendingApprovalWidget: () => <div>pending approvals</div>,
 }));
 

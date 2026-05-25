@@ -30,7 +30,10 @@ import {
 import { cn } from '@/lib/utils';
 
 // Submodule imports
-import { type AgentChatVirtuosoContext } from './agent-chat-messages/types';
+import {
+  SCROLL_TO_LATEST_BUTTON_OFFSET,
+  type AgentChatVirtuosoContext,
+} from './agent-chat-messages/types';
 import {
   getGroupedMessageVirtuosoKey,
   setForwardedRef,
@@ -380,7 +383,7 @@ export function AgentChatMessages() {
           <div
             className="pointer-events-none absolute right-6 z-10"
             style={{
-              bottom: `calc(var(--agent-chat-composer-overlap, 64px) + 40px)`,
+              bottom: `calc(var(--agent-chat-composer-overlap, 64px) + ${SCROLL_TO_LATEST_BUTTON_OFFSET}px)`,
             }}
           >
             <Tooltip>

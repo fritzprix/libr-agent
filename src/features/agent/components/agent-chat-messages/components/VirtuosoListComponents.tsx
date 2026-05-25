@@ -2,8 +2,8 @@ import { forwardRef } from 'react';
 import { type ListProps } from 'react-virtuoso';
 import { Bot } from 'lucide-react';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
-import { AnalysisLoader } from '../../shared';
-import { PendingApprovalWidget } from '../../PendingApprovalWidget';
+import { AnalysisLoader } from '@/features/agent/components/shared';
+import { PendingApprovalWidget } from '@/features/agent/components/PendingApprovalWidget';
 import { shouldShowAnalysisLoader } from '../utils';
 import {
   CHAT_COMPOSER_CLEARANCE,
@@ -14,16 +14,12 @@ export const AgentChatMessagesList = forwardRef<
   HTMLDivElement,
   ListProps & AgentChatVirtuosoContextProps
 >(function AgentChatMessagesList(props, ref) {
-  const { children, style, ...rest } = props;
-
-  // Cleanly delete the custom 'context' property to prevent it from forwarding to the DOM element,
-  // avoiding any unused variable ESLint warnings.
-  const cleanedProps = rest as Record<string, unknown>;
-  delete cleanedProps.context;
+  const { children, style, context, ...domProps } = props;
+  void context;
 
   return (
     <div
-      {...cleanedProps}
+      {...domProps}
       ref={ref}
       style={{
         ...style,
