@@ -32,6 +32,7 @@ mod m20260405_000027_add_org_fields_to_sessions;
 mod m20260406_000028_create_gemini_context_caches;
 mod m20260506_000029_add_session_list_indexes;
 mod m20260510_000030_add_unsafe_mode_to_sessions;
+mod m20260524_000031_add_messages_created_at_index;
 
 pub struct Migrator;
 
@@ -69,6 +70,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260406_000028_create_gemini_context_caches::Migration),
             Box::new(m20260506_000029_add_session_list_indexes::Migration),
             Box::new(m20260510_000030_add_unsafe_mode_to_sessions::Migration),
+            Box::new(m20260524_000031_add_messages_created_at_index::Migration),
         ]
     }
 }

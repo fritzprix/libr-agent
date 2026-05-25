@@ -75,10 +75,6 @@ describe('LLMServiceContext – Event Handling', () => {
       listModels: mockListModels,
       dispose: mockDispose,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
-      prepareContextInjection: vi.fn((systemPrompt, _sessionContext, messages) => ({
-        systemPrompt,
-        messages,
-      })),
     });
 
     // Setup mockListModels to return test models
@@ -220,10 +216,6 @@ describe('LLMServiceContext – Event Handling', () => {
       listModels: mockListModels,
       dispose: mockDispose,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
-      prepareContextInjection: vi.fn((_systemPrompt, _sessionContext, messages) => ({
-        systemPrompt: 'x'.repeat(30000),
-        messages,
-      })),
     });
 
     renderHook(() => useLLMService(), {

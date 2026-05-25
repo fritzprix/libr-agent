@@ -3,7 +3,7 @@ pub mod env;
 pub mod schema_builder;
 
 /// Serialize a list of `rmcp::model::Tool` (raw MCP protocol type) to a compact JSON cache string.
-/// Used by `test_server_connection` in `mcp_manager/operations.rs`.
+/// Used by `test_server_connection` in the builtin tool server operations.
 pub fn serialize_rmcp_tools(tools: &[rmcp::model::Tool]) -> String {
     let arr: Vec<serde_json::Value> = tools
         .iter()

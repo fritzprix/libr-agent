@@ -26,18 +26,18 @@ The compact-mode contract is governed by five non-negotiable principles:
 1. **SSOT principle**
    - Provider-reported `usage.promptTokens` is the source of truth for actual
      submitted input size.
-   - Rust-emitted post-response compaction pressure is the source of truth for
-     compact-mode occupancy display and trigger evaluation.
+   - Rust-owned preflight fit/no-fit decisions are the source of truth for
+     automatic compaction control in compact mode.
 2. **Incremental estimation principle**
    - Request-time control estimates must stay anchored to the latest grounded
      `promptTokens` turn and estimate primarily the post-anchor delta.
    - Compaction itself is incremental summary folding, not full-prefix
      re-summarization.
 3. **5% compaction-trigger margin principle**
-   - Background post-response compaction should trigger once compact-mode
-     occupancy exceeds 95% of the effective request budget.
-   - This trigger threshold is distinct from the separate 5% conservative bias
-     applied to estimated delta/output occupancy.
+   - Compact mode may use a 95% advisory threshold to proactively arm
+     preflight compaction before the next request send.
+   - This advisory threshold is distinct from the separate conservative bias
+     applied to preflight occupancy estimation.
 4. **Compaction-overflow-only drop principle**
    - Message dropping or truncation is allowed only when shrinking the
      compaction request payload itself so the compaction call can fit safely.
@@ -137,33 +137,29 @@ This is the implemented model for compact mode.
 
 ## 5. Workflow Timing Contract
 
-Compaction evaluation happens **once per completed assistant response**, not per
-tool call.
+Automatic compaction evaluation happens **in preflight**, immediately before Rust
+would send the next LLM completion request.
 
 Correct sequencing:
 
 ```text
 assistant response completed
--> evaluate post-response compaction need
--> if compaction required, block next workflow step
+-> execute tool calls / continue workflow / finalize normally
+-> when the next LLM completion is about to be requested, run preflight fit check
+-> if compaction required, block only that completion request
 -> run compaction
--> resume deferred next workflow step
+-> retry the completion request with rebuilt compacted context
 ```
-
-### The deferred next workflow step may be
-
-1. execute tool calls from the completed assistant response
-2. request the next LLM turn
-3. finalize the workflow
 
 ### Contract
 
-1. A multi-tool assistant response is still a single response for compaction
-   evaluation purposes.
-2. Compaction must not be evaluated once per individual tool call in the same
-   assistant response.
-3. Tool execution may be deferred until compaction completes if the completed
-   assistant response triggers compaction.
+1. Automatic compaction is a request-assembly responsibility, not a
+   post-response workflow-orchestration responsibility.
+2. Tool execution, pending-message continuation, and workflow finalization must
+   not be deferred behind an automatic compaction roundtrip.
+3. A multi-tool assistant response does not create a separate automatic
+   compaction checkpoint after each tool call; the only automatic gate is the
+   next completion preflight.
 
 ---
 
@@ -179,11 +175,12 @@ While compaction is active:
 
 1. compacting state must be visible in runtime/UI state
 2. the next LLM turn must not start
-3. deferred tool execution must not start
-4. workflow completion must not be emitted if compaction has become the blocking
-   next step
+3. the blocked unit of work is the pending completion request being prepared
+4. tool execution and workflow completion are not retroactively re-blocked by
+   automatic compaction once the response path has already advanced
 
-Completion of compaction is the gate that releases the deferred step.
+Completion of compaction is the gate that releases the blocked completion
+request.
 
 ### Rust-owned preflight gate
 
@@ -235,7 +232,7 @@ safe_input_token_limit = min(max_input_context, model_max_limit)
    oversize condition even if the provider still accepts the request because the
    provider hard max is larger.
 
-### Background compaction trigger threshold
+### Preflight advisory threshold
 
 Compact mode uses:
 
@@ -245,8 +242,8 @@ compact_trigger_threshold = floor(safe_input_token_limit * 0.95)
 
 ### Contract
 
-1. Background post-response compaction should trigger only after occupancy
-   exceeds this 95% threshold.
+1. Rust may use this threshold as an advisory preflight point for proactively
+   arming compaction before the next completion request is emitted.
 2. Equality at the threshold is not itself a trigger condition; crossing above
    it is.
 3. This 5% trigger margin is separate from the 5% conservative upward bias used
@@ -268,9 +265,9 @@ Token semantics must distinguish **provider-reported ground truth** from
 ### Estimated / control values
 
 - request-time message selection uses a prompt-anchored occupancy estimate
-- post-response compaction trigger and UI gauge use Rust-emitted compaction
-  pressure
-- compaction pressure uses:
+- preflight fit/no-fit and proactive compaction checks use Rust-owned
+  conservative occupancy estimates
+- the estimate uses:
 
 ```text
 reported promptTokens + conservative output estimate
@@ -283,8 +280,8 @@ reported promptTokens + conservative output estimate
    request size.
 3. `promptTokens > configured limit` means the real submitted request exceeded
    the configured limit.
-4. post-response compaction pressure is a conservative occupancy signal for
-   trigger/UI purposes, not a claim about pure submitted input size.
+4. conservative occupancy estimates are control signals for Rust preflight
+   decisions, not claims about pure submitted input size.
 5. Normal compact-mode requests must not introduce request-side message drop
    noise into this SSOT signal; abrupt occupancy drops should come from
    compaction/reinjection state changes or from the actual grounded request
@@ -348,9 +345,9 @@ delta added after the anchor.
 6. The estimator's job is to decide send/no-send and compaction/no-compaction in
    Rust; it is not license for frontend-side request shaping.
 
-### Post-response trigger estimate
+### Preflight occupancy estimate
 
-Post-response compaction decisions use:
+Preflight compaction decisions use:
 
 ```text
 promptTokens + conservative_output_estimate
@@ -420,6 +417,95 @@ Important clarification:
 - it does **not** imply that compaction requests and normal response requests
   are byte-for-byte identical payloads
 
+## 10A. Normal Active-Request Residual Contract
+
+In the **normal compact-mode path**, the latest user/external request should
+remain operationally available as **semantic residual state** inside the compact
+summary, not as a permanently preserved raw request anchor in the live tail.
+
+### Contract
+
+1. Normal-path compaction should preserve the unresolved operative request in
+   the `Active Request` summary section.
+2. `Active Request` is semantic state, not a raw transcript dump; it should
+   preserve intent, constraints, requested deliverables, and still-relevant
+   qualifiers without forcing verbatim replay of the latest user message.
+3. Latest external request block detection may still be used in Rust as a
+   **distillation seed** for compaction hints and first-compaction coverage.
+4. Normal-path compaction must not treat that raw request block as a hard
+   anchoring contract that permanently pins the live tail boundary.
+5. Incremental compaction may clear, supersede, or rewrite a previously
+   summarized `Active Request` when later messages show that the request is
+   resolved, replaced, or refined.
+6. Durable outcomes from resolved requests should move into other stable summary
+   sections rather than remaining as stale request bullets.
+
+---
+
+## 10B. Compaction Overflow Recovery Contract
+
+If a compaction request still overflows for **any** reason, the recovery goal
+changes.
+
+At that point, preserving prompt-cache alignment is no longer the top priority.
+The top priority becomes: **reconstruct the most useful compactable state
+possible, even if that causes a prompt-cache miss**.
+
+Intended recovery shape:
+
+```text
+overflow_compaction_recovery(
+  latest_real_user_request,
+  prev_compaction_summary?,
+  active_message_fifo_subset
+)
+```
+
+### Essential recovery inputs
+
+When overflow recovery is required, Rust should preserve these inputs in this
+priority order:
+
+1. **Latest real user request**
+   - This is the highest-priority payload element.
+   - It must refer to an actual user-authored request, not an internal synthetic
+     user message.
+   - The implementation must distinguish this using message source
+     classification, not by `role == "user"` alone.
+   - In particular, synthetic compact-mode/user-like messages such as
+     `compact-summary`, `compaction-instruction`, `recovery`, and
+     `session-context` must not be mistaken for the latest real user request.
+2. **Previous compaction summary, if one exists**
+   - If a prior compact summary is available, it should be preserved as the
+     compressed history anchor whenever possible.
+3. **Active message set as a partial FIFO subset**
+   - The remaining live context may be reduced, but reduction should behave as a
+     FIFO drop of older active messages so the newest active context survives as
+     long as possible.
+
+### Contract
+
+1. Compaction overflow recovery is an **exception-only** path used after the
+   normal cache-aligned compaction request still cannot fit.
+2. A prompt-cache miss is acceptable in this path if that is what allows the
+   system to preserve more useful recovery information.
+3. Rust owns the recovery ordering and reduction policy.
+4. The latest real user request must be preserved if it is at all possible to
+   build any valid recovery payload.
+5. If a previous compact summary exists, it should be preferred over re-sending
+   older raw history.
+6. Active messages may be reduced with FIFO semantics, but the recovery path
+   should preserve the freshest active context rather than arbitrarily dropping
+   recent turns first.
+7. Tool schema may be degraded in this exception path when needed to make the
+   recovery payload fit; for example, tool parameter schemas may be removed while
+   retaining tool identity and any still-useful high-level tool visibility.
+8. The system must not pretend this recovery payload is cache-aligned with the
+   normal request shape once such degradation has occurred.
+9. If even this ordered recovery contract cannot fit, the system should fail
+   explicitly with a context-limit error rather than silently discarding the
+   essential inputs above.
+
 ---
 
 ## 11. Compact Summary Persistence
@@ -437,7 +523,6 @@ Persisted record fields:
 Runtime session state may additionally track:
 
 - in-flight compaction guard
-- deferred workflow step
 - completion blocking state
 - compaction start time / observability
 - last completion request layout for cache-preserving replay
@@ -502,21 +587,16 @@ compaction(prev_summary, delta_messages_since_last_compaction)
 
 ## 14. Frontend / UI Interpretation
 
-The UI gauge is **Compaction Pressure**, not a raw-history meter.
-
-It represents Rust-emitted post-response compaction pressure, not the total
-persisted session history size and not a separate frontend estimate.
+Frontend is not the authority for automatic compaction decisions.
 
 ### Contract
 
-1. UI should treat Rust-emitted compaction pressure as the SSOT for compact-mode
-   occupancy display.
-2. UI should not reinterpret compact-mode token accounting with a separate local
-   estimator for control decisions.
-3. A sharp drop after compaction is expected because the next request is rebuilt
-   from compact-summary state plus recent tail.
-4. A sharp drop caused by pre-send compact-mode request-side message dropping is
-   not part of this contract.
+1. UI should reflect Rust-emitted compact-state events for actual in-flight
+   compaction.
+2. UI must not implement its own automatic compaction trigger logic.
+3. Any future occupancy gauge is optional product UI, not part of the automatic
+   compaction contract.
+4. UI token displays must not override Rust preflight fit/no-fit decisions.
 
 ---
 
@@ -524,10 +604,11 @@ persisted session history size and not a separate frontend estimate.
 
 Already confirmed in logs:
 
-1. post-response compaction evaluation runs after completed assistant responses
-2. tool execution can be deferred until compaction completes
-3. compact response is stored
-4. deferred tool execution resumes after compaction
+1. automatic compaction is armed from request preflight, not from a completed
+   response tail
+2. compact responses are stored and reinjected through compact-summary state
+3. preflight compaction blocks only the pending completion request
+4. workflow progression no longer relies on deferred post-response resume steps
 
 ---
 
@@ -539,6 +620,5 @@ Core implementation is now aligned with this contract:
 2. already-compacted raw history is not re-sent as full-prefix raw input
 3. normal requests and compaction requests preserve stable prompt-layout inputs
    as much as practical while keeping compaction payload bounded
-4. UI gauge uses Rust post-response compaction pressure as the displayed SSOT
-5. compact-mode request overflow handling is Rust-owned and separate from
+4. compact-mode request overflow handling is Rust-owned and separate from
    compaction-payload overflow handling

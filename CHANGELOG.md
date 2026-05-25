@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.31] - 2026-05-24
+
+### 🚀 Features
+
+- **Broader Localization & Tooling UX**: Expanded AppSidebar and model-description localization, and improved built-in tool listing output with better limits, counts, and safer column sanitization.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Secure File Export Hardening**: Closed path traversal gaps in file export package-name handling to better protect generated archives.
+- **Browser Automation Reliability**: Moved the browser runtime onto a more isolated sidecar flow and fixed follow-up lifecycle issues so browser sessions start and recover more reliably.
+- **Workspace & History Stability**: Improved workspace search handling for empty inputs, CRLF multiline anchors, pagination, and internal filtering, while also tightening history search scope and empty-file reads to avoid noisy edge-case failures.
+- **Interactive UI Callback Recovery**: Fixed stale `presentInteractive` callback handling so orphaned UI answers stop surfacing as bogus workflow errors, and reduced related CI/cache flakiness on Windows.
+
+### 🔧 Internal
+
+- **Agent Guard/Test Refactor**: Extracted response-admission guard logic into a lightweight Rust workspace crate so small regression checks no longer pay the full Tauri integration-test cost.
+- **Codebase Cleanup & Validation Maintenance**: Pruned legacy MCP manager code, simplified planning parsing, and refreshed validation/release support files to keep the repo easier to maintain.
+
 ## [0.7.30] - 2026-05-22
 
 ### 🚀 Features

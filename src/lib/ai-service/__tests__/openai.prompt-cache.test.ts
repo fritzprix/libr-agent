@@ -75,6 +75,18 @@ const message: Message = {
   createdAt: new Date(),
 };
 
+function createSessionContextMessage(id: string, text: string): Message {
+  return {
+    id,
+    sessionId: 's1',
+    threadId: 't1',
+    role: 'user',
+    source: 'session-context',
+    content: [{ type: 'text', text }],
+    createdAt: new Date(),
+  };
+}
+
 const alphaTool: MCPTool = {
   name: 'alpha',
   description: 'Alpha tool',
@@ -275,17 +287,20 @@ describe('OpenAIService prompt cache extensions', () => {
     const { OpenAIService } = await import('../openai');
     const service = new OpenAIService('sk-test');
 
-    const firstPrepared = service.prepareContextInjection(
-      'Stable instructions',
-      '# Current Context Information\nfirst state',
-      [message],
-    );
-    for await (const chunk of service.streamChat(firstPrepared.messages, {
-      modelName: 'gpt-4o',
-      systemPrompt: firstPrepared.systemPrompt,
-      sessionContext: firstPrepared.sessionContext,
-      availableTools: [alphaTool, betaTool],
-    })) {
+    for await (const chunk of service.streamChat(
+      [
+        message,
+        createSessionContextMessage(
+          'openai-session-context-m1',
+          '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nfirst state\n\n[End of session context]',
+        ),
+      ],
+      {
+        modelName: 'gpt-4o',
+        systemPrompt: 'Stable instructions',
+        availableTools: [alphaTool, betaTool],
+      },
+    )) {
       void chunk;
       break;
     }
@@ -293,17 +308,20 @@ describe('OpenAIService prompt cache extensions', () => {
     loggerMock.debug.mockClear();
     loggerMock.info.mockClear();
 
-    const secondPrepared = service.prepareContextInjection(
-      'Stable instructions',
-      '# Current Context Information\nsecond state',
-      [message],
-    );
-    for await (const chunk of service.streamChat(secondPrepared.messages, {
-      modelName: 'gpt-4o',
-      systemPrompt: secondPrepared.systemPrompt,
-      sessionContext: secondPrepared.sessionContext,
-      availableTools: [alphaTool, betaTool],
-    })) {
+    for await (const chunk of service.streamChat(
+      [
+        message,
+        createSessionContextMessage(
+          'openai-session-context-m1',
+          '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nsecond state\n\n[End of session context]',
+        ),
+      ],
+      {
+        modelName: 'gpt-4o',
+        systemPrompt: 'Stable instructions',
+        availableTools: [alphaTool, betaTool],
+      },
+    )) {
       void chunk;
       break;
     }

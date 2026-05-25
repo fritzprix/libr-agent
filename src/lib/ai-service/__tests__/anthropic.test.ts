@@ -249,40 +249,6 @@ describe('AnthropicService', () => {
     });
   });
 
-  describe('prepareContextInjection()', () => {
-    it('moves volatile session context into a synthetic tail message for Anthropic only', () => {
-      const prepared = service.prepareContextInjection(
-        'Stable system prompt',
-        '# Current Context Information\nvolatile bits',
-        [
-          {
-            id: 'user-1',
-            sessionId: 'session-1',
-            threadId: 'session-1',
-            role: 'user',
-            content: [{ type: 'text', text: 'Hello' }],
-          },
-        ],
-      );
-
-      expect(prepared.systemPrompt).toBe('Stable system prompt');
-      expect(prepared.sessionContext).toBeUndefined();
-      expect(prepared.messages).toHaveLength(2);
-      expect(prepared.messages[1]).toMatchObject({
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: '# Current Context Information\nvolatile bits',
-          },
-        ],
-        metadata: {
-          anthropicSyntheticSessionContext: true,
-        },
-      });
-    });
-  });
-
   describe('streamChat()', () => {
     it('preserves tools but disables tool use when disableToolUse is true', async () => {
       const mockStreamFn = vi.fn().mockReturnValue(

@@ -64,7 +64,9 @@ pub fn external_tool_error_result(
 
     if recovery.is_empty() {
         text.push_str("Recovery:\n");
-        text.push_str("- Use listTools for this server to confirm the tool name\n");
+        text.push_str(
+            "- Use tool__list({\"availability\":\"inventory\",\"query\":\"<server or tool>\"}) to confirm the tool name\n",
+        );
         text.push_str("- Verify the server is configured and reachable\n");
     } else {
         text.push_str("Recovery:\n");

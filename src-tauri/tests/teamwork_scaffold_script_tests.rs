@@ -104,6 +104,7 @@ fn scaffold_script_writes_expected_teamwork_manifest_contract() {
     let output = base_command(&output_dir)
         .arg("--execution-substrate")
         .arg("org")
+        .arg("--allow-git-worktree")
         .output()
         .expect("script should run");
 

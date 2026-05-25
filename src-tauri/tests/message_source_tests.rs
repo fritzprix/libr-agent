@@ -80,8 +80,8 @@ fn external_request_message_semantics_match_source_policy() {
     assert!(make_message(Some(MessageSource::SwarmLegacy)).is_external_request_message());
     assert!(make_message(Some(MessageSource::Channel)).is_external_request_message());
     assert!(make_message(Some(MessageSource::ScheduledTask)).is_external_request_message());
+    assert!(make_message(Some(MessageSource::Ui)).is_external_request_message());
 
-    assert!(!make_message(Some(MessageSource::Ui)).is_external_request_message());
     assert!(!make_message(Some(MessageSource::Tool)).is_external_request_message());
     assert!(!make_message(Some(MessageSource::AgentTool)).is_external_request_message());
 }

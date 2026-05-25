@@ -9,6 +9,7 @@ import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { createSystemMessage, createUserMessage } from '@/lib/chat-utils';
 import { executeUiTauriAction, handleUserToolCall } from '@/lib/backend';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
+import { isWorkflowCancelledError } from '@/context/llm/types';
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -166,13 +167,27 @@ export function useUIActionHandler(
           }
         }
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
+        if (isWorkflowCancelledError(errorMessage)) {
+          logger.info('Ignoring stale UI action result', {
+            type: result.type,
+            error: errorMessage,
+          });
+          return {
+            status: 'ignored',
+            message: errorMessage,
+          };
+        }
+
         logger.error('Failed to handle UI action', {
           type: result.type,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
         });
         return {
           status: 'error',
-          message: error instanceof Error ? error.message : String(error),
+          message: errorMessage,
         };
       }
     },

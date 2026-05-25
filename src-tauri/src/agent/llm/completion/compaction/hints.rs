@@ -229,7 +229,7 @@ pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPr
         );
     }
 
-    let Some(active_request_start) = super::find_latest_external_request_block_start(messages)
+    let Some(active_request_start) = super::find_latest_external_request_seed_block_start(messages)
     else {
         return CompactionPreservationHints {
             active_request,

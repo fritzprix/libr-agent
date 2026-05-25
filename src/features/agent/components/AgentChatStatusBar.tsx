@@ -32,7 +32,6 @@ import { useTranslation } from 'react-i18next';
 import { mergeDisplayTokenUsage } from './token-metrics';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
-import { useSettings } from '@/context/SettingsContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 const logger = getLogger('AgentChatStatusBar');
@@ -94,19 +93,12 @@ function findLatestAssistantUsage(messages: Message[]): TokenUsage | null {
 
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
-  const { value: settings } = useSettings();
   const isCompactStatusBar = useIsMobile(640);
   const { session, executionMode, setExecutionMode, updateSessionConfig } =
     useAgentSession();
   const { messages, workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
-  const { isCompacting, isAwaitingCompact, getCompactionPressure } =
-    useLLMService();
-  const isCompactStrategy = settings.contextStrategy === 'compact';
-  const compactionPressure =
-    isCompactStrategy && session?.id
-      ? getCompactionPressure(session.id)
-      : undefined;
+  const { isCompacting, isAwaitingCompact } = useLLMService();
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
@@ -453,9 +445,6 @@ export function AgentChatStatusBar() {
   };
 
   const config = getStatusConfig();
-  const badgeCompactionPressure = isCompactStatusBar
-    ? undefined
-    : compactionPressure;
 
   return (
     <>
@@ -563,7 +552,6 @@ export function AgentChatStatusBar() {
                 usage={displayMetrics}
                 className="shrink-0"
                 compact={isCompactStatusBar}
-                compactionPressure={badgeCompactionPressure}
               />
             )}
 

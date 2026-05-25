@@ -162,7 +162,9 @@ function classifyProviderErrorKind(args: {
     normalizedMessage?.includes('context size has been exceeded') ||
     normalizedMessage?.includes('maximum context length') ||
     normalizedMessage?.includes('context window exceeded') ||
-    normalizedMessage?.includes('prompt is too long')
+    normalizedMessage?.includes('prompt is too long') ||
+    normalizedMessage?.includes('prompt too long') ||
+    normalizedMessage?.includes('exceeds max context window')
   ) {
     return 'context_limit';
   }

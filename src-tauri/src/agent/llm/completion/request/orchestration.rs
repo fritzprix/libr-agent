@@ -80,9 +80,6 @@ pub async fn request_llm_completion(
 
     // 7. Context Settings & Tokens
     let context_settings = load_context_management_settings().await;
-    let token_counts = compute_prompt_tokens(&system_prompt, &session_context, &tools_json);
-    let system_prompt_tokens = token_counts.system_prompt_tokens;
-    let tools_tokens = token_counts.tools_tokens;
     let raw_messages = normalized_messages.clone();
 
     // 8. Inject Compact Summary
@@ -93,13 +90,6 @@ pub async fn request_llm_completion(
         &context_settings.context_strategy,
     )
     .await?;
-
-    let preserved_calibration_ratio = resolve_preserved_calibration_ratio(
-        &raw_messages,
-        &messages_with_summary,
-        system_prompt_tokens,
-        tools_tokens,
-    );
 
     // 9. Select Final Messages
     let final_messages =
@@ -139,9 +129,26 @@ pub async fn request_llm_completion(
         }
     }
 
+    let request_layout = crate::agent::llm::build_request_layout(
+        &snapshot.provider,
+        &session_id,
+        system_prompt,
+        session_context,
+        final_messages,
+    );
+    let token_counts = compute_prompt_tokens(&request_layout.system_prompt, &tools_json);
+    let system_prompt_tokens = token_counts.system_prompt_tokens;
+    let tools_tokens = token_counts.tools_tokens;
+    let preserved_calibration_ratio = resolve_preserved_calibration_ratio(
+        &raw_messages,
+        &request_layout.messages,
+        system_prompt_tokens,
+        tools_tokens,
+    );
+
     // 11. Check token limit & apply lossy fallbacks
     let final_messages = match check_token_limit(
-        final_messages,
+        request_layout.messages,
         active_sessions,
         app_handle,
         &session_id,
@@ -177,8 +184,7 @@ pub async fn request_llm_completion(
         messages: final_messages,
         model: snapshot.model,
         provider: snapshot.provider,
-        system_prompt,
-        session_context,
+        system_prompt: request_layout.system_prompt,
         temperature: snapshot.agent_config.temperature,
         max_tokens: snapshot.agent_config.max_tokens,
         available_tools,
@@ -378,17 +384,9 @@ fn normalize_messages(messages: Vec<Message>, session_id: &str) -> Vec<Message> 
 
 fn compute_prompt_tokens(
     system_prompt: &Option<String>,
-    session_context: &Option<String>,
     tools_json: &Option<String>,
 ) -> PromptTokenCounts {
-    let combined_system_prompt = match (system_prompt, session_context) {
-        (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
-        (Some(sp), None) => Some(sp.clone()),
-        (None, Some(sc)) => Some(sc.clone()),
-        (None, None) => None,
-    };
-
-    let system_prompt_tokens = combined_system_prompt
+    let system_prompt_tokens = system_prompt
         .as_ref()
         .map(|prompt| crate::agent::llm::token_utils::estimate_text_tokens(prompt))
         .unwrap_or(0);

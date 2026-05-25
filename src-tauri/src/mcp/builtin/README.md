@@ -14,7 +14,6 @@ src-tauri/src/mcp/builtin/
 ├── browser_content_store.rs # Browser-aware attachments bridge
 ├── error_guidance.rs     # Error analysis and guidance utilities
 ├── knowledge/            # Semantic search and memory
-├── mcp_manager/          # Legacy MCP manager module
 ├── media/                # Media processing tools
 ├── planning/             # Task planning and tracking
 ├── playbook/             # Workflow automation
@@ -22,7 +21,7 @@ src-tauri/src/mcp/builtin/
 ├── session_api/          # Session-oriented agent APIs
 ├── skills/               # Reusable capabilities
 ├── tests/                # Integration tests
-├── tool/                 # Builtin tool orchestration
+├── tool/                 # Builtin tool discovery and external MCP server management
 ├── ui/                   # UI interaction tools
 ├── workspace/            # Terminal, File Manager, Code Execution
 ├── utils.rs              # Common utilities

@@ -31,11 +31,6 @@ describe('LLMServiceContext – Completion Execution', () => {
       dispose: mockDispose,
       setDefaultConfig: mockSetDefaultConfig,
       sanitizeMessages: vi.fn((messages: Message[]) => messages),
-      // Default implementation: pass-through (mirrors BaseAIService default)
-      prepareContextInjection: vi.fn((systemPrompt, _sessionContext, messages) => ({
-        systemPrompt,
-        messages,
-      })),
     });
 
     // Setup mockListModels to return test models

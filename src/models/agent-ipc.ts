@@ -118,16 +118,6 @@ export interface AgentResponse<T = unknown> {
   data?: T;
 }
 
-export interface CompactionPressure {
-  totalTokens: number;
-  contextWindow: number;
-  modelMaxContext: number;
-}
-
-export interface HandleLLMResponseData {
-  compactionPressure?: CompactionPressure;
-}
-
 export type StreamingIssueKind = 'REPEATED_THINKING_LOOP';
 
 export interface StreamingIssueReport {

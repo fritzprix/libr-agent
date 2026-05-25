@@ -135,12 +135,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     cancelCompletionRequest,
     isCompacting,
     isAwaitingCompact,
-    getCompactionPressure,
     getCompactedRange,
     clearSessionState,
     clearAllCompactState,
-    clearCompactionPressureForSession,
-    setCompactionPressureMap,
     setCompacting,
     setCompactedRange,
     setAwaitingCompact,
@@ -170,14 +167,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     executeCompletionRequest,
     cancelCompletionRequest,
     setStreamingMessages,
-    setCompactionPressureForSession: (sessionId, pressure) => {
-      setCompactionPressureMap((prev) => {
-        const next = new Map(prev);
-        next.set(sessionId, pressure);
-        return next;
-      });
-    },
-    clearCompactionPressureForSession,
     setCompactingFromEvent: setCompacting,
     setCompactedRangeForSession: setCompactedRange,
     setAwaitingCompactForSession: setAwaitingCompact,
@@ -212,7 +201,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       cancelCompletionRequest,
       isCompacting,
       isAwaitingCompact,
-      getCompactionPressure,
       getCompactedRange,
       refreshCompactedRange,
       clearSessionState,
@@ -225,7 +213,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       cancelCompletionRequest,
       isCompacting,
       isAwaitingCompact,
-      getCompactionPressure,
       getCompactedRange,
       refreshCompactedRange,
       clearSessionState,

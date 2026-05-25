@@ -14,6 +14,7 @@ use tracing::{error, info};
 const READ_FILE_BASE_HEADROOM_BYTES: usize = 1024;
 const READ_FILE_ANCHOR_HEADROOM_BYTES: usize = 2 * 1024;
 const READ_FILE_MIN_VISIBLE_CONTENT_BYTES: usize = 1024;
+const EMPTY_FILE_OUT_OF_RANGE_PREFIX: &str = "File is empty (0 lines);";
 
 #[derive(Debug)]
 struct ReadFileChunk {
@@ -72,20 +73,33 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let start_line = args
-            .get("startLine")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as usize);
-        let end_line = args
-            .get("endLine")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as usize);
+        let start_line = match parse_line_parameter(&args, "startLine") {
+            Ok(line) => line,
+            Err(result) => return Ok(result),
+        };
+        let end_line = match parse_line_parameter(&args, "endLine") {
+            Ok(line) => line,
+            Err(result) => return Ok(result),
+        };
         let show_line_anchors = args
             .get("showLineAnchors")
             .and_then(|v| v.as_bool())
             .unwrap_or(false); // Default OFF: reduce noise unless precise editing is needed
 
         // 3. Line range validation (moved before file access for efficiency)
+        if matches!(start_line, Some(0)) || matches!(end_line, Some(0)) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Line numbers must be >= 1 (1-indexed)",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Line numbering starts at 1, not 0".to_string(),
+                "Use startLine: 1 for the first line".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
                 return Ok(guided_error(
@@ -99,20 +113,6 @@ impl WorkspaceServer {
                         end, start
                     ),
                     "Or omit both parameters to read the entire file".to_string(),
-                ])
-                .to_mcp_result());
-            }
-
-            // Line numbers must be 1-indexed
-            if start == 0 || end == 0 {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    "Line numbers must be ≥ 1 (1-indexed)",
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Line numbering starts at 1, not 0".to_string(),
-                    "Use startLine: 1 for the first line".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -159,8 +159,6 @@ impl WorkspaceServer {
             ])
             .to_mcp_result());
         }
-
-        // Use the file_manager initialized earlier
 
         // Security check: validate file size before reading
         if let Err(e) = file_manager
@@ -311,6 +309,16 @@ impl WorkspaceServer {
                 let is_not_found = e.contains("No such file") || e.contains("not found");
                 if is_not_found {
                     Ok(not_found_error("File", path_str, ToolGroup::Workspace))
+                } else if is_empty_file_out_of_range_error(&e) {
+                    Ok(
+                        guided_error(ErrorCategory::InvalidInput, &e, ToolGroup::Workspace)
+                            .guidance(vec![
+                                "Empty files have no readable line range".to_string(),
+                                "Omit startLine/endLine to read the empty-file summary".to_string(),
+                                "If you need an explicit bound, use startLine: 1".to_string(),
+                            ])
+                            .to_mcp_result(),
+                    )
                 } else if let Some((requested_line, total_lines)) =
                     parse_start_line_exceeds_error(&e)
                 {
@@ -349,6 +357,43 @@ impl WorkspaceServer {
 }
 
 // Helper functions
+
+fn parse_line_parameter(args: &Value, field_name: &str) -> Result<Option<usize>, MCPResult> {
+    let Some(value) = args.get(field_name) else {
+        return Ok(None);
+    };
+
+    match value {
+        Value::Null => Ok(None),
+        Value::Number(number) => match number.as_u64() {
+            Some(line) => Ok(Some(line as usize)),
+            None => Err(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("{field_name} must be a positive integer"),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                format!("Use an integer like {{\"{field_name}\": 1}}"),
+                "Line numbers do not accept decimals or negative values".to_string(),
+            ])
+            .to_mcp_result()),
+        },
+        _ => Err(guided_error(
+            ErrorCategory::InvalidInput,
+            format!("{field_name} must be a positive integer"),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            format!("Use an integer like {{\"{field_name}\": 1}}"),
+            "Provide the line bound as a JSON number, not a string or object".to_string(),
+        ])
+        .to_mcp_result()),
+    }
+}
+
+fn is_empty_file_out_of_range_error(message: &str) -> bool {
+    message.starts_with(EMPTY_FILE_OUT_OF_RANGE_PREFIX)
+}
 
 fn parse_start_line_exceeds_error(message: &str) -> Option<(usize, usize)> {
     let prefix = "Requested start line ";
@@ -490,6 +535,25 @@ where
         if current_line >= end {
             break;
         }
+    }
+
+    if total_lines == 0 {
+        if start > 1 {
+            return Err(format!(
+                "{EMPTY_FILE_OUT_OF_RANGE_PREFIX} omit startLine/endLine or use startLine: 1 (received startLine: {start})"
+            ));
+        }
+
+        return Ok(ReadFileChunk {
+            content: String::new(),
+            displayed_start_line: start,
+            displayed_end_line: start,
+            displayed_line_count: 0,
+            truncated: false,
+            next_start_line: None,
+            suggested_end_line: None,
+            next_line_too_large: false,
+        });
     }
 
     if result_lines.is_empty() && start > total_lines {
