@@ -141,28 +141,33 @@ pub async fn list_assistants(
             let has_more = (offset + limit) < total_count;
 
             // Format list for AI readability
-            let assistants_text = assistants
-                .iter()
-                .map(|a| {
-                    let description = extract_assistant_description(&a["config"]);
-                    format!(
-                        "• {} [ID: {}]\n  Description: {}",
-                        a["name"].as_str().unwrap_or("?"),
-                        a["id"].as_str().unwrap_or("?"),
-                        description
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n");
+            let mut assistants_text = String::new();
+            assistants_text.push_str("| Name | ID | Description |\n");
+            assistants_text.push_str("|---|---|---|\n");
+            for a in &assistants {
+                let description = extract_assistant_description(&a["config"]);
+                let name = a["name"].as_str().unwrap_or("?");
+                let id = a["id"].as_str().unwrap_or("?");
+
+                let name_clean = name.replace('|', "\\|").replace('\n', " ");
+                let id_clean = id.replace('|', "\\|").replace('\n', " ");
+                let description_clean = description.replace('|', "\\|").replace('\n', " ");
+
+                assistants_text.push_str(&format!("| {} | `{}` | {} |\n", name_clean, id_clean, description_clean));
+            }
 
             let hint = SuccessHint::new(
                 if has_more {
                     format!(
-                        "Found {} assistants (showing {} to {}):\n\n{}",
+                        "Found {} assistants (showing {} to {}):\n\n{}\n\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
                         total_count,
                         offset + 1,
                         offset + assistants.len() as u64,
-                        assistants_text
+                        assistants_text,
+                        offset + 1,
+                        offset + assistants.len() as u64,
+                        total_count,
+                        offset + limit
                     )
                 } else if assistants.is_empty() {
                     format!(
@@ -241,12 +246,20 @@ pub async fn search_assistant(
         .unwrap_or(10)
         .min(100);
 
+    let offset = args
+        .get("offset")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.max(0) as u64)
+        .unwrap_or(0);
+
     let result = repo.search_assistants(query).await;
 
     match result {
         Ok(models) => {
+            let total = models.len();
             let assistants: Vec<Value> = models
                 .into_iter()
+                .skip(offset as usize)
                 .take(limit as usize)
                 .map(|model| {
                     let config = serde_json::from_str::<Value>(&model.config).unwrap_or_else(|e| {
@@ -264,25 +277,64 @@ pub async fn search_assistant(
                 .collect();
 
             // Format list for AI readability
-            let assistants_text = assistants
-                .iter()
-                .map(|a| {
-                    format!(
-                        "• {} [ID: {}]",
-                        a["name"].as_str().unwrap_or("?"),
-                        a["id"].as_str().unwrap_or("?")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
+            let mut assistants_text = String::new();
+            if !assistants.is_empty() {
+                assistants_text.push_str("| Name | ID | Description |\n");
+                assistants_text.push_str("|---|---|---|\n");
+                for a in &assistants {
+                    let description = extract_assistant_description(&a["config"]);
+                    let name = a["name"].as_str().unwrap_or("?");
+                    let id = a["id"].as_str().unwrap_or("?");
 
-            let hint = SuccessHint::new(
+                    let name_clean = name.replace('|', "\\|").replace('\n', " ");
+                    let id_clean = id.replace('|', "\\|").replace('\n', " ");
+                    let description_clean = description.replace('|', "\\|").replace('\n', " ");
+
+                    assistants_text.push_str(&format!("| {} | `{}` | {} |\n", name_clean, id_clean, description_clean));
+                }
+            }
+
+            let start = offset + 1;
+            let end = offset + assistants.len() as u64;
+
+            let message = if assistants.is_empty() {
+                if total == 0 {
+                    format!("Found 0 assistants matching '{}'", query)
+                } else {
+                    format!("No results for this page (offset {}, limit {}). Try a smaller offset.", offset, limit)
+                }
+            } else if end < total as u64 {
+                format!(
+                    "Found {} assistants matching '{}':\n\n{}\n*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*",
+                    total,
+                    query,
+                    assistants_text,
+                    start,
+                    end,
+                    total,
+                    offset + limit as u64
+                )
+            } else if offset > 0 {
+                format!(
+                    "Found {} assistants matching '{}':\n\n{}\n*(Showing {} to {} of {} items)*",
+                    total,
+                    query,
+                    assistants_text,
+                    start,
+                    end,
+                    total
+                )
+            } else {
                 format!(
                     "Found {} assistants matching '{}':\n\n{}",
-                    assistants.len(),
+                    total,
                     query,
                     assistants_text
-                ),
+                )
+            };
+
+            let hint = SuccessHint::new(
+                message,
                 if assistants.is_empty() {
                     vec!["List all agent configurations to broaden the search".to_string()]
                 } else {
@@ -292,7 +344,10 @@ pub async fn search_assistant(
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "assistants": assistants,
-                "count": assistants.len()
+                "count": assistants.len(),
+                "total": total,
+                "limit": limit,
+                "offset": offset
             }))))
         }
         Err(e) => Ok(guided_error(

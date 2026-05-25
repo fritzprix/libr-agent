@@ -179,6 +179,10 @@ pub fn search_assistant_tool() -> MCPTool {
                     "limit".to_string(),
                     integer_prop(None, None, Some("Maximum number of results")),
                 ),
+                (
+                    "offset".to_string(),
+                    integer_prop(None, None, Some("Pagination offset (0-based)")),
+                ),
             ],
             vec!["query".to_string()],
             None,

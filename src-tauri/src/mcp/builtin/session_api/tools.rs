@@ -218,7 +218,20 @@ pub fn get_child_sessions_tool() -> MCPTool {
         name: "getChildAgents".to_string(),
         title: Some("Get Child Agents".to_string()),
         description: "List all agents directly spawned by the calling session.".to_string(),
-        input_schema: object_prop(vec![], vec![], None),
+        input_schema: object_prop(
+            vec![
+                (
+                    "limit".to_string(),
+                    integer_prop_with_default(Some(1), Some(100), 20, Some("Maximum number of items to return.")),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop_with_default(Some(0), None, 0, Some("Pagination offset (0-based).")),
+                ),
+            ],
+            vec![],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }
@@ -273,7 +286,20 @@ pub fn list_assistants_tool() -> MCPTool {
         name: "listAgentTypes".to_string(),
         title: Some("List Agent Types".to_string()),
         description: "List available agent types (assistants) you can spawn. Call this to discover which specialists exist before delegating tasks.".to_string(),
-        input_schema: object_prop(vec![], vec![], None),
+        input_schema: object_prop(
+            vec![
+                (
+                    "limit".to_string(),
+                    integer_prop_with_default(Some(1), Some(100), 20, Some("Maximum number of items to return.")),
+                ),
+                (
+                    "offset".to_string(),
+                    integer_prop_with_default(Some(0), None, 0, Some("Pagination offset (0-based).")),
+                ),
+            ],
+            vec![],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }
