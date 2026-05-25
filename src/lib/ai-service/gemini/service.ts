@@ -9,11 +9,7 @@ import {
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
-import {
-  AIServiceProvider,
-  AIServiceConfig,
-  type ContextInjectionResult,
-} from '../types';
+import { AIServiceProvider, AIServiceConfig } from '../types';
 import { BaseAIService } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
@@ -28,11 +24,7 @@ import {
 } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
-import {
-  createEphemeralSessionContextInjection,
-  formatSessionContextAsBackgroundReference,
-  isCompactSummaryMessage,
-} from '../base-service-context';
+import { isCompactSummaryMessage } from '../base-service-context';
 import type { MCPContent } from '@/lib/mcp';
 
 function summarizeLibrAgentMessages(messages: Message[]): {
@@ -243,7 +235,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     options: {
       modelName?: string;
       systemPrompt?: string;
-      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
@@ -262,14 +253,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       );
 
       try {
-        const normalizedContextInjection = this.prepareContextInjection(
-          currentOptions.systemPrompt,
-          currentOptions.sessionContext,
-          sanitizedMessages,
-        );
         const geminiMessages = this.convertMessages(
-          normalizedContextInjection.messages,
-          normalizedContextInjection.systemPrompt,
+          sanitizedMessages,
+          currentOptions.systemPrompt,
         );
         if (geminiMessages.length === 0) {
           throw new Error(
@@ -287,14 +273,13 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
         const model =
           currentOptions.modelName || config.defaultModel || getDefaultModel();
-        const stablePrefix = normalizedContextInjection.systemPrompt ?? '';
+        const stablePrefix = currentOptions.systemPrompt ?? '';
         const encoder = new TextEncoder();
         const toolDeclarationCount =
           geminiTools?.[0]?.functionDeclarations.length ?? 0;
 
-        const requestMessageSummary = summarizeLibrAgentMessages(
-          normalizedContextInjection.messages,
-        );
+        const requestMessageSummary =
+          summarizeLibrAgentMessages(sanitizedMessages);
         const geminiContentSummary = summarizeGeminiContents(geminiMessages);
 
         this.logger.info('Gemini request assembly breakdown', {
@@ -424,33 +409,6 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
         });
       }
     }
-  }
-
-  override prepareContextInjection(
-    systemPrompt: string | undefined,
-    sessionContext: string | undefined,
-    messages: Message[],
-  ): ContextInjectionResult {
-    if (!sessionContext) {
-      return { systemPrompt, sessionContext: undefined, messages };
-    }
-
-    this.logger.debug(
-      'Injecting Gemini session context as ephemeral tail message',
-      {
-        sessionContextLength: sessionContext.length,
-      },
-    );
-
-    return createEphemeralSessionContextInjection(
-      systemPrompt,
-      sessionContext,
-      messages,
-      {
-        idPrefix: 'gemini-session-context',
-        contentText: formatSessionContextAsBackgroundReference(sessionContext),
-      },
-    );
   }
 
   protected convertMessages(

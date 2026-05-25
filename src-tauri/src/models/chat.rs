@@ -24,6 +24,7 @@ pub enum MessageSource {
     CompactSummary,
     CompactionInstruction,
     Recovery,
+    SessionContext,
     ScheduledTask,
     Tool,
     Ui,
@@ -42,6 +43,7 @@ impl MessageSource {
             "compact-summary" => Self::CompactSummary,
             "compaction-instruction" => Self::CompactionInstruction,
             "recovery" => Self::Recovery,
+            "session-context" => Self::SessionContext,
             "scheduled_task" => Self::ScheduledTask,
             "tool" => Self::Tool,
             "ui" => Self::Ui,
@@ -59,6 +61,7 @@ impl MessageSource {
             Self::CompactSummary => "compact-summary",
             Self::CompactionInstruction => "compaction-instruction",
             Self::Recovery => "recovery",
+            Self::SessionContext => "session-context",
             Self::ScheduledTask => "scheduled_task",
             Self::Tool => "tool",
             Self::Ui => "ui",
@@ -79,13 +82,16 @@ impl MessageSource {
     }
 
     fn is_internal_synthetic_user_source(&self) -> bool {
-        matches!(self, Self::CompactionInstruction | Self::Recovery)
+        matches!(
+            self,
+            Self::CompactionInstruction | Self::Recovery | Self::SessionContext
+        )
     }
 
     fn is_external_request_source(&self) -> bool {
         matches!(
             self,
-            Self::Api | Self::SwarmLegacy | Self::Channel | Self::ScheduledTask
+            Self::Ui | Self::Api | Self::SwarmLegacy | Self::Channel | Self::ScheduledTask
         )
     }
 }

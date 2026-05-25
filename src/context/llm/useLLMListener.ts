@@ -6,7 +6,6 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 
 import { messageToRustMessage, type Message } from '@/models/chat';
-import type { CompactionPressure } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import type { AIServiceProvider } from '@/lib/ai-service';
@@ -24,7 +23,6 @@ import {
   isWorkflowCancelledError,
 } from './types';
 import {
-  extractCompactionPressure,
   shouldBypassRetryAndFallback,
   toAgentRuntimeError,
 } from './listener-utils';
@@ -59,7 +57,6 @@ interface UseLLMListenerProps {
     provider: string,
     apiKey?: string,
     systemPrompt?: string,
-    sessionContext?: string,
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
@@ -71,11 +68,6 @@ interface UseLLMListenerProps {
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
-  setCompactionPressureForSession: (
-    sessionId: string,
-    pressure: CompactionPressure,
-  ) => void;
-  clearCompactionPressureForSession: (sessionId: string) => void;
   setCompactingFromEvent: (sessionId: string, value: boolean) => void;
   setCompactedRangeForSession: (
     sessionId: string,
@@ -89,8 +81,6 @@ export function useLLMListener({
   executeCompletionRequest,
   cancelCompletionRequest,
   setStreamingMessages,
-  setCompactionPressureForSession,
-  clearCompactionPressureForSession,
   setCompactingFromEvent,
   setCompactedRangeForSession,
   setAwaitingCompactForSession,
@@ -123,7 +113,6 @@ export function useLLMListener({
             model,
             provider,
             systemPrompt,
-            sessionContext,
             temperature,
             maxTokens,
             availableTools,
@@ -233,7 +222,6 @@ export function useLLMListener({
                     targetProvider,
                     targetApiKey,
                     systemPrompt,
-                    sessionContext,
                     temperature,
                     maxTokens,
                     availableTools,
@@ -308,7 +296,6 @@ export function useLLMListener({
                   fallbackModel.provider,
                   fallbackApiKey,
                   systemPrompt,
-                  sessionContext,
                   temperature,
                   maxTokens,
                   availableTools,
@@ -337,15 +324,7 @@ export function useLLMListener({
               fullMessage: messageForRust,
             });
 
-            const response = await handleLLMResponse(sessionId, messageForRust);
-            const compactionPressure = extractCompactionPressure(
-              response?.data,
-            );
-            if (compactionPressure) {
-              setCompactionPressureForSession(sessionId, compactionPressure);
-            } else {
-              clearCompactionPressureForSession(sessionId);
-            }
+            await handleLLMResponse(sessionId, messageForRust);
 
             logger.info('LLM response sent back to Rust', { sessionId });
           } catch (error) {
@@ -356,9 +335,7 @@ export function useLLMListener({
             const isAborted = isAbortError(error);
             const isSuperseded = isSupersededRequestError(error);
             const isWorkflowCancelled = isWorkflowCancelledError(error);
-
             if (isAborted || isSuperseded || isWorkflowCancelled) {
-              clearCompactionPressureForSession(sessionId);
               logger.info('Skipping benign LLM request error report to Rust', {
                 sessionId,
                 reason: isAborted
@@ -372,7 +349,6 @@ export function useLLMListener({
             }
 
             logger.error('Failed to execute LLM completion', error);
-            clearCompactionPressureForSession(sessionId);
 
             // Report error to Rust
             await handleLLMError(sessionId, toAgentRuntimeError(error));
@@ -422,7 +398,6 @@ export function useLLMListener({
       try {
         compactRequestCleanup = await setupCompactRequestListener({
           settingsRef,
-          clearCompactionPressureForSession,
           setCompactedRangeForSession,
           isMounted: () => isMounted,
           onRegistered: () => {

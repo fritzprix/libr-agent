@@ -9,12 +9,7 @@ import {
   SamplingOptions,
   SamplingResponse,
 } from '@/lib/mcp';
-import {
-  AIServiceProvider,
-  AIServiceConfig,
-  type ContextInjectionResult,
-  TokenUsage,
-} from './types';
+import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import type { ModelInfo } from '../llm-config-manager';
 import { supportsThinking } from './model-capabilities';
@@ -26,10 +21,6 @@ import {
   buildAutomaticPromptCacheKey,
   withPromptCaching,
 } from './openai/prompt-cache';
-import {
-  createEphemeralSessionContextInjection,
-  formatSessionContextAsBackgroundReference,
-} from './base-service-context';
 import {
   createSerializableToolCallArgumentDelta,
   serializeToolCallArgumentDeltas,
@@ -118,44 +109,6 @@ export class OpenAIService extends BaseAIService<
   }
 
   /**
-   * OpenAI-optimised context injection strategy.
-   *
-   * Keeps the stable system prompt untouched so OpenAI's automatic prefix
-   * caching can maximise cache hits across turns. The volatile `sessionContext`
-   * (planning state, memory, current time, etc.) is injected as an ephemeral
-   * user message appended at the tail of the conversation, framed so the model
-   * treats it as background context rather than a question to answer.
-   *
-   * If `sessionContext` is absent, falls back to the base (concat) behaviour.
-   */
-  override prepareContextInjection(
-    systemPrompt: string | undefined,
-    sessionContext: string | undefined,
-    messages: Message[],
-  ): ContextInjectionResult {
-    if (!sessionContext) {
-      return { systemPrompt, sessionContext: undefined, messages };
-    }
-
-    logger.debug('Injecting session context as ephemeral tail message', {
-      sessionContextLength: sessionContext.length,
-    });
-
-    return createEphemeralSessionContextInjection(
-      systemPrompt,
-      sessionContext,
-      messages,
-      {
-        idPrefix: 'openai-session-context',
-        contentText: formatSessionContextAsBackgroundReference(sessionContext),
-        sessionIdFallback: '',
-        threadIdFallback: '',
-        createdAt: new Date(),
-      },
-    );
-  }
-
-  /**
    * Fetches the list of available models from the OpenAI service.
    * Maps provider-specific model metadata into the project's `ModelInfo` shape.
    * On error, returns an empty array and logs the failure.
@@ -208,7 +161,6 @@ export class OpenAIService extends BaseAIService<
     options: {
       modelName?: string;
       systemPrompt?: string;
-      sessionContext?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;

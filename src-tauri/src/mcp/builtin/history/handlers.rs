@@ -268,6 +268,28 @@ pub async fn search_history(
     )
     .await?;
 
+    if allowed_session_ids.is_empty() {
+        let paged = paginate_in_memory(Vec::<HistorySearchMatch>::new(), page, page_size);
+        let text = render_search_text(&paged, caller_session_id);
+
+        return Ok(SuccessHint::new(
+            text,
+            vec![
+                "Use list() to inspect sessions that match your current filters".to_string(),
+                "Relax sessionId/agentId/from/to filters and retry search()".to_string(),
+            ],
+        )
+        .to_mcp_result_with_data(Some(json!({
+            "matches": paged.items,
+            "page": paged.page,
+            "pageSize": paged.page_size,
+            "totalItems": paged.total_items,
+            "totalPages": paged.total_pages,
+            "hasNextPage": paged.has_next_page,
+            "hasPreviousPage": paged.has_previous_page
+        }))));
+    }
+
     if let Some(session_id) = args.session_id.as_deref() {
         if !allowed_session_ids.contains(session_id) {
             return Ok(operation_failed_error(
@@ -289,14 +311,17 @@ pub async fn search_history(
         .saturating_mul(page_size)
         .saturating_mul(10)
         .clamp(page_size, SEARCH_SCAN_LIMIT);
+    let narrowed_session_id = args.session_id.clone().or_else(|| {
+        if allowed_session_ids.len() == 1 {
+            allowed_session_ids.iter().next().cloned()
+        } else {
+            None
+        }
+    });
 
-    let raw_page = MessageService::search_messages(
-        args.query.clone(),
-        args.session_id.clone(),
-        1,
-        scan_page_size,
-    )
-    .await?;
+    let raw_page =
+        MessageService::search_messages(args.query.clone(), narrowed_session_id, 1, scan_page_size)
+            .await?;
 
     let message_repo = get_message_repository();
     let messages = message_repo

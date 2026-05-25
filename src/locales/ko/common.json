@@ -150,7 +150,9 @@
     "settings": "설정",
     "history": "기록",
     "scheduledTasks": "예약된 작업",
-    "session": "세션"
+    "session": "세션",
+    "knowledge": "지식",
+    "org": "조직"
   },
   "sessionHistory": {
     "heading": "세션 기록",
@@ -335,7 +337,45 @@
       "agentHubUrlPlaceholder": "https://api.agenthub.com",
       "responseBehavior": "응답 동작",
       "decreaseRetries": "재시도 횟수 줄이기",
-      "increaseRetries": "재시도 횟수 늘리기"
+      "increaseRetries": "재시도 횟수 늘리기",
+      "providers": {
+        "openai": {
+          "name": "OpenAI",
+          "description": "GPT-4o, o3, o4-mini 등"
+        },
+        "anthropic": {
+          "name": "Anthropic",
+          "description": "Claude 3.5 Sonnet, Haiku 등"
+        },
+        "gemini": {
+          "name": "Google Gemini",
+          "description": "Gemini 2.5 Pro, Flash 등"
+        },
+        "ollama": {
+          "name": "Ollama",
+          "description": "로컬 환경에서 오픈 모델 실행"
+        },
+        "groq": {
+          "name": "Groq",
+          "description": "Groq LPU 칩을 통한 초고속 추론"
+        },
+        "fireworks": {
+          "name": "Fireworks AI",
+          "description": "오픈소스 모델을 위한 빠른 호스팅"
+        },
+        "cerebras": {
+          "name": "Cerebras",
+          "description": "세계에서 가장 빠른 AI 추론 칩"
+        },
+        "openrouter": {
+          "name": "OpenRouter",
+          "description": "하나의 API 키로 200개 이상의 모델 접근"
+        },
+        "empty": {
+          "name": "없음",
+          "description": ""
+        }
+      }
     },
     "provider": {
       "apiKey": "API 키",

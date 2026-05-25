@@ -5,8 +5,8 @@ use std::time::SystemTime;
 
 use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::state::{
-    AgentSession, CompactionKind, CompactionPhase, CompactionRuntimeState, DeferredWorkflowStep,
-    InFlightCompaction, PendingEventManager,
+    AgentSession, CompactionKind, CompactionPhase, CompactionRuntimeState, InFlightCompaction,
+    PendingEventManager,
 };
 use tauri_mcp_agent_lib::agent::workflow::reset_session_execution_state;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
@@ -79,9 +79,7 @@ async fn reset_session_execution_state_clears_cancel_poison_and_stale_compaction
     session.cancellation_token.cancel();
     session.compaction = CompactionRuntimeState::with_test_state(
         CompactionPhase::InFlight(InFlightCompaction {
-            kind: CompactionKind::PostResponse {
-                deferred_step: DeferredWorkflowStep::RequestCompletion,
-            },
+            kind: CompactionKind::Preflight,
             current_tail_id: Some("tail-before-reset".to_string()),
             started_at_ms: 1234,
         }),

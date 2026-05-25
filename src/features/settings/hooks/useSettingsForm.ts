@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -129,12 +129,13 @@ export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
   const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
+  const [prevGlobal, setPrevGlobal] =
+    useState<SettingsFormState>(globalSettings);
 
-  // Sync draftState during render using a ref if globals changed externally and match
-  const prevGlobalRef = useRef<SettingsFormState>(globalSettings);
-  if (globalSettings !== prevGlobalRef.current) {
-    prevGlobalRef.current = globalSettings;
-    if (draftState && equal(draftState, globalSettings)) {
+  // Sync draftState during render using Adjusting State pattern
+  if (globalSettings !== prevGlobal) {
+    setPrevGlobal(globalSettings);
+    if (!draftState || equal(draftState, globalSettings)) {
       setDraftState(null);
     }
   }

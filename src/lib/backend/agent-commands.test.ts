@@ -10,6 +10,7 @@ import {
 } from './agent-commands';
 import { safeInvoke } from './core';
 import type { RustMessage } from '../../models/chat';
+import { isWorkflowCancelledError } from '@/context/llm/types';
 
 vi.mock('./core', () => ({
   safeInvoke: vi.fn(),
@@ -58,6 +59,8 @@ describe('backend/agent-commands', () => {
     expect(safeInvoke).toHaveBeenCalledWith('agent_handle_llm_response', {
       sessionId: 'session-1',
       assistantMessage: mockMessage,
+    }, {
+      shouldSuppressErrorLogging: isWorkflowCancelledError,
     });
   });
 
@@ -105,6 +108,8 @@ describe('backend/agent-commands', () => {
         createdAt: mockNow,
         updatedAt: mockNow,
       },
+    }, {
+      shouldSuppressErrorLogging: isWorkflowCancelledError,
     });
   });
 

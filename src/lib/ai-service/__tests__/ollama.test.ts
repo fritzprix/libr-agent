@@ -60,6 +60,18 @@ function createUserMessage(text: string): Message {
   };
 }
 
+function createSessionContextMessage(text: string): Message {
+  return {
+    id: 'ollama-session-context-msg-hello',
+    sessionId: 'session-1',
+    threadId: 'thread-1',
+    role: 'user',
+    source: 'session-context',
+    content: [{ type: 'text', text }],
+    createdAt: new Date('2026-04-04T10:00:00.000Z'),
+  };
+}
+
 const alphaTool: MCPTool = {
   name: 'alpha_tool',
   description: 'Alpha tool',
@@ -91,50 +103,24 @@ describe('OllamaService prompt layout', () => {
     chatMock.mockResolvedValue(createEmptyStream());
   });
 
-  it('moves volatile session context into a synthetic tail message for Ollama', async () => {
+  it('keeps a Rust-prepared synthetic session-context tail in Ollama requests', async () => {
     const { OllamaService } = await import('../ollama');
     const service = new OllamaService('ollama-local');
-
-    const prepared = service.prepareContextInjection(
-      'Stable system prompt',
-      '# Current Context Information\nvolatile bits',
-      [createUserMessage('hello')],
-    );
-
-    expect(prepared.systemPrompt).toBe('Stable system prompt');
-    expect(prepared.sessionContext).toBeUndefined();
-    expect(prepared.messages).toHaveLength(2);
-    expect(prepared.messages[1]).toMatchObject({
-      id: 'ollama-session-context-msg-hello',
-      sessionId: 'session-1',
-      threadId: 'thread-1',
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
-        },
-      ],
-    });
-  });
-
-  it('keeps stable system prompt and normalized tool order across Ollama turns', async () => {
-    const { OllamaService } = await import('../ollama');
-    const service = new OllamaService('ollama-local');
-
-    const prepared = service.prepareContextInjection(
-      'Stable system prompt',
-      '# Current Context Information\nvolatile bits',
-      [createUserMessage('hello')],
-    );
 
     await consumeStream(
-      service.streamChat(prepared.messages, {
-        modelName: 'llama3.1',
-        systemPrompt: prepared.systemPrompt,
-        sessionContext: prepared.sessionContext,
-        availableTools: [betaTool, alphaTool],
-      }),
+      service.streamChat(
+        [
+          createUserMessage('hello'),
+          createSessionContextMessage(
+            '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+          ),
+        ],
+        {
+          modelName: 'llama3.1',
+          systemPrompt: 'Stable system prompt',
+          availableTools: [betaTool, alphaTool],
+        },
+      ),
     );
 
     const request = chatMock.mock.calls[0]?.[0] as {
@@ -163,20 +149,21 @@ describe('OllamaService prompt layout', () => {
     const { OllamaService } = await import('../ollama');
     const service = new OllamaService('ollama-local');
 
-    const prepared = service.prepareContextInjection(
-      'Stable system prompt',
-      '# Current Context Information\nvolatile bits',
-      [createUserMessage('summarize this')],
-    );
-
     await consumeStream(
-      service.streamChat(prepared.messages, {
-        modelName: 'llama3.1',
-        systemPrompt: prepared.systemPrompt,
-        sessionContext: prepared.sessionContext,
-        availableTools: [betaTool, alphaTool],
-        disableToolUse: true,
-      }),
+      service.streamChat(
+        [
+          createUserMessage('summarize this'),
+          createSessionContextMessage(
+            '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+          ),
+        ],
+        {
+          modelName: 'llama3.1',
+          systemPrompt: 'Stable system prompt',
+          availableTools: [betaTool, alphaTool],
+          disableToolUse: true,
+        },
+      ),
     );
 
     const request = chatMock.mock.calls[0]?.[0] as {

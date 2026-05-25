@@ -73,8 +73,12 @@ impl FileExportService {
         // Create a temporary ZIP file
         let temp_dir =
             tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+
+        // Sanitize package_name to prevent path traversal via malicious characters
+        let safe_package_name = Self::sanitize_package_name(package_name);
+
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let zip_filename = format!("{package_name}_{timestamp}.zip");
+        let zip_filename = format!("{safe_package_name}_{timestamp}.zip");
         let temp_zip_path = temp_dir.path().join(&zip_filename);
 
         // Create the ZIP archive
@@ -183,5 +187,19 @@ impl FileExportService {
             content: zip_content,
             file_count: Some(processed_files.len()),
         })
+    }
+
+    /// Sanitizes package_name to prevent path traversal via malicious characters.
+    pub fn sanitize_package_name(package_name: &str) -> String {
+        package_name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect()
     }
 }

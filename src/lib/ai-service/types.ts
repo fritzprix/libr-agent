@@ -1,14 +1,7 @@
 import type { ModelInfo } from '../llm-config-manager';
 import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
-import type { Message } from '@/models/chat';
 
 export type { ModelInfo, SamplingOptions, SamplingResponse };
-
-export interface ContextInjectionResult {
-  systemPrompt: string | undefined;
-  sessionContext?: string;
-  messages: Message[];
-}
 
 export interface SafetySetting {
   category: string;
@@ -200,7 +193,6 @@ export type {
   AICompactOptions,
   AIContextCompactionService,
   AICompactionService,
-  AIContextInjectionService,
   AIMessageSanitizationService,
   AIModelLookupService,
   AIModelDiscoveryService,

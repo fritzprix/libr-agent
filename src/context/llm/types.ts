@@ -1,6 +1,5 @@
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
-import type { CompactionPressure } from '@/models/agent-ipc';
 import type { CompletionCancelRequest } from '@/models/agent-ipc';
 
 /**
@@ -30,9 +29,14 @@ export function isSupersededRequestError(error: unknown): boolean {
 }
 
 export function isWorkflowCancelledError(error: unknown): boolean {
+  const orphanedUiToolResultMessage =
+    'UI tool result orphaned (workflow inactive)';
+
   if (typeof error === 'string') {
     return (
-      error === 'Workflow was cancelled' || error === 'LLM response superseded'
+      error === 'Workflow was cancelled' ||
+      error === 'LLM response superseded' ||
+      error === orphanedUiToolResultMessage
     );
   }
 
@@ -44,8 +48,10 @@ export function isWorkflowCancelledError(error: unknown): boolean {
   return (
     e['message'] === 'Workflow was cancelled' ||
     e['message'] === 'LLM response superseded' ||
+    e['message'] === orphanedUiToolResultMessage ||
     e['displayMessage'] === 'Workflow was cancelled' ||
-    e['displayMessage'] === 'LLM response superseded'
+    e['displayMessage'] === 'LLM response superseded' ||
+    e['displayMessage'] === orphanedUiToolResultMessage
   );
 }
 
@@ -61,12 +67,6 @@ export interface CompletionRequest {
   apiKey?: string;
   /** Stable system prompt (base sections plus stable service-context blocks). */
   systemPrompt?: string;
-  /**
-   * Per-turn session context (context providers + non-stable service tool states).
-   * Rebuilt on every LLM call. Each AI service decides how to inject this via
-   * `prepareContextInjection`.
-   */
-  sessionContext?: string;
   temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
@@ -78,7 +78,6 @@ export interface CompactionParentRequest {
   model: string;
   provider: string;
   systemPrompt?: string;
-  sessionContext?: string;
   availableTools?: MCPTool[];
 }
 
@@ -130,7 +129,6 @@ export interface LLMServiceContextValue {
     provider: string,
     apiKey?: string,
     systemPrompt?: string,
-    sessionContext?: string,
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
@@ -162,9 +160,6 @@ export interface LLMServiceContextValue {
 
   /** Returns true if the session is blocked waiting for compaction to finish */
   isAwaitingCompact: (sessionId: string) => boolean;
-
-  /** Last post-response compaction pressure emitted by Rust for this session. */
-  getCompactionPressure: (sessionId: string) => CompactionPressure | undefined;
 
   /** Compacted message range for the session, used to render a compaction event card */
   getCompactedRange: (sessionId: string) => CompactedRange | undefined;

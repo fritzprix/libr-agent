@@ -4,20 +4,18 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
+use agent_response_guards::is_internal_ui_callback_tool_name;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-use super::completion::{request_llm_completion, trigger_post_response_compaction_if_needed};
+use super::completion::request_llm_completion;
 use super::response_admission;
 use super::response_circuit_breaker;
 use super::tool_execution;
 use crate::agent::events::{AgentEvent, AgentEventDispatcher};
-use crate::agent::llm::types::{
-    AgentRuntimeError, AgentRuntimeErrorType, PostResponseCompactionPressure,
-};
-use crate::agent::state::DeferredWorkflowStep;
+use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 use crate::agent::tauri_events::TauriEventDispatcher;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,102 +32,6 @@ pub fn completion_result_from_error_handling_outcome(
         LlmErrorHandlingOutcome::RecoveredByCompaction => Ok(()),
         LlmErrorHandlingOutcome::FinalizedWorkflowError => Err(error.into()),
     }
-}
-
-async fn calculate_post_response_compaction_pressure(
-    assistant_message: &Message,
-) -> Option<PostResponseCompactionPressure> {
-    let total_tokens = crate::agent::llm::token_utils::calculate_post_response_compaction_tokens(
-        assistant_message,
-    )?;
-    let settings = crate::agent::llm::completion::load_context_management_settings().await;
-    if !crate::agent::llm::completion::uses_compaction_strategy(&settings.context_strategy) {
-        return None;
-    }
-
-    let context_window = std::cmp::min(settings.max_input_context, settings.model_max_limit);
-    Some(PostResponseCompactionPressure {
-        total_tokens,
-        context_window,
-        model_max_context: settings.model_max_limit,
-    })
-}
-
-async fn defer_for_post_response_compaction_if_needed(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
-    session_id: &str,
-    post_response_compaction_pressure: Option<&PostResponseCompactionPressure>,
-    pending_message: Option<&Message>,
-    deferred_step: DeferredWorkflowStep,
-) -> Result<bool, String> {
-    let Some(post_response_compaction_pressure) = post_response_compaction_pressure else {
-        return Ok(false);
-    };
-
-    let (message_snapshot, session_name) = {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            let session_name = session
-                .metadata
-                .name
-                .clone()
-                .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
-            let cached_messages = session.messages.read().await.clone();
-            let message_snapshot =
-                build_post_response_compaction_snapshot(&cached_messages, pending_message);
-            (message_snapshot, session_name)
-        } else {
-            let message_snapshot = build_post_response_compaction_snapshot(&[], pending_message);
-            (
-                message_snapshot,
-                session_id[..8.min(session_id.len())].to_string(),
-            )
-        }
-    };
-
-    if message_snapshot.is_empty() {
-        return Ok(false);
-    }
-
-    trigger_post_response_compaction_if_needed(
-        active_sessions,
-        app_handle,
-        session_id,
-        &session_name,
-        &message_snapshot,
-        post_response_compaction_pressure.total_tokens,
-        deferred_step,
-    )
-    .await
-}
-
-pub fn build_post_response_compaction_snapshot(
-    cached_messages: &[Message],
-    pending_message: Option<&Message>,
-) -> Vec<Message> {
-    let mut snapshot = cached_messages.to_vec();
-
-    if let Some(message) = pending_message {
-        let already_present = snapshot.iter().any(|existing| existing.id == message.id);
-        if !already_present {
-            snapshot.push(message.clone());
-        }
-    }
-
-    snapshot
-}
-
-pub fn validate_expected_response_id(
-    session_id: &str,
-    expected_response_id: Option<&str>,
-    received_message_id: &str,
-) -> Result<(), String> {
-    response_admission::validate_expected_response_id(
-        session_id,
-        expected_response_id,
-        received_message_id,
-    )
 }
 
 struct AssistantMessageShape {
@@ -159,6 +61,32 @@ fn inspect_assistant_message_shape(message: &Message) -> AssistantMessageShape {
         has_thinking,
         has_tool_calls,
     }
+}
+
+fn assistant_message_has_only_ui_tool_calls(message: &Message) -> bool {
+    message
+        .tool_calls
+        .as_ref()
+        .map(|tool_calls| {
+            !tool_calls.is_empty()
+                && tool_calls
+                    .iter()
+                    .all(|tool_call| tool_call.function.name.starts_with("ui__"))
+        })
+        .unwrap_or(false)
+}
+
+fn assistant_message_has_only_internal_ui_callback_tool_calls(message: &Message) -> bool {
+    message
+        .tool_calls
+        .as_ref()
+        .map(|tool_calls| {
+            !tool_calls.is_empty()
+                && tool_calls.iter().all(|tool_call| {
+                    is_internal_ui_callback_tool_name(tool_call.function.name.as_str())
+                })
+        })
+        .unwrap_or(false)
 }
 
 async fn cache_assistant_message(
@@ -239,18 +167,23 @@ pub async fn handle_llm_response(
     app_handle: &AppHandle,
     session_id: String,
     mut assistant_message: Message,
-) -> Result<Option<PostResponseCompactionPressure>, String> {
+) -> Result<(), String> {
     // Check cancellation and determine whether Idle tool-call entry is allowed
     let allow_idle_tool_entry = assistant_message
         .tool_calls
         .as_ref()
         .map(|calls| !calls.is_empty())
         .unwrap_or(false);
+    let is_ui_tool = assistant_message_has_only_ui_tool_calls(&assistant_message);
+    let is_internal_ui_callback =
+        assistant_message_has_only_internal_ui_callback_tool_calls(&assistant_message);
 
     let admission = response_admission::inspect_response_admission(
         active_sessions,
         &session_id,
         allow_idle_tool_entry,
+        is_ui_tool,
+        is_internal_ui_callback,
     )
     .await?;
 
@@ -274,12 +207,15 @@ pub async fn handle_llm_response(
     }
 
     // [Message ID Matching] Use pre-generated ID if available
-    response_admission::consume_expected_response_id(
-        active_sessions,
-        &session_id,
-        &assistant_message.id,
-    )
-    .await?;
+    if !admission.skip_expected_response_id_check {
+        response_admission::consume_expected_response_id(
+            active_sessions,
+            &session_id,
+            &assistant_message.id,
+            is_ui_tool,
+        )
+        .await?;
+    }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
     response_circuit_breaker::preprocess_assistant_tool_calls(
@@ -288,9 +224,6 @@ pub async fn handle_llm_response(
         &mut assistant_message,
     )
     .await;
-
-    let post_response_compaction_pressure =
-        calculate_post_response_compaction_pressure(&assistant_message).await;
 
     // Check if content is also empty (abnormal empty response).
     // Note: A message with tool calls but no content is VALID and normal.
@@ -326,39 +259,10 @@ pub async fn handle_llm_response(
             };
             crate::agent::tauri_events::emit_agent_event(app_handle, error_event)
                 .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
-            return Ok(post_response_compaction_pressure.clone());
+            return Ok(());
         }
 
         if assistant_shape.has_thinking && !assistant_shape.has_content {
-            match defer_for_post_response_compaction_if_needed(
-                active_sessions,
-                app_handle,
-                &session_id,
-                post_response_compaction_pressure.as_ref(),
-                Some(&assistant_message),
-                DeferredWorkflowStep::RequestCompletion,
-            )
-            .await
-            {
-                Ok(true) => {
-                    log::info!(
-                        "⏸️ Delaying thinking-only recovery until post-response compaction finishes: session={}, assistant_message={}",
-                        session_id,
-                        assistant_message.id
-                    );
-                    return Ok(post_response_compaction_pressure.clone());
-                }
-                Ok(false) => {}
-                Err(error) => {
-                    log::warn!(
-                        "⚠️ Failed to evaluate post-response compaction for thinking-only completion in session {} after assistant message {}: {}",
-                        session_id,
-                        assistant_message.id,
-                        error
-                    );
-                }
-            }
-
             return crate::agent::llm::stream_recovery::handle_thinking_only_completion(
                 session_repo,
                 active_sessions,
@@ -368,7 +272,7 @@ pub async fn handle_llm_response(
                 assistant_message.id.clone(),
             )
             .await
-            .map(|_| post_response_compaction_pressure.clone());
+            .map(|_| ());
         }
     }
 
@@ -408,35 +312,6 @@ pub async fn handle_llm_response(
         let has_pending = session_has_pending_events(active_sessions, &session_id).await;
 
         if has_pending {
-            match defer_for_post_response_compaction_if_needed(
-                active_sessions,
-                app_handle,
-                &session_id,
-                post_response_compaction_pressure.as_ref(),
-                None,
-                DeferredWorkflowStep::RequestCompletion,
-            )
-            .await
-            {
-                Ok(true) => {
-                    log::info!(
-                        "⏸️ Delaying pending-message continuation until post-response compaction finishes: session={}, assistant_message={}",
-                        session_id,
-                        assistant_message.id
-                    );
-                    return Ok(post_response_compaction_pressure.clone());
-                }
-                Ok(false) => {}
-                Err(error) => {
-                    log::warn!(
-                        "⚠️ Failed to evaluate post-response compaction for session {} after assistant message {}: {}",
-                        session_id,
-                        assistant_message.id,
-                        error
-                    );
-                }
-            }
-
             log::info!(
                 "🔄 Pending messages detected for session {}. Continuing workflow.",
                 session_id
@@ -450,42 +325,11 @@ pub async fn handle_llm_response(
                 session_id,
             )
             .await
-            .map(|_| post_response_compaction_pressure.clone())
+            .map(|_| ())
             .map_err(String::from);
         }
 
-        match defer_for_post_response_compaction_if_needed(
-            active_sessions,
-            app_handle,
-            &session_id,
-            post_response_compaction_pressure.as_ref(),
-            None,
-            DeferredWorkflowStep::FinalizeWorkflow {
-                reason: crate::agent::events::WorkflowCompletionReason::Natural,
-            },
-        )
-        .await
-        {
-            Ok(true) => {
-                log::info!(
-                    "⏸️ Delaying workflow completion until post-response compaction finishes: session={}, assistant_message={}",
-                    session_id,
-                    assistant_message.id
-                );
-                return Ok(post_response_compaction_pressure.clone());
-            }
-            Ok(false) => {}
-            Err(error) => {
-                log::warn!(
-                    "⚠️ Failed to evaluate post-response compaction for session {} after assistant message {}: {}",
-                    session_id,
-                    assistant_message.id,
-                    error
-                );
-            }
-        }
-
-        // No pending messages and no blocking post-response compaction, finish workflow
+        // No pending messages remain, so finish the workflow now.
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,
@@ -512,39 +356,6 @@ pub async fn handle_llm_response(
         );
 
         reset_repeated_thinking_retry_count(active_sessions, &session_id).await;
-
-        match defer_for_post_response_compaction_if_needed(
-            active_sessions,
-            app_handle,
-            &session_id,
-            post_response_compaction_pressure.as_ref(),
-            None,
-            DeferredWorkflowStep::ExecuteToolCalls {
-                assistant_message_id: assistant_message.id.clone(),
-                tool_calls: tool_calls.clone(),
-            },
-        )
-        .await
-        {
-            Ok(true) => {
-                log::info!(
-                    "⏸️ Delaying tool execution until post-response compaction finishes: session={}, assistant_message={}, tool_calls={}",
-                    session_id,
-                    assistant_message.id,
-                    tool_calls.len()
-                );
-                return Ok(post_response_compaction_pressure.clone());
-            }
-            Ok(false) => {}
-            Err(error) => {
-                log::warn!(
-                    "⚠️ Failed to evaluate post-response compaction before tool execution for session {} after assistant message {}: {}",
-                    session_id,
-                    assistant_message.id,
-                    error
-                );
-            }
-        }
 
         // Update status to Busy
         crate::agent::lifecycle::update_session_status(
@@ -588,7 +399,7 @@ pub async fn handle_llm_response(
         });
     }
 
-    Ok(post_response_compaction_pressure)
+    Ok(())
 }
 
 /// Handle LLM error from frontend

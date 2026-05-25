@@ -12,6 +12,15 @@
 /// 5. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
 ///    crate, passing it the database URL to initialize the application with database support.
 fn main() {
+    if std::env::args().any(|arg| arg == tauri_mcp_agent_lib::browser_sidecar::BROWSER_SIDECAR_FLAG)
+    {
+        if let Err(error) = tauri_mcp_agent_lib::browser_sidecar::run_sidecar_mode() {
+            eprintln!("❌ Browser sidecar failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     #[cfg(target_os = "linux")]
     {
         println!("🐧 Linux detected - using default WebKit rendering path");

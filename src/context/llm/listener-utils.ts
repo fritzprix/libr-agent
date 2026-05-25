@@ -2,7 +2,7 @@ import {
   isSpendingCapError,
   normalizeAIServiceError,
 } from '@/lib/ai-service/utils';
-import type { AgentRuntimeError, CompactionPressure } from '@/models/agent-ipc';
+import type { AgentRuntimeError } from '@/models/agent-ipc';
 import type { MessageError } from '@/models/chat';
 
 function isMessageError(error: unknown): error is MessageError {
@@ -61,38 +61,4 @@ export function shouldBypassRetryAndFallback(error: unknown): boolean {
   }
 
   return isSpendingCapError(error);
-}
-
-export function extractCompactionPressure(
-  data: unknown,
-): CompactionPressure | undefined {
-  if (typeof data !== 'object' || data === null) {
-    return undefined;
-  }
-
-  if (!('compactionPressure' in data)) {
-    return undefined;
-  }
-
-  const maybePressure = data.compactionPressure;
-  if (typeof maybePressure !== 'object' || maybePressure === null) {
-    return undefined;
-  }
-
-  if (
-    !('totalTokens' in maybePressure) ||
-    !('contextWindow' in maybePressure) ||
-    !('modelMaxContext' in maybePressure) ||
-    typeof maybePressure.totalTokens !== 'number' ||
-    typeof maybePressure.contextWindow !== 'number' ||
-    typeof maybePressure.modelMaxContext !== 'number'
-  ) {
-    return undefined;
-  }
-
-  return {
-    totalTokens: maybePressure.totalTokens,
-    contextWindow: maybePressure.contextWindow,
-    modelMaxContext: maybePressure.modelMaxContext,
-  };
 }

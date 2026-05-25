@@ -227,9 +227,9 @@ pub fn list_tools_tool() -> MCPTool {
                     "limit".to_string(),
                     integer_prop_with_default(
                         Some(1),
-                        Some(200),
+                        Some(100),
                         50,
-                        Some("Maximum number of tools to return. Default: 50."),
+                        Some("Maximum number of results to return (pagination). Default: 50."),
                     ),
                 ),
                 (
@@ -238,7 +238,7 @@ pub fn list_tools_tool() -> MCPTool {
                         Some(0),
                         None,
                         0,
-                        Some("Number of tools to skip for pagination. Default: 0."),
+                        Some("Number of results to skip (pagination). Default: 0."),
                     ),
                 ),
             ],

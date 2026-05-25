@@ -29,6 +29,7 @@ mod message_injection;
 
 pub use channel::format_channel_payload_for_test;
 pub use compact::handle_compact_error_with_dispatcher;
+pub use compact::should_retry_budget_related_blocking_compaction;
 pub use execution_mode::ExecutionMode;
 
 /// Manages agent sessions and their workflows
@@ -276,7 +277,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         assistant_message: Message,
-    ) -> Result<Option<crate::agent::llm::types::PostResponseCompactionPressure>, String> {
+    ) -> Result<(), String> {
         crate::agent::llm::handle_llm_response(
             &self.session_repo,
             &self.active_sessions,
@@ -708,6 +709,8 @@ impl AgentSessionManager {
         handle_compact_error_with_dispatcher(
             &self.session_repo,
             &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
             &dispatcher,
             session_id,
             error,

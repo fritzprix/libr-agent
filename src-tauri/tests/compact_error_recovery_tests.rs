@@ -14,8 +14,9 @@ use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
+use tauri_mcp_agent_lib::agent::session_manager::should_retry_budget_related_blocking_compaction;
 use tauri_mcp_agent_lib::agent::state::{
-    AgentSession, CompactionKind, CompactionPhase, DeferredWorkflowStep, InFlightCompaction,
+    AgentSession, CompactionKind, CompactionPhase, CompactionRecoveryPhase, InFlightCompaction,
     PendingEventManager,
 };
 use tauri_mcp_agent_lib::repositories::{
@@ -271,73 +272,46 @@ async fn manual_compact_failure_clears_flags_without_failing_workflow() {
     assert!(dispatcher.agent_events().is_empty());
 }
 
-#[tokio::test]
-async fn post_response_compact_failure_with_deferred_step_transitions_workflow_to_error() {
-    init_runtime_primitives();
-
-    let session_id = "compact-error-post-response";
-    let metadata = build_session_metadata(session_id, SessionStatus::Busy);
-    let repo = Arc::new(InMemorySessionRepository::new());
-    repo.upsert_session(&metadata)
-        .await
-        .expect("session upsert should succeed");
-    let session_repo: Arc<dyn SessionRepository> = repo.clone();
-
-    let session = build_agent_session(metadata.clone(), false);
-    session
-        .compaction
-        .attach_deferred_workflow_step(DeferredWorkflowStep::FinalizeWorkflow {
-            reason: tauri_mcp_agent_lib::agent::events::WorkflowCompletionReason::Natural,
-        })
-        .await;
-    let active_sessions = Arc::new(RwLock::new(HashMap::from([(
-        session_id.to_string(),
-        session,
-    )])));
-    let dispatcher = RecordingDispatcher::default();
+#[test]
+fn preflight_context_limit_failure_is_retryable() {
+    let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
+        phase: CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Preflight,
+            current_tail_id: Some("tail".to_string()),
+            started_at_ms: 1234,
+        }),
+        last_compacted_tail_id: Some("tail".to_string()),
+        retry_attempt: 0,
+        recovery_phase: CompactionRecoveryPhase::CacheAligned,
+    };
     let error = AgentRuntimeError::new(
-        AgentRuntimeErrorType::AiServiceError,
-        "post-response compaction failed",
+        AgentRuntimeErrorType::ContextLimitError,
+        "Prompt too long: 146228 tokens exceeds max context window of 131072 tokens",
     );
 
-    handle_compact_error_state(
-        &session_repo,
-        &active_sessions,
-        &dispatcher,
-        session_id.to_string(),
-        error.clone(),
-    )
-    .await
-    .expect("compact error handling should succeed");
-
-    let persisted = repo
-        .get_session(session_id)
-        .await
-        .expect("session lookup should succeed")
-        .expect("session should exist");
-    assert_eq!(persisted.status, SessionStatus::Error);
-
-    let active = active_sessions.read().await;
-    let session = active.get(session_id).expect("active session should exist");
-    assert_eq!(session.metadata.status, SessionStatus::Error);
-    let snapshot = session.compaction.snapshot().await;
-    assert!(matches!(snapshot.phase, CompactionPhase::Idle));
-    drop(active);
-
-    let agent_events = dispatcher.agent_events();
-    assert_eq!(agent_events.len(), 2);
-    assert!(matches!(
-        &agent_events[0],
-        AgentEvent::StatusChanged {
-            session_id: emitted_session_id,
-            status: SessionStatus::Error,
-        } if emitted_session_id == session_id
+    assert!(should_retry_budget_related_blocking_compaction(
+        &snapshot, &error
     ));
-    assert!(matches!(
-        &agent_events[1],
-        AgentEvent::WorkflowError {
-            session_id: emitted_session_id,
-            error: emitted_error,
-        } if emitted_session_id == session_id && emitted_error.display_message == error.display_message
+}
+
+#[test]
+fn degraded_tool_phase_stops_retrying_preflight_compaction() {
+    let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
+        phase: CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Preflight,
+            current_tail_id: Some("tail".to_string()),
+            started_at_ms: 1234,
+        }),
+        last_compacted_tail_id: Some("tail".to_string()),
+        retry_attempt: 0,
+        recovery_phase: CompactionRecoveryPhase::DegradedTools,
+    };
+    let error = AgentRuntimeError::new(
+        AgentRuntimeErrorType::ContextLimitError,
+        "Prompt too long: 146228 tokens exceeds max context window of 131072 tokens",
+    );
+
+    assert!(!should_retry_budget_related_blocking_compaction(
+        &snapshot, &error
     ));
 }

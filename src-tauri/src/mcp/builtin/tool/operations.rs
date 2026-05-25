@@ -255,7 +255,7 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         )
         .with_guidance(vec![
             "Verify database permissions".to_string(),
-            "Use listTools to confirm the name exists".to_string(),
+            "Use tool__list({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to confirm the name exists".to_string(),
         ])
         .to_mcp_result());
     }
@@ -269,7 +269,10 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
 
     let hint = SuccessHint::new(
         format!("Excluded server '{}' from configuration", name),
-        vec!["Use listTools to verify remaining servers".to_string()],
+        vec![
+            "Use tool__list({\"availability\":\"inventory\"}) to verify remaining servers"
+                .to_string(),
+        ],
     );
     Ok(hint.to_mcp_result())
 }
@@ -371,7 +374,7 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
 
     let hint = SuccessHint::new(
         format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
-        vec!["Use listTools to verify changes".to_string()],
+        vec!["Use tool__list({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to verify changes".to_string()],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
 }
@@ -442,7 +445,7 @@ pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResul
                 Transport: {}\n\
                 {}\n\
                 Status: Connected and responsive\n\
-                Available tools: {} (cached — use listTools to see)\n\
+                Available tools: {} (cached — use tool__list to inspect inventory)\n\
                 Connection latency: {}ms\n\n\
                 The server is properly configured and ready to use.",
                 name, id, transport_type, transport_details, tool_count, latency_ms
@@ -494,7 +497,7 @@ pub async fn verify_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     }
 }
 
-/// Test server connection by spawning/connecting and calling listTools.
+/// Test server connection by spawning/connecting and calling the remote MCP ListTools API.
 /// Returns `(tool_count, tools_json)` where `tools_json` is a JSON array of
 /// `{"name": "...", "description": "..."}` entries for caching.
 async fn test_server_connection(
@@ -536,7 +539,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
     let limit = args
         .get("limit")
         .and_then(|v| v.as_u64())
-        .map(|v| v.clamp(1, 200))
+        .map(|v| v.clamp(1, 100))
         .unwrap_or(50);
     let limit = limit.min(usize::MAX as u64) as usize;
 
@@ -557,10 +560,10 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         name: String,
         description: String,
         status: String,
+        external_server: Option<(String, String)>,
     }
 
     let mut all_matched_tools: Vec<MatchedTool> = Vec::new();
-    let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
 
     // --- Internal (builtin) tools ---
     if include_internal {
@@ -583,6 +586,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                         name: t.name.clone(),
                         description: t.description.clone(),
                         status,
+                        external_server: None,
                     });
                 }
             }
@@ -614,7 +618,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                     match test_server_connection(config, &model.name).await {
                         Ok((_, json_str)) => Some(json_str),
                         Err(e) => {
-                            log::warn!("listTools: live verify failed for '{}': {}", model.name, e);
+                            log::warn!("tool::list live verify failed for '{}': {}", model.name, e);
                             None
                         }
                     }
@@ -654,6 +658,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                         name: name.to_string(),
                         description: desc.to_string(),
                         status,
+                        external_server: Some((model.name.clone(), model.id.clone())),
                     });
                     matched_in_server = true;
                 }
@@ -678,11 +683,8 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                     name: "-".to_string(),
                     description: desc.to_string(),
                     status,
+                    external_server: Some((model.name.clone(), model.id.clone())),
                 });
-            }
-
-            if matched_in_server || server_matches_query {
-                found_external_ids.push((model.name.clone(), model.id.clone()));
             }
         }
     }
@@ -696,7 +698,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
     if total_results == 0 {
         let hint_text = if query.is_empty() {
-            "No tools found. Use registerServer to add external MCP servers.".to_string()
+            "No tools found. Use tool__register to add external MCP servers.".to_string()
         } else {
             format!(
                 "No tools found matching '{}'. Try a broader query, scope='all', or availability='inventory'.",
@@ -708,7 +710,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             vec![
                 "Use scope='all' to search both builtin and external tools".to_string(),
                 "Use availability='inventory' to browse platform/server inventory regardless of current session access".to_string(),
-                "Use listTools to browse all available tools".to_string(),
+                "Use tool__list({\"availability\":\"inventory\"}) to browse all available tools".to_string(),
             ],
         )
         .to_mcp_result());
@@ -730,6 +732,12 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .skip(offset)
         .take(limit)
         .collect();
+    let mut visible_external_ids = paginated_tools
+        .iter()
+        .filter_map(|tool| tool.external_server.clone())
+        .collect::<Vec<_>>();
+    visible_external_ids.sort();
+    visible_external_ids.dedup();
 
     let result_summary = if total_server_rows > 0 {
         format!(
@@ -790,19 +798,14 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         ));
     }
 
-    let external_action = if !session_view && !found_external_ids.is_empty() {
-        // De-duplicate external ids just in case.
-        let mut unique_ids = found_external_ids.clone();
-        unique_ids.sort();
-        unique_ids.dedup();
-
-        let ids_list: Vec<String> = unique_ids
+    let external_action = if !session_view && !visible_external_ids.is_empty() {
+        let ids_list: Vec<String> = visible_external_ids
             .iter()
             .map(|(name, id)| format!("  • {} → \"{}\"", name, id))
             .collect();
         format!(
             "\n\n---\n📌 To enable these external servers:\n\
-             Server IDs found:\n{}\n\n\
+            Server IDs found:\n(this page only)\n{}\n\n\
             To assign them to an agent, call:\n  agent__update(id: \"<agentId>\", externalMcpServers: [\"<id_1>\", \"...\"])\n\n\
             Use agent__list(type: \"configs\") to find your target agent ID.",
             ids_list.join("\n")
@@ -838,12 +841,10 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             })
         })
         .collect::<Vec<_>>();
-    let mut external_servers = found_external_ids
+    let external_servers = visible_external_ids
         .iter()
         .map(|(name, id)| json!({ "name": name, "id": id }))
         .collect::<Vec<_>>();
-    external_servers.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
-    external_servers.dedup_by(|left, right| left["id"] == right["id"]);
 
     Ok(
         SuccessHint::new(format!("{}{}{}", header, body, external_action), hints)

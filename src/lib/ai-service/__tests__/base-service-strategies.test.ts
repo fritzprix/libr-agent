@@ -44,4 +44,38 @@ describe('throwStreamingError', () => {
 
     throw new Error('Expected throwStreamingError to throw');
   });
+
+  it('classifies prompt-too-long 400s as context-limit errors', () => {
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+
+    try {
+      throwStreamingError({
+        error: {
+          status: 400,
+          error: {
+            message:
+              '400 Prompt too long: 146228 tokens exceeds max context window of 131072 tokens',
+          },
+        },
+        context,
+        logger,
+        provider: AIServiceProvider.OpenAI,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIServiceError);
+      if (!(error instanceof AIServiceError)) {
+        throw error;
+      }
+
+      expect(error.metadata.kind).toBe('context_limit');
+      expect(error.metadata.retryable).toBe(false);
+      expect(error.statusCode).toBe(400);
+      return;
+    }
+
+    throw new Error('Expected throwStreamingError to throw');
+  });
 });

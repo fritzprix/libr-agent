@@ -12,7 +12,6 @@ import {
   isParsedIndexedToolCallDelta,
   parseStreamChunk,
 } from '@/lib/ai-service/stream-events';
-import { assembleRequestLayout } from '@/lib/ai-service/base-service-context';
 import { getLogger } from '@/lib/logger';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
@@ -140,7 +139,6 @@ export function useExecuteCompletion({
       provider: string,
       apiKey?: string,
       systemPrompt?: string,
-      sessionContext?: string,
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
@@ -331,28 +329,9 @@ export function useExecuteCompletion({
           }
         };
 
-        // Let the provider choose how to deliver sessionContext (stable system
-        // prompt concat vs. ephemeral tail message injection for prefix caching).
-        const {
-          systemPrompt: effectiveSystemPrompt,
-          sessionContext: effectiveSessionContext,
-          messages: effectiveMessages,
-        } = assembleRequestLayout(
-          {
-            systemPrompt,
-            sessionContext,
-            messages: enrichedMessages,
-          },
-          {
-            prepareContextInjection:
-              service.prepareContextInjection.bind(service),
-          },
-        );
-
-        const streamGenerator = service.streamChat(effectiveMessages, {
+        const streamGenerator = service.streamChat(enrichedMessages, {
           modelName: model,
-          systemPrompt: effectiveSystemPrompt,
-          sessionContext: effectiveSessionContext,
+          systemPrompt,
           availableTools: availableTools || [],
           config,
           forceToolUse: false,

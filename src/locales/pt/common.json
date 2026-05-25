@@ -150,7 +150,9 @@
     "settings": "Configurações",
     "history": "Histórico",
     "scheduledTasks": "Tarefas Agendadas",
-    "session": "Sessão"
+    "session": "Sessão",
+    "knowledge": "Conhecimento",
+    "org": "Organização"
   },
   "sessionHistory": {
     "heading": "Histórico de Sessões",
@@ -334,7 +336,45 @@
       "agentHubUrlPlaceholder": "https://api.agenthub.com",
       "responseBehavior": "Comportamento da resposta",
       "decreaseRetries": "Diminuir tentativas de repetição",
-      "increaseRetries": "Aumentar tentativas de repetição"
+      "increaseRetries": "Aumentar tentativas de repetição",
+      "providers": {
+        "openai": {
+          "name": "OpenAI",
+          "description": "GPT-4o, o3, o4-mini and more"
+        },
+        "anthropic": {
+          "name": "Anthropic",
+          "description": "Claude 3.5 Sonnet, Haiku and more"
+        },
+        "gemini": {
+          "name": "Google Gemini",
+          "description": "Gemini 2.5 Pro, Flash and more"
+        },
+        "ollama": {
+          "name": "Ollama",
+          "description": "Run open models locally on your machine"
+        },
+        "groq": {
+          "name": "Groq",
+          "description": "Ultra-fast inference via Groq LPU chips"
+        },
+        "fireworks": {
+          "name": "Fireworks AI",
+          "description": "Fast hosting for open-source models"
+        },
+        "cerebras": {
+          "name": "Cerebras",
+          "description": "World's fastest AI inference chips"
+        },
+        "openrouter": {
+          "name": "OpenRouter",
+          "description": "Access 200+ models through one API key"
+        },
+        "empty": {
+          "name": "None",
+          "description": ""
+        }
+      }
     },
     "provider": {
       "apiKey": "Chave de API",

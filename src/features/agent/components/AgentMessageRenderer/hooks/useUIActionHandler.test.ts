@@ -9,11 +9,19 @@ const {
   executeUiTauriActionMock,
   handleUserToolCallMock,
   openExternalUrlMock,
+  loggerInfoMock,
+  loggerWarnMock,
+  loggerErrorMock,
+  loggerDebugMock,
 } = vi.hoisted(() => ({
   submitMock: vi.fn(),
   executeUiTauriActionMock: vi.fn(),
   handleUserToolCallMock: vi.fn(),
   openExternalUrlMock: vi.fn(),
+  loggerInfoMock: vi.fn(),
+  loggerWarnMock: vi.fn(),
+  loggerErrorMock: vi.fn(),
+  loggerDebugMock: vi.fn(),
 }));
 
 vi.mock('@/context/AgentChatContext', () => ({
@@ -41,10 +49,10 @@ vi.mock('@/lib/backend', () => ({
 
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
+    info: loggerInfoMock,
+    warn: loggerWarnMock,
+    error: loggerErrorMock,
+    debug: loggerDebugMock,
   }),
 }));
 
@@ -54,6 +62,10 @@ describe('useUIActionHandler', () => {
     executeUiTauriActionMock.mockReset();
     handleUserToolCallMock.mockReset();
     openExternalUrlMock.mockReset();
+    loggerInfoMock.mockReset();
+    loggerWarnMock.mockReset();
+    loggerErrorMock.mockReset();
+    loggerDebugMock.mockReset();
   });
 
   it('routes tauri tool actions through the backend command path', async () => {
@@ -115,5 +127,33 @@ describe('useUIActionHandler', () => {
     expect(executeUiTauriActionMock).toHaveBeenCalledTimes(1);
     expect(handleUserToolCallMock).not.toHaveBeenCalled();
     expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale workflow-cancelled tool results without error logging', async () => {
+    handleUserToolCallMock.mockRejectedValue(
+      new Error('UI tool result orphaned (workflow inactive)'),
+    );
+
+    const contentRef = {
+      current: [] as MCPContent[],
+    };
+
+    const { result } = renderHook(() => useUIActionHandler(contentRef));
+
+    const action: UIActionResult = {
+      type: 'tool',
+      payload: {
+        toolName: 'getUserAnswer',
+        params: { messageId: 'msg-1', answer: 'Option A' },
+      },
+    };
+
+    await expect(result.current(action)).resolves.toEqual({
+      status: 'ignored',
+      message: 'UI tool result orphaned (workflow inactive)',
+    });
+
+    expect(loggerErrorMock).not.toHaveBeenCalled();
+    expect(loggerInfoMock).toHaveBeenCalled();
   });
 });

@@ -241,15 +241,12 @@ async fn list_returns_structured_results_for_ui_consumers() {
         .structured_content
         .clone()
         .expect("structured content should be present");
-    let results = structured["results"]
-        .as_array()
-        .expect("results should be an array");
     let external_servers = structured["externalServers"]
         .as_array()
         .expect("externalServers should be an array");
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["name"].as_str(), Some("search_issues"));
+    let text = extract_text(&result);
+    assert!(text.contains("| External: github-structured-list | search_issues |"));
     assert_eq!(structured["totalResults"].as_u64(), Some(1));
     assert!(external_servers.iter().any(|entry| {
         entry["id"].as_str() == Some(created.id.as_str())

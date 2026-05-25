@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.7.30"
+version = "0.7.32"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -24,6 +24,7 @@ test = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+agent-response-guards = { path = "agent-response-guards" }
 tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-opener = "2"
 
@@ -64,6 +65,7 @@ dashmap = "6.2"
 regex = "1"
 cuid2 = "0.1.6"
 dirs = "6.0"
+chromiumoxide = { version = "0.9.1", features = ["fetcher", "rustls", "zip8"] }
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
 ammonia = "4.0"
@@ -90,7 +92,7 @@ sea-orm = { version = "1.1", features = ["sqlx-sqlite", "runtime-tokio-rustls", 
 sea-orm-migration = { version = "1.1", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
 migration = { path = "migration" }
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
-tauri-plugin-mcp-bridge = "0.11.1"
+tauri-plugin-mcp-bridge = "0.11.2"
 sqlite-vec = "0.1.9"
 fastembed = "5.13.4"
 
@@ -104,4 +106,4 @@ debug = 0
 incremental = false
 
 [workspace]
-members = ["migration"]
+members = ["migration", "agent-response-guards"]

@@ -16,15 +16,10 @@ import {
 } from './tool-input';
 
 const logger = getLogger('AnthropicMessageConverter');
-const ANTHROPIC_SESSION_CONTEXT_METADATA_KEY =
-  'anthropicSyntheticSessionContext';
 const MIN_STABLE_MESSAGES_FOR_EXTRA_BREAKPOINT = 8;
 
 function isAnthropicSyntheticSessionContextMessage(message: Message): boolean {
-  return (
-    message.role === 'user' &&
-    message.metadata?.[ANTHROPIC_SESSION_CONTEXT_METADATA_KEY] === true
-  );
+  return message.role === 'user' && message.source === 'session-context';
 }
 
 function applyCacheBreakpoint(

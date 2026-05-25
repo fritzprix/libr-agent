@@ -1,7 +1,6 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::llm::types::CompactionParentRequest;
-use crate::agent::types::ToolCall;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
@@ -103,22 +102,9 @@ pub enum SessionStatusTransition {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeferredWorkflowStep {
-    RequestCompletion,
-    ExecuteToolCalls {
-        assistant_message_id: String,
-        tool_calls: Vec<ToolCall>,
-    },
-    FinalizeWorkflow {
-        reason: crate::agent::events::WorkflowCompletionReason,
-    },
-}
-
-#[derive(Debug, Clone)]
 pub enum CompactionKind {
     Manual,
     Preflight,
-    PostResponse { deferred_step: DeferredWorkflowStep },
 }
 
 impl CompactionKind {
@@ -126,7 +112,6 @@ impl CompactionKind {
         match self {
             Self::Manual => "manual",
             Self::Preflight => "preflight",
-            Self::PostResponse { .. } => "post-response",
         }
     }
 
@@ -156,6 +141,8 @@ pub enum CompactionPhase {
 pub struct CompactionSnapshot {
     pub phase: CompactionPhase,
     pub last_compacted_tail_id: Option<String>,
+    pub retry_attempt: u32,
+    pub recovery_phase: CompactionRecoveryPhase,
 }
 
 impl CompactionSnapshot {
@@ -198,7 +185,13 @@ pub enum CompactionReuseOutcome {
 pub enum CompactionResumeAction {
     Nothing,
     ResumeCompletion,
-    RunDeferred(DeferredWorkflowStep),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactionRecoveryPhase {
+    CacheAligned,
+    OverflowRecovery,
+    DegradedTools,
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +202,12 @@ pub struct CompactionRuntimeState {
     /// The ID of the last message in the stack at the moment compaction was triggered.
     /// This survives successful settlement so future triggers can skip same-tail work.
     last_compacted_tail_id: Arc<RwLock<Option<String>>>,
+
+    /// Retry ladder state for budget-related compaction overflows.
+    retry_attempt: Arc<RwLock<u32>>,
+
+    /// Phase ladder for compaction overflow recovery.
+    recovery_phase: Arc<RwLock<CompactionRecoveryPhase>>,
 }
 
 impl CompactionRuntimeState {
@@ -216,6 +215,8 @@ impl CompactionRuntimeState {
         Self {
             phase: Arc::new(RwLock::new(CompactionPhase::Idle)),
             last_compacted_tail_id: Arc::new(RwLock::new(None)),
+            retry_attempt: Arc::new(RwLock::new(0)),
+            recovery_phase: Arc::new(RwLock::new(CompactionRecoveryPhase::CacheAligned)),
         }
     }
 
@@ -223,6 +224,8 @@ impl CompactionRuntimeState {
         Self {
             phase: Arc::new(RwLock::new(phase)),
             last_compacted_tail_id: Arc::new(RwLock::new(last_tail_id)),
+            retry_attempt: Arc::new(RwLock::new(0)),
+            recovery_phase: Arc::new(RwLock::new(CompactionRecoveryPhase::CacheAligned)),
         }
     }
 
@@ -230,6 +233,8 @@ impl CompactionRuntimeState {
         CompactionSnapshot {
             phase: self.phase.read().await.clone(),
             last_compacted_tail_id: self.last_compacted_tail_id.read().await.clone(),
+            retry_attempt: *self.retry_attempt.read().await,
+            recovery_phase: *self.recovery_phase.read().await,
         }
     }
 
@@ -243,6 +248,48 @@ impl CompactionRuntimeState {
         if clear_last_compacted_tail_id {
             *self.last_compacted_tail_id.write().await = None;
         }
+    }
+
+    pub async fn retry_attempt(&self) -> u32 {
+        *self.retry_attempt.read().await
+    }
+
+    pub async fn recovery_phase(&self) -> CompactionRecoveryPhase {
+        *self.recovery_phase.read().await
+    }
+
+    pub async fn increment_retry_attempt(&self) -> u32 {
+        let mut retry_attempt = self.retry_attempt.write().await;
+        *retry_attempt += 1;
+        *retry_attempt
+    }
+
+    pub async fn reset_retry_attempt(&self) {
+        *self.retry_attempt.write().await = 0;
+    }
+
+    pub async fn transition_to_overflow_recovery(&self) {
+        *self.retry_attempt.write().await = 0;
+        *self.recovery_phase.write().await = CompactionRecoveryPhase::OverflowRecovery;
+    }
+
+    pub async fn transition_to_degraded_tools(&self) {
+        *self.retry_attempt.write().await = 0;
+        *self.recovery_phase.write().await = CompactionRecoveryPhase::DegradedTools;
+    }
+
+    pub async fn reset_recovery_progress(&self) {
+        *self.retry_attempt.write().await = 0;
+        *self.recovery_phase.write().await = CompactionRecoveryPhase::CacheAligned;
+    }
+
+    pub async fn set_recovery_progress(
+        &self,
+        recovery_phase: CompactionRecoveryPhase,
+        retry_attempt: u32,
+    ) {
+        *self.retry_attempt.write().await = retry_attempt;
+        *self.recovery_phase.write().await = recovery_phase;
     }
 
     pub async fn try_begin(
@@ -274,39 +321,18 @@ impl CompactionRuntimeState {
                     in_flight.kind = CompactionKind::Preflight;
                     CompactionReuseOutcome::Promoted
                 }
-                CompactionKind::Preflight | CompactionKind::PostResponse { .. } => {
-                    CompactionReuseOutcome::NoChange
-                }
-            },
-        }
-    }
-
-    pub async fn attach_deferred_workflow_step(
-        &self,
-        deferred_step: DeferredWorkflowStep,
-    ) -> CompactionReuseOutcome {
-        let mut phase = self.phase.write().await;
-        match &mut *phase {
-            CompactionPhase::Idle => CompactionReuseOutcome::NotInFlight,
-            CompactionPhase::InFlight(in_flight) => match &in_flight.kind {
-                CompactionKind::PostResponse { .. } => CompactionReuseOutcome::NoChange,
-                CompactionKind::Manual | CompactionKind::Preflight => {
-                    in_flight.kind = CompactionKind::PostResponse { deferred_step };
-                    CompactionReuseOutcome::Promoted
-                }
+                CompactionKind::Preflight => CompactionReuseOutcome::NoChange,
             },
         }
     }
 
     pub async fn complete_success(&self) -> CompactionResumeAction {
+        self.reset_recovery_progress().await;
         match std::mem::replace(&mut *self.phase.write().await, CompactionPhase::Idle) {
             CompactionPhase::Idle => CompactionResumeAction::Nothing,
             CompactionPhase::InFlight(in_flight) => match in_flight.kind {
                 CompactionKind::Manual => CompactionResumeAction::Nothing,
                 CompactionKind::Preflight => CompactionResumeAction::ResumeCompletion,
-                CompactionKind::PostResponse { deferred_step } => {
-                    CompactionResumeAction::RunDeferred(deferred_step)
-                }
             },
         }
     }
