@@ -30,6 +30,7 @@ mod message_injection;
 pub use channel::format_channel_payload_for_test;
 pub use compact::handle_compact_error_with_dispatcher;
 pub use compact::should_retry_budget_related_blocking_compaction;
+pub use compact::CompactContextView;
 pub use execution_mode::ExecutionMode;
 
 /// Manages agent sessions and their workflows
@@ -667,6 +668,13 @@ impl AgentSessionManager {
         session_id: &str,
     ) -> Result<Option<CompactContextRecord>, String> {
         compact::get_compact_context(&self.active_sessions, session_id).await
+    }
+
+    pub async fn get_compact_context_view(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<CompactContextView>, String> {
+        compact::get_compact_context_view(&self.active_sessions, session_id).await
     }
 
     /// Save compacted context for a session

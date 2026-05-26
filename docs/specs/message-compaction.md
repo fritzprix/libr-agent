@@ -1,5 +1,41 @@
 # Message Compaction Contract
 
+## Quick Read
+
+If you only need the contract in one minute, read this section first.
+
+### The three layers
+
+| Layer                               | What it answers                                                | Key rule                                                           |
+| ----------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **Semantic compaction state**       | "What is being folded into the new summary?"                   | Normal path folds `prev_summary + full_delta`.                     |
+| **Provider-visible request layout** | "What payload shape should the provider see?"                  | Compaction should reuse the same stable prefix as normal requests. |
+| **Overflow recovery policy**        | "What may be reduced if compaction itself still does not fit?" | Split/reduction is allowed only here, not in the normal path.      |
+
+### The one-line rule
+
+```text
+normal path = absorb full_delta into next_summary without silently trimming the normal request
+```
+
+### Normal path vs overflow recovery
+
+| Question                                         | Normal compact path                      | Overflow recovery path                                |
+| ------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------- |
+| May raw active windows be partially left behind? | **No**                                   | Yes, if required to fit recovery payload              |
+| May prompt-cache alignment be broken?            | Should be preserved                      | May be sacrificed                                     |
+| May tool schema be degraded?                     | **No**                                   | Yes, if needed                                        |
+| May messages be dropped/truncated?               | **No** for the normal completion request | Yes, only to make the compaction/recovery request fit |
+
+### Key terms
+
+- **`prev_summary`**: the persisted compact summary from the previous compaction epoch
+- **`full_delta`**: all uncompacted active windows after `prev_summary.to_id` in the current normal-path candidate request
+- **stable prefix**: the provider-visible prompt/layout prefix that should stay aligned between normal requests and compaction requests
+- **overflow recovery**: the exception path entered only when a cache-aligned compaction request still cannot fit
+
+---
+
 ## 1. Scope
 
 This document defines the **agreed normative contract** for Agent V2 message
@@ -96,6 +132,37 @@ Frontend must not decide:
 - how compact-summary state is persisted or reinjected
 - whether a compact-mode request is safe to send
 
+### 3A. Compaction request assembly boundary
+
+The Rust/frontend split must be read narrowly:
+
+1. **Rust owns logical compaction payload construction.**
+   - Rust chooses the compacted message slice.
+   - Rust injects any synthetic compact-summary anchor.
+   - Rust generates and appends the compaction-instruction message.
+   - Rust replays the parent request contract (`model`, `provider`, stable
+     prompt inputs, tool set) needed to preserve request-layout alignment.
+2. **Rust also owns provider-visible logical layout shaping before emit.**
+   - If provider-specific session-context placement requires a synthetic
+     message tail, Rust builds that logical message layout before the event is
+     emitted.
+   - Frontend must receive the already-shaped logical message list that Rust
+     preflight fitted.
+3. **Frontend owns only provider SDK / wire-format assembly.**
+   - It may translate the Rust-provided logical layout into vendor-specific API
+     fields, cache-breakpoint metadata, and transport-specific request bodies.
+   - It must not invent or omit compact-mode message semantics on its own.
+
+Equivalent split:
+
+```text
+Rust
+= compaction policy + message slice + synthetic messages + logical layout contract
+
+Frontend
+= provider SDK adapter + final wire-format serialization
+```
+
 ---
 
 ## 4. Core Model
@@ -114,6 +181,9 @@ Where:
   compaction
 - `message_delta_from_last_compaction` is only the raw message delta accumulated
   since the previous compaction, not the full conversation history
+- in the normal path, that delta is the **full uncompacted live request slice**
+  after `prev_summary.to_id` that would otherwise be carried into the next
+  completion request
 
 ### Contract
 
@@ -124,6 +194,15 @@ Where:
    `prev_summary` already represents that history.
 5. The first compaction in a session is the only case where there is no prior
    summary, so the compactable raw prefix becomes the initial delta baseline.
+6. In the normal compact-mode path, compaction input is `prev_summary +
+full_delta`, where `full_delta` means all uncompacted active windows in the
+   candidate next-request stack.
+7. After a successful normal-path compaction, that pre-existing `full_delta`
+   must be absorbed into `next_summary`; it must not remain outside the new
+   summary as a residual live suffix in the next epoch.
+8. Delta splitting, partial retention, FIFO reduction, or other message-slice
+   shrinkage is an overflow-recovery behavior, not a normal compaction
+   behavior.
 
 Equivalent interpretation:
 
@@ -131,7 +210,74 @@ Equivalent interpretation:
 summary_state <- fold(summary_state, delta_messages)
 ```
 
-This is the implemented model for compact mode.
+Important clarification:
+
+- `prev_summary + delta_messages` describes the **semantic compaction state
+  input**, not the full provider-visible request body by itself.
+- The actual compaction provider request is assembled on top of the same
+  provider-visible normal-request layout contract used for ordinary completion
+  requests.
+- That provider-visible layout may still include stable non-message inputs such
+  as:
+  - system prompt
+  - session context placement
+  - tool schema
+  - provider-specific cache-key / cache-breakpoint shaping
+- Therefore, the compaction contract has two layers that must not be confused:
+
+```text
+semantic compaction input
+= prev_summary + full_delta
+
+provider-visible compaction request
+= normal_request_layout_base(stable prompt/context/tool/cache inputs)
+  + compaction-specific overlay(prev_summary, full_delta, compaction_instruction, tool_use_disabled)
+```
+
+This is the normative model for compact mode.
+
+### 4A. Compaction instruction contract
+
+`compaction_instruction` is a **Rust-generated synthetic instruction turn**
+addressed to the LLM summarizer.
+
+### Contract
+
+1. Its audience is the LLM performing the compaction call.
+2. Its job is to define the required summary schema, compression rules,
+   preservation hints, and tool-disable expectation for that compaction round.
+3. It belongs to the **compaction overlay**, not the stable prefix.
+4. It is represented as a synthetic **`user`** message, not a system prompt
+   mutation.
+5. Its message source must be classified as `compaction-instruction` so it is
+   never confused with a real external user request.
+6. Rust must generate this instruction before emitting `llm:compact-request`;
+   frontend must treat it as already-authored logical input.
+7. Because it is overlay content, it may differ between compaction rounds and
+   is not itself a prompt-cache alignment anchor.
+
+### 4B. Exact meaning of `full_delta`
+
+`full_delta` means the **entire compactable normalized live slice** after the
+previous summary boundary.
+
+### Contract
+
+1. Start from the current request candidate after Rust message normalization.
+2. Exclude internal synthetic user messages used only for orchestration
+   scaffolding.
+3. If a previous compact record exists, begin immediately after `prev_summary.to_id`.
+4. End at the current compaction split boundary.
+5. Therefore `full_delta` may include:
+   - assistant natural-language turns
+   - assistant tool-call messages whose tool chain is resolved
+   - tool result messages
+   - the latest external user request, if it is already inside the compactable
+     prefix
+6. `full_delta` must not include the unresolved suffix behind the earliest
+   still-open tool-call boundary.
+7. In the common no-open-tool-chain case, `full_delta` extends to the end of the
+   current normalized live stack.
 
 ---
 
@@ -201,6 +347,10 @@ For compact mode, Rust owns the final pre-send hard gate.
 6. Frontend must not add compact-mode-only logical payload pieces that are
    invisible to Rust's fit/no-fit contract. Provider-specific serialization is
    allowed; frontend-owned logical reshaping is not.
+7. In the normal compact-mode path, if the assembled request overflows, Rust
+   must attempt compaction over `prev_summary + full_delta` first; it must not
+   silently keep part of that pre-existing delta as a residual live suffix just
+   to make the normal request fit.
 
 ---
 
@@ -231,6 +381,47 @@ safe_input_token_limit = min(max_input_context, model_max_limit)
 6. If actual submitted prompt size exceeds configured limit, that is a real
    oversize condition even if the provider still accepts the request because the
    provider hard max is larger.
+7. Normal-path compaction must treat the current uncompacted active window set as
+   the full delta to absorb, not as a pool that may be partially left behind in
+   the next live stack.
+
+### 7A. Compaction request budget and retry ladder
+
+The compaction request itself is subject to the same effective context-budget
+model. It is not exempt.
+
+### Contract
+
+1. The starting budget for the compaction request is the same
+   `safe_input_token_limit`.
+2. System prompt, replayed session context placement, tool schema, compact
+   summary anchor, raw delta messages, and compaction instruction all consume
+   that same budget.
+3. If the cache-aligned compaction payload does not fit, Rust may enter the
+   overflow-recovery ladder:
+   - cache-aligned retry with stricter effective fit budget
+   - overflow recovery payload reduction
+   - degraded-tools recovery
+4. If none of those paths fit, Rust must fail explicitly with a context-limit
+   error rather than pretending compaction succeeded.
+
+### 7B. Compaction frequency / duplicate suppression
+
+The contract has **no time-based cooldown**. Duplicate suppression is structural,
+not clock-based.
+
+### Contract
+
+1. A session may compact repeatedly across turns if the rebuilt request keeps
+   exceeding the threshold.
+2. Rust must not start a second independent compaction while one is already
+   in-flight for the same session.
+3. Rust may skip a new preflight compaction when the current live tail is the
+   same tail that was already compacted successfully.
+4. Therefore the frequency guard is:
+   - in-flight reuse while compaction is running
+   - same-tail suppression after settlement
+   - not a wall-clock minimum interval
 
 ### Preflight advisory threshold
 
@@ -345,6 +536,25 @@ delta added after the anchor.
 6. The estimator's job is to decide send/no-send and compaction/no-compaction in
    Rust; it is not license for frontend-side request shaping.
 
+### 9A. Anchor validity after reinjection changes
+
+Compaction can change the live message layout around the old anchor. The rule is
+simple: keep the anchor only while its prior grounded base still matches the new
+layout assumption closely enough to remain incremental.
+
+### Contract
+
+1. A compact-summary message **before** the grounded assistant does not invalidate
+   the anchor by itself.
+2. If compaction inserts a new compact-summary message **after** the previously
+   grounded anchor turn, the old anchor must not be trusted as if nothing
+   changed.
+3. After such a reinjection/layout shift, Rust may fall back to:
+   - a newer grounded assistant anchor, if one exists
+   - otherwise full-BPE estimation until a new grounded anchor is produced
+4. Therefore, anchor reuse is conditional on layout continuity, not on message
+   chronology alone.
+
 ### Preflight occupancy estimate
 
 Preflight compaction decisions use:
@@ -367,25 +577,38 @@ Where conservative output estimate is:
 Compaction should preserve the same stable prompt layout as normal requests as
 much as possible.
 
-Intended shape:
+To avoid ambiguity:
+
+- `prev_summary + full_delta` is the semantic state being folded.
+- It is **not** a claim that the provider request body contains only those two
+  message components.
+- Cache-preserving compaction still reuses the normal request assembly base,
+  including stable prompt/context/tool inputs, and then applies only the minimal
+  compaction-specific differences.
+
+The easiest way to read this section is to separate **what is being folded**
+from **what the provider sees**:
 
 ```text
-next_summary = compaction(
-  prev_summary,
-  composed_layout_of_prompt,
-  tool_schema,
-  tool_call_disable,
-  message_delta_from_last_compaction
-)
+semantic compaction input
+= prev_summary + full_delta
 
-next_output = llm_response(
-  prev_summary,
-  composed_layout_of_prompt,
-  tool_schema,
-  tool_call_enable,
-  latest_context
-)
+provider-visible normal request
+= stable_prefix(system_prompt, session_context, tool_schema, cache shaping)
+  + normal_overlay(latest_context, tool_use_enabled)
+
+provider-visible compaction request
+= stable_prefix(system_prompt, session_context, tool_schema, cache shaping)
+  + compaction_overlay(prev_summary, full_delta, compaction_instruction, tool_use_disabled)
 ```
+
+So:
+
+1. `tool_schema`, system prompt, and session context are **not** extra semantic
+   fold inputs.
+2. They **are** part of the stable provider-visible prefix.
+3. Prompt-cache alignment is therefore a **provider-visible layout** concern, not
+   a claim about semantic fold state.
 
 ### Contract
 
@@ -401,7 +624,8 @@ next_output = llm_response(
    request-body construction stay aligned by default.
 6. Divergence between normal requests and compaction requests should be limited
    to compact-specific semantics:
-   - `prev_summary + delta_messages_since_last_compaction` input shape
+   - `prev_summary + full_delta_messages_since_last_compaction` input shape in
+     the normal path
    - compaction instruction content
    - tool-use disabled while tool schema remains present
    - Rust-owned overflow reduction needed only to make the compaction request
@@ -416,6 +640,9 @@ Important clarification:
 - this contract is about **stable prefix prompt cache reuse**
 - it does **not** imply that compaction requests and normal response requests
   are byte-for-byte identical payloads
+- the compaction path should start from the same provider-visible normal request
+  layout and then apply only the minimal compaction-specific semantic
+  differences above
 
 ## 10A. Normal Active-Request Residual Contract
 
@@ -439,6 +666,10 @@ summary, not as a permanently preserved raw request anchor in the live tail.
    resolved, replaced, or refined.
 6. Durable outcomes from resolved requests should move into other stable summary
    sections rather than remaining as stale request bullets.
+7. The current active windows submitted in the normal preflight candidate should
+   be merged into the new summary state; they should not survive as a raw
+   residual tail merely because they were active at the moment compaction was
+   triggered.
 
 ---
 
@@ -460,6 +691,29 @@ overflow_compaction_recovery(
   active_message_fifo_subset
 )
 ```
+
+If this is the **first compaction in the session**, then `prev_compaction_summary`
+is absent by definition. That is a normal first-compaction state, not a special
+error.
+
+In that case, the recovery shape should be read as:
+
+```text
+first_compaction_overflow_recovery(
+  full_compactable_prefix,
+  latest_real_user_request,
+  active_message_fifo_subset
+)
+```
+
+Where:
+
+- `full_compactable_prefix` means the raw compactable prefix that the first
+  compaction was attempting to summarize before any prior summary existed
+- this is still an **overflow-recovery** path, not a successful normal-path
+  compaction
+- the absence of `prev_compaction_summary` does not weaken the requirement to
+  preserve the most useful operative context possible
 
 ### Essential recovery inputs
 
@@ -494,17 +748,25 @@ priority order:
    build any valid recovery payload.
 5. If a previous compact summary exists, it should be preferred over re-sending
    older raw history.
-6. Active messages may be reduced with FIFO semantics, but the recovery path
+6. If this is the first compaction and no previous compact summary exists, the
+   recovery baseline is the first compaction's raw compactable prefix rather than
+   a prior summary anchor.
+7. First-compaction overflow recovery may therefore operate on a reduced form of
+   that raw compactable prefix while still preserving the latest real user
+   request and the freshest active context.
+8. Active messages may be reduced with FIFO semantics, but the recovery path
    should preserve the freshest active context rather than arbitrarily dropping
    recent turns first.
-7. Tool schema may be degraded in this exception path when needed to make the
+9. Tool schema may be degraded in this exception path when needed to make the
    recovery payload fit; for example, tool parameter schemas may be removed while
    retaining tool identity and any still-useful high-level tool visibility.
-8. The system must not pretend this recovery payload is cache-aligned with the
-   normal request shape once such degradation has occurred.
-9. If even this ordered recovery contract cannot fit, the system should fail
-   explicitly with a context-limit error rather than silently discarding the
-   essential inputs above.
+10. The system must not pretend this recovery payload is cache-aligned with the
+    normal request shape once such degradation has occurred.
+11. If even this ordered recovery contract cannot fit, the system should fail
+    explicitly with a context-limit error rather than silently discarding the
+    essential inputs above.
+12. Any split/reduction of the normal full delta belongs to this exception path,
+    not to normal-path compaction.
 
 ---
 
@@ -539,6 +801,106 @@ stable provider-visible prompt layout as normal requests as much as practical.
 3. Updating compaction should replace the session's active compact record rather
    than creating nested summary chains.
 
+### 11A. Boundary ID contract (`from_id`, `to_id`)
+
+`from_id` and `to_id` are **message identity boundaries**, not ordinal indexes.
+
+### Contract
+
+1. `from_id` and `to_id` must store `message.id` string values from the compacted
+   persisted message range.
+2. They do **not** store:
+   - array positions
+   - FIFO ordinals
+   - "nth message in stack" style counters
+3. `to_id` means: "this compact record covers messages through the persisted
+   message whose `id` equals `to_id`."
+4. Reinjection validity is checked by matching `to_id` back against the current
+   message stack, not by recomputing a numeric split index.
+5. The identity contract assumed here is:
+   - persisted messages use stable message IDs
+   - persisted message IDs are unique at the storage layer
+6. This contract does **not** require every synthetic runtime-only message ID to
+   be globally UUID-shaped.
+7. Therefore, compaction boundary correctness depends on matching persisted
+   message identity, not on any assumption that all message IDs across all
+   runtime scaffolding are globally random UUIDs.
+
+### 11B. Compact-summary message contract
+
+The persisted compact record is storage state. The reinjected compact-summary
+message is the runtime message-form projection of that state.
+
+### Contract
+
+1. The reinjected compact-summary message must use role **`assistant`**.
+2. Its source classification must be **`compact-summary`**.
+3. It is synthetic runtime context, not a user-authored transcript turn.
+4. Its content should contain the compact summary text and may include a bounded
+   recent tool snapshot if the implementation uses one.
+5. It participates in the provider-visible request payload and therefore affects
+   prompt tokens and cache alignment like any other injected message.
+6. It must remain distinguishable from normal assistant turns so anchor logic,
+   recovery logic, and UI logic do not misclassify it.
+
+### 11C. Message source classification contract
+
+Role alone is not enough. The compaction contract depends on explicit message
+source classification.
+
+### Contract
+
+1. Every synthetic orchestration message should carry a stable source label.
+2. At minimum, the contract recognizes these synthetic classes:
+   - `compact-summary`
+   - `compaction-instruction`
+   - `session-context`
+   - `recovery`
+3. External user requests are classified by source policy, not by `role == "user"`
+   alone.
+4. Internal synthetic user messages must never be treated as the latest real user
+   request during overflow recovery.
+5. Unknown future source values should degrade safely rather than breaking
+   deserialization.
+
+### 11D. In-flight compaction guard
+
+The compaction guard is the session-scoped runtime state that prevents duplicate
+or contradictory compaction work.
+
+### Contract
+
+1. It prevents concurrent independent compaction requests for the same session.
+2. It marks whether the in-flight compaction is:
+   - manual only, or
+   - preflight-blocking and must resume the blocked completion afterward
+3. It stores enough runtime state to support:
+   - same-tail suppression
+   - overflow-recovery retries
+   - completion resume after success
+4. On successful compaction, the guard settles back to idle and may trigger
+   completion resume.
+5. On failure, the guard must be cleared so the session does not remain stuck in
+   a fake in-flight state.
+
+### 11E. Compaction failure handling
+
+Compaction failure is not one thing. Budget-related fit failures and hard
+execution failures must be treated differently.
+
+### Contract
+
+1. If the compaction call fails for budget-related reasons, Rust may advance the
+   overflow-recovery ladder and retry compaction.
+2. If compaction ultimately succeeds, Rust stores the new compact record and, for
+   preflight compaction, resumes the blocked completion request.
+3. If compaction fails with a non-recoverable error:
+   - in-flight compaction state must be cleared
+   - failure state must be emitted to the UI
+   - a blocking preflight compaction must fail the waiting workflow explicitly
+4. The system must not silently continue as if the blocked completion had been
+   compacted when it was not.
+
 ---
 
 ## 12. Reinjection Contract
@@ -558,6 +920,9 @@ matches the current message stack, Rust may synthesize:
 3. Reinjection must not create nested summary-on-summary chains.
 4. Summary reinjection is runtime context, not a user-authored persisted chat
    message.
+5. After a successful normal-path compaction, the messages after `to_id` should
+   ordinarily represent only turns created after that compaction completed, not
+   pre-existing active windows that were omitted from the same compaction epoch.
 
 ---
 
@@ -612,13 +977,20 @@ Already confirmed in logs:
 
 ---
 
-## 16. Alignment Status
+## 16. Alignment Evaluation Rule
 
-Core implementation is now aligned with this contract:
+Implementations should be judged against this contract using the following
+rules:
 
-1. compaction input is built from `prev_summary + delta_messages_since_last_compaction`
-2. already-compacted raw history is not re-sent as full-prefix raw input
-3. normal requests and compaction requests preserve stable prompt-layout inputs
-   as much as practical while keeping compaction payload bounded
-4. compact-mode request overflow handling is Rust-owned and separate from
-   compaction-payload overflow handling
+1. Normal-path compaction is aligned only if it absorbs `prev_summary +
+full_delta_messages_since_last_compaction` into `next_summary`.
+2. An implementation is not aligned if a successful normal-path compaction
+   leaves pre-existing active windows outside the new summary as a residual live
+   suffix.
+3. An implementation is not aligned if it silently trims or drops messages from
+   the normal compact-mode completion request merely to force-send that request.
+4. Delta splitting, FIFO reduction, tool-schema degradation, and prompt-cache
+   misalignment are aligned only inside the explicit overflow-recovery path.
+5. Prompt-cache alignment is considered preserved only when compaction reuses
+   the same normal request assembly contract by default and limits divergence to
+   the compaction-specific semantics defined above.

@@ -13,6 +13,15 @@ pub(super) struct CompactionRequestPayload {
     pub(super) reused_prior_summary: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionRequestPayloadPreview {
+    pub message_count: usize,
+    pub from_id: String,
+    pub to_id: String,
+    pub compacted_delta_count: usize,
+    pub reused_prior_summary: bool,
+}
+
 pub fn apply_compaction_retry_budget(safe_input_token_limit: usize, retry_attempt: u32) -> usize {
     let reduction_percent = match retry_attempt {
         0 => 100,
@@ -100,6 +109,23 @@ pub(super) fn build_compaction_request_payload(
         compacted_delta_count: split_idx,
         reused_prior_summary: false,
     })
+}
+
+pub fn build_compaction_request_payload_for_testing(
+    session_id: &str,
+    messages: &[Message],
+    split_idx: usize,
+    compact_record: Option<&CompactContextRecord>,
+    created_at: i64,
+) -> Option<CompactionRequestPayloadPreview> {
+    build_compaction_request_payload(session_id, messages, split_idx, compact_record, created_at)
+        .map(|payload| CompactionRequestPayloadPreview {
+            message_count: payload.compact_messages.len(),
+            from_id: payload.from_id,
+            to_id: payload.to_id,
+            compacted_delta_count: payload.compacted_delta_count,
+            reused_prior_summary: payload.reused_prior_summary,
+        })
 }
 
 fn provider_requires_compaction_tool_chain_cleanup(provider_id: &str) -> bool {
@@ -245,6 +271,26 @@ fn candidate_compaction_total(
     }
 }
 
+fn split_compaction_round_messages(messages: &[Message]) -> (Vec<Message>, Option<Message>) {
+    let instruction = messages
+        .last()
+        .filter(|message| message.is_compaction_overlay_message())
+        .cloned();
+    let body_end = messages
+        .len()
+        .saturating_sub(usize::from(instruction.is_some()));
+    let body_messages = messages[..body_end]
+        .iter()
+        .filter(|message| {
+            !message.is_request_layout_scaffolding_message()
+                && !message.is_compaction_overlay_message()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    (body_messages, instruction)
+}
+
 pub fn build_overflow_recovery_compaction_messages(
     messages: &[Message],
     provider_id: &str,
@@ -259,15 +305,10 @@ pub fn build_overflow_recovery_compaction_messages(
             tools_tokens,
         );
 
-    let (instruction, body_messages) = match messages.last() {
-        Some(message) if message.is_compaction_instruction() => {
-            (Some(message.clone()), &messages[..messages.len() - 1])
-        }
-        _ => (None, messages),
-    };
+    let (body_messages, instruction) = split_compaction_round_messages(messages);
 
     let (latest_request_start, latest_request_end) =
-        latest_real_user_request_block_range(body_messages).ok_or_else(|| {
+        latest_real_user_request_block_range(&body_messages).ok_or_else(|| {
             "Compaction overflow recovery requires a latest real user request anchor, but none was found."
                 .to_string()
         })?;
@@ -279,7 +320,6 @@ pub fn build_overflow_recovery_compaction_messages(
         .filter(|index| {
             !matches!(previous_summary_idx, Some(summary_idx) if summary_idx == *index)
                 && (*index < latest_request_start || *index >= latest_request_end)
-                && !body_messages[*index].is_internal_synthetic_user_message()
         })
         .collect::<Vec<_>>();
 

@@ -20,6 +20,9 @@ export interface CompactContextRecord {
   toId: string;
   summary: string;
   createdAt: number;
+  earlierPreview?: string;
+  latestIncludedPreview?: string;
+  condensedCount?: number;
 }
 
 /**

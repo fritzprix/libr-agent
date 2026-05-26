@@ -88,6 +88,14 @@ impl MessageSource {
         )
     }
 
+    fn is_request_layout_scaffolding_source(&self) -> bool {
+        matches!(self, Self::SessionContext)
+    }
+
+    fn is_compaction_overlay_source(&self) -> bool {
+        matches!(self, Self::CompactionInstruction)
+    }
+
     fn is_external_request_source(&self) -> bool {
         matches!(
             self,
@@ -243,6 +251,20 @@ impl Message {
             && self
                 .source_with_legacy_fallback()
                 .is_some_and(|source| source.is_internal_synthetic_user_source())
+    }
+
+    pub fn is_request_layout_scaffolding_message(&self) -> bool {
+        self.role == "user"
+            && self
+                .source_with_legacy_fallback()
+                .is_some_and(|source| source.is_request_layout_scaffolding_source())
+    }
+
+    pub fn is_compaction_overlay_message(&self) -> bool {
+        self.role == "user"
+            && self
+                .source_with_legacy_fallback()
+                .is_some_and(|source| source.is_compaction_overlay_source())
     }
 
     pub fn is_external_request_message(&self) -> bool {

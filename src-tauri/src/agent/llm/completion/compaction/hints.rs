@@ -1,3 +1,4 @@
+use crate::agent::compaction_text::sanitize_compaction_semantic_text;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use once_cell::sync::Lazy;
@@ -36,6 +37,25 @@ fn extract_message_text_fragments(message: &Message) -> Vec<String> {
         .filter_map(|content| match content {
             MCPContent::Text { text, .. } => {
                 let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn extract_sanitized_message_text_fragments(message: &Message) -> Vec<String> {
+    message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => {
+                let sanitized = sanitize_compaction_semantic_text(text);
+                let trimmed = sanitized.trim();
                 if trimmed.is_empty() {
                     None
                 } else {
@@ -200,7 +220,7 @@ fn collect_reference_candidates_from_json_value(
 }
 
 fn collect_reference_candidates_from_message(message: &Message, references: &mut Vec<String>) {
-    for text in extract_message_text_fragments(message) {
+    for text in extract_sanitized_message_text_fragments(message) {
         for candidate in extract_reference_candidates_from_text(&text) {
             push_unique_limited(references, candidate, usize::MAX);
         }
@@ -244,7 +264,7 @@ pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPr
         + active_request_start;
 
     for message in &messages[active_request_start..request_block_end] {
-        for fragment in extract_message_text_fragments(message) {
+        for fragment in extract_sanitized_message_text_fragments(message) {
             push_unique_limited(
                 &mut active_request,
                 truncate_instruction_text(&fragment, INSTRUCTION_HINT_TEXT_LIMIT),

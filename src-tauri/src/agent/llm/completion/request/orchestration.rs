@@ -21,7 +21,6 @@ use crate::agent::llm::types::{
 use super::compact::build_compact_summary_message_for_messages;
 use super::context_selection::{
     resolve_preserved_calibration_ratio, trigger_preflight_compaction_for_messages_or_error,
-    try_apply_lossy_main_request_fallback,
 };
 use super::formatting::{merge_consecutive_user_messages, resolve_message_references};
 
@@ -146,14 +145,13 @@ pub async fn request_llm_completion(
         tools_tokens,
     );
 
-    // 11. Check token limit & apply lossy fallbacks
+    // 11. Check token limit and trigger preflight compaction or fail explicitly
     let final_messages = match check_token_limit(
         request_layout.messages,
         active_sessions,
         app_handle,
         &session_id,
         &snapshot.session_name,
-        &snapshot.provider,
         &context_settings,
         system_prompt_tokens,
         tools_tokens,
@@ -568,7 +566,6 @@ async fn check_token_limit(
     app_handle: &AppHandle,
     session_id: &str,
     session_name: &str,
-    provider: &str,
     context_settings: &ContextManagementSettings,
     system_prompt_tokens: usize,
     tools_tokens: usize,
@@ -585,7 +582,7 @@ async fn check_token_limit(
         context_settings.max_input_context,
         context_settings.model_max_limit,
     );
-    let mut conservative_preflight_tokens =
+    let conservative_preflight_tokens =
         crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
             &final_messages,
             system_prompt_tokens,
@@ -631,57 +628,28 @@ async fn check_token_limit(
         .with_code("COMPACTION_TRIGGERED_OK"));
     }
 
-    if let Some(lossy_messages) = try_apply_lossy_main_request_fallback(
-        &final_messages,
-        provider,
-        safe_input_token_limit,
-        system_prompt_tokens,
-        tools_tokens,
-        preserved_calibration_ratio,
-    ) {
-        let lossy_breakdown =
-            crate::agent::llm::token_utils::summarize_message_token_breakdown(&lossy_messages);
-        conservative_preflight_tokens =
-            crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
-                &lossy_messages,
-                system_prompt_tokens,
-                tools_tokens,
-                preserved_calibration_ratio,
-            );
-        log::warn!(
-            "🪓 Applied lossy fallback to main completion request: session={}, original_message_count={}, reduced_message_count={}, conservative_prompt_tokens={}, safe_input_token_limit={}, compact_summary_injected={}, reduced_breakdown=[{}]",
-            session_id,
-            final_messages.len(),
-            lossy_messages.len(),
-            conservative_preflight_tokens,
-            safe_input_token_limit,
-            compact_summary_injected,
-            lossy_breakdown
-        );
-        Ok(lossy_messages)
-    } else {
-        Err(
-            AgentRuntimeError::new(
-                AgentRuntimeErrorType::ContextLimitError,
-                format!(
-                    "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens). Trigger preflight compaction or reduce the latest message size.",
-                    conservative_preflight_tokens, safe_input_token_limit
-                ),
-            )
-            .with_code("RUST_PREFLIGHT_CONTEXT_LIMIT")
-            .with_original_error(serde_json::json!({
-                "sessionId": session_id,
-                "conservativePromptTokens": conservative_preflight_tokens,
-                "safeInputTokenLimit": safe_input_token_limit,
-                "compactSummaryInjected": compact_summary_injected,
-                "selectedMessageCount": final_messages.len(),
-                "systemPromptTokens": system_prompt_tokens,
-                "toolsTokens": tools_tokens,
-                "preservedCalibrationRatio": preserved_calibration_ratio,
-                "selectedBreakdown": selected_message_breakdown,
-            })),
+    Err(
+        AgentRuntimeError::new(
+            AgentRuntimeErrorType::ContextLimitError,
+            format!(
+                "Prepared payload exceeds the effective context limit before send ({} >= {} conservative tokens), and normal compact-mode requests must not be silently trimmed. Trigger preflight compaction or fail explicitly.",
+                conservative_preflight_tokens, safe_input_token_limit
+            ),
         )
-    }
+        .with_code("RUST_PREFLIGHT_CONTEXT_LIMIT")
+        .with_original_error(serde_json::json!({
+            "sessionId": session_id,
+            "conservativePromptTokens": conservative_preflight_tokens,
+            "safeInputTokenLimit": safe_input_token_limit,
+            "compactSummaryInjected": compact_summary_injected,
+            "selectedMessageCount": final_messages.len(),
+            "systemPromptTokens": system_prompt_tokens,
+            "toolsTokens": tools_tokens,
+            "preservedCalibrationRatio": preserved_calibration_ratio,
+            "selectedBreakdown": selected_message_breakdown,
+            "normalPathLossyFallbackAllowed": false,
+        })),
+    )
 }
 
 async fn generate_response_message_id(

@@ -185,6 +185,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           fromId: compactContext.fromId,
           toId: compactContext.toId,
           summary: compactContext.summary,
+          earlierPreview: compactContext.earlierPreview,
+          latestIncludedPreview: compactContext.latestIncludedPreview,
+          condensedCount: compactContext.condensedCount,
         });
       } catch (error) {
         logger.warn('Failed to refresh compacted range', { sessionId, error });

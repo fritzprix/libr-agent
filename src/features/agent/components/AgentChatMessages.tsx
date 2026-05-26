@@ -39,7 +39,6 @@ import {
   setForwardedRef,
   renderVirtualPlaceholder,
   groupedMessageContainsBoundary,
-  extractMessagePreview,
 } from './agent-chat-messages/utils';
 import { useAgentChatScroll } from './agent-chat-messages/hooks/useAgentChatScroll';
 import {
@@ -207,12 +206,9 @@ export function AgentChatMessages() {
     }
 
     return {
-      earlierPreview:
-        fromIndex === -1
-          ? undefined
-          : extractMessagePreview(messages[fromIndex]),
-      latestIncludedPreview: extractMessagePreview(messages[toIndex]),
-      condensedCount: fromIndex === -1 ? undefined : toIndex - fromIndex + 1,
+      earlierPreview: compactedRange.earlierPreview,
+      latestIncludedPreview: compactedRange.latestIncludedPreview,
+      condensedCount: compactedRange.condensedCount,
       summary: compactedRange.summary,
     };
   }, [compactedRange, messages]);

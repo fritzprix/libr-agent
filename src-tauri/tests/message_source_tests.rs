@@ -87,6 +87,19 @@ fn external_request_message_semantics_match_source_policy() {
 }
 
 #[test]
+fn synthetic_user_helpers_distinguish_request_layout_from_compaction_overlay() {
+    let session_context = make_message(Some(MessageSource::SessionContext));
+    assert!(session_context.is_internal_synthetic_user_message());
+    assert!(session_context.is_request_layout_scaffolding_message());
+    assert!(!session_context.is_compaction_overlay_message());
+
+    let compaction_instruction = make_message(Some(MessageSource::CompactionInstruction));
+    assert!(compaction_instruction.is_internal_synthetic_user_message());
+    assert!(!compaction_instruction.is_request_layout_scaffolding_message());
+    assert!(compaction_instruction.is_compaction_overlay_message());
+}
+
+#[test]
 fn unknown_source_still_uses_legacy_id_fallback_for_classification_helpers() {
     let mut compact_summary =
         make_message(Some(MessageSource::Unknown("future-source".to_string())));
@@ -98,5 +111,6 @@ fn unknown_source_still_uses_legacy_id_fallback_for_classification_helpers() {
     compaction_instruction.id = "compaction-instruction-legacy".to_string();
     assert!(compaction_instruction.is_compaction_instruction());
     assert!(compaction_instruction.is_internal_synthetic_user_message());
+    assert!(compaction_instruction.is_compaction_overlay_message());
     assert!(!compaction_instruction.is_external_request_message());
 }

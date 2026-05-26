@@ -73,14 +73,7 @@ fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
         return 0;
     }
 
-    let unresolved_boundary =
-        crate::agent::llm::context_selector::find_compaction_split_index(messages);
-
-    match messages.last().map(|message| message.role.as_str()) {
-        Some("tool") => unresolved_boundary,
-        Some(_) => std::cmp::min(messages.len().saturating_sub(1), unresolved_boundary),
-        None => 0,
-    }
+    crate::agent::llm::context_selector::find_compaction_split_index(messages)
 }
 
 pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
@@ -94,6 +87,17 @@ pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) 
     }
 
     split_idx <= 1
+}
+
+fn filter_compaction_history_messages(messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .filter(|message| {
+            !message.is_request_layout_scaffolding_message()
+                && !message.is_compaction_overlay_message()
+        })
+        .cloned()
+        .collect()
 }
 
 async fn load_merged_compaction_messages(
@@ -117,14 +121,16 @@ async fn load_merged_compaction_messages(
             .read()
             .await
             .iter()
-            .filter(|message| !message.is_internal_synthetic_user_message())
             .cloned()
             .collect::<Vec<_>>();
 
         (session_name, messages)
     };
 
-    Ok((session_name, normalize_request_messages(messages)))
+    Ok((
+        session_name,
+        normalize_request_messages(filter_compaction_history_messages(&messages)),
+    ))
 }
 
 struct PreparedCompactionRequest {

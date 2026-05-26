@@ -109,62 +109,6 @@ export function getScrollContentElement(
   return firstChild instanceof HTMLElement ? firstChild : null;
 }
 
-export function truncatePreview(value: string, maxLength = 96): string {
-  const trimmed = value.replace(/\s+/g, ' ').trim();
-
-  if (!trimmed) {
-    return '';
-  }
-
-  if (trimmed.length <= maxLength) {
-    return trimmed;
-  }
-
-  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
-}
-
-export function extractMessagePreview(
-  message: Message | undefined,
-): string | undefined {
-  if (!message) {
-    return undefined;
-  }
-
-  if (Array.isArray(message.content)) {
-    for (const item of message.content) {
-      if (item.type === 'text') {
-        const preview = truncatePreview(item.text);
-        if (preview) {
-          return preview;
-        }
-      }
-
-      if (item.type === 'thinking') {
-        const preview = truncatePreview(item.thinking);
-        if (preview) {
-          return preview;
-        }
-      }
-
-      if (item.type === 'tool_call') {
-        return truncatePreview(`Tool call: ${item.name}`);
-      }
-    }
-  }
-
-  if (message.tool_calls?.length) {
-    return truncatePreview(
-      `Tool call: ${message.tool_calls[0]?.function.name}`,
-    );
-  }
-
-  if (message.role === 'tool') {
-    return 'Tool result';
-  }
-
-  return undefined;
-}
-
 export function groupedMessageContainsBoundary(
   groupedMessage: GroupedMessage,
   boundaryId: string | undefined,

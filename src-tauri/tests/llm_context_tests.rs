@@ -1,14 +1,17 @@
 use serde_json::json;
 use std::collections::HashMap;
+use tauri_mcp_agent_lib::agent::compaction_text::{
+    is_compaction_artifact_line, sanitize_compaction_semantic_text,
+};
 use tauri_mcp_agent_lib::agent::llm::completion::{
     advance_compaction_overflow_recovery_step_for_testing, apply_compaction_retry_budget,
     build_compact_context_selection_options, build_compact_summary_message_for_messages,
     build_compact_summary_text, build_compaction_preservation_hints,
-    build_overflow_recovery_compaction_messages, fit_compaction_request_messages_to_limit,
-    merge_consecutive_user_messages, normalize_request_messages,
-    preview_preflight_compaction_selection, resolve_context_management_settings,
-    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
-    try_apply_lossy_main_request_fallback, uses_compaction_strategy,
+    build_compaction_request_payload_for_testing, build_overflow_recovery_compaction_messages,
+    fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
+    normalize_request_messages, preview_preflight_compaction_selection,
+    resolve_context_management_settings, resolve_preserved_calibration_ratio,
+    should_skip_same_tail_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -16,47 +19,89 @@ use tauri_mcp_agent_lib::agent::llm::types::CompactionParentRequest;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
+use tauri_mcp_agent_lib::repositories::CompactContextRecord;
 
-fn make_message(id: &str, role: &str, text: &str) -> Message {
-    Message {
-        id: id.to_string(),
-        session_id: "test-session".to_string(),
-        role: role.to_string(),
-        content: vec![MCPContent::Text {
+const TEST_SESSION_ID: &str = "test-session";
+
+struct TestMessageBuilder {
+    message: Message,
+}
+
+impl TestMessageBuilder {
+    fn new(id: &str, role: &str) -> Self {
+        Self {
+            message: Message {
+                id: id.to_string(),
+                session_id: TEST_SESSION_ID.to_string(),
+                role: role.to_string(),
+                content: Vec::new(),
+                tool_calls: None,
+                tool_call_id: None,
+                is_streaming: None,
+                thinking: None,
+                thinking_signature: None,
+                assistant_id: None,
+                attachments: None,
+                tool_use: None,
+                usage: None,
+                created_at: 0,
+                updated_at: 0,
+                source: None,
+                error: None,
+                metadata: None,
+            },
+        }
+    }
+
+    fn text(mut self, text: &str) -> Self {
+        self.message.content = vec![MCPContent::Text {
             text: text.to_string(),
             is_error: None,
-        }],
-        tool_calls: None,
-        tool_call_id: None,
-        is_streaming: None,
-        thinking: None,
-        thinking_signature: None,
-        assistant_id: None,
-        attachments: None,
-        tool_use: None,
-        usage: None,
-        created_at: 0,
-        updated_at: 0,
-        source: None,
-        error: None,
-        metadata: None,
+        }];
+        self
     }
+
+    fn source(mut self, source: MessageSource) -> Self {
+        self.message.source = Some(source);
+        self
+    }
+
+    fn build(self) -> Message {
+        self.message
+    }
+}
+
+fn make_message(id: &str, role: &str, text: &str) -> Message {
+    TestMessageBuilder::new(id, role).text(text).build()
 }
 
 fn make_message_simple(role: &str, text: &str) -> Message {
     make_message(&format!("msg-{}", text.len()), role, text)
 }
 
-fn make_compact_summary_message(id: &str, role: &str, text: &str) -> Message {
-    let mut message = make_message(id, role, text);
-    message.source = Some(MessageSource::CompactSummary);
+fn text_content_parts(message: &Message) -> Vec<&str> {
     message
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            MCPContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn make_compact_summary_message(id: &str, role: &str, text: &str) -> Message {
+    TestMessageBuilder::new(id, role)
+        .text(text)
+        .source(MessageSource::CompactSummary)
+        .build()
 }
 
 fn make_compaction_instruction_message(id: &str, text: &str) -> Message {
-    let mut message = make_message(id, "user", text);
-    message.source = Some(MessageSource::CompactionInstruction);
-    message
+    TestMessageBuilder::new(id, "user")
+        .text(text)
+        .source(MessageSource::CompactionInstruction)
+        .build()
 }
 
 #[test]
@@ -117,23 +162,23 @@ fn test_find_compaction_split_index_stops_before_unresolved_tool_chain() {
 }
 
 #[test]
-fn test_find_preflight_compaction_split_index_preserves_latest_user_turn() {
+fn test_find_preflight_compaction_split_index_absorbs_latest_user_turn_in_normal_path() {
     let earlier = make_message("m0", "assistant", "Earlier context");
     let latest_user = make_message("m1", "user", &"latest request ".repeat(200));
 
     let preview = preview_preflight_compaction_selection(&[earlier, latest_user]);
-    assert_eq!(preview.compacted_ids, vec!["m0"]);
-    assert_eq!(preview.preserved_ids, vec!["m1"]);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
-fn test_find_preflight_compaction_split_index_preserves_latest_non_tool_turn() {
+fn test_find_preflight_compaction_split_index_absorbs_latest_non_tool_turn_in_normal_path() {
     let earlier = make_message("m0", "user", "Earlier user context");
     let latest_assistant = make_message("m1", "assistant", "Latest non-tool turn");
 
     let preview = preview_preflight_compaction_selection(&[earlier, latest_assistant]);
-    assert_eq!(preview.compacted_ids, vec!["m0"]);
-    assert_eq!(preview.preserved_ids, vec!["m1"]);
+    assert_eq!(preview.compacted_ids, vec!["m0", "m1"]);
+    assert!(preview.preserved_ids.is_empty());
 }
 
 #[test]
@@ -191,6 +236,66 @@ fn test_find_preflight_compaction_split_index_keeps_unresolved_tool_chain_tail()
 }
 
 #[test]
+fn test_preview_preflight_compaction_selection_handles_empty_messages() {
+    let preview = preview_preflight_compaction_selection(&[]);
+    assert!(preview.compacted_ids.is_empty());
+    assert!(preview.preserved_ids.is_empty());
+}
+
+#[test]
+fn test_build_compaction_request_payload_returns_none_for_zero_split_idx() {
+    let compact_record = CompactContextRecord {
+        id: "compact-1".to_string(),
+        session_id: TEST_SESSION_ID.to_string(),
+        from_id: "m0".to_string(),
+        to_id: "m1".to_string(),
+        summary: "Existing summary".to_string(),
+        created_at: 123,
+    };
+
+    let payload = build_compaction_request_payload_for_testing(
+        TEST_SESSION_ID,
+        &[],
+        0,
+        Some(&compact_record),
+        456,
+    );
+
+    assert!(payload.is_none());
+}
+
+#[test]
+fn test_build_compaction_request_payload_falls_back_when_compact_record_to_id_is_missing() {
+    let messages = vec![
+        make_message("m0", "user", "Earlier context"),
+        make_message("m1", "assistant", "Latest context"),
+    ];
+    let compact_record = CompactContextRecord {
+        id: "compact-1".to_string(),
+        session_id: TEST_SESSION_ID.to_string(),
+        from_id: "old-from".to_string(),
+        to_id: "missing-message".to_string(),
+        summary: "Stale summary".to_string(),
+        created_at: 123,
+    };
+
+    let payload = build_compaction_request_payload_for_testing(
+        TEST_SESSION_ID,
+        &messages,
+        2,
+        Some(&compact_record),
+        456,
+    )
+    .expect("payload should fall back to raw-prefix compaction");
+
+    assert_eq!(payload.message_count, 3);
+    assert_eq!(payload.from_id, "m0");
+    assert_eq!(payload.to_id, "m1");
+    assert_eq!(payload.compacted_delta_count, 2);
+    assert!(!payload.reused_prior_summary);
+}
+
+#[test]
 fn test_compaction_parent_request_does_not_serialize_internal_session_context() {
     let request = CompactionParentRequest {
         model: "gpt-4o".to_string(),
@@ -206,56 +311,6 @@ fn test_compaction_parent_request_does_not_serialize_internal_session_context() 
     assert_eq!(serialized["provider"], "openai");
     assert_eq!(serialized["systemPrompt"], "Stable prompt");
     assert!(serialized.get("sessionContext").is_none());
-}
-
-#[test]
-fn test_lossy_main_request_fallback_drops_oldest_messages_until_within_limit() {
-    let messages = vec![
-        make_message("m1", "user", &"older context ".repeat(800)),
-        make_message("m2", "assistant", &"assistant context ".repeat(800)),
-        make_message("m3", "user", &"latest request ".repeat(400)),
-    ];
-
-    let original_total = calculate_conservative_preflight_prompt_tokens(&messages, 0, 0, None);
-    let safe_limit = original_total / 2;
-
-    let reduced =
-        try_apply_lossy_main_request_fallback(&messages, "openai", safe_limit, 0, 0, None)
-            .expect("lossy fallback should produce a reduced request");
-
-    let reduced_total = calculate_conservative_preflight_prompt_tokens(&reduced, 0, 0, None);
-
-    assert!(reduced.len() < messages.len());
-    assert!(reduced_total < safe_limit);
-}
-
-#[test]
-fn test_lossy_main_request_fallback_truncates_single_oversized_message() {
-    let messages = vec![make_message(
-        "m1",
-        "user",
-        &"single oversized message ".repeat(2000),
-    )];
-    let original_total = calculate_conservative_preflight_prompt_tokens(&messages, 0, 0, None);
-    let safe_limit = original_total / 3;
-
-    let reduced =
-        try_apply_lossy_main_request_fallback(&messages, "openai", safe_limit, 0, 0, None)
-            .expect("lossy fallback should truncate a single oversized user message");
-
-    let reduced_total = calculate_conservative_preflight_prompt_tokens(&reduced, 0, 0, None);
-    let reduced_text = reduced[0]
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            MCPContent::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<String>();
-
-    assert_eq!(reduced.len(), 1);
-    assert!(reduced_total < safe_limit);
-    assert!(reduced_text.contains("[truncated for context fit]"));
 }
 
 #[test]
@@ -344,6 +399,53 @@ fn test_overflow_recovery_preserves_latest_real_ui_request_summary_and_recent_fi
     assert!(selected_ids.contains(&fresh_assistant.id.as_str()));
     assert!(selected_ids.contains(&instruction.id.as_str()));
     assert!(!selected_ids.contains(&"m1"));
+}
+
+#[test]
+fn test_overflow_recovery_filters_scaffolding_and_preserves_tail_instruction_shape() {
+    let summary = make_compact_summary_message("m0", "assistant", "previous summary");
+
+    let mut session_context = make_message("m1", "user", "volatile session context");
+    session_context.source = Some(MessageSource::SessionContext);
+
+    let old_instruction = make_compaction_instruction_message("m2", "stale compaction overlay");
+
+    let mut latest_request = make_message("m3", "user", "latest real request from ui");
+    latest_request.source = Some(MessageSource::Ui);
+
+    let fresh_assistant = make_message("m4", "assistant", "fresh assistant context");
+    let tail_instruction = make_compaction_instruction_message("m5", "current compaction overlay");
+
+    let selected = build_overflow_recovery_compaction_messages(
+        &[
+            summary.clone(),
+            session_context,
+            old_instruction,
+            latest_request.clone(),
+            fresh_assistant.clone(),
+            tail_instruction.clone(),
+        ],
+        "openai",
+        10_000,
+        0,
+        0,
+    )
+    .expect("overflow recovery payload should preserve compaction shape");
+
+    let selected_ids = selected
+        .iter()
+        .map(|message| message.id.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(selected_ids.contains(&summary.id.as_str()));
+    assert!(selected_ids.contains(&latest_request.id.as_str()));
+    assert!(selected_ids.contains(&fresh_assistant.id.as_str()));
+    assert!(!selected_ids.contains(&"m1"));
+    assert!(!selected_ids.contains(&"m2"));
+    assert_eq!(
+        selected.last().map(|message| message.id.as_str()),
+        Some("m5")
+    );
 }
 
 #[test]
@@ -516,7 +618,7 @@ fn test_build_compaction_preservation_hints_carry_forward_prior_summary_open_req
 }
 
 #[test]
-fn test_build_compaction_preservation_hints_keeps_bullets_that_end_with_colons() {
+fn test_build_compaction_preservation_hints_preserves_colon_terminated_request_bullets() {
     let prior_summary = "\
 ### Stable Context
 - Existing work item
@@ -538,7 +640,7 @@ fn test_build_compaction_preservation_hints_keeps_bullets_that_end_with_colons()
 
     assert!(
         hints.active_request.iter().any(|hint| hint == "Next step:"),
-        "bullets ending with a colon should stay inside the section instead of terminating it"
+        "colon-terminated request bullets should remain part of the active request"
     );
     assert!(
         hints
@@ -586,6 +688,110 @@ fn test_build_compaction_preservation_hints_filter_non_identifier_backticks_and_
             .iter()
             .any(|hint| hint.contains("18.3")),
         "bare dotted values should not be treated as file paths"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_strip_harness_meta_wrappers() {
+    let request = make_message(
+        "m0",
+        "user",
+        "<current_datetime>2026-05-26T19:38:10.415+09:00</current_datetime>\n\nFix spawnPickups in `doom-app/src/game.cpp`.\n\n<system_reminder>\nConsider updating plan.md to reflect current progress and next steps.\n</system_reminder>\n<system_reminder>\n<sql_tables>Available tables: todos, todo_deps, inbox_entries</sql_tables>\n</system_reminder>",
+    );
+
+    let hints = build_compaction_preservation_hints(&[request]);
+
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("Fix spawnPickups in `doom-app/src/game.cpp`.")),
+        "semantic user request should survive wrapper stripping"
+    );
+    assert!(
+        !hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("current_datetime") || hint.contains("system_reminder")),
+        "harness metadata wrappers must not leak into active request hints"
+    );
+}
+
+#[test]
+fn test_sanitize_compaction_semantic_text_strips_multiline_wrapper_blocks() {
+    let sanitized = sanitize_compaction_semantic_text(
+        "Keep this request.\n<current_datetime>\n2026-05-26T20:05:13.256+09:00\n</current_datetime>\n<system_reminder>\n<sql_tables>Available tables: todos, todo_deps, inbox_entries</sql_tables>\n</system_reminder>\nStill keep this.",
+    );
+
+    assert_eq!(sanitized, "Keep this request.\nStill keep this.");
+}
+
+#[test]
+fn test_compaction_artifact_line_detects_known_divider_and_wrapper_lines() {
+    assert!(is_compaction_artifact_line(
+        "Latest included: doom-app/src/game.cpp"
+    ));
+    assert!(is_compaction_artifact_line("345 messages condensed"));
+    assert!(is_compaction_artifact_line("<system_reminder>"));
+    assert!(is_compaction_artifact_line("</system_reminder>"));
+    assert!(!is_compaction_artifact_line(
+        "Fix spawnPickups in doom-app/src/game.cpp"
+    ));
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_strip_compact_divider_chrome_from_fenced_text() {
+    let request = make_message(
+        "m0",
+        "user",
+        "```컨텍스트가 위에서 압축됨\nEarlier: Earlier conversation context\nLatest included: doom-app/src/game.cpp\n345 messages condensed\nSummary\nFix spawnPickups stale end anchor in `doom-app/src/game.cpp`.\n```",
+    );
+
+    let hints = build_compaction_preservation_hints(&[request]);
+
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("Fix spawnPickups stale end anchor")),
+        "semantic request text should remain after compact divider chrome is removed"
+    );
+    assert!(
+        !hints.active_request.iter().any(|hint| {
+            hint.contains("컨텍스트가 위에서 압축됨")
+                || hint.contains("Earlier:")
+                || hint.contains("Latest included:")
+                || hint.contains("messages condensed")
+        }),
+        "compact divider chrome must not leak into active request hints"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_strip_multiline_harness_wrappers() {
+    let request = make_message(
+        "m0",
+        "user",
+        "Fix spawnPickups in `doom-app/src/game.cpp`.\n<current_datetime>\n2026-05-26T20:06:01.072+09:00\n</current_datetime>\n<system_reminder>\n<sql_tables>Available tables: todos, todo_deps, inbox_entries</sql_tables>\n</system_reminder>",
+    );
+
+    let hints = build_compaction_preservation_hints(&[request]);
+
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("Fix spawnPickups in `doom-app/src/game.cpp`.")),
+        "semantic request should survive multiline wrapper stripping"
+    );
+    assert!(
+        !hints.active_request.iter().any(|hint| {
+            hint.contains("current_datetime")
+                || hint.contains("system_reminder")
+                || hint.contains("sql_tables")
+                || hint.contains("2026-05-26")
+        }),
+        "multiline harness wrapper content must not leak into active request hints"
     );
 }
 
@@ -698,13 +904,13 @@ fn test_same_tail_compaction_allows_follow_up_compaction_after_summary_injection
 }
 
 #[test]
-fn test_same_tail_compaction_stops_when_only_existing_summary_is_left_to_compact() {
+fn test_same_tail_compaction_does_not_skip_latest_request_after_summary() {
     let summary =
         make_compact_summary_message("compact-summary-test", "assistant", "Compacted summary");
 
     let messages = vec![summary, make_message("m1", "user", "Latest request")];
 
-    assert!(should_skip_same_tail_compaction(&messages, 1));
+    assert!(!should_skip_same_tail_compaction(&messages, 2));
 }
 
 #[test]
@@ -784,19 +990,36 @@ fn test_remove_incomplete_tool_chains_preserves_stable_prefix_before_unstable_su
 }
 
 #[test]
-fn test_remove_incomplete_tool_chains_drops_orphan_tool_from_unstable_suffix_only() {
-    let stable_user = make_message("m1", "user", "Stable prefix");
-    let mut orphan_tool = make_message("m2", "tool", "orphan result");
+fn test_remove_incomplete_tool_chains_drops_orphan_tool_from_unstable_suffix_tail() {
+    let mut stable_assistant = make_message("m1", "assistant", "Completed tools");
+    stable_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut stable_tool = make_message("m2", "tool", "result A");
+    stable_tool.tool_call_id = Some("call_A".to_string());
+
+    let mut orphan_tool = make_message("m3", "tool", "orphan result");
     orphan_tool.tool_call_id = Some("missing_call".to_string());
 
-    let cleaned = remove_incomplete_tool_chains(vec![stable_user.clone(), orphan_tool]);
+    let cleaned = remove_incomplete_tool_chains(vec![
+        stable_assistant.clone(),
+        stable_tool.clone(),
+        orphan_tool,
+    ]);
 
-    assert_eq!(cleaned.len(), 1);
-    assert_eq!(cleaned[0].id, stable_user.id);
+    assert_eq!(cleaned.len(), 2);
+    assert_eq!(cleaned[0].id, stable_assistant.id);
+    assert_eq!(cleaned[1].id, stable_tool.id);
 }
 
 #[test]
-fn test_merge_consecutive_user_messages_only_merges_trailing_run() {
+fn test_merge_consecutive_user_messages_preserves_first_id_and_appends_content() {
     let earlier_user = make_message("m1", "user", "Earlier user");
     let middle_user = make_message("m2", "user", "Should stay separate");
     let assistant = make_message("m3", "assistant", "Assistant reply");
@@ -816,6 +1039,10 @@ fn test_merge_consecutive_user_messages_only_merges_trailing_run() {
     assert_eq!(merged[1].id, "m2");
     assert_eq!(merged[2].id, "m3");
     assert_eq!(merged[3].id, "m4");
+    assert_eq!(
+        text_content_parts(&merged[3]),
+        vec!["Latest user A", "\n\n---\n\n", "Latest user B"]
+    );
 }
 
 #[test]
@@ -871,15 +1098,20 @@ fn test_select_messages_within_context() {
 }
 
 #[test]
-fn test_select_messages_regression_large_message() {
+fn test_select_messages_drops_oversized_single_message_across_providers() {
     let msgs = vec![make_message(
         "big_msg",
         "user",
         &"Very long content ".repeat(100),
     )];
 
-    let selected = select_messages_within_context(&msgs, "gemini", Some(10), None, None);
-    assert!(selected.is_empty());
+    for provider in ["gemini", "openai", "anthropic"] {
+        let selected = select_messages_within_context(&msgs, provider, Some(10), None, None);
+        assert!(
+            selected.is_empty(),
+            "oversized single-message payloads should be dropped for provider {provider}"
+        );
+    }
 }
 
 #[test]
@@ -1033,10 +1265,12 @@ fn test_select_recent_messages_fifo_falls_back_to_latest_non_tool_message() {
 }
 
 #[test]
-fn test_estimate_text_tokens() {
-    let text = "Hello, world! This is a test.";
-    let tokens = estimate_text_tokens(text);
-    assert!(tokens > 0);
+fn test_estimate_text_tokens_grows_with_input_size() {
+    let short = estimate_text_tokens("Hello");
+    let long = estimate_text_tokens(&"Hello world ".repeat(20));
+
+    assert!(short > 0);
+    assert!(long > short);
 }
 
 #[test]

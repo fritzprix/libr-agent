@@ -1,12 +1,16 @@
 use crate::agent::compact_recovery::handle_compact_error_state;
+use crate::agent::compaction_text::sanitize_compaction_semantic_text;
 use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use crate::agent::state::{AgentSession, CompactionRecoveryPhase, CompactionResumeAction};
 use crate::agent::tauri_events::emit_compact_finished;
+use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::chat::Message;
 use crate::repositories::compact_context_repository::CompactContextRepository;
+use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{CompactContextRecord, SessionRepository};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,6 +18,7 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 const MAX_COMPACTION_RETRY_ATTEMPTS: u32 = 3;
+const COMPACT_PREVIEW_MAX_CHARS: usize = 96;
 
 pub fn should_retry_budget_related_blocking_compaction(
     snapshot: &crate::agent::state::CompactionSnapshot,
@@ -170,6 +175,20 @@ pub struct CompactResponseParams<'a> {
     pub summary: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactContextView {
+    pub id: String,
+    pub session_id: String,
+    pub from_id: String,
+    pub to_id: String,
+    pub summary: String,
+    pub created_at: i64,
+    pub earlier_preview: Option<String>,
+    pub latest_included_preview: Option<String>,
+    pub condensed_count: Option<usize>,
+}
+
 pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Result<(), String> {
     let CompactResponseParams {
         active_sessions,
@@ -271,6 +290,71 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
     Ok(())
 }
 
+fn truncate_preview(value: &str, max_chars: usize) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+
+    format!(
+        "{}…",
+        normalized
+            .chars()
+            .take(max_chars.saturating_sub(1))
+            .collect::<String>()
+            .trim_end()
+    )
+}
+
+fn extract_text_preview(text: &str) -> Option<String> {
+    let cleaned = sanitize_compaction_semantic_text(text);
+    let preview = truncate_preview(&cleaned, COMPACT_PREVIEW_MAX_CHARS);
+    if preview.is_empty() {
+        None
+    } else {
+        Some(preview)
+    }
+}
+
+fn extract_message_preview(message: &Message) -> Option<String> {
+    for content in &message.content {
+        match content {
+            MCPContent::Text { text, .. } => {
+                if let Some(preview) = extract_text_preview(text) {
+                    return Some(preview);
+                }
+            }
+            MCPContent::Thinking { thinking, .. } => {
+                if let Some(preview) = extract_text_preview(thinking) {
+                    return Some(preview);
+                }
+            }
+            MCPContent::ToolCall { name, .. } => {
+                return Some(truncate_preview(
+                    &format!("Tool call: {}", name),
+                    COMPACT_PREVIEW_MAX_CHARS,
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(tool_calls) = &message.tool_calls {
+        if let Some(tool_call) = tool_calls.first() {
+            return Some(truncate_preview(
+                &format!("Tool call: {}", tool_call.function.name),
+                COMPACT_PREVIEW_MAX_CHARS,
+            ));
+        }
+    }
+
+    if message.role == "tool" {
+        return Some("Tool result".to_string());
+    }
+
+    None
+}
+
 pub async fn get_compact_context(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -287,6 +371,107 @@ pub async fn get_compact_context(
     repo.get_by_session_id(session_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+async fn load_boundary_messages(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    record: &CompactContextRecord,
+) -> Result<HashMap<String, Message>, String> {
+    let mut boundary_messages = HashMap::new();
+
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            let messages = session.messages.read().await;
+            for message in messages.iter() {
+                if message.id == record.from_id || message.id == record.to_id {
+                    boundary_messages.insert(message.id.clone(), message.clone());
+                }
+            }
+        }
+    }
+
+    let mut missing_ids = Vec::new();
+    if !boundary_messages.contains_key(&record.from_id) {
+        missing_ids.push(record.from_id.clone());
+    }
+    if !boundary_messages.contains_key(&record.to_id) {
+        missing_ids.push(record.to_id.clone());
+    }
+
+    if !missing_ids.is_empty() {
+        let repo = crate::state::get_message_repository();
+        let loaded = repo
+            .get_by_ids(missing_ids)
+            .await
+            .map_err(|error| error.to_string())?;
+        for message in loaded {
+            boundary_messages.insert(message.id.clone(), message);
+        }
+    }
+
+    Ok(boundary_messages)
+}
+
+async fn derive_condensed_count(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    record: &CompactContextRecord,
+) -> Option<usize> {
+    let active = active_sessions.read().await;
+    let session = active.get(session_id)?;
+    let messages = session.messages.read().await;
+    let from_index = messages
+        .iter()
+        .position(|message| message.id == record.from_id)?;
+    let to_index = messages
+        .iter()
+        .position(|message| message.id == record.to_id)?;
+    (from_index <= to_index).then_some(to_index - from_index + 1)
+}
+
+fn build_compact_context_view(
+    record: CompactContextRecord,
+    boundary_messages: &HashMap<String, Message>,
+    condensed_count: Option<usize>,
+) -> CompactContextView {
+    let earlier_preview = boundary_messages
+        .get(&record.from_id)
+        .and_then(extract_message_preview);
+    let latest_included_preview = boundary_messages
+        .get(&record.to_id)
+        .and_then(extract_message_preview);
+
+    CompactContextView {
+        id: record.id,
+        session_id: record.session_id,
+        from_id: record.from_id,
+        to_id: record.to_id,
+        summary: record.summary,
+        created_at: record.created_at,
+        earlier_preview,
+        latest_included_preview,
+        condensed_count,
+    }
+}
+
+pub async fn get_compact_context_view(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<Option<CompactContextView>, String> {
+    let Some(record) = get_compact_context(active_sessions, session_id).await? else {
+        return Ok(None);
+    };
+
+    let boundary_messages = load_boundary_messages(active_sessions, session_id, &record).await?;
+    let condensed_count = derive_condensed_count(active_sessions, session_id, &record).await;
+
+    Ok(Some(build_compact_context_view(
+        record,
+        &boundary_messages,
+        condensed_count,
+    )))
 }
 
 pub async fn save_compact_context(

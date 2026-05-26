@@ -1,6 +1,6 @@
 use super::contracts::AgentResponse;
+use crate::agent::session_manager::CompactContextView;
 use crate::agent::AgentSessionManager;
-use crate::repositories::CompactContextRecord;
 use tauri::{command, State};
 
 /// Get compacted context for a session
@@ -8,8 +8,8 @@ use tauri::{command, State};
 pub async fn agent_get_compact_context(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
-) -> Result<Option<CompactContextRecord>, String> {
-    manager.get_compact_context(&session_id).await
+) -> Result<Option<CompactContextView>, String> {
+    manager.get_compact_context_view(&session_id).await
 }
 
 /// Handle a successful compact response from the frontend LLM call.

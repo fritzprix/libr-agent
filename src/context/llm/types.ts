@@ -95,6 +95,9 @@ export interface CompactedRange {
   fromId: string;
   toId: string;
   summary?: string;
+  earlierPreview?: string;
+  latestIncludedPreview?: string;
+  condensedCount?: number;
 }
 
 /**
