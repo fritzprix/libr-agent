@@ -98,6 +98,17 @@ fn build_new_hash_sections(edits: &[LineEdit], new_content: &str) -> Vec<String>
     let mut line_delta: i64 = 0;
     for edit in &sorted_asc {
         let replacement_line_count = edit.replacement_line_count();
+        let original_line_count = if edit.action == EditAction::InsertAfter {
+            0
+        } else {
+            (edit.end_line - edit.start_line + 1) as i64
+        };
+
+        if replacement_line_count == 0 {
+            line_delta += replacement_line_count as i64 - original_line_count;
+            continue;
+        }
+
         let start_in_new = if edit.action == EditAction::InsertAfter {
             (edit.start_line as i64 + line_delta) as usize
         } else {
@@ -110,11 +121,6 @@ fn build_new_hash_sections(edits: &[LineEdit], new_content: &str) -> Vec<String>
             new_hash_sections.push(section.join("\n"));
         }
 
-        let original_line_count = if edit.action == EditAction::InsertAfter {
-            0
-        } else {
-            (edit.end_line - edit.start_line + 1) as i64
-        };
         line_delta += replacement_line_count as i64 - original_line_count;
     }
 

@@ -454,6 +454,63 @@ async fn edit_files_delete_only_response_does_not_claim_new_anchors_exist() {
 }
 
 #[tokio::test]
+async fn edit_files_delete_range_at_eof_does_not_panic() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-delete-range-eof";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(
+        workspace_dir.join("sample.txt"),
+        "alpha\nbeta\ngamma\ndelta\n",
+    )
+    .expect("write sample file");
+
+    let anchors = format_as_hashlines("alpha\nbeta\ngamma\ndelta\n");
+    let anchor_lines: Vec<&str> = anchors.lines().collect();
+    let start_anchor = anchor_lines[2]
+        .split('|')
+        .next()
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("start anchor");
+    let end_anchor = anchor_lines[3]
+        .split('|')
+        .next()
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("end anchor");
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "delete",
+                        "startLine": 3,
+                        "endLine": 4,
+                        "startAnchor": start_anchor,
+                        "endAnchor": end_anchor
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("delete range at EOF should return MCPResult");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains(
+            "no new anchors were generated because these edits only removed existing lines"
+        ),
+        "delete-only range at EOF should explain missing anchors: {text}"
+    );
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "alpha\nbeta\n");
+}
+
+#[tokio::test]
 async fn edit_files_error_messages_include_edit_context() {
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "edit-files-error-context";
