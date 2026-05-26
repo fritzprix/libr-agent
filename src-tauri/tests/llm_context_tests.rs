@@ -364,7 +364,7 @@ fn test_compaction_overflow_recovery_ladder_progresses_from_budget_to_recovery_t
 }
 
 #[test]
-fn test_overflow_recovery_preserves_latest_real_ui_request_summary_and_recent_fifo_subset() {
+fn test_overflow_recovery_preserves_latest_real_ui_request_summary_and_full_surviving_body() {
     let summary = make_compact_summary_message("m0", "assistant", "previous summary");
     let mut synthetic = make_message("m1", "user", "synthetic session context");
     synthetic.source = Some(MessageSource::SessionContext);
@@ -445,6 +445,119 @@ fn test_overflow_recovery_filters_scaffolding_and_preserves_tail_instruction_sha
     assert_eq!(
         selected.last().map(|message| message.id.as_str()),
         Some("m5")
+    );
+}
+
+#[test]
+fn test_overflow_recovery_rejects_lossy_fifo_suffix_trimming() {
+    let summary = make_compact_summary_message("m0", "assistant", &"summary context ".repeat(600));
+    let older = make_message("m1", "assistant", &"older assistant context ".repeat(300));
+    let mut latest_request = make_message("m2", "user", "latest real request from ui");
+    latest_request.source = Some(MessageSource::Ui);
+    let fresh_assistant = make_message("m3", "assistant", "fresh assistant context");
+    let tail_instruction = make_compaction_instruction_message("m4", "current compaction overlay");
+
+    let limit = calculate_conservative_preflight_prompt_tokens(
+        &[
+            summary.clone(),
+            latest_request.clone(),
+            fresh_assistant.clone(),
+            tail_instruction.clone(),
+        ],
+        10,
+        5,
+        None,
+    ) + 1;
+
+    let error = build_overflow_recovery_compaction_messages(
+        &[
+            summary,
+            older,
+            latest_request,
+            fresh_assistant,
+            tail_instruction,
+        ],
+        "openai",
+        limit,
+        10,
+        5,
+    )
+    .expect_err("overflow recovery must fail instead of trimming older context by FIFO suffix");
+
+    assert!(error.contains("without lossy FIFO trimming"));
+}
+
+#[test]
+fn test_overflow_recovery_allows_no_external_user_anchor_when_body_fits() {
+    let summary = make_compact_summary_message("m0", "assistant", "previous summary");
+    let assistant = make_message("m1", "assistant", "assistant-only continuation");
+    let mut tool = make_message("m2", "tool", "tool output");
+    tool.tool_call_id = Some("call-1".to_string());
+    let tail_instruction = make_compaction_instruction_message("m3", "current compaction overlay");
+
+    let selected = build_overflow_recovery_compaction_messages(
+        &[
+            summary.clone(),
+            assistant.clone(),
+            tool.clone(),
+            tail_instruction.clone(),
+        ],
+        "openai",
+        10_000,
+        0,
+        0,
+    )
+    .expect("overflow recovery should support sessions without external user anchor");
+
+    let selected_ids = selected
+        .iter()
+        .map(|message| message.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(selected_ids.contains(&summary.id.as_str()));
+    assert!(selected_ids.contains(&assistant.id.as_str()));
+    assert!(selected_ids.contains(&tool.id.as_str()));
+    assert_eq!(
+        selected.last().map(|message| message.id.as_str()),
+        Some(tail_instruction.id.as_str())
+    );
+}
+
+#[test]
+fn test_overflow_recovery_uses_compact_summary_active_request_as_workflow_anchor() {
+    let summary = make_compact_summary_message(
+        "m0",
+        "assistant",
+        "### Stable Context\n- Existing project context\n\n### Active Request\n- Fix SDL2 compatibility in doom-engine build\n\n### Next Actions\n- Rebuild and verify runtime",
+    );
+    let assistant = make_message("m1", "assistant", "assistant-only continuation");
+    let mut tool = make_message("m2", "tool", "tool output");
+    tool.tool_call_id = Some("call-1".to_string());
+    let tail_instruction = make_compaction_instruction_message("m3", "current compaction overlay");
+
+    let selected = build_overflow_recovery_compaction_messages(
+        &[
+            summary.clone(),
+            assistant.clone(),
+            tool.clone(),
+            tail_instruction.clone(),
+        ],
+        "openai",
+        10_000,
+        0,
+        0,
+    )
+    .expect("overflow recovery should use compact summary Active Request as workflow anchor");
+
+    let selected_ids = selected
+        .iter()
+        .map(|message| message.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(selected_ids.contains(&summary.id.as_str()));
+    assert!(selected_ids.contains(&assistant.id.as_str()));
+    assert!(selected_ids.contains(&tool.id.as_str()));
+    assert_eq!(
+        selected.last().map(|message| message.id.as_str()),
+        Some(tail_instruction.id.as_str())
     );
 }
 
@@ -1821,7 +1934,7 @@ fn test_truncate_single_oversized_message_to_fit_conservative_limit_skips_assist
 }
 
 #[test]
-fn test_fit_compaction_request_messages_to_limit_preserves_summary_anchor() {
+fn test_fit_compaction_request_messages_to_limit_rejects_lossy_multi_message_trimming() {
     let summary =
         make_compact_summary_message("compact-summary-1", "assistant", &"summary ".repeat(700));
     let older = make_message("older", "assistant", &"older context ".repeat(250));
@@ -1833,18 +1946,16 @@ fn test_fit_compaction_request_messages_to_limit_preserves_summary_anchor() {
         None,
     ) + 1;
 
-    let fitted = fit_compaction_request_messages_to_limit(
+    let error = fit_compaction_request_messages_to_limit(
         &[summary.clone(), older, newest.clone()],
         "gemini",
         limit,
         10,
         5,
     )
-    .expect("compaction payload should fit after dropping raw delta");
+    .expect_err("compaction-fit should fail instead of dropping older raw history");
 
-    assert_eq!(fitted.len(), 2);
-    assert_eq!(fitted[0].id, summary.id);
-    assert_eq!(fitted[1].id, newest.id);
+    assert!(error.contains("without lossy cache-aligned trimming"));
 }
 
 #[test]

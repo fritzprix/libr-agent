@@ -1,5 +1,6 @@
 use crate::agent::llm::completion::request::build_compact_summary_message_for_messages;
 use crate::agent::llm::types::CompactionParentRequest;
+use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 
@@ -132,20 +133,6 @@ fn provider_requires_compaction_tool_chain_cleanup(provider_id: &str) -> bool {
     ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
 }
 
-fn drop_oldest_compaction_message(messages: &mut Vec<Message>) -> bool {
-    if messages.len() <= 1 {
-        return false;
-    }
-
-    let drop_index = if messages[0].is_compact_summary() && messages.len() > 1 {
-        1
-    } else {
-        0
-    };
-    messages.remove(drop_index);
-    true
-}
-
 pub fn fit_compaction_request_messages_to_limit(
     messages: &[Message],
     provider_id: &str,
@@ -160,38 +147,28 @@ pub fn fit_compaction_request_messages_to_limit(
             tools_tokens,
         );
 
-    let mut fitted = messages.to_vec();
-    while fitted.len() > 1 {
-        let conservative_total =
-            crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
-                &fitted,
-                system_prompt_tokens,
-                tools_tokens,
-                preserved_calibration_ratio,
-            );
-        if conservative_total < safe_input_token_limit {
-            return Ok(fitted);
-        }
-
-        if !drop_oldest_compaction_message(&mut fitted) {
-            break;
-        }
-
-        if provider_requires_compaction_tool_chain_cleanup(provider_id) {
-            fitted = crate::agent::llm::context_selector::remove_incomplete_tool_chains(fitted);
-        }
+    let cleaned = provider_cleanup_compaction_messages(messages.to_vec(), provider_id);
+    let conservative_total =
+        crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
+            &cleaned,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        );
+    if conservative_total < safe_input_token_limit {
+        return Ok(cleaned);
     }
 
-    let single_message = if fitted.len() == 1 {
+    let single_message = if cleaned.len() == 1 {
         crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
-            &fitted,
+            &cleaned,
             safe_input_token_limit,
             system_prompt_tokens,
             tools_tokens,
             preserved_calibration_ratio,
         )
     } else {
-        fitted
+        cleaned
     };
 
     if single_message
@@ -216,7 +193,7 @@ pub fn fit_compaction_request_messages_to_limit(
     }
 
     Err(format!(
-        "Compaction payload still exceeds the effective context limit after compaction-fit reduction ({} >= {}).",
+        "Compaction payload exceeds the effective context limit without lossy cache-aligned trimming ({} >= {}); advance to overflow recovery instead of dropping older compaction history.",
         conservative_total, safe_input_token_limit
     ))
 }
@@ -237,6 +214,54 @@ fn latest_real_user_request_block_range(messages: &[Message]) -> Option<(usize, 
     }
 
     Some((block_start, block_end))
+}
+
+fn compact_summary_has_active_request_anchor(message: &Message) -> bool {
+    if !message.is_compact_summary() {
+        return false;
+    }
+
+    let text = message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let Some((_, active_request_block)) = text.split_once("### Active Request") else {
+        return false;
+    };
+
+    active_request_block
+        .lines()
+        .skip(1)
+        .take_while(|line| !line.trim_start().starts_with("### "))
+        .any(|line| line.trim_start().starts_with("- "))
+}
+
+fn latest_request_anchor_range(messages: &[Message]) -> Option<(usize, usize)> {
+    if let Some(range) = latest_real_user_request_block_range(messages) {
+        return Some(range);
+    }
+
+    if let Some(summary_idx) = messages
+        .iter()
+        .rposition(compact_summary_has_active_request_anchor)
+    {
+        return Some((summary_idx, summary_idx + 1));
+    }
+
+    // If there is no active request text parsed in the summary, but a prior compact summary message
+    // itself exists, it guarantees the user's workflow-wide instructions are safely preserved within it.
+    // We treat the prior summary itself as the anchor to avoid workflow shutdowns.
+    if let Some(summary_idx) = messages.iter().position(|m| m.is_compact_summary()) {
+        return Some((summary_idx, summary_idx + 1));
+    }
+
+    None
 }
 
 fn provider_cleanup_compaction_messages(messages: Vec<Message>, provider_id: &str) -> Vec<Message> {
@@ -307,11 +332,7 @@ pub fn build_overflow_recovery_compaction_messages(
 
     let (body_messages, instruction) = split_compaction_round_messages(messages);
 
-    let (latest_request_start, latest_request_end) =
-        latest_real_user_request_block_range(&body_messages).ok_or_else(|| {
-            "Compaction overflow recovery requires a latest real user request anchor, but none was found."
-                .to_string()
-        })?;
+    let latest_request_range = latest_request_anchor_range(&body_messages);
 
     let previous_summary_idx = body_messages
         .iter()
@@ -319,7 +340,11 @@ pub fn build_overflow_recovery_compaction_messages(
     let remaining_indices = (0..body_messages.len())
         .filter(|index| {
             !matches!(previous_summary_idx, Some(summary_idx) if summary_idx == *index)
-                && (*index < latest_request_start || *index >= latest_request_end)
+                && latest_request_range
+                    .map(|(latest_request_start, latest_request_end)| {
+                        *index < latest_request_start || *index >= latest_request_end
+                    })
+                    .unwrap_or(true)
         })
         .collect::<Vec<_>>();
 
@@ -329,41 +354,44 @@ pub fn build_overflow_recovery_compaction_messages(
         .chain(std::iter::once(None));
 
     for summary_idx in attempt_with_summary {
-        for suffix_start in 0..=remaining_indices.len() {
-            let mut selected_indices = Vec::new();
-            if let Some(summary_idx) = summary_idx {
-                selected_indices.push(summary_idx);
-            }
+        let mut selected_indices = Vec::new();
+        if let Some(summary_idx) = summary_idx {
+            selected_indices.push(summary_idx);
+        }
+        if let Some((latest_request_start, latest_request_end)) = latest_request_range {
             selected_indices.extend(latest_request_start..latest_request_end);
-            selected_indices.extend(remaining_indices[suffix_start..].iter().copied());
-            selected_indices.sort_unstable();
-            selected_indices.dedup();
+        }
+        selected_indices.extend(remaining_indices.iter().copied());
+        selected_indices.sort_unstable();
+        selected_indices.dedup();
 
-            let mut candidate = selected_indices
-                .into_iter()
-                .map(|index| body_messages[index].clone())
-                .collect::<Vec<_>>();
-            if let Some(instruction) = &instruction {
-                candidate.push(instruction.clone());
-            }
+        let mut candidate = selected_indices
+            .into_iter()
+            .map(|index| body_messages[index].clone())
+            .collect::<Vec<_>>();
+        if let Some(instruction) = &instruction {
+            candidate.push(instruction.clone());
+        }
 
-            if let Some((cleaned, _)) = candidate_compaction_total(
-                &candidate,
-                provider_id,
-                safe_input_token_limit,
-                system_prompt_tokens,
-                tools_tokens,
-                preserved_calibration_ratio,
-            ) {
-                return Ok(cleaned);
-            }
+        if let Some((cleaned, _)) = candidate_compaction_total(
+            &candidate,
+            provider_id,
+            safe_input_token_limit,
+            system_prompt_tokens,
+            tools_tokens,
+            preserved_calibration_ratio,
+        ) {
+            return Ok(cleaned);
         }
     }
 
-    Err(
-        "Compaction overflow recovery could not fit the latest real user request anchor, previous summary preference, and freshest active FIFO subset within the effective context limit."
-            .to_string(),
-    )
+    Err(if latest_request_range.is_some() {
+        "Compaction overflow recovery could not fit the latest real user request anchor and full surviving context body within the effective context limit without lossy FIFO trimming."
+                .to_string()
+    } else {
+        "Compaction overflow recovery could not fit the full surviving context body within the effective context limit when no latest real user request anchor was available."
+                .to_string()
+    })
 }
 
 pub(super) fn estimate_compaction_non_message_tokens(

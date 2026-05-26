@@ -1,6 +1,7 @@
 import {
   handleCompactError,
   handleCompactResponse,
+  getAgentCompactContext,
 } from '@/lib/backend/agent-commands';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -102,11 +103,28 @@ export async function setupCompactRequestListener({
           config: runtimeConfig,
         });
         await handleCompactResponse(sessionId, fromId, toId, summary);
-        setCompactedRangeForSession(sessionId, {
-          fromId,
-          toId,
-          summary,
-        });
+        try {
+          const freshContext = await getAgentCompactContext(sessionId);
+          if (freshContext) {
+            setCompactedRangeForSession(sessionId, freshContext);
+          } else {
+            setCompactedRangeForSession(sessionId, {
+              fromId,
+              toId,
+              summary,
+            });
+          }
+        } catch (fetchError) {
+          logger.warn(
+            `Failed to hydrate compact context after live compaction: session=${sessionId}`,
+            fetchError,
+          );
+          setCompactedRangeForSession(sessionId, {
+            fromId,
+            toId,
+            summary,
+          });
+        }
         logger.info(`✅ Compact summary stored: session=${sessionId}`);
       } catch (error) {
         const compactRuntimeError = toAgentRuntimeError(error);

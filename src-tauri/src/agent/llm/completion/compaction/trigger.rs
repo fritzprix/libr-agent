@@ -305,6 +305,42 @@ async fn prepare_compaction_request(
         }
     };
 
+    let mut final_from_id = from_id.clone();
+    let mut final_compacted_delta_count = compacted_delta_count;
+
+    if !compact_messages.is_empty() {
+        let first_msg = &compact_messages[0];
+        if !first_msg.is_compact_summary() {
+            // If the first message is not the previous compact summary, it means
+            // we dropped the previous summary (or there wasn't one) and potentially some delta messages.
+            // So the range actually summarized starts from this first message!
+            final_from_id = first_msg.id.clone();
+        }
+
+        // Count how many delta messages are actually in compact_messages
+        // (excluding the compaction instruction/overlay at the end).
+        let delta_only_count = compact_messages
+            .iter()
+            .filter(|m| {
+                !m.is_compaction_overlay_message()
+                    && !m.is_compact_summary()
+                    && !m.is_request_layout_scaffolding_message()
+            })
+            .count();
+        final_compacted_delta_count = delta_only_count;
+    }
+
+    if final_from_id != from_id || final_compacted_delta_count != compacted_delta_count {
+        log::info!(
+            "📐 Compaction payload shrunken, adjusting range metadata: session={}, from_id: {} -> {}, compacted_delta_count: {} -> {}",
+            session_id,
+            from_id,
+            final_from_id,
+            compacted_delta_count,
+            final_compacted_delta_count
+        );
+    }
+
     if retry_attempt > 0 {
         log::warn!(
             "🔧 Applying compaction retry budget: session={}, retry_attempt={}, safe_input_token_limit={}, effective_input_token_limit={}",
@@ -328,14 +364,14 @@ async fn prepare_compaction_request(
             session_id: session_id.to_string(),
             session_name: session_name.to_string(),
             messages: compact_messages,
-            from_id,
+            from_id: final_from_id,
             to_id,
             parent_request: final_parent_request,
             resume_completion_after_compact,
         },
         started_at_ms,
         current_tail_id: messages.last().map(|message| message.id.clone()),
-        compacted_delta_count,
+        compacted_delta_count: final_compacted_delta_count,
         reused_prior_summary,
     }))
 }

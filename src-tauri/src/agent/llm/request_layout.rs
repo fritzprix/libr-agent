@@ -60,12 +60,20 @@ pub fn build_request_layout(
     };
 
     if provider_uses_synthetic_session_context(provider) {
-        let reference_message_id = messages
-            .last()
-            .map(|message| message.id.as_str())
-            .unwrap_or("system");
+        // If the last message is a compaction overlay (e.g. instruction), we want to
+        // insert the session context message before it to preserve LLM instruction attention.
+        let mut insert_idx = messages.len();
+        if insert_idx > 0 && messages[insert_idx - 1].is_compaction_overlay_message() {
+            insert_idx -= 1;
+        }
+
+        let reference_message_id = if insert_idx > 0 {
+            messages[insert_idx - 1].id.as_str()
+        } else {
+            "system"
+        };
         let now = chrono::Utc::now().timestamp_millis();
-        messages.push(Message {
+        let session_context_msg = Message {
             id: format!(
                 "{}-{}",
                 synthetic_session_context_id_prefix(provider),
@@ -91,7 +99,9 @@ pub fn build_request_layout(
             source: Some(MessageSource::SessionContext),
             error: None,
             metadata: None,
-        });
+        };
+
+        messages.insert(insert_idx, session_context_msg);
 
         RequestLayout {
             system_prompt,
