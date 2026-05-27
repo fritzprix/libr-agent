@@ -23,6 +23,30 @@ pub struct CompactionRequestPayloadPreview {
     pub reused_prior_summary: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionPayloadMessageDiagnostic {
+    pub id: String,
+    pub role: String,
+    pub source: String,
+    pub flags: Vec<String>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionPayloadDiagnostics {
+    pub total_messages: usize,
+    pub body_message_count: usize,
+    pub raw_delta_message_count: usize,
+    pub compact_summary_count: usize,
+    pub compaction_instruction_count: usize,
+    pub scaffolding_count: usize,
+    pub external_request_count: usize,
+    pub assistant_message_count: usize,
+    pub tool_message_count: usize,
+    pub latest_external_request_message_ids: Vec<String>,
+    pub messages: Vec<CompactionPayloadMessageDiagnostic>,
+}
+
 pub fn apply_compaction_retry_budget(safe_input_token_limit: usize, retry_attempt: u32) -> usize {
     let reduction_percent = match retry_attempt {
         0 => 100,
@@ -127,6 +151,127 @@ pub fn build_compaction_request_payload_for_testing(
             compacted_delta_count: payload.compacted_delta_count,
             reused_prior_summary: payload.reused_prior_summary,
         })
+}
+
+fn compact_message_preview(message: &Message) -> String {
+    let preview = message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    const PREVIEW_LIMIT: usize = 120;
+    if preview.chars().count() <= PREVIEW_LIMIT {
+        return preview;
+    }
+
+    let truncated = preview.chars().take(PREVIEW_LIMIT).collect::<String>();
+    format!("{}...", truncated)
+}
+
+fn compaction_message_flags(message: &Message) -> Vec<String> {
+    let mut flags = Vec::new();
+
+    if message.is_compact_summary() {
+        flags.push("compact_summary".to_string());
+    }
+    if message.is_compaction_instruction() {
+        flags.push("compaction_instruction".to_string());
+    }
+    if message.is_request_layout_scaffolding_message() {
+        flags.push("scaffolding".to_string());
+    }
+    if message.is_external_request_message() {
+        flags.push("external_request".to_string());
+    }
+    if message.role == "tool" {
+        flags.push("tool".to_string());
+    }
+    if message
+        .tool_calls
+        .as_ref()
+        .is_some_and(|calls| !calls.is_empty())
+    {
+        flags.push("tool_call".to_string());
+    }
+
+    flags
+}
+
+pub fn inspect_compaction_payload(messages: &[Message]) -> CompactionPayloadDiagnostics {
+    let latest_external_request_message_ids = latest_real_user_request_block_range(messages)
+        .map(|(start, end)| {
+            messages[start..end]
+                .iter()
+                .map(|message| message.id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    CompactionPayloadDiagnostics {
+        total_messages: messages.len(),
+        body_message_count: messages
+            .iter()
+            .filter(|message| {
+                !message.is_request_layout_scaffolding_message()
+                    && !message.is_compaction_overlay_message()
+            })
+            .count(),
+        raw_delta_message_count: messages
+            .iter()
+            .filter(|message| {
+                !message.is_request_layout_scaffolding_message()
+                    && !message.is_compaction_overlay_message()
+                    && !message.is_compact_summary()
+            })
+            .count(),
+        compact_summary_count: messages
+            .iter()
+            .filter(|message| message.is_compact_summary())
+            .count(),
+        compaction_instruction_count: messages
+            .iter()
+            .filter(|message| message.is_compaction_instruction())
+            .count(),
+        scaffolding_count: messages
+            .iter()
+            .filter(|message| message.is_request_layout_scaffolding_message())
+            .count(),
+        external_request_count: messages
+            .iter()
+            .filter(|message| message.is_external_request_message())
+            .count(),
+        assistant_message_count: messages
+            .iter()
+            .filter(|message| message.role == "assistant")
+            .count(),
+        tool_message_count: messages
+            .iter()
+            .filter(|message| message.role == "tool")
+            .count(),
+        latest_external_request_message_ids,
+        messages: messages
+            .iter()
+            .map(|message| CompactionPayloadMessageDiagnostic {
+                id: message.id.clone(),
+                role: message.role.clone(),
+                source: message
+                    .source
+                    .as_ref()
+                    .map(|source| source.as_str().to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                flags: compaction_message_flags(message),
+                preview: compact_message_preview(message),
+            })
+            .collect(),
+    }
 }
 
 fn provider_requires_compaction_tool_chain_cleanup(provider_id: &str) -> bool {
@@ -332,6 +477,7 @@ pub fn build_overflow_recovery_compaction_messages(
 
     let (body_messages, instruction) = split_compaction_round_messages(messages);
 
+    let latest_real_user_request_range = latest_real_user_request_block_range(&body_messages);
     let latest_request_range = latest_request_anchor_range(&body_messages);
 
     let previous_summary_idx = body_messages
@@ -354,43 +500,48 @@ pub fn build_overflow_recovery_compaction_messages(
         .chain(std::iter::once(None));
 
     for summary_idx in attempt_with_summary {
-        let mut selected_indices = Vec::new();
-        if let Some(summary_idx) = summary_idx {
-            selected_indices.push(summary_idx);
-        }
-        if let Some((latest_request_start, latest_request_end)) = latest_request_range {
-            selected_indices.extend(latest_request_start..latest_request_end);
-        }
-        selected_indices.extend(remaining_indices.iter().copied());
-        selected_indices.sort_unstable();
-        selected_indices.dedup();
+        // Overflow recovery is allowed to reduce the active live body by FIFO semantics.
+        // We therefore keep the newest active context possible by progressively dropping
+        // older active messages while preserving the priority anchors.
+        for fifo_drop_count in 0..=remaining_indices.len() {
+            let mut selected_indices = Vec::new();
+            if let Some(summary_idx) = summary_idx {
+                selected_indices.push(summary_idx);
+            }
+            if let Some((latest_request_start, latest_request_end)) = latest_request_range {
+                selected_indices.extend(latest_request_start..latest_request_end);
+            }
+            selected_indices.extend(remaining_indices.iter().skip(fifo_drop_count).copied());
+            selected_indices.sort_unstable();
+            selected_indices.dedup();
 
-        let mut candidate = selected_indices
-            .into_iter()
-            .map(|index| body_messages[index].clone())
-            .collect::<Vec<_>>();
-        if let Some(instruction) = &instruction {
-            candidate.push(instruction.clone());
-        }
+            let mut candidate = selected_indices
+                .into_iter()
+                .map(|index| body_messages[index].clone())
+                .collect::<Vec<_>>();
+            if let Some(instruction) = &instruction {
+                candidate.push(instruction.clone());
+            }
 
-        if let Some((cleaned, _)) = candidate_compaction_total(
-            &candidate,
-            provider_id,
-            safe_input_token_limit,
-            system_prompt_tokens,
-            tools_tokens,
-            preserved_calibration_ratio,
-        ) {
-            return Ok(cleaned);
+            if let Some((cleaned, _)) = candidate_compaction_total(
+                &candidate,
+                provider_id,
+                safe_input_token_limit,
+                system_prompt_tokens,
+                tools_tokens,
+                preserved_calibration_ratio,
+            ) {
+                return Ok(cleaned);
+            }
         }
     }
 
-    Err(if latest_request_range.is_some() {
-        "Compaction overflow recovery could not fit the latest real user request anchor and full surviving context body within the effective context limit without lossy FIFO trimming."
-                .to_string()
+    Err(if latest_real_user_request_range.is_some() {
+        "Compaction overflow recovery could not fit the latest real user request anchor and any valid priority-preserving active-message FIFO subset within the effective context limit."
+            .to_string()
     } else {
-        "Compaction overflow recovery could not fit the full surviving context body within the effective context limit when no latest real user request anchor was available."
-                .to_string()
+        "Compaction overflow recovery could not fit any valid priority-preserving active-message FIFO subset within the effective context limit."
+            .to_string()
     })
 }
 

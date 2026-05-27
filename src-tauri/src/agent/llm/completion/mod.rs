@@ -6,10 +6,14 @@ pub(crate) mod request;
 pub use compaction::{
     advance_compaction_overflow_recovery_step_for_testing, apply_compaction_retry_budget,
     build_compaction_preservation_hints, build_compaction_request_payload_for_testing,
-    build_overflow_recovery_compaction_messages, fit_compaction_request_messages_to_limit,
-    preview_preflight_compaction_selection, should_skip_same_tail_compaction,
-    trigger_manual_compaction_for_session, trigger_preflight_compaction_for_session,
-    CompactionPreservationHints, CompactionRequestPayloadPreview, CompactionSelectionPreview,
+    build_overflow_recovery_compaction_messages,
+    derive_tail_recompaction_recovery_plan_for_testing,
+    find_preflight_compactable_end_exclusive_for_testing, fit_compaction_request_messages_to_limit,
+    inspect_compaction_payload, preview_preflight_compaction_selection,
+    should_skip_same_tail_compaction, trigger_manual_compaction_for_session,
+    trigger_preflight_compaction_for_session, CompactionPayloadDiagnostics,
+    CompactionPayloadMessageDiagnostic, CompactionPreservationHints,
+    CompactionRequestPayloadPreview, CompactionSelectionPreview, TailRecompactionRecoveryPlan,
 };
 pub use context::{
     resolve_context_management_settings, uses_compaction_strategy, ContextManagementSettings,

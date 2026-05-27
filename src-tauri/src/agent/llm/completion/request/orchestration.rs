@@ -582,6 +582,12 @@ async fn check_token_limit(
         context_settings.max_input_context,
         context_settings.model_max_limit,
     );
+    let prompt_anchored_total_tokens =
+        crate::agent::llm::token_utils::calculate_prompt_anchored_total_tokens(
+            &final_messages,
+            system_prompt_tokens,
+            tools_tokens,
+        );
     let conservative_preflight_tokens =
         crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
             &final_messages,
@@ -589,6 +595,21 @@ async fn check_token_limit(
             tools_tokens,
             preserved_calibration_ratio,
         );
+    let preflight_metrics = crate::agent::events::PreflightTokenMetrics {
+        conservative_prompt_tokens: conservative_preflight_tokens,
+        prompt_anchored_total_tokens,
+        safe_input_token_limit,
+        system_prompt_tokens,
+        tools_tokens,
+        selected_message_count: final_messages.len(),
+        compact_summary_injected,
+        preserved_calibration_ratio,
+    };
+    let event = crate::agent::events::AgentEvent::PreflightTokenMetricsUpdated {
+        session_id: session_id.to_string(),
+        metrics: preflight_metrics,
+    };
+    let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
 
     if conservative_preflight_tokens < safe_input_token_limit {
         return Ok(final_messages);

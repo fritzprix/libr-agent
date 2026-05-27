@@ -58,6 +58,7 @@ const mockSession: MockSession = {
 const mockAgentSession = {
   session: mockSession,
   executionMode: 'normal' as ExecutionMode,
+  preflightTokenMetrics: null,
   yoloModeEnabled: false,
   unsafeModeEnabled: false,
   setExecutionMode: mocks.setExecutionMode,

@@ -99,12 +99,7 @@ async fn message_history_pagination_uses_rowid_for_same_timestamp_ties() {
         .expect("recent slice should expose oldest cursor");
 
     let older_slice = message_repo
-        .get_messages_before(
-            &session_id,
-            oldest_cursor.created_at,
-            oldest_cursor.row_id,
-            2,
-        )
+        .get_messages_before(&session_id, oldest_cursor.row_id, 2)
         .await
         .expect("older slice should load");
 
@@ -114,6 +109,65 @@ async fn message_history_pagination_uses_rowid_for_same_timestamp_ties() {
         .map(|message| message.id.clone())
         .collect();
     assert_eq!(older_ids, vec!["msg-z".to_string(), "msg-a".to_string()]);
+    assert!(!older_slice.has_more_before);
+}
+
+#[tokio::test]
+async fn message_history_pagination_prefers_rowid_over_inverted_created_at() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let session_id = format!("pagination-inverted-{}", uuid::Uuid::new_v4());
+
+    session_repo
+        .upsert_session(&build_session_metadata(&session_id))
+        .await
+        .expect("session should be created");
+
+    message_repo
+        .insert(&build_message(&session_id, "assistant-owner", 2_000))
+        .await
+        .expect("assistant owner insert should succeed");
+    message_repo
+        .insert(&build_message(&session_id, "tool-result-a", 1_000))
+        .await
+        .expect("tool result A insert should succeed");
+    message_repo
+        .insert(&build_message(&session_id, "tool-result-b", 1_001))
+        .await
+        .expect("tool result B insert should succeed");
+
+    let first_slice = message_repo
+        .get_recent_slice(&session_id, 2)
+        .await
+        .expect("recent slice should load");
+
+    let first_ids: Vec<String> = first_slice
+        .items
+        .iter()
+        .map(|message| message.id.clone())
+        .collect();
+    assert_eq!(
+        first_ids,
+        vec!["tool-result-a".to_string(), "tool-result-b".to_string()]
+    );
+
+    let oldest_cursor = first_slice
+        .oldest_cursor
+        .clone()
+        .expect("recent slice should expose oldest cursor");
+
+    let older_slice = message_repo
+        .get_messages_before(&session_id, oldest_cursor.row_id, 2)
+        .await
+        .expect("older slice should load");
+
+    let older_ids: Vec<String> = older_slice
+        .items
+        .iter()
+        .map(|message| message.id.clone())
+        .collect();
+    assert_eq!(older_ids, vec!["assistant-owner".to_string()]);
     assert!(!older_slice.has_more_before);
 }
 
@@ -140,7 +194,7 @@ async fn message_slice_queries_reject_zero_limit() {
     assert!(matches!(recent_error, DbError::InvalidInput(_)));
 
     let before_error = message_repo
-        .get_messages_before(&session_id, 1_712_345_678_900_i64, i64::MAX, 0)
+        .get_messages_before(&session_id, i64::MAX, 0)
         .await
         .expect_err("zero limit should be rejected for older slices");
     assert!(matches!(before_error, DbError::InvalidInput(_)));

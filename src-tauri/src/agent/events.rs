@@ -22,6 +22,19 @@ pub enum WorkflowCompletionReason {
     Cancelled,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreflightTokenMetrics {
+    pub conservative_prompt_tokens: usize,
+    pub prompt_anchored_total_tokens: usize,
+    pub safe_input_token_limit: usize,
+    pub system_prompt_tokens: usize,
+    pub tools_tokens: usize,
+    pub selected_message_count: usize,
+    pub compact_summary_injected: bool,
+    pub preserved_calibration_ratio: Option<f64>,
+}
+
 /// Events emitted from Rust Agent runtime to TypeScript Frontend
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -121,6 +134,13 @@ pub enum AgentEvent {
         runtime_state: SessionRuntimeState,
     },
 
+    /// Backend-owned preflight token estimate used to decide compaction.
+    #[serde(rename_all = "camelCase")]
+    PreflightTokenMetricsUpdated {
+        session_id: String,
+        metrics: PreflightTokenMetrics,
+    },
+
     /// Resource updated (assistants, MCP servers, playbooks, etc.)
     /// Emitted when builtin tools modify global resources
     #[serde(rename_all = "camelCase")]
@@ -214,6 +234,15 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         } => format!(
             "SessionRuntimeStateUpdated(session={session_id}, sequence={}, phase={:?}, proxy_mode={:?})",
             runtime_state.sequence, runtime_state.phase, runtime_state.proxy.mode
+        ),
+        AgentEvent::PreflightTokenMetricsUpdated {
+            session_id,
+            metrics,
+        } => format!(
+            "PreflightTokenMetricsUpdated(session={session_id}, conservative_prompt_tokens={}, prompt_anchored_total_tokens={}, safe_input_token_limit={})",
+            metrics.conservative_prompt_tokens,
+            metrics.prompt_anchored_total_tokens,
+            metrics.safe_input_token_limit
         ),
         AgentEvent::ResourceUpdated {
             resource_type,

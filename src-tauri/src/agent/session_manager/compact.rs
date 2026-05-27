@@ -1,6 +1,9 @@
 use crate::agent::compact_recovery::handle_compact_error_state;
 use crate::agent::compaction_text::sanitize_compaction_semantic_text;
 use crate::agent::events::AgentEventDispatcher;
+use crate::agent::llm::completion::{
+    build_compact_summary_message_for_messages, load_context_management_settings,
+};
 use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
@@ -19,6 +22,115 @@ use tokio::sync::RwLock;
 
 const MAX_COMPACTION_RETRY_ATTEMPTS: u32 = 3;
 const COMPACT_PREVIEW_MAX_CHARS: usize = 96;
+const COMPACTION_SUMMARY_HARD_LIMIT_RATIO: usize = 10;
+const COMPACTION_SUMMARY_TRUNCATION_SUFFIX: &str = "…";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactSummaryClampResult {
+    pub summary: String,
+    pub hard_limit_tokens: usize,
+    pub estimated_tokens: usize,
+    pub original_estimated_tokens: usize,
+    pub was_clamped: bool,
+}
+
+fn compact_summary_hard_limit_tokens(max_input_context: usize) -> usize {
+    std::cmp::max(1, max_input_context / COMPACTION_SUMMARY_HARD_LIMIT_RATIO)
+}
+
+fn estimate_wrapped_compact_summary_tokens(
+    session_id: &str,
+    summary: &str,
+    compacted_messages: &[Message],
+) -> usize {
+    let summary_message =
+        build_compact_summary_message_for_messages(session_id, summary, compacted_messages, 0);
+    crate::agent::llm::estimate_tokens_bpe(&summary_message)
+}
+
+fn truncate_summary_prefix(summary: &str, max_chars: usize) -> String {
+    let total_chars = summary.chars().count();
+    let prefix = summary.chars().take(max_chars).collect::<String>();
+    let trimmed = prefix.trim_end();
+    if max_chars < total_chars {
+        format!("{}{}", trimmed, COMPACTION_SUMMARY_TRUNCATION_SUFFIX)
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub fn clamp_compact_summary_to_context_limit(
+    session_id: &str,
+    summary: &str,
+    compacted_messages: &[Message],
+    max_input_context: usize,
+) -> CompactSummaryClampResult {
+    let normalized_summary = summary.trim();
+    let hard_limit_tokens = compact_summary_hard_limit_tokens(max_input_context);
+    let original_estimated_tokens =
+        estimate_wrapped_compact_summary_tokens(session_id, normalized_summary, compacted_messages);
+
+    if original_estimated_tokens <= hard_limit_tokens {
+        return CompactSummaryClampResult {
+            summary: normalized_summary.to_string(),
+            hard_limit_tokens,
+            estimated_tokens: original_estimated_tokens,
+            original_estimated_tokens,
+            was_clamped: false,
+        };
+    }
+
+    let total_chars = normalized_summary.chars().count();
+    let mut low = 0usize;
+    let mut high = total_chars;
+    let mut best_summary = String::new();
+    let mut best_estimated_tokens =
+        estimate_wrapped_compact_summary_tokens(session_id, &best_summary, compacted_messages);
+
+    while low <= high {
+        let mid = low + ((high - low) / 2);
+        let candidate = truncate_summary_prefix(normalized_summary, mid);
+        let candidate_estimated_tokens =
+            estimate_wrapped_compact_summary_tokens(session_id, &candidate, compacted_messages);
+
+        if candidate_estimated_tokens <= hard_limit_tokens {
+            best_summary = candidate;
+            best_estimated_tokens = candidate_estimated_tokens;
+            low = mid + 1;
+        } else if mid == 0 {
+            break;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    CompactSummaryClampResult {
+        summary: best_summary,
+        hard_limit_tokens,
+        estimated_tokens: best_estimated_tokens,
+        original_estimated_tokens,
+        was_clamped: true,
+    }
+}
+
+async fn compacted_messages_prefix_for_to_id(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    to_id: &str,
+) -> Vec<Message> {
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return Vec::new();
+    };
+    let session_messages = session.messages.read().await;
+    let Some(to_idx) = session_messages
+        .iter()
+        .position(|message| message.id == to_id)
+    else {
+        return Vec::new();
+    };
+    session_messages.iter().take(to_idx + 1).cloned().collect()
+}
 
 pub fn should_retry_budget_related_blocking_compaction(
     snapshot: &crate::agent::state::CompactionSnapshot,
@@ -214,14 +326,32 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
     } else {
         None
     };
+    let context_settings = load_context_management_settings().await;
+    let compacted_messages =
+        compacted_messages_prefix_for_to_id(active_sessions, session_id, &to_id).await;
+    let clamped_summary = clamp_compact_summary_to_context_limit(
+        session_id,
+        &summary,
+        &compacted_messages,
+        context_settings.max_input_context(),
+    );
+    if clamped_summary.was_clamped {
+        log::warn!(
+            "✂️ Clamped oversized compact summary in backend: session={}, hard_limit_tokens={}, original_estimated_tokens={}, clamped_estimated_tokens={}",
+            session_id,
+            clamped_summary.hard_limit_tokens,
+            clamped_summary.original_estimated_tokens,
+            clamped_summary.estimated_tokens
+        );
+    }
 
     log::info!(
-        "✅ Compact response stored for session {}: from_id={}, to_id={}, summary_chars={}, summary_est_tokens=~{}, elapsed_ms={}",
+        "✅ Compact response stored for session {}: from_id={}, to_id={}, summary_chars={}, summary_est_tokens={}, elapsed_ms={}",
         session_id,
         from_id,
         to_id,
-        summary.len(),
-        summary.len() / 4,
+        clamped_summary.summary.len(),
+        clamped_summary.estimated_tokens,
         started_at_ms
             .map(|value| (chrono::Utc::now().timestamp_millis() - value).to_string())
             .unwrap_or_else(|| "unknown".to_string())
@@ -232,7 +362,7 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
         session_id: session_id.to_string(),
         from_id,
         to_id,
-        summary,
+        summary: clamped_summary.summary,
         created_at: chrono::Utc::now().timestamp_millis(),
     };
     save_compact_context(active_sessions, session_id, record).await?;

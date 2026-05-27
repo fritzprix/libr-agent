@@ -4,7 +4,7 @@ use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
     sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
-    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QueryResult, QuerySelect, Set, Statement,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryResult, QuerySelect, Set, Statement,
 };
 
 use crate::entity::prelude::{Message as MessageEntity, MessageIndexMeta};
@@ -92,12 +92,12 @@ pub trait MessageRepository: Send + Sync {
         limit: u64,
     ) -> Result<MessageSlicePage, DbError>;
 
-    /// Get messages older than a cursor for a session in ascending chronological order.
-    /// Cursor is exclusive and uses `(created_at, row_id)` for stable keyset pagination.
+    /// Get messages older than a row-id cursor for a session in ascending causal order.
+    /// Returned cursors still include `created_at` for UI metadata, but row_id is the ordering
+    /// truth so message history is resilient to clock skew or cross-layer timestamp drift.
     async fn get_messages_before(
         &self,
         session_id: &str,
-        before_created_at: i64,
         before_row_id: i64,
         limit: u64,
     ) -> Result<MessageSlicePage, DbError>;
@@ -223,6 +223,26 @@ impl SqliteMessageRepository {
 
         rows.iter()
             .map(Self::row_to_message_with_cursor)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn query_message_models(
+        &self,
+        sql: &str,
+        values: Vec<sea_orm::Value>,
+    ) -> Result<Vec<message::Model>, DbError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        rows.iter()
+            .map(Self::row_to_message_model)
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -414,13 +434,17 @@ impl MessageRepository for SqliteMessageRepository {
         // Calculate offset
         let offset = page.saturating_sub(1).saturating_mul(page_size);
 
-        // Fetch paginated messages
-        let models = MessageEntity::find()
-            .filter(message::Column::SessionId.eq(session_id))
-            .order_by_asc(message::Column::CreatedAt)
-            .offset(offset)
-            .limit(page_size)
-            .all(&self.db)
+        // Fetch paginated messages in persisted causal order. Using rowid avoids treating
+        // cross-layer created_at skew as conversation truth.
+        let models = self
+            .query_message_models(
+                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                 FROM messages \
+                 WHERE session_id = ? \
+                 ORDER BY rowid ASC \
+                 LIMIT ? OFFSET ?",
+                vec![session_id.into(), (page_size as i64).into(), (offset as i64).into()],
+            )
             .await?;
 
         let messages: Vec<Message> = models.into_iter().map(Self::model_to_message).collect();
@@ -607,7 +631,7 @@ impl MessageRepository for SqliteMessageRepository {
                 "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
                  FROM messages \
                  WHERE session_id = ? \
-                 ORDER BY created_at DESC, rowid DESC \
+                 ORDER BY rowid DESC \
                  LIMIT ?",
                 vec![session_id.into(), fetch_limit.into()],
             )
@@ -619,7 +643,6 @@ impl MessageRepository for SqliteMessageRepository {
     async fn get_messages_before(
         &self,
         session_id: &str,
-        before_created_at: i64,
         before_row_id: i64,
         limit: u64,
     ) -> Result<MessageSlicePage, DbError> {
@@ -629,13 +652,11 @@ impl MessageRepository for SqliteMessageRepository {
                 "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
                  FROM messages \
                  WHERE session_id = ? \
-                   AND (created_at < ? OR (created_at = ? AND rowid < ?)) \
-                 ORDER BY created_at DESC, rowid DESC \
+                   AND rowid < ? \
+                 ORDER BY rowid DESC \
                  LIMIT ?",
                 vec![
                     session_id.into(),
-                    before_created_at.into(),
-                    before_created_at.into(),
                     before_row_id.into(),
                     fetch_limit.into(),
                 ],
@@ -683,21 +704,29 @@ impl MessageRepository for SqliteMessageRepository {
         session_id: &str,
         limit: u64,
     ) -> Result<Vec<message::Model>, DbError> {
-        let models = MessageEntity::find()
-            .filter(message::Column::SessionId.eq(session_id))
-            .order_by_desc(message::Column::CreatedAt)
-            .limit(limit)
-            .all(&self.db)
+        let models = self
+            .query_message_models(
+                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                 FROM messages \
+                 WHERE session_id = ? \
+                 ORDER BY rowid DESC \
+                 LIMIT ?",
+                vec![session_id.into(), (limit as i64).into()],
+            )
             .await?;
 
         Ok(models)
     }
 
     async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError> {
-        let models = MessageEntity::find()
-            .order_by_desc(message::Column::CreatedAt)
-            .limit(limit)
-            .all(&self.db)
+        let models = self
+            .query_message_models(
+                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                 FROM messages \
+                 ORDER BY rowid DESC \
+                 LIMIT ?",
+                vec![(limit as i64).into()],
+            )
             .await?;
 
         Ok(models)
@@ -825,5 +854,42 @@ mod tests {
             .expect("Failed to get recent");
         assert_eq!(recent.len(), 2);
         assert_eq!(recent[0].id, "msg2"); // msg2 is newer
+    }
+
+    #[tokio::test]
+    async fn test_get_page_uses_persisted_row_order_when_created_at_is_inverted() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+
+        let mut assistant = create_dummy_message("assistant-owner", "session1");
+        assistant.created_at = 2000;
+        assistant.updated_at = 2000;
+        repo.insert(&assistant)
+            .await
+            .expect("Failed to insert assistant");
+
+        let mut tool_a = create_dummy_message("tool-result-a", "session1");
+        tool_a.created_at = 1000;
+        tool_a.updated_at = 1000;
+        repo.insert(&tool_a).await.expect("Failed to insert tool A");
+
+        let mut tool_b = create_dummy_message("tool-result-b", "session1");
+        tool_b.created_at = 1001;
+        tool_b.updated_at = 1001;
+        repo.insert(&tool_b).await.expect("Failed to insert tool B");
+
+        let page = repo
+            .get_page("session1", 1, 10)
+            .await
+            .expect("Failed to get page");
+        let ids: Vec<String> = page.items.into_iter().map(|message| message.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "assistant-owner".to_string(),
+                "tool-result-a".to_string(),
+                "tool-result-b".to_string()
+            ]
+        );
     }
 }

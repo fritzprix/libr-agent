@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TokenUsage } from '@/lib/ai-service/types';
+import type { PreflightTokenMetrics } from '@/models/agent-ipc';
 
 import { TokenMetricsBadge } from '../TokenMetricsBadge';
 
@@ -49,5 +50,30 @@ describe('TokenMetricsBadge', () => {
     render(<TokenMetricsBadge usage={usage} />);
 
     expect(screen.getByTestId('cache-hit-indicator')).toHaveTextContent('cache');
+  });
+
+  it('prefers backend preflight estimate as the displayed input metric', () => {
+    const usage: TokenUsage = {
+      promptTokens: 1200,
+      completionTokens: 120,
+      totalTokens: 1320,
+      details: {},
+    };
+    const preflight: PreflightTokenMetrics = {
+      conservativePromptTokens: 2450,
+      promptAnchoredTotalTokens: 2334,
+      safeInputTokenLimit: 65536,
+      systemPromptTokens: 2048,
+      toolsTokens: 1024,
+      selectedMessageCount: 12,
+      compactSummaryInjected: true,
+      preservedCalibrationRatio: 0.92,
+    };
+
+    render(<TokenMetricsBadge usage={usage} preflight={preflight} />);
+
+    expect(screen.getByText('2,450')).toBeInTheDocument();
+    expect(screen.getByText('/65,536')).toBeInTheDocument();
+    expect(screen.queryByText('1,200')).not.toBeInTheDocument();
   });
 });

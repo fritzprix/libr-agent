@@ -94,8 +94,13 @@ function findLatestAssistantUsage(messages: Message[]): TokenUsage | null {
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
   const isCompactStatusBar = useIsMobile(640);
-  const { session, executionMode, setExecutionMode, updateSessionConfig } =
-    useAgentSession();
+  const {
+    session,
+    executionMode,
+    setExecutionMode,
+    updateSessionConfig,
+    preflightTokenMetrics,
+  } = useAgentSession();
   const { messages, workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
   const { isCompacting, isAwaitingCompact } = useLLMService();
@@ -550,6 +555,7 @@ export function AgentChatStatusBar() {
             {displayMetrics && (
               <TokenMetricsBadge
                 usage={displayMetrics}
+                preflight={preflightTokenMetrics}
                 className="shrink-0"
                 compact={isCompactStatusBar}
               />

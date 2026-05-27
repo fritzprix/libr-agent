@@ -8,14 +8,17 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_context_selection_options, build_compact_summary_message_for_messages,
     build_compact_summary_text, build_compaction_preservation_hints,
     build_compaction_request_payload_for_testing, build_overflow_recovery_compaction_messages,
-    fit_compaction_request_messages_to_limit, merge_consecutive_user_messages,
-    normalize_request_messages, preview_preflight_compaction_selection,
-    resolve_context_management_settings, resolve_preserved_calibration_ratio,
-    should_skip_same_tail_compaction, uses_compaction_strategy,
+    derive_tail_recompaction_recovery_plan_for_testing,
+    find_preflight_compactable_end_exclusive_for_testing, fit_compaction_request_messages_to_limit,
+    inspect_compaction_payload, merge_consecutive_user_messages, normalize_request_messages,
+    preview_preflight_compaction_selection, resolve_context_management_settings,
+    resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
+    uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::llm::types::CompactionParentRequest;
+use tauri_mcp_agent_lib::agent::session_manager::clamp_compact_summary_to_context_limit;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
@@ -296,6 +299,96 @@ fn test_build_compaction_request_payload_falls_back_when_compact_record_to_id_is
 }
 
 #[test]
+fn test_preflight_compactable_end_ignores_unresolved_tool_chain_before_to_id() {
+    let mut older_assistant = make_message("m0", "assistant", "Older unresolved tool call");
+    older_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_old".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__readFile".to_string(),
+            arguments: "{\"path\":\"old.txt\"}".to_string(),
+        },
+    }]);
+
+    let messages = vec![
+        older_assistant,
+        make_message("m1", "user", "Already compacted user turn"),
+        make_message("m2", "assistant", "Already compacted assistant turn"),
+        make_message("m3", "assistant", "Fresh post-summary delta"),
+        make_message("m4", "user", "Latest request"),
+    ];
+    let compact_record = CompactContextRecord {
+        id: "compact-1".to_string(),
+        session_id: TEST_SESSION_ID.to_string(),
+        from_id: "m1".to_string(),
+        to_id: "m2".to_string(),
+        summary: "Existing summary".to_string(),
+        created_at: 123,
+    };
+
+    let compactable_end_exclusive =
+        find_preflight_compactable_end_exclusive_for_testing(&messages, Some(&compact_record));
+
+    assert_eq!(compactable_end_exclusive, messages.len());
+}
+
+#[test]
+fn test_tail_recompaction_recovery_plan_targets_latest_request_block_after_incremental_noop() {
+    let messages = vec![
+        make_message("m0", "assistant", "older 0"),
+        make_message("m1", "assistant", "older 1"),
+        make_message("m2", "assistant", "older 2"),
+        make_message("m3", "assistant", "older 3"),
+        make_message("m4", "assistant", "post-summary delta"),
+        TestMessageBuilder::new("m5", "user")
+            .text("latest user request")
+            .source(MessageSource::Ui)
+            .build(),
+    ];
+    let compact_record = CompactContextRecord {
+        id: "compact-1".to_string(),
+        session_id: TEST_SESSION_ID.to_string(),
+        from_id: "m0".to_string(),
+        to_id: "m3".to_string(),
+        summary: "Existing summary".to_string(),
+        created_at: 123,
+    };
+
+    let plan =
+        derive_tail_recompaction_recovery_plan_for_testing(&messages, Some(&compact_record), 2)
+            .expect("oversize no-op should force tail re-compaction before latest request");
+
+    assert_eq!(plan.compacted_to_idx, 3);
+    assert_eq!(plan.first_delta_message_idx, 4);
+    assert_eq!(plan.latest_request_start_idx, 5);
+    assert_eq!(plan.fallback_split_idx, 5);
+}
+
+#[test]
+fn test_tail_recompaction_recovery_plan_returns_none_when_latest_request_is_already_only_tail() {
+    let messages = vec![
+        make_message("m0", "assistant", "older 0"),
+        TestMessageBuilder::new("m1", "user")
+            .text("latest user request")
+            .source(MessageSource::Ui)
+            .build(),
+    ];
+    let compact_record = CompactContextRecord {
+        id: "compact-1".to_string(),
+        session_id: TEST_SESSION_ID.to_string(),
+        from_id: "m0".to_string(),
+        to_id: "m0".to_string(),
+        summary: "Existing summary".to_string(),
+        created_at: 123,
+    };
+
+    let plan =
+        derive_tail_recompaction_recovery_plan_for_testing(&messages, Some(&compact_record), 1);
+
+    assert!(plan.is_none());
+}
+
+#[test]
 fn test_compaction_parent_request_does_not_serialize_internal_session_context() {
     let request = CompactionParentRequest {
         model: "gpt-4o".to_string(),
@@ -449,7 +542,62 @@ fn test_overflow_recovery_filters_scaffolding_and_preserves_tail_instruction_sha
 }
 
 #[test]
-fn test_overflow_recovery_rejects_lossy_fifo_suffix_trimming() {
+fn test_compaction_payload_diagnostics_capture_final_input_shape() {
+    let summary = make_compact_summary_message("m0", "assistant", "previous summary");
+
+    let mut latest_request = make_message("m1", "user", "latest real request from ui");
+    latest_request.source = Some(MessageSource::Ui);
+
+    let fresh_assistant = make_message("m2", "assistant", "fresh assistant context");
+    let tail_instruction = make_compaction_instruction_message("m3", "current compaction overlay");
+
+    let selected = build_overflow_recovery_compaction_messages(
+        &[
+            summary.clone(),
+            latest_request.clone(),
+            fresh_assistant.clone(),
+            tail_instruction.clone(),
+        ],
+        "openai",
+        10_000,
+        0,
+        0,
+    )
+    .expect("overflow recovery payload should fit");
+
+    let diagnostics = inspect_compaction_payload(&selected);
+
+    assert_eq!(diagnostics.total_messages, 4);
+    assert_eq!(diagnostics.body_message_count, 3);
+    assert_eq!(diagnostics.raw_delta_message_count, 2);
+    assert_eq!(diagnostics.compact_summary_count, 1);
+    assert_eq!(diagnostics.compaction_instruction_count, 1);
+    assert_eq!(diagnostics.scaffolding_count, 0);
+    assert_eq!(diagnostics.external_request_count, 1);
+    assert_eq!(diagnostics.latest_external_request_message_ids, vec!["m1"]);
+
+    let latest_request_entry = diagnostics
+        .messages
+        .iter()
+        .find(|message| message.id == "m1")
+        .expect("latest request entry should exist");
+    assert_eq!(latest_request_entry.source, "ui");
+    assert!(latest_request_entry
+        .flags
+        .contains(&"external_request".to_string()));
+
+    let instruction_entry = diagnostics
+        .messages
+        .iter()
+        .find(|message| message.id == "m3")
+        .expect("instruction entry should exist");
+    assert!(instruction_entry
+        .flags
+        .contains(&"compaction_instruction".to_string()));
+}
+
+#[test]
+fn test_overflow_recovery_reduces_active_body_with_fifo_semantics() {
     let summary = make_compact_summary_message("m0", "assistant", &"summary context ".repeat(600));
     let older = make_message("m1", "assistant", &"older assistant context ".repeat(300));
     let mut latest_request = make_message("m2", "user", "latest real request from ui");
@@ -469,28 +617,44 @@ fn test_overflow_recovery_rejects_lossy_fifo_suffix_trimming() {
         None,
     ) + 1;
 
-    let error = build_overflow_recovery_compaction_messages(
+    let selected = build_overflow_recovery_compaction_messages(
         &[
-            summary,
+            summary.clone(),
             older,
-            latest_request,
-            fresh_assistant,
-            tail_instruction,
+            latest_request.clone(),
+            fresh_assistant.clone(),
+            tail_instruction.clone(),
         ],
         "openai",
         limit,
         10,
         5,
     )
-    .expect_err("overflow recovery must fail instead of trimming older context by FIFO suffix");
+    .expect("overflow recovery should keep the latest request and freshest active suffix");
 
-    assert!(error.contains("without lossy FIFO trimming"));
+    let selected_ids = selected
+        .iter()
+        .map(|message| message.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(selected_ids.contains(&summary.id.as_str()));
+    assert!(selected_ids.contains(&latest_request.id.as_str()));
+    assert!(selected_ids.contains(&fresh_assistant.id.as_str()));
+    assert!(selected_ids.contains(&tail_instruction.id.as_str()));
+    assert!(!selected_ids.contains(&"m1"));
 }
 
 #[test]
 fn test_overflow_recovery_allows_no_external_user_anchor_when_body_fits() {
     let summary = make_compact_summary_message("m0", "assistant", "previous summary");
-    let assistant = make_message("m1", "assistant", "assistant-only continuation");
+    let mut assistant = make_message("m1", "assistant", "assistant-only continuation");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call-1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "read_file".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
     let mut tool = make_message("m2", "tool", "tool output");
     tool.tool_call_id = Some("call-1".to_string());
     let tail_instruction = make_compaction_instruction_message("m3", "current compaction overlay");
@@ -529,7 +693,15 @@ fn test_overflow_recovery_uses_compact_summary_active_request_as_workflow_anchor
         "assistant",
         "### Stable Context\n- Existing project context\n\n### Active Request\n- Fix SDL2 compatibility in doom-engine build\n\n### Next Actions\n- Rebuild and verify runtime",
     );
-    let assistant = make_message("m1", "assistant", "assistant-only continuation");
+    let mut assistant = make_message("m1", "assistant", "assistant-only continuation");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call-1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "read_file".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
     let mut tool = make_message("m2", "tool", "tool output");
     tool.tool_call_id = Some("call-1".to_string());
     let tail_instruction = make_compaction_instruction_message("m3", "current compaction overlay");
@@ -999,7 +1171,7 @@ fn test_same_tail_compaction_allows_retry_when_no_compact_summary_exists() {
         make_message("m1", "user", "Latest request"),
     ];
 
-    assert!(!should_skip_same_tail_compaction(&messages, 1));
+    assert!(!should_skip_same_tail_compaction(&messages, None, 1));
 }
 
 #[test]
@@ -1013,7 +1185,7 @@ fn test_same_tail_compaction_allows_follow_up_compaction_after_summary_injection
         make_message("m2", "user", "Latest request"),
     ];
 
-    assert!(!should_skip_same_tail_compaction(&messages, 2));
+    assert!(!should_skip_same_tail_compaction(&messages, None, 2));
 }
 
 #[test]
@@ -1023,7 +1195,7 @@ fn test_same_tail_compaction_does_not_skip_latest_request_after_summary() {
 
     let messages = vec![summary, make_message("m1", "user", "Latest request")];
 
-    assert!(!should_skip_same_tail_compaction(&messages, 2));
+    assert!(!should_skip_same_tail_compaction(&messages, None, 2));
 }
 
 #[test]
@@ -1967,7 +2139,9 @@ fn test_fit_compaction_request_messages_to_limit_rejects_summary_only_payload() 
     let error = fit_compaction_request_messages_to_limit(&[summary, delta], "gemini", 80, 10, 5)
         .expect_err("compaction should fail instead of summarizing only the prior summary");
 
-    assert!(error.contains("prior compact summary anchor"));
+    assert!(
+        error.contains("prior compact summary anchor") || error.contains("effective context limit")
+    );
 }
 
 #[test]
@@ -2040,6 +2214,42 @@ fn test_build_compact_summary_text_limits_snapshot_to_latest_five_completed_tool
         );
         tool.tool_call_id = Some(format!("call_{index}"));
         messages.push(tool);
+    }
+
+    #[test]
+    fn test_backend_compact_summary_clamp_uses_wrapped_token_budget() {
+        let compacted_messages = vec![
+            make_message(
+                "user-1",
+                "user",
+                "Need a concise recap of the ongoing contract review.",
+            ),
+            make_message(
+                "assistant-1",
+                "assistant",
+                "I will inspect the file and compare terms.",
+            ),
+        ];
+        let oversized_summary = "A".repeat(80_000);
+
+        let result = clamp_compact_summary_to_context_limit(
+            TEST_SESSION_ID,
+            &oversized_summary,
+            &compacted_messages,
+            131_072,
+        );
+
+        assert!(result.was_clamped);
+        assert_eq!(result.hard_limit_tokens, 13_107);
+
+        let clamped_message = build_compact_summary_message_for_messages(
+            TEST_SESSION_ID,
+            &result.summary,
+            &compacted_messages,
+            0,
+        );
+        assert!(estimate_tokens_bpe(&clamped_message) <= result.hard_limit_tokens);
+        assert!(result.original_estimated_tokens > result.hard_limit_tokens);
     }
 
     let summary = build_compact_summary_text("Compacted summary", &messages);

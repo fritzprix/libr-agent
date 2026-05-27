@@ -28,9 +28,11 @@ pub mod execution_mode;
 mod message_injection;
 
 pub use channel::format_channel_payload_for_test;
+pub use compact::clamp_compact_summary_to_context_limit;
 pub use compact::handle_compact_error_with_dispatcher;
 pub use compact::should_retry_budget_related_blocking_compaction;
 pub use compact::CompactContextView;
+pub use compact::CompactSummaryClampResult;
 pub use execution_mode::ExecutionMode;
 
 /// Manages agent sessions and their workflows

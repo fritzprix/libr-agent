@@ -43,6 +43,7 @@ function createBaseSessionState(): AgentSessionStateContextValue {
     workflowStatus: 'idle',
     workflowPhase: 'idle',
     runtimeState: createBaseRuntimeState(),
+    preflightTokenMetrics: null,
     initializationStep: null,
     pendingApprovals: [],
     executionMode: 'normal',

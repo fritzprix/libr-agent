@@ -4,6 +4,7 @@ import {
   getAgentCompactContext,
 } from '@/lib/backend/agent-commands';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import { summarizeMessageIngredients } from '@/lib/ai-service/request-ingredients';
 import type {
   AIContextCompactionService,
   AIServiceConfig,
@@ -95,6 +96,16 @@ export async function setupCompactRequestListener({
           provider,
           apiKey,
           providerConfig,
+        );
+        logger.info(
+          `🧪 Compact provider handoff ingredients: session=${sessionId}, provider=${provider}, model=${model}`,
+          {
+            ...summarizeMessageIngredients(messages),
+            systemPromptLength: parentRequest?.systemPrompt?.length ?? 0,
+            toolsCount: parentRequest?.availableTools?.length ?? 0,
+            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
+            maxTokens: runtimeConfig.maxTokens,
+          },
         );
         const summary = await service.compact(messages, {
           modelName: model,

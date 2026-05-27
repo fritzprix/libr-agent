@@ -61,7 +61,17 @@ fn resolve_calibration_ratio(
 /// when the stack contains no in-flight tool chains. This prevents async compaction
 /// from swallowing an assistant tool-call message and leaving future tool results
 /// orphaned behind the compact summary.
-pub fn find_compaction_split_index(messages: &[Message]) -> usize {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionSplitDiagnostics {
+    pub split_idx: usize,
+    pub first_unresolved_owner_index: Option<usize>,
+    pub first_unresolved_owner_id: Option<String>,
+    pub first_unresolved_tool_call_count: usize,
+}
+
+pub(crate) fn inspect_compaction_split_boundary(
+    messages: &[Message],
+) -> CompactionSplitDiagnostics {
     use std::collections::HashMap;
 
     let mut tool_call_owner: HashMap<String, usize> = HashMap::new();
@@ -100,11 +110,22 @@ pub fn find_compaction_split_index(messages: &[Message]) -> usize {
         }
     }
 
-    open_tool_counts
-        .keys()
-        .min()
-        .copied()
-        .unwrap_or(messages.len())
+    let first_unresolved_owner_index = open_tool_counts.keys().min().copied();
+
+    CompactionSplitDiagnostics {
+        split_idx: first_unresolved_owner_index.unwrap_or(messages.len()),
+        first_unresolved_owner_index,
+        first_unresolved_owner_id: first_unresolved_owner_index
+            .and_then(|idx| messages.get(idx))
+            .map(|message| message.id.clone()),
+        first_unresolved_tool_call_count: first_unresolved_owner_index
+            .and_then(|idx| open_tool_counts.get(&idx).copied())
+            .unwrap_or(0),
+    }
+}
+
+pub fn find_compaction_split_index(messages: &[Message]) -> usize {
+    inspect_compaction_split_boundary(messages).split_idx
 }
 
 /// Removes incomplete tool chains.
