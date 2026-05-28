@@ -8,7 +8,6 @@ use super::instruction::{build_compaction_instruction, build_compaction_instruct
 
 pub(super) struct CompactionRequestPayload {
     pub(super) compact_messages: Vec<Message>,
-    pub(super) from_id: String,
     pub(super) to_id: String,
     pub(super) compacted_delta_count: usize,
     pub(super) reused_prior_summary: bool,
@@ -17,7 +16,6 @@ pub(super) struct CompactionRequestPayload {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionRequestPayloadPreview {
     pub message_count: usize,
-    pub from_id: String,
     pub to_id: String,
     pub compacted_delta_count: usize,
     pub reused_prior_summary: bool,
@@ -109,7 +107,6 @@ pub(super) fn build_compaction_request_payload(
 
             return Some(CompactionRequestPayload {
                 compact_messages,
-                from_id: record.from_id.clone(),
                 to_id: messages[split_idx - 1].id.clone(),
                 compacted_delta_count: split_idx - first_delta_message_idx,
                 reused_prior_summary: true,
@@ -126,10 +123,6 @@ pub(super) fn build_compaction_request_payload(
     ));
     Some(CompactionRequestPayload {
         compact_messages,
-        from_id: messages
-            .first()
-            .map(|message| message.id.clone())
-            .unwrap_or_default(),
         to_id: messages[split_idx - 1].id.clone(),
         compacted_delta_count: split_idx,
         reused_prior_summary: false,
@@ -146,7 +139,6 @@ pub fn build_compaction_request_payload_for_testing(
     build_compaction_request_payload(session_id, messages, split_idx, compact_record, created_at)
         .map(|payload| CompactionRequestPayloadPreview {
             message_count: payload.compact_messages.len(),
-            from_id: payload.from_id,
             to_id: payload.to_id,
             compacted_delta_count: payload.compacted_delta_count,
             reused_prior_summary: payload.reused_prior_summary,

@@ -113,6 +113,68 @@ async fn cache_assistant_message(
     }
 }
 
+fn extract_prompt_tokens(message: &Message) -> Option<i64> {
+    message
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.get("promptTokens"))
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().and_then(|v| i64::try_from(v).ok()))
+        })
+}
+
+async fn persist_prompt_token_checkpoint(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    prompt_tokens: i64,
+) {
+    let (checkpoint_handle, message_handle) = {
+        let sessions = active_sessions.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return;
+        };
+        (
+            session.last_submitted_input_message_id.clone(),
+            session.messages.clone(),
+        )
+    };
+
+    let checkpoint_id = checkpoint_handle.read().await.clone();
+    let Some(checkpoint_id) = checkpoint_id else {
+        return;
+    };
+
+    let checkpoint_message = {
+        let mut messages = message_handle.write().await;
+        let Some(message) = messages
+            .iter_mut()
+            .find(|message| message.id == checkpoint_id)
+        else {
+            log::warn!(
+                "Failed to stamp prompt-token checkpoint: session={}, checkpoint_id={} missing from cache",
+                session_id,
+                checkpoint_id
+            );
+            return;
+        };
+
+        message.prompt_tokens = Some(prompt_tokens);
+        message.clone()
+    };
+
+    let repo = crate::state::get_message_repository();
+    if let Err(error) = repo.insert(&checkpoint_message).await {
+        log::error!(
+            "Failed to persist prompt-token checkpoint: session={}, checkpoint_id={}, error={}",
+            session_id,
+            checkpoint_message.id,
+            error
+        );
+    }
+}
+
 async fn reset_repeated_thinking_retry_count(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -274,6 +336,10 @@ pub async fn handle_llm_response(
             .await
             .map(|_| ());
         }
+    }
+
+    if let Some(prompt_tokens) = extract_prompt_tokens(&assistant_message) {
+        persist_prompt_token_checkpoint(active_sessions, &session_id, prompt_tokens).await;
     }
 
     // 1. Add assistant message to cache

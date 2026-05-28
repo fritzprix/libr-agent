@@ -31,10 +31,8 @@ const {
     chatState: { messages: [] as Message[], workflowStatus: 'idle' as 'idle' | 'busy' },
     hasVirtuosoHandle: { current: true },
     compactedRange: {
-      fromId: 'earlier-user',
       toId: 'tool-1',
       summary: 'Compacted summary',
-      earlierPreview: 'Backend earlier preview',
       latestIncludedPreview: 'Backend latest preview',
       condensedCount: 3,
     },
@@ -108,18 +106,15 @@ vi.mock('@/features/agent/components/shared', () => ({
 vi.mock('../shared/CompactEventDivider', () => ({
   CompactEventDivider: ({
     summary,
-    earlierPreview,
     latestIncludedPreview,
     condensedCount,
   }: {
     summary?: string;
-    earlierPreview?: string;
     latestIncludedPreview?: string;
     condensedCount?: number;
   }) => (
     <div>
       <div>{summary ?? 'compact divider'}</div>
-      <div>{earlierPreview ?? 'no earlier preview'}</div>
       <div>{latestIncludedPreview ?? 'no latest preview'}</div>
       <div>{condensedCount ?? 'no count'}</div>
     </div>
@@ -178,7 +173,7 @@ describe('AgentChatMessages – rendering and layout helpers', () => {
     expect(screen.getByText('Compacted summary')).toBeInTheDocument();
   });
 
-  it('uses backend-provided compaction previews instead of re-extracting raw message text', () => {
+  it('uses backend-provided compact metadata instead of re-extracting raw message text', () => {
     chatState.messages = [
       {
         id: 'earlier-user',
@@ -198,7 +193,6 @@ describe('AgentChatMessages – rendering and layout helpers', () => {
 
     render(<AgentChatMessages />);
 
-    expect(screen.getByText('Backend earlier preview')).toBeInTheDocument();
     expect(screen.getByText('Backend latest preview')).toBeInTheDocument();
     expect(screen.queryByText(/leaked raw UI chrome/)).not.toBeInTheDocument();
   });

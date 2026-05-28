@@ -16,11 +16,9 @@ import { createId } from '@paralleldrive/cuid2';
 export interface CompactContextRecord {
   id: string;
   sessionId: string;
-  fromId: string;
   toId: string;
   summary: string;
   createdAt: number;
-  earlierPreview?: string;
   latestIncludedPreview?: string;
   condensedCount?: number;
 }
@@ -157,14 +155,14 @@ export type { CompletionCancelRequest };
  */
 export async function handleCompactResponse(
   sessionId: string,
-  fromId: string,
   toId: string,
+  compactedDeltaCount: number,
   summary: string,
 ): Promise<void> {
   await safeInvoke<AgentResponse>('agent_handle_compact_response', {
     sessionId,
-    fromId,
     toId,
+    compactedDeltaCount,
     summary,
   });
 }

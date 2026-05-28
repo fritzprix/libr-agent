@@ -18,7 +18,9 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::llm::types::CompactionParentRequest;
-use tauri_mcp_agent_lib::agent::session_manager::clamp_compact_summary_to_context_limit;
+use tauri_mcp_agent_lib::agent::session_manager::{
+    clamp_compact_summary_to_context_limit, validate_compact_summary_for_testing,
+};
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
@@ -47,6 +49,7 @@ impl TestMessageBuilder {
                 attachments: None,
                 tool_use: None,
                 usage: None,
+                prompt_tokens: None,
                 created_at: 0,
                 updated_at: 0,
                 source: None,
@@ -66,6 +69,11 @@ impl TestMessageBuilder {
 
     fn source(mut self, source: MessageSource) -> Self {
         self.message.source = Some(source);
+        self
+    }
+
+    fn prompt_tokens(mut self, prompt_tokens: i64) -> Self {
+        self.message.prompt_tokens = Some(prompt_tokens);
         self
     }
 
@@ -250,8 +258,8 @@ fn test_build_compaction_request_payload_returns_none_for_zero_split_idx() {
     let compact_record = CompactContextRecord {
         id: "compact-1".to_string(),
         session_id: TEST_SESSION_ID.to_string(),
-        from_id: "m0".to_string(),
         to_id: "m1".to_string(),
+        condensed_count: Some(2),
         summary: "Existing summary".to_string(),
         created_at: 123,
     };
@@ -276,8 +284,8 @@ fn test_build_compaction_request_payload_falls_back_when_compact_record_to_id_is
     let compact_record = CompactContextRecord {
         id: "compact-1".to_string(),
         session_id: TEST_SESSION_ID.to_string(),
-        from_id: "old-from".to_string(),
         to_id: "missing-message".to_string(),
+        condensed_count: Some(2),
         summary: "Stale summary".to_string(),
         created_at: 123,
     };
@@ -292,7 +300,6 @@ fn test_build_compaction_request_payload_falls_back_when_compact_record_to_id_is
     .expect("payload should fall back to raw-prefix compaction");
 
     assert_eq!(payload.message_count, 3);
-    assert_eq!(payload.from_id, "m0");
     assert_eq!(payload.to_id, "m1");
     assert_eq!(payload.compacted_delta_count, 2);
     assert!(!payload.reused_prior_summary);
@@ -320,16 +327,46 @@ fn test_preflight_compactable_end_ignores_unresolved_tool_chain_before_to_id() {
     let compact_record = CompactContextRecord {
         id: "compact-1".to_string(),
         session_id: TEST_SESSION_ID.to_string(),
-        from_id: "m1".to_string(),
         to_id: "m2".to_string(),
+        condensed_count: Some(2),
         summary: "Existing summary".to_string(),
         created_at: 123,
     };
 
-    let compactable_end_exclusive =
-        find_preflight_compactable_end_exclusive_for_testing(&messages, Some(&compact_record));
+    let compactable_end_exclusive = find_preflight_compactable_end_exclusive_for_testing(
+        &messages,
+        Some(&compact_record),
+        None,
+    );
 
     assert_eq!(compactable_end_exclusive, messages.len());
+}
+
+#[test]
+fn test_preflight_compactable_end_uses_prompt_token_checkpoint_window() {
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user")
+            .text("checkpoint 0")
+            .prompt_tokens(12_000)
+            .build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text("checkpoint 1")
+            .prompt_tokens(24_000)
+            .build(),
+        TestMessageBuilder::new("m2", "user")
+            .text("checkpoint 2")
+            .prompt_tokens(36_000)
+            .build(),
+        TestMessageBuilder::new("m3", "assistant")
+            .text("checkpoint 3")
+            .prompt_tokens(48_000)
+            .build(),
+    ];
+
+    let compactable_end_exclusive =
+        find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(30_000));
+
+    assert_eq!(compactable_end_exclusive, 1);
 }
 
 #[test]
@@ -348,8 +385,8 @@ fn test_tail_recompaction_recovery_plan_targets_latest_request_block_after_incre
     let compact_record = CompactContextRecord {
         id: "compact-1".to_string(),
         session_id: TEST_SESSION_ID.to_string(),
-        from_id: "m0".to_string(),
         to_id: "m3".to_string(),
+        condensed_count: Some(4),
         summary: "Existing summary".to_string(),
         created_at: 123,
     };
@@ -376,8 +413,8 @@ fn test_tail_recompaction_recovery_plan_returns_none_when_latest_request_is_alre
     let compact_record = CompactContextRecord {
         id: "compact-1".to_string(),
         session_id: TEST_SESSION_ID.to_string(),
-        from_id: "m0".to_string(),
         to_id: "m0".to_string(),
+        condensed_count: Some(1),
         summary: "Existing summary".to_string(),
         created_at: 123,
     };
@@ -2257,6 +2294,26 @@ fn test_build_compact_summary_text_limits_snapshot_to_latest_five_completed_tool
     assert!(!summary.contains("file-0.txt"));
     assert!(summary.contains("file-1.txt"));
     assert!(summary.contains("file-5.txt"));
+}
+
+#[test]
+fn test_validate_compact_summary_accepts_long_unstructured_summary() {
+    let summary = "The agent inspected the failing build path, compared the recent compiler output, identified the namespace mismatch in main.cpp, confirmed the renderer z-buffer access bug, and noted that the next step is applying the remaining fixes before rebuilding."
+        .to_string();
+
+    let result = validate_compact_summary_for_testing(&summary, 8);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_validate_compact_summary_rejects_short_summary_for_large_compaction() {
+    let result = validate_compact_summary_for_testing("Too short to be useful.", 8);
+
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .contains("Compaction summary was too short"));
 }
 
 #[test]

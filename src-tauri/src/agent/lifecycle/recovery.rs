@@ -72,6 +72,7 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
                 thinking_signature: None,
                 assistant_id: None,
                 usage: None,
+                prompt_tokens: None,
                 attachments: None,
                 tool_use: None,
                 created_at: now,
@@ -128,6 +129,7 @@ fn build_recovered_session(
         expected_response_id: Arc::new(RwLock::new(None)),
         cached_stable_prompt: Arc::new(RwLock::new(None)),
         last_completion_request: Arc::new(RwLock::new(None)),
+        last_submitted_input_message_id: Arc::new(RwLock::new(None)),
     }
 }
 

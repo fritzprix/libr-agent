@@ -182,17 +182,11 @@ export function AgentChatMessages() {
       return undefined;
     }
 
-    let fromIndex = -1;
     let toIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
       const id = messages[i]?.id;
       if (id === compactedRange.toId) {
         toIndex = i;
-      }
-      if (id === compactedRange.fromId) {
-        fromIndex = i;
-      }
-      if (fromIndex !== -1 && toIndex !== -1) {
         break;
       }
     }
@@ -201,12 +195,7 @@ export function AgentChatMessages() {
       return undefined;
     }
 
-    if (fromIndex > toIndex) {
-      return undefined;
-    }
-
     return {
-      earlierPreview: compactedRange.earlierPreview,
       latestIncludedPreview: compactedRange.latestIncludedPreview,
       condensedCount: compactedRange.condensedCount,
       summary: compactedRange.summary,
@@ -262,7 +251,6 @@ export function AgentChatMessages() {
       const compactDivider = isCompactBoundary ? (
         <CompactEventDivider
           key={`compact-divider-${groupedMessage.message.id}`}
-          earlierPreview={compactedEvent?.earlierPreview}
           latestIncludedPreview={compactedEvent?.latestIncludedPreview}
           condensedCount={compactedEvent?.condensedCount}
           summary={compactedEvent?.summary}

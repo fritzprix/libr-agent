@@ -143,6 +143,7 @@ pub(super) fn build_compaction_instruction_message(
         attachments: None,
         tool_use: None,
         usage: None,
+        prompt_tokens: None,
         created_at,
         updated_at: created_at,
         source: Some(MessageSource::CompactionInstruction),

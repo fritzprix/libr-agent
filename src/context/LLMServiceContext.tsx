@@ -182,10 +182,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         }
 
         setCompactedRange(sessionId, {
-          fromId: compactContext.fromId,
           toId: compactContext.toId,
           summary: compactContext.summary,
-          earlierPreview: compactContext.earlierPreview,
           latestIncludedPreview: compactContext.latestIncludedPreview,
           condensedCount: compactContext.condensedCount,
         });

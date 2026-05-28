@@ -147,6 +147,8 @@ pub struct Message {
     pub tool_use: Option<serde_json::Value>,
     /// Token usage metrics
     pub usage: Option<serde_json::Value>,
+    /// Persisted prompt-token truth for checkpoint-based compaction decisions.
+    pub prompt_tokens: Option<i64>,
     #[serde(default = "default_timestamp")]
     pub created_at: i64, // Unix timestamp in milliseconds
     #[serde(default = "default_timestamp")]
@@ -184,6 +186,7 @@ impl Message {
             attachments: None,
             tool_use: None,
             usage: None,
+            prompt_tokens: None,
             created_at: now,
             updated_at: now,
             source,
@@ -210,6 +213,7 @@ impl Message {
             attachments: None,
             tool_use: None,
             usage: None,
+            prompt_tokens: None,
             created_at,
             updated_at: created_at,
             source: Some(MessageSource::CompactSummary),
@@ -273,5 +277,17 @@ impl Message {
             && self
                 .source_with_legacy_fallback()
                 .is_none_or(|source| source.is_external_request_source())
+    }
+
+    pub fn prompt_tokens_value(&self) -> Option<usize> {
+        self.prompt_tokens
+            .and_then(|value| usize::try_from(value).ok())
+            .or_else(|| {
+                self.usage
+                    .as_ref()
+                    .and_then(|usage| usage.get("promptTokens"))
+                    .and_then(|value| value.as_u64())
+                    .and_then(|value| usize::try_from(value).ok())
+            })
     }
 }

@@ -188,6 +188,14 @@ pub async fn request_llm_completion(
         available_tools,
     };
 
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            *session.last_submitted_input_message_id.write().await =
+                request.messages.last().map(|message| message.id.clone());
+        }
+    }
+
     app_handle
         .emit("llm:completion-request", request)
         .map_err(|e| {
@@ -631,6 +639,44 @@ async fn check_token_limit(
             .unwrap_or_else(|| "none".to_string()),
         selected_message_breakdown
     );
+
+    let compact_context_record = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.compact_context.clone())
+    };
+    let compact_context_record = match compact_context_record {
+        Some(handle) => handle.read().await.clone(),
+        None => None,
+    };
+
+    if !crate::agent::llm::completion::compaction::has_prompt_checkpoint_compaction_target(
+        normalized_messages,
+        compact_context_record.as_ref(),
+        safe_input_token_limit,
+    ) {
+        return Err(
+            AgentRuntimeError::new(
+                AgentRuntimeErrorType::ValidationError,
+                "Prepared payload exceeds the effective context limit, but there is no persisted prompt-token checkpoint to compact from. This session state is invalid and must not be committed.",
+            )
+            .with_code("INVALID_CONTEXT_STATE")
+            .with_original_error(serde_json::json!({
+                "sessionId": session_id,
+                "conservativePromptTokens": conservative_preflight_tokens,
+                "safeInputTokenLimit": safe_input_token_limit,
+                "compactSummaryInjected": compact_summary_injected,
+                "selectedMessageCount": final_messages.len(),
+                "systemPromptTokens": system_prompt_tokens,
+                "toolsTokens": tools_tokens,
+                "preservedCalibrationRatio": preserved_calibration_ratio,
+                "selectedBreakdown": selected_message_breakdown,
+                "normalPathLossyFallbackAllowed": false,
+                "requiresPromptTokenCheckpoint": true,
+            })),
+        );
+    }
 
     if trigger_preflight_compaction_for_messages_or_error(
         active_sessions,

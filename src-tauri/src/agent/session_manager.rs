@@ -31,6 +31,7 @@ pub use channel::format_channel_payload_for_test;
 pub use compact::clamp_compact_summary_to_context_limit;
 pub use compact::handle_compact_error_with_dispatcher;
 pub use compact::should_retry_budget_related_blocking_compaction;
+pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
 pub use compact::CompactSummaryClampResult;
 pub use execution_mode::ExecutionMode;
@@ -692,8 +693,8 @@ impl AgentSessionManager {
     pub async fn handle_compact_response(
         &self,
         session_id: &str,
-        from_id: String,
         to_id: String,
+        compacted_delta_count: usize,
         summary: String,
     ) -> Result<(), String> {
         compact::handle_compact_response(compact::CompactResponseParams {
@@ -702,8 +703,8 @@ impl AgentSessionManager {
             session_repo: &self.session_repo,
             proxy_manager: &self.proxy_manager,
             session_id,
-            from_id,
             to_id,
+            compacted_delta_count,
             summary,
         })
         .await

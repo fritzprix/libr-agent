@@ -419,6 +419,10 @@ pub struct AgentSession {
     /// Exact prompt-layout fields from the latest emitted completion request.
     /// Reused by compaction so the summarization call preserves provider cache prefixes.
     pub last_completion_request: Arc<RwLock<Option<CompactionParentRequest>>>,
+
+    /// Last raw input message ID included in the most recent emitted completion request.
+    /// Used to persist provider-reported prompt tokens onto the correct checkpoint message.
+    pub last_submitted_input_message_id: Arc<RwLock<Option<String>>>,
 }
 
 #[cfg(test)]

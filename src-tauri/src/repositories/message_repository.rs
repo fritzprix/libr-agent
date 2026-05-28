@@ -185,6 +185,9 @@ impl SqliteMessageRepository {
             usage: row
                 .try_get("", "usage")
                 .map_err(DbError::SeaOrmQueryFailed)?,
+            prompt_tokens: row
+                .try_get("", "prompt_tokens")
+                .map_err(DbError::SeaOrmQueryFailed)?,
         })
     }
 
@@ -313,6 +316,7 @@ impl SqliteMessageRepository {
             source: model.source.map(MessageSource::from_raw),
             error,
             usage,
+            prompt_tokens: model.prompt_tokens,
             metadata: None,
         }
     }
@@ -365,6 +369,7 @@ impl SqliteMessageRepository {
                 .map(|source| source.as_str().to_string())),
             error: Set(error_json),
             usage: Set(usage_json),
+            prompt_tokens: Set(message.prompt_tokens),
         })
     }
 
@@ -388,6 +393,7 @@ impl SqliteMessageRepository {
                 message::Column::Source,
                 message::Column::Error,
                 message::Column::Usage,
+                message::Column::PromptTokens,
             ])
             .to_owned()
     }
@@ -438,7 +444,7 @@ impl MessageRepository for SqliteMessageRepository {
         // cross-layer created_at skew as conversation truth.
         let models = self
             .query_message_models(
-                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
                  FROM messages \
                  WHERE session_id = ? \
                  ORDER BY rowid ASC \
@@ -628,7 +634,7 @@ impl MessageRepository for SqliteMessageRepository {
         let fetch_limit = Self::validate_slice_limit(limit)?;
         let rows = self
             .query_slice_rows(
-                "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
                  FROM messages \
                  WHERE session_id = ? \
                  ORDER BY rowid DESC \
@@ -649,7 +655,7 @@ impl MessageRepository for SqliteMessageRepository {
         let fetch_limit = Self::validate_slice_limit(limit)?;
         let rows = self
             .query_slice_rows(
-                "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                "SELECT rowid AS cursor_rowid, id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
                  FROM messages \
                  WHERE session_id = ? \
                    AND rowid < ? \
@@ -706,7 +712,7 @@ impl MessageRepository for SqliteMessageRepository {
     ) -> Result<Vec<message::Model>, DbError> {
         let models = self
             .query_message_models(
-                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
                  FROM messages \
                  WHERE session_id = ? \
                  ORDER BY rowid DESC \
@@ -721,7 +727,7 @@ impl MessageRepository for SqliteMessageRepository {
     async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError> {
         let models = self
             .query_message_models(
-                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage \
+                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
                  FROM messages \
                  ORDER BY rowid DESC \
                  LIMIT ?",
@@ -793,6 +799,7 @@ mod tests {
             error: None,
             metadata: None,
             usage: None,
+            prompt_tokens: None,
         }
     }
 

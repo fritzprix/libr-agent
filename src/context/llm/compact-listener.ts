@@ -59,13 +59,13 @@ export async function setupCompactRequestListener({
       const {
         sessionId,
         messages: rawMessages,
-        fromId,
         toId,
+        compactedDeltaCount,
         parentRequest,
       } = event.payload;
       const messages = rawMessages.map(normalizeRustMessage);
       logger.info(
-        `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
+        `📦 Compact request received: session=${sessionId}, toId=${toId}, compactedDeltaCount=${compactedDeltaCount}`,
       );
 
       const settings = settingsRef.current;
@@ -113,15 +113,20 @@ export async function setupCompactRequestListener({
           availableTools: parentRequest?.availableTools,
           config: runtimeConfig,
         });
-        await handleCompactResponse(sessionId, fromId, toId, summary);
+        await handleCompactResponse(
+          sessionId,
+          toId,
+          compactedDeltaCount,
+          summary,
+        );
         try {
           const freshContext = await getAgentCompactContext(sessionId);
           if (freshContext) {
             setCompactedRangeForSession(sessionId, freshContext);
           } else {
             setCompactedRangeForSession(sessionId, {
-              fromId,
               toId,
+              condensedCount: compactedDeltaCount,
               summary,
             });
           }
@@ -131,8 +136,8 @@ export async function setupCompactRequestListener({
             fetchError,
           );
           setCompactedRangeForSession(sessionId, {
-            fromId,
             toId,
+            condensedCount: compactedDeltaCount,
             summary,
           });
         }

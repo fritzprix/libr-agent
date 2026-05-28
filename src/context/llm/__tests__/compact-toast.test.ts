@@ -31,8 +31,8 @@ interface CompactPayload {
   sessionId: string;
   sessionName: string;
   messages: Array<Message | RustMessage>;
-  fromId: string;
   toId: string;
+  compactedDeltaCount: number;
   parentRequest?: {
     model: string;
     provider: string;
@@ -42,8 +42,8 @@ interface CompactPayload {
 }
 
 interface CompactedRange {
-  fromId: string;
   toId: string;
+  condensedCount?: number;
   summary?: string;
 }
 
@@ -79,8 +79,8 @@ async function handleCompactEvent(
   },
   handleCompactResponse: (
     sessionId: string,
-    fromId: string,
     toId: string,
+    compactedDeltaCount: number,
     summary: string,
   ) => Promise<void>,
   handleCompactError: (sessionId: string, error: unknown) => Promise<void>,
@@ -89,7 +89,7 @@ async function handleCompactEvent(
     range: CompactedRange,
   ) => void,
 ): Promise<void> {
-  const { sessionId, messages, fromId, toId } = payload;
+  const { sessionId, messages, toId, compactedDeltaCount } = payload;
 
   if (!settings) {
     await handleCompactError(sessionId, {} as unknown);
@@ -111,8 +111,12 @@ async function handleCompactEvent(
       systemPrompt: payload.parentRequest?.systemPrompt,
       availableTools: payload.parentRequest?.availableTools,
     });
-    await handleCompactResponse(sessionId, fromId, toId, summary);
-    setCompactedRangeForSession(sessionId, { fromId, toId, summary });
+    await handleCompactResponse(sessionId, toId, compactedDeltaCount, summary);
+    setCompactedRangeForSession(sessionId, {
+      toId,
+      condensedCount: compactedDeltaCount,
+      summary,
+    });
   } catch {
     await handleCompactError(sessionId, {} as unknown);
   }
@@ -149,8 +153,8 @@ function handleCompactStateEvent(payload: CompactStatePayload, toast: MockToast)
 
 const SESSION_ID = 'abc-123-session';
 const SESSION_NAME = 'My Agent';
-const FROM_ID = 'msg-001';
 const TO_ID = 'msg-099';
+const COMPACTED_DELTA_COUNT = 7;
 const MESSAGES: Message[] = [
   {
     id: 'message-1',
@@ -172,8 +176,8 @@ const DEFAULT_PAYLOAD: CompactPayload = {
   sessionId: SESSION_ID,
   sessionName: SESSION_NAME,
   messages: MESSAGES,
-  fromId: FROM_ID,
   toId: TO_ID,
+  compactedDeltaCount: COMPACTED_DELTA_COUNT,
 };
 
 describe('compact state toast flow', () => {
@@ -453,14 +457,14 @@ describe('compact request handler', () => {
 
     expect(handleCompactResponse).toHaveBeenCalledWith(
       SESSION_ID,
-      FROM_ID,
       TO_ID,
+      COMPACTED_DELTA_COUNT,
       'A concise summary.',
     );
     expect(setDefaultConfig).not.toHaveBeenCalled();
     expect(setCompactedRangeForSession).toHaveBeenCalledWith(SESSION_ID, {
-      fromId: FROM_ID,
       toId: TO_ID,
+      condensedCount: COMPACTED_DELTA_COUNT,
       summary: 'A concise summary.',
     });
   });

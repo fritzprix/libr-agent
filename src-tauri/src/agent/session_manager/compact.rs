@@ -282,8 +282,8 @@ pub struct CompactResponseParams<'a> {
     pub session_repo: &'a Arc<dyn SessionRepository>,
     pub proxy_manager: &'a Arc<MCPServiceProxyManager>,
     pub session_id: &'a str,
-    pub from_id: String,
     pub to_id: String,
+    pub compacted_delta_count: usize,
     pub summary: String,
 }
 
@@ -292,13 +292,44 @@ pub struct CompactResponseParams<'a> {
 pub struct CompactContextView {
     pub id: String,
     pub session_id: String,
-    pub from_id: String,
     pub to_id: String,
     pub summary: String,
     pub created_at: i64,
-    pub earlier_preview: Option<String>,
     pub latest_included_preview: Option<String>,
     pub condensed_count: Option<usize>,
+}
+
+fn minimum_compact_summary_chars(compacted_delta_count: usize) -> usize {
+    match compacted_delta_count {
+        0..=2 => 32,
+        3..=5 => 64,
+        _ => 96,
+    }
+}
+
+fn validate_compact_summary(summary: &str, compacted_delta_count: usize) -> Result<(), String> {
+    let normalized = summary.trim();
+    if normalized.is_empty() {
+        return Err("Compaction summary was empty.".to_string());
+    }
+
+    let min_chars = minimum_compact_summary_chars(compacted_delta_count);
+    let summary_chars = normalized.chars().count();
+    if summary_chars < min_chars {
+        return Err(format!(
+            "Compaction summary was too short: got {} chars, expected at least {}.",
+            summary_chars, min_chars
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn validate_compact_summary_for_testing(
+    summary: &str,
+    compacted_delta_count: usize,
+) -> Result<(), String> {
+    validate_compact_summary(summary, compacted_delta_count)
 }
 
 pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Result<(), String> {
@@ -308,8 +339,8 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
         session_repo,
         proxy_manager,
         session_id,
-        from_id,
         to_id,
+        compacted_delta_count,
         summary,
     } = params;
     let (compaction, session_name) = {
@@ -344,12 +375,13 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
             clamped_summary.estimated_tokens
         );
     }
+    validate_compact_summary(&clamped_summary.summary, compacted_delta_count)?;
 
     log::info!(
-        "✅ Compact response stored for session {}: from_id={}, to_id={}, summary_chars={}, summary_est_tokens={}, elapsed_ms={}",
+        "✅ Compact response stored for session {}: to_id={}, compacted_delta_count={}, summary_chars={}, summary_est_tokens={}, elapsed_ms={}",
         session_id,
-        from_id,
         to_id,
+        compacted_delta_count,
         clamped_summary.summary.len(),
         clamped_summary.estimated_tokens,
         started_at_ms
@@ -360,8 +392,8 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
     let record = CompactContextRecord {
         id: uuid::Uuid::new_v4().to_string(),
         session_id: session_id.to_string(),
-        from_id,
         to_id,
+        condensed_count: Some(compacted_delta_count),
         summary: clamped_summary.summary,
         created_at: chrono::Utc::now().timestamp_millis(),
     };
@@ -515,7 +547,7 @@ async fn load_boundary_messages(
         if let Some(session) = active.get(session_id) {
             let messages = session.messages.read().await;
             for message in messages.iter() {
-                if message.id == record.from_id || message.id == record.to_id {
+                if message.id == record.to_id {
                     boundary_messages.insert(message.id.clone(), message.clone());
                 }
             }
@@ -523,9 +555,6 @@ async fn load_boundary_messages(
     }
 
     let mut missing_ids = Vec::new();
-    if !boundary_messages.contains_key(&record.from_id) {
-        missing_ids.push(record.from_id.clone());
-    }
     if !boundary_messages.contains_key(&record.to_id) {
         missing_ids.push(record.to_id.clone());
     }
@@ -544,31 +573,10 @@ async fn load_boundary_messages(
     Ok(boundary_messages)
 }
 
-async fn derive_condensed_count(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-    record: &CompactContextRecord,
-) -> Option<usize> {
-    let active = active_sessions.read().await;
-    let session = active.get(session_id)?;
-    let messages = session.messages.read().await;
-    let from_index = messages
-        .iter()
-        .position(|message| message.id == record.from_id)?;
-    let to_index = messages
-        .iter()
-        .position(|message| message.id == record.to_id)?;
-    (from_index <= to_index).then_some(to_index - from_index + 1)
-}
-
 fn build_compact_context_view(
     record: CompactContextRecord,
     boundary_messages: &HashMap<String, Message>,
-    condensed_count: Option<usize>,
 ) -> CompactContextView {
-    let earlier_preview = boundary_messages
-        .get(&record.from_id)
-        .and_then(extract_message_preview);
     let latest_included_preview = boundary_messages
         .get(&record.to_id)
         .and_then(extract_message_preview);
@@ -576,13 +584,11 @@ fn build_compact_context_view(
     CompactContextView {
         id: record.id,
         session_id: record.session_id,
-        from_id: record.from_id,
         to_id: record.to_id,
         summary: record.summary,
         created_at: record.created_at,
-        earlier_preview,
         latest_included_preview,
-        condensed_count,
+        condensed_count: record.condensed_count,
     }
 }
 
@@ -595,13 +601,7 @@ pub async fn get_compact_context_view(
     };
 
     let boundary_messages = load_boundary_messages(active_sessions, session_id, &record).await?;
-    let condensed_count = derive_condensed_count(active_sessions, session_id, &record).await;
-
-    Ok(Some(build_compact_context_view(
-        record,
-        &boundary_messages,
-        condensed_count,
-    )))
+    Ok(Some(build_compact_context_view(record, &boundary_messages)))
 }
 
 pub async fn save_compact_context(

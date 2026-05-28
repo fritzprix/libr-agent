@@ -163,7 +163,7 @@ fn log_compaction_input_diagnostics(
 pub fn preview_preflight_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
     build_compaction_selection_preview(
         messages,
-        find_preflight_compactable_end_exclusive(messages, None),
+        find_preflight_compactable_end_exclusive(messages, None, None),
     )
 }
 
@@ -221,27 +221,93 @@ fn find_compaction_delta_start_index(
         .unwrap_or(0)
 }
 
+fn find_latest_checkpoint_index(messages: &[Message]) -> Option<usize> {
+    messages
+        .iter()
+        .rposition(|message| message.prompt_tokens_value().is_some())
+}
+
+fn find_prompt_checkpoint_compactable_end_exclusive(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: usize,
+) -> Option<usize> {
+    let delta_start_idx = find_compaction_delta_start_index(messages, compact_context_record);
+    let uncompacted_messages = &messages[delta_start_idx..];
+    let latest_checkpoint_relative_idx = find_latest_checkpoint_index(uncompacted_messages)?;
+    let latest_checkpoint = &uncompacted_messages[latest_checkpoint_relative_idx];
+    let latest_prompt_tokens = latest_checkpoint.prompt_tokens_value()?;
+
+    if latest_prompt_tokens > current_context_limit {
+        let compaction_window_start = latest_prompt_tokens.saturating_sub(current_context_limit);
+        let preserve_relative_idx = uncompacted_messages
+            .iter()
+            .position(|message| {
+                message
+                    .prompt_tokens_value()
+                    .is_some_and(|value| value > compaction_window_start)
+            })
+            .unwrap_or(latest_checkpoint_relative_idx);
+        return Some(delta_start_idx + preserve_relative_idx);
+    }
+
+    Some(delta_start_idx + latest_checkpoint_relative_idx + 1)
+}
+
+pub fn has_prompt_checkpoint_compaction_target(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: usize,
+) -> bool {
+    find_prompt_checkpoint_compactable_end_exclusive(
+        messages,
+        compact_context_record,
+        current_context_limit,
+    )
+    .is_some_and(|compactable_end_exclusive| {
+        compactable_end_exclusive
+            > find_compaction_delta_start_index(messages, compact_context_record)
+    })
+}
+
 fn find_preflight_compactable_end_exclusive(
     messages: &[Message],
     compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: Option<usize>,
 ) -> usize {
     if messages.is_empty() {
         return 0;
+    }
+
+    if let Some(limit) = current_context_limit {
+        if let Some(prompt_checkpoint_end_exclusive) =
+            find_prompt_checkpoint_compactable_end_exclusive(
+                messages,
+                compact_context_record,
+                limit,
+            )
+        {
+            return prompt_checkpoint_end_exclusive;
+        }
     }
 
     let delta_start_idx = find_compaction_delta_start_index(messages, compact_context_record);
     let relative_end_exclusive = crate::agent::llm::context_selector::find_compaction_split_index(
         &messages[delta_start_idx..],
     );
-
     delta_start_idx + relative_end_exclusive
 }
 
 pub fn find_preflight_compactable_end_exclusive_for_testing(
     messages: &[Message],
     compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: Option<usize>,
 ) -> usize {
-    find_preflight_compactable_end_exclusive(messages, compact_context_record)
+    find_preflight_compactable_end_exclusive(
+        messages,
+        compact_context_record,
+        current_context_limit,
+    )
 }
 
 fn log_preflight_split_boundary(
@@ -440,7 +506,6 @@ async fn prepare_compaction_request(
 
     let Some(CompactionRequestPayload {
         compact_messages: base_compact_messages,
-        from_id,
         to_id,
         compacted_delta_count,
         reused_prior_summary,
@@ -458,8 +523,8 @@ async fn prepare_compaction_request(
                 .position(|message| message.id == record.to_id);
             let first_delta_message_idx = compacted_to_idx.map(|idx| idx.saturating_add(1));
             format!(
-                "from_id={}, to_id={}, compacted_to_idx={:?}, first_delta_message_idx={:?}",
-                record.from_id, record.to_id, compacted_to_idx, first_delta_message_idx
+                "to_id={}, compacted_to_idx={:?}, first_delta_message_idx={:?}",
+                record.to_id, compacted_to_idx, first_delta_message_idx
             )
         });
         log::warn!(
@@ -545,18 +610,9 @@ async fn prepare_compaction_request(
         &compact_messages,
     );
 
-    let mut final_from_id = from_id.clone();
     let mut final_compacted_delta_count = compacted_delta_count;
 
     if !compact_messages.is_empty() {
-        let first_msg = &compact_messages[0];
-        if !first_msg.is_compact_summary() {
-            // If the first message is not the previous compact summary, it means
-            // we dropped the previous summary (or there wasn't one) and potentially some delta messages.
-            // So the range actually summarized starts from this first message!
-            final_from_id = first_msg.id.clone();
-        }
-
         // Count how many delta messages are actually in compact_messages
         // (excluding the compaction instruction/overlay at the end).
         let delta_only_count = compact_messages
@@ -570,12 +626,10 @@ async fn prepare_compaction_request(
         final_compacted_delta_count = delta_only_count;
     }
 
-    if final_from_id != from_id || final_compacted_delta_count != compacted_delta_count {
+    if final_compacted_delta_count != compacted_delta_count {
         log::info!(
-            "📐 Compaction payload shrunken, adjusting range metadata: session={}, from_id: {} -> {}, compacted_delta_count: {} -> {}",
+            "📐 Compaction payload shrunken, adjusting delta metadata: session={}, compacted_delta_count: {} -> {}",
             session_id,
-            from_id,
-            final_from_id,
             compacted_delta_count,
             final_compacted_delta_count
         );
@@ -604,8 +658,8 @@ async fn prepare_compaction_request(
             session_id: session_id.to_string(),
             session_name: session_name.to_string(),
             messages: compact_messages,
-            from_id: final_from_id,
             to_id,
+            compacted_delta_count: final_compacted_delta_count,
             parent_request: final_parent_request,
             resume_completion_after_compact,
         },
@@ -691,8 +745,13 @@ pub(crate) async fn try_trigger_preflight_compaction(
         (session.compact_context.clone(), session.compaction.clone())
     };
     let compact_context_record = compact_context_handle.read().await.clone();
-    let compactable_end_exclusive =
-        find_preflight_compactable_end_exclusive(messages, compact_context_record.as_ref());
+    let settings = load_context_management_settings().await;
+    let current_context_limit = std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let compactable_end_exclusive = find_preflight_compactable_end_exclusive(
+        messages,
+        compact_context_record.as_ref(),
+        Some(current_context_limit),
+    );
     if compactable_end_exclusive == 0 {
         log_preflight_split_boundary(
             session_id,
@@ -803,7 +862,6 @@ pub(crate) async fn try_trigger_preflight_compaction(
         retry_attempt,
     } = prepared_attempt;
 
-    let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
     let compact_event = prepared.compact_event.clone();
     let kind = if resume_completion_after_compact {
@@ -878,9 +936,8 @@ pub(crate) async fn try_trigger_preflight_compaction(
 
     if resume_completion_after_compact {
         log::info!(
-            "⏸️ Preflight compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            "⏸️ Preflight compaction triggered: session={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
             session_id,
-            log_from_id,
             log_to_id,
             compactable_end_exclusive,
             prepared.compacted_delta_count,
@@ -890,9 +947,8 @@ pub(crate) async fn try_trigger_preflight_compaction(
         );
     } else {
         log::info!(
-            "🧰 Manual compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            "🧰 Manual compaction triggered: session={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
             session_id,
-            log_from_id,
             log_to_id,
             compactable_end_exclusive,
             prepared.compacted_delta_count,

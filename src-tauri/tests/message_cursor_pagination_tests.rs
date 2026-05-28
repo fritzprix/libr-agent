@@ -51,6 +51,7 @@ fn build_message(session_id: &str, id: &str, created_at: i64) -> Message {
         attachments: None,
         tool_use: None,
         usage: None,
+        prompt_tokens: None,
         created_at,
         updated_at: created_at,
         source: None,

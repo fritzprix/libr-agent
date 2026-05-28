@@ -43,8 +43,8 @@ async fn test_compact_context_crud() {
     let record = CompactContextRecord {
         id: "cc-1".to_string(),
         session_id: "session-1".to_string(),
-        from_id: "msg-1".to_string(),
         to_id: "msg-10".to_string(),
+        condensed_count: Some(10),
         summary: "Test summary".to_string(),
         created_at: 123456789,
     };
@@ -53,7 +53,7 @@ async fn test_compact_context_crud() {
 
     let retrieved = repo.get_by_session_id("session-1").await.unwrap().unwrap();
     assert_eq!(retrieved.summary, "Test summary");
-    assert_eq!(retrieved.from_id, "msg-1");
+    assert_eq!(retrieved.condensed_count, Some(10));
 
     // ON CONFLICT upsert — update summary
     let mut updated = record.clone();

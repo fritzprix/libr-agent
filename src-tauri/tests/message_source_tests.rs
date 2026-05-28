@@ -19,6 +19,7 @@ fn make_message(source: Option<MessageSource>) -> Message {
         attachments: None,
         tool_use: None,
         usage: None,
+        prompt_tokens: None,
         created_at: 1,
         updated_at: 1,
         source,

@@ -18,12 +18,12 @@ pub async fn agent_get_compact_context(
 pub async fn agent_handle_compact_response(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
-    from_id: String,
     to_id: String,
+    compacted_delta_count: usize,
     summary: String,
 ) -> Result<AgentResponse, String> {
     manager
-        .handle_compact_response(&session_id, from_id, to_id, summary)
+        .handle_compact_response(&session_id, to_id, compacted_delta_count, summary)
         .await?;
 
     Ok(AgentResponse {
