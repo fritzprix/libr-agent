@@ -148,11 +148,13 @@ export function useSettingsPageController() {
     setIsResetting(true);
     try {
       try {
-        await dbUtils.clearAllObjects();
-        await dbUtils.clearAllSessions();
-        await dbUtils.clearAllAssistants();
-        await dbUtils.clearAllMCPServers();
-        await dbUtils.clearAllPlaybooks();
+        await Promise.all([
+          dbUtils.clearAllObjects(),
+          dbUtils.clearAllSessions(),
+          dbUtils.clearAllAssistants(),
+          dbUtils.clearAllMCPServers(),
+          dbUtils.clearAllPlaybooks(),
+        ]);
       } catch (error) {
         logger.error('Failed to clear frontend DB during factory reset', error);
       }
