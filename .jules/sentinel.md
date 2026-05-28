@@ -6,3 +6,7 @@
 **Vulnerability:** Path traversal in `FileExportService::create_zip_export` where `package_name` is directly interpolated into a path passed to `temp_dir.path().join()`.
 **Learning:** `Path::join` allows directory traversal if the right-hand side contains relative components like `..`, potentially escaping intended directories (e.g., `temp_dir`). This can be exploited to overwrite arbitrary files when creating zip exports.
 **Prevention:** Sanitize variables from external input used in path constructions, even for temporary filenames. Replace non-alphanumeric characters with safe alternatives like underscores.
+## 2024-05-28 - Path Traversal in MCP Export Handler
+**Vulnerability:** Path traversal in `WorkspaceServer::handle_export` where `package_name` is directly interpolated into a path passed to `exports_dir.join()`.
+**Learning:** This is identical to the previously fixed issue in `FileExportService`, but existed in the duplicate code path for the `export` MCP tool handler. Duplicate logic means duplicate vulnerabilities.
+**Prevention:** Sanitize variables from external input used in path constructions consistently across all handlers.
