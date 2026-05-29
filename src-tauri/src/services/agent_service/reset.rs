@@ -1,8 +1,8 @@
 use super::lineage::remove_lineage;
 use super::AgentService;
 use crate::agent::AgentSessionManager;
-use crate::session::get_session_manager;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::session::get_session_manager;
 use std::fs;
 
 impl AgentService {
