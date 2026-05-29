@@ -92,6 +92,7 @@ pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
 }
 
 const CONSERVATIVE_DELTA_SAFETY_MULTIPLIER: f64 = 1.05;
+const OUTPUT_RESERVE_FALLBACK_CAP: usize = 8_192;
 // Cross-tokenizer providers like Gemini can legitimately report promptTokens
 // around ~0.63 of the equivalent cl100k_base estimate, so the acceptance band
 // must stay wide enough to preserve those grounded anchors.
@@ -442,4 +443,41 @@ pub fn calculate_conservative_preflight_prompt_tokens(
     }
 
     (full_estimate as f64 * CONSERVATIVE_DELTA_SAFETY_MULTIPLIER).ceil() as usize
+}
+
+pub fn derive_measured_output_tokens_reserve(
+    messages: &[Message],
+    configured_max_output_tokens: Option<u32>,
+) -> usize {
+    let latest_external_request_cycle_max = messages
+        .iter()
+        .rposition(Message::is_external_request_message)
+        .and_then(|latest_external_idx| {
+            messages[latest_external_idx..]
+                .iter()
+                .filter(|message| message.role == "assistant")
+                .filter_map(Message::completion_tokens_value)
+                .max()
+        });
+    let latest_observed_completion_tokens = messages
+        .iter()
+        .rev()
+        .filter(|message| message.role == "assistant")
+        .find_map(Message::completion_tokens_value);
+    let configured_reserve = configured_max_output_tokens
+        .map(|value| value as usize)
+        .unwrap_or(0)
+        .min(OUTPUT_RESERVE_FALLBACK_CAP);
+
+    latest_external_request_cycle_max
+        .or(latest_observed_completion_tokens)
+        .unwrap_or(configured_reserve)
+        .min(OUTPUT_RESERVE_FALLBACK_CAP)
+}
+
+pub fn calculate_effective_input_budget(
+    safe_input_token_limit: usize,
+    output_reserve_tokens: usize,
+) -> usize {
+    safe_input_token_limit.saturating_sub(output_reserve_tokens)
 }

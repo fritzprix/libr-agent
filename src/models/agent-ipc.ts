@@ -201,6 +201,9 @@ export interface PreflightTokenMetrics {
   conservativePromptTokens: number;
   promptAnchoredTotalTokens: number;
   safeInputTokenLimit: number;
+  measuredOutputTokensReserve: number;
+  effectiveInputBudget: number;
+  totalBudgetTokens: number;
   systemPromptTokens: number;
   toolsTokens: number;
   selectedMessageCount: number;

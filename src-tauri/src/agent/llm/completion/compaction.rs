@@ -11,7 +11,6 @@ pub use payload::{
     inspect_compaction_payload, CompactionPayloadDiagnostics, CompactionPayloadMessageDiagnostic,
     CompactionRequestPayloadPreview,
 };
-pub(crate) use trigger::try_trigger_preflight_compaction;
 pub use trigger::{
     advance_compaction_overflow_recovery_step_for_testing,
     find_preflight_compactable_end_exclusive_for_testing, has_prompt_checkpoint_compaction_target,
@@ -19,6 +18,7 @@ pub use trigger::{
     trigger_manual_compaction_for_session, trigger_preflight_compaction_for_session,
     CompactionSelectionPreview,
 };
+pub(crate) use trigger::{try_trigger_preflight_compaction, PreflightCompactionTriggerInput};
 #[allow(dead_code)]
 pub type TailRecompactionRecoveryPlan = trigger::TailRecompactionRecoveryPlan;
 

@@ -77,6 +77,15 @@ impl TestMessageBuilder {
         self
     }
 
+    fn completion_tokens(mut self, completion_tokens: usize) -> Self {
+        let mut usage = self.message.usage.unwrap_or_else(|| json!({}));
+        if let Some(object) = usage.as_object_mut() {
+            object.insert("completionTokens".to_string(), json!(completion_tokens));
+        }
+        self.message.usage = Some(usage);
+        self
+    }
+
     fn build(self) -> Message {
         self.message
     }
@@ -370,6 +379,91 @@ fn test_preflight_compactable_end_uses_prompt_token_checkpoint_window() {
 }
 
 #[test]
+fn test_preflight_compactable_end_respects_effective_budget_after_output_reserve() {
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user")
+            .text("checkpoint 0")
+            .prompt_tokens(12_000)
+            .build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text("checkpoint 1")
+            .prompt_tokens(24_000)
+            .build(),
+        TestMessageBuilder::new("m2", "user")
+            .text("checkpoint 2")
+            .prompt_tokens(36_000)
+            .build(),
+        TestMessageBuilder::new("m3", "assistant")
+            .text("checkpoint 3")
+            .prompt_tokens(48_000)
+            .build(),
+    ];
+
+    let full_budget_end =
+        find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(48_000));
+    let reserve_adjusted_end =
+        find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(36_000));
+
+    assert_eq!(full_budget_end, 4);
+    assert_eq!(reserve_adjusted_end, 1);
+}
+
+#[test]
+fn test_derive_measured_output_tokens_reserve_prefers_observed_completion_tokens() {
+    let messages = vec![
+        TestMessageBuilder::new("m0", "assistant")
+            .text("Earlier output")
+            .completion_tokens(320)
+            .build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text("Latest output")
+            .completion_tokens(2048)
+            .build(),
+    ];
+
+    assert_eq!(
+        derive_measured_output_tokens_reserve(&messages, Some(4096)),
+        2048
+    );
+    assert_eq!(
+        derive_measured_output_tokens_reserve(&[], Some(16_384)),
+        8192
+    );
+    assert_eq!(derive_measured_output_tokens_reserve(&[], None), 0);
+}
+
+#[test]
+fn test_derive_measured_output_tokens_reserve_prefers_latest_external_cycle_max() {
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user")
+            .text("older request")
+            .source(MessageSource::Ui)
+            .build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text("older answer")
+            .completion_tokens(4096)
+            .build(),
+        TestMessageBuilder::new("m2", "user")
+            .text("latest request")
+            .source(MessageSource::Ui)
+            .build(),
+        TestMessageBuilder::new("m3", "assistant")
+            .text("main answer in latest cycle")
+            .completion_tokens(1800)
+            .build(),
+        TestMessageBuilder::new("m4", "assistant")
+            .text("small follow-up in latest cycle")
+            .completion_tokens(120)
+            .build(),
+    ];
+
+    assert_eq!(
+        derive_measured_output_tokens_reserve(&messages, Some(4096)),
+        1800
+    );
+}
+
+#[test]
 fn test_tail_recompaction_recovery_plan_targets_latest_request_block_after_incremental_noop() {
     let messages = vec![
         make_message("m0", "assistant", "older 0"),
@@ -450,6 +544,18 @@ fn test_apply_compaction_retry_budget_progressively_reduces_limit() {
     assert_eq!(apply_compaction_retry_budget(128_000, 2), 89_600);
     assert_eq!(apply_compaction_retry_budget(128_000, 3), 70_400);
     assert_eq!(apply_compaction_retry_budget(512, 3), 512);
+}
+
+#[test]
+fn test_retry_budget_applies_after_output_reserve_budgeting() {
+    let safe_input_limit = 128_000;
+    let output_reserve = 24_000;
+
+    let effective_budget = calculate_effective_input_budget(safe_input_limit, output_reserve);
+    let retry_budget = apply_compaction_retry_budget(effective_budget, 1);
+
+    assert_eq!(effective_budget, 104_000);
+    assert_eq!(retry_budget, 88_400);
 }
 
 #[test]

@@ -273,7 +273,7 @@ fn provider_requires_compaction_tool_chain_cleanup(provider_id: &str) -> bool {
 pub fn fit_compaction_request_messages_to_limit(
     messages: &[Message],
     provider_id: &str,
-    safe_input_token_limit: usize,
+    effective_input_token_limit: usize,
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> Result<Vec<Message>, String> {
@@ -292,14 +292,14 @@ pub fn fit_compaction_request_messages_to_limit(
             tools_tokens,
             preserved_calibration_ratio,
         );
-    if conservative_total < safe_input_token_limit {
+    if conservative_total < effective_input_token_limit {
         return Ok(cleaned);
     }
 
     let single_message = if cleaned.len() == 1 {
         crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
             &cleaned,
-            safe_input_token_limit,
+            effective_input_token_limit,
             system_prompt_tokens,
             tools_tokens,
             preserved_calibration_ratio,
@@ -325,13 +325,13 @@ pub fn fit_compaction_request_messages_to_limit(
             preserved_calibration_ratio,
         );
 
-    if conservative_total < safe_input_token_limit {
+    if conservative_total < effective_input_token_limit {
         return Ok(single_message);
     }
 
     Err(format!(
         "Compaction payload exceeds the effective context limit without lossy cache-aligned trimming ({} >= {}); advance to overflow recovery instead of dropping older compaction history.",
-        conservative_total, safe_input_token_limit
+        conservative_total, effective_input_token_limit
     ))
 }
 

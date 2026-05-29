@@ -109,7 +109,7 @@ export function TokenMetricsBadge({
           className="flex items-center gap-0.5 text-primary"
           title={
             preflight
-              ? `Backend preflight context estimate: ${promptDisplayLabel}${inputLimitLabel ? ` / ${inputLimitLabel}` : ''} tokens. Provider prompt tokens: ${providerPromptLabel}. System prompt: ${formatNumber(preflight.systemPromptTokens)}. Tools: ${formatNumber(preflight.toolsTokens)}. Selected messages: ${formatNumber(preflight.selectedMessageCount)}.${prefillInfo}`
+              ? `Backend preflight context estimate: ${promptDisplayLabel}${inputLimitLabel ? ` / ${inputLimitLabel}` : ''} tokens. Reserved output: ${formatNumber(preflight.measuredOutputTokensReserve)}. Total budget: ${formatNumber(preflight.totalBudgetTokens)}. Effective input budget: ${formatNumber(preflight.effectiveInputBudget)}. Provider prompt tokens: ${providerPromptLabel}. System prompt: ${formatNumber(preflight.systemPromptTokens)}. Tools: ${formatNumber(preflight.toolsTokens)}. Selected messages: ${formatNumber(preflight.selectedMessageCount)}.${prefillInfo}`
               : (hasCacheHit
                   ? `Prompt Tokens (Read from Cache: ${formatNumber(cachedTokens)}, Created: ${formatNumber(usage.details?.cacheCreationInputTokens || 0)})`
                   : 'Prompt Tokens') + prefillInfo

@@ -290,4 +290,16 @@ impl Message {
                     .and_then(|value| usize::try_from(value).ok())
             })
     }
+
+    pub fn completion_tokens_value(&self) -> Option<usize> {
+        self.usage
+            .as_ref()
+            .and_then(|usage| usage.get("completionTokens"))
+            .and_then(|value| {
+                value
+                    .as_u64()
+                    .or_else(|| value.as_f64().map(|number| number as u64))
+            })
+            .and_then(|value| usize::try_from(value).ok())
+    }
 }

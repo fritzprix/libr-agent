@@ -461,12 +461,23 @@ struct PrepareCompactionRequestInput<'a> {
     session_name: &'a str,
     messages: &'a [Message],
     split_idx: usize,
+    measured_output_tokens_reserve: usize,
     parent_request: Option<CompactionParentRequest>,
     compact_context_record: Option<CompactContextRecord>,
     started_at_ms: i64,
     resume_completion_after_compact: bool,
     recovery_phase: CompactionRecoveryPhase,
     retry_attempt: u32,
+}
+
+#[derive(Clone)]
+pub(crate) struct PreflightCompactionTriggerInput<'a> {
+    pub session_id: &'a str,
+    pub session_name: &'a str,
+    pub messages: &'a [Message],
+    pub parent_request: Option<CompactionParentRequest>,
+    pub measured_output_tokens_reserve: usize,
+    pub resume_completion_after_compact: bool,
 }
 
 fn degrade_tools_for_overflow_recovery(tools: &[MCPTool]) -> Vec<MCPTool> {
@@ -496,6 +507,7 @@ async fn prepare_compaction_request(
         session_name,
         messages,
         split_idx,
+        measured_output_tokens_reserve,
         parent_request,
         compact_context_record,
         started_at_ms,
@@ -540,8 +552,13 @@ async fn prepare_compaction_request(
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let base_effective_input_budget =
+        crate::agent::llm::token_utils::calculate_effective_input_budget(
+            safe_input_token_limit,
+            measured_output_tokens_reserve,
+        );
     let effective_input_token_limit =
-        apply_compaction_retry_budget(safe_input_token_limit, retry_attempt);
+        apply_compaction_retry_budget(base_effective_input_budget, retry_attempt);
     let resolved_parent_request =
         resolve_parent_request(active_sessions, session_id, parent_request).await;
     let request_layout = resolved_parent_request.as_ref().map(|request| {
@@ -637,10 +654,12 @@ async fn prepare_compaction_request(
 
     if retry_attempt > 0 {
         log::warn!(
-            "🔧 Applying compaction retry budget: session={}, retry_attempt={}, safe_input_token_limit={}, effective_input_token_limit={}",
+            "🔧 Applying compaction retry budget: session={}, retry_attempt={}, safe_input_token_limit={}, measured_output_tokens_reserve={}, base_effective_input_budget={}, effective_input_token_limit={}",
             session_id,
             retry_attempt,
             safe_input_token_limit,
+            measured_output_tokens_reserve,
+            base_effective_input_budget,
             effective_input_token_limit
         );
     }
@@ -722,12 +741,16 @@ async fn prepare_compaction_request_with_recovery_ladder(
 pub(crate) async fn try_trigger_preflight_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
-    session_id: &str,
-    session_name: &str,
-    messages: &[Message],
-    parent_request: Option<CompactionParentRequest>,
-    resume_completion_after_compact: bool,
+    input: PreflightCompactionTriggerInput<'_>,
 ) -> Result<bool, String> {
+    let PreflightCompactionTriggerInput {
+        session_id,
+        session_name,
+        messages,
+        parent_request,
+        measured_output_tokens_reserve,
+        resume_completion_after_compact,
+    } = input;
     if messages.len() <= 1 {
         log::info!(
             "⏭️ Preflight compaction skipped (insufficient messages): session={}, count={}",
@@ -747,10 +770,14 @@ pub(crate) async fn try_trigger_preflight_compaction(
     let compact_context_record = compact_context_handle.read().await.clone();
     let settings = load_context_management_settings().await;
     let current_context_limit = std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let effective_input_budget = crate::agent::llm::token_utils::calculate_effective_input_budget(
+        current_context_limit,
+        measured_output_tokens_reserve,
+    );
     let compactable_end_exclusive = find_preflight_compactable_end_exclusive(
         messages,
         compact_context_record.as_ref(),
-        Some(current_context_limit),
+        Some(effective_input_budget),
     );
     if compactable_end_exclusive == 0 {
         log_preflight_split_boundary(
@@ -796,6 +823,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
             session_name,
             messages,
             split_idx: compactable_end_exclusive,
+            measured_output_tokens_reserve,
             parent_request: parent_request.clone(),
             compact_context_record: compact_context_record.clone(),
             started_at_ms,
@@ -831,6 +859,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
                     session_name,
                     messages,
                     split_idx: recovery_plan.fallback_split_idx,
+                    measured_output_tokens_reserve,
                     parent_request: parent_request.clone(),
                     compact_context_record: compact_context_record.clone(),
                     started_at_ms,
@@ -968,14 +997,22 @@ pub async fn trigger_preflight_compaction_for_session(
 ) -> Result<bool, String> {
     let (session_name, merged_messages) =
         load_merged_compaction_messages(active_sessions, session_id).await?;
+    let measured_output_tokens_reserve =
+        crate::agent::llm::token_utils::derive_measured_output_tokens_reserve(
+            &merged_messages,
+            None,
+        );
     try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
-        session_id,
-        &session_name,
-        &merged_messages,
-        None,
-        true,
+        PreflightCompactionTriggerInput {
+            session_id,
+            session_name: &session_name,
+            messages: &merged_messages,
+            parent_request: None,
+            measured_output_tokens_reserve,
+            resume_completion_after_compact: true,
+        },
     )
     .await
 }
@@ -987,14 +1024,22 @@ pub async fn trigger_manual_compaction_for_session(
 ) -> Result<bool, String> {
     let (session_name, merged_messages) =
         load_merged_compaction_messages(active_sessions, session_id).await?;
+    let measured_output_tokens_reserve =
+        crate::agent::llm::token_utils::derive_measured_output_tokens_reserve(
+            &merged_messages,
+            None,
+        );
     try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
-        session_id,
-        &session_name,
-        &merged_messages,
-        None,
-        false,
+        PreflightCompactionTriggerInput {
+            session_id,
+            session_name: &session_name,
+            messages: &merged_messages,
+            parent_request: None,
+            measured_output_tokens_reserve,
+            resume_completion_after_compact: false,
+        },
     )
     .await
 }

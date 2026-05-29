@@ -13,15 +13,19 @@ pub async fn trigger_preflight_compaction_for_messages_or_error(
     session_name: &str,
     messages: &[Message],
     parent_request: Option<CompactionParentRequest>,
+    measured_output_tokens_reserve: usize,
 ) -> Result<bool, AgentRuntimeError> {
     crate::agent::llm::completion::compaction::try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
-        session_id,
-        session_name,
-        messages,
-        parent_request,
-        true,
+        crate::agent::llm::completion::compaction::PreflightCompactionTriggerInput {
+            session_id,
+            session_name,
+            messages,
+            parent_request,
+            measured_output_tokens_reserve,
+            resume_completion_after_compact: true,
+        },
     )
     .await
     .map_err(|error| {
