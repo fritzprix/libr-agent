@@ -28,8 +28,10 @@ pub mod execution_mode;
 mod message_injection;
 
 pub use channel::format_channel_payload_for_test;
+pub use compact::build_compaction_hard_fallback_summary_for_testing;
 pub use compact::clamp_compact_summary_to_context_limit;
 pub use compact::clear_message_prompt_token_checkpoint_for_testing;
+pub use compact::compaction_fallback_artifact_relative_path_for_testing;
 pub use compact::handle_compact_error_with_dispatcher;
 pub use compact::should_retry_budget_related_blocking_compaction;
 pub use compact::validate_compact_summary_for_testing;

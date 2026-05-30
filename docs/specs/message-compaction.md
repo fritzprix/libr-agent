@@ -15,7 +15,9 @@ The short version:
    causal-prefix strategy.
 5. Successful compaction must invalidate stale retained-tail checkpoints and set
    runtime `lastReportedPromptTokens = null`.
-6. If the request does not fit and there is no usable checkpoint candidate, the
+6. Empty compaction responses still enter the bounded soft-retry ladder; only after
+   that ladder is exhausted may Rust persist a deterministic hard fallback summary.
+7. If the request does not fit and there is no usable checkpoint candidate, the
    state is invalid and the backend must reject without mutating history.
 
 The old mental model around `safeCheckpointId` is obsolete. Context-fit truth must
@@ -31,8 +33,10 @@ This spec covers:
 - persisted token checkpoints
 - request-time preflight behavior
 - compaction trigger behavior
+- bounded retry and hard-fallback behavior
 - invalid-state handling
 - compact summary persistence and reinjection
+- fallback artifact spillover and resume behavior
 - UI-facing condensed-count meaning
 
 This spec does **not** define provider-specific SDK request formatting.
@@ -261,8 +265,15 @@ Therefore compaction must:
 
 1. try the newest usable checkpoint candidate first
 2. back off one candidate at a time toward older prefix boundaries
-3. stop after at most 3 split attempts
-4. fail closed after 3 empty compaction summaries
+3. treat an empty compaction response as a recoverable compaction failure while the
+   recovery ladder still has room
+4. stop after the bounded soft-retry ladder is exhausted:
+   `CacheAligned -> OverflowRecovery -> DegradedTools`
+5. if the ladder is exhausted but a compaction boundary did exist, persist a
+   deterministic hard fallback summary with fixed handoff sections instead of
+   deadlocking the workflow
+6. if the artifact spill write fails, keep the fallback summary path alive anyway;
+   artifact persistence is best-effort, not a gate on resume
 
 ---
 
@@ -342,24 +353,30 @@ Quick mental model first:
 function runTurn(state) {
   const projectedPromptLoad = estimateNextPromptLoadFromLastTruth(state);
 
-  if (projectedPromptLoad == null || projectedPromptLoad >= state.maxInputContext) {
+  if (
+    projectedPromptLoad == null ||
+    projectedPromptLoad >= state.maxInputContext
+  ) {
     const splitCandidates = newestCheckpointAnchorsFirst(state.liveMessages);
 
     if (splitCandidates.length === 0) {
       throw InvalidContextStateError();
     }
 
-    for (const candidate of splitCandidates.slice(0, 3)) {
-      const summary = compactPrefixIntoSummary(state, candidate);
+    const result = compactWithBoundedRecovery(state, splitCandidates.slice(0, 3));
 
-      if (summary.isEmpty()) {
-        continue;
-      }
-
-      persistCompactedSummary(summary, candidate.toId);
-      dropCompactedPrefixFromLiveHistory(state, candidate.toId);
+    if (result.kind === 'success') {
+      persistCompactedSummary(result.summary, result.toId);
+      dropCompactedPrefixFromLiveHistory(state, result.toId);
       invalidateRetainedTailPromptTruth(state);
       return runTurn(state); // retry with compact summary injected
+    }
+
+    if (result.kind === 'hard_fallback') {
+      persistDeterministicFallbackSummary(result.summary, result.toId);
+      dropCompactedPrefixFromLiveHistory(state, result.toId);
+      invalidateRetainedTailPromptTruth(state);
+      return runTurn(state); // retry with fallback summary injected
     }
 
     throw InvalidContextStateError();
@@ -391,7 +408,11 @@ type CompactSummary = {
 } | null;
 
 const MAX_SPLIT_TRIES = 3;
-const MAX_EMPTY_COMPACTION_RESPONSES = 3;
+const RECOVERY_PHASES = [
+  'CacheAligned',
+  'OverflowRecovery',
+  'DegradedTools',
+] as const;
 
 function selectLastSubmittedRealInputMessage(
   messages: Message[],
@@ -465,46 +486,42 @@ async function runCompletionLoop(state: {
         );
       }
 
-      let emptyResponses = 0;
-      let compacted = false;
+      const compactResult = await runBoundedCompactionRecovery({
+        previousSummary: state.compactSummary,
+        liveMessages: state.messages,
+        candidates: candidates.slice(0, MAX_SPLIT_TRIES),
+        recoveryPhases: RECOVERY_PHASES,
+      });
 
-      for (const candidate of candidates.slice(0, MAX_SPLIT_TRIES)) {
-        const compactResult = await runCompactionRequest({
-          previousSummary: state.compactSummary,
-          liveMessages: state.messages,
-          compactToId: candidate.toId,
-        });
-
-        if (!compactResult.summary.trim()) {
-          emptyResponses += 1;
-          if (emptyResponses >= MAX_EMPTY_COMPACTION_RESPONSES) {
-            throw new InvalidContextStateError(
-              'Compaction returned empty summary 3 times.',
-            );
-          }
-          continue;
-        }
-
+      if (compactResult.kind === 'success') {
         state.compactSummary = {
-          toId: candidate.toId,
+          toId: compactResult.toId,
           summary: compactResult.summary,
-          condensedCount: candidate.condensedCount,
+          condensedCount: compactResult.condensedCount,
         };
         state.messages = invalidateRetainedTailPromptTokens(
-          removeCompactedPrefix(state.messages, candidate.toId),
+          removeCompactedPrefix(state.messages, compactResult.toId),
         );
         state.lastReportedPromptTokens = null;
-        compacted = true;
-        break;
+        continue;
       }
 
-      if (!compacted) {
-        throw new InvalidContextStateError(
-          'Prepared payload still exceeds the prompt limit after bounded checkpoint backoff.',
+      if (compactResult.kind === 'hard_fallback') {
+        state.compactSummary = {
+          toId: compactResult.toId,
+          summary: compactResult.summary,
+          condensedCount: compactResult.condensedCount,
+        };
+        state.messages = invalidateRetainedTailPromptTokens(
+          removeCompactedPrefix(state.messages, compactResult.toId),
         );
+        state.lastReportedPromptTokens = null;
+        continue;
       }
 
-      continue;
+      throw new InvalidContextStateError(
+        'Prepared payload still exceeds the prompt limit, and no usable compaction boundary exists.',
+      );
     }
 
     const lastSubmittedInput = selectLastSubmittedRealInputMessage(
@@ -624,6 +641,15 @@ These rules are mandatory:
 15. Frontend may assist UX, but backend owns correctness.
 16. Summary bubble counts must describe the compacted delta actually submitted by
     the compaction payload, not unrelated totals.
+17. Empty compaction responses must flow through the bounded soft-retry ladder
+    before hard fallback is allowed.
+18. If bounded recovery is exhausted but a valid compaction boundary existed,
+    compaction must persist a deterministic fallback summary, resume from it,
+    and keep the fallback handoff shape stable.
+19. Hard-fallback artifact spillover is best-effort; artifact-write failure must
+    not cancel fallback summary persistence.
+20. Stale compaction responses whose `to_id` no longer matches the active request
+    must be ignored.
 
 ---
 
@@ -636,8 +662,12 @@ When reading logs:
 - `conservative_prompt_tokens=...` is a Rust projection signal, not grounded truth
 - dynamic service-context growth can make the next real prompt larger than a naive
   checkpoint projection
+- `empty response from streamChat` during compaction is a retry signal while the
+  recovery ladder still has phases left; it is not an immediate terminal failure
 - `lastReportedPromptTokens=null` after compaction means the previous full-prompt
   truth was intentionally invalidated for the new epoch
+- `stale compaction response ignored` means a late response lost the `to_id` race
+  and was intentionally discarded
 
 When reading stored messages:
 
@@ -648,6 +678,8 @@ When reading stored messages:
   participate in future output-reserve derivation
 - the latest external request may be preserved in the compaction instruction even
   when it is not part of the compacted body prefix
+- a fallback compact summary may include artifact path/guidance when spillover
+  succeeded; if not, the summary itself is the only saved handoff
 
 When debugging compaction:
 
@@ -671,5 +703,9 @@ When debugging compaction:
     after payload fitting
 13. if the UI badge stayed visible during compaction, check whether it intentionally
     held the last stable preflight value rather than the blocked overflow estimate
+14. if compaction still could not stabilize, check whether hard fallback persisted
+    a deterministic summary with optional artifact guidance instead of deadlocking
+15. if the fallback summary lacks an artifact path, check whether the best-effort
+    spill write failed while summary persistence still succeeded
 
 That is the current contract.

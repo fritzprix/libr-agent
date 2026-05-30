@@ -297,6 +297,29 @@ fn preflight_context_limit_failure_is_retryable() {
 }
 
 #[test]
+fn empty_compaction_response_is_retryable_before_degraded_tools() {
+    let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
+        phase: CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Preflight,
+            current_tail_id: Some("tail".to_string()),
+            started_at_ms: 1234,
+        }),
+        last_compacted_tail_id: Some("tail".to_string()),
+        retry_attempt: 0,
+        recovery_phase: CompactionRecoveryPhase::CacheAligned,
+        summary_retry_count: 0,
+    };
+    let error = AgentRuntimeError::new(
+        AgentRuntimeErrorType::AiServiceError,
+        "compact() received an empty response from streamChat",
+    );
+
+    assert!(should_retry_budget_related_blocking_compaction(
+        &snapshot, &error
+    ));
+}
+
+#[test]
 fn degraded_tool_phase_stops_retrying_preflight_compaction() {
     let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
         phase: CompactionPhase::InFlight(InFlightCompaction {
@@ -312,6 +335,29 @@ fn degraded_tool_phase_stops_retrying_preflight_compaction() {
     let error = AgentRuntimeError::new(
         AgentRuntimeErrorType::ContextLimitError,
         "Prompt too long: 146228 tokens exceeds max context window of 131072 tokens",
+    );
+
+    assert!(!should_retry_budget_related_blocking_compaction(
+        &snapshot, &error
+    ));
+}
+
+#[test]
+fn degraded_tool_phase_does_not_retry_empty_compaction_response() {
+    let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
+        phase: CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Preflight,
+            current_tail_id: Some("tail".to_string()),
+            started_at_ms: 1234,
+        }),
+        last_compacted_tail_id: Some("tail".to_string()),
+        retry_attempt: 0,
+        recovery_phase: CompactionRecoveryPhase::DegradedTools,
+        summary_retry_count: 0,
+    };
+    let error = AgentRuntimeError::new(
+        AgentRuntimeErrorType::AiServiceError,
+        "compact() received an empty response from streamChat",
     );
 
     assert!(!should_retry_budget_related_blocking_compaction(

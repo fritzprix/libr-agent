@@ -3,8 +3,8 @@ use crate::models::chat::{Message, MessageSource};
 
 use super::hints::build_compaction_preservation_hints_from_parts;
 
-const COMPACTION_SECTION_SCHEMA: &str =
-    "Use Markdown headings only when helpful. Do not force all sections.\n\
+const COMPACTION_SECTION_SCHEMA: &str = "Write plain Markdown summary text for a later resume.\n\
+ Use headings only when helpful. Do not force all sections.\n\
 Keep these section titles unchanged when you use them so later compaction can recognize them:\n\
 - Active Request\n\
 - Required References\n\
@@ -16,14 +16,15 @@ Optional supporting section titles:\n\
 - Next Actions";
 
 const COMPACTION_RULES: &[&str] = &[
-    "Write a dense handoff for the next coding turn. Brief bullets or short note fragments are both fine.",
-    "Preserve enough detail to resume safely: durable facts, decisions, constraints, user preferences, unresolved work, and exact file paths or identifiers.",
-    "You do not need to emit every possible section. Omit empty or low-value sections.",
+    "Pause first. You are not continuing the workflow; you are only compressing it into a handoff.",
+    "Write a dense handoff for later resume. Brief bullets or short note fragments are fine.",
+    "Keep only the details needed to resume safely: durable facts, decisions, constraints, user preferences, unresolved work, and exact file paths or identifiers.",
+    "You do not need to emit every possible section. Omit empty or low-value sections, and keep short sections brief.",
     "Active Request: keep only the current unresolved user ask. Remove resolved asks.",
     "Required References: keep only the minimum paths, symbols, or IDs needed for the active request.",
-    "Put volatile details in Current State, Recent Tool Results, or Next Actions.",
-    "If a section has little to say, keep it brief instead of adding filler.",
-    "Never call tools, suggest tool use, or write meta commentary about what you will do.",
+    "Put fast-changing details in Current State, Recent Tool Results, or Next Actions.",
+    "Do not call tools. Even if tool definitions are visible, ignore them for this request.",
+    "Do not emit XML, JSON, pseudo tool-call markup, command blocks, or meta commentary.",
 ];
 
 const COMPACTION_SECTION_LIMITS: &[&str] = &[
@@ -34,12 +35,12 @@ const COMPACTION_SECTION_LIMITS: &[&str] = &[
 ];
 
 const COMPACTION_OUTPUT_CONSTRAINT: &str =
-    "IMPORTANT: Output only the compact summary. Do not call tools, propose tool calls, ask for verification, or describe your process.";
+    "IMPORTANT: Output only the compact summary. Stay in summary mode. Do not call tools, propose tool calls, ask for verification, or describe your process.";
 
 const INCREMENTAL_COMPACTION_RESIDUAL_PREFIX: &str =
     "The first message is the prior compact summary for all earlier history.\n\
-Preserve its durable facts, decisions, and constraints when merging the newer messages.\n\
-Update Active Request only if the newer messages clearly refine or resolve it.";
+Keep its Active Request and Required References unless newer messages clearly replace or resolve them.\n\
+Preserve its durable facts, decisions, and constraints when merging the newer messages.";
 
 pub(super) const ACTIVE_REQUEST_BULLET_LIMIT: usize = 4;
 pub(super) const REQUIRED_REFERENCE_BULLET_LIMIT: usize = 5;
@@ -47,7 +48,7 @@ pub(super) const REFERENCE_CONTEXT_WINDOW_MESSAGES: usize = 8;
 // Character cap for individual hint bullets. This keeps the instruction block
 // bounded and biased toward terse operational seeds rather than copying large
 // raw request paragraphs into the compaction prompt.
-pub(super) const INSTRUCTION_HINT_TEXT_LIMIT: usize = 320;
+pub(super) const INSTRUCTION_HINT_TEXT_LIMIT: usize = 160;
 
 #[derive(Clone, Copy)]
 pub(super) struct CompactionInstructionTemplateInput<'a> {

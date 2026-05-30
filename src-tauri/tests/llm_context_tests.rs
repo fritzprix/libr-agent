@@ -20,9 +20,11 @@ use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::llm::types::CompactionParentRequest;
 use tauri_mcp_agent_lib::agent::session_manager::{
-    clamp_compact_summary_to_context_limit, clear_message_prompt_token_checkpoint_for_testing,
-    validate_compact_summary_for_testing,
+    build_compaction_hard_fallback_summary_for_testing, clamp_compact_summary_to_context_limit,
+    clear_message_prompt_token_checkpoint_for_testing,
+    compaction_fallback_artifact_relative_path_for_testing, validate_compact_summary_for_testing,
 };
+use tauri_mcp_agent_lib::agent::state::CompactionRecoveryPhase;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
@@ -389,6 +391,12 @@ fn test_build_compaction_request_payload_incremental_path_injects_latest_externa
     assert!(
         payload
             .instruction_text
+            .contains("Keep its Active Request and Required References unless newer messages clearly replace or resolve them."),
+        "incremental compaction should explicitly preserve prior active-request and reference anchors"
+    );
+    assert!(
+        payload
+            .instruction_text
             .contains("src-tauri/src/agent/llm/completion/compaction/payload.rs"),
         "instruction should preserve the latest external request even when it is outside the incremental compacted delta"
     );
@@ -418,7 +426,13 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
     assert!(
         payload
             .instruction_text
-            .contains("Use Markdown headings only when helpful."),
+            .contains("Write plain Markdown summary text for a later resume."),
+        "instruction should open with a simpler plain-summary directive"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Use headings only when helpful."),
         "instruction should stop forcing every summary into a rigid heading template"
     );
     assert!(
@@ -440,6 +454,24 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
     assert!(
         payload
             .instruction_text
+            .contains("Pause first. You are not continuing the workflow"),
+        "instruction should nudge the model to stop and summarize instead of continuing execution"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Even if tool definitions are visible, ignore them"),
+        "instruction should explicitly forbid tool use even when schemas are visible"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Do not emit XML, JSON, pseudo tool-call markup"),
+        "instruction should block fake tool-call markup from leaking into the summary"
+    );
+    assert!(
+        payload
+            .instruction_text
             .contains("Use these seeds if helpful:"),
         "instruction should keep the preservation seeds in a compact form"
     );
@@ -456,7 +488,7 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
     assert!(
         payload
             .instruction_text
-            .contains("keep it brief instead of adding filler"),
+            .contains("Omit empty or low-value sections, and keep short sections brief."),
         "instruction should prefer sufficient information over rigid section padding"
     );
 }
@@ -2745,6 +2777,78 @@ fn test_validate_compact_summary_rejects_short_summary_for_large_compaction() {
     assert!(result
         .unwrap_err()
         .contains("Compaction summary was too short"));
+}
+
+#[test]
+fn test_compaction_fallback_artifact_relative_path_uses_compaction_tool_results_dir() {
+    let path = compaction_fallback_artifact_relative_path_for_testing(
+        TEST_SESSION_ID,
+        "message:with spaces",
+        1_717_060_000_000,
+    );
+
+    assert!(path.starts_with(".libragent/tool-results/compaction/"));
+    assert!(path.ends_with(".md"));
+    assert!(!path.contains(' '));
+    assert!(!path.contains(':'));
+}
+
+#[test]
+fn test_build_compaction_hard_fallback_summary_includes_sections_and_artifact_guidance() {
+    let messages = vec![
+        TestMessageBuilder::new("user-fallback", "user")
+            .text(
+                "Investigate compaction failures in src-tauri/src/agent/session_manager/compact.rs",
+            )
+            .source(MessageSource::Ui)
+            .build(),
+        {
+            let mut assistant = make_message(
+                "assistant-fallback",
+                "assistant",
+                "Running workspace__readFile",
+            );
+            assistant.tool_calls = Some(vec![AgentToolCall {
+                id: "call_fallback".to_string(),
+                r#type: "function".to_string(),
+                function: ToolCallFunction {
+                    name: "workspace__readFile".to_string(),
+                    arguments: "{\"path\":\"src-tauri/src/agent/session_manager/compact.rs\"}"
+                        .to_string(),
+                },
+            }]);
+            assistant
+        },
+        {
+            let mut tool = make_message(
+                "tool-fallback",
+                "tool",
+                "Opened src-tauri/src/agent/session_manager/compact.rs and found repeated summary retry failures.",
+            );
+            tool.tool_call_id = Some("call_fallback".to_string());
+            tool
+        },
+    ];
+
+    let summary = build_compaction_hard_fallback_summary_for_testing(
+        &messages,
+        ".libragent/tool-results/compaction/fallback-123.md",
+        "tool-fallback",
+        7,
+        CompactionRecoveryPhase::DegradedTools,
+        3,
+        "Compaction summary was too short: got 41 chars.",
+    );
+
+    assert!(summary.contains("### Active Request"));
+    assert!(summary.contains("### Required References"));
+    assert!(summary.contains("### Current State"));
+    assert!(summary.contains("### Recent Tool Results"));
+    assert!(summary.contains("### Next Actions"));
+    assert!(summary.contains("### Fallback Note"));
+    assert!(summary.contains(".libragent/tool-results/compaction/fallback-123.md"));
+    assert!(summary.contains("Open `.libragent/tool-results/compaction/fallback-123.md`"));
+    assert!(summary.contains("Auto-saved via fallback summary"));
 }
 
 #[test]

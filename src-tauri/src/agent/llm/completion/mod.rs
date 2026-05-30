@@ -23,7 +23,7 @@ pub use request::{
     build_compact_context_selection_options, build_compact_summary_message,
     build_compact_summary_message_for_messages, build_compact_summary_text,
     merge_consecutive_user_messages, normalize_request_messages, request_llm_completion,
-    resolve_preserved_calibration_ratio,
+    resolve_preserved_calibration_ratio, summarize_recent_tool_calls,
 };
 
 // Crate-internal re-exports for intra-module visibility
