@@ -4,7 +4,7 @@ import {
   getAgentCompactContext,
 } from '@/lib/backend/agent-commands';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
-import { summarizeMessageIngredients } from '@/lib/ai-service/request-ingredients';
+import { summarizeCompactionRequestSizes } from '@/lib/ai-service/request-ingredients';
 import type {
   AIContextCompactionService,
   AIServiceConfig,
@@ -86,12 +86,14 @@ export async function setupCompactRequestListener({
       const model = parentRequest?.model ?? settings.preferredModel.model;
       const providerConfig: AIServiceConfig =
         settings.serviceConfigs?.[provider] ?? {};
+      const runtimeConfig = buildServiceRuntimeConfig(settings, providerConfig);
+      const requestComposition = summarizeCompactionRequestSizes({
+        messages,
+        systemPrompt: parentRequest?.systemPrompt,
+        availableTools: parentRequest?.availableTools,
+      });
 
       try {
-        const runtimeConfig = buildServiceRuntimeConfig(
-          settings,
-          providerConfig,
-        );
         const service: AIContextCompactionService = AIServiceFactory.getService(
           provider,
           apiKey,
@@ -100,9 +102,7 @@ export async function setupCompactRequestListener({
         logger.info(
           `🧪 Compact provider handoff ingredients: session=${sessionId}, provider=${provider}, model=${model}`,
           {
-            ...summarizeMessageIngredients(messages),
-            systemPromptLength: parentRequest?.systemPrompt?.length ?? 0,
-            toolsCount: parentRequest?.availableTools?.length ?? 0,
+            ...requestComposition,
             reasoningEnabled: runtimeConfig.enableReasoning ?? false,
             maxTokens: runtimeConfig.maxTokens,
           },
@@ -113,12 +113,18 @@ export async function setupCompactRequestListener({
           availableTools: parentRequest?.availableTools,
           config: runtimeConfig,
         });
-        await handleCompactResponse(
+        const response = await handleCompactResponse(
           sessionId,
           toId,
           compactedDeltaCount,
           summary,
         );
+        if (response.data?.retried) {
+          logger.info(
+            `🔁 Compact summary rejected by backend; retry requested: session=${sessionId}`,
+          );
+          return;
+        }
         try {
           const freshContext = await getAgentCompactContext(sessionId);
           if (freshContext) {
@@ -147,6 +153,14 @@ export async function setupCompactRequestListener({
         logger.error(
           `Compact LLM call failed: session=${sessionId}`,
           compactRuntimeError,
+        );
+        logger.error(
+          `🧪 Compact failure request composition: session=${sessionId}, provider=${provider}, model=${model}`,
+          {
+            ...requestComposition,
+            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
+            maxTokens: runtimeConfig.maxTokens,
+          },
         );
         await handleCompactError(sessionId, compactRuntimeError);
       }

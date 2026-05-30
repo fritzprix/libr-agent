@@ -227,6 +227,67 @@ fn find_latest_checkpoint_index(messages: &[Message]) -> Option<usize> {
         .rposition(|message| message.prompt_tokens_value().is_some())
 }
 
+fn retained_tail_has_orphan_tool_messages(messages: &[Message], split_idx: usize) -> bool {
+    use std::collections::HashSet;
+
+    let split_idx = split_idx.min(messages.len());
+    let tail = &messages[split_idx..];
+    let tail_owner_ids = tail
+        .iter()
+        .filter(|message| message.role == "assistant")
+        .flat_map(|message| {
+            message
+                .tool_calls
+                .iter()
+                .flatten()
+                .map(|tool_call| tool_call.id.clone())
+        })
+        .collect::<HashSet<_>>();
+
+    tail.iter().any(|message| {
+        message.role == "tool"
+            && message
+                .tool_call_id
+                .as_ref()
+                .is_some_and(|tool_call_id| !tail_owner_ids.contains(tool_call_id))
+    })
+}
+
+fn build_checkpoint_backoff_split_candidates(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    initial_split_idx: usize,
+) -> Vec<usize> {
+    use std::collections::HashSet;
+
+    let delta_start_idx = find_compaction_delta_start_index(messages, compact_context_record);
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+
+    let mut push_candidate = |split_idx: usize| {
+        if split_idx <= delta_start_idx || split_idx > messages.len() {
+            return;
+        }
+        if retained_tail_has_orphan_tool_messages(messages, split_idx) {
+            return;
+        }
+        if seen.insert(split_idx) {
+            candidates.push(split_idx);
+        }
+    };
+
+    push_candidate(initial_split_idx);
+
+    for (idx, message) in messages.iter().enumerate().rev() {
+        if idx < delta_start_idx || message.prompt_tokens_value().is_none() {
+            continue;
+        }
+        push_candidate(idx + 1);
+    }
+
+    candidates
+}
+
 fn find_prompt_checkpoint_compactable_end_exclusive(
     messages: &[Message],
     compact_context_record: Option<&CompactContextRecord>,
@@ -308,6 +369,14 @@ pub fn find_preflight_compactable_end_exclusive_for_testing(
         compact_context_record,
         current_context_limit,
     )
+}
+
+pub fn build_checkpoint_backoff_split_candidates_for_testing(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    initial_split_idx: usize,
+) -> Vec<usize> {
+    build_checkpoint_backoff_split_candidates(messages, compact_context_record, initial_split_idx)
 }
 
 fn log_preflight_split_boundary(
@@ -427,6 +496,7 @@ struct PreparedCompactionAttempt {
 }
 
 const MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS: u32 = 3;
+const MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS: usize = 3;
 
 fn advance_compaction_overflow_recovery_step(
     recovery_phase: CompactionRecoveryPhase,
@@ -816,25 +886,67 @@ pub(crate) async fn try_trigger_preflight_compaction(
     let started_at_ms = chrono::Utc::now().timestamp_millis();
     let initial_retry_attempt = compaction.retry_attempt().await;
     let initial_recovery_phase = compaction.recovery_phase().await;
-    let mut prepared_attempt = prepare_compaction_request_with_recovery_ladder(
-        active_sessions,
-        PrepareCompactionRequestInput {
-            session_id,
-            session_name,
-            messages,
-            split_idx: compactable_end_exclusive,
-            measured_output_tokens_reserve,
-            parent_request: parent_request.clone(),
-            compact_context_record: compact_context_record.clone(),
-            started_at_ms,
-            resume_completion_after_compact,
-            recovery_phase: initial_recovery_phase,
-            retry_attempt: initial_retry_attempt,
-        },
+    let split_candidates = build_checkpoint_backoff_split_candidates(
+        messages,
+        compact_context_record.as_ref(),
+        compactable_end_exclusive,
+    );
+    if split_candidates.is_empty() {
+        return Err(format!(
+            "No ownership-safe compaction split candidates available for session {}.",
+            session_id
+        ));
+    }
+    let candidate_offset = if matches!(
         initial_recovery_phase,
-        initial_retry_attempt,
-    )
-    .await?;
+        CompactionRecoveryPhase::CacheAligned
+    ) {
+        usize::min(
+            initial_retry_attempt as usize,
+            split_candidates.len().saturating_sub(1),
+        )
+    } else {
+        0
+    };
+    log::info!(
+        "🪜 Preflight compaction split candidates: session={}, initial_split_idx={}, candidate_offset={}, candidates={:?}",
+        session_id,
+        compactable_end_exclusive,
+        candidate_offset,
+        split_candidates
+    );
+
+    let mut prepared_attempt = None;
+    for split_idx in split_candidates
+        .iter()
+        .copied()
+        .skip(candidate_offset)
+        .take(MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS)
+    {
+        let attempt = prepare_compaction_request_with_recovery_ladder(
+            active_sessions,
+            PrepareCompactionRequestInput {
+                session_id,
+                session_name,
+                messages,
+                split_idx,
+                measured_output_tokens_reserve,
+                parent_request: parent_request.clone(),
+                compact_context_record: compact_context_record.clone(),
+                started_at_ms,
+                resume_completion_after_compact,
+                recovery_phase: initial_recovery_phase,
+                retry_attempt: initial_retry_attempt,
+            },
+            initial_recovery_phase,
+            initial_retry_attempt,
+        )
+        .await?;
+        if attempt.is_some() {
+            prepared_attempt = attempt;
+            break;
+        }
+    }
 
     if prepared_attempt.is_none() {
         if let Some(recovery_plan) = derive_tail_recompaction_recovery_plan(
@@ -910,6 +1022,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
             compaction
                 .set_recovery_progress(recovery_phase, retry_attempt)
                 .await;
+            compaction.set_current_request(compact_event.clone()).await;
             if let Err(error) = emit_compact_started(
                 app_handle,
                 session_id.to_string(),

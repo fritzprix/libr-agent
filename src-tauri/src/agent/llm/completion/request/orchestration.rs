@@ -199,7 +199,7 @@ pub async fn request_llm_completion(
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             *session.last_submitted_input_message_id.write().await =
-                request.messages.last().map(|message| message.id.clone());
+                crate::agent::llm::select_last_submitted_input_message_id(&request.messages);
         }
     }
 

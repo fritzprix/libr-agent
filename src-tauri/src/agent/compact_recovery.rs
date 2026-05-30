@@ -59,6 +59,7 @@ pub async fn handle_compact_error_state(
                     last_compacted_tail_id: None,
                     retry_attempt: 0,
                     recovery_phase: crate::agent::state::CompactionRecoveryPhase::CacheAligned,
+                    summary_retry_count: 0,
                 },
                 session_id.chars().take(8).collect::<String>(),
             )

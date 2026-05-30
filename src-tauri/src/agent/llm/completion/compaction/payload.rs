@@ -4,7 +4,11 @@ use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 
-use super::instruction::{build_compaction_instruction, build_compaction_instruction_message};
+use super::hints::extract_summary_section_bullets;
+use super::instruction::{
+    build_compaction_instruction, build_compaction_instruction_message,
+    CompactionInstructionTemplateInput, REFERENCE_CONTEXT_WINDOW_MESSAGES,
+};
 
 pub(super) struct CompactionRequestPayload {
     pub(super) compact_messages: Vec<Message>,
@@ -19,6 +23,7 @@ pub struct CompactionRequestPayloadPreview {
     pub to_id: String,
     pub compacted_delta_count: usize,
     pub reused_prior_summary: bool,
+    pub instruction_text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +73,32 @@ fn build_incremental_compact_summary_message(
     build_compact_summary_message_for_messages(session_id, summary, compacted_messages, created_at)
 }
 
+fn build_compaction_instruction_template_input<'a>(
+    all_messages: &'a [Message],
+    compact_messages: &'a [Message],
+) -> CompactionInstructionTemplateInput<'a> {
+    let prior_summary = compact_messages
+        .iter()
+        .find(|message| message.is_compact_summary());
+    let (latest_external_request_messages, reference_context_messages) = if let Some((start, end)) =
+        super::find_latest_external_request_seed_block_range(all_messages)
+    {
+        (
+            &all_messages[start..end],
+            &all_messages[start.saturating_sub(REFERENCE_CONTEXT_WINDOW_MESSAGES)..end],
+        )
+    } else {
+        (&[][..], &[][..])
+    };
+
+    CompactionInstructionTemplateInput {
+        has_prior_summary: compact_messages.first().map(Message::is_compact_summary) == Some(true),
+        prior_summary,
+        latest_external_request_messages,
+        reference_context_messages,
+    }
+}
+
 pub(super) fn build_compaction_request_payload(
     session_id: &str,
     messages: &[Message],
@@ -98,7 +129,9 @@ pub(super) fn build_compaction_request_payload(
             ));
             compact_messages.extend(messages[first_delta_message_idx..split_idx].iter().cloned());
 
-            let instruction = build_compaction_instruction(&compact_messages);
+            let instruction = build_compaction_instruction(
+                build_compaction_instruction_template_input(messages, &compact_messages),
+            );
             compact_messages.push(build_compaction_instruction_message(
                 session_id,
                 instruction,
@@ -115,7 +148,10 @@ pub(super) fn build_compaction_request_payload(
     }
 
     let mut compact_messages = messages[..split_idx].to_vec();
-    let instruction = build_compaction_instruction(&compact_messages);
+    let instruction = build_compaction_instruction(build_compaction_instruction_template_input(
+        messages,
+        &compact_messages,
+    ));
     compact_messages.push(build_compaction_instruction_message(
         session_id,
         instruction,
@@ -142,6 +178,22 @@ pub fn build_compaction_request_payload_for_testing(
             to_id: payload.to_id,
             compacted_delta_count: payload.compacted_delta_count,
             reused_prior_summary: payload.reused_prior_summary,
+            instruction_text: payload
+                .compact_messages
+                .last()
+                .filter(|message| message.is_compaction_instruction())
+                .map(|message| {
+                    message
+                        .content
+                        .iter()
+                        .filter_map(|content| match content {
+                            MCPContent::Text { text, .. } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default(),
         })
 }
 
@@ -198,14 +250,15 @@ fn compaction_message_flags(message: &Message) -> Vec<String> {
 }
 
 pub fn inspect_compaction_payload(messages: &[Message]) -> CompactionPayloadDiagnostics {
-    let latest_external_request_message_ids = latest_real_user_request_block_range(messages)
-        .map(|(start, end)| {
-            messages[start..end]
-                .iter()
-                .map(|message| message.id.clone())
-                .collect()
-        })
-        .unwrap_or_default();
+    let latest_external_request_message_ids =
+        super::find_latest_external_request_seed_block_range(messages)
+            .map(|(start, end)| {
+                messages[start..end]
+                    .iter()
+                    .map(|message| message.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
 
     CompactionPayloadDiagnostics {
         total_messages: messages.len(),
@@ -335,24 +388,6 @@ pub fn fit_compaction_request_messages_to_limit(
     ))
 }
 
-fn latest_real_user_request_block_range(messages: &[Message]) -> Option<(usize, usize)> {
-    let latest_request_idx = messages
-        .iter()
-        .rposition(Message::is_external_request_message)?;
-
-    let mut block_start = latest_request_idx;
-    while block_start > 0 && messages[block_start - 1].is_external_request_message() {
-        block_start -= 1;
-    }
-
-    let mut block_end = latest_request_idx + 1;
-    while block_end < messages.len() && messages[block_end].is_external_request_message() {
-        block_end += 1;
-    }
-
-    Some((block_start, block_end))
-}
-
 fn compact_summary_has_active_request_anchor(message: &Message) -> bool {
     if !message.is_compact_summary() {
         return false;
@@ -368,19 +403,11 @@ fn compact_summary_has_active_request_anchor(message: &Message) -> bool {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let Some((_, active_request_block)) = text.split_once("### Active Request") else {
-        return false;
-    };
-
-    active_request_block
-        .lines()
-        .skip(1)
-        .take_while(|line| !line.trim_start().starts_with("### "))
-        .any(|line| line.trim_start().starts_with("- "))
+    !extract_summary_section_bullets(&text, "Active Request").is_empty()
 }
 
 fn latest_request_anchor_range(messages: &[Message]) -> Option<(usize, usize)> {
-    if let Some(range) = latest_real_user_request_block_range(messages) {
+    if let Some(range) = super::find_latest_external_request_seed_block_range(messages) {
         return Some(range);
     }
 
@@ -469,7 +496,8 @@ pub fn build_overflow_recovery_compaction_messages(
 
     let (body_messages, instruction) = split_compaction_round_messages(messages);
 
-    let latest_real_user_request_range = latest_real_user_request_block_range(&body_messages);
+    let latest_external_request_range =
+        super::find_latest_external_request_seed_block_range(&body_messages);
     let latest_request_range = latest_request_anchor_range(&body_messages);
 
     let previous_summary_idx = body_messages
@@ -528,8 +556,8 @@ pub fn build_overflow_recovery_compaction_messages(
         }
     }
 
-    Err(if latest_real_user_request_range.is_some() {
-        "Compaction overflow recovery could not fit the latest real user request anchor and any valid priority-preserving active-message FIFO subset within the effective context limit."
+    Err(if latest_external_request_range.is_some() {
+        "Compaction overflow recovery could not fit the latest external request anchor and any valid priority-preserving active-message FIFO subset within the effective context limit."
             .to_string()
     } else {
         "Compaction overflow recovery could not fit any valid priority-preserving active-message FIFO subset within the effective context limit."

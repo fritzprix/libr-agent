@@ -284,6 +284,7 @@ fn preflight_context_limit_failure_is_retryable() {
         last_compacted_tail_id: Some("tail".to_string()),
         retry_attempt: 0,
         recovery_phase: CompactionRecoveryPhase::CacheAligned,
+        summary_retry_count: 0,
     };
     let error = AgentRuntimeError::new(
         AgentRuntimeErrorType::ContextLimitError,
@@ -306,6 +307,7 @@ fn degraded_tool_phase_stops_retrying_preflight_compaction() {
         last_compacted_tail_id: Some("tail".to_string()),
         retry_attempt: 0,
         recovery_phase: CompactionRecoveryPhase::DegradedTools,
+        summary_retry_count: 0,
     };
     let error = AgentRuntimeError::new(
         AgentRuntimeErrorType::ContextLimitError,

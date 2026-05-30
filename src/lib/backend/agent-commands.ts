@@ -23,6 +23,10 @@ export interface CompactContextRecord {
   condensedCount?: number;
 }
 
+export interface CompactResponseOutcome {
+  retried: boolean;
+}
+
 /**
  * Handle LLM response from frontend by sending it to Rust backend
  * This is the primary way to sync frontend-generated messages (like UI tool calls) with the Rust backend.
@@ -158,13 +162,16 @@ export async function handleCompactResponse(
   toId: string,
   compactedDeltaCount: number,
   summary: string,
-): Promise<void> {
-  await safeInvoke<AgentResponse>('agent_handle_compact_response', {
-    sessionId,
-    toId,
-    compactedDeltaCount,
-    summary,
-  });
+): Promise<AgentResponse<CompactResponseOutcome>> {
+  return safeInvoke<AgentResponse<CompactResponseOutcome>>(
+    'agent_handle_compact_response',
+    {
+      sessionId,
+      toId,
+      compactedDeltaCount,
+      summary,
+    },
+  );
 }
 
 export async function handleCompactError(

@@ -123,3 +123,12 @@ pub fn build_request_layout(
         }
     }
 }
+
+pub fn select_last_submitted_input_message_id(messages: &[Message]) -> Option<String> {
+    messages
+        .iter()
+        .rev()
+        .find(|message| !message.is_internal_synthetic_user_message())
+        .or_else(|| messages.last())
+        .map(|message| message.id.clone())
+}

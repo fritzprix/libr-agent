@@ -192,6 +192,7 @@ export const MESSAGE_SOURCES = [
   'api',
   'tool',
   'compact-summary',
+  'compaction-instruction',
   'recovery',
   'session-context',
   'scheduled_task',

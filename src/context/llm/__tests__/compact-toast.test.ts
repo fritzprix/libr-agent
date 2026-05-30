@@ -60,6 +60,12 @@ interface CompactStatePayload {
   phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
 }
 
+const COMPACT_RESPONSE_SUCCESS = {
+  success: true,
+  message: 'ok',
+  data: { retried: false },
+};
+
 async function handleCompactEvent(
   payload: CompactPayload,
   settings: Settings | null,
@@ -82,7 +88,7 @@ async function handleCompactEvent(
     toId: string,
     compactedDeltaCount: number,
     summary: string,
-  ) => Promise<void>,
+  ) => Promise<{ data?: { retried?: boolean } }>,
   handleCompactError: (sessionId: string, error: unknown) => Promise<void>,
   setCompactedRangeForSession: (
     sessionId: string,
@@ -111,7 +117,15 @@ async function handleCompactEvent(
       systemPrompt: payload.parentRequest?.systemPrompt,
       availableTools: payload.parentRequest?.availableTools,
     });
-    await handleCompactResponse(sessionId, toId, compactedDeltaCount, summary);
+    const response = await handleCompactResponse(
+      sessionId,
+      toId,
+      compactedDeltaCount,
+      summary,
+    );
+    if (response.data?.retried) {
+      return;
+    }
     setCompactedRangeForSession(sessionId, {
       toId,
       condensedCount: compactedDeltaCount,
@@ -302,7 +316,7 @@ describe('compact request handler', () => {
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       getService,
-      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(COMPACT_RESPONSE_SUCCESS),
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
     );
@@ -313,7 +327,9 @@ describe('compact request handler', () => {
   it('reuses parent request provider, model, and prompt layout for compaction', async () => {
     const compactService = vi.fn().mockResolvedValue('summary');
     const getService = vi.fn().mockReturnValue({ compact: compactService });
-    const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
+    const handleCompactResponse = vi
+      .fn()
+      .mockResolvedValue(COMPACT_RESPONSE_SUCCESS);
     const handleCompactError = vi.fn().mockResolvedValue(undefined);
     const setCompactedRangeForSession = vi.fn();
 
@@ -396,7 +412,7 @@ describe('compact request handler', () => {
       rustPayload,
       DEFAULT_SETTINGS,
       getService,
-      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(COMPACT_RESPONSE_SUCCESS),
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
     );
@@ -426,7 +442,7 @@ describe('compact request handler', () => {
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       getService,
-      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(COMPACT_RESPONSE_SUCCESS),
       vi.fn().mockResolvedValue(undefined),
       vi.fn(),
     );
@@ -443,7 +459,9 @@ describe('compact request handler', () => {
       compact: compactService,
       setDefaultConfig,
     });
-    const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
+    const handleCompactResponse = vi
+      .fn()
+      .mockResolvedValue(COMPACT_RESPONSE_SUCCESS);
     const setCompactedRangeForSession = vi.fn();
 
     await handleCompactEvent(
@@ -478,7 +496,7 @@ describe('compact request handler', () => {
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       getService,
-      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(COMPACT_RESPONSE_SUCCESS),
       handleCompactError,
       vi.fn(),
     );
@@ -493,11 +511,32 @@ describe('compact request handler', () => {
       DEFAULT_PAYLOAD,
       null,
       vi.fn(),
-      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(COMPACT_RESPONSE_SUCCESS),
       handleCompactError,
       vi.fn(),
     );
 
     expect(handleCompactError).toHaveBeenCalledWith(SESSION_ID, expect.anything());
   });
+
+    it('does not publish compacted range when backend requests a compaction retry', async () => {
+      const compactService = vi.fn().mockResolvedValue('Too short.');
+      const getService = vi.fn().mockReturnValue({ compact: compactService });
+      const setCompactedRangeForSession = vi.fn();
+
+      await handleCompactEvent(
+        DEFAULT_PAYLOAD,
+        DEFAULT_SETTINGS,
+        getService,
+        vi.fn().mockResolvedValue({
+          success: true,
+          message: 'retrying',
+          data: { retried: true },
+        }),
+        vi.fn().mockResolvedValue(undefined),
+        setCompactedRangeForSession,
+      );
+
+      expect(setCompactedRangeForSession).not.toHaveBeenCalled();
+    });
 });

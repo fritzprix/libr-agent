@@ -163,7 +163,7 @@ pub struct CompactionParentRequest {
 
 /// Event payload emitted as `llm:compact-request`.
 /// The frontend listener calls the LLM for a summary and returns via `agent_handle_compact_response`.
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactRequest {
     pub session_id: String,

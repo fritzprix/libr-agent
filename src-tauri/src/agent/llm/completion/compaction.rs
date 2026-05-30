@@ -13,6 +13,7 @@ pub use payload::{
 };
 pub use trigger::{
     advance_compaction_overflow_recovery_step_for_testing,
+    build_checkpoint_backoff_split_candidates_for_testing,
     find_preflight_compactable_end_exclusive_for_testing, has_prompt_checkpoint_compaction_target,
     preview_preflight_compaction_selection, should_skip_same_tail_compaction,
     trigger_manual_compaction_for_session, trigger_preflight_compaction_for_session,
@@ -35,7 +36,7 @@ pub fn derive_tail_recompaction_recovery_plan_for_testing(
     )
 }
 
-fn find_latest_external_request_seed_block_start(messages: &[Message]) -> Option<usize> {
+fn find_latest_external_request_seed_block_range(messages: &[Message]) -> Option<(usize, usize)> {
     let latest_request_idx = messages
         .iter()
         .rposition(Message::is_external_request_message)?;
@@ -45,5 +46,14 @@ fn find_latest_external_request_seed_block_start(messages: &[Message]) -> Option
         block_start -= 1;
     }
 
-    Some(block_start)
+    let mut block_end = latest_request_idx + 1;
+    while block_end < messages.len() && messages[block_end].is_external_request_message() {
+        block_end += 1;
+    }
+
+    Some((block_start, block_end))
+}
+
+fn find_latest_external_request_seed_block_start(messages: &[Message]) -> Option<usize> {
+    find_latest_external_request_seed_block_range(messages).map(|(block_start, _)| block_start)
 }

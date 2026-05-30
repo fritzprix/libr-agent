@@ -136,27 +136,55 @@ fn extract_compact_summary_body(message: &Message) -> Option<String> {
     }
 }
 
-fn extract_summary_section_bullets(summary: &str, section_heading: &str) -> Vec<String> {
+fn parse_section_heading_line(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let candidate = if trimmed.starts_with('#') {
+        trimmed.trim_start_matches('#').trim()
+    } else if !trimmed.starts_with("- ") && !trimmed.starts_with("* ") && trimmed.ends_with(':') {
+        trimmed.trim_end_matches(':').trim()
+    } else {
+        return None;
+    };
+
+    if candidate.is_empty() {
+        None
+    } else {
+        Some(candidate.to_string())
+    }
+}
+
+fn matches_section_heading(line: &str, section_heading: &str) -> bool {
+    parse_section_heading_line(line)
+        .map(|candidate| candidate == section_heading)
+        .unwrap_or(false)
+}
+
+pub(super) fn extract_summary_section_bullets(summary: &str, section_heading: &str) -> Vec<String> {
     let mut bullets = Vec::new();
     let mut in_section = false;
-    let markdown_heading = format!("### {}", section_heading);
 
     for line in summary.lines() {
         let trimmed = line.trim();
 
-        if trimmed == markdown_heading || trimmed == section_heading {
+        if matches_section_heading(trimmed, section_heading) {
             in_section = true;
             continue;
         }
 
-        if trimmed.starts_with("### ")
-            || (!trimmed.starts_with("- ") && !trimmed.starts_with("* ") && trimmed.ends_with(':'))
-        {
+        if parse_section_heading_line(trimmed).is_some() {
             in_section = false;
+            continue;
         }
 
         if in_section {
-            if let Some(bullet) = trimmed.strip_prefix("- ") {
+            let bullet = trimmed
+                .strip_prefix("- ")
+                .or_else(|| trimmed.strip_prefix("* "));
+            if let Some(bullet) = bullet {
                 let normalized = bullet.trim();
                 if !normalized.is_empty() {
                     bullets.push(normalized.to_string());
@@ -169,11 +197,11 @@ fn extract_summary_section_bullets(summary: &str, section_heading: &str) -> Vec<
 }
 
 fn collect_prior_summary_hints(
-    message: &Message,
+    summary_message: &Message,
     active_request: &mut Vec<String>,
     required_references: &mut Vec<String>,
 ) {
-    let Some(summary_body) = extract_compact_summary_body(message) else {
+    let Some(summary_body) = extract_compact_summary_body(summary_message) else {
         return;
     };
 
@@ -237,33 +265,15 @@ fn collect_reference_candidates_from_message(message: &Message, references: &mut
     }
 }
 
-pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPreservationHints {
+pub(super) fn build_compaction_preservation_hints_from_parts(
+    prior_summary: Option<&Message>,
+    latest_external_request_messages: &[Message],
+    reference_context_messages: &[Message],
+) -> CompactionPreservationHints {
     let mut active_request = Vec::new();
     let mut required_references = Vec::new();
 
-    if let Some(previous_summary) = messages.iter().find(|message| message.is_compact_summary()) {
-        collect_prior_summary_hints(
-            previous_summary,
-            &mut active_request,
-            &mut required_references,
-        );
-    }
-
-    let Some(active_request_start) = super::find_latest_external_request_seed_block_start(messages)
-    else {
-        return CompactionPreservationHints {
-            active_request,
-            required_references,
-        };
-    };
-
-    let request_block_end = messages[active_request_start..]
-        .iter()
-        .take_while(|message| message.is_external_request_message())
-        .count()
-        + active_request_start;
-
-    for message in &messages[active_request_start..request_block_end] {
+    for message in latest_external_request_messages {
         for fragment in extract_sanitized_message_text_fragments(message) {
             push_unique_limited(
                 &mut active_request,
@@ -280,10 +290,8 @@ pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPr
         }
     }
 
-    let reference_window_start =
-        active_request_start.saturating_sub(REFERENCE_CONTEXT_WINDOW_MESSAGES);
     let mut raw_reference_candidates = Vec::new();
-    for message in &messages[reference_window_start..request_block_end] {
+    for message in reference_context_messages {
         collect_reference_candidates_from_message(message, &mut raw_reference_candidates);
     }
 
@@ -295,8 +303,36 @@ pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPr
         );
     }
 
+    if let Some(summary_message) = prior_summary {
+        collect_prior_summary_hints(
+            summary_message,
+            &mut active_request,
+            &mut required_references,
+        );
+    }
+
     CompactionPreservationHints {
         active_request,
         required_references,
     }
+}
+
+pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPreservationHints {
+    let prior_summary = messages.iter().find(|message| message.is_compact_summary());
+    let (latest_external_request_messages, reference_context_messages) = if let Some((start, end)) =
+        super::find_latest_external_request_seed_block_range(messages)
+    {
+        (
+            &messages[start..end],
+            &messages[start.saturating_sub(REFERENCE_CONTEXT_WINDOW_MESSAGES)..end],
+        )
+    } else {
+        (&[][..], &[][..])
+    };
+
+    build_compaction_preservation_hints_from_parts(
+        prior_summary,
+        latest_external_request_messages,
+        reference_context_messages,
+    )
 }

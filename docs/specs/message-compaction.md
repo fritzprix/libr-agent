@@ -6,13 +6,17 @@ This document defines the current compaction contract for Agent V2.
 
 The short version:
 
-1. `message.promptTokens` is the persistent checkpoint truth.
-2. The value belongs to the **last submitted input message** of a successful request.
-3. Rust preflight uses the latest checkpoint plus estimated delta to decide whether
-   the next request fits.
-4. If the request does not fit, Rust compacts before send.
-5. If the request does not fit and there is no usable checkpoint anchor, the state
-   is invalid and the backend must reject without mutating history.
+1. Provider `usage.promptTokens` is the only grounded full-prompt truth.
+2. That value belongs to the **last submitted real input message** of a successful
+   request.
+3. Next-turn fit starts from the last grounded `usage.promptTokens` and only adds
+   known post-checkpoint growth.
+4. If the request does not fit, Rust compacts before send using a checkpoint-anchored
+   causal-prefix strategy.
+5. Successful compaction must invalidate stale retained-tail checkpoints and set
+   runtime `lastReportedPromptTokens = null`.
+6. If the request does not fit and there is no usable checkpoint candidate, the
+   state is invalid and the backend must reject without mutating history.
 
 The old mental model around `safeCheckpointId` is obsolete. Context-fit truth must
 survive restart and later `maxInputContext` changes, so the checkpoint must live on
@@ -39,19 +43,22 @@ This spec does **not** define provider-specific SDK request formatting.
 
 ### 2.1 Source of truth
 
-There are two different truths and they must not be confused:
+There are two different signals and they must not be confused:
 
-1. **Provider-reported truth**
-   - `usage.promptTokens` is the actual submitted input size for a completed
+1. **Provider-reported prompt truth**
+   - `usage.promptTokens` is the actual full submitted input size for a completed
      request.
-2. **Rust preflight truth**
-   - `conservative_prompt_tokens` is a Rust-side estimate used to decide whether
-     the next request is safe to send.
+   - This is the only grounded prompt-size truth.
+2. **Rust preflight projection**
+   - Rust projects the next request by starting from the last grounded
+     `usage.promptTokens` and adding only known post-checkpoint growth.
+   - Dynamic service-context growth can still make the next real request larger
+     than this projection.
 
 Important consequence:
 
 ```text
-preflight estimate != actual submitted size
+next-turn projection != guaranteed next submitted size
 ```
 
 If Rust preflight blocks a request, that blocked request was never submitted to the
@@ -60,7 +67,7 @@ provider.
 ### 2.2 Persistent checkpoint rule
 
 After a successful completion request, the backend must persist the provider's
-`usage.promptTokens` onto the **last submitted input message** for that request.
+`usage.promptTokens` onto the **last submitted real input message** for that request.
 
 That field is stored as:
 
@@ -155,15 +162,19 @@ the configured `maxInputContext`.
 
 ### 4.2 Fit decision
 
-Rust estimates the next request size conservatively.
+Rust projects the next request from:
 
-If the estimate is within the safe limit:
+1. the last grounded `usage.promptTokens`
+2. known post-checkpoint growth
+3. the current runtime `maxInputContext`
+
+If the projected next request is within the safe limit:
 
 ```text
 send normal completion request
 ```
 
-If the estimate exceeds the safe limit:
+If the projected next request exceeds the safe limit:
 
 ```text
 do not send the normal completion request
@@ -213,8 +224,9 @@ old `split_idx` mental model alone.
 The point of the checkpoint is:
 
 ```text
-find the latest proven-fit anchor below the current request tail, then compact the
-older live prefix into summary state
+start from the newest usable checkpoint candidate below the current request tail,
+compact the older live causal prefix into summary state, and back off toward older
+candidates if dynamic prompt growth makes the first split still fail
 ```
 
 ### 5.3 What the new summary absorbs
@@ -230,6 +242,27 @@ round.
 
 Normal compaction must not silently leave half of that selected delta outside the
 summary.
+
+### 5.4 Post-compaction invalidation
+
+After a compaction step succeeds:
+
+1. any `promptTokens` still present on the retained tail are stale full-prompt
+   measurements from the pre-compaction epoch and must be invalidated for checkpoint
+   reuse
+2. runtime `lastReportedPromptTokens` must be set to `null`
+3. only a later successful submit may establish new grounded prompt truth
+
+### 5.5 Bounded retry policy
+
+Dynamic service-context growth can invalidate the most recent checkpoint-based split.
+
+Therefore compaction must:
+
+1. try the newest usable checkpoint candidate first
+2. back off one candidate at a time toward older prefix boundaries
+3. stop after at most 3 split attempts
+4. fail closed after 3 empty compaction summaries
 
 ---
 
@@ -269,6 +302,10 @@ Rules:
 1. ChatInput may reject a blatantly oversized first input early.
 2. That early rejection must stay conservative and UX-oriented.
 3. Backend must still re-validate and remain authoritative.
+4. If the UI keeps showing token metrics during `awaitingCompact` or `compacting`,
+   it should prefer the last stable preflight projection over a transient blocked
+   overflow value so the badge does not imply the compaction request itself
+   overflowed.
 
 ---
 
@@ -299,7 +336,42 @@ So the UI count must reflect the selected compacted delta only.
 
 ## 9. Canonical Pseudocode
 
-The following pseudocode is the intended behavior model.
+Quick mental model first:
+
+```ts
+function runTurn(state) {
+  const projectedPromptLoad = estimateNextPromptLoadFromLastTruth(state);
+
+  if (projectedPromptLoad == null || projectedPromptLoad >= state.maxInputContext) {
+    const splitCandidates = newestCheckpointAnchorsFirst(state.liveMessages);
+
+    if (splitCandidates.length === 0) {
+      throw InvalidContextStateError();
+    }
+
+    for (const candidate of splitCandidates.slice(0, 3)) {
+      const summary = compactPrefixIntoSummary(state, candidate);
+
+      if (summary.isEmpty()) {
+        continue;
+      }
+
+      persistCompactedSummary(summary, candidate.toId);
+      dropCompactedPrefixFromLiveHistory(state, candidate.toId);
+      invalidateRetainedTailPromptTruth(state);
+      return runTurn(state); // retry with compact summary injected
+    }
+
+    throw InvalidContextStateError();
+  }
+
+  const response = submitNormalCompletion(state);
+  persistProviderPromptTruthOnLastSubmittedRealInput(response);
+  appendAssistantResult(state, response);
+}
+```
+
+This is the simplified control-flow view. The full intended behavior model is below.
 
 ```ts
 type Message = {
@@ -318,150 +390,126 @@ type CompactSummary = {
   condensedCount: number;
 } | null;
 
-const OUTPUT_RESERVE_FALLBACK_CAP = 8192;
+const MAX_SPLIT_TRIES = 3;
+const MAX_EMPTY_COMPACTION_RESPONSES = 3;
 
-function latestCheckpoint(messages: Message[]): Message | null {
+function selectLastSubmittedRealInputMessage(
+  messages: Message[],
+): Message | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].promptTokens != null) {
+    if (messages[i].source !== 'internal') {
       return messages[i];
     }
   }
   return null;
 }
 
-function estimateNextPromptTokens(args: {
-  systemTokens: number;
-  toolTokens: number;
-  serviceContextTokens: number;
-  liveMessages: Message[];
-  compactSummary: CompactSummary;
-}): number {
-  // Exact estimator details are implementation-owned.
-  // Contractually this is a conservative Rust preflight estimate.
-  return conservativeEstimate(args);
-}
-
-function deriveMeasuredOutputTokensReserve(args: {
-  liveMessages: Message[];
-  configuredMaxOutputTokens?: number | null;
-}): number {
-  const latestExternalRequestIndex = findLastIndex(
-    args.liveMessages,
-    (message) => message.source === 'external_request',
-  );
-
-  const latestExternalRequestCycleMax =
-    latestExternalRequestIndex == null
-      ? null
-      : max(
-          args.liveMessages
-            .slice(latestExternalRequestIndex)
-            .filter((message) => message.role === 'assistant')
-            .map((message) => message.usage?.completionTokens ?? null),
-        );
-
-  const latestObservedAssistantCompletionTokens = lastValue(
-    args.liveMessages,
-    (message) =>
-      message.role === 'assistant' ? message.usage?.completionTokens ?? null : null,
-  );
-
-  const configuredReserve = Math.min(
-    args.configuredMaxOutputTokens ?? 0,
-    OUTPUT_RESERVE_FALLBACK_CAP,
-  );
-
-  return Math.min(
-    latestExternalRequestCycleMax ??
-      latestObservedAssistantCompletionTokens ??
-      configuredReserve,
-    OUTPUT_RESERVE_FALLBACK_CAP,
-  );
-}
-
-function calculateEffectiveInputBudget(args: {
-  safeInputTokenLimit: number;
-  measuredOutputTokensReserve: number;
-}): number {
-  return Math.max(
-    0,
-    args.safeInputTokenLimit - args.measuredOutputTokensReserve,
-  );
-}
-
-function findCompactTarget(args: {
-  liveMessages: Message[];
-  effectiveInputBudget: number;
-}): { toId: string; condensedCount: number } | null {
-  const checkpoint = latestCheckpoint(args.liveMessages);
-  if (!checkpoint || checkpoint.promptTokens == null) {
+function projectedNextPromptLoad(args: {
+  lastReportedPromptTokens: number | null;
+  outputReserveTokens: number;
+  toolResultGrowthTokens: number;
+  serviceContextGrowthTokens: number;
+}): number | null {
+  if (args.lastReportedPromptTokens == null) {
     return null;
   }
 
-  // Use persisted prompt-token truth to choose a compactable boundary.
-  // Exact boundary math is implementation-owned, but it must be anchored by
-  // checkpointed messages rather than ad-hoc split heuristics alone.
-  return selectPromptAnchoredBoundary(
-    args.liveMessages,
-    checkpoint,
-    args.effectiveInputBudget,
+  return (
+    args.lastReportedPromptTokens +
+    args.outputReserveTokens +
+    args.toolResultGrowthTokens +
+    args.serviceContextGrowthTokens
   );
+}
+
+function buildCheckpointBackoffCandidates(
+  liveMessages: Message[],
+): { toId: string; condensedCount: number }[] {
+  return selectCheckpointAnchoredBoundariesNewestFirst(liveMessages).filter(
+    (candidate) =>
+      retainedTailPreservesToolOwnership(liveMessages, candidate.toId),
+  );
+}
+
+function invalidateRetainedTailPromptTokens(messages: Message[]): Message[] {
+  return messages.map((message) => ({
+    ...message,
+    promptTokens: null,
+  }));
 }
 
 async function runCompletionLoop(state: {
   messages: Message[];
   compactSummary: CompactSummary;
-  safeInputTokenLimit: number;
-  configuredMaxOutputTokens?: number | null;
+  maxInputContext: number;
+  lastReportedPromptTokens: number | null;
 }) {
   while (true) {
-    const preflightTokens = estimateNextPromptTokens({
-      systemTokens: getSystemPromptTokens(),
-      toolTokens: getToolSchemaTokens(),
-      serviceContextTokens: getServiceContextTokens(),
-      liveMessages: state.messages,
-      compactSummary: state.compactSummary,
-    });
-    const measuredOutputTokensReserve = deriveMeasuredOutputTokensReserve({
-      liveMessages: state.messages,
-      configuredMaxOutputTokens: state.configuredMaxOutputTokens,
-    });
-    const totalBudgetTokens =
-      preflightTokens + measuredOutputTokensReserve;
-    const effectiveInputBudget = calculateEffectiveInputBudget({
-      safeInputTokenLimit: state.safeInputTokenLimit,
-      measuredOutputTokensReserve,
+    const projectedPromptLoad = projectedNextPromptLoad({
+      lastReportedPromptTokens: state.lastReportedPromptTokens,
+      outputReserveTokens: deriveOutputReserve(state.messages),
+      toolResultGrowthTokens: deriveToolResultGrowth(state.messages),
+      serviceContextGrowthTokens: deriveServiceContextGrowth(),
     });
 
-    if (totalBudgetTokens >= state.safeInputTokenLimit) {
-      const target = findCompactTarget({
-        liveMessages: state.messages,
-        effectiveInputBudget,
-      });
+    const mustCompact =
+      projectedPromptLoad == null ||
+      projectedPromptLoad >= state.maxInputContext;
 
-      if (!target) {
+    if (mustCompact) {
+      const candidates = buildCheckpointBackoffCandidates(state.messages);
+
+      if (candidates.length === 0) {
         throw new InvalidContextStateError(
-          'Prepared payload exceeds the effective context limit, but no prompt-token checkpoint can anchor compaction.',
+          'Prepared payload exceeds the prompt limit, but no prompt-token checkpoint can anchor compaction.',
         );
       }
 
-      const compactResult = await runCompactionRequest({
-        previousSummary: state.compactSummary,
-        liveMessages: state.messages,
-        compactToId: target.toId,
-      });
+      let emptyResponses = 0;
+      let compacted = false;
 
-      state.compactSummary = {
-        toId: target.toId,
-        summary: compactResult.summary,
-        condensedCount: target.condensedCount,
-      };
+      for (const candidate of candidates.slice(0, MAX_SPLIT_TRIES)) {
+        const compactResult = await runCompactionRequest({
+          previousSummary: state.compactSummary,
+          liveMessages: state.messages,
+          compactToId: candidate.toId,
+        });
 
-      state.messages = removeCompactedPrefix(state.messages, target.toId);
+        if (!compactResult.summary.trim()) {
+          emptyResponses += 1;
+          if (emptyResponses >= MAX_EMPTY_COMPACTION_RESPONSES) {
+            throw new InvalidContextStateError(
+              'Compaction returned empty summary 3 times.',
+            );
+          }
+          continue;
+        }
+
+        state.compactSummary = {
+          toId: candidate.toId,
+          summary: compactResult.summary,
+          condensedCount: candidate.condensedCount,
+        };
+        state.messages = invalidateRetainedTailPromptTokens(
+          removeCompactedPrefix(state.messages, candidate.toId),
+        );
+        state.lastReportedPromptTokens = null;
+        compacted = true;
+        break;
+      }
+
+      if (!compacted) {
+        throw new InvalidContextStateError(
+          'Prepared payload still exceeds the prompt limit after bounded checkpoint backoff.',
+        );
+      }
+
       continue;
     }
 
-    const lastSubmittedInput = findLastSubmittedInputMessage(state.messages);
+    const lastSubmittedInput = selectLastSubmittedRealInputMessage(
+      state.messages,
+    );
 
     const response = await submitNormalCompletion({
       compactSummary: state.compactSummary,
@@ -473,10 +521,9 @@ async function runCompletionLoop(state: {
         lastSubmittedInput.id,
         response.usage.promptTokens,
       );
+      state.lastReportedPromptTokens = response.usage.promptTokens;
     }
 
-    // Assistant usage metadata must be retained so the next preflight can derive
-    // its measured output reserve from observed completionTokens.
     applyAssistantResult(state, response);
   }
 }
@@ -484,61 +531,145 @@ async function runCompletionLoop(state: {
 
 ---
 
-## 10. Non-Negotiable Invariants
+## 10. Compaction Instruction Seed Contract
+
+Compaction request assembly has two separate inputs:
+
+1. **Compaction body** — the prefix actually being summarized (`split_idx` / replayed
+   request layout / overflow recovery subject)
+2. **Instruction seed** — the latest external request and nearby reference context
+   taken from the **full pre-compaction message stack**, even when that request is
+   outside the compacted body window
+
+Pseudocode:
+
+```ts
+function buildCompactionInstructionInput(args: {
+  allMessages: Message[];
+  compactBodyMessages: Message[];
+}): {
+  hasPriorSummary: boolean;
+  priorSummary: Message | null;
+  latestExternalRequestMessages: Message[];
+  referenceContextMessages: Message[];
+} {
+  const latestExternalRequestRange = findLatestExternalRequestSeedBlockRange(
+    args.allMessages,
+  );
+
+  if (latestExternalRequestRange == null) {
+    return {
+      hasPriorSummary:
+        args.compactBodyMessages[0]?.source === 'compact_summary',
+      priorSummary:
+        args.compactBodyMessages.find(
+          (message) => message.source === 'compact_summary',
+        ) ?? null,
+      latestExternalRequestMessages: [],
+      referenceContextMessages: [],
+    };
+  }
+
+  const [start, end] = latestExternalRequestRange;
+  return {
+    hasPriorSummary: args.compactBodyMessages[0]?.source === 'compact_summary',
+    priorSummary:
+      args.compactBodyMessages.find(
+        (message) => message.source === 'compact_summary',
+      ) ?? null,
+    latestExternalRequestMessages: args.allMessages.slice(start, end),
+    referenceContextMessages: args.allMessages.slice(
+      Math.max(0, start - REFERENCE_CONTEXT_WINDOW_MESSAGES),
+      end,
+    ),
+  };
+}
+```
+
+This split is mandatory: the latest external request must remain explicitly visible
+to the compaction summary instruction even when FIFO body trimming or checkpoint
+splits would otherwise exclude it from the compacted prefix itself.
+
+---
+
+## 11. Non-Negotiable Invariants
 
 These rules are mandatory:
 
 1. `message.promptTokens` must be persisted, not runtime-only.
 2. The persisted value must come from provider `usage.promptTokens`.
-3. The value must be written to the last submitted input message.
+3. The value must be written to the last submitted real input message.
 4. Assistant `usage.completionTokens` must be retained so output reserve can be
    derived from observed turns.
 5. Preflight overflow must block the oversized normal request before send.
-6. Preflight overflow is evaluated against total budget, not input-only estimate:
-   `conservative_prompt_tokens + measured_output_tokens_reserve >= safe_input_token_limit`.
-7. Compaction target selection must use the reserve-aware effective input budget,
-   not the raw safe input limit.
-8. Reserve derivation must prefer the maximum assistant `completionTokens` inside
-   the latest external-request cycle, then fall back to the latest observed
-   assistant completion usage, then configured output reserve capped at 8192.
-9. Missing checkpoint anchors in an overflow situation must be treated as invalid
-   state.
-10. Frontend may assist UX, but backend owns correctness.
-11. Summary bubble counts must describe the compacted delta actually submitted by
-   the compaction payload, not unrelated totals.
+6. Next-turn fit decisions must start from grounded provider `usage.promptTokens`
+   and add only known post-checkpoint growth; they must not treat checkpoints as
+   per-message additive deltas.
+7. Compaction target selection must start from the newest usable checkpoint and
+   support bounded backoff toward older candidates.
+8. A compaction boundary is invalid if the retained tail would break
+   assistant/tool ownership.
+9. After compaction, retained-tail `promptTokens` must be invalidated for checkpoint
+   reuse.
+10. After compaction, runtime `lastReportedPromptTokens` must be set to `null`.
+11. Dynamic service-context growth must be tolerated via bounded retry rather than
+    assuming the newest checkpoint split always fits.
+12. Compaction instruction seeds must be derived from the full pre-compaction
+    message stack, not only from the compacted body window.
+13. Live latest-external-request bullets must be added before prior-summary
+    carry-forward bullets so the current request cannot be evicted by a saturated
+    prior summary `Active Request` section.
+14. Missing checkpoint anchors in an overflow situation must be treated as invalid
+    state.
+15. Frontend may assist UX, but backend owns correctness.
+16. Summary bubble counts must describe the compacted delta actually submitted by
+    the compaction payload, not unrelated totals.
 
 ---
 
-## 11. Practical Interpretation
+## 12. Practical Interpretation
 
 When reading logs:
 
-- `conservative_prompt_tokens=...` means Rust's preflight estimate
-- `measured_output_tokens_reserve=...` means the reserved output budget derived
-  from observed assistant `completionTokens` or configured fallback
-- `total_budget_tokens=...` means the actual preflight gate:
-  `conservative_prompt_tokens + measured_output_tokens_reserve`
-- `effective_input_budget=...` means the checkpoint-selection and compaction-fit
-  budget after reserve subtraction
-- `usage.promptTokens=...` means actual provider-submitted size for the request
+- `usage.promptTokens=...` means actual provider-submitted full prompt size for the
+  request
+- `conservative_prompt_tokens=...` is a Rust projection signal, not grounded truth
+- dynamic service-context growth can make the next real prompt larger than a naive
+  checkpoint projection
+- `lastReportedPromptTokens=null` after compaction means the previous full-prompt
+  truth was intentionally invalidated for the new epoch
 
 When reading stored messages:
 
-- `promptTokens=null` means the message is not a grounded checkpoint
-- `promptTokens=number` means the message can serve as a persisted compaction anchor
+- `promptTokens=null` means the message is not currently a grounded checkpoint
+- `promptTokens=number` means the message may serve as a persisted compaction anchor
+  if it is still usable in the current live range
 - `usage.completionTokens=number` on assistant turns means the turn can
   participate in future output-reserve derivation
+- the latest external request may be preserved in the compaction instruction even
+  when it is not part of the compacted body prefix
 
 When debugging compaction:
 
 1. check whether preflight blocked before send
-2. check whether `total_budget_tokens` crossed `safe_input_token_limit`
-3. check which assistant turn supplied the measured output reserve
-4. check whether a prompt-token checkpoint existed
-5. check which `to_id` was selected under the reserve-aware effective input budget
-6. check that compact summary was stored
-7. check that the resumed request was rebuilt with the summary injected
-8. check that the summary bubble count matches the compacted delta actually kept
-   after payload fitting
+2. check what the last grounded `usage.promptTokens` value was
+3. check whether dynamic service-context growth or tool-result growth invalidated a
+   naive checkpoint fit assumption
+4. check whether a usable prompt-token checkpoint existed in the current live range
+5. check which `to_id` candidate was selected and whether backoff to older
+   candidates was attempted
+6. check whether the retained tail preserved assistant/tool ownership
+7. check whether the instruction seed came from the full live message stack or
+   was accidentally derived only from the compacted prefix
+8. check that the latest external request appears in the instruction seed even if
+   it sits outside the compacted body window
+9. check that compact summary was stored
+10. check that retained-tail `promptTokens` were invalidated and
+    `lastReportedPromptTokens` was cleared
+11. check that the resumed request was rebuilt with the summary injected
+12. check that the summary bubble count matches the compacted delta actually kept
+    after payload fitting
+13. if the UI badge stayed visible during compaction, check whether it intentionally
+    held the last stable preflight value rather than the blocked overflow estimate
 
 That is the current contract.

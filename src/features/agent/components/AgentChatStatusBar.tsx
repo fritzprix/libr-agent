@@ -118,6 +118,13 @@ export function AgentChatStatusBar() {
     sessionId,
     usage: null,
   });
+  const [persistedStablePreflight, setPersistedStablePreflight] = useState<{
+    sessionId?: string;
+    metrics: typeof preflightTokenMetrics;
+  }>({
+    sessionId,
+    metrics: null,
+  });
   const lastObservedMetricsRef = useRef<{
     sessionId?: string;
     usage: TokenUsage | null;
@@ -179,12 +186,42 @@ export function AgentChatStatusBar() {
     };
   }, [metrics, persistMetrics, sessionId]);
 
+  const compacting = session?.id ? isCompacting(session.id) : false;
+  const awaitingCompact = session?.id ? isAwaitingCompact(session.id) : false;
+
+  useEffect(() => {
+    if (!sessionId) {
+      setPersistedStablePreflight({
+        sessionId: undefined,
+        metrics: null,
+      });
+      return;
+    }
+
+    if (awaitingCompact || compacting || !preflightTokenMetrics) {
+      return;
+    }
+
+    setPersistedStablePreflight({
+      sessionId,
+      metrics: preflightTokenMetrics,
+    });
+  }, [compacting, awaitingCompact, preflightTokenMetrics, sessionId]);
+
   const latestAssistantUsage = useMemo(
     () => findLatestAssistantUsage(messages),
     [messages],
   );
   const sessionPersistedUsage =
     persistedMetrics.sessionId === sessionId ? persistedMetrics.usage : null;
+  const sessionPersistedStablePreflight =
+    persistedStablePreflight.sessionId === sessionId
+      ? persistedStablePreflight.metrics
+      : null;
+  const badgePreflightMetrics =
+    awaitingCompact || compacting
+      ? (sessionPersistedStablePreflight ?? preflightTokenMetrics)
+      : preflightTokenMetrics;
 
   // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
   // without mutating state during render.
@@ -382,7 +419,7 @@ export function AgentChatStatusBar() {
     }
 
     // Compact-specific states take priority over generic 'busy'
-    if (session?.id && isAwaitingCompact(session.id)) {
+    if (awaitingCompact) {
       return {
         icon: <Loader2 className="w-4 h-4 animate-spin" />,
         text: t('agent.statusBar.statusAwaitingCompact'),
@@ -393,7 +430,7 @@ export function AgentChatStatusBar() {
       };
     }
 
-    if (session?.id && isCompacting(session.id)) {
+    if (compacting) {
       return {
         icon: (
           <DatabaseZap className="w-4 h-4 animate-pulse text-muted-foreground" />
@@ -555,7 +592,7 @@ export function AgentChatStatusBar() {
             {displayMetrics && (
               <TokenMetricsBadge
                 usage={displayMetrics}
-                preflight={preflightTokenMetrics}
+                preflight={badgePreflightMetrics}
                 className="shrink-0"
                 compact={isCompactStatusBar}
               />

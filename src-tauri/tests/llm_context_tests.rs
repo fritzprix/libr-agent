@@ -5,9 +5,10 @@ use tauri_mcp_agent_lib::agent::compaction_text::{
 };
 use tauri_mcp_agent_lib::agent::llm::completion::{
     advance_compaction_overflow_recovery_step_for_testing, apply_compaction_retry_budget,
-    build_compact_context_selection_options, build_compact_summary_message_for_messages,
-    build_compact_summary_text, build_compaction_preservation_hints,
-    build_compaction_request_payload_for_testing, build_overflow_recovery_compaction_messages,
+    build_checkpoint_backoff_split_candidates_for_testing, build_compact_context_selection_options,
+    build_compact_summary_message_for_messages, build_compact_summary_text,
+    build_compaction_preservation_hints, build_compaction_request_payload_for_testing,
+    build_overflow_recovery_compaction_messages,
     derive_tail_recompaction_recovery_plan_for_testing,
     find_preflight_compactable_end_exclusive_for_testing, fit_compaction_request_messages_to_limit,
     inspect_compaction_payload, merge_consecutive_user_messages, normalize_request_messages,
@@ -19,7 +20,8 @@ use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::llm::types::CompactionParentRequest;
 use tauri_mcp_agent_lib::agent::session_manager::{
-    clamp_compact_summary_to_context_limit, validate_compact_summary_for_testing,
+    clamp_compact_summary_to_context_limit, clear_message_prompt_token_checkpoint_for_testing,
+    validate_compact_summary_for_testing,
 };
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
@@ -315,6 +317,151 @@ fn test_build_compaction_request_payload_falls_back_when_compact_record_to_id_is
 }
 
 #[test]
+fn test_build_compaction_request_payload_injects_latest_external_request_outside_body_window() {
+    let earlier_context = make_message("m0", "assistant", "Earlier compaction body");
+    let older_request = make_message("m1", "user", "Compact the older context.");
+    let mut latest_request = make_message(
+        "m2",
+        "user",
+        "After compaction, keep `src/agent/instruction.rs` and `Active Request` visible.",
+    );
+    latest_request.source = Some(MessageSource::Ui);
+
+    let payload = build_compaction_request_payload_for_testing(
+        TEST_SESSION_ID,
+        &[earlier_context, older_request, latest_request],
+        2,
+        None,
+        456,
+    )
+    .expect("payload should be built");
+
+    assert!(
+        payload
+            .instruction_text
+            .contains("src/agent/instruction.rs"),
+        "instruction should preserve the latest external request even when it is outside the compacted body"
+    );
+    assert!(
+        payload.instruction_text.contains("After compaction"),
+        "instruction should still include the latest external request seed text outside the body window"
+    );
+}
+
+#[test]
+fn test_build_compaction_request_payload_incremental_path_injects_latest_external_request_outside_delta(
+) {
+    let messages = vec![
+        make_message("m0", "user", "Already compacted user turn"),
+        make_message("m1", "assistant", "Already compacted assistant turn"),
+        make_message("m2", "assistant", "Delta body context before the latest request"),
+        make_message("m3", "user", "Compact the active delta state first."),
+        make_message("m4", "assistant", "Delta response before the latest external request"),
+        TestMessageBuilder::new("m5", "user")
+            .text(
+                "After compaction, keep `src-tauri/src/agent/llm/completion/compaction/payload.rs` visible for the next step.",
+            )
+            .source(MessageSource::Ui)
+            .build(),
+    ];
+    let compact_record = CompactContextRecord {
+        id: "compact-1".to_string(),
+        session_id: TEST_SESSION_ID.to_string(),
+        to_id: "m1".to_string(),
+        condensed_count: Some(2),
+        summary: "Prior compact summary".to_string(),
+        created_at: 123,
+    };
+
+    let payload = build_compaction_request_payload_for_testing(
+        TEST_SESSION_ID,
+        &messages,
+        5,
+        Some(&compact_record),
+        456,
+    )
+    .expect("payload should be built");
+
+    assert!(
+        payload.reused_prior_summary,
+        "incremental compaction path should reuse the prior summary"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("src-tauri/src/agent/llm/completion/compaction/payload.rs"),
+        "instruction should preserve the latest external request even when it is outside the incremental compacted delta"
+    );
+    assert!(
+        payload.instruction_text.contains("After compaction"),
+        "instruction should still include the latest external request seed text outside the incremental delta"
+    );
+}
+
+#[test]
+fn test_build_compaction_request_payload_uses_simplified_instruction_template() {
+    let latest_request = TestMessageBuilder::new("m0", "user")
+        .text("Keep `src-tauri/src/agent/llm/completion/compaction/instruction.rs` visible.")
+        .source(MessageSource::Ui)
+        .build();
+    let assistant = make_message("m1", "assistant", "Reviewing the compaction template.");
+
+    let payload = build_compaction_request_payload_for_testing(
+        TEST_SESSION_ID,
+        &[latest_request, assistant],
+        2,
+        None,
+        456,
+    )
+    .expect("payload should be built");
+
+    assert!(
+        payload
+            .instruction_text
+            .contains("Use Markdown headings only when helpful."),
+        "instruction should stop forcing every summary into a rigid heading template"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Keep these section titles unchanged"),
+        "instruction should still preserve parser-critical section anchors"
+    );
+    assert!(
+        payload.instruction_text.contains("- Active Request"),
+        "instruction should keep the Active Request anchor visible for downstream parsing"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("You do not need to emit every possible section."),
+        "instruction should explicitly allow omitting low-value sections"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Use these seeds if helpful:"),
+        "instruction should keep the preservation seeds in a compact form"
+    );
+    assert!(
+        !payload.instruction_text.contains("Compression rules:"),
+        "instruction should drop the older verbose compression block label"
+    );
+    assert!(
+        !payload
+            .instruction_text
+            .contains("Preservation hints for this compaction input:"),
+        "instruction should drop the older verbose hint wrapper"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("keep it brief instead of adding filler"),
+        "instruction should prefer sufficient information over rigid section padding"
+    );
+}
+
+#[test]
 fn test_preflight_compactable_end_ignores_unresolved_tool_chain_before_to_id() {
     let mut older_assistant = make_message("m0", "assistant", "Older unresolved tool call");
     older_assistant.tool_calls = Some(vec![AgentToolCall {
@@ -406,6 +553,40 @@ fn test_preflight_compactable_end_respects_effective_budget_after_output_reserve
 
     assert_eq!(full_budget_end, 4);
     assert_eq!(reserve_adjusted_end, 1);
+}
+
+#[test]
+fn test_checkpoint_backoff_candidates_skip_orphan_tool_tail_splits() {
+    let mut assistant = make_message("m0", "assistant", "Tool call owner");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__readFile".to_string(),
+            arguments: "{\"path\":\"src/lib.rs\"}".to_string(),
+        },
+    }]);
+    assistant.prompt_tokens = Some(2_000);
+    let mut tool = make_message("m1", "tool", "Tool result");
+    tool.tool_call_id = Some("call_1".to_string());
+
+    let messages = vec![
+        TestMessageBuilder::new("m-1", "user")
+            .text("older checkpoint")
+            .prompt_tokens(1_000)
+            .build(),
+        assistant,
+        tool,
+        TestMessageBuilder::new("m2", "user")
+            .text("latest checkpoint")
+            .prompt_tokens(3_000)
+            .build(),
+    ];
+
+    let candidates =
+        build_checkpoint_backoff_split_candidates_for_testing(&messages, None, messages.len());
+
+    assert_eq!(candidates, vec![4, 1]);
 }
 
 #[test]
@@ -877,6 +1058,53 @@ fn test_overflow_recovery_uses_compact_summary_active_request_as_workflow_anchor
 }
 
 #[test]
+fn test_overflow_recovery_accepts_plain_active_request_heading_as_workflow_anchor() {
+    let summary = make_compact_summary_message(
+        "m0",
+        "assistant",
+        "Stable Context:\n- Existing project context\n\nActive Request:\n- Fix SDL2 compatibility in doom-engine build\n\nNext Actions:\n- Rebuild and verify runtime",
+    );
+    let mut assistant = make_message("m1", "assistant", "assistant-only continuation");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call-1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "read_file".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+    let mut tool = make_message("m2", "tool", "tool output");
+    tool.tool_call_id = Some("call-1".to_string());
+    let tail_instruction = make_compaction_instruction_message("m3", "current compaction overlay");
+
+    let selected = build_overflow_recovery_compaction_messages(
+        &[
+            summary.clone(),
+            assistant.clone(),
+            tool.clone(),
+            tail_instruction.clone(),
+        ],
+        "openai",
+        10_000,
+        0,
+        0,
+    )
+    .expect("overflow recovery should accept flexible Active Request headings");
+
+    let selected_ids = selected
+        .iter()
+        .map(|message| message.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(selected_ids.contains(&summary.id.as_str()));
+    assert!(selected_ids.contains(&assistant.id.as_str()));
+    assert!(selected_ids.contains(&tool.id.as_str()));
+    assert_eq!(
+        selected.last().map(|message| message.id.as_str()),
+        Some(tail_instruction.id.as_str())
+    );
+}
+
+#[test]
 fn test_internal_synthetic_user_message_uses_compaction_instruction_id_fallback() {
     let synthetic = make_message(
         "compaction-instruction-legacy",
@@ -1046,6 +1274,51 @@ fn test_build_compaction_preservation_hints_carry_forward_prior_summary_open_req
 }
 
 #[test]
+fn test_build_compaction_preservation_hints_prioritize_live_external_request_over_full_summary_limit(
+) {
+    let prior_summary = "\
+### Stable Context
+- Existing work item
+
+### Active Request
+- Preserve `src/lib/file-a.ts`
+- Preserve `src/lib/file-b.ts`
+- Preserve `src/lib/file-c.ts`
+- Preserve `src/lib/file-d.ts`
+
+### Required References
+- Preserve file path `src/lib/file-a.ts`
+
+### Current State
+- Refactor still pending";
+    let summary_message = make_compact_summary_message(
+        "m0",
+        "assistant",
+        &build_compact_summary_text(prior_summary, &[]),
+    );
+    let request = make_message(
+        "m1",
+        "user",
+        "Also update `src/lib/live-file.ts` immediately.",
+    );
+
+    let hints = build_compaction_preservation_hints(&[summary_message, request]);
+
+    assert_eq!(
+        hints.active_request.len(),
+        4,
+        "active request hints should still obey the fixed bullet budget"
+    );
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("src/lib/live-file.ts")),
+        "the latest live external request must survive even when prior summary active-request bullets already fill the limit"
+    );
+}
+
+#[test]
 fn test_build_compaction_preservation_hints_preserves_colon_terminated_request_bullets() {
     let prior_summary = "\
 ### Stable Context
@@ -1069,6 +1342,42 @@ fn test_build_compaction_preservation_hints_preserves_colon_terminated_request_b
     assert!(
         hints.active_request.iter().any(|hint| hint == "Next step:"),
         "colon-terminated request bullets should remain part of the active request"
+    );
+}
+
+#[test]
+fn test_build_compaction_preservation_hints_accept_plain_section_headings() {
+    let prior_summary = "\
+Stable Context:
+- Existing work item
+
+Active Request:
+- Refactor `src/lib/file-b.ts`
+
+Required References:
+- Preserve file path `src/lib/file-b.ts`
+";
+    let summary_message = make_compact_summary_message(
+        "m0",
+        "assistant",
+        &build_compact_summary_text(prior_summary, &[]),
+    );
+
+    let hints = build_compaction_preservation_hints(&[summary_message]);
+
+    assert!(
+        hints
+            .active_request
+            .iter()
+            .any(|hint| hint.contains("src/lib/file-b.ts")),
+        "plain section headings should still feed Active Request hints"
+    );
+    assert!(
+        hints
+            .required_references
+            .iter()
+            .any(|hint| hint.contains("src/lib/file-b.ts")),
+        "plain section headings should still feed Required References hints"
     );
     assert!(
         hints
@@ -2359,47 +2668,63 @@ fn test_build_compact_summary_text_limits_snapshot_to_latest_five_completed_tool
         messages.push(tool);
     }
 
-    #[test]
-    fn test_backend_compact_summary_clamp_uses_wrapped_token_budget() {
-        let compacted_messages = vec![
-            make_message(
-                "user-1",
-                "user",
-                "Need a concise recap of the ongoing contract review.",
-            ),
-            make_message(
-                "assistant-1",
-                "assistant",
-                "I will inspect the file and compare terms.",
-            ),
-        ];
-        let oversized_summary = "A".repeat(80_000);
-
-        let result = clamp_compact_summary_to_context_limit(
-            TEST_SESSION_ID,
-            &oversized_summary,
-            &compacted_messages,
-            131_072,
-        );
-
-        assert!(result.was_clamped);
-        assert_eq!(result.hard_limit_tokens, 13_107);
-
-        let clamped_message = build_compact_summary_message_for_messages(
-            TEST_SESSION_ID,
-            &result.summary,
-            &compacted_messages,
-            0,
-        );
-        assert!(estimate_tokens_bpe(&clamped_message) <= result.hard_limit_tokens);
-        assert!(result.original_estimated_tokens > result.hard_limit_tokens);
-    }
-
     let summary = build_compact_summary_text("Compacted summary", &messages);
 
     assert!(!summary.contains("file-0.txt"));
     assert!(summary.contains("file-1.txt"));
     assert!(summary.contains("file-5.txt"));
+}
+
+#[test]
+fn test_backend_compact_summary_clamp_uses_wrapped_token_budget() {
+    let compacted_messages = vec![
+        make_message(
+            "user-1",
+            "user",
+            "Need a concise recap of the ongoing contract review.",
+        ),
+        make_message(
+            "assistant-1",
+            "assistant",
+            "I will inspect the file and compare terms.",
+        ),
+    ];
+    let expected_hard_limit_tokens = 13_107;
+    let mut oversized_summary = "A ".repeat(80_000);
+    let mut wrapped_summary = build_compact_summary_message_for_messages(
+        TEST_SESSION_ID,
+        &oversized_summary,
+        &compacted_messages,
+        0,
+    );
+    while estimate_tokens_bpe(&wrapped_summary) <= expected_hard_limit_tokens {
+        oversized_summary.push_str(&"A ".repeat(20_000));
+        wrapped_summary = build_compact_summary_message_for_messages(
+            TEST_SESSION_ID,
+            &oversized_summary,
+            &compacted_messages,
+            0,
+        );
+    }
+
+    let result = clamp_compact_summary_to_context_limit(
+        TEST_SESSION_ID,
+        &oversized_summary,
+        &compacted_messages,
+        131_072,
+    );
+
+    assert!(result.was_clamped);
+    assert_eq!(result.hard_limit_tokens, expected_hard_limit_tokens);
+
+    let clamped_message = build_compact_summary_message_for_messages(
+        TEST_SESSION_ID,
+        &result.summary,
+        &compacted_messages,
+        0,
+    );
+    assert!(estimate_tokens_bpe(&clamped_message) <= result.hard_limit_tokens);
+    assert!(result.original_estimated_tokens > result.hard_limit_tokens);
 }
 
 #[test]
@@ -2420,6 +2745,31 @@ fn test_validate_compact_summary_rejects_short_summary_for_large_compaction() {
     assert!(result
         .unwrap_err()
         .contains("Compaction summary was too short"));
+}
+
+#[test]
+fn test_clear_message_prompt_token_checkpoint_clears_direct_and_usage_truth() {
+    let mut message = TestMessageBuilder::new("m-usage", "assistant")
+        .text("checkpoint")
+        .build();
+    message.prompt_tokens = Some(12_345);
+    message.usage = Some(json!({
+        "promptTokens": 67_890,
+        "completionTokens": 321
+    }));
+
+    assert!(clear_message_prompt_token_checkpoint_for_testing(
+        &mut message
+    ));
+    assert_eq!(message.prompt_tokens_value(), None);
+    assert_eq!(
+        message
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.get("completionTokens"))
+            .and_then(|value| value.as_u64()),
+        Some(321)
+    );
 }
 
 #[test]

@@ -22,14 +22,14 @@ pub async fn agent_handle_compact_response(
     compacted_delta_count: usize,
     summary: String,
 ) -> Result<AgentResponse, String> {
-    manager
+    let outcome = manager
         .handle_compact_response(&session_id, to_id, compacted_delta_count, summary)
         .await?;
 
     Ok(AgentResponse {
         success: true,
         message: format!("Compact response handled for session: {}", session_id),
-        data: None,
+        data: Some(serde_json::json!(outcome)),
     })
 }
 

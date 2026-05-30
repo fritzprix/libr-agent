@@ -8,7 +8,7 @@ use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
 };
 use crate::agent::state::{AgentSession, CompactionRecoveryPhase, CompactionResumeAction};
-use crate::agent::tauri_events::emit_compact_finished;
+use crate::agent::tauri_events::{emit_compact_finished, emit_compact_request};
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -21,6 +21,7 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 const MAX_COMPACTION_RETRY_ATTEMPTS: u32 = 3;
+const MAX_COMPACTION_SUMMARY_RETRY_ATTEMPTS: u32 = 3;
 const COMPACT_PREVIEW_MAX_CHARS: usize = 96;
 const COMPACTION_SUMMARY_HARD_LIMIT_RATIO: usize = 10;
 const COMPACTION_SUMMARY_TRUNCATION_SUFFIX: &str = "…";
@@ -245,7 +246,7 @@ pub async fn handle_compact_error_with_dispatcher(
                 }
                 CompactionRecoveryPhase::DegradedTools => unreachable!(),
             };
-            compaction.clear_runtime_state(false).await;
+            compaction.clear_in_flight_state(false).await;
             dispatcher.emit_compact_state(CompactStateEvent {
                 session_id: session_id.clone(),
                 session_name: Some(session_name),
@@ -299,6 +300,12 @@ pub struct CompactContextView {
     pub condensed_count: Option<usize>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactResponseOutcome {
+    pub retried: bool,
+}
+
 fn minimum_compact_summary_chars(compacted_delta_count: usize) -> usize {
     match compacted_delta_count {
         0..=2 => 32,
@@ -332,7 +339,132 @@ pub fn validate_compact_summary_for_testing(
     validate_compact_summary(summary, compacted_delta_count)
 }
 
-pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Result<(), String> {
+fn clear_message_prompt_token_checkpoint(message: &mut Message) -> bool {
+    let mut changed = false;
+
+    if message.prompt_tokens.take().is_some() {
+        changed = true;
+    }
+
+    if let Some(usage) = message
+        .usage
+        .as_mut()
+        .and_then(|usage| usage.as_object_mut())
+    {
+        if usage.remove("promptTokens").is_some() {
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+pub fn clear_message_prompt_token_checkpoint_for_testing(message: &mut Message) -> bool {
+    clear_message_prompt_token_checkpoint(message)
+}
+
+async fn invalidate_retained_tail_prompt_token_checkpoints(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    to_id: &str,
+) -> Result<(), String> {
+    let changed_messages = {
+        let active = active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return Ok(());
+        };
+
+        let messages = session.messages.read().await;
+        let Some(to_idx) = messages.iter().position(|message| message.id == to_id) else {
+            return Ok(());
+        };
+
+        messages
+            .iter()
+            .skip(to_idx.saturating_add(1))
+            .filter_map(|message| {
+                let mut updated_message = message.clone();
+                if clear_message_prompt_token_checkpoint(&mut updated_message) {
+                    Some(updated_message)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
+    if changed_messages.is_empty() {
+        return Ok(());
+    }
+
+    crate::state::get_message_repository()
+        .insert_many(changed_messages.clone())
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let changed_by_id = changed_messages
+        .into_iter()
+        .map(|message| (message.id.clone(), message))
+        .collect::<HashMap<_, _>>();
+
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return Ok(());
+    };
+    let mut messages = session.messages.write().await;
+    for message in messages.iter_mut() {
+        if let Some(updated_message) = changed_by_id.get(&message.id) {
+            *message = updated_message.clone();
+        }
+    }
+
+    Ok(())
+}
+
+async fn retry_invalid_compact_summary_if_possible(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    validation_error: &str,
+) -> Result<Option<CompactResponseOutcome>, String> {
+    let compaction = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.compaction.clone())
+    };
+    let Some(compaction) = compaction else {
+        return Ok(None);
+    };
+
+    let snapshot = compaction.snapshot().await;
+    if !snapshot.blocks_workflow() {
+        return Ok(None);
+    }
+
+    let Some(compact_event) = compaction.current_request().await else {
+        return Ok(None);
+    };
+
+    let current_retry_count = compaction.summary_retry_count().await;
+    if current_retry_count >= MAX_COMPACTION_SUMMARY_RETRY_ATTEMPTS {
+        return Ok(None);
+    }
+
+    let retry_count = compaction.increment_summary_retry_count().await;
+    log::warn!(
+        "🔁 Retrying compaction summary request after validation failure: session={}, retry_count={}, error={}",
+        session_id,
+        retry_count,
+        validation_error
+    );
+    emit_compact_request(app_handle, compact_event)?;
+    Ok(Some(CompactResponseOutcome { retried: true }))
+}
+
+pub async fn handle_compact_response(
+    params: CompactResponseParams<'_>,
+) -> Result<CompactResponseOutcome, String> {
     let CompactResponseParams {
         active_sessions,
         app_handle,
@@ -375,7 +507,21 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
             clamped_summary.estimated_tokens
         );
     }
-    validate_compact_summary(&clamped_summary.summary, compacted_delta_count)?;
+    if let Err(validation_error) =
+        validate_compact_summary(&clamped_summary.summary, compacted_delta_count)
+    {
+        if let Some(outcome) = retry_invalid_compact_summary_if_possible(
+            active_sessions,
+            app_handle,
+            session_id,
+            &validation_error,
+        )
+        .await?
+        {
+            return Ok(outcome);
+        }
+        return Err(validation_error);
+    }
 
     log::info!(
         "✅ Compact response stored for session {}: to_id={}, compacted_delta_count={}, summary_chars={}, summary_est_tokens={}, elapsed_ms={}",
@@ -392,11 +538,12 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
     let record = CompactContextRecord {
         id: uuid::Uuid::new_v4().to_string(),
         session_id: session_id.to_string(),
-        to_id,
+        to_id: to_id.clone(),
         condensed_count: Some(compacted_delta_count),
         summary: clamped_summary.summary,
         created_at: chrono::Utc::now().timestamp_millis(),
     };
+    invalidate_retained_tail_prompt_token_checkpoints(active_sessions, session_id, &to_id).await?;
     save_compact_context(active_sessions, session_id, record).await?;
 
     let resume_action = {
@@ -449,7 +596,7 @@ pub async fn handle_compact_response(params: CompactResponseParams<'_>) -> Resul
         CompactionResumeAction::Nothing => {}
     }
 
-    Ok(())
+    Ok(CompactResponseOutcome { retried: false })
 }
 
 fn truncate_preview(value: &str, max_chars: usize) -> String {
@@ -609,6 +756,9 @@ pub async fn save_compact_context(
     session_id: &str,
     record: CompactContextRecord,
 ) -> Result<(), String> {
+    let repo = crate::state::get_compact_context_repository();
+    repo.upsert(&record).await.map_err(|e| e.to_string())?;
+
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(session_id) {
@@ -616,9 +766,6 @@ pub async fn save_compact_context(
             *compact = Some(record.clone());
         }
     }
-
-    let repo = crate::state::get_compact_context_repository();
-    repo.upsert(&record).await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
