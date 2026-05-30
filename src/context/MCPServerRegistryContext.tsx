@@ -85,13 +85,12 @@ export const MCPServerRegistryProvider = ({
     setLoaded(false);
     setLoading(false);
     setError(undefined);
-  }
 
-  useEffect(() => {
+    // Synchronously reset refs during render to prevent stale closure reads in callbacks
     serviceKeyRef.current = settings.agentHubUrl;
     hasLoadedRef.current = false;
     refreshRequestRef.current = null;
-  }, [settings.agentHubUrl]);
+  }
 
   useEffect(() => {
     allServersRef.current = allServers;
