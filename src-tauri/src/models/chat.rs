@@ -88,6 +88,14 @@ impl MessageSource {
         )
     }
 
+    fn is_request_layout_scaffolding_source(&self) -> bool {
+        matches!(self, Self::SessionContext)
+    }
+
+    fn is_compaction_overlay_source(&self) -> bool {
+        matches!(self, Self::CompactionInstruction)
+    }
+
     fn is_external_request_source(&self) -> bool {
         matches!(
             self,
@@ -139,6 +147,8 @@ pub struct Message {
     pub tool_use: Option<serde_json::Value>,
     /// Token usage metrics
     pub usage: Option<serde_json::Value>,
+    /// Persisted prompt-token truth for checkpoint-based compaction decisions.
+    pub prompt_tokens: Option<i64>,
     #[serde(default = "default_timestamp")]
     pub created_at: i64, // Unix timestamp in milliseconds
     #[serde(default = "default_timestamp")]
@@ -176,6 +186,7 @@ impl Message {
             attachments: None,
             tool_use: None,
             usage: None,
+            prompt_tokens: None,
             created_at: now,
             updated_at: now,
             source,
@@ -202,6 +213,7 @@ impl Message {
             attachments: None,
             tool_use: None,
             usage: None,
+            prompt_tokens: None,
             created_at,
             updated_at: created_at,
             source: Some(MessageSource::CompactSummary),
@@ -245,11 +257,49 @@ impl Message {
                 .is_some_and(|source| source.is_internal_synthetic_user_source())
     }
 
+    pub fn is_request_layout_scaffolding_message(&self) -> bool {
+        self.role == "user"
+            && self
+                .source_with_legacy_fallback()
+                .is_some_and(|source| source.is_request_layout_scaffolding_source())
+    }
+
+    pub fn is_compaction_overlay_message(&self) -> bool {
+        self.role == "user"
+            && self
+                .source_with_legacy_fallback()
+                .is_some_and(|source| source.is_compaction_overlay_source())
+    }
+
     pub fn is_external_request_message(&self) -> bool {
         self.role == "user"
             && !self.is_internal_synthetic_user_message()
             && self
                 .source_with_legacy_fallback()
                 .is_none_or(|source| source.is_external_request_source())
+    }
+
+    pub fn prompt_tokens_value(&self) -> Option<usize> {
+        self.prompt_tokens
+            .and_then(|value| usize::try_from(value).ok())
+            .or_else(|| {
+                self.usage
+                    .as_ref()
+                    .and_then(|usage| usage.get("promptTokens"))
+                    .and_then(|value| value.as_u64())
+                    .and_then(|value| usize::try_from(value).ok())
+            })
+    }
+
+    pub fn completion_tokens_value(&self) -> Option<usize> {
+        self.usage
+            .as_ref()
+            .and_then(|usage| usage.get("completionTokens"))
+            .and_then(|value| {
+                value
+                    .as_u64()
+                    .or_else(|| value.as_f64().map(|number| number as u64))
+            })
+            .and_then(|value| usize::try_from(value).ok())
     }
 }

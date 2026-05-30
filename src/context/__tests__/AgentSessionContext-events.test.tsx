@@ -181,6 +181,66 @@ describe('AgentSessionContext – Event Handling', () => {
             });
         });
 
+        it('stores backend preflight token metrics from agent events', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            listenMock.mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => useAgentSessionState(),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(result.current.isSessionLoading).toBe(false);
+                expect(eventHandler).toBeDefined();
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'preflightTokenMetricsUpdated',
+                        sessionId: TEST_SESSION_ID,
+                        metrics: {
+                            conservativePromptTokens: 2450,
+                            promptAnchoredTotalTokens: 2334,
+                            safeInputTokenLimit: 65536,
+                            measuredOutputTokensReserve: 1200,
+                            effectiveInputBudget: 64336,
+                            totalBudgetTokens: 3650,
+                            systemPromptTokens: 2048,
+                            toolsTokens: 1024,
+                            selectedMessageCount: 12,
+                            compactSummaryInjected: true,
+                            preservedCalibrationRatio: 0.92,
+                        },
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.preflightTokenMetrics).toEqual({
+                    conservativePromptTokens: 2450,
+                    promptAnchoredTotalTokens: 2334,
+                    safeInputTokenLimit: 65536,
+                    measuredOutputTokensReserve: 1200,
+                    effectiveInputBudget: 64336,
+                    totalBudgetTokens: 3650,
+                    systemPromptTokens: 2048,
+                    toolsTokens: 1024,
+                    selectedMessageCount: 12,
+                    compactSummaryInjected: true,
+                    preservedCalibrationRatio: 0.92,
+                });
+            });
+        });
+
         it('keeps cancelled workflows paused when workflowCompleted is emitted', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
             listenMock.mockImplementation(

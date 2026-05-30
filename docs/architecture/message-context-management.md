@@ -2,66 +2,90 @@
 
 ## Overview
 
-Agent V2 message context management is now **Rust-orchestrated**.
+Agent V2 message context management is fully Rust-orchestrated.
 
-The old React-led flow is no longer the source of truth for agent sessions. Rust owns:
+The frontend still executes provider SDK calls, but it is no longer the authority
+for:
 
-- message stack preparation
-- system prompt assembly
-- compact-summary reinjection
-- token estimation and context selection
-- compaction trigger / persistence / restoration
+- request fit / no-fit decisions
+- compaction triggering
+- compacted range selection
+- compact summary persistence
+- invalid-state rejection
 
-The frontend still does one important job: it acts as the **LLM execution bridge**. Rust emits completion and compaction requests through Tauri events, the frontend calls the provider SDK, and the result is sent back to Rust.
+If you need the normative rules, read
+[`docs/specs/message-compaction.md`](../specs/message-compaction.md) first. This
+document is only the architecture guide.
 
 ---
 
-## Current Ownership Split
+## Ownership Split
 
-### Rust backend owns orchestration
+### Rust owns context control
 
-Primary files:
+Rust is the source of truth for Agent V2 context management.
 
-- `src-tauri/src/agent/llm/completion.rs`
+Primary areas:
+
+- `src-tauri/src/agent/llm/completion/`
 - `src-tauri/src/agent/llm/prompt.rs`
-- `src-tauri/src/agent/llm/context_selector.rs`
 - `src-tauri/src/agent/llm/token_utils.rs`
-- `src-tauri/src/agent/session_manager.rs`
-- `src-tauri/src/agent/lifecycle/{creation,cache,management}.rs`
+- `src-tauri/src/agent/llm/response.rs`
+- `src-tauri/src/agent/session_manager/compact.rs`
 - `src-tauri/src/repositories/compact_context_repository.rs`
 
 Rust is responsible for:
 
-- draining pending user messages into the in-memory session cache
-- filtering out recovery tombstones from normal LLM context
-- building the stable prompt prefix and volatile session context
-- injecting any saved compact summary back into the message stack
-- calculating grounded token usage
-- selecting the final message subset for the request
-- deciding whether to trigger async compaction
-- persisting compact summaries and restoring them on session load/resume
+- preparing the message stack
+- assembling stable prompt + volatile session context
+- injecting persisted compact summaries
+- computing conservative preflight token estimates
+- deciding whether a normal request fits
+- deciding whether compaction can proceed
+- persisting prompt-token checkpoints on messages
+- persisting compact summaries
+- rejecting invalid overflow states
 
-### Frontend owns provider API execution
+### Frontend owns provider execution
 
-Primary files:
+Primary areas:
 
 - `src/context/llm/useLLMListener.ts`
 - `src/context/llm/useLLMExecution.ts`
-- `src/lib/ai-service/base-service.ts`
-- `src/lib/ai-service/anthropic.ts`
+- `src/lib/ai-service/`
 - `src/lib/backend/agent-commands.ts`
 
 The frontend is responsible for:
 
 - listening for `llm:completion-request`
 - calling the selected provider SDK
-- streaming and normalizing the assistant response
-- returning the result through `agent_handle_llm_response`
 - listening for `llm:compact-request`
-- executing `service.compact(...)`
-- returning the summary through `agent_handle_compact_response`
+- executing the summary request
+- returning completion / compact responses back to Rust
 
-This is a bridge role, not an orchestration role.
+That is a bridge role, not a policy role.
+
+---
+
+## Core Runtime Model
+
+There are two persistent pieces of context state:
+
+1. **Prompt-token checkpoints on messages**
+   - `message.promptTokens`
+   - stored on the **last submitted input message** of a successful request
+   - used as grounded anchors for later preflight compaction decisions
+2. **Compact summary record**
+   - stored in `compact_contexts`
+   - anchored by `to_id`
+   - means "history through `to_id` is represented by this summary now"
+
+There is also one important runtime-only bridge field:
+
+- `last_submitted_input_message_id`
+
+That field exists only to connect request emission time to response handling time
+so the backend can stamp provider `usage.promptTokens` onto the correct message.
 
 ---
 
@@ -70,553 +94,102 @@ This is a bridge role, not an orchestration role.
 ```text
 User message
   ↓
-Rust workflow starts
-  ↓
-request_llm_completion()
-  ├─ drain pending events into session cache
-  ├─ load/build stable prompt + volatile session context
-  ├─ resolve @references in user messages
-  ├─ inject saved compact summary if present
-  ├─ compute grounded token usage
-  ├─ optionally trigger async compaction
-  ├─ select final messages within context
-  └─ emit llm:completion-request
+Rust prepares request state
+  ├─ loads cached messages
+  ├─ builds stable prompt + volatile session context
+  ├─ injects compact summary if present
+  ├─ computes conservative preflight token estimate
+  └─ decides: send / compact / reject
         ↓
-Frontend useLLMListener
-  ├─ execute provider SDK call
-  ├─ apply retry/fallback logic
-  └─ return assistant message via agent_handle_llm_response
+Frontend bridge executes provider SDK call
         ↓
-Rust continues workflow / tool execution
+Rust receives provider response
+  ├─ persists promptTokens on last submitted input message
+  ├─ stores assistant/tool results
+  └─ continues workflow
 ```
 
 ---
 
-## System Prompt Assembly
+## Compaction Flow
 
-System prompt assembly is handled in `src-tauri/src/agent/llm/prompt.rs`.
+Compaction is a **before-send** overflow response.
 
-### Stable / volatile split
+If preflight says the next normal request exceeds `maxInputContext`:
 
-`build_session_system_prompt_split()` returns:
+1. Rust blocks the oversized normal request before send.
+2. Rust checks whether a prompt-token checkpoint can anchor compaction.
+3. If yes, Rust emits a compaction request.
+4. Frontend executes the summary request and returns the result.
+5. Rust stores the summary in `compact_contexts`.
+6. Rust rebuilds the next request with the compact summary injected.
+7. Rust retries the normal completion request.
 
-- `stable_prompt`
-- `session_context` (optional volatile suffix)
+If no usable checkpoint anchor exists:
 
-The stable prefix is cached in `AgentSession.cached_stable_prompt`.
+1. Rust does **not** send the oversized request.
+2. Rust does **not** fabricate a lossy fallback.
+3. Rust raises `INVALID_CONTEXT_STATE`.
 
-### Stable prefix contents
-
-Built by `build_stable_prefix()`:
-
-1. agent identity / base system prompt
-2. persona template from the first matching file in:
-   - `.github/SOUL.md`
-   - `SOUL.md`
-   - `.github/soul.md`
-   - `soul.md`
-3. workspace instructions from the first matching file in:
-   - `agents.md`
-   - `AGENTS.md`
-   - `CLAUDE.md`
-   - `GEMINI.md`
-4. session metadata label (`## Session Context`)
-
-### Volatile suffix contents
-
-Built by `build_volatile_sections()`:
-
-5. `ContextRegistry` output
-6. builtin tool service contexts from `proxy.get_service_contexts()`
-
-Service contexts are sorted by `tool_id` before concatenation so the prompt byte sequence remains deterministic across requests.
-
-### Important caveat: only `context_prompt` reaches the LLM
-
-Builtin tool service contexts may contain:
-
-- `context_prompt`
-- `structured_state`
-
-Only `context_prompt` is appended to the system prompt. `structured_state` does **not** reach the model.
-
-If the AI must see a value, it must be written into `context_prompt` as plain text.
+This is intentional. Overflow without a safe compaction anchor is an invalid
+non-committing state.
 
 ---
 
-## Stable Prompt Cache Behavior
+## Prompt / Summary Semantics
 
-The stable prefix is intentionally cached for the session lifetime because it contains session-immutable data.
+### Preflight estimate vs actual submitted size
 
-This improves provider-side prefix caching, but it has a tradeoff:
+Do not confuse these:
 
-- edits to workspace instruction files during a live session are **not** reflected immediately
-- they are picked up after cache invalidation, config update, or session resume
+- `conservative_prompt_tokens` = Rust preflight estimate
+- `usage.promptTokens` = actual provider-submitted input size
 
-This behavior is documented directly in `prompt.rs` and is intentional.
+If preflight blocks a request, that oversized normal request was never sent.
 
----
+### Compact summary reinjection
 
-## Message Stack Preparation
+When a valid compact summary exists, Rust injects it back into the logical message
+stack as a synthetic compact-summary message and keeps only the live tail after
+`to_id`.
 
-Main implementation: `src-tauri/src/agent/llm/completion.rs`
-
-Before sending an LLM request, Rust prepares the message stack in this order:
-
-1. validate session state
-2. drain pending user messages from `pending_events`
-3. append drained messages into the in-memory session cache
-4. emit `MessageAdded` events for those drained messages
-5. read cached session messages
-6. drop messages with `source == "recovery"`
-7. resolve `@type:arg` references in user messages
-8. merge consecutive user messages when recovery produced an unanswered tail
-9. inject saved compact summary if one exists and still matches the current stack
-10. run context selection
-11. emit `llm:completion-request`
-
-### Recovery tombstones
-
-Crash recovery may inject synthetic `tool` error messages with `source: "recovery"` to close orphaned tool calls. These are useful for UI and workflow recovery, but are excluded from normal LLM context assembly.
+The summary is persisted session state, not ephemeral UI state.
 
 ---
 
-## Compaction Architecture
+## Frontend Caveat
 
-Compaction is session-scoped and persisted.
+Frontend may still apply UX-level guards such as blocking blatantly oversized
+first-input cases in ChatInput.
 
-### In-memory runtime state
+That does **not** change ownership:
 
-Defined in `src-tauri/src/agent/state.rs`:
-
-- `compact_context: Arc<RwLock<Option<CompactContextRecord>>>`
-- `compact_in_flight: Arc<AtomicBool>`
-- `last_compacted_tail_id: Arc<RwLock<Option<String>>>`
-
-### Persisted record
-
-Stored by `SqliteCompactContextRepository` in `compact_contexts`:
-
-- `id`
-- `session_id`
-- `from_id`
-- `to_id`
-- `summary`
-- `created_at`
-
-Repository behavior:
-
-- one record per session
-- upsert on `session_id`
-- newest compact summary replaces the previous one
+- frontend convenience checks are advisory
+- backend preflight remains authoritative
 
 ---
 
-## Compaction Lifecycle
-
-### Step A: summary reinjection
-
-At the start of each request, `request_llm_completion()` checks `session.compact_context`.
-
-If a valid record exists and `to_id` is still present in the current message stack:
-
-- Rust creates a synthetic user message with:
-  - `id = compact-summary-{session_id}`
-  - `source = "compact-summary"`
-  - content:
-
-    ```text
-    ### Previous Conversation Summary
-
-    {summary}
-    ```
-
-- Rust replaces the compacted prefix with:
-  - `[compact-summary-message] + [tail-messages-after-to_id]`
-
-If `to_id` is missing, the in-memory compact cache is invalidated as stale.
-
-### Step B: background compaction trigger
-
-After a completed assistant response, Rust computes post-response compaction pressure from provider-grounded usage:
-
-- base input = `usage.promptTokens`
-- output side = measured output tokens with a small upward safety bias
-- trigger threshold = `floor(effective_limit * 0.9)`
-
-If that pressure exceeds the compact threshold, Rust computes:
-
-- `split_idx = find_compaction_split_index(messages)`
-
-Current implementation detail:
-
-- `find_compaction_split_index()` currently returns `messages.len()`
-- so the initial compactable prefix is effectively the full current stack
-- but subsequent compaction requests are still **incremental**, not whole-stack repeats
-
-Current compaction payload contract:
-
-- first compaction in a session:
-  - `[raw compactable prefix]`
-- later compactions:
-  - `[previous compact-summary synthetic message] + [raw delta after previous to_id]`
-
-So "whole stack" currently describes the coarse split point for the **first** compaction candidate, not the payload shape of every later compaction request.
-
-#### Guard G1: `compact_in_flight`
-
-Rust uses `compare_exchange(false, true, ...)` on `compact_in_flight`.
-
-This prevents two concurrent requests from triggering duplicate compaction work.
-
-#### Guard G2: `last_compacted_tail_id`
-
-Rust stores the last message ID from the stack when compaction is triggered.
-
-If the next candidate request sees the same tail ID, it skips compaction because nothing new has arrived since the last trigger.
-
-### Step C: frontend summary call
-
-Rust emits:
-
-- `llm:compact-state` with `compacting: true`
-- `llm:compact-request`
-
-Frontend `useLLMListener.ts` receives the compact request, calls:
-
-```ts
-service.compact(messages, { modelName: model });
-```
-
-and returns the summary through:
-
-- `agent_handle_compact_response` on success
-- `agent_handle_compact_error` on failure
-
-### Step D: store result, clear state, and resume deferred workflow if needed
-
-`AgentSessionManager.handle_compact_response()`:
-
-1. builds a `CompactContextRecord`
-2. stores it in-memory
-3. upserts it in SQLite
-4. clears `compact_in_flight`
-5. resumes any deferred workflow step
-
-Compaction is not just a fire-and-forget background side job anymore. Rust may defer and later resume:
-
-- the next LLM completion
-- tool-call execution
-- workflow finalization
-
-On error, Rust still clears compaction state. If the workflow was waiting on compaction, the failure is surfaced as a workflow error instead of being silently ignored.
-
-### Step E: preflight compaction hard gate
-
-Before Rust emits `llm:completion-request`, compact mode now runs a conservative pre-send gate:
-
-- compute `safe_input_token_limit = min(maxInputContext, model_max_limit)`
-- estimate prompt size with `calculate_conservative_preflight_prompt_tokens(...)`
-- if the conservative estimate would overflow the effective limit, Rust does **not** send the request
-
-At that point Rust either:
-
-- triggers blocking preflight compaction and resumes later, or
-- raises `RUST_PREFLIGHT_CONTEXT_LIMIT`
-
-This is the authoritative compact-mode send/no-send decision for Agent V2. The frontend no longer owns that judgment.
-
----
-
-## Compaction State Events
-
-The frontend also listens for:
-
-- `llm:compact-state`
-
-Current use:
-
-- expose `compacting: boolean` to the UI
-- expose whether the workflow is actively waiting for compaction completion
-- show compacting state without giving ownership of compaction orchestration to React
-
-This event is Rust-owned state, not a frontend guess.
-
----
-
-## Context Selection
-
-Context selection is implemented in `src-tauri/src/agent/llm/context_selector.rs`.
-
-The selector is still used for both strategies:
-
-- `contextStrategy == "compact"`
-- `contextStrategy != "compact"` (window-style fallback / legacy path)
-
-### Shared selection behavior
-
-`select_messages_within_context()` does the following:
-
-1. batch oversized assistant tool-call messages with `batch_tool_calls_in_messages()`
-2. estimate token cost for:
-   - system prompt
-   - tool schema payload
-   - pinned first user message
-3. compute a calibrated token budget using grounded API usage if available
-4. walk backward from newest to oldest
-5. stop when:
-   - token budget is exceeded, or
-   - `max_messages` is hit
-6. for certain providers, call `remove_incomplete_tool_chains()`
-7. prepend the pinned first user message
-8. merge pinned + selected first user message if they would otherwise be consecutive
-
-### Compact-mode selection override
-
-Compact mode does **not** use the selector with its default pinning behavior.
-
-Current compact-mode options include:
-
-- `max_messages = None`
-- `pin_first_user_message = false`
-
-So the usual "always pin the first user message" rule is intentionally disabled in compact mode. That avoids dragging ancient first-turn content forward after a compact summary already represents the old prefix.
-
-### Provider-specific integrity guard
-
-Incomplete tool-chain cleanup is currently enabled for:
-
-- Anthropic
-- Gemini
-- OpenAI
-- OpenRouter
-- Groq
-
-### Gemini batching exception
-
-Gemini uses a very high `max_tool_calls_per_message` value to avoid splitting turns that must remain atomic.
-
-### Compact mode vs window mode
-
-When `contextStrategy == "compact"`:
-
-- Rust may trigger post-response background compaction
-- Rust still runs the selector with `max_messages = None`
-- Rust then runs a conservative preflight hard gate before emit
-
-When `contextStrategy != "compact"`:
-
-- Rust skips compaction triggering
-- Rust runs the selector with `max_messages = windowSize`
-
-So the old sliding-window path still exists, but it is no longer the primary Agent V2 design.
-
----
-
-## Token Estimation
-
-Implemented in `src-tauri/src/agent/llm/token_utils.rs`.
-
-### Core functions
-
-- `estimate_text_tokens()`
-- `estimate_tokens_bpe()`
-- `derive_bpe_calibration_ratio()`
-- `calculate_prompt_anchored_total_tokens()`
-- `calculate_conservative_preflight_prompt_tokens()`
-- `calculate_post_response_compaction_tokens()`
-- `calculate_compact_threshold()`
-
-### Important behavior
-
-Token estimates use `cl100k_base` when available, with a char-based fallback.
-
-Request-time estimation is prompt-anchored and summary-aware:
-
-- the latest assistant turn with valid `usage.promptTokens` is the preferred anchor
-- that anchor already includes stable prompt inputs such as compact-summary reinjection, system prompt, session context, and tool schema
-- after that anchor, the estimator primarily needs to account for incremental delta rather than re-estimating the whole rebuilt prompt
-- Rust applies a conservative `1.05` upward bias to the post-anchor delta for preflight gating
-- if no valid prompt anchor exists yet, Rust falls back to full-BPE estimation and applies the same `1.05` safety multiplier
-
-Post-response compaction pressure is estimated separately:
-
-- input side is anchored to provider-reported `promptTokens`
-- output side uses measured completion tokens when available, with a small upward bias
-- this post-response pressure drives background compaction triggering
-
-So there are two distinct estimates now:
-
-- **preflight conservative prompt estimate** for send/no-send gating
-- **post-response compaction pressure** for deciding whether to compact after a completed response
-
-Full-BPE estimation remains the exception path for turns that do not yet have a grounded provider anchor.
-
----
-
-## Persistence and Restoration
-
-Compaction is restored in multiple lifecycle paths, not just one.
-
-### Session creation
-
-`src-tauri/src/agent/lifecycle/creation.rs`
-
-- loads compact context from the repository
-- stores it in the new `AgentSession`
-
-### Cache initialization
-
-`src-tauri/src/agent/lifecycle/cache.rs`
-
-- loads recent messages
-- loads compact context
-- hydrates both into the in-memory session state
-
-### Session resume / active-session refresh
-
-`src-tauri/src/agent/lifecycle/management.rs`
-
-- reloads compact context
-- updates in-memory runtime state for the resumed session
-
-### Safety lookup
-
-`src-tauri/src/agent/session_manager.rs`
-
-- `get_compact_context()` checks in-memory state first
-- falls back to the repository if needed
-
-This means compact summaries are persistent session state, not ephemeral frontend state.
-
----
-
-## Frontend Provider Injection Strategy
-
-Rust sends `system_prompt` and `session_context` separately in `CompletionRequest`.
-
-The frontend provider layer decides how to inject them.
-
-### Default behavior
-
-`src/lib/ai-service/base-service.ts`
-
-Base services can concatenate the stable prompt and volatile session context into one system prompt.
-
-### Anthropic-specific behavior
-
-`src/lib/ai-service/anthropic.ts`
-
-Anthropic uses `VOLATILE_CONTEXT_MARKER` to split the prompt into:
-
-- cached stable prefix
-- uncached volatile suffix
-
-The stable block is marked with:
-
-```ts
-cache_control: {
-  type: 'ephemeral';
-}
-```
-
-This is the current prompt-cache optimization path.
-
-### OpenAI-specific behavior
-
-`src/lib/ai-service/openai.ts`
-
-OpenAI overrides `prepareContextInjection()` differently:
-
-- keep the stable system prompt untouched
-- inject `sessionContext` as an ephemeral tail `user` message
-
-This preserves a stable system-prompt prefix while still giving the model the latest session state.
-
----
-
-## What Changed from the Old React-Led Design
-
-The old documentation described compaction as if React owned:
-
-- token measurement
-- compaction orchestration
-- overflow waiting
-- message stack rebuilding
-
-That is no longer true for Agent V2.
-
-### Old assumption
-
-- React hook decides when to compact
-- React owns compact waiters / overflow handling
-- token utils in frontend are the main path
-
-### Current reality
-
-- Rust owns the orchestration loop
-- Rust triggers compaction and persists summaries
-- Rust owns the final compact-mode pre-send gate
-- frontend only performs the provider API calls
-- the final message stack is assembled in Rust
-
-Frontend utilities and legacy paths may still exist for non-Agent-V2 flows, but they are not the authoritative architecture for agent sessions.
-
----
-
-## Current Limitations
-
-These are the limitations of the **implemented** system, not the old proposal.
-
-1. **Background compaction still uses a coarse split**
-   - `find_compaction_split_index()` currently returns `messages.len()`.
-   - So the initial compactable prefix is still coarse-grained.
-   - The implementation is incremental across later compactions, but the split heuristic is not yet semantically smart.
-
-2. **Single compact record per session**
-   - Each new summary replaces the previous session record.
-   - There is no layered compact-history stack.
-
-3. **Prompt cache wins depend on provider injection strategy**
-   - Rust provides a stable/volatile split.
-   - Actual prefix-cache benefit still depends on the frontend provider implementation.
-
-4. **`structured_state` is invisible to the model**
-   - If tool authors put critical values only in structured JSON, the model will not see them.
-
----
-
-## Quick Reference
-
-### Rust entry points
-
-- `request_llm_completion()` — `src-tauri/src/agent/llm/completion.rs`
-- `build_session_system_prompt_split()` — `src-tauri/src/agent/llm/prompt.rs`
-- `select_messages_within_context()` — `src-tauri/src/agent/llm/context_selector.rs`
-- `trigger_post_response_compaction_if_needed()` — `src-tauri/src/agent/llm/completion/compaction.rs`
-- `handle_compact_response()` — `src-tauri/src/agent/session_manager/compact.rs`
-
-### Frontend bridge points
-
-- `useLLMListener()` — `src/context/llm/useLLMListener.ts`
-- `handleLLMResponse()` — `src/lib/backend/agent-commands.ts`
-- `handleCompactResponse()` — `src/lib/backend/agent-commands.ts`
-
-### Persistence
-
-- `SqliteCompactContextRepository` — `src-tauri/src/repositories/compact_context_repository.rs`
+## Where To Read Next
+
+Use these docs in this order:
+
+1. **Normative contract**:
+   [`docs/specs/message-compaction.md`](../specs/message-compaction.md)
+2. **Implementation map**:
+   `src-tauri/src/agent/llm/completion/`
+3. **Persistence layer**:
+   `src-tauri/src/repositories/compact_context_repository.rs`
+   and `src-tauri/src/repositories/message_repository.rs`
 
 ---
 
 ## Bottom Line
 
-If you are documenting or modifying Agent V2 message context behavior, assume this:
+For Agent V2, the safe mental model is:
 
-- **Rust owns context management**
-- **frontend executes model calls**
-- **compact summaries are persisted session state**
-- **Rust preflight is the final compact-mode size gate**
-- **post-response compaction and preflight compaction are different phases**
-- **incremental compaction payloads reuse the prior summary plus raw delta**
-
-If a document says React is the primary compaction orchestrator for agent sessions, that document is outdated.
+- Rust owns context management.
+- `message.promptTokens` is the persistent checkpoint truth.
+- compact summaries are persisted session state.
+- preflight compaction is a before-send gate.
+- missing checkpoint anchors in overflow cases are invalid state, not fallback
+  territory.

@@ -1,624 +1,675 @@
 # Message Compaction Contract
 
+## Quick Read
+
+This document defines the current compaction contract for Agent V2.
+
+The short version:
+
+1. Provider `usage.promptTokens` is the only grounded full-prompt truth.
+2. That value belongs to the **last submitted real input message** of a successful
+   request.
+3. Next-turn fit starts from the last grounded `usage.promptTokens` and only adds
+   known post-checkpoint growth.
+4. If the request does not fit, Rust compacts before send using a checkpoint-anchored
+   causal-prefix strategy.
+5. Successful compaction must invalidate stale retained-tail checkpoints and set
+   runtime `lastReportedPromptTokens = null`.
+6. If the request does not fit and there is no usable checkpoint candidate, the
+   state is invalid and the backend must reject without mutating history.
+
+The old mental model around `safeCheckpointId` is obsolete. Context-fit truth must
+survive restart and later `maxInputContext` changes, so the checkpoint must live on
+messages themselves.
+
+---
+
 ## 1. Scope
 
-This document defines the **agreed normative contract** for Agent V2 message
-compaction.
+This spec covers:
 
-If the implementation differs from this document, the implementation should be
-moved toward this contract rather than treating old behavior as authoritative.
+- persisted token checkpoints
+- request-time preflight behavior
+- compaction trigger behavior
+- invalid-state handling
+- compact summary persistence and reinjection
+- UI-facing condensed-count meaning
 
-It covers:
-
-- context strategy separation
-- compaction timing and workflow sequencing
-- incremental summary folding
-- prompt-cache layout expectations
-- token semantics and limit interpretation
-- compact-summary persistence and reinjection
+This spec does **not** define provider-specific SDK request formatting.
 
 ---
 
-## 1A. Governing Principles
+## 2. Core Contract
 
-The compact-mode contract is governed by five non-negotiable principles:
+### 2.1 Source of truth
 
-1. **SSOT principle**
-   - Provider-reported `usage.promptTokens` is the source of truth for actual
-     submitted input size.
-   - Rust-owned preflight fit/no-fit decisions are the source of truth for
-     automatic compaction control in compact mode.
-2. **Incremental estimation principle**
-   - Request-time control estimates must stay anchored to the latest grounded
-     `promptTokens` turn and estimate primarily the post-anchor delta.
-   - Compaction itself is incremental summary folding, not full-prefix
-     re-summarization.
-3. **5% compaction-trigger margin principle**
-   - Compact mode may use a 95% advisory threshold to proactively arm
-     preflight compaction before the next request send.
-   - This advisory threshold is distinct from the separate conservative bias
-     applied to preflight occupancy estimation.
-4. **Compaction-overflow-only drop principle**
-   - Message dropping or truncation is allowed only when shrinking the
-     compaction request payload itself so the compaction call can fit safely.
-   - Normal compact-mode requests must not silently drop messages merely to make
-     the next response request fit.
-5. **Rust ownership principle**
-   - All compact-mode routing, trigger, fit/no-fit, message slice, reinjection,
-     and overflow decisions are made in Rust.
-   - Frontend remains a provider bridge only.
+There are two different signals and they must not be confused:
 
----
+1. **Provider-reported prompt truth**
+   - `usage.promptTokens` is the actual full submitted input size for a completed
+     request.
+   - This is the only grounded prompt-size truth.
+2. **Rust preflight projection**
+   - Rust projects the next request by starting from the last grounded
+     `usage.promptTokens` and adding only known post-checkpoint growth.
+   - Dynamic service-context growth can still make the next real request larger
+     than this projection.
 
-## 2. Context Strategies
-
-The system supports two context strategies:
-
-| Strategy  | Behavior                                                         | Primary rule                      |
-| --------- | ---------------------------------------------------------------- | --------------------------------- |
-| `window`  | Sliding recent-message window only                               | No persisted summary state        |
-| `compact` | Persisted summary plus recent tail with compaction orchestration | Summary state may be read/written |
-
-### Contract
-
-1. `window` mode remains a plain sliding-window strategy.
-2. `compact` mode is the only strategy allowed to persist and reuse compacted
-   summary state.
-3. Compact-specific rules must not silently leak into `window` mode.
-
----
-
-## 3. Ownership
-
-Rust owns compaction orchestration and workflow control.
-
-Frontend is only the provider bridge for:
-
-- `llm:completion-request`
-- `llm:compact-request`
-- `llm:compact-state`
-
-Frontend may still perform provider-specific request assembly as part of that
-bridge role, including:
-
-- provider-specific prompt/context injection
-- provider-specific tool normalization and request-body shaping
-- provider-specific prompt-cache or cache-breakpoint shaping
-
-But that bridge assembly must operate on Rust-owned contract inputs rather than
-introducing frontend-owned compaction policy.
-
-Frontend must not decide:
-
-- when compaction should trigger
-- what message slice should be compacted
-- whether the next workflow step should be deferred
-- how compact-summary state is persisted or reinjected
-- whether a compact-mode request is safe to send
-
----
-
-## 4. Core Model
-
-Compaction is **incremental**, not full-prefix re-summarization.
-
-The intended state model is:
+Important consequence:
 
 ```text
-next_summary = compaction(prev_summary, message_delta_from_last_compaction)
+next-turn projection != guaranteed next submitted size
 ```
 
-Where:
+If Rust preflight blocks a request, that blocked request was never submitted to the
+provider.
 
-- `prev_summary` is the persisted compact summary produced by the previous
-  compaction
-- `message_delta_from_last_compaction` is only the raw message delta accumulated
-  since the previous compaction, not the full conversation history
+### 2.2 Persistent checkpoint rule
 
-### Contract
+After a successful completion request, the backend must persist the provider's
+`usage.promptTokens` onto the **last submitted real input message** for that request.
 
-1. The summary is the persistent compacted state.
-2. Newly accumulated messages are the delta.
-3. Compaction folds delta into the previous summary.
-4. Compaction should not repeatedly re-send already-compacted raw history when
-   `prev_summary` already represents that history.
-5. The first compaction in a session is the only case where there is no prior
-   summary, so the compactable raw prefix becomes the initial delta baseline.
-
-Equivalent interpretation:
+That field is stored as:
 
 ```text
-summary_state <- fold(summary_state, delta_messages)
+message.promptTokens?: number | null
 ```
 
-This is the implemented model for compact mode.
-
----
-
-## 5. Workflow Timing Contract
-
-Automatic compaction evaluation happens **in preflight**, immediately before Rust
-would send the next LLM completion request.
-
-Correct sequencing:
+This value means:
 
 ```text
-assistant response completed
--> execute tool calls / continue workflow / finalize normally
--> when the next LLM completion is about to be requested, run preflight fit check
--> if compaction required, block only that completion request
--> run compaction
--> retry the completion request with rebuilt compacted context
+"total input tokens processed when the conversation state included this message as
+the request tail"
 ```
 
-### Contract
+It is **not**:
 
-1. Automatic compaction is a request-assembly responsibility, not a
-   post-response workflow-orchestration responsibility.
-2. Tool execution, pending-message continuation, and workflow finalization must
-   not be deferred behind an automatic compaction roundtrip.
-3. A multi-tool assistant response does not create a separate automatic
-   compaction checkpoint after each tool call; the only automatic gate is the
-   next completion preflight.
+- a per-message token size
+- a delta to sum across turns
+- an assistant-message metric
 
----
+### 2.3 Nullability rule
 
-## 6. Sync Behavior Contract
+`message.promptTokens` may be `null` for older history, failed attempts, imported
+data, or any message that has never served as the final submitted input checkpoint.
 
-Compaction is treated as synchronous from the perspective of workflow control,
-even if the provider call itself is bridged asynchronously through the
-frontend.
-
-### Contract
-
-While compaction is active:
-
-1. compacting state must be visible in runtime/UI state
-2. the next LLM turn must not start
-3. the blocked unit of work is the pending completion request being prepared
-4. tool execution and workflow completion are not retroactively re-blocked by
-   automatic compaction once the response path has already advanced
-
-Completion of compaction is the gate that releases the blocked completion
-request.
-
-### Rust-owned preflight gate
-
-For compact mode, Rust owns the final pre-send hard gate.
-
-1. Rust assembles the candidate request payload and computes the authoritative
-   conservative preflight estimate.
-2. If that estimate exceeds the send budget, Rust must not emit the completion
-   request yet.
-3. Rust should synchronously arm preflight compaction first, then retry with the
-   rebuilt post-compaction payload.
-4. Frontend may perform provider-specific prompt injection, but it is not the
-   authority for compact-mode send/no-send decisions.
-5. Rust's preflight contract must model the same logical request layout that the
-   frontend bridge will submit, including compact-summary reinjection, retained
-   tool schema, tool-use-disable policy, compaction-specific instruction input,
-   and provider-visible session-context placement.
-6. Frontend must not add compact-mode-only logical payload pieces that are
-   invisible to Rust's fit/no-fit contract. Provider-specific serialization is
-   allowed; frontend-owned logical reshaping is not.
-
----
-
-## 7. Effective Context Limit
-
-Compact mode computes:
+Therefore:
 
 ```text
-safe_input_token_limit = min(max_input_context, model_max_limit)
+null means "not checkpointed yet", not "zero tokens"
 ```
 
-### Contract
+Any algorithm that uses `message.promptTokens` must explicitly handle `null`.
 
-1. `safe_input_token_limit` is the configured request-budget target used by
-   compact mode.
-2. System prompt, session context, and tool schema belong to the same effective
-   request budget.
-3. In compact mode, Rust first assembles the next-response request from the
-   current compact-summary state plus the live tail, then evaluates that
-   candidate in the preflight gate. Rust must not silently drop or truncate
-   messages just to force-send that next response request.
-4. If the preflight gate determines that the assembled next-response request
-   exceeds the budget, Rust must stay in the same compact flow and trigger
-   preflight compaction first or raise an explicit context-limit error.
-5. Message dropping or truncation may still be used when fitting the compaction
-   input payload itself, because that step exists only to make the compaction
-   request fit safely, not to reshape the normal next-response request.
-6. If actual submitted prompt size exceeds configured limit, that is a real
-   oversize condition even if the provider still accepts the request because the
-   provider hard max is larger.
+---
 
-### Preflight advisory threshold
+## 3. Data Model
 
-Compact mode uses:
+### 3.1 Message
+
+Relevant fields:
+
+```ts
+type Message = {
+  id: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  promptTokens?: number | null;
+};
+```
+
+### 3.2 Runtime session state
+
+The runtime tracks:
 
 ```text
-compact_trigger_threshold = floor(safe_input_token_limit * 0.95)
+last_submitted_input_message_id
 ```
 
-### Contract
+This exists only to bridge the gap between:
 
-1. Rust may use this threshold as an advisory preflight point for proactively
-   arming compaction before the next completion request is emitted.
-2. Equality at the threshold is not itself a trigger condition; crossing above
-   it is.
-3. This 5% trigger margin is separate from the 5% conservative upward bias used
-   inside token estimation helpers.
+1. request emission time
+2. provider response time
 
----
+Flow:
 
-## 8. Token Semantics
+1. request orchestration decides which input message is the last submitted input
+2. runtime records its id
+3. response handling receives provider `usage.promptTokens`
+4. backend writes that value back onto the recorded message
 
-Token semantics must distinguish **provider-reported ground truth** from
-**occupancy estimates used for control/UI**.
+### 3.3 Compact context
 
-### Ground truth
+Compaction persists a summary record anchored by `to_id`.
 
-- `promptTokens` is the provider-reported input token count for the actual
-  submitted request
-- `completionTokens` is the provider-reported output token count when provided
-
-### Estimated / control values
-
-- request-time message selection uses a prompt-anchored occupancy estimate
-- preflight fit/no-fit and proactive compaction checks use Rust-owned
-  conservative occupancy estimates
-- the estimate uses:
+The summary means:
 
 ```text
-reported promptTokens + conservative output estimate
+"all compacted live history through to_id is now represented by this summary"
 ```
 
-### Contract
-
-1. `promptTokens` is the source of truth for actual submitted input size.
-2. request-time occupancy estimates are control heuristics, not provider-reported
-   request size.
-3. `promptTokens > configured limit` means the real submitted request exceeded
-   the configured limit.
-4. conservative occupancy estimates are control signals for Rust preflight
-   decisions, not claims about pure submitted input size.
-5. Normal compact-mode requests must not introduce request-side message drop
-   noise into this SSOT signal; abrupt occupancy drops should come from
-   compaction/reinjection state changes or from the actual grounded request
-   history, not from pre-send compact-mode trimming.
+The old `from_id`-centric interpretation is intentionally gone from the contract.
 
 ---
 
-## 9. Token Estimation Contract
+## 4. Request-Time Preflight Rules
 
-Request-time occupancy estimation uses a prompt-anchored calibration model.
+Before a normal completion request is sent, Rust computes token-fit metrics against
+the configured `maxInputContext`.
 
-### Formula
+### 4.1 Safe limit
 
-Search backward for the latest assistant message with valid
-`usage.promptTokens > 0`.
+`maxInputContext` from settings is the authoritative configured input budget.
 
-Then derive:
+### 4.2 Fit decision
+
+Rust projects the next request from:
+
+1. the last grounded `usage.promptTokens`
+2. known post-checkpoint growth
+3. the current runtime `maxInputContext`
+
+If the projected next request is within the safe limit:
 
 ```text
-ratio = promptTokens(anchor) / BPE(messages_before_anchor + sys + tools)
-estimate = promptTokens(anchor) + BPE(messages[anchor_idx..]) * ratio
+send normal completion request
 ```
 
-### Summary-aware anchor rule
-
-`promptTokens(anchor)` already includes every stable input component that was sent
-at that turn:
-
-- compact-summary reinjection, if present
-- system prompt
-- session context
-- tool schema
-- the selected message tail up to the anchor turn
-
-Therefore, once a grounded anchor exists, the estimator should treat those
-stable inputs as already-accounted-for base state and primarily estimate only the
-delta added after the anchor.
-
-### Why promptTokens is the anchor
-
-`promptTokens` is preferred over `totalTokens` because:
-
-1. it measures pure input tokens
-2. it grows monotonically with request history
-3. it is less noisy than a total-based ratio that includes variable completion
-   output
-
-### Contract
-
-1. The latest assistant turn with valid `usage.promptTokens > 0` is the preferred
-   request-time anchor.
-2. A compact-summary message **before** that grounded assistant does **not**
-   invalidate the anchor by itself.
-3. If the stable prompt layout is preserved, the estimator should reuse the
-   anchor's reported input tokens as the base and estimate primarily the
-   incremental delta after that anchor.
-4. Full-BPE estimation is an exception path for turns with no grounded anchor,
-   not the default strategy after compaction.
-5. Rust preflight should apply a conservative upward bias to the estimated
-   post-anchor delta before deciding whether the next request may be sent.
-6. The estimator's job is to decide send/no-send and compaction/no-compaction in
-   Rust; it is not license for frontend-side request shaping.
-
-### Preflight occupancy estimate
-
-Preflight compaction decisions use:
+If the projected next request exceeds the safe limit:
 
 ```text
-promptTokens + conservative_output_estimate
+do not send the normal completion request
 ```
 
-Where conservative output estimate is:
+Then Rust must choose one of two paths:
 
-1. provider-reported `completionTokens`, if available
-2. otherwise `totalTokens - promptTokens`, if available
-3. otherwise local BPE fallback
-4. plus a small upward safety bias
+1. compaction is possible -> trigger compaction first
+2. compaction is impossible -> reject as invalid non-committing state
+
+### 4.3 Why checkpoints matter
+
+The checkpoint is needed because `maxInputContext` may shrink later.
+
+Example:
+
+1. a request previously succeeded under a large context window
+2. the user lowers `maxInputContext`
+3. old `safeCheckpointId` assumptions become stale
+4. persisted `message.promptTokens` still reflects real previously observed input
+   occupancy
+
+That is why checkpoint truth must be stored on messages and persisted in the DB.
 
 ---
 
-## 10. Prompt Cache Contract
+## 5. Compaction Trigger Rules
 
-Compaction should preserve the same stable prompt layout as normal requests as
-much as possible.
+### 5.1 Normal policy
 
-Intended shape:
+Compaction is a **before-send** operation.
+
+If preflight says the next request does not fit:
+
+1. Rust blocks the normal request
+2. Rust computes the compactable range
+3. Rust sends a compaction request
+4. Rust stores the resulting summary
+5. Rust rebuilds the request with the compact summary injected
+6. Rust retries the normal completion request
+
+### 5.2 Range selection principle
+
+The compactable cutoff is anchored by persisted prompt-token checkpoints, not by the
+old `split_idx` mental model alone.
+
+The point of the checkpoint is:
 
 ```text
-next_summary = compaction(
-  prev_summary,
-  composed_layout_of_prompt,
-  tool_schema,
-  tool_call_disable,
-  message_delta_from_last_compaction
-)
-
-next_output = llm_response(
-  prev_summary,
-  composed_layout_of_prompt,
-  tool_schema,
-  tool_call_enable,
-  latest_context
-)
+start from the newest usable checkpoint candidate below the current request tail,
+compact the older live causal prefix into summary state, and back off toward older
+candidates if dynamic prompt growth makes the first split still fail
 ```
 
-### Contract
+### 5.3 What the new summary absorbs
 
-1. Compaction should reuse the stable prompt-cache prefix from normal requests.
-2. Tool schema should stay present for cache-layout stability.
-3. Compaction may disable tool use, but should not strip tool schema from the
-   prompt layout merely because tool execution is disabled.
-4. The compaction request and normal request need not be identical, but their
-   stable prefix should remain aligned as much as possible.
-5. Compaction should reuse the same provider-specific request-assembly path as
-   normal requests wherever practical, so prompt/context injection, tool
-   normalization, cache-key shaping, cache-breakpoint placement, and final
-   request-body construction stay aligned by default.
-6. Divergence between normal requests and compaction requests should be limited
-   to compact-specific semantics:
-   - `prev_summary + delta_messages_since_last_compaction` input shape
-   - compaction instruction content
-   - tool-use disabled while tool schema remains present
-   - Rust-owned overflow reduction needed only to make the compaction request
-     itself fit safely
-7. A separate frontend-only compaction payload builder that bypasses or drifts
-   from the normal vendor-specific assembly path is contrary to this contract,
-   unless the same behavior is explicitly shared through a common assembly
-   contract.
-
-Important clarification:
-
-- this contract is about **stable prefix prompt cache reuse**
-- it does **not** imply that compaction requests and normal response requests
-  are byte-for-byte identical payloads
-
-## 10A. Normal Active-Request Residual Contract
-
-In the **normal compact-mode path**, the latest user/external request should
-remain operationally available as **semantic residual state** inside the compact
-summary, not as a permanently preserved raw request anchor in the live tail.
-
-### Contract
-
-1. Normal-path compaction should preserve the unresolved operative request in
-   the `Active Request` summary section.
-2. `Active Request` is semantic state, not a raw transcript dump; it should
-   preserve intent, constraints, requested deliverables, and still-relevant
-   qualifiers without forcing verbatim replay of the latest user message.
-3. Latest external request block detection may still be used in Rust as a
-   **distillation seed** for compaction hints and first-compaction coverage.
-4. Normal-path compaction must not treat that raw request block as a hard
-   anchoring contract that permanently pins the live tail boundary.
-5. Incremental compaction may clear, supersede, or rewrite a previously
-   summarized `Active Request` when later messages show that the request is
-   resolved, replaced, or refined.
-6. Durable outcomes from resolved requests should move into other stable summary
-   sections rather than remaining as stale request bullets.
-
----
-
-## 10B. Compaction Overflow Recovery Contract
-
-If a compaction request still overflows for **any** reason, the recovery goal
-changes.
-
-At that point, preserving prompt-cache alignment is no longer the top priority.
-The top priority becomes: **reconstruct the most useful compactable state
-possible, even if that causes a prompt-cache miss**.
-
-Intended recovery shape:
+On successful compaction:
 
 ```text
-overflow_compaction_recovery(
-  latest_real_user_request,
-  prev_compaction_summary?,
-  active_message_fifo_subset
-)
+new_summary = fold(prev_summary, full_compacted_delta)
 ```
 
-### Essential recovery inputs
+Where `full_compacted_delta` is the uncompacted live range being folded in that
+round.
 
-When overflow recovery is required, Rust should preserve these inputs in this
-priority order:
+Normal compaction must not silently leave half of that selected delta outside the
+summary.
 
-1. **Latest real user request**
-   - This is the highest-priority payload element.
-   - It must refer to an actual user-authored request, not an internal synthetic
-     user message.
-   - The implementation must distinguish this using message source
-     classification, not by `role == "user"` alone.
-   - In particular, synthetic compact-mode/user-like messages such as
-     `compact-summary`, `compaction-instruction`, `recovery`, and
-     `session-context` must not be mistaken for the latest real user request.
-2. **Previous compaction summary, if one exists**
-   - If a prior compact summary is available, it should be preserved as the
-     compressed history anchor whenever possible.
-3. **Active message set as a partial FIFO subset**
-   - The remaining live context may be reduced, but reduction should behave as a
-     FIFO drop of older active messages so the newest active context survives as
-     long as possible.
+### 5.4 Post-compaction invalidation
 
-### Contract
+After a compaction step succeeds:
 
-1. Compaction overflow recovery is an **exception-only** path used after the
-   normal cache-aligned compaction request still cannot fit.
-2. A prompt-cache miss is acceptable in this path if that is what allows the
-   system to preserve more useful recovery information.
-3. Rust owns the recovery ordering and reduction policy.
-4. The latest real user request must be preserved if it is at all possible to
-   build any valid recovery payload.
-5. If a previous compact summary exists, it should be preferred over re-sending
-   older raw history.
-6. Active messages may be reduced with FIFO semantics, but the recovery path
-   should preserve the freshest active context rather than arbitrarily dropping
-   recent turns first.
-7. Tool schema may be degraded in this exception path when needed to make the
-   recovery payload fit; for example, tool parameter schemas may be removed while
-   retaining tool identity and any still-useful high-level tool visibility.
-8. The system must not pretend this recovery payload is cache-aligned with the
-   normal request shape once such degradation has occurred.
-9. If even this ordered recovery contract cannot fit, the system should fail
-   explicitly with a context-limit error rather than silently discarding the
-   essential inputs above.
+1. any `promptTokens` still present on the retained tail are stale full-prompt
+   measurements from the pre-compaction epoch and must be invalidated for checkpoint
+   reuse
+2. runtime `lastReportedPromptTokens` must be set to `null`
+3. only a later successful submit may establish new grounded prompt truth
+
+### 5.5 Bounded retry policy
+
+Dynamic service-context growth can invalidate the most recent checkpoint-based split.
+
+Therefore compaction must:
+
+1. try the newest usable checkpoint candidate first
+2. back off one candidate at a time toward older prefix boundaries
+3. stop after at most 3 split attempts
+4. fail closed after 3 empty compaction summaries
 
 ---
 
-## 11. Compact Summary Persistence
+## 6. Invalid State Rule
 
-Compaction state is session-scoped and persisted.
+If Rust preflight determines the request does not fit, but there is no usable
+prompt-token checkpoint to anchor a safe compaction target, that state is invalid.
 
-Persisted record fields:
+Required behavior:
 
-- `session_id`
-- `from_id`
-- `to_id`
-- `summary`
-- `created_at`
+1. reject the request in backend
+2. do not commit a misleading summary
+3. do not mutate message history as if compaction succeeded
+4. surface an explicit invalid-context error
 
-Runtime session state may additionally track:
-
-- in-flight compaction guard
-- completion blocking state
-- compaction start time / observability
-- last completion request layout for cache-preserving replay
-
-The tracked completion-request layout is a cache-preserving assembly contract,
-not merely a loose metadata snapshot. It exists so compaction can reuse the same
-stable provider-visible prompt layout as normal requests as much as practical.
-
-### Contract
-
-1. There is at most one active compact record per session.
-2. Compact summary is the authoritative compressed history state for compact
-   mode.
-3. Updating compaction should replace the session's active compact record rather
-   than creating nested summary chains.
+This is a non-committing failure, not a silent fallback.
 
 ---
 
-## 12. Reinjection Contract
+## 7. Frontend Role
 
-At request assembly time, if a compact record exists and its `to_id` still
-matches the current message stack, Rust may synthesize:
+Frontend is not the authority for compaction decisions.
+
+Rust owns:
+
+- token-fit judgment
+- compaction triggering
+- compactable range selection
+- invalid-state rejection
+- summary persistence and reinjection
+
+Frontend may provide a lightweight UX guard for obviously bad first-input cases, but
+that guard is only a convenience layer.
+
+Rules:
+
+1. ChatInput may reject a blatantly oversized first input early.
+2. That early rejection must stay conservative and UX-oriented.
+3. Backend must still re-validate and remain authoritative.
+4. If the UI keeps showing token metrics during `awaitingCompact` or `compacting`,
+   it should prefer the last stable preflight projection over a transient blocked
+   overflow value so the badge does not imply the compaction request itself
+   overflowed.
+
+---
+
+## 8. Summary Bubble Semantics
+
+The summary bubble field:
 
 ```text
-[compact-summary message] + [all messages after to_id]
+xxx messages condensed
 ```
 
-### Contract
-
-1. Reinjection is session-scoped.
-2. Reinjection is valid only if the persisted range still matches the current
-   stack.
-3. Reinjection must not create nested summary-on-summary chains.
-4. Summary reinjection is runtime context, not a user-authored persisted chat
-   message.
-
----
-
-## 13. Why Incremental Compaction Is Required
-
-Even if prompt-cache prefix reuse works correctly, compaction input should still
-stay away from:
+means:
 
 ```text
-compaction(raw_compactable_prefix)
+the number of live messages absorbed by the compacted delta represented by this
+summary event
 ```
 
-and remain at:
+It does **not** mean:
 
-```text
-compaction(prev_summary, delta_messages_since_last_compaction)
+- total messages in the whole conversation
+- total messages ever seen by the session
+- provider-visible request message count
+
+So the UI count must reflect the selected compacted delta only.
+
+---
+
+## 9. Canonical Pseudocode
+
+Quick mental model first:
+
+```ts
+function runTurn(state) {
+  const projectedPromptLoad = estimateNextPromptLoadFromLastTruth(state);
+
+  if (projectedPromptLoad == null || projectedPromptLoad >= state.maxInputContext) {
+    const splitCandidates = newestCheckpointAnchorsFirst(state.liveMessages);
+
+    if (splitCandidates.length === 0) {
+      throw InvalidContextStateError();
+    }
+
+    for (const candidate of splitCandidates.slice(0, 3)) {
+      const summary = compactPrefixIntoSummary(state, candidate);
+
+      if (summary.isEmpty()) {
+        continue;
+      }
+
+      persistCompactedSummary(summary, candidate.toId);
+      dropCompactedPrefixFromLiveHistory(state, candidate.toId);
+      invalidateRetainedTailPromptTruth(state);
+      return runTurn(state); // retry with compact summary injected
+    }
+
+    throw InvalidContextStateError();
+  }
+
+  const response = submitNormalCompletion(state);
+  persistProviderPromptTruthOnLastSubmittedRealInput(response);
+  appendAssistantResult(state, response);
+}
 ```
 
-### Reasons
+This is the simplified control-flow view. The full intended behavior model is below.
 
-1. it bounds compaction payload growth
-2. it avoids repeatedly sending already-compacted history
-3. it better matches the intended summary-as-state, delta-as-input model
-4. it remains compatible with stable prompt-cache prefix reuse
+```ts
+type Message = {
+  id: string;
+  role: 'user' | 'assistant' | 'tool';
+  promptTokens?: number | null;
+  usage?: {
+    completionTokens?: number | null;
+  } | null;
+  source?: 'external_request' | 'internal' | 'tool' | null;
+};
+
+type CompactSummary = {
+  toId: string;
+  summary: string;
+  condensedCount: number;
+} | null;
+
+const MAX_SPLIT_TRIES = 3;
+const MAX_EMPTY_COMPACTION_RESPONSES = 3;
+
+function selectLastSubmittedRealInputMessage(
+  messages: Message[],
+): Message | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].source !== 'internal') {
+      return messages[i];
+    }
+  }
+  return null;
+}
+
+function projectedNextPromptLoad(args: {
+  lastReportedPromptTokens: number | null;
+  outputReserveTokens: number;
+  toolResultGrowthTokens: number;
+  serviceContextGrowthTokens: number;
+}): number | null {
+  if (args.lastReportedPromptTokens == null) {
+    return null;
+  }
+
+  return (
+    args.lastReportedPromptTokens +
+    args.outputReserveTokens +
+    args.toolResultGrowthTokens +
+    args.serviceContextGrowthTokens
+  );
+}
+
+function buildCheckpointBackoffCandidates(
+  liveMessages: Message[],
+): { toId: string; condensedCount: number }[] {
+  return selectCheckpointAnchoredBoundariesNewestFirst(liveMessages).filter(
+    (candidate) =>
+      retainedTailPreservesToolOwnership(liveMessages, candidate.toId),
+  );
+}
+
+function invalidateRetainedTailPromptTokens(messages: Message[]): Message[] {
+  return messages.map((message) => ({
+    ...message,
+    promptTokens: null,
+  }));
+}
+
+async function runCompletionLoop(state: {
+  messages: Message[];
+  compactSummary: CompactSummary;
+  maxInputContext: number;
+  lastReportedPromptTokens: number | null;
+}) {
+  while (true) {
+    const projectedPromptLoad = projectedNextPromptLoad({
+      lastReportedPromptTokens: state.lastReportedPromptTokens,
+      outputReserveTokens: deriveOutputReserve(state.messages),
+      toolResultGrowthTokens: deriveToolResultGrowth(state.messages),
+      serviceContextGrowthTokens: deriveServiceContextGrowth(),
+    });
+
+    const mustCompact =
+      projectedPromptLoad == null ||
+      projectedPromptLoad >= state.maxInputContext;
+
+    if (mustCompact) {
+      const candidates = buildCheckpointBackoffCandidates(state.messages);
+
+      if (candidates.length === 0) {
+        throw new InvalidContextStateError(
+          'Prepared payload exceeds the prompt limit, but no prompt-token checkpoint can anchor compaction.',
+        );
+      }
+
+      let emptyResponses = 0;
+      let compacted = false;
+
+      for (const candidate of candidates.slice(0, MAX_SPLIT_TRIES)) {
+        const compactResult = await runCompactionRequest({
+          previousSummary: state.compactSummary,
+          liveMessages: state.messages,
+          compactToId: candidate.toId,
+        });
+
+        if (!compactResult.summary.trim()) {
+          emptyResponses += 1;
+          if (emptyResponses >= MAX_EMPTY_COMPACTION_RESPONSES) {
+            throw new InvalidContextStateError(
+              'Compaction returned empty summary 3 times.',
+            );
+          }
+          continue;
+        }
+
+        state.compactSummary = {
+          toId: candidate.toId,
+          summary: compactResult.summary,
+          condensedCount: candidate.condensedCount,
+        };
+        state.messages = invalidateRetainedTailPromptTokens(
+          removeCompactedPrefix(state.messages, candidate.toId),
+        );
+        state.lastReportedPromptTokens = null;
+        compacted = true;
+        break;
+      }
+
+      if (!compacted) {
+        throw new InvalidContextStateError(
+          'Prepared payload still exceeds the prompt limit after bounded checkpoint backoff.',
+        );
+      }
+
+      continue;
+    }
+
+    const lastSubmittedInput = selectLastSubmittedRealInputMessage(
+      state.messages,
+    );
+
+    const response = await submitNormalCompletion({
+      compactSummary: state.compactSummary,
+      liveMessages: state.messages,
+    });
+
+    if (lastSubmittedInput && response.usage?.promptTokens != null) {
+      persistPromptTokensCheckpoint(
+        lastSubmittedInput.id,
+        response.usage.promptTokens,
+      );
+      state.lastReportedPromptTokens = response.usage.promptTokens;
+    }
+
+    applyAssistantResult(state, response);
+  }
+}
+```
 
 ---
 
-## 14. Frontend / UI Interpretation
+## 10. Compaction Instruction Seed Contract
 
-Frontend is not the authority for automatic compaction decisions.
+Compaction request assembly has two separate inputs:
 
-### Contract
+1. **Compaction body** — the prefix actually being summarized (`split_idx` / replayed
+   request layout / overflow recovery subject)
+2. **Instruction seed** — the latest external request and nearby reference context
+   taken from the **full pre-compaction message stack**, even when that request is
+   outside the compacted body window
 
-1. UI should reflect Rust-emitted compact-state events for actual in-flight
-   compaction.
-2. UI must not implement its own automatic compaction trigger logic.
-3. Any future occupancy gauge is optional product UI, not part of the automatic
-   compaction contract.
-4. UI token displays must not override Rust preflight fit/no-fit decisions.
+Pseudocode:
+
+```ts
+function buildCompactionInstructionInput(args: {
+  allMessages: Message[];
+  compactBodyMessages: Message[];
+}): {
+  hasPriorSummary: boolean;
+  priorSummary: Message | null;
+  latestExternalRequestMessages: Message[];
+  referenceContextMessages: Message[];
+} {
+  const latestExternalRequestRange = findLatestExternalRequestSeedBlockRange(
+    args.allMessages,
+  );
+
+  if (latestExternalRequestRange == null) {
+    return {
+      hasPriorSummary:
+        args.compactBodyMessages[0]?.source === 'compact_summary',
+      priorSummary:
+        args.compactBodyMessages.find(
+          (message) => message.source === 'compact_summary',
+        ) ?? null,
+      latestExternalRequestMessages: [],
+      referenceContextMessages: [],
+    };
+  }
+
+  const [start, end] = latestExternalRequestRange;
+  return {
+    hasPriorSummary: args.compactBodyMessages[0]?.source === 'compact_summary',
+    priorSummary:
+      args.compactBodyMessages.find(
+        (message) => message.source === 'compact_summary',
+      ) ?? null,
+    latestExternalRequestMessages: args.allMessages.slice(start, end),
+    referenceContextMessages: args.allMessages.slice(
+      Math.max(0, start - REFERENCE_CONTEXT_WINDOW_MESSAGES),
+      end,
+    ),
+  };
+}
+```
+
+This split is mandatory: the latest external request must remain explicitly visible
+to the compaction summary instruction even when FIFO body trimming or checkpoint
+splits would otherwise exclude it from the compacted prefix itself.
 
 ---
 
-## 15. Currently Confirmed Runtime Behavior
+## 11. Non-Negotiable Invariants
 
-Already confirmed in logs:
+These rules are mandatory:
 
-1. automatic compaction is armed from request preflight, not from a completed
-   response tail
-2. compact responses are stored and reinjected through compact-summary state
-3. preflight compaction blocks only the pending completion request
-4. workflow progression no longer relies on deferred post-response resume steps
+1. `message.promptTokens` must be persisted, not runtime-only.
+2. The persisted value must come from provider `usage.promptTokens`.
+3. The value must be written to the last submitted real input message.
+4. Assistant `usage.completionTokens` must be retained so output reserve can be
+   derived from observed turns.
+5. Preflight overflow must block the oversized normal request before send.
+6. Next-turn fit decisions must start from grounded provider `usage.promptTokens`
+   and add only known post-checkpoint growth; they must not treat checkpoints as
+   per-message additive deltas.
+7. Compaction target selection must start from the newest usable checkpoint and
+   support bounded backoff toward older candidates.
+8. A compaction boundary is invalid if the retained tail would break
+   assistant/tool ownership.
+9. After compaction, retained-tail `promptTokens` must be invalidated for checkpoint
+   reuse.
+10. After compaction, runtime `lastReportedPromptTokens` must be set to `null`.
+11. Dynamic service-context growth must be tolerated via bounded retry rather than
+    assuming the newest checkpoint split always fits.
+12. Compaction instruction seeds must be derived from the full pre-compaction
+    message stack, not only from the compacted body window.
+13. Live latest-external-request bullets must be added before prior-summary
+    carry-forward bullets so the current request cannot be evicted by a saturated
+    prior summary `Active Request` section.
+14. Missing checkpoint anchors in an overflow situation must be treated as invalid
+    state.
+15. Frontend may assist UX, but backend owns correctness.
+16. Summary bubble counts must describe the compacted delta actually submitted by
+    the compaction payload, not unrelated totals.
 
 ---
 
-## 16. Alignment Status
+## 12. Practical Interpretation
 
-Core implementation is now aligned with this contract:
+When reading logs:
 
-1. compaction input is built from `prev_summary + delta_messages_since_last_compaction`
-2. already-compacted raw history is not re-sent as full-prefix raw input
-3. normal requests and compaction requests preserve stable prompt-layout inputs
-   as much as practical while keeping compaction payload bounded
-4. compact-mode request overflow handling is Rust-owned and separate from
-   compaction-payload overflow handling
+- `usage.promptTokens=...` means actual provider-submitted full prompt size for the
+  request
+- `conservative_prompt_tokens=...` is a Rust projection signal, not grounded truth
+- dynamic service-context growth can make the next real prompt larger than a naive
+  checkpoint projection
+- `lastReportedPromptTokens=null` after compaction means the previous full-prompt
+  truth was intentionally invalidated for the new epoch
+
+When reading stored messages:
+
+- `promptTokens=null` means the message is not currently a grounded checkpoint
+- `promptTokens=number` means the message may serve as a persisted compaction anchor
+  if it is still usable in the current live range
+- `usage.completionTokens=number` on assistant turns means the turn can
+  participate in future output-reserve derivation
+- the latest external request may be preserved in the compaction instruction even
+  when it is not part of the compacted body prefix
+
+When debugging compaction:
+
+1. check whether preflight blocked before send
+2. check what the last grounded `usage.promptTokens` value was
+3. check whether dynamic service-context growth or tool-result growth invalidated a
+   naive checkpoint fit assumption
+4. check whether a usable prompt-token checkpoint existed in the current live range
+5. check which `to_id` candidate was selected and whether backoff to older
+   candidates was attempted
+6. check whether the retained tail preserved assistant/tool ownership
+7. check whether the instruction seed came from the full live message stack or
+   was accidentally derived only from the compacted prefix
+8. check that the latest external request appears in the instruction seed even if
+   it sits outside the compacted body window
+9. check that compact summary was stored
+10. check that retained-tail `promptTokens` were invalidated and
+    `lastReportedPromptTokens` was cleared
+11. check that the resumed request was rebuilt with the summary injected
+12. check that the summary bubble count matches the compacted delta actually kept
+    after payload fitting
+13. if the UI badge stayed visible during compaction, check whether it intentionally
+    held the last stable preflight value rather than the blocked overflow estimate
+
+That is the current contract.

@@ -1,53 +1,45 @@
 use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
 
-use super::hints::build_compaction_preservation_hints;
+use super::hints::build_compaction_preservation_hints_from_parts;
 
-const COMPACTION_SECTION_SCHEMA: &str = "Use EXACTLY these sections in this order:\n\
-1. Stable Context\n\
-2. Key Decisions & Constraints\n\
-3. Active Request\n\
-4. Required References\n\
-5. Current State\n\
-6. Recent Tool Results\n\
-7. Next Actions";
+const COMPACTION_SECTION_SCHEMA: &str =
+    "Use Markdown headings only when helpful. Do not force all sections.\n\
+Keep these section titles unchanged when you use them so later compaction can recognize them:\n\
+- Active Request\n\
+- Required References\n\
+Optional supporting section titles:\n\
+- Stable Context\n\
+- Key Decisions & Constraints\n\
+- Current State\n\
+- Recent Tool Results\n\
+- Next Actions";
 
 const COMPACTION_RULES: &[&str] = &[
-    "Use terse bullet points, not prose paragraphs.",
-    "Prefer noun phrases and short action statements.",
-    "Minimize adjectives, adverbs, filler, and repetition.",
-    "Do not restate obvious chronology or narration.",
-    "Preserve durable facts, decisions, constraints, user preferences, and unresolved work.",
-    "If the messages include an unresolved external request, you MUST record it in Active Request.",
-    "Active Request is semantic residual state, not a raw transcript dump; preserve the user's operative intent, constraints, and deliverable without copying every request line verbatim unless exact wording is operationally required.",
-    "If a previously recorded Active Request is now resolved, superseded, or no longer actionable, you MUST clear it from Active Request and move any durable outcome to Stable Context, Key Decisions & Constraints, Current State, or Next Actions instead of preserving stale request bullets.",
-    "If the unresolved request depends on earlier discovered context, you MUST record the minimum file paths, symbol names, entities, or identifiers needed to execute it in Required References.",
-    "Keep volatile/recent details in Current State, Recent Tool Results, or Next Actions.",
-    "Do not paraphrase away concrete requirements such as technology choices, limits, file targets, or requested deliverables when they are still relevant to pending work.",
-    "Do not replace exact file paths, symbol names, or user-named targets with vague descriptions when they are still operationally relevant.",
-    "If a detail is recoverable from recent tool results, do not duplicate it in stable sections.",
+    "Write a dense handoff for the next coding turn. Brief bullets or short note fragments are both fine.",
+    "Preserve enough detail to resume safely: durable facts, decisions, constraints, user preferences, unresolved work, and exact file paths or identifiers.",
+    "You do not need to emit every possible section. Omit empty or low-value sections.",
+    "Active Request: keep only the current unresolved user ask. Remove resolved asks.",
+    "Required References: keep only the minimum paths, symbols, or IDs needed for the active request.",
+    "Put volatile details in Current State, Recent Tool Results, or Next Actions.",
+    "If a section has little to say, keep it brief instead of adding filler.",
+    "Never call tools, suggest tool use, or write meta commentary about what you will do.",
 ];
 
 const COMPACTION_SECTION_LIMITS: &[&str] = &[
-    "Stable Context: at most 6 bullets",
-    "Key Decisions & Constraints: at most 6 bullets",
-    "Active Request: at most 4 bullets",
-    "Required References: at most 5 bullets",
-    "Current State: at most 6 bullets",
-    "Recent Tool Results: at most 5 bullets",
-    "Next Actions: at most 5 bullets",
-    "Each bullet should be one short sentence or fragment.",
+    "Keep the summary compact, but completeness matters more than rigid symmetry.",
+    "Usually 1-5 bullets or note fragments per section.",
+    "Active Request: at most 4 items.",
+    "Required References: at most 5 items.",
 ];
 
 const COMPACTION_OUTPUT_CONSTRAINT: &str =
-    "IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.";
+    "IMPORTANT: Output only the compact summary. Do not call tools, propose tool calls, ask for verification, or describe your process.";
 
-const INCREMENTAL_COMPACTION_RESIDUAL_PREFIX: &str = "The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n\
-CRITICAL RESIDUAL RULE: Every durable fact, decision, constraint, reference, and unresolved operationally useful context item recorded in that prior summary MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. \
-Do NOT drop durable information from the prior summary. \
-You may tighten wording, remove duplication, and relocate items into the required sections, but you must preserve the same meaning and operational usefulness. \
-EXCEPTION FOR ACTIVE REQUEST: Active Request is allowed to change when the new delta shows that the prior request was resolved, superseded, or refined. In that case, rewrite Active Request to reflect only the still-unresolved operative request, and move completed outcomes to the appropriate non-request sections instead of preserving stale request bullets. \
-Your new summary = (prior summary, preserved faithfully and reorganized if needed) + (new messages, summarised under the same schema).";
+const INCREMENTAL_COMPACTION_RESIDUAL_PREFIX: &str =
+    "The first message is the prior compact summary for all earlier history.\n\
+Preserve its durable facts, decisions, and constraints when merging the newer messages.\n\
+Update Active Request only if the newer messages clearly refine or resolve it.";
 
 pub(super) const ACTIVE_REQUEST_BULLET_LIMIT: usize = 4;
 pub(super) const REQUIRED_REFERENCE_BULLET_LIMIT: usize = 5;
@@ -56,6 +48,14 @@ pub(super) const REFERENCE_CONTEXT_WINDOW_MESSAGES: usize = 8;
 // bounded and biased toward terse operational seeds rather than copying large
 // raw request paragraphs into the compaction prompt.
 pub(super) const INSTRUCTION_HINT_TEXT_LIMIT: usize = 320;
+
+#[derive(Clone, Copy)]
+pub(super) struct CompactionInstructionTemplateInput<'a> {
+    pub has_prior_summary: bool,
+    pub prior_summary: Option<&'a Message>,
+    pub latest_external_request_messages: &'a [Message],
+    pub reference_context_messages: &'a [Message],
+}
 
 fn render_bulleted_lines(lines: &[&str]) -> String {
     lines
@@ -67,7 +67,7 @@ fn render_bulleted_lines(lines: &[&str]) -> String {
 
 fn build_base_compaction_instruction() -> String {
     format!(
-        "Summarise the previous conversation history using strict compact Markdown.\n\n{}\n\nCompression rules:\n{}\n\nSection limits:\n{}\n\n{}",
+        "Summarise the previous conversation history into a compact technical handoff for later resume.\n\n{}\n\nRules:\n{}\n\nLimits:\n{}\n\n{}",
         COMPACTION_SECTION_SCHEMA,
         render_bulleted_lines(COMPACTION_RULES),
         render_bulleted_lines(COMPACTION_SECTION_LIMITS),
@@ -75,8 +75,12 @@ fn build_base_compaction_instruction() -> String {
     )
 }
 
-fn build_compaction_hint_block(messages: &[Message]) -> Option<String> {
-    let hints = build_compaction_preservation_hints(messages);
+fn build_compaction_hint_block(input: CompactionInstructionTemplateInput<'_>) -> Option<String> {
+    let hints = build_compaction_preservation_hints_from_parts(
+        input.prior_summary,
+        input.latest_external_request_messages,
+        input.reference_context_messages,
+    );
     if hints.active_request.is_empty() && hints.required_references.is_empty() {
         return None;
     }
@@ -84,7 +88,7 @@ fn build_compaction_hint_block(messages: &[Message]) -> Option<String> {
     let mut parts = Vec::new();
     if !hints.active_request.is_empty() {
         parts.push(format!(
-            "Active Request distillation seed (distill the operative unresolved request; do not copy raw wording unless exact phrasing is required):\n{}",
+            "Active Request seed:\n{}",
             hints
                 .active_request
                 .iter()
@@ -96,7 +100,7 @@ fn build_compaction_hint_block(messages: &[Message]) -> Option<String> {
 
     if !hints.required_references.is_empty() {
         parts.push(format!(
-            "Required References candidates:\n{}",
+            "Required References seed:\n{}",
             hints
                 .required_references
                 .iter()
@@ -107,18 +111,20 @@ fn build_compaction_hint_block(messages: &[Message]) -> Option<String> {
     }
 
     Some(format!(
-        "Preservation hints for this compaction input:\n{}",
+        "Use these seeds if helpful:\n{}",
         parts.join("\n\n")
     ))
 }
 
-pub(super) fn build_compaction_instruction(messages: &[Message]) -> String {
+pub(super) fn build_compaction_instruction(
+    input: CompactionInstructionTemplateInput<'_>,
+) -> String {
     let mut instruction = build_base_compaction_instruction();
-    if let Some(hint_block) = build_compaction_hint_block(messages) {
+    if let Some(hint_block) = build_compaction_hint_block(input) {
         instruction = format!("{}\n\n{}", instruction, hint_block);
     }
 
-    if messages.first().map(Message::is_compact_summary) == Some(true) {
+    if input.has_prior_summary {
         return format!(
             "{}\n\n{}",
             INCREMENTAL_COMPACTION_RESIDUAL_PREFIX, instruction
@@ -150,6 +156,7 @@ pub(super) fn build_compaction_instruction_message(
         attachments: None,
         tool_use: None,
         usage: None,
+        prompt_tokens: None,
         created_at,
         updated_at: created_at,
         source: Some(MessageSource::CompactionInstruction),

@@ -4,6 +4,7 @@ import type {
   AgentRuntimeError,
   PendingApprovalKind,
   PendingApprovalSnapshot,
+  PreflightTokenMetrics,
   SessionRuntimeState,
   WorkflowCompletionReason,
 } from '@/models/agent-ipc';
@@ -62,6 +63,11 @@ export type AgentEventPayload =
       runtimeState: SessionRuntimeState;
     }
   | {
+      type: 'preflightTokenMetricsUpdated';
+      sessionId: string;
+      metrics: PreflightTokenMetrics;
+    }
+  | {
       type: 'resourceUpdated';
       resourceType: string;
       action: string;
@@ -91,6 +97,7 @@ export interface AgentSessionStateContextValue {
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
   workflowPhase: WorkflowPhase;
   runtimeState: SessionRuntimeState;
+  preflightTokenMetrics: PreflightTokenMetrics | null;
   initializationStep: {
     step: string;
     status: 'running' | 'complete' | 'error';

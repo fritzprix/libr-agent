@@ -69,6 +69,7 @@ export function useAgentSessionEvents(
       logger.info('Initializing agent session', { sessionId });
       setters.setError(null);
       setters.setRuntimeState(HYDRATING_RUNTIME_STATE);
+      setters.setPreflightTokenMetrics(null);
 
       try {
         unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
@@ -91,6 +92,11 @@ export function useAgentSessionEvents(
                   ? payload.runtimeState
                   : currentState,
               );
+              break;
+            }
+
+            case 'preflightTokenMetricsUpdated': {
+              setters.setPreflightTokenMetrics(payload.metrics);
               break;
             }
 

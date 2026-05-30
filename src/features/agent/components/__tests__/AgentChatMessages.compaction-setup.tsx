@@ -230,7 +230,6 @@ export function createAgentSessionContextMock(
 export const llmServiceContextMock = {
   useLLMService: () => ({
     getCompactedRange: () => ({
-      fromId: 'earlier-user',
       toId: 'tool-1',
       summary: 'Compacted summary',
     }),

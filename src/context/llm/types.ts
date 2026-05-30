@@ -85,16 +85,17 @@ export interface CompactRequest {
   sessionId: string;
   sessionName: string;
   messages: Message[];
-  fromId: string;
   toId: string;
+  compactedDeltaCount: number;
   parentRequest?: CompactionParentRequest;
   resumeCompletionAfterCompact: boolean;
 }
 
 export interface CompactedRange {
-  fromId: string;
   toId: string;
   summary?: string;
+  latestIncludedPreview?: string;
+  condensedCount?: number;
 }
 
 /**

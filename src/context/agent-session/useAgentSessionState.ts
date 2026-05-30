@@ -4,6 +4,7 @@ import type { Message, MessageError } from '@/models/chat';
 import type {
   AgentRuntimeError,
   MessageCursor,
+  PreflightTokenMetrics,
   SessionRuntimeState,
 } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
@@ -40,6 +41,8 @@ export function useAgentSessionState() {
   const [runtimeState, setRuntimeState] = useState<SessionRuntimeState>(
     DEFAULT_RUNTIME_STATE,
   );
+  const [preflightTokenMetrics, setPreflightTokenMetrics] =
+    useState<PreflightTokenMetrics | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
   );
@@ -105,6 +108,7 @@ export function useAgentSessionState() {
       setWorkflowStatus,
       setWorkflowPhase,
       setRuntimeState,
+      setPreflightTokenMetrics,
       setPendingApprovals,
       setYoloModeEnabled,
       setUnsafeModeEnabled,
@@ -123,6 +127,7 @@ export function useAgentSessionState() {
       setWorkflowStatus,
       setWorkflowPhase,
       setRuntimeState,
+      setPreflightTokenMetrics,
       setPendingApprovals,
       setYoloModeEnabled,
       setUnsafeModeEnabled,
@@ -163,6 +168,7 @@ export function useAgentSessionState() {
       workflowStatus,
       workflowPhase,
       runtimeState,
+      preflightTokenMetrics,
       initializationStep,
       pendingApprovals,
       yoloModeEnabled,

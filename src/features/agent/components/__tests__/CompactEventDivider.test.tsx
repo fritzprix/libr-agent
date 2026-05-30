@@ -23,16 +23,12 @@ describe('CompactEventDivider', () => {
   it('renders compacted range previews without exposing internal ids', () => {
     render(
       <CompactEventDivider
-        earlierPreview="Please inspect the gemini cache path."
         latestIncludedPreview="The explicit cache manager is in gemini/service.ts."
         condensedCount={7}
       />,
     );
 
     expect(screen.getByText('Context compacted')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Please inspect the gemini cache path\./),
-    ).toBeInTheDocument();
     expect(
       screen.getByText(
         /The explicit cache manager is in gemini\/service\.ts\./,
@@ -44,7 +40,6 @@ describe('CompactEventDivider', () => {
   it('reveals the saved summary when expanded', () => {
     render(
       <CompactEventDivider
-        earlierPreview="Earlier context"
         latestIncludedPreview="Latest context"
         summary="Summary body goes here."
       />,
