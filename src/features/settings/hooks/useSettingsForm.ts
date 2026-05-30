@@ -129,7 +129,8 @@ export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
   const [draftState, setDraftState] = useState<SettingsFormState | null>(null);
-  const [prevGlobal, setPrevGlobal] = useState<SettingsFormState>(globalSettings);
+  const [prevGlobal, setPrevGlobal] =
+    useState<SettingsFormState>(globalSettings);
 
   // Sync draftState during render using Adjusting State pattern
   if (globalSettings !== prevGlobal) {
