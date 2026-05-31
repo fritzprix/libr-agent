@@ -23,6 +23,7 @@ import { getLogger } from '@/lib/logger';
 const logger = getLogger('DBService');
 import * as messagesBackend from '@/lib/backend/messages';
 import * as playbooksBackend from '@/lib/backend/playbooks';
+import { clearAllSessions as backendClearAllSessions } from '@/lib/backend/sessions';
 
 /**
  * A comprehensive database service object that exports all CRUD operations.
@@ -139,8 +140,8 @@ export const dbUtils = {
     return all.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   },
   clearAllSessions: async (): Promise<void> => {
-    const all = await sessionsBackend.listSessions();
-    await Promise.all(all.map((s) => sessionsBackend.deleteSession(s.id)));
+    // ⚡ Bolt: Use backendClearAllSessions to perform bulk session clearing in a single IPC call, preserving PR #1337.
+    await backendClearAllSessions();
   },
   clearSessionAndWorkspace: async (sessionId: string): Promise<void> => {
     // Backend deleteSession handles workspace removal if implemented in backend command
