@@ -44,6 +44,7 @@ vi.mock('@/context/AgentSessionContext', () => ({
         id: 'assistant-1',
       },
     },
+    messages: [],
   }),
 }));
 

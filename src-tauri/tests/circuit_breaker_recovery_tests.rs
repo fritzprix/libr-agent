@@ -36,6 +36,7 @@ fn test_message(
         error: None,
         metadata,
         usage: None,
+        prompt_tokens: None,
     }
 }
 

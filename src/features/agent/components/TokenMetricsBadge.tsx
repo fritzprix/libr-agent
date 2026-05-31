@@ -1,4 +1,5 @@
 import type { TokenUsage } from '@/lib/ai-service/types';
+import type { PreflightTokenMetrics } from '@/models/agent-ipc';
 import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
 import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
@@ -7,6 +8,7 @@ import { formatNumber } from '@/lib/utils';
 
 interface TokenMetricsBadgeProps {
   usage: TokenUsage;
+  preflight?: PreflightTokenMetrics | null;
   showSpeed?: boolean;
   className?: string;
   compact?: boolean;
@@ -14,6 +16,7 @@ interface TokenMetricsBadgeProps {
 
 export function TokenMetricsBadge({
   usage,
+  preflight = null,
   showSpeed: showSpeedProp,
   className = '',
   compact: compactProp,
@@ -39,6 +42,12 @@ export function TokenMetricsBadge({
       : null;
 
   const tpsFormatted = tokensPerSec ? tokensPerSec.toFixed(1) : null;
+  const inputTokens =
+    preflight?.conservativePromptTokens ?? usage.promptTokens ?? 0;
+  const inputLimit = preflight?.safeInputTokenLimit;
+  const inputLimitLabel = inputLimit ? formatNumber(inputLimit) : null;
+  const promptDisplayLabel = formatNumber(inputTokens);
+  const providerPromptLabel = formatNumber(usage.promptTokens ?? 0);
 
   const cachedTokens =
     usage.cachedPromptTokens ??
@@ -99,13 +108,20 @@ export function TokenMetricsBadge({
         <span
           className="flex items-center gap-0.5 text-primary"
           title={
-            (hasCacheHit
-              ? `Prompt Tokens (Read from Cache: ${formatNumber(cachedTokens)}, Created: ${formatNumber(usage.details?.cacheCreationInputTokens || 0)})`
-              : 'Prompt Tokens') + prefillInfo
+            preflight
+              ? `Backend preflight context estimate: ${promptDisplayLabel}${inputLimitLabel ? ` / ${inputLimitLabel}` : ''} tokens. Reserved output: ${formatNumber(preflight.measuredOutputTokensReserve)}. Total budget: ${formatNumber(preflight.totalBudgetTokens)}. Effective input budget: ${formatNumber(preflight.effectiveInputBudget)}. Provider prompt tokens: ${providerPromptLabel}. System prompt: ${formatNumber(preflight.systemPromptTokens)}. Tools: ${formatNumber(preflight.toolsTokens)}. Selected messages: ${formatNumber(preflight.selectedMessageCount)}.${prefillInfo}`
+              : (hasCacheHit
+                  ? `Prompt Tokens (Read from Cache: ${formatNumber(cachedTokens)}, Created: ${formatNumber(usage.details?.cacheCreationInputTokens || 0)})`
+                  : 'Prompt Tokens') + prefillInfo
           }
         >
           <ArrowUp size={10} className="stroke-[3]" />
-          {formatNumber(usage.promptTokens ?? 0)}
+          {promptDisplayLabel}
+          {inputLimitLabel && (
+            <span className="text-[10px] text-muted-foreground">
+              /{inputLimitLabel}
+            </span>
+          )}
         </span>
 
         {/* Output Tokens */}

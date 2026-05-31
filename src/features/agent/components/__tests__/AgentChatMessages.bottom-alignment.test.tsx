@@ -69,7 +69,6 @@ vi.mock('@/context/AgentSessionContext', () => ({
 vi.mock('@/context/LLMServiceContext', () => ({
   useLLMService: () => ({
     getCompactedRange: () => ({
-      fromId: 'earlier-user',
       toId: 'tool-1',
       summary: 'Compacted summary',
     }),

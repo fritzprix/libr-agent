@@ -49,7 +49,7 @@ pub fn build_compact_summary_text(summary: &str, compacted_messages: &[Message])
     text
 }
 
-fn summarize_recent_tool_calls(compacted_messages: &[Message]) -> Vec<String> {
+pub fn summarize_recent_tool_calls(compacted_messages: &[Message]) -> Vec<String> {
     let tool_results_by_id: HashMap<&str, &Message> = compacted_messages
         .iter()
         .filter(|message| message.role == "tool")

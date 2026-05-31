@@ -153,6 +153,8 @@ export interface Message {
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
   /** Token usage metrics for this message */
   usage?: TokenUsage;
+  /** Persisted prompt-token truth for checkpoint-based compaction */
+  promptTokens?: number | null;
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
   /** Source of the message - 'assistant' for AI-generated, 'ui' for interface actions, 'channel' for external channel events */
@@ -190,6 +192,7 @@ export const MESSAGE_SOURCES = [
   'api',
   'tool',
   'compact-summary',
+  'compaction-instruction',
   'recovery',
   'session-context',
   'scheduled_task',
@@ -242,6 +245,7 @@ export interface RustMessage {
   attachments?: AttachmentReference[];
   toolUse?: { id: string; name: string; input: Record<string, unknown> };
   usage?: TokenUsage;
+  promptTokens?: number | null;
 
   // Timestamps come as Unix milliseconds (i64)
   createdAt: number;
@@ -286,6 +290,7 @@ export function rustMessageToMessage(rustMsg: RustMessage): Message {
     attachments: rustMsg.attachments,
     tool_use: rustMsg.toolUse,
     usage: rustMsg.usage,
+    promptTokens: rustMsg.promptTokens,
     createdAt: new Date(rustMsg.createdAt),
     updatedAt: new Date(rustMsg.updatedAt),
     source: isMessageSource(rustMsg.source) ? rustMsg.source : undefined,
@@ -416,6 +421,7 @@ export function messageToRustMessage(msg: Message): RustMessage {
     attachments: msg.attachments,
     toolUse: msg.tool_use,
     usage: msg.usage,
+    promptTokens: msg.promptTokens,
     createdAt,
     updatedAt,
     source: msg.source,

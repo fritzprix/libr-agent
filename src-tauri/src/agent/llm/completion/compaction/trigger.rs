@@ -17,7 +17,8 @@ use tokio::sync::RwLock;
 use super::payload::{
     apply_compaction_retry_budget, build_compaction_request_payload,
     build_overflow_recovery_compaction_messages, estimate_compaction_non_message_tokens,
-    fit_compaction_request_messages_to_limit, CompactionRequestPayload,
+    fit_compaction_request_messages_to_limit, inspect_compaction_payload,
+    CompactionPayloadDiagnostics, CompactionRequestPayload,
 };
 
 async fn resolve_parent_request(
@@ -46,6 +47,14 @@ pub struct CompactionSelectionPreview {
     pub preserved_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TailRecompactionRecoveryPlan {
+    pub compacted_to_idx: usize,
+    pub first_delta_message_idx: usize,
+    pub latest_request_start_idx: usize,
+    pub fallback_split_idx: usize,
+}
+
 fn build_compaction_selection_preview(
     messages: &[Message],
     split_idx: usize,
@@ -64,26 +73,358 @@ fn build_compaction_selection_preview(
     }
 }
 
-pub fn preview_preflight_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
-    build_compaction_selection_preview(messages, find_preflight_compaction_split_index(messages))
+fn format_compaction_payload_messages(diagnostics: &CompactionPayloadDiagnostics) -> String {
+    if diagnostics.messages.is_empty() {
+        return "  - <none>".to_string();
+    }
+
+    diagnostics
+        .messages
+        .iter()
+        .map(|message| {
+            format!(
+                "  - {} | role={} | source={} | flags={} | preview={}",
+                message.id,
+                message.role,
+                message.source,
+                if message.flags.is_empty() {
+                    "-".to_string()
+                } else {
+                    message.flags.join("+")
+                },
+                message.preview
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
+fn log_compaction_input_diagnostics(
+    session_id: &str,
+    provider_id: &str,
+    recovery_phase: CompactionRecoveryPhase,
+    retry_attempt: u32,
+    base_payload_message_count: usize,
+    request_layout_message_count: usize,
+    selected_messages: &[Message],
+) {
+    let diagnostics = inspect_compaction_payload(selected_messages);
+
+    log::info!(
+        "🧪 Compaction input diagnostics: session={}, provider={}, recovery_phase={:?}, retry_attempt={}, base_payload_message_count={}, request_layout_message_count={}, emitted_message_count={}, body_message_count={}, raw_delta_message_count={}, compact_summary_count={}, compaction_instruction_count={}, scaffolding_count={}, external_request_count={}, assistant_message_count={}, tool_message_count={}, latest_external_request_ids={:?}",
+        session_id,
+        provider_id,
+        recovery_phase,
+        retry_attempt,
+        base_payload_message_count,
+        request_layout_message_count,
+        diagnostics.total_messages,
+        diagnostics.body_message_count,
+        diagnostics.raw_delta_message_count,
+        diagnostics.compact_summary_count,
+        diagnostics.compaction_instruction_count,
+        diagnostics.scaffolding_count,
+        diagnostics.external_request_count,
+        diagnostics.assistant_message_count,
+        diagnostics.tool_message_count,
+        diagnostics.latest_external_request_message_ids
+    );
+
+    if diagnostics.external_request_count == 0 {
+        log::warn!(
+            "⚠️ Compaction input emitted without any external request messages: session={}, provider={}, recovery_phase={:?}, retry_attempt={}",
+            session_id,
+            provider_id,
+            recovery_phase,
+            retry_attempt
+        );
+    }
+
+    if diagnostics.raw_delta_message_count == 1 && diagnostics.external_request_count == 1 {
+        log::warn!(
+            "⚠️ Compaction input collapsed to a single raw delta message around the latest request: session={}, provider={}, recovery_phase={:?}, retry_attempt={}",
+            session_id,
+            provider_id,
+            recovery_phase,
+            retry_attempt
+        );
+    }
+
+    log::debug!(
+        "🧾 Compaction input messages: session={}, provider={}, recovery_phase={:?}, retry_attempt={}, messages=\n{}",
+        session_id,
+        provider_id,
+        recovery_phase,
+        retry_attempt,
+        format_compaction_payload_messages(&diagnostics)
+    );
+}
+
+pub fn preview_preflight_compaction_selection(messages: &[Message]) -> CompactionSelectionPreview {
+    build_compaction_selection_preview(
+        messages,
+        find_preflight_compactable_end_exclusive(messages, None, None),
+    )
+}
+
+fn derive_tail_recompaction_recovery_plan(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    compactable_end_exclusive: usize,
+) -> Option<TailRecompactionRecoveryPlan> {
+    let record = compact_context_record?;
+    let compacted_to_idx = messages
+        .iter()
+        .position(|message| message.id == record.to_id)?;
+    let first_delta_message_idx = compacted_to_idx.saturating_add(1);
+    if first_delta_message_idx < compactable_end_exclusive {
+        return None;
+    }
+
+    let latest_request_start_idx = super::find_latest_external_request_seed_block_start(messages)?;
+    if latest_request_start_idx <= first_delta_message_idx {
+        return None;
+    }
+
+    Some(TailRecompactionRecoveryPlan {
+        compacted_to_idx,
+        first_delta_message_idx,
+        latest_request_start_idx,
+        fallback_split_idx: latest_request_start_idx,
+    })
+}
+
+#[allow(dead_code)]
+pub fn derive_tail_recompaction_recovery_plan_for_testing(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    compactable_end_exclusive: usize,
+) -> Option<TailRecompactionRecoveryPlan> {
+    derive_tail_recompaction_recovery_plan(
+        messages,
+        compact_context_record,
+        compactable_end_exclusive,
+    )
+}
+
+fn find_compaction_delta_start_index(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+) -> usize {
+    compact_context_record
+        .and_then(|record| {
+            messages
+                .iter()
+                .position(|message| message.id == record.to_id)
+                .map(|idx| idx.saturating_add(1))
+        })
+        .unwrap_or(0)
+}
+
+fn find_latest_checkpoint_index(messages: &[Message]) -> Option<usize> {
+    messages
+        .iter()
+        .rposition(|message| message.prompt_tokens_value().is_some())
+}
+
+fn retained_tail_has_orphan_tool_messages(messages: &[Message], split_idx: usize) -> bool {
+    use std::collections::HashSet;
+
+    let split_idx = split_idx.min(messages.len());
+    let tail = &messages[split_idx..];
+    let tail_owner_ids = tail
+        .iter()
+        .filter(|message| message.role == "assistant")
+        .flat_map(|message| {
+            message
+                .tool_calls
+                .iter()
+                .flatten()
+                .map(|tool_call| tool_call.id.clone())
+        })
+        .collect::<HashSet<_>>();
+
+    tail.iter().any(|message| {
+        message.role == "tool"
+            && message
+                .tool_call_id
+                .as_ref()
+                .is_some_and(|tool_call_id| !tail_owner_ids.contains(tool_call_id))
+    })
+}
+
+fn build_checkpoint_backoff_split_candidates(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    initial_split_idx: usize,
+) -> Vec<usize> {
+    use std::collections::HashSet;
+
+    let delta_start_idx = find_compaction_delta_start_index(messages, compact_context_record);
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+
+    let mut push_candidate = |split_idx: usize| {
+        if split_idx <= delta_start_idx || split_idx > messages.len() {
+            return;
+        }
+        if retained_tail_has_orphan_tool_messages(messages, split_idx) {
+            return;
+        }
+        if seen.insert(split_idx) {
+            candidates.push(split_idx);
+        }
+    };
+
+    push_candidate(initial_split_idx);
+
+    for (idx, message) in messages.iter().enumerate().rev() {
+        if idx < delta_start_idx || message.prompt_tokens_value().is_none() {
+            continue;
+        }
+        push_candidate(idx + 1);
+    }
+
+    candidates
+}
+
+fn find_prompt_checkpoint_compactable_end_exclusive(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: usize,
+) -> Option<usize> {
+    let delta_start_idx = find_compaction_delta_start_index(messages, compact_context_record);
+    let uncompacted_messages = &messages[delta_start_idx..];
+    let latest_checkpoint_relative_idx = find_latest_checkpoint_index(uncompacted_messages)?;
+    let latest_checkpoint = &uncompacted_messages[latest_checkpoint_relative_idx];
+    let latest_prompt_tokens = latest_checkpoint.prompt_tokens_value()?;
+
+    if latest_prompt_tokens > current_context_limit {
+        let compaction_window_start = latest_prompt_tokens.saturating_sub(current_context_limit);
+        let preserve_relative_idx = uncompacted_messages
+            .iter()
+            .position(|message| {
+                message
+                    .prompt_tokens_value()
+                    .is_some_and(|value| value > compaction_window_start)
+            })
+            .unwrap_or(latest_checkpoint_relative_idx);
+        return Some(delta_start_idx + preserve_relative_idx);
+    }
+
+    Some(delta_start_idx + latest_checkpoint_relative_idx + 1)
+}
+
+pub fn has_prompt_checkpoint_compaction_target(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: usize,
+) -> bool {
+    find_prompt_checkpoint_compactable_end_exclusive(
+        messages,
+        compact_context_record,
+        current_context_limit,
+    )
+    .is_some_and(|compactable_end_exclusive| {
+        compactable_end_exclusive
+            > find_compaction_delta_start_index(messages, compact_context_record)
+    })
+}
+
+fn find_preflight_compactable_end_exclusive(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: Option<usize>,
+) -> usize {
     if messages.is_empty() {
         return 0;
     }
 
-    let unresolved_boundary =
-        crate::agent::llm::context_selector::find_compaction_split_index(messages);
-
-    match messages.last().map(|message| message.role.as_str()) {
-        Some("tool") => unresolved_boundary,
-        Some(_) => std::cmp::min(messages.len().saturating_sub(1), unresolved_boundary),
-        None => 0,
+    if let Some(limit) = current_context_limit {
+        if let Some(prompt_checkpoint_end_exclusive) =
+            find_prompt_checkpoint_compactable_end_exclusive(
+                messages,
+                compact_context_record,
+                limit,
+            )
+        {
+            return prompt_checkpoint_end_exclusive;
+        }
     }
+
+    let delta_start_idx = find_compaction_delta_start_index(messages, compact_context_record);
+    let relative_end_exclusive = crate::agent::llm::context_selector::find_compaction_split_index(
+        &messages[delta_start_idx..],
+    );
+    delta_start_idx + relative_end_exclusive
 }
 
-pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) -> bool {
+pub fn find_preflight_compactable_end_exclusive_for_testing(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    current_context_limit: Option<usize>,
+) -> usize {
+    find_preflight_compactable_end_exclusive(
+        messages,
+        compact_context_record,
+        current_context_limit,
+    )
+}
+
+pub fn build_checkpoint_backoff_split_candidates_for_testing(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    initial_split_idx: usize,
+) -> Vec<usize> {
+    build_checkpoint_backoff_split_candidates(messages, compact_context_record, initial_split_idx)
+}
+
+fn log_preflight_split_boundary(
+    session_id: &str,
+    messages: &[Message],
+    split_idx: usize,
+    reason: &str,
+) {
+    let diagnostics =
+        crate::agent::llm::context_selector::inspect_compaction_split_boundary(messages);
+    let first_message_id = messages
+        .first()
+        .map(|message| message.id.as_str())
+        .unwrap_or("?");
+    let last_message_id = messages
+        .last()
+        .map(|message| message.id.as_str())
+        .unwrap_or("?");
+    let first_message_role = messages
+        .first()
+        .map(|message| message.role.as_str())
+        .unwrap_or("?");
+    let last_message_role = messages
+        .last()
+        .map(|message| message.role.as_str())
+        .unwrap_or("?");
+
+    log::warn!(
+        "🧭 Preflight compaction split diagnostics: session={}, reason={}, message_count={}, split_idx={}, first_unresolved_owner_index={:?}, first_unresolved_owner_id={:?}, first_unresolved_tool_call_count={}, first_message_id={}, first_message_role={}, last_message_id={}, last_message_role={}",
+        session_id,
+        reason,
+        messages.len(),
+        split_idx,
+        diagnostics.first_unresolved_owner_index,
+        diagnostics.first_unresolved_owner_id,
+        diagnostics.first_unresolved_tool_call_count,
+        first_message_id,
+        first_message_role,
+        last_message_id,
+        last_message_role
+    );
+}
+
+pub fn should_skip_same_tail_compaction(
+    messages: &[Message],
+    compact_context_record: Option<&CompactContextRecord>,
+    compactable_end_exclusive: usize,
+) -> bool {
     let has_compact_summary = messages
         .first()
         .map(|message| message.is_compact_summary())
@@ -93,7 +434,18 @@ pub fn should_skip_same_tail_compaction(messages: &[Message], split_idx: usize) 
         return false;
     }
 
-    split_idx <= 1
+    compactable_end_exclusive <= find_compaction_delta_start_index(messages, compact_context_record)
+}
+
+fn filter_compaction_history_messages(messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .filter(|message| {
+            !message.is_request_layout_scaffolding_message()
+                && !message.is_compaction_overlay_message()
+        })
+        .cloned()
+        .collect()
 }
 
 async fn load_merged_compaction_messages(
@@ -117,14 +469,16 @@ async fn load_merged_compaction_messages(
             .read()
             .await
             .iter()
-            .filter(|message| !message.is_internal_synthetic_user_message())
             .cloned()
             .collect::<Vec<_>>();
 
         (session_name, messages)
     };
 
-    Ok((session_name, normalize_request_messages(messages)))
+    Ok((
+        session_name,
+        normalize_request_messages(filter_compaction_history_messages(&messages)),
+    ))
 }
 
 struct PreparedCompactionRequest {
@@ -142,6 +496,7 @@ struct PreparedCompactionAttempt {
 }
 
 const MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS: u32 = 3;
+const MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS: usize = 3;
 
 fn advance_compaction_overflow_recovery_step(
     recovery_phase: CompactionRecoveryPhase,
@@ -176,12 +531,23 @@ struct PrepareCompactionRequestInput<'a> {
     session_name: &'a str,
     messages: &'a [Message],
     split_idx: usize,
+    measured_output_tokens_reserve: usize,
     parent_request: Option<CompactionParentRequest>,
     compact_context_record: Option<CompactContextRecord>,
     started_at_ms: i64,
     resume_completion_after_compact: bool,
     recovery_phase: CompactionRecoveryPhase,
     retry_attempt: u32,
+}
+
+#[derive(Clone)]
+pub(crate) struct PreflightCompactionTriggerInput<'a> {
+    pub session_id: &'a str,
+    pub session_name: &'a str,
+    pub messages: &'a [Message],
+    pub parent_request: Option<CompactionParentRequest>,
+    pub measured_output_tokens_reserve: usize,
+    pub resume_completion_after_compact: bool,
 }
 
 fn degrade_tools_for_overflow_recovery(tools: &[MCPTool]) -> Vec<MCPTool> {
@@ -211,6 +577,7 @@ async fn prepare_compaction_request(
         session_name,
         messages,
         split_idx,
+        measured_output_tokens_reserve,
         parent_request,
         compact_context_record,
         started_at_ms,
@@ -220,8 +587,7 @@ async fn prepare_compaction_request(
     } = input;
 
     let Some(CompactionRequestPayload {
-        compact_messages,
-        from_id,
+        compact_messages: base_compact_messages,
         to_id,
         compacted_delta_count,
         reused_prior_summary,
@@ -233,14 +599,36 @@ async fn prepare_compaction_request(
         started_at_ms,
     )
     else {
+        let compact_record_summary = compact_context_record.as_ref().map(|record| {
+            let compacted_to_idx = messages
+                .iter()
+                .position(|message| message.id == record.to_id);
+            let first_delta_message_idx = compacted_to_idx.map(|idx| idx.saturating_add(1));
+            format!(
+                "to_id={}, compacted_to_idx={:?}, first_delta_message_idx={:?}",
+                record.to_id, compacted_to_idx, first_delta_message_idx
+            )
+        });
+        log::warn!(
+            "⏭️ Preflight compaction payload build returned no-op: session={}, split_idx={}, message_count={}, compact_record={:?}",
+            session_id,
+            split_idx,
+            messages.len(),
+            compact_record_summary
+        );
         return Ok(None);
     };
 
     let settings = load_context_management_settings().await;
     let safe_input_token_limit =
         std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let base_effective_input_budget =
+        crate::agent::llm::token_utils::calculate_effective_input_budget(
+            safe_input_token_limit,
+            measured_output_tokens_reserve,
+        );
     let effective_input_token_limit =
-        apply_compaction_retry_budget(safe_input_token_limit, retry_attempt);
+        apply_compaction_retry_budget(base_effective_input_budget, retry_attempt);
     let resolved_parent_request =
         resolve_parent_request(active_sessions, session_id, parent_request).await;
     let request_layout = resolved_parent_request.as_ref().map(|request| {
@@ -249,13 +637,13 @@ async fn prepare_compaction_request(
             session_id,
             request.system_prompt.clone(),
             request.session_context.clone(),
-            compact_messages.clone(),
+            base_compact_messages.clone(),
         )
     });
     let final_compact_messages = request_layout
         .as_ref()
         .map(|layout| layout.messages.clone())
-        .unwrap_or_else(|| compact_messages.clone());
+        .unwrap_or_else(|| base_compact_messages.clone());
     let final_parent_request = match (resolved_parent_request, request_layout.as_ref()) {
         (Some(mut request), Some(layout)) => {
             request.system_prompt = layout.system_prompt.clone();
@@ -299,12 +687,49 @@ async fn prepare_compaction_request(
         }
     };
 
+    log_compaction_input_diagnostics(
+        session_id,
+        provider_id,
+        recovery_phase,
+        retry_attempt,
+        base_compact_messages.len(),
+        final_compact_messages.len(),
+        &compact_messages,
+    );
+
+    let mut final_compacted_delta_count = compacted_delta_count;
+
+    if !compact_messages.is_empty() {
+        // Count how many delta messages are actually in compact_messages
+        // (excluding the compaction instruction/overlay at the end).
+        let delta_only_count = compact_messages
+            .iter()
+            .filter(|m| {
+                !m.is_compaction_overlay_message()
+                    && !m.is_compact_summary()
+                    && !m.is_request_layout_scaffolding_message()
+            })
+            .count();
+        final_compacted_delta_count = delta_only_count;
+    }
+
+    if final_compacted_delta_count != compacted_delta_count {
+        log::info!(
+            "📐 Compaction payload shrunken, adjusting delta metadata: session={}, compacted_delta_count: {} -> {}",
+            session_id,
+            compacted_delta_count,
+            final_compacted_delta_count
+        );
+    }
+
     if retry_attempt > 0 {
         log::warn!(
-            "🔧 Applying compaction retry budget: session={}, retry_attempt={}, safe_input_token_limit={}, effective_input_token_limit={}",
+            "🔧 Applying compaction retry budget: session={}, retry_attempt={}, safe_input_token_limit={}, measured_output_tokens_reserve={}, base_effective_input_budget={}, effective_input_token_limit={}",
             session_id,
             retry_attempt,
             safe_input_token_limit,
+            measured_output_tokens_reserve,
+            base_effective_input_budget,
             effective_input_token_limit
         );
     }
@@ -322,14 +747,14 @@ async fn prepare_compaction_request(
             session_id: session_id.to_string(),
             session_name: session_name.to_string(),
             messages: compact_messages,
-            from_id,
             to_id,
+            compacted_delta_count: final_compacted_delta_count,
             parent_request: final_parent_request,
             resume_completion_after_compact,
         },
         started_at_ms,
         current_tail_id: messages.last().map(|message| message.id.clone()),
-        compacted_delta_count,
+        compacted_delta_count: final_compacted_delta_count,
         reused_prior_summary,
     }))
 }
@@ -386,26 +811,21 @@ async fn prepare_compaction_request_with_recovery_ladder(
 pub(crate) async fn try_trigger_preflight_compaction(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
-    session_id: &str,
-    session_name: &str,
-    messages: &[Message],
-    parent_request: Option<CompactionParentRequest>,
-    resume_completion_after_compact: bool,
+    input: PreflightCompactionTriggerInput<'_>,
 ) -> Result<bool, String> {
+    let PreflightCompactionTriggerInput {
+        session_id,
+        session_name,
+        messages,
+        parent_request,
+        measured_output_tokens_reserve,
+        resume_completion_after_compact,
+    } = input;
     if messages.len() <= 1 {
-        log::debug!(
+        log::info!(
             "⏭️ Preflight compaction skipped (insufficient messages): session={}, count={}",
             session_id,
             messages.len()
-        );
-        return Ok(false);
-    }
-
-    let split_idx = find_preflight_compaction_split_index(messages);
-    if split_idx == 0 {
-        log::debug!(
-            "⏭️ Preflight compaction skipped (split_idx=0): session={}",
-            session_id
         );
         return Ok(false);
     }
@@ -417,49 +837,163 @@ pub(crate) async fn try_trigger_preflight_compaction(
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         (session.compact_context.clone(), session.compaction.clone())
     };
+    let compact_context_record = compact_context_handle.read().await.clone();
+    let settings = load_context_management_settings().await;
+    let current_context_limit = std::cmp::min(settings.max_input_context, settings.model_max_limit);
+    let effective_input_budget = crate::agent::llm::token_utils::calculate_effective_input_budget(
+        current_context_limit,
+        measured_output_tokens_reserve,
+    );
+    let compactable_end_exclusive = find_preflight_compactable_end_exclusive(
+        messages,
+        compact_context_record.as_ref(),
+        Some(effective_input_budget),
+    );
+    if compactable_end_exclusive == 0 {
+        log_preflight_split_boundary(
+            session_id,
+            messages,
+            compactable_end_exclusive,
+            "split_idx_zero",
+        );
+        log::warn!(
+            "⏭️ Preflight compaction skipped (split_idx=0): session={}",
+            session_id
+        );
+        return Ok(false);
+    }
 
     let current_tail_id = messages.last().map(|message| message.id.clone());
     let last_compacted_tail = compaction.last_compacted_tail_id().await;
     if current_tail_id.as_deref() == last_compacted_tail.as_deref()
-        && should_skip_same_tail_compaction(messages, split_idx)
+        && should_skip_same_tail_compaction(
+            messages,
+            compact_context_record.as_ref(),
+            compactable_end_exclusive,
+        )
     {
-        log::debug!(
-            "⏭️ Preflight compaction skipped (same tail): session={}, tail={}, split_idx={}",
+        log::info!(
+            "⏭️ Preflight compaction skipped (same tail): session={}, tail={}, split_idx={}, message_count={}, last_compacted_tail={}",
             session_id,
             current_tail_id.as_deref().unwrap_or("?"),
-            split_idx
+            compactable_end_exclusive,
+            messages.len(),
+            last_compacted_tail.as_deref().unwrap_or("?")
         );
         return Ok(false);
     }
 
     let started_at_ms = chrono::Utc::now().timestamp_millis();
-    let compact_context_record = compact_context_handle.read().await.clone();
     let initial_retry_attempt = compaction.retry_attempt().await;
     let initial_recovery_phase = compaction.recovery_phase().await;
-    let Some(prepared_attempt) = prepare_compaction_request_with_recovery_ladder(
-        active_sessions,
-        PrepareCompactionRequestInput {
-            session_id,
-            session_name,
-            messages,
-            split_idx,
-            parent_request,
-            compact_context_record,
-            started_at_ms,
-            resume_completion_after_compact,
-            recovery_phase: initial_recovery_phase,
-            retry_attempt: initial_retry_attempt,
-        },
+    let split_candidates = build_checkpoint_backoff_split_candidates(
+        messages,
+        compact_context_record.as_ref(),
+        compactable_end_exclusive,
+    );
+    if split_candidates.is_empty() {
+        return Err(format!(
+            "No ownership-safe compaction split candidates available for session {}.",
+            session_id
+        ));
+    }
+    let candidate_offset = if matches!(
         initial_recovery_phase,
-        initial_retry_attempt,
-    )
-    .await?
-    else {
-        log::debug!(
-            "⏭️ Preflight compaction skipped (no new delta beyond previous summary): session={}, tail={}, split_idx={}",
+        CompactionRecoveryPhase::CacheAligned
+    ) {
+        usize::min(
+            initial_retry_attempt as usize,
+            split_candidates.len().saturating_sub(1),
+        )
+    } else {
+        0
+    };
+    log::info!(
+        "🪜 Preflight compaction split candidates: session={}, initial_split_idx={}, candidate_offset={}, candidates={:?}",
+        session_id,
+        compactable_end_exclusive,
+        candidate_offset,
+        split_candidates
+    );
+
+    let mut prepared_attempt = None;
+    for split_idx in split_candidates
+        .iter()
+        .copied()
+        .skip(candidate_offset)
+        .take(MAX_COMPACTION_SPLIT_BACKOFF_ATTEMPTS)
+    {
+        let attempt = prepare_compaction_request_with_recovery_ladder(
+            active_sessions,
+            PrepareCompactionRequestInput {
+                session_id,
+                session_name,
+                messages,
+                split_idx,
+                measured_output_tokens_reserve,
+                parent_request: parent_request.clone(),
+                compact_context_record: compact_context_record.clone(),
+                started_at_ms,
+                resume_completion_after_compact,
+                recovery_phase: initial_recovery_phase,
+                retry_attempt: initial_retry_attempt,
+            },
+            initial_recovery_phase,
+            initial_retry_attempt,
+        )
+        .await?;
+        if attempt.is_some() {
+            prepared_attempt = attempt;
+            break;
+        }
+    }
+
+    if prepared_attempt.is_none() {
+        if let Some(recovery_plan) = derive_tail_recompaction_recovery_plan(
+            messages,
+            compact_context_record.as_ref(),
+            compactable_end_exclusive,
+        ) {
+            log::warn!(
+                "🧯 Forcing tail re-compaction recovery after no-op incremental payload: session={}, original_split_idx={}, fallback_split_idx={}, compacted_to_idx={}, first_delta_message_idx={}, latest_request_start_idx={}, message_count={}",
+                session_id,
+                compactable_end_exclusive,
+                recovery_plan.fallback_split_idx,
+                recovery_plan.compacted_to_idx,
+                recovery_plan.first_delta_message_idx,
+                recovery_plan.latest_request_start_idx,
+                messages.len()
+            );
+            prepared_attempt = prepare_compaction_request_with_recovery_ladder(
+                active_sessions,
+                PrepareCompactionRequestInput {
+                    session_id,
+                    session_name,
+                    messages,
+                    split_idx: recovery_plan.fallback_split_idx,
+                    measured_output_tokens_reserve,
+                    parent_request: parent_request.clone(),
+                    compact_context_record: compact_context_record.clone(),
+                    started_at_ms,
+                    resume_completion_after_compact,
+                    recovery_phase: crate::agent::state::CompactionRecoveryPhase::OverflowRecovery,
+                    retry_attempt: 0,
+                },
+                crate::agent::state::CompactionRecoveryPhase::OverflowRecovery,
+                0,
+            )
+            .await?;
+        }
+    }
+
+    let Some(prepared_attempt) = prepared_attempt else {
+        log::info!(
+            "⏭️ Preflight compaction skipped (no new delta beyond previous summary): session={}, tail={}, split_idx={}, message_count={}, last_compacted_tail={}",
             session_id,
             current_tail_id.as_deref().unwrap_or("?"),
-            split_idx
+            compactable_end_exclusive,
+            messages.len(),
+            last_compacted_tail.as_deref().unwrap_or("?")
         );
         return Ok(false);
     };
@@ -469,7 +1003,6 @@ pub(crate) async fn try_trigger_preflight_compaction(
         retry_attempt,
     } = prepared_attempt;
 
-    let log_from_id = prepared.compact_event.from_id.clone();
     let log_to_id = prepared.compact_event.to_id.clone();
     let compact_event = prepared.compact_event.clone();
     let kind = if resume_completion_after_compact {
@@ -489,6 +1022,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
             compaction
                 .set_recovery_progress(recovery_phase, retry_attempt)
                 .await;
+            compaction.set_current_request(compact_event.clone()).await;
             if let Err(error) = emit_compact_started(
                 app_handle,
                 session_id.to_string(),
@@ -544,11 +1078,10 @@ pub(crate) async fn try_trigger_preflight_compaction(
 
     if resume_completion_after_compact {
         log::info!(
-            "⏸️ Preflight compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            "⏸️ Preflight compaction triggered: session={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
             session_id,
-            log_from_id,
             log_to_id,
-            split_idx,
+            compactable_end_exclusive,
             prepared.compacted_delta_count,
             prepared.reused_prior_summary,
             current_tail_id.as_deref().unwrap_or("?"),
@@ -556,11 +1089,10 @@ pub(crate) async fn try_trigger_preflight_compaction(
         );
     } else {
         log::info!(
-            "🧰 Manual compaction triggered: session={}, from_id={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
+            "🧰 Manual compaction triggered: session={}, to_id={}, split_idx={}, compacted_delta_count={}, reused_prior_summary={}, tail={}, started_at_ms={}",
             session_id,
-            log_from_id,
             log_to_id,
-            split_idx,
+            compactable_end_exclusive,
             prepared.compacted_delta_count,
             prepared.reused_prior_summary,
             current_tail_id.as_deref().unwrap_or("?"),
@@ -578,14 +1110,22 @@ pub async fn trigger_preflight_compaction_for_session(
 ) -> Result<bool, String> {
     let (session_name, merged_messages) =
         load_merged_compaction_messages(active_sessions, session_id).await?;
+    let measured_output_tokens_reserve =
+        crate::agent::llm::token_utils::derive_measured_output_tokens_reserve(
+            &merged_messages,
+            None,
+        );
     try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
-        session_id,
-        &session_name,
-        &merged_messages,
-        None,
-        true,
+        PreflightCompactionTriggerInput {
+            session_id,
+            session_name: &session_name,
+            messages: &merged_messages,
+            parent_request: None,
+            measured_output_tokens_reserve,
+            resume_completion_after_compact: true,
+        },
     )
     .await
 }
@@ -597,14 +1137,22 @@ pub async fn trigger_manual_compaction_for_session(
 ) -> Result<bool, String> {
     let (session_name, merged_messages) =
         load_merged_compaction_messages(active_sessions, session_id).await?;
+    let measured_output_tokens_reserve =
+        crate::agent::llm::token_utils::derive_measured_output_tokens_reserve(
+            &merged_messages,
+            None,
+        );
     try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
-        session_id,
-        &session_name,
-        &merged_messages,
-        None,
-        false,
+        PreflightCompactionTriggerInput {
+            session_id,
+            session_name: &session_name,
+            messages: &merged_messages,
+            parent_request: None,
+            measured_output_tokens_reserve,
+            resume_completion_after_compact: false,
+        },
     )
     .await
 }

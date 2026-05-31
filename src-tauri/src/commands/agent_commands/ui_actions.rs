@@ -77,6 +77,7 @@ fn create_ui_tool_call_message(
             attachments: None,
             tool_use: None,
             usage: None,
+            prompt_tokens: None,
             created_at: now,
             updated_at: now,
             source: Some(MessageSource::Ui),

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { safeInvoke } from './core';
 import {
   getMessagesPageForSession,
+  getMessagesBeforeCursor,
   upsertMessages,
   upsertMessage,
   deleteMessage,
@@ -9,6 +10,7 @@ import {
   searchMessages,
 } from './messages';
 import type { Message, RustMessage, ToolCall } from '@/models/chat';
+import type { MessageCursor } from '@/models/agent-ipc';
 
 vi.mock('./core', () => ({
   safeInvoke: vi.fn(),
@@ -28,6 +30,47 @@ describe('Message Management Service', () => {
       await expect(
         getMessagesPageForSession('', 'thread-1', 1, 10),
       ).rejects.toThrow('sessionId and threadId are required');
+    });
+
+    describe('getMessagesBeforeCursor', () => {
+      it('should request older messages using the row-id cursor only', async () => {
+        const mockTimestamp = Date.now();
+        const cursor: MessageCursor = {
+          createdAt: mockTimestamp - 1000,
+          rowId: 42,
+        };
+        const mockRustResponse = {
+          items: [
+            {
+              id: 'msg-older',
+              sessionId: 'session-1',
+              threadId: 'thread-1',
+              role: 'assistant',
+              content: [{ type: 'text', text: 'Older message' }],
+              createdAt: mockTimestamp,
+              updatedAt: mockTimestamp,
+            } satisfies RustMessage,
+          ],
+          hasMoreBefore: false,
+          oldestCursor: null,
+        };
+
+        vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
+
+        const result = await getMessagesBeforeCursor('session-1', cursor, 10);
+
+        expect(safeInvoke).toHaveBeenCalledWith('messages_get_messages_before', {
+          sessionId: 'session-1',
+          beforeRowId: 42,
+          limit: 10,
+        });
+        expect(result.items[0]).toEqual(
+          expect.objectContaining({
+            id: 'msg-older',
+            createdAt: new Date(mockTimestamp),
+          }),
+        );
+      });
     });
 
     it('should throw if threadId is missing', async () => {
