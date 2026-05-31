@@ -1,6 +1,8 @@
 #[cfg(unix)]
 use std::ffi::OsStr;
 use std::ffi::OsString;
+#[cfg(unix)]
+use std::io::IsTerminal;
 use std::process::Command as StdCommand;
 #[cfg(unix)]
 use std::sync::OnceLock;
@@ -30,17 +32,23 @@ fn get_unix_shell_path() -> &'static str {
             }
         });
 
-        let probe_args = [["-l", "-i", "-c"], ["-l", "-c", ""]];
+        // GUI-launched apps don't have a controlling TTY, but we only probe interactive shell
+        // if stdin is actually a terminal and we are NOT in a cargo test environment
+        // (avoiding SIGTTIN/SIGTTOU background suspension in tests/CI).
+        let is_cargo_test = std::env::var("CARGO_MANIFEST_DIR").is_ok();
+        let probe_args: &[&[&str]] = if std::io::stdin().is_terminal() && !is_cargo_test {
+            &[&["-l", "-i", "-c"], &["-l", "-c"]]
+        } else {
+            &[&["-l", "-c"]]
+        };
+
         let probe_command =
             format!("printf '{PATH_CAPTURE_PREFIX}%s{PATH_CAPTURE_SUFFIX}' \"$PATH\"");
 
         for args in probe_args {
             let mut cmd = StdCommand::new(&shell);
-            if args[2].is_empty() {
-                cmd.args([args[0], args[1], &probe_command]);
-            } else {
-                cmd.args([args[0], args[1], args[2], &probe_command]);
-            }
+            cmd.args(*args);
+            cmd.arg(&probe_command);
 
             if let Ok(out) = cmd.output() {
                 if !out.status.success() {
