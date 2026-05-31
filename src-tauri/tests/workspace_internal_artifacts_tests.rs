@@ -256,3 +256,62 @@ async fn export_omits_internal_tmp_and_exports_when_packaging_workspace_root() {
         archived_names
     );
 }
+
+#[tokio::test]
+async fn export_prevents_path_traversal_via_package_name() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "workspace-export-path-traversal";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::create_dir_all(workspace_dir.join("src")).expect("src dir");
+    std::fs::write(workspace_dir.join("src/keep.txt"), "keep me").expect("workspace file");
+
+    // Attempt path traversal via a malicious name parameter
+    let _response = server
+        .handle_export(
+            json!({
+                "paths": ["."],
+                "name": "../../../traversal_attempt"
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("export should succeed");
+
+    // The output file should be saved inside .libragent/exports/packages/
+    let packages_dir = workspace_dir.join(".libragent/exports/packages");
+    assert!(
+        packages_dir.exists(),
+        "packages directory should be created"
+    );
+
+    let archive_path = std::fs::read_dir(&packages_dir)
+        .expect("packages dir")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("zip"))
+        .expect("zip archive expected");
+
+    // The filename should be sanitized, replacing ".." and slashes with "_"
+    let filename = archive_path.file_name().unwrap().to_string_lossy();
+    assert!(
+        filename.starts_with("_________traversal_attempt"),
+        "The malicious name '../' should be sanitized to '_': {}",
+        filename
+    );
+
+    // Verify it was not written outside packages_dir
+    let parent_dir = packages_dir.parent().unwrap();
+    let has_dangling_zip = std::fs::read_dir(parent_dir)
+        .expect("parent dir")
+        .filter_map(Result::ok)
+        .any(|entry| {
+            let path = entry.path();
+            path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("zip")
+        });
+    assert!(
+        !has_dangling_zip,
+        "No zip files should leak outside packages directory"
+    );
+}
