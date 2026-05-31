@@ -171,9 +171,10 @@ impl WorkspaceServer {
         }
 
         // === ZIP PACKAGE EXPORT ===
-        let package_name = crate::services::file_export_service::FileExportService::sanitize_package_name(
-            &name_param.unwrap_or_else(|| "workspace_export".to_string()),
-        );
+        let package_name =
+            crate::services::file_export_service::FileExportService::sanitize_package_name(
+                &name_param.unwrap_or_else(|| "workspace_export".to_string()),
+            );
         let zip_filename = format!("{package_name}_{timestamp}.zip");
         let zip_path = exports_dir.join("packages").join(&zip_filename);
 
