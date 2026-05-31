@@ -144,16 +144,6 @@ export function useSettingsPageController() {
   const handleFactoryReset = useCallback(async () => {
     setIsResetting(true);
     try {
-      try {
-        await dbUtils.clearAllObjects();
-        await dbUtils.clearAllSessions();
-        await dbUtils.clearAllAssistants();
-        await dbUtils.clearAllMCPServers();
-        await dbUtils.clearAllPlaybooks();
-      } catch (error) {
-        logger.error('Failed to clear frontend DB during factory reset', error);
-      }
-
       await backendFactoryReset();
 
       toast.success(

@@ -1,6 +1,7 @@
 use super::lineage::remove_lineage;
 use super::AgentService;
 use crate::agent::AgentSessionManager;
+use crate::repositories::settings_repository::SettingsRepository;
 use crate::session::get_session_manager;
 use std::fs;
 
@@ -118,6 +119,19 @@ impl AgentService {
                 .delete(&server.name)
                 .await
                 .map_err(|e| format!("Failed to delete MCP server {}: {}", server.name, e))?;
+        }
+
+        if let Some(settings_repo) = crate::state::try_get_settings_repository() {
+            let settings = settings_repo
+                .list()
+                .await
+                .map_err(|e| format!("Failed to list settings: {}", e))?;
+            for setting in settings {
+                settings_repo
+                    .delete(&setting.key)
+                    .await
+                    .map_err(|e| format!("Failed to delete setting {}: {}", setting.key, e))?;
+            }
         }
 
         if let Err(error) = crate::services::assistant_init::ensure_default_assistants().await {
