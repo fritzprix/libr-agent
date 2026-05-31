@@ -139,7 +139,9 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   // Pending messages queue for busy state
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
-  const [prevSessionId, setPrevSessionId] = useState<string | null>(session?.id ?? null);
+  const [prevSessionId, setPrevSessionId] = useState<string | null>(
+    session?.id ?? null,
+  );
   const activeSessionIdRef = useRef<string | null>(session?.id ?? null);
 
   const nextSessionId = session?.id ?? null;

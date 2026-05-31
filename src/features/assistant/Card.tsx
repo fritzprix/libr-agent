@@ -167,7 +167,10 @@ export default function AssistantCard({
 
         {/* Detailed Content */}
         {isExpanded && (
-          <div id={panelId} className="space-y-6 mb-6 relative z-10 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div
+            id={panelId}
+            className="space-y-6 mb-6 relative z-10 animate-in fade-in slide-in-from-top-2 duration-300"
+          >
             <div className="space-y-2">
               <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60 font-sans flex items-center gap-1.5">
                 <Square size={10} />

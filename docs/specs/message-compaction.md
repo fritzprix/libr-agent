@@ -363,7 +363,10 @@ function runTurn(state) {
       throw InvalidContextStateError();
     }
 
-    const result = compactWithBoundedRecovery(state, splitCandidates.slice(0, 3));
+    const result = compactWithBoundedRecovery(
+      state,
+      splitCandidates.slice(0, 3),
+    );
 
     if (result.kind === 'success') {
       persistCompactedSummary(result.summary, result.toId);
