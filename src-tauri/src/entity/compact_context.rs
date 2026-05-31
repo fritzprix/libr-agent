@@ -7,8 +7,8 @@ pub struct Model {
     pub id: String,
     #[sea_orm(unique)]
     pub session_id: String,
-    pub from_id: String,
     pub to_id: String,
+    pub condensed_count: Option<i32>,
     pub summary: String,
     pub created_at: i64,
 }

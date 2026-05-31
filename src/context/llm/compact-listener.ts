@@ -1,8 +1,10 @@
 import {
   handleCompactError,
   handleCompactResponse,
+  getAgentCompactContext,
 } from '@/lib/backend/agent-commands';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import { summarizeCompactionRequestSizes } from '@/lib/ai-service/request-ingredients';
 import type {
   AIContextCompactionService,
   AIServiceConfig,
@@ -57,13 +59,13 @@ export async function setupCompactRequestListener({
       const {
         sessionId,
         messages: rawMessages,
-        fromId,
         toId,
+        compactedDeltaCount,
         parentRequest,
       } = event.payload;
       const messages = rawMessages.map(normalizeRustMessage);
       logger.info(
-        `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
+        `📦 Compact request received: session=${sessionId}, toId=${toId}, compactedDeltaCount=${compactedDeltaCount}`,
       );
 
       const settings = settingsRef.current;
@@ -84,16 +86,26 @@ export async function setupCompactRequestListener({
       const model = parentRequest?.model ?? settings.preferredModel.model;
       const providerConfig: AIServiceConfig =
         settings.serviceConfigs?.[provider] ?? {};
+      const runtimeConfig = buildServiceRuntimeConfig(settings, providerConfig);
+      const requestComposition = summarizeCompactionRequestSizes({
+        messages,
+        systemPrompt: parentRequest?.systemPrompt,
+        availableTools: parentRequest?.availableTools,
+      });
 
       try {
-        const runtimeConfig = buildServiceRuntimeConfig(
-          settings,
-          providerConfig,
-        );
         const service: AIContextCompactionService = AIServiceFactory.getService(
           provider,
           apiKey,
           providerConfig,
+        );
+        logger.info(
+          `🧪 Compact provider handoff ingredients: session=${sessionId}, provider=${provider}, model=${model}`,
+          {
+            ...requestComposition,
+            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
+            maxTokens: runtimeConfig.maxTokens,
+          },
         );
         const summary = await service.compact(messages, {
           modelName: model,
@@ -101,18 +113,54 @@ export async function setupCompactRequestListener({
           availableTools: parentRequest?.availableTools,
           config: runtimeConfig,
         });
-        await handleCompactResponse(sessionId, fromId, toId, summary);
-        setCompactedRangeForSession(sessionId, {
-          fromId,
+        const response = await handleCompactResponse(
+          sessionId,
           toId,
+          compactedDeltaCount,
           summary,
-        });
+        );
+        if (response.data?.retried) {
+          logger.info(
+            `🔁 Compact summary rejected by backend; retry requested: session=${sessionId}`,
+          );
+          return;
+        }
+        try {
+          const freshContext = await getAgentCompactContext(sessionId);
+          if (freshContext) {
+            setCompactedRangeForSession(sessionId, freshContext);
+          } else {
+            setCompactedRangeForSession(sessionId, {
+              toId,
+              condensedCount: compactedDeltaCount,
+              summary,
+            });
+          }
+        } catch (fetchError) {
+          logger.warn(
+            `Failed to hydrate compact context after live compaction: session=${sessionId}`,
+            fetchError,
+          );
+          setCompactedRangeForSession(sessionId, {
+            toId,
+            condensedCount: compactedDeltaCount,
+            summary,
+          });
+        }
         logger.info(`✅ Compact summary stored: session=${sessionId}`);
       } catch (error) {
         const compactRuntimeError = toAgentRuntimeError(error);
         logger.error(
           `Compact LLM call failed: session=${sessionId}`,
           compactRuntimeError,
+        );
+        logger.error(
+          `🧪 Compact failure request composition: session=${sessionId}, provider=${provider}, model=${model}`,
+          {
+            ...requestComposition,
+            reasoningEnabled: runtimeConfig.enableReasoning ?? false,
+            maxTokens: runtimeConfig.maxTokens,
+          },
         );
         await handleCompactError(sessionId, compactRuntimeError);
       }

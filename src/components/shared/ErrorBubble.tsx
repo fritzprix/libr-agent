@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Message } from '@/models/chat';
 import { BaseBubble } from '@/components/ui/BaseBubble';
@@ -27,6 +27,25 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
   ({ error, onRetry }) => {
     const { t } = useTranslation('common');
     const [retrying, setRetrying] = useState(false);
+    const lastLoggedErrorKeyRef = useRef<string | null>(null);
+
+    useEffect(() => {
+      if (!error) {
+        lastLoggedErrorKeyRef.current = null;
+        return;
+      }
+
+      const errorKey =
+        error.details?.timestamp ??
+        `${error.type}:${error.displayMessage}:${error.recoverable}`;
+
+      if (lastLoggedErrorKeyRef.current === errorKey) {
+        return;
+      }
+
+      lastLoggedErrorKeyRef.current = errorKey;
+      logger.info('Rendering error bubble', { error });
+    }, [error]);
 
     const handleRetry = async () => {
       if (!onRetry || !error?.recoverable) return;
@@ -90,7 +109,6 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
       }
     };
 
-    logger.info('error : ', { error });
     return (
       <BaseBubble
         title={t('errorBubble.title', 'Error')}

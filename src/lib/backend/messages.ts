@@ -95,7 +95,6 @@ export async function getMessagesBeforeCursor(
     'messages_get_messages_before',
     {
       sessionId,
-      beforeCreatedAt: cursor.createdAt,
       beforeRowId: cursor.rowId,
       limit,
     },

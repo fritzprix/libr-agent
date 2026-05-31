@@ -2,12 +2,14 @@ import { useState, useCallback } from 'react';
 import { createId } from '@paralleldrive/cuid2';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
+import { useSettings } from '@/hooks/use-settings';
 import type { Message, AttachmentReference } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 
 const logger = getLogger('useChatSubmit');
+const OBVIOUS_OVERSIZE_CHAR_MULTIPLIER = 2;
 
 interface UseChatSubmitProps {
   session: { id: string; threadId?: string } | null;
@@ -22,6 +24,7 @@ interface UseChatSubmitProps {
   refetchSessionFiles: ReturnType<
     typeof useAgentResourceAttachment
   >['refetchSessionFiles'];
+  hasPersistedMessages: boolean;
   onSubmitted?: () => void | Promise<void>;
 }
 
@@ -32,8 +35,10 @@ export function useChatSubmit({
   commitPendingFiles,
   clearPendingFiles,
   refetchSessionFiles,
+  hasPersistedMessages,
   onSubmitted,
 }: UseChatSubmitProps) {
+  const { value: settings } = useSettings();
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -41,7 +46,8 @@ export function useChatSubmit({
     async (e?: React.FormEvent<HTMLFormElement>) => {
       e?.preventDefault();
 
-      const hasInput = input.trim().length > 0 || pendingFiles.length > 0;
+      const messageText = input.trim();
+      const hasInput = messageText.length > 0 || pendingFiles.length > 0;
 
       if (!hasInput) {
         logger.info('Submit ignored: no input and no pending files');
@@ -49,6 +55,25 @@ export function useChatSubmit({
       }
       if (!session?.id) {
         logger.info('Submit ignored: no session');
+        return;
+      }
+
+      if (
+        !hasPersistedMessages &&
+        pendingFiles.length === 0 &&
+        messageText.length >
+          settings.maxInputContext * OBVIOUS_OVERSIZE_CHAR_MULTIPLIER
+      ) {
+        logger.warn('Rejected obvious oversize first input in ChatInput', {
+          sessionId: session.id,
+          inputLength: messageText.length,
+          maxInputContext: settings.maxInputContext,
+          obviousOversizeCharLimit:
+            settings.maxInputContext * OBVIOUS_OVERSIZE_CHAR_MULTIPLIER,
+        });
+        toast.error(
+          'First input is too large to start this session. Split it up or raise Max Input Context in Settings.',
+        );
         return;
       }
 
@@ -70,8 +95,6 @@ export function useChatSubmit({
           return;
         }
       }
-
-      let messageText = input.trim();
 
       // Split attachments: inline (image/audio) go straight into message.content;
       // all others stay as attachments for the text-hint preprocessor.
@@ -153,7 +176,9 @@ export function useChatSubmit({
       clearPendingFiles,
       submit,
       refetchSessionFiles,
+      hasPersistedMessages,
       onSubmitted,
+      settings.maxInputContext,
     ],
   );
 

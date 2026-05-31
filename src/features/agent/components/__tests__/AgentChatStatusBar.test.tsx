@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TokenUsage } from '@/lib/ai-service/types';
+import type { PreflightTokenMetrics } from '@/models/agent-ipc';
 import type { Message } from '@/models/chat';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { AgentChatStatusBar } from '../AgentChatStatusBar';
@@ -25,10 +26,16 @@ const viewportState = vi.hoisted(() => ({
 const metricsBadgeState = vi.hoisted(() => ({
   usage: null as TokenUsage | null,
   compact: false,
+  preflight: null as PreflightTokenMetrics | null,
 }));
 
 const tokenMetricsState = vi.hoisted(() => ({
   metrics: null as TokenUsage | null,
+}));
+
+const llmServiceState = vi.hoisted(() => ({
+  compacting: false,
+  awaitingCompact: false,
 }));
 
 type WorkflowStatus = 'idle' | 'busy' | 'paused' | 'error';
@@ -44,6 +51,16 @@ interface MockSession {
   };
 }
 
+interface MockAgentSessionContextValue {
+  session: MockSession;
+  executionMode: ExecutionMode;
+  preflightTokenMetrics: PreflightTokenMetrics | null;
+  yoloModeEnabled: boolean;
+  unsafeModeEnabled: boolean;
+  setExecutionMode: typeof mocks.setExecutionMode;
+  updateSessionConfig: typeof mocks.updateSessionConfig;
+}
+
 const mockSession: MockSession = {
   id: 'session-123',
   model: 'gpt-4.1',
@@ -55,9 +72,10 @@ const mockSession: MockSession = {
   },
 };
 
-const mockAgentSession = {
+const mockAgentSession: MockAgentSessionContextValue = {
   session: mockSession,
   executionMode: 'normal' as ExecutionMode,
+  preflightTokenMetrics: null,
   yoloModeEnabled: false,
   unsafeModeEnabled: false,
   setExecutionMode: mocks.setExecutionMode,
@@ -83,8 +101,8 @@ vi.mock('@/context/AgentChatContext', () => ({
 
 vi.mock('@/context/LLMServiceContext', () => ({
   useLLMService: () => ({
-    isCompacting: vi.fn(() => false),
-    isAwaitingCompact: vi.fn(() => false),
+    isCompacting: vi.fn(() => llmServiceState.compacting),
+    isAwaitingCompact: vi.fn(() => llmServiceState.awaitingCompact),
   }),
 }));
 
@@ -156,12 +174,15 @@ vi.mock('../TokenMetricsBadge', () => ({
   TokenMetricsBadge: ({
     usage,
     compact,
+    preflight,
   }: {
     usage: TokenUsage;
     compact?: boolean;
+    preflight?: PreflightTokenMetrics | null;
   }) => {
     metricsBadgeState.usage = usage;
     metricsBadgeState.compact = compact ?? false;
+    metricsBadgeState.preflight = preflight ?? null;
     return (
       <div data-testid="metrics-badge" data-compact={compact ? 'true' : 'false'}>
         {usage.promptTokens} {usage.completionTokens}
@@ -219,9 +240,13 @@ describe('AgentChatStatusBar', () => {
     viewportState.isMobile = false;
     metricsBadgeState.usage = null;
     metricsBadgeState.compact = false;
+    metricsBadgeState.preflight = null;
+    llmServiceState.compacting = false;
+    llmServiceState.awaitingCompact = false;
     tokenMetricsState.metrics = null;
     mockAgentSession.session = { ...mockSession };
     mockAgentSession.executionMode = 'normal';
+    mockAgentSession.preflightTokenMetrics = null;
     mockAgentSession.yoloModeEnabled = false;
     mockAgentSession.unsafeModeEnabled = false;
     mockAgentChat.messages = [];
@@ -360,5 +385,45 @@ describe('AgentChatStatusBar', () => {
 
     expect(screen.getByTestId('metrics-badge')).toHaveTextContent('120');
     expect(screen.getByTestId('metrics-badge')).toHaveTextContent('45');
+  });
+
+  it('reuses the last stable preflight metrics while compaction is in progress', () => {
+    const stablePreflight: PreflightTokenMetrics = {
+      conservativePromptTokens: 21035,
+      promptAnchoredTotalTokens: 21940,
+      safeInputTokenLimit: 65536,
+      measuredOutputTokensReserve: 4096,
+      effectiveInputBudget: 61440,
+      totalBudgetTokens: 25131,
+      systemPromptTokens: 2048,
+      toolsTokens: 1024,
+      selectedMessageCount: 44,
+      compactSummaryInjected: false,
+      preservedCalibrationRatio: 0.93,
+    };
+    const overflowPreflight: PreflightTokenMetrics = {
+      ...stablePreflight,
+      conservativePromptTokens: 67990,
+      promptAnchoredTotalTokens: 68894,
+      compactSummaryInjected: true,
+    };
+
+    mockAgentSession.preflightTokenMetrics = stablePreflight;
+    tokenMetricsState.metrics = {
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      details: {},
+    };
+
+    const { rerender } = render(<AgentChatStatusBar />);
+
+    expect(metricsBadgeState.preflight?.conservativePromptTokens).toBe(21035);
+
+    llmServiceState.awaitingCompact = true;
+    mockAgentSession.preflightTokenMetrics = overflowPreflight;
+    rerender(<AgentChatStatusBar />);
+
+    expect(metricsBadgeState.preflight?.conservativePromptTokens).toBe(21035);
   });
 });

@@ -269,10 +269,13 @@ export function ImageContentRenderer({
         </Tooltip>
       </div>
 
+      {/* ⚡ Bolt: Added lazy loading and async decoding to prevent blocking main thread and eager loading offscreen images */}
       <img
         key={itemKey}
         src={imageSrc}
         alt={t('agent.mediaRenderer.imageAlt')}
+        loading="lazy"
+        decoding="async"
         className="h-auto max-w-full rounded-lg border border-border/10 shadow-sm"
       />
     </div>

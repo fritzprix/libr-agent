@@ -66,6 +66,8 @@ export const MCPServerRegistryProvider = ({
 
   const { value: settings } = useSettings();
 
+  const [prevAgentHubUrl, setPrevAgentHubUrl] = useState(settings.agentHubUrl);
+
   // Use service layer
   const mcpServerService = useMemo(() => {
     return new McpServerService(settings.agentHubUrl);
@@ -77,20 +79,22 @@ export const MCPServerRegistryProvider = ({
   const refreshRequestRef = useRef<Promise<void> | null>(null);
   const serviceKeyRef = useRef(settings.agentHubUrl);
 
-  useEffect(() => {
-    allServersRef.current = allServers;
-  }, [allServers]);
-
-  useEffect(() => {
-    serviceKeyRef.current = settings.agentHubUrl;
-    allServersRef.current = [];
-    hasLoadedRef.current = false;
-    refreshRequestRef.current = null;
+  if (settings.agentHubUrl !== prevAgentHubUrl) {
+    setPrevAgentHubUrl(settings.agentHubUrl);
     setAllServers([]);
     setLoaded(false);
     setLoading(false);
     setError(undefined);
-  }, [settings.agentHubUrl]);
+
+    // Synchronously reset refs during render to prevent stale closure reads in callbacks
+    serviceKeyRef.current = settings.agentHubUrl;
+    hasLoadedRef.current = false;
+    refreshRequestRef.current = null;
+  }
+
+  useEffect(() => {
+    allServersRef.current = allServers;
+  }, [allServers]);
 
   /**
    * Loads all MCP servers from the database

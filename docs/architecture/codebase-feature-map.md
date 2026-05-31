@@ -14,7 +14,7 @@ The core Think-Act-Observe loop managed entirely in Rust.
 | **AgentSessionManager** | `src-tauri/src/agent/session_manager.rs` (28 KB) | Lifecycle: create, recover, delete sessions. Concurrency gate, session bus, fan-out management       |
 | **Workflow Loop**       | `src-tauri/src/agent/workflow/`                  | Think → Act (tool call) → Observe → Next iteration. Handles LLM response, tool result, errors        |
 | **LLM Interaction**     | `src-tauri/src/agent/llm/`                       | Builds messages from conversation history, sends to model, handles streaming/non-streaming responses |
-| **Compact Recovery**    | `src-tauri/src/agent/compact_recovery.rs`        | Context compaction: when conversation grows too large, generates summary and prunes history          |
+| **Compact Recovery**    | `src-tauri/src/agent/compact_recovery.rs`        | Recovery/error handling for compaction-related workflow states; normal compaction control lives under `agent/llm/completion/` |
 | **Tool Execution**      | `src-tauri/src/agent/tools.rs` (28 KB)           | Dispatches tool calls to MCPServiceProxy, handles result formatting                                  |
 | **Tool Approvals**      | `src-tauri/src/agent/tool_approvals.rs`          | Human-in-the-loop approval gates for sensitive operations                                            |
 | **Concurrency Control** | `src-tauri/src/agent/concurrency.rs` (10 KB)     | Global concurrency gate, limits parallel agent sessions                                              |
@@ -103,7 +103,8 @@ Full Model Context Protocol support — both built-in and external servers.
 | **Message Service**    | `src-tauri/src/services/message_service.rs` (12 KB)   | Paginated message retrieval, search, upsert                |
 | **Message Entity**     | `src-tauri/src/entity/message.rs`                     | Conversation messages with role/content                    |
 | **Message Index Meta** | `src-tauri/src/entity/message_index_meta.rs`          | Search index metadata                                      |
-| **Compact Context**    | `src-tauri/src/entity/compact_context.rs`             | Stores context summaries for recovery                      |
+| **Compact Context**    | `src-tauri/src/entity/compact_context.rs`             | Stores persisted compact summaries anchored by `to_id`     |
+| **Prompt Checkpoints** | `src-tauri/src/entity/message.rs`                     | Stores per-message `prompt_tokens` checkpoints used for preflight compaction anchoring |
 | **Session Isolation**  | `src-tauri/src/session_isolation/`                    | Per-session workspace directories, state isolation         |
 | **Session Cleanup**    | `src-tauri/src/services/session_cleanup_service.rs`   | Background cleanup of stale sessions                       |
 | **Session Directory**  | `src-tauri/src/services/session_directory_service.rs` | Per-session file directory management                      |
