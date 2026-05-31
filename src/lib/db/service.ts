@@ -18,6 +18,7 @@ import * as assistantsBackend from '@/lib/backend/assistants';
 import * as mcpBackent from '@/lib/backend/mcp-server-config';
 import * as settingsBackend from '@/lib/backend/settings';
 import * as sessionsBackend from '@/lib/backend/session-crud';
+import { clearAllSessions as backendClearAllSessions } from '@/lib/backend/sessions';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('DBService');
@@ -146,10 +147,7 @@ export const dbUtils = {
     return all.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   },
   clearAllSessions: async (): Promise<void> => {
-    const all = await sessionsBackend.listSessions();
-    for (const s of all) {
-      await sessionsBackend.deleteSession(s.id);
-    }
+    await backendClearAllSessions();
   },
   clearSessionAndWorkspace: async (sessionId: string): Promise<void> => {
     // Backend deleteSession handles workspace removal if implemented in backend command
