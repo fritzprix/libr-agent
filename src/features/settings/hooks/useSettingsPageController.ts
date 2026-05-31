@@ -148,12 +148,14 @@ export function useSettingsPageController() {
     setIsResetting(true);
     try {
       try {
+        // ⚡ Bolt: Clear playbooks sequentially first because it depends on listing assistants,
+        // then clear the remaining independent databases concurrently to avoid race conditions.
+        await dbUtils.clearAllPlaybooks();
         await Promise.all([
           dbUtils.clearAllObjects(),
           dbUtils.clearAllSessions(),
           dbUtils.clearAllAssistants(),
           dbUtils.clearAllMCPServers(),
-          dbUtils.clearAllPlaybooks(),
         ]);
       } catch (error) {
         logger.error('Failed to clear frontend DB during factory reset', error);

@@ -64,7 +64,9 @@ export const dbUtils = {
   clearAllAssistants: async (): Promise<void> => {
     const all = await assistantsBackend.listAssistants();
     await Promise.all(
-      all.filter((a) => a.id).map((a) => assistantsBackend.deleteAssistant(a.id!))
+      all
+        .filter((a) => a.id)
+        .map((a) => assistantsBackend.deleteAssistant(a.id!)),
     );
   },
   /**
@@ -111,9 +113,7 @@ export const dbUtils = {
   },
   clearAllMCPServers: async (): Promise<void> => {
     const all = await mcpBackent.listMCPServers();
-    await Promise.all(
-      all.map((s) => mcpBackent.deleteMCPServer(s.name))
-    );
+    await Promise.all(all.map((s) => mcpBackent.deleteMCPServer(s.name)));
   },
 
   // --- Objects (Settings) ---
@@ -126,9 +126,7 @@ export const dbUtils = {
   },
   clearAllObjects: async (): Promise<void> => {
     const all = await settingsBackend.listSettings();
-    await Promise.all(
-      all.map((o) => settingsBackend.deleteSetting(o.key))
-    );
+    await Promise.all(all.map((o) => settingsBackend.deleteSetting(o.key)));
   },
   bulkUpsertObjects: async (objects: DatabaseObject[]): Promise<void> => {
     await settingsBackend.upsertSettings(objects);
@@ -142,9 +140,7 @@ export const dbUtils = {
   },
   clearAllSessions: async (): Promise<void> => {
     const all = await sessionsBackend.listSessions();
-    await Promise.all(
-      all.map((s) => sessionsBackend.deleteSession(s.id))
-    );
+    await Promise.all(all.map((s) => sessionsBackend.deleteSession(s.id)));
   },
   clearSessionAndWorkspace: async (sessionId: string): Promise<void> => {
     // Backend deleteSession handles workspace removal if implemented in backend command
@@ -199,15 +195,9 @@ export const dbUtils = {
     );
   },
   deleteAllMessagesForSession: async (sessionId: string): Promise<number> => {
-    // Not strictly supported to "delete messages only" without deleting session in backend usually?
-    // messages_commands.rs doesn't have `delete_messages_by_session`.
-    // It has `delete_message` (single).
-    // Wait, legacy DB separated messages from session.
-    // Backend stores messages in SQLite.
-    // If we want to clear conversation history but keep session settings?
-    // I need to list messages and delete them.
+    // ⚡ Bolt: Utilize existing O(1) bulk backend delete instead of flooding IPC with O(N) concurrent deletes.
     const msgs = await dbUtils.getAllMessagesForSession(sessionId);
-    await Promise.all(msgs.map((m) => messagesBackend.deleteMessage(m.id)));
+    await messagesBackend.deleteAllMessagesForSession(sessionId);
     return msgs.length;
   },
   clearAllMessages: async (): Promise<void> => {
@@ -231,9 +221,9 @@ export const dbUtils = {
         await Promise.all(
           all
             .filter((p) => p.id)
-            .map((p) => playbooksBackend.deletePlaybook(p.id!, assistant.id))
+            .map((p) => playbooksBackend.deletePlaybook(p.id!, assistant.id)),
         );
-      })
+      }),
     );
   },
 };
