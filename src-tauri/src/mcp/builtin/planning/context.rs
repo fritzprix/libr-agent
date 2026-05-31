@@ -1,3 +1,4 @@
+use super::errors::planning_follow_up_read_notice;
 use crate::mcp::types::{ContextVolatility, ServiceContext};
 use crate::repositories::PlanningRepository;
 use crate::state::get_planning_repository;
@@ -22,22 +23,21 @@ pub async fn get_service_context(
 ) -> ServiceContext {
     let repo = get_planning_repository();
 
-    // 1. Fetch Active Goal
-    let goal_model = repo.get_active_goal(session_id).await.unwrap_or_else(|e| {
-        log::error!("Failed to fetch goal: {}", e);
-        None
-    });
+    let (goal, goal_notice) = match repo.get_active_goal(session_id).await {
+        Ok(goal_model) => (goal_model.map(|g| g.goal_text), None),
+        Err(error) => (
+            None,
+            Some(planning_follow_up_read_notice("current goal state", &error)),
+        ),
+    };
 
-    let goal = goal_model.map(|g| g.goal_text);
-
-    // 2. Fetch Todos (include_checked controls whether completed todos are returned)
-    let todos = repo
-        .list_todos(session_id, include_checked)
-        .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to fetch todos: {}", e);
-            Vec::new()
-        });
+    let (todos, todo_notice) = match repo.list_todos(session_id, include_checked).await {
+        Ok(todos) => (todos, None),
+        Err(error) => (
+            Vec::new(),
+            Some(planning_follow_up_read_notice("current todo list", &error)),
+        ),
+    };
 
     // Build flat Todo list for structured state
     // We keep the subtasks field empty for API compatibility with frontend
@@ -61,7 +61,10 @@ pub async fn get_service_context(
 
     // Goal Section
     parts.push("### Stable Context".to_string());
-    if let Some(g) = &goal {
+    if let Some(notice) = &goal_notice {
+        parts.push("- Current Goal: unavailable".to_string());
+        parts.push(format!("- {}", notice.hint));
+    } else if let Some(g) = &goal {
         parts.push(format!("- Current Goal: \"{}\"", g));
     } else {
         parts.push("- No goal set".to_string());
@@ -70,7 +73,10 @@ pub async fn get_service_context(
     // Todos Section
     parts.push(String::new());
     parts.push("### Live State".to_string());
-    if !todos.is_empty() {
+    if let Some(notice) = &todo_notice {
+        parts.push("- Tasks: unavailable".to_string());
+        parts.push(format!("- {}", notice.hint));
+    } else if !todos.is_empty() {
         let (checked_todos, unchecked_todos): (Vec<_>, Vec<_>) =
             todos.iter().enumerate().partition(|(_, t)| t.is_checked);
 

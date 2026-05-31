@@ -20,7 +20,7 @@ use tokio::sync::RwLock;
 mod approvals;
 #[path = "session_manager/channel.rs"]
 mod channel;
-#[path = "session_manager/compact.rs"]
+#[path = "session_manager/compact/mod.rs"]
 mod compact;
 #[path = "session_manager/execution_mode.rs"]
 pub mod execution_mode;
