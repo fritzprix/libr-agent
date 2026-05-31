@@ -11,6 +11,7 @@ import type { Message } from '@/models/chat';
 
 export const mockMarkSessionViewed = vi.fn();
 export const mockClearPendingApproval = vi.fn();
+export const mockRenameSession = vi.fn();
 export const mockRefreshCompactedRange = vi.fn();
 export const listenMock = listen as ReturnType<typeof vi.fn>;
 export const safeInvokeMock = safeInvoke as ReturnType<typeof vi.fn>;
@@ -44,6 +45,7 @@ vi.mock('../AgentSessionListContext', () => ({
   useAgentSessionListActions: () => ({
     markSessionViewed: mockMarkSessionViewed,
     clearPendingApproval: mockClearPendingApproval,
+    renameSession: mockRenameSession,
   }),
 }));
 

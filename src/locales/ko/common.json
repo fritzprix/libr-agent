@@ -149,6 +149,7 @@
     "seeAllSessions": "모든 세션 보기 →",
     "settings": "설정",
     "history": "기록",
+    "bookmarked": "북마크",
     "scheduledTasks": "예약된 작업",
     "session": "세션",
     "knowledge": "지식",
@@ -172,6 +173,15 @@
     "clearLineageFocus": "리니지 집중 해제",
     "noSessionsMatching": "\"{{query}}\"와 일치하는 세션이 없습니다",
     "clearSearch": "검색 지우기",
+    "bookmarkedSection": {
+      "heading": "북마크한 세션",
+      "description": "고정한 세션을 여기서 바로 열고, 전체 기록은 아래에서 계속 탐색할 수 있습니다.",
+      "resumeAria": "북마크한 세션 {{name}} 열기",
+      "open": "세션 열기",
+      "lastUsed": "{{time}} 사용",
+      "defaultMeta": "빠르게 다시 열 수 있도록 저장됨",
+      "more": "기록에 {{count}}개 더 있음"
+    },
     "toasts": {
       "deleted": "세션이 삭제되었습니다",
       "deleteFailed": "세션 삭제에 실패했습니다"
@@ -221,12 +231,18 @@
       "justNow": "방금 전",
       "subagentsCount_one": "+{{count}}개의 하위 에이전트",
       "subagentsCount_other": "+{{count}}개의 하위 에이전트",
-      "subagentsKept": "하위 에이전트 유지됨"
+      "subagentsKept": "하위 에이전트 유지됨",
+      "bookmarkedBadge": "북마크됨"
     },
     "actions": {
       "view": "보기",
       "continue": "계속",
       "resume": "재개",
+      "bookmark": "북마크",
+      "bookmarked": "북마크됨",
+      "bookmarkAria": "세션 북마크",
+      "unbookmark": "북마크 해제",
+      "unbookmarkAria": "북마크 해제",
       "viewAria": "세션 {{name}} 보기",
       "continueAria": "세션 {{name}} 계속",
       "resumeAria": "세션 {{name}} 재개",
@@ -840,7 +856,17 @@
       "toggleWorkspaceAria": "워크스페이스 파일 패널 전환",
       "toggleWorkspaceTooltip": "워크스페이스 파일 패널 전환",
       "togglePlanningAria": "AI 계획 패널 전환",
-      "togglePlanningTooltip": "AI 계획 패널 전환"
+      "togglePlanningTooltip": "AI 계획 패널 전환",
+      "defaultAssistant": "에이전트",
+      "untitledSession": "제목 없는 세션",
+      "sessionLabel": "세션",
+      "renameAria": "세션 이름 변경",
+      "renameInputAria": "세션 제목 편집",
+      "renameSaveAria": "세션 제목 저장",
+      "renameCancelAria": "세션 제목 편집 취소",
+      "renameSuccess": "세션 제목이 업데이트되었습니다",
+      "renameError": "세션 제목 업데이트에 실패했습니다",
+      "renameEmptyError": "세션 제목은 비워 둘 수 없습니다"
     },
     "workspace": {
       "loadError": "디렉토리 로드에 실패했습니다",

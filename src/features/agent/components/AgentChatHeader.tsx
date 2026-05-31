@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import AgentSessionHeader from './AgentSessionHeader';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import {
+  useAgentSessionActions,
+  useAgentSessionState,
+} from '@/context/AgentSessionContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
 import { useAgentChat } from '@/context/AgentChatContext';
@@ -27,6 +30,7 @@ export function AgentChatHeader({
 }: AgentChatHeaderProps) {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
+  const { renameSession } = useAgentSessionActions();
   const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
   const { messages } = useAgentChat();
@@ -48,7 +52,7 @@ export function AgentChatHeader({
   };
 
   return (
-    <AgentSessionHeader>
+    <AgentSessionHeader onRenameSession={renameSession}>
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center">
           {children}

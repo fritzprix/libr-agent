@@ -86,4 +86,24 @@ describe('SessionCard', () => {
     // const visibleTooltip = tooltipElements.find(el => el.checkVisibility?.());
     // expect(visibleTooltip).toBeInTheDocument();
   });
+
+  it('shows visible bookmark state affordances for bookmarked sessions', () => {
+    const onResume = vi.fn();
+    const onDelete = vi.fn();
+    const onToggleBookmark = vi.fn();
+
+    render(
+      <SessionCard
+        session={{ ...mockSession, isBookmarked: true }}
+        onResume={onResume}
+        onDelete={onDelete}
+        onToggleBookmark={onToggleBookmark}
+      />,
+    );
+
+    expect(screen.getAllByText('Bookmarked').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove bookmark/i }));
+    expect(onToggleBookmark).toHaveBeenCalledWith('session-123');
+  });
 });

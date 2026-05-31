@@ -217,6 +217,9 @@ pub trait SessionRepository: Send + Sync {
         agent_config: Option<String>,
     ) -> Result<(), DbError>;
 
+    /// Update the user-visible session title without affecting activity ordering.
+    async fn update_name(&self, session_id: &str, name: String) -> Result<(), DbError>;
+
     /// Get all sessions
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError>;
 
@@ -418,6 +421,15 @@ impl SessionRepository for SqliteSessionRepository {
         active_model.update(&self.db).await?;
 
         Ok(())
+    }
+
+    async fn update_name(&self, session_id: &str, name: String) -> Result<(), DbError> {
+        self.apply_partial_update(session::ActiveModel {
+            id: Set(session_id.to_string()),
+            name: Set(Some(name)),
+            ..Default::default()
+        })
+        .await
     }
 
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {

@@ -105,6 +105,11 @@ interface AgentSessionListActionsContextValue {
   toggleBookmark: (sessionId: string) => Promise<void>;
 
   /**
+   * Update the user-visible title on a session.
+   */
+  renameSession: (sessionId: string, name: string) => Promise<void>;
+
+  /**
    * Persist that the user viewed a session and clear unread state locally.
    */
   markSessionViewed: (sessionId: string, viewedAt?: Date) => Promise<void>;
@@ -556,6 +561,58 @@ export function AgentSessionListProvider({
     [applySessionUpdate, mutateSessions, sessions],
   );
 
+  const renameSession = useCallback(
+    async (sessionId: string, name: string) => {
+      const normalizedName = name.trim();
+      if (!normalizedName) {
+        throw new Error('Session title cannot be empty');
+      }
+
+      const currentSession =
+        sessionsRef.current.find((session) => session.id === sessionId) ??
+        notificationSessionsRef.current.find(
+          (session) => session.id === sessionId,
+        );
+      const previousName = currentSession?.name;
+
+      if (previousName === normalizedName) {
+        return;
+      }
+
+      mutateSessions(
+        (previousSessions) =>
+          previousSessions.map((session) =>
+            session.id === sessionId
+              ? { ...session, name: normalizedName }
+              : session,
+          ),
+        {
+          notificationUpdater: (previousNotifications) =>
+            previousNotifications.map((session) =>
+              session.id === sessionId
+                ? { ...session, name: normalizedName }
+                : session,
+            ),
+        },
+      );
+
+      try {
+        await safeInvoke<void>('agent_update_session_name', {
+          sessionId,
+          name: normalizedName,
+        });
+      } catch (err) {
+        logger.error('Failed to rename session', err);
+        applySessionUpdate(sessionId, (session) => ({
+          ...session,
+          name: previousName,
+        }));
+        throw err;
+      }
+    },
+    [applySessionUpdate, mutateSessions],
+  );
+
   const markSessionViewed = useCallback(
     async (sessionId: string, viewedAt = new Date()) => {
       await safeInvoke<void>('agent_mark_session_viewed', {
@@ -659,6 +716,7 @@ export function AgentSessionListProvider({
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,
+      renameSession,
       markSessionViewed,
       clearPendingApproval,
     }),
@@ -669,6 +727,7 @@ export function AgentSessionListProvider({
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,
+      renameSession,
       markSessionViewed,
       clearPendingApproval,
     ],

@@ -148,6 +148,7 @@
     "seeAllSessions": "すべてのセッションを見る →",
     "settings": "設定",
     "history": "履歴",
+    "bookmarked": "ブックマーク",
     "scheduledTasks": "スケジュール済みタスク",
     "session": "セッション",
     "knowledge": "知識",
@@ -171,6 +172,15 @@
     "clearLineageFocus": "系統のフォーカスをクリア",
     "noSessionsMatching": "\"{{query}}\" に一致するセッションは見つかりませんでした",
     "clearSearch": "検索をクリア",
+    "bookmarkedSection": {
+      "heading": "ブックマークしたセッション",
+      "description": "固定したセッションへここからすぐ戻れます。完全な履歴は下にそのまま表示されます。",
+      "resumeAria": "ブックマークしたセッション {{name}} を開く",
+      "open": "セッションを開く",
+      "lastUsed": "{{time}} に使用",
+      "defaultMeta": "すぐ戻れるよう保存済み",
+      "more": "履歴にさらに {{count}} 件"
+    },
     "toasts": {
       "deleted": "セッションを削除しました",
       "deleteFailed": "セッションの削除に失敗しました"
@@ -212,6 +222,7 @@
       "subagentsCount_one": "+{{count}} 個のサブエージェント",
       "subagentsCount_other": "+{{count}} 個のサブエージェント",
       "subagentsKept": "保持されたサブエージェント",
+      "bookmarkedBadge": "ブックマーク済み",
       "descendantBusy": "実行中: {{count}}",
       "descendantError": "エラー: {{count}}",
       "descendantIdle": "待機中: {{count}}",
@@ -222,6 +233,11 @@
       "view": "表示",
       "continue": "続行",
       "resume": "再開",
+      "bookmark": "ブックマーク",
+      "bookmarked": "ブックマーク済み",
+      "bookmarkAria": "セッションをブックマーク",
+      "unbookmark": "ブックマークを解除",
+      "unbookmarkAria": "ブックマークを解除",
       "viewAria": "セッション {{name}} を表示",
       "continueAria": "セッション {{name}} を続行",
       "resumeAria": "セッション {{name}} を再開",
@@ -805,7 +821,17 @@
       "toggleWorkspaceAria": "ワークスペースファイルパネルを切り替え",
       "toggleWorkspaceTooltip": "ワークスペースファイルパネルを切り替え",
       "togglePlanningAria": "AIプランニングパネルを切り替え",
-      "togglePlanningTooltip": "AIプランニングパネルを切り替え"
+      "togglePlanningTooltip": "AIプランニングパネルを切り替え",
+      "defaultAssistant": "エージェント",
+      "untitledSession": "無題のセッション",
+      "sessionLabel": "セッション",
+      "renameAria": "セッション名を変更",
+      "renameInputAria": "セッションタイトルを編集",
+      "renameSaveAria": "セッションタイトルを保存",
+      "renameCancelAria": "セッションタイトルの編集をキャンセル",
+      "renameSuccess": "セッションタイトルを更新しました",
+      "renameError": "セッションタイトルの更新に失敗しました",
+      "renameEmptyError": "セッションタイトルは空にできません"
     },
     "workspace": {
       "loadError": "ディレクトリの読み込みに失敗しました",

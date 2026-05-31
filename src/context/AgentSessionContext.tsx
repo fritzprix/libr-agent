@@ -28,7 +28,7 @@ export function AgentSessionProvider({
   children,
   sessionId,
 }: AgentSessionProviderProps) {
-  const { markSessionViewed, clearPendingApproval } =
+  const { markSessionViewed, clearPendingApproval, renameSession } =
     useAgentSessionListActions();
   const { refreshCompactedRange } = useLLMService();
   const stateProps = useAgentSessionStateLogic();
@@ -59,6 +59,7 @@ export function AgentSessionProvider({
   const customActions = useAgentSessionActionsLogic(sessionId, stateProps, {
     acknowledgeSessionAttention,
     clearPendingApproval,
+    renameSessionInList: renameSession,
   });
 
   const stateValue: AgentSessionStateContextValue = useMemo(

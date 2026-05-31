@@ -149,6 +149,7 @@
     "seeAllSessions": "See all sessions →",
     "settings": "Settings",
     "history": "History",
+    "bookmarked": "Bookmarked",
     "scheduledTasks": "Scheduled Tasks",
     "session": "Session",
     "knowledge": "Knowledge",
@@ -172,6 +173,15 @@
     "clearLineageFocus": "Clear lineage focus",
     "noSessionsMatching": "No sessions found matching \"{{query}}\"",
     "clearSearch": "Clear search",
+    "bookmarkedSection": {
+      "heading": "Bookmarked Sessions",
+      "description": "Pinned sessions stay here for quick access while the full history remains below.",
+      "resumeAria": "Open bookmarked session {{name}}",
+      "open": "Open session",
+      "lastUsed": "Used {{time}}",
+      "defaultMeta": "Saved for quick access",
+      "more": "+{{count}} more in history"
+    },
     "toasts": {
       "deleted": "Session deleted",
       "deleteFailed": "Failed to delete session"
@@ -221,12 +231,18 @@
       "justNow": "just now",
       "subagentsCount_one": "+{{count}} subagent",
       "subagentsCount_other": "+{{count}} subagents",
-      "subagentsKept": "Subagents kept"
+      "subagentsKept": "Subagents kept",
+      "bookmarkedBadge": "Bookmarked"
     },
     "actions": {
       "view": "View",
       "continue": "Continue",
       "resume": "Resume",
+      "bookmark": "Bookmark",
+      "bookmarked": "Bookmarked",
+      "bookmarkAria": "Bookmark session",
+      "unbookmark": "Remove bookmark",
+      "unbookmarkAria": "Remove bookmark",
       "viewAria": "View session {{name}}",
       "continueAria": "Continue session {{name}}",
       "resumeAria": "Resume session {{name}}",
@@ -839,7 +855,17 @@
       "toggleWorkspaceAria": "Toggle Workspace Files Panel",
       "toggleWorkspaceTooltip": "Toggle Workspace Files Panel",
       "togglePlanningAria": "Toggle AI Planning Panel",
-      "togglePlanningTooltip": "Toggle AI Planning Panel"
+      "togglePlanningTooltip": "Toggle AI Planning Panel",
+      "defaultAssistant": "Agent",
+      "untitledSession": "Untitled Session",
+      "sessionLabel": "Session",
+      "renameAria": "Rename session",
+      "renameInputAria": "Edit session title",
+      "renameSaveAria": "Save session title",
+      "renameCancelAria": "Cancel editing session title",
+      "renameSuccess": "Session title updated",
+      "renameError": "Failed to update session title",
+      "renameEmptyError": "Session title cannot be empty"
     },
     "workspace": {
       "loadError": "Failed to load directory",

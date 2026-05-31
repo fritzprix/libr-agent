@@ -149,6 +149,7 @@
     "seeAllSessions": "查看全部会话 →",
     "settings": "设置",
     "history": "历史记录",
+    "bookmarked": "已收藏",
     "scheduledTasks": "计划任务",
     "session": "会话",
     "knowledge": "知识",
@@ -172,6 +173,15 @@
     "clearLineageFocus": "清除血统聚焦",
     "noSessionsMatching": "未找到匹配 \"{{query}}\" 的会话",
     "clearSearch": "清除搜索",
+    "bookmarkedSection": {
+      "heading": "已收藏的会话",
+      "description": "置顶的会话会显示在这里，方便快速返回；完整历史记录仍保留在下方。",
+      "resumeAria": "打开已收藏的会话 {{name}}",
+      "open": "打开会话",
+      "lastUsed": "最近使用于 {{time}}",
+      "defaultMeta": "已保存，方便快速返回",
+      "more": "历史记录中还有 {{count}} 个"
+    },
     "toasts": {
       "deleted": "会话已删除",
       "deleteFailed": "删除会话失败"
@@ -221,12 +231,18 @@
       "justNow": "刚刚",
       "subagentsCount_one": "+{{count}} 个子代理",
       "subagentsCount_other": "+{{count}} 个子代理",
-      "subagentsKept": "保留子代理"
+      "subagentsKept": "保留子代理",
+      "bookmarkedBadge": "已收藏"
     },
     "actions": {
       "view": "查看",
       "continue": "继续",
       "resume": "恢复",
+      "bookmark": "收藏",
+      "bookmarked": "已收藏",
+      "bookmarkAria": "收藏会话",
+      "unbookmark": "取消收藏",
+      "unbookmarkAria": "取消收藏",
       "viewAria": "查看会话 {{name}}",
       "continueAria": "继续会话 {{name}}",
       "resumeAria": "恢复会话 {{name}}",
@@ -831,7 +847,17 @@
       "toggleWorkspaceAria": "切换工作区文件面板",
       "toggleWorkspaceTooltip": "切换工作区文件面板",
       "togglePlanningAria": "切换 AI 计划面板",
-      "togglePlanningTooltip": "切换 AI 计划面板"
+      "togglePlanningTooltip": "切换 AI 计划面板",
+      "defaultAssistant": "智能体",
+      "untitledSession": "未命名会话",
+      "sessionLabel": "会话",
+      "renameAria": "重命名会话",
+      "renameInputAria": "编辑会话标题",
+      "renameSaveAria": "保存会话标题",
+      "renameCancelAria": "取消编辑会话标题",
+      "renameSuccess": "会话标题已更新",
+      "renameError": "更新会话标题失败",
+      "renameEmptyError": "会话标题不能为空"
     },
     "workspace": {
       "loadError": "加载目录失败",

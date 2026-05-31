@@ -232,6 +232,29 @@ async fn toggle_bookmark_persists_boolean_value() {
 }
 
 #[tokio::test]
+async fn update_name_persists_title_without_touching_updated_at() {
+    let repo = setup_repo().await;
+    let session = build_session("test-rename", 42_000);
+
+    repo.upsert_session(&session)
+        .await
+        .expect("session should insert");
+
+    repo.update_name("test-rename", "Renamed Session".to_string())
+        .await
+        .expect("title update should persist");
+
+    let retrieved = repo
+        .get_session("test-rename")
+        .await
+        .expect("lookup should succeed")
+        .expect("session should exist");
+
+    assert_eq!(retrieved.name.as_deref(), Some("Renamed Session"));
+    assert_eq!(retrieved.updated_at, session.updated_at);
+}
+
+#[tokio::test]
 async fn get_session_coalesces_legacy_execution_flags() {
     let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteSessionRepository::new(db.clone());
