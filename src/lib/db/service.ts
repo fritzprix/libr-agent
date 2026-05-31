@@ -64,9 +64,11 @@ export const dbUtils = {
    */
   clearAllAssistants: async (): Promise<void> => {
     const all = await assistantsBackend.listAssistants();
-    for (const a of all) {
-      if (a.id) await assistantsBackend.deleteAssistant(a.id);
-    }
+    await Promise.all(
+      all
+        .filter((a) => a.id)
+        .map((a) => assistantsBackend.deleteAssistant(a.id!)),
+    );
   },
   /**
    * Inserts or updates multiple assistants.
@@ -112,14 +114,7 @@ export const dbUtils = {
   },
   clearAllMCPServers: async (): Promise<void> => {
     const all = await mcpBackent.listMCPServers();
-    for (const s of all) {
-      // Check constrained deletion?
-      // If we are clearing ALL, we probably don't care about assistant refs if they are also cleared.
-      // But this function might be called independently.
-      // Force delete or safe delete?
-      // Legacy clearAllMCPServers just cleared table.
-      await mcpBackent.deleteMCPServer(s.name);
-    }
+    await Promise.all(all.map((s) => mcpBackent.deleteMCPServer(s.name)));
   },
 
   // --- Objects (Settings) ---
@@ -132,9 +127,7 @@ export const dbUtils = {
   },
   clearAllObjects: async (): Promise<void> => {
     const all = await settingsBackend.listSettings();
-    for (const o of all) {
-      await settingsBackend.deleteSetting(o.key);
-    }
+    await Promise.all(all.map((o) => settingsBackend.deleteSetting(o.key)));
   },
   bulkUpsertObjects: async (objects: DatabaseObject[]): Promise<void> => {
     await settingsBackend.upsertSettings(objects);
@@ -154,9 +147,7 @@ export const dbUtils = {
     await sessionsBackend.deleteSession(sessionId);
   },
   bulkUpsertSessions: async (sessions: Session[]): Promise<void> => {
-    for (const s of sessions) {
-      await sessionsBackend.upsertSession(s);
-    }
+    await Promise.all(sessions.map((s) => sessionsBackend.upsertSession(s)));
   },
 
   // --- Messages ---
@@ -204,20 +195,10 @@ export const dbUtils = {
     );
   },
   deleteAllMessagesForSession: async (sessionId: string): Promise<number> => {
-    // Not strictly supported to "delete messages only" without deleting session in backend usually?
-    // messages_commands.rs doesn't have `delete_messages_by_session`.
-    // It has `delete_message` (single).
-    // Wait, legacy DB separated messages from session.
-    // Backend stores messages in SQLite.
-    // If we want to clear conversation history but keep session settings?
-    // I need to list messages and delete them.
+    // ⚡ Bolt: Utilize existing O(1) bulk backend delete instead of flooding IPC with O(N) concurrent deletes.
     const msgs = await dbUtils.getAllMessagesForSession(sessionId);
-    let count = 0;
-    for (const m of msgs) {
-      await messagesBackend.deleteMessage(m.id);
-      count++;
-    }
-    return count;
+    await messagesBackend.deleteAllMessagesForSession(sessionId);
+    return msgs.length;
   },
   clearAllMessages: async (): Promise<void> => {
     // Global clear not supported easily without listing everything.
@@ -232,13 +213,17 @@ export const dbUtils = {
   clearAllPlaybooks: async (): Promise<void> => {
     const assistants = await assistantsBackend.listAssistants();
 
-    for (const assistant of assistants) {
-      const all = await playbooksBackend.listPlaybooks({
-        agentId: assistant.id,
-      });
-      for (const p of all) {
-        if (p.id) await playbooksBackend.deletePlaybook(p.id, assistant.id);
-      }
-    }
+    await Promise.all(
+      assistants.map(async (assistant) => {
+        const all = await playbooksBackend.listPlaybooks({
+          agentId: assistant.id,
+        });
+        await Promise.all(
+          all
+            .filter((p) => p.id)
+            .map((p) => playbooksBackend.deletePlaybook(p.id!, assistant.id)),
+        );
+      }),
+    );
   },
 };
