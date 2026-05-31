@@ -466,7 +466,8 @@
       "title": "Controles avanzados de ejecución",
       "summary": "Esta configuración cambia las barreras de seguridad en tiempo de ejecución, los límites multiagente y el aislamiento del shell. La mayoría de los usuarios debería dejarla como está.",
       "loopPreventionThreshold": "Umbral de prevención de bucles",
-      "loopPreventionThresholdDescription": "Número de resultados idénticos repetidos de herramientas antes de que el agente intente recuperarse de forma natural o active una detención forzada."
+      "loopPreventionThresholdDescription": "Número de resultados idénticos repetidos de herramientas antes de que el agente intente recuperarse de forma natural o active una detención forzada.",
+      "loopPreventionThresholdPlaceholder": "p. ej., 3"
     },
     "system": {
       "title": "Sistema y rendimiento",

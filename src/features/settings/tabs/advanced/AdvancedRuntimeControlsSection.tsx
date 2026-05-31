@@ -22,7 +22,7 @@ function AdvancedRuntimeControlsSectionComponent({
           'Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop.',
         )}
         placeholder={t(
-          'settings.advanced.defaultSessionMaxDepthPlaceholder',
+          'settings.advanced.loopPreventionThresholdPlaceholder',
           'e.g., 3',
         )}
         min={2}
@@ -75,7 +75,10 @@ function AdvancedRuntimeControlsSectionComponent({
           'settings.advanced.defaultSessionMaxFanoutDescription',
           'Controls how many direct child sessions each parent can create by default. Set 0 for unlimited. Most users can leave this as-is.',
         )}
-        placeholder="0 = unlimited"
+        placeholder={t(
+          'settings.advanced.defaultSessionMaxFanoutPlaceholder',
+          '0 = unlimited',
+        )}
         min={0}
         max={64}
         step={1}
