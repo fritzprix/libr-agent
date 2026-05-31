@@ -422,7 +422,14 @@ pub fn build_terminal_check_session_result_from_messages(
             }),
         ]
     } else {
-        vec![]
+        vec![json!({
+            "toolName": "messageToSession",
+            "reason": "Request the child session for more detail, file contents, or full output.",
+            "args": {
+                "sessionId": session_id,
+                "message": "Please share the complete output or file contents."
+            }
+        })]
     };
     let message = if is_abnormal {
         format!(
@@ -436,8 +443,8 @@ pub fn build_terminal_check_session_result_from_messages(
         )
     } else {
         format!(
-            "Session {} is terminal ({}).\n\nResult:\n{}",
-            session_id, status, assistant_text
+            "Session {} is terminal ({}).\n\nResult:\n{}\n\nIf you need more detail, use messageToSession(\"{}\", message=\"Please share the complete output or file contents.\") to ask the child session for the full result.",
+            session_id, status, assistant_text, session_id
         )
     };
     let hint = SuccessHint::new(message.clone(), vec![]);
@@ -469,6 +476,8 @@ pub fn build_terminal_check_session_result_from_messages(
             Value::String(default_session_recovery_message(status)),
         );
     }
+    // Always include hasMoreDetail hint so UI can show a "view more" action
+    response_data.insert("hasMoreDetail".to_string(), Value::Bool(true));
 
     hint.to_mcp_result_with_data(Some(Value::Object(response_data)))
 }
