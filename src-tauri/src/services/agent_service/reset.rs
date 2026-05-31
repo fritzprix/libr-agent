@@ -112,10 +112,15 @@ impl AgentService {
         }
 
         if let Some(settings_repo) = crate::state::try_get_settings_repository() {
-            if let Ok(settings) = settings_repo.list().await {
-                for setting in settings {
-                    let _ = settings_repo.delete(&setting.key).await;
-                }
+            let settings = settings_repo
+                .list()
+                .await
+                .map_err(|e| format!("Failed to list settings: {}", e))?;
+            for setting in settings {
+                settings_repo
+                    .delete(&setting.key)
+                    .await
+                    .map_err(|e| format!("Failed to delete setting {}: {}", setting.key, e))?;
             }
         }
 
