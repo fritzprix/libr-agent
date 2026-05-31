@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-05-31
+
+### 🚀 Features
+
+- **Richer Agent Editing & Recovery Guidance**: Added anchored `editFiles` diff previews, improved delegated `checkSession` follow-up guidance, and refined session history, rename, and notification UX so active agent work is easier to follow.
+- **Broader UI Localization & Polish**: Expanded localization coverage for advanced runtime controls and common UI actions, while adding default close buttons and other quality-of-life polish to shared toasts and controls.
+- **Faster Everyday Interactions**: Reduced redundant resize observer work, parallelized bulk operations, lazy-loaded image-heavy views, and debounced assistant search to keep large agent sessions more responsive.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Export Path Traversal Hardening**: Closed multiple path traversal gaps in ZIP and MCP export package-name handling, with regression coverage to better protect generated archives.
+- **Compaction & Context Recovery Reliability**: Hardened compaction boundaries, reserve budgeting, checkpoint flow, overflow anchors, fallback behavior, and planning write recovery so long-running sessions recover more predictably under pressure.
+- **Factory Reset & Session Cleanup Stability**: Moved factory reset deeper into the backend, propagated deletion failures correctly, and resolved dependency hazards so destructive cleanup flows fail loudly instead of leaving hidden partial state behind.
+- **UI Consistency & Accessibility**: Fixed assistant search synchronization, accessibility review blockers, Sonner labeling, workspace EOF edit panics, and other session/chat edge cases that could leave the UI in a confusing state.
+
+### 🔧 Internal
+
+- **Compaction Architecture Refactor**: Split oversized compaction and session-manager flows into focused Rust modules and refreshed the surrounding architecture/spec docs to make future maintenance less error-prone.
+- **Planning Error Handling Cleanup**: Standardized planning error normalization, removed success-shaped silent fallbacks from planning context reads, and added regression coverage for SQLite lock contention and degraded-state visibility.
+
 ## [0.7.32] - 2026-05-26
 
 ### 🚀 Features
