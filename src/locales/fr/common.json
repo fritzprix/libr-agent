@@ -831,7 +831,17 @@
       "toggleWorkspaceAria": "Basculer le panneau des fichiers de l'espace de travail",
       "toggleWorkspaceTooltip": "Basculer le panneau des fichiers de l'espace de travail",
       "togglePlanningAria": "Basculer le panneau de planification IA",
-      "togglePlanningTooltip": "Basculer le panneau de planification IA"
+      "togglePlanningTooltip": "Basculer le panneau de planification IA",
+      "defaultAssistant": "Agent",
+      "untitledSession": "Session sans titre",
+      "sessionLabel": "Session",
+      "renameAria": "Renommer la session",
+      "renameInputAria": "Modifier le titre de la session",
+      "renameSaveAria": "Enregistrer le titre de la session",
+      "renameCancelAria": "Annuler la modification du titre de la session",
+      "renameSuccess": "Titre de la session mis à jour",
+      "renameError": "Échec de la mise à jour du titre de la session",
+      "renameEmptyError": "Le titre de la session ne peut pas être vide"
     },
     "workspace": {
       "loadError": "Échec du chargement du répertoire",

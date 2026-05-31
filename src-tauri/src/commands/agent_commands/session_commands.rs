@@ -304,6 +304,36 @@ pub async fn agent_toggle_session_bookmark(
         .map_err(|e| format!("Failed to toggle bookmark: {}", e))
 }
 
+/// Update the user-visible session title.
+#[command]
+pub async fn agent_update_session_name(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    name: String,
+) -> Result<(), String> {
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() {
+        return Err("Session title cannot be empty".to_string());
+    }
+
+    let normalized_name = trimmed_name.to_string();
+    let repo = get_session_repository();
+    repo.update_name(&session_id, normalized_name.clone())
+        .await
+        .map_err(|e| format!("Failed to update session title: {}", e))?;
+
+    let active_sessions = manager.active_sessions_arc();
+    let mut active = active_sessions.write().await;
+    if let Some(session) = active.get_mut(&session_id) {
+        session.metadata.name = Some(normalized_name);
+    }
+    drop(active);
+
+    crate::agent::tauri_events::emit_resource_updated("session", "update", Some(session_id));
+
+    Ok(())
+}
+
 /// Mark a session as viewed at the current time.
 #[command]
 pub async fn agent_mark_session_viewed(

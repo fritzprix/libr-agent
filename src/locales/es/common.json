@@ -831,7 +831,17 @@
       "toggleWorkspaceAria": "Alternar panel de archivos del espacio de trabajo",
       "toggleWorkspaceTooltip": "Alternar panel de archivos del espacio de trabajo",
       "togglePlanningAria": "Alternar panel de planificación de IA",
-      "togglePlanningTooltip": "Alternar panel de planificación de IA"
+      "togglePlanningTooltip": "Alternar panel de planificación de IA",
+      "defaultAssistant": "Agente",
+      "untitledSession": "Sesión sin título",
+      "sessionLabel": "Sesión",
+      "renameAria": "Renombrar sesión",
+      "renameInputAria": "Editar título de la sesión",
+      "renameSaveAria": "Guardar título de la sesión",
+      "renameCancelAria": "Cancelar edición del título de la sesión",
+      "renameSuccess": "Título de la sesión actualizado",
+      "renameError": "No se pudo actualizar el título de la sesión",
+      "renameEmptyError": "El título de la sesión no puede estar vacío"
     },
     "workspace": {
       "loadError": "Error al cargar el directorio",

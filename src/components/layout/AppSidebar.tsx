@@ -4,6 +4,7 @@ import {
   Bot,
   BrainCircuit,
   History,
+  BookmarkCheck,
   Network,
   Settings,
   Users,
@@ -27,6 +28,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '../ui/sidebar';
+import { Badge } from '../ui/badge';
 import { useAgentSessionListState } from '@/context/AgentSessionListContext';
 import { useUpdateContext } from '@/context/UpdateContext';
 import { buildChildrenMap } from '@/lib/session-utils';
@@ -69,6 +71,10 @@ export default function AppSidebar() {
   const hasUpdate = updateStatus === 'available';
 
   const { sessions } = useAgentSessionListState();
+  const bookmarkedCount = useMemo(
+    () => sessions.filter((session) => session.isBookmarked === true).length,
+    [sessions],
+  );
 
   /** Show up to 5 recent sessions with lightweight hierarchy cues. */
   const recentSessions = useMemo(() => {
@@ -178,6 +184,36 @@ export default function AppSidebar() {
                   >
                     <History className="shrink-0" />
                     <span>{t('sidebar.history')}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={
+                    location.pathname.startsWith('/history') &&
+                    location.hash === '#bookmarked-sessions'
+                  }
+                  tooltip={t('sidebar.bookmarked', 'Bookmarked')}
+                >
+                  <Link
+                    to="/history#bookmarked-sessions"
+                    className="flex w-full items-center justify-between gap-2"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <BookmarkCheck className="shrink-0" />
+                      <span className="truncate">
+                        {t('sidebar.bookmarked', 'Bookmarked')}
+                      </span>
+                    </div>
+                    {!isCollapsed && bookmarkedCount > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="h-5 shrink-0 px-1.5"
+                      >
+                        {bookmarkedCount}
+                      </Badge>
+                    )}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -334,6 +370,9 @@ export default function AppSidebar() {
                           {session.name ||
                             `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
                         </span>
+                        {session.isBookmarked && (
+                          <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

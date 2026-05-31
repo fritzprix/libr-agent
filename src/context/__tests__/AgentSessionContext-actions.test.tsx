@@ -1,4 +1,4 @@
-import { TEST_SESSION_ID, createDefaultWrapper, mockMarkSessionViewed, mockRefreshCompactedRange, listenMock, openAgentSessionMock, safeInvokeMock, createOpenSessionResponse, mockClearPendingApproval } from "./agent-session-test-utils";
+import { TEST_SESSION_ID, createDefaultWrapper, mockMarkSessionViewed, mockRefreshCompactedRange, listenMock, openAgentSessionMock, safeInvokeMock, createOpenSessionResponse, mockClearPendingApproval, mockRenameSession } from "./agent-session-test-utils";
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
@@ -13,6 +13,7 @@ describe('AgentSessionContext – User Actions', () => {
     vi.clearAllMocks();
     mockMarkSessionViewed.mockResolvedValue(undefined);
     mockRefreshCompactedRange.mockResolvedValue(undefined);
+    mockRenameSession.mockResolvedValue(undefined);
     listenMock.mockResolvedValue(mockUnlisten);
     openAgentSessionMock.mockResolvedValue(
       createOpenSessionResponse(TEST_SESSION_ID, {
@@ -169,5 +170,30 @@ describe('AgentSessionContext – User Actions', () => {
             expect(result.current.state.executionMode).toBe('unsafe');
             expect(result.current.state.yoloModeEnabled).toBe(false);
             expect(result.current.state.unsafeModeEnabled).toBe(true);
+        });
+
+        it('updates local session title and persists it through the list action', async () => {
+            const { result } = renderHook(
+                () => ({
+                    state: useAgentSessionState(),
+                    actions: useAgentSessionActions(),
+                }),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(result.current.state.isSessionLoading).toBe(false);
+                expect(result.current.state.session?.name).toBe('Test Session');
+            });
+
+            await act(async () => {
+                await result.current.actions.renameSession('  Renamed Session  ');
+            });
+
+            expect(mockRenameSession).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                'Renamed Session',
+            );
+            expect(result.current.state.session?.name).toBe('Renamed Session');
         });
 });

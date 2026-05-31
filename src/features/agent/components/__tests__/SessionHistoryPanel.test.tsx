@@ -18,6 +18,11 @@ vi.mock('react-i18next', () => ({
       if (key === 'sessionHistory.lineageHint.child') {
         return `Child of ${String(options?.parentName ?? '')}`;
       }
+      if (defaultString && options) {
+        return Object.entries(options).reduce((text, [optionKey, value]) => {
+          return text.replace(`{{${optionKey}}}`, String(value));
+        }, defaultString);
+      }
       return defaultString || key;
     },
   }),
@@ -116,7 +121,6 @@ function createSession(
 const defaultProps = {
   hasMoreSessions: false,
   isLoadingMoreSessions: false,
-  onActiveTabChange: () => {},
   onActiveStatusFilterChange: () => {},
   onSearchQueryChange: () => {},
   onRefresh: () => {},
@@ -124,6 +128,7 @@ const defaultProps = {
   onResume: () => {},
   onDelete: () => {},
   onDeleteOnly: () => {},
+  onToggleBookmark: () => {},
 };
 
 describe('SessionHistoryPanel', () => {
@@ -142,7 +147,6 @@ describe('SessionHistoryPanel', () => {
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="all"
         activeStatusFilter="all"
         searchQuery=""
       />,
@@ -164,7 +168,6 @@ describe('SessionHistoryPanel', () => {
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="all"
         activeStatusFilter="all"
         searchQuery=""
       />,
@@ -184,7 +187,6 @@ describe('SessionHistoryPanel', () => {
         sessions={[createSession('root', 'Root')]}
         isLoading={false}
         {...defaultProps}
-        activeTab="all"
         activeStatusFilter="all"
         searchQuery=""
       />,
@@ -207,7 +209,6 @@ describe('SessionHistoryPanel', () => {
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="all"
         activeStatusFilter="all"
         searchQuery=""
       />,
@@ -235,7 +236,6 @@ describe('SessionHistoryPanel', () => {
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="all"
         activeStatusFilter="error"
         searchQuery=""
       />,
@@ -245,7 +245,7 @@ describe('SessionHistoryPanel', () => {
     expect(screen.getByTestId('session-card-child')).toBeInTheDocument();
   });
 
-  it('keeps lineage roots visible in bookmarked view when only a descendant is bookmarked', () => {
+  it('renders bookmarked sessions in a dedicated top section', () => {
     const sessions: AgentSession[] = [
       createSession('root', 'Root'),
       createSession('child', 'Child', {
@@ -253,29 +253,57 @@ describe('SessionHistoryPanel', () => {
         isBookmarked: true,
       }),
     ];
+    const onResume = vi.fn();
 
     render(
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="bookmarked"
+        onResume={onResume}
         activeStatusFilter="all"
         searchQuery=""
       />,
     );
 
-    expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
-    expect(screen.getByTestId('session-card-child')).toBeInTheDocument();
+    expect(screen.getByText('Bookmarked Sessions')).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Open bookmarked session Child' }),
+    );
+    expect(onResume).toHaveBeenCalledWith('child');
   });
 
-  it('allows collapsing an auto-expanded lineage in bookmarked view', () => {
+  it('allows removing a bookmark directly from the top section', () => {
     const sessions: AgentSession[] = [
-      createSession('root', 'Root'),
-      createSession('child', 'Child', {
-        parentSessionId: 'root',
+      createSession('bookmarked', 'Bookmarked Session', { isBookmarked: true }),
+    ];
+    const onToggleBookmark = vi.fn();
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        onToggleBookmark={onToggleBookmark}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bookmark' }));
+    expect(onToggleBookmark).toHaveBeenCalledWith('bookmarked');
+  });
+
+  it('shows overflow count when bookmarks exceed the featured shortcut cap', () => {
+    const sessions: AgentSession[] = [
+      createSession('s1', 'Session 1', {
         isBookmarked: true,
       }),
+      createSession('s2', 'Session 2', { isBookmarked: true }),
+      createSession('s3', 'Session 3', { isBookmarked: true }),
+      createSession('s4', 'Session 4', { isBookmarked: true }),
+      createSession('s5', 'Session 5', { isBookmarked: true }),
+      createSession('s6', 'Session 6', { isBookmarked: true }),
     ];
 
     render(
@@ -283,16 +311,12 @@ describe('SessionHistoryPanel', () => {
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="bookmarked"
         activeStatusFilter="all"
         searchQuery=""
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
-
-    expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
-    expect(screen.queryByTestId('session-card-child')).not.toBeInTheDocument();
+    expect(screen.getByText('+1 more in history')).toBeInTheDocument();
   });
 
   it('resets collapsed auto-expanded lineage state when the filter context changes', () => {
@@ -311,7 +335,6 @@ describe('SessionHistoryPanel', () => {
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="all"
         activeStatusFilter="all"
         searchQuery="alpha"
       />,
@@ -328,7 +351,6 @@ describe('SessionHistoryPanel', () => {
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
-        activeTab="all"
         activeStatusFilter="all"
         searchQuery="beta"
       />,

@@ -123,4 +123,5 @@ export interface AgentSessionActionsContextValue {
   toggleYoloMode: () => void;
   toggleUnsafeMode: () => void;
   updateSessionConfig: (model: string, provider: string) => void;
+  renameSession: (name: string) => Promise<void>;
 }

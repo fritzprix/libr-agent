@@ -831,7 +831,17 @@
       "toggleWorkspaceAria": "Alternar Painel de Arquivos do Espaço de Trabalho",
       "toggleWorkspaceTooltip": "Alternar Painel de Arquivos do Espaço de Trabalho",
       "togglePlanningAria": "Alternar Painel de Planejamento de IA",
-      "togglePlanningTooltip": "Alternar Painel de Planejamento de IA"
+      "togglePlanningTooltip": "Alternar Painel de Planejamento de IA",
+      "defaultAssistant": "Agente",
+      "untitledSession": "Sessão sem título",
+      "sessionLabel": "Sessão",
+      "renameAria": "Renomear sessão",
+      "renameInputAria": "Editar título da sessão",
+      "renameSaveAria": "Salvar título da sessão",
+      "renameCancelAria": "Cancelar edição do título da sessão",
+      "renameSuccess": "Título da sessão atualizado",
+      "renameError": "Falha ao atualizar o título da sessão",
+      "renameEmptyError": "O título da sessão não pode ficar vazio"
     },
     "workspace": {
       "loadError": "Falha ao carregar diretório",

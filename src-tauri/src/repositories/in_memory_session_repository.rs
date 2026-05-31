@@ -150,6 +150,20 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(())
     }
 
+    async fn update_name(&self, session_id: &str, name: String) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.name = Some(name);
+            log::debug!("InMemory: Updated session name for {}", session_id);
+        } else {
+            log::debug!(
+                "InMemory: Name update for non-existent session {} (idempotent skip)",
+                session_id
+            );
+        }
+        Ok(())
+    }
+
     /// Get all sessions stored in memory
     ///
     /// Returns sessions in arbitrary order (HashMap iteration order).

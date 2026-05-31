@@ -831,7 +831,17 @@
       "toggleWorkspaceAria": "Arbeitsbereich-Dateipanel umschalten",
       "toggleWorkspaceTooltip": "Arbeitsbereich-Dateipanel umschalten",
       "togglePlanningAria": "KI-Planungspanel umschalten",
-      "togglePlanningTooltip": "KI-Planungspanel umschalten"
+      "togglePlanningTooltip": "KI-Planungspanel umschalten",
+      "defaultAssistant": "Agent",
+      "untitledSession": "Unbenannte Sitzung",
+      "sessionLabel": "Sitzung",
+      "renameAria": "Sitzung umbenennen",
+      "renameInputAria": "Sitzungstitel bearbeiten",
+      "renameSaveAria": "Sitzungstitel speichern",
+      "renameCancelAria": "Bearbeiten des Sitzungstitels abbrechen",
+      "renameSuccess": "Sitzungstitel aktualisiert",
+      "renameError": "Sitzungstitel konnte nicht aktualisiert werden",
+      "renameEmptyError": "Der Sitzungstitel darf nicht leer sein"
     },
     "workspace": {
       "loadError": "Verzeichnis konnte nicht geladen werden",

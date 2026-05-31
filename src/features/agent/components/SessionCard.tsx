@@ -194,14 +194,44 @@ export function SessionCard({
     t('sessionHistory.card.fallbackName', 'Session {{id}}', {
       id: session.id.slice(0, 8),
     });
+  const createdAtLabel = t(
+    'sessionHistory.card.createdAt',
+    'Created {{time}}',
+    {
+      time:
+        formatRelativeTime(session.createdAt, new Date()) ||
+        t('sessionHistory.card.justNow', 'just now'),
+    },
+  );
+  const updatedAtLabel = session.updatedAt
+    ? t('sessionHistory.card.updatedAt', 'Updated {{time}}', {
+        time:
+          formatRelativeTime(session.updatedAt, new Date()) ||
+          t('sessionHistory.card.justNow', 'just now'),
+      })
+    : null;
+  const summaryParts = [
+    session.assistant?.name,
+    session.model && session.provider
+      ? `${t('sessionHistory.card.model', 'Model:')} ${session.provider}/${session.model}`
+      : null,
+    lineageHint,
+    updatedAtLabel,
+    createdAtLabel,
+  ].filter((value): value is string => Boolean(value));
+  const contentIndentStyle =
+    nestingLevel > 0
+      ? { paddingLeft: `${Math.min(nestingLevel, 4) * 14}px` }
+      : undefined;
 
   return (
     <article
       className={cn(
-        'relative overflow-hidden rounded-xl border p-4 transition',
+        'relative overflow-hidden rounded-xl border px-3 py-2.5 transition',
         statusConfig.cardClassName,
+        session.isBookmarked &&
+          'ring-1 ring-warning/25 shadow-sm shadow-warning/10',
       )}
-      style={{ marginLeft: `${nestingLevel * 16}px` }}
       aria-label={t('sessionHistory.card.ariaLabel', 'Session: {{name}}', {
         name: sessionNameFallback,
       })}
@@ -213,15 +243,15 @@ export function SessionCard({
         )}
         aria-hidden="true"
       />
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+      <div className="space-y-2.5" style={contentIndentStyle}>
+        <div className="grid grid-cols-[auto,minmax(0,1fr),auto] items-start gap-2">
+          <div className="pt-0.5">
             {hasExpandableChildren ? (
               <Button
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7 shrink-0"
+                className="h-6 w-6 shrink-0"
                 onClick={() => onToggleExpand?.(session.id)}
                 aria-label={
                   isExpanded
@@ -238,18 +268,38 @@ export function SessionCard({
                 }
               >
                 {isExpanded ? (
-                  <ChevronDown className="w-4 h-4" aria-hidden="true" />
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
                 ) : (
-                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
                 )}
               </Button>
             ) : (
-              <span className="w-7 shrink-0" aria-hidden="true" />
+              <span className="w-6 shrink-0" aria-hidden="true" />
             )}
-            <h3 className="font-semibold truncate">{sessionNameFallback}</h3>
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold leading-5">
+              {sessionNameFallback}
+            </h3>
+            {summaryParts.length > 0 && (
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {summaryParts.join(' · ')}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {session.isBookmarked && (
+              <Badge
+                variant="secondary"
+                className="h-5 border-warning/20 bg-warning/10 px-1.5 text-[10px] text-warning-foreground"
+              >
+                <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                {t('sessionHistory.card.bookmarkedBadge', 'Bookmarked')}
+              </Badge>
+            )}
             <Badge
               variant={statusConfig.variant}
-              className={statusConfig.className}
+              className={cn('h-5 px-1.5 text-[10px]', statusConfig.className)}
               role="status"
               aria-label={t(
                 'sessionHistory.card.statusAriaLabel',
@@ -258,41 +308,43 @@ export function SessionCard({
               )}
             >
               {statusConfig.icon === 'active' && (
-                <Circle className="w-3 h-3 fill-current" />
+                <Circle className="h-3 w-3 fill-current" />
               )}
               {statusConfig.icon === 'idle' && (
-                <Circle className="w-3 h-3 fill-current" />
+                <Circle className="h-3 w-3 fill-current" />
               )}
-              {statusConfig.icon === 'paused' && <Pause className="w-3 h-3" />}
-              {statusConfig.icon === 'error' && <XCircle className="w-3 h-3" />}
+              {statusConfig.icon === 'paused' && <Pause className="h-3 w-3" />}
+              {statusConfig.icon === 'error' && <XCircle className="h-3 w-3" />}
               {statusConfig.icon === 'unknown' && (
-                <Circle className="w-3 h-3 fill-current" />
+                <Circle className="h-3 w-3 fill-current" />
               )}
               {statusConfig.badge}
             </Badge>
           </div>
-          {session.assistant?.name && (
-            <p className="text-xs text-muted-foreground">
-              {session.assistant.name}
-            </p>
-          )}
         </div>
-      </div>
 
-      <div className="text-xs text-muted-foreground space-y-1">
-        {(depthLabel || shortParentId || shortLineageId) && (
-          <div className="flex flex-wrap items-center gap-1">
-            <Badge variant="secondary">{relationBadge}</Badge>
-            {depthLabel && <Badge variant="outline">{depthLabel}</Badge>}
+        {(depthLabel ||
+          shortParentId ||
+          shortLineageId ||
+          (descendantStatusCounts && descendantCount > 0)) && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+              {relationBadge}
+            </Badge>
+            {depthLabel && (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                {depthLabel}
+              </Badge>
+            )}
             {descendantCount > 0 && (
-              <Badge variant="outline">
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                 {t('sessionHistory.card.descendants', '{{count}} descendants', {
                   count: descendantCount,
                 })}
               </Badge>
             )}
             {shortParentId && (
-              <Badge variant="outline">
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                 {t('sessionHistory.card.parentBadge', 'Parent: {{id}}', {
                   id: shortParentId,
                 })}
@@ -304,7 +356,7 @@ export function SessionCard({
                 size="sm"
                 variant={isSelectedLineage ? 'default' : 'outline'}
                 className="h-5 px-1.5 text-[10px]"
-                onClick={() => onLineageSelect?.(session.lineageId!)}
+                onClick={() => onLineageSelect?.(session.lineageId)}
                 aria-label={t(
                   'sessionHistory.card.lineageFilterAria',
                   'Filter by lineage {{id}}',
@@ -316,26 +368,22 @@ export function SessionCard({
                 })}
               </Button>
             )}
-          </div>
-        )}
-        {descendantStatusCounts && descendantCount > 0 && (
-          <div className="flex flex-wrap items-center gap-1">
-            {descendantStatusCounts.busy > 0 && (
-              <Badge variant="outline">
+            {descendantStatusCounts?.busy ? (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                 {t('sessionHistory.card.descendantBusy', 'Busy: {{count}}', {
                   count: descendantStatusCounts.busy,
                 })}
               </Badge>
-            )}
-            {descendantStatusCounts.idle > 0 && (
-              <Badge variant="outline">
+            ) : null}
+            {descendantStatusCounts?.idle ? (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                 {t('sessionHistory.card.descendantIdle', 'Idle: {{count}}', {
                   count: descendantStatusCounts.idle,
                 })}
               </Badge>
-            )}
-            {descendantStatusCounts.paused > 0 && (
-              <Badge variant="outline">
+            ) : null}
+            {descendantStatusCounts?.paused ? (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                 {t(
                   'sessionHistory.card.descendantPaused',
                   'Paused: {{count}}',
@@ -344,212 +392,179 @@ export function SessionCard({
                   },
                 )}
               </Badge>
-            )}
-            {descendantStatusCounts.error > 0 && (
-              <Badge variant="outline">
+            ) : null}
+            {descendantStatusCounts?.error ? (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                 {t('sessionHistory.card.descendantError', 'Error: {{count}}', {
                   count: descendantStatusCounts.error,
                 })}
               </Badge>
-            )}
+            ) : null}
           </div>
         )}
-        {lineageHint && <div>{lineageHint}</div>}
-        {session.model && session.provider && (
-          <div className="flex items-center gap-1">
-            <span className="font-medium">
-              {t('sessionHistory.card.model', 'Model:')}
-            </span>
-            <span>
-              {session.provider}/{session.model}
-            </span>
-          </div>
-        )}
-        <div>
-          {t('sessionHistory.card.createdAt', 'Created {{time}}', {
-            time:
-              formatRelativeTime(session.createdAt, new Date()) ||
-              t('sessionHistory.card.justNow', 'just now'),
-          })}
-        </div>
-        {session.updatedAt && (
-          <div>
-            {t('sessionHistory.card.updatedAt', 'Updated {{time}}', {
-              time:
-                formatRelativeTime(session.updatedAt, new Date()) ||
-                t('sessionHistory.card.justNow', 'just now'),
-            })}
-          </div>
-        )}
-      </div>
 
-      <div
-        className="flex gap-2 mt-3"
-        role="group"
-        aria-label={t('sessionHistory.actions.groupAria', 'Session actions')}
-      >
-        {!showConfirm ? (
-          <>
-            <Button
-              size="sm"
-              variant={isActive ? 'default' : 'outline'}
-              onClick={() => onResume(session.id)}
-              className="flex-1"
-              aria-label={
-                isViewOnly
+        <div
+          className="flex items-center gap-2"
+          role="group"
+          aria-label={t('sessionHistory.actions.groupAria', 'Session actions')}
+        >
+          <Button
+            size="sm"
+            variant={isActive ? 'default' : 'outline'}
+            onClick={() => onResume(session.id)}
+            className="h-8 min-w-[7.5rem] flex-1 justify-center sm:flex-none"
+            aria-label={
+              isViewOnly
+                ? t(
+                    'sessionHistory.actions.viewAria',
+                    'View session {{name}}',
+                    {
+                      name: sessionNameFallback,
+                    },
+                  )
+                : isPaused
                   ? t(
-                      'sessionHistory.actions.viewAria',
-                      'View session {{name}}',
+                      'sessionHistory.actions.resumeAria',
+                      'Resume session {{name}}',
                       { name: sessionNameFallback },
                     )
-                  : isPaused
-                    ? t(
-                        'sessionHistory.actions.resumeAria',
-                        'Resume session {{name}}',
-                        { name: sessionNameFallback },
-                      )
-                    : t(
-                        'sessionHistory.actions.continueAria',
-                        'Continue session {{name}}',
-                        { name: sessionNameFallback },
-                      )
-              }
-            >
-              {isViewOnly ? (
-                <>
-                  <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
-                  {t('sessionHistory.actions.view', 'View')}
-                </>
-              ) : isPaused ? (
-                <>
-                  <Play className="w-3 h-3 mr-1" aria-hidden="true" />
-                  {t('sessionHistory.actions.resume', 'Resume')}
-                </>
-              ) : (
-                <>
-                  <Play className="w-3 h-3 mr-1" aria-hidden="true" />
-                  {t('sessionHistory.actions.continue', 'Continue')}
-                </>
-              )}
-            </Button>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onToggleBookmark?.(session.id)}
-                  aria-label={
-                    session.isBookmarked
-                      ? t(
-                          'sessionHistory.actions.unbookmarkAria',
-                          'Remove bookmark',
-                        )
-                      : t(
-                          'sessionHistory.actions.bookmarkAria',
-                          'Bookmark session',
-                        )
-                  }
-                  className={session.isBookmarked ? 'text-yellow-500' : ''}
-                >
-                  {session.isBookmarked ? (
-                    <BookmarkCheck className="w-3 h-3" aria-hidden="true" />
-                  ) : (
-                    <Bookmark className="w-3 h-3" aria-hidden="true" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {session.isBookmarked
-                  ? t('sessionHistory.actions.unbookmark', 'Remove bookmark')
-                  : t('sessionHistory.actions.bookmark', 'Bookmark')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  aria-label={t(
-                    'sessionHistory.actions.deleteAria',
-                    'Delete session {{name}}',
-                    { name: sessionNameFallback },
-                  )}
-                >
-                  <Trash2 className="w-3 h-3" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t('sessionHistory.actions.deleteTooltip', 'Delete session')}
-              </TooltipContent>
-            </Tooltip>
-          </>
-        ) : (
-          <>
-            {descendantCount > 0 ? (
+                  : t(
+                      'sessionHistory.actions.continueAria',
+                      'Continue session {{name}}',
+                      { name: sessionNameFallback },
+                    )
+            }
+          >
+            {isViewOnly ? (
               <>
-                <div className="flex w-full gap-2">
-                  <div className="flex flex-col flex-1 gap-0.5">
+                <Eye className="mr-1 h-3 w-3" aria-hidden="true" />
+                {t('sessionHistory.actions.view', 'View')}
+              </>
+            ) : (
+              <>
+                <Play className="mr-1 h-3 w-3" aria-hidden="true" />
+                {isPaused
+                  ? t('sessionHistory.actions.resume', 'Resume')
+                  : t('sessionHistory.actions.continue', 'Continue')}
+              </>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant={session.isBookmarked ? 'secondary' : 'outline'}
+            onClick={() => onToggleBookmark?.(session.id)}
+            aria-label={
+              session.isBookmarked
+                ? t('sessionHistory.actions.unbookmarkAria', 'Remove bookmark')
+                : t('sessionHistory.actions.bookmarkAria', 'Bookmark session')
+            }
+            className={cn(
+              'h-8 shrink-0 px-2.5',
+              session.isBookmarked &&
+                'border-warning/20 bg-warning/10 text-warning-foreground hover:bg-warning/20',
+            )}
+          >
+            {session.isBookmarked ? (
+              <BookmarkCheck className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Bookmark className="h-4 w-4" aria-hidden="true" />
+            )}
+            <span>
+              {session.isBookmarked
+                ? t('sessionHistory.actions.bookmarked', 'Bookmarked')
+                : t('sessionHistory.actions.bookmark', 'Bookmark')}
+            </span>
+          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="h-8 w-8 shrink-0"
+                aria-label={t(
+                  'sessionHistory.actions.deleteAria',
+                  'Delete session {{name}}',
+                  { name: sessionNameFallback },
+                )}
+              >
+                <Trash2 className="h-3 w-3" aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('sessionHistory.actions.deleteTooltip', 'Delete session')}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+
+      {showConfirm && (
+        <div className="absolute inset-0 z-10 flex items-end rounded-xl bg-background/95 p-3 backdrop-blur-sm">
+          <div className="w-full rounded-lg border bg-card p-3 shadow-lg">
+            <div className="mb-2 text-sm font-medium text-foreground">
+              {t('sessionHistory.actions.confirmDelete', 'Confirm Delete')}
+            </div>
+            {descendantCount > 0 ? (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="w-full"
+                    aria-busy={isDeleting}
+                    aria-label={t(
+                      'sessionHistory.actions.deleteAllAria',
+                      'Delete this session and all subagent sessions',
+                    )}
+                  >
+                    {isDeleting
+                      ? t('sessionHistory.actions.deleting', 'Deleting...')
+                      : t('sessionHistory.actions.deleteAll', 'Delete all')}
+                  </Button>
+                  <p className="text-center text-xs text-destructive">
+                    {t(
+                      'sessionHistory.card.subagentsCount',
+                      '+{{count}} subagent',
+                      {
+                        count: descendantCount,
+                      },
+                    )}
+                  </p>
+                </div>
+                {onDeleteOnly && (
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <Button
                       size="sm"
-                      variant="destructive"
-                      onClick={handleDelete}
+                      variant="outline"
+                      onClick={handleDeleteOnly}
                       disabled={isDeleting}
                       className="w-full"
-                      aria-busy={isDeleting}
                       aria-label={t(
-                        'sessionHistory.actions.deleteAllAria',
-                        'Delete this session and all subagent sessions',
+                        'sessionHistory.actions.deleteOnlyThisAria',
+                        'Delete only this session',
                       )}
                     >
-                      {isDeleting
-                        ? t('sessionHistory.actions.deleting', 'Deleting...')
-                        : t('sessionHistory.actions.deleteAll', 'Delete all')}
-                    </Button>
-                    <p className="text-xs text-destructive text-center">
                       {t(
-                        'sessionHistory.card.subagentsCount',
-                        '+{{count}} subagent',
-                        { count: descendantCount },
+                        'sessionHistory.actions.deleteOnlyThis',
+                        'Delete only this',
                       )}
+                    </Button>
+                    <p className="text-center text-xs text-muted-foreground">
+                      {t('sessionHistory.card.subagentsKept', 'Subagents kept')}
                     </p>
                   </div>
-                  {onDeleteOnly && (
-                    <div className="flex flex-col flex-1 gap-0.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleDeleteOnly}
-                        disabled={isDeleting}
-                        className="w-full"
-                        aria-label={t(
-                          'sessionHistory.actions.deleteOnlyThisAria',
-                          'Delete only this session',
-                        )}
-                      >
-                        {t(
-                          'sessionHistory.actions.deleteOnlyThis',
-                          'Delete only this',
-                        )}
-                      </Button>
-                      <p className="text-xs text-muted-foreground text-center">
-                        {t(
-                          'sessionHistory.card.subagentsKept',
-                          'Subagents kept',
-                        )}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </>
+                )}
+              </div>
             ) : (
               <Button
                 size="sm"
                 variant="destructive"
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="flex-1"
+                className="w-full"
                 aria-busy={isDeleting}
                 aria-label={t(
                   'sessionHistory.actions.confirmDeleteAria',
@@ -566,6 +581,7 @@ export function SessionCard({
               variant="outline"
               onClick={handleCancelDelete}
               disabled={isDeleting}
+              className="mt-2 w-full"
               aria-label={t(
                 'sessionHistory.actions.cancelDeletionAria',
                 'Cancel deletion',
@@ -573,9 +589,9 @@ export function SessionCard({
             >
               {t('sessionHistory.actions.cancel', 'Cancel')}
             </Button>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
