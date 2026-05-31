@@ -53,9 +53,11 @@ export function useAssistantsList() {
 
   // Search results using SWR to prevent race conditions
   const { data: searchResults = null, isValidating: isSearching } = useSWR(
-    debouncedSearchQuery.trim() ? ['search-assistants', debouncedSearchQuery.trim()] : null,
-    async ([, query]) => {
-      return await searchAssistants(query as string);
+    debouncedSearchQuery.trim()
+      ? ['search-assistants', debouncedSearchQuery.trim()]
+      : null,
+    async ([, query]: [string, string]) => {
+      return await searchAssistants(query);
     },
     {
       revalidateOnFocus: false,
@@ -63,6 +65,12 @@ export function useAssistantsList() {
       keepPreviousData: true,
     },
   );
+
+  const isDebouncing = searchQuery !== debouncedSearchQuery;
+  const finalIsSearching =
+    searchQuery.trim() !== '' && (isDebouncing || isSearching);
+  const finalSearchResults =
+    !isDebouncing && debouncedSearchQuery.trim() ? searchResults : null;
 
   const handleToggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -88,8 +96,8 @@ export function useAssistantsList() {
     createNew,
     setCreateNew,
     searchQuery,
-    searchResults: debouncedSearchQuery.trim() ? searchResults : null,
-    isSearching: debouncedSearchQuery.trim() ? isSearching : false,
+    searchResults: finalSearchResults,
+    isSearching: finalIsSearching,
     expandedId,
     builtinToolsMap,
     mcpServersMap,

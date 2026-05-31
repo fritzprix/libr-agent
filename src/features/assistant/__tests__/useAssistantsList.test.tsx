@@ -165,4 +165,33 @@ describe('useAssistantsList', () => {
     expect(result.current.searchQuery).toBe('');
     vi.useRealTimers();
   });
+
+  it('synchronizes searchQuery and searchResults to hide stale results and show searching status during debounce window', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockSearchAssistants.mockResolvedValueOnce([createMockAssistant('2', 'Result 2')]);
+
+    const { result } = renderHook(() => useAssistantsList(), { wrapper });
+
+    await act(async () => {
+      result.current.handleSearch('typing');
+    });
+
+    // During the debounce window:
+    // searchQuery is 'typing' but debouncedSearchQuery is still ''
+    expect(result.current.searchQuery).toBe('typing');
+    expect(result.current.isSearching).toBe(true); // Should show loading spinner
+    expect(result.current.searchResults).toBeNull(); // Should hide stale results
+
+    // Advance fake timers by 300ms to trigger debounced query
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
+    // Now it should resolve
+    await waitFor(() => {
+      expect(result.current.isSearching).toBe(false);
+    });
+    expect(result.current.searchResults).toEqual([createMockAssistant('2', 'Result 2')]);
+    vi.useRealTimers();
+  });
 });
