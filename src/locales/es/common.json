@@ -149,6 +149,7 @@
     "seeAllSessions": "Ver todas las sesiones →",
     "settings": "Configuración",
     "history": "Historial",
+    "bookmarked": "Favoritas",
     "scheduledTasks": "Tareas programadas",
     "session": "Sesión",
     "knowledge": "Conocimiento",
@@ -172,6 +173,15 @@
     "clearLineageFocus": "Limpiar enfoque de linaje",
     "noSessionsMatching": "No se encontraron sesiones que coincidan con \"{{query}}\"",
     "clearSearch": "Limpiar búsqueda",
+    "bookmarkedSection": {
+      "heading": "Sesiones favoritas",
+      "description": "Las sesiones fijadas permanecen aquí para acceso rápido mientras el historial completo sigue debajo.",
+      "resumeAria": "Abrir sesión favorita {{name}}",
+      "open": "Abrir sesión",
+      "lastUsed": "Usada {{time}}",
+      "defaultMeta": "Guardada para acceso rápido",
+      "more": "+{{count}} más en el historial"
+    },
     "toasts": {
       "deleted": "Sesión eliminada",
       "deleteFailed": "Error al eliminar la sesión"
@@ -221,12 +231,18 @@
       "justNow": "ahora mismo",
       "subagentsCount_one": "+{{count}} subagente",
       "subagentsCount_other": "+{{count}} subagentes",
-      "subagentsKept": "Subagentes conservados"
+      "subagentsKept": "Subagentes conservados",
+      "bookmarkedBadge": "Favorita"
     },
     "actions": {
       "view": "Ver",
       "continue": "Continuar",
       "resume": "Reanudar",
+      "bookmark": "Guardar",
+      "bookmarked": "Guardada",
+      "bookmarkAria": "Guardar sesión",
+      "unbookmark": "Quitar favorita",
+      "unbookmarkAria": "Quitar favorita",
       "viewAria": "Ver sesión {{name}}",
       "continueAria": "Continuar sesión {{name}}",
       "resumeAria": "Reanudar sesión {{name}}",

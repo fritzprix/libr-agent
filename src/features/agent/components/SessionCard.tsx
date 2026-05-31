@@ -356,7 +356,11 @@ export function SessionCard({
                 size="sm"
                 variant={isSelectedLineage ? 'default' : 'outline'}
                 className="h-5 px-1.5 text-[10px]"
-                onClick={() => onLineageSelect?.(session.lineageId)}
+                onClick={() => {
+                  if (session.lineageId) {
+                    onLineageSelect?.(session.lineageId);
+                  }
+                }}
                 aria-label={t(
                   'sessionHistory.card.lineageFilterAria',
                   'Filter by lineage {{id}}',

@@ -149,6 +149,7 @@
     "seeAllSessions": "Alle Sitzungen anzeigen →",
     "settings": "Einstellungen",
     "history": "Verlauf",
+    "bookmarked": "Lesezeichen",
     "scheduledTasks": "Geplante Aufgaben",
     "session": "Sitzung",
     "knowledge": "Wissen",
@@ -172,6 +173,15 @@
     "clearLineageFocus": "Abstammungsfokus löschen",
     "noSessionsMatching": "Keine Sitzungen für \"{{query}}\" gefunden",
     "clearSearch": "Suche löschen",
+    "bookmarkedSection": {
+      "heading": "Gespeicherte Sitzungen",
+      "description": "Markierte Sitzungen bleiben hier für den Schnellzugriff, während der vollständige Verlauf darunter sichtbar bleibt.",
+      "resumeAria": "Gespeicherte Sitzung {{name}} öffnen",
+      "open": "Sitzung öffnen",
+      "lastUsed": "Verwendet {{time}}",
+      "defaultMeta": "Für den Schnellzugriff gespeichert",
+      "more": "+{{count}} weitere im Verlauf"
+    },
     "toasts": {
       "deleted": "Sitzung gelöscht",
       "deleteFailed": "Sitzung konnte nicht gelöscht werden"
@@ -221,12 +231,18 @@
       "justNow": "gerade eben",
       "subagentsCount_one": "+{{count}} Subagent",
       "subagentsCount_other": "+{{count}} Subagenten",
-      "subagentsKept": "Subagenten behalten"
+      "subagentsKept": "Subagenten behalten",
+      "bookmarkedBadge": "Gespeichert"
     },
     "actions": {
       "view": "Ansehen",
       "continue": "Weiter",
       "resume": "Fortsetzen",
+      "bookmark": "Speichern",
+      "bookmarked": "Gespeichert",
+      "bookmarkAria": "Sitzung speichern",
+      "unbookmark": "Speicherung entfernen",
+      "unbookmarkAria": "Speicherung entfernen",
       "viewAria": "Sitzung {{name}} ansehen",
       "continueAria": "Sitzung {{name}} weiterführen",
       "resumeAria": "Sitzung {{name}} fortsetzen",

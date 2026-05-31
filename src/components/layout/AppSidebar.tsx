@@ -70,7 +70,7 @@ export default function AppSidebar() {
   const { status: updateStatus } = useUpdateContext();
   const hasUpdate = updateStatus === 'available';
 
-  const { sessions } = useAgentSessionListState();
+  const { sessions, hasMoreSessions } = useAgentSessionListState();
   const bookmarkedCount = useMemo(
     () => sessions.filter((session) => session.isBookmarked === true).length,
     [sessions],
@@ -206,14 +206,16 @@ export default function AppSidebar() {
                         {t('sidebar.bookmarked', 'Bookmarked')}
                       </span>
                     </div>
-                    {!isCollapsed && bookmarkedCount > 0 && (
-                      <Badge
-                        variant="secondary"
-                        className="h-5 shrink-0 px-1.5"
-                      >
-                        {bookmarkedCount}
-                      </Badge>
-                    )}
+                    {!isCollapsed &&
+                      bookmarkedCount > 0 &&
+                      !hasMoreSessions && (
+                        <Badge
+                          variant="secondary"
+                          className="h-5 shrink-0 px-1.5"
+                        >
+                          {bookmarkedCount}
+                        </Badge>
+                      )}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
