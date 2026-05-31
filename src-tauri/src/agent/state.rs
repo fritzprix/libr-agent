@@ -1,6 +1,6 @@
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
-use crate::agent::llm::types::CompactionParentRequest;
+use crate::agent::llm::types::{CompactRequest, CompactionParentRequest};
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
@@ -143,6 +143,7 @@ pub struct CompactionSnapshot {
     pub last_compacted_tail_id: Option<String>,
     pub retry_attempt: u32,
     pub recovery_phase: CompactionRecoveryPhase,
+    pub summary_retry_count: u32,
 }
 
 impl CompactionSnapshot {
@@ -208,6 +209,13 @@ pub struct CompactionRuntimeState {
 
     /// Phase ladder for compaction overflow recovery.
     recovery_phase: Arc<RwLock<CompactionRecoveryPhase>>,
+
+    /// Retry counter for low-quality or empty compaction summaries.
+    summary_retry_count: Arc<RwLock<u32>>,
+
+    /// Most recent compact request payload, retained while compaction is in flight so
+    /// the backend can re-emit it without involving the frontend error path.
+    current_request: Arc<RwLock<Option<CompactRequest>>>,
 }
 
 impl CompactionRuntimeState {
@@ -217,6 +225,8 @@ impl CompactionRuntimeState {
             last_compacted_tail_id: Arc::new(RwLock::new(None)),
             retry_attempt: Arc::new(RwLock::new(0)),
             recovery_phase: Arc::new(RwLock::new(CompactionRecoveryPhase::CacheAligned)),
+            summary_retry_count: Arc::new(RwLock::new(0)),
+            current_request: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -226,6 +236,8 @@ impl CompactionRuntimeState {
             last_compacted_tail_id: Arc::new(RwLock::new(last_tail_id)),
             retry_attempt: Arc::new(RwLock::new(0)),
             recovery_phase: Arc::new(RwLock::new(CompactionRecoveryPhase::CacheAligned)),
+            summary_retry_count: Arc::new(RwLock::new(0)),
+            current_request: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -235,6 +247,7 @@ impl CompactionRuntimeState {
             last_compacted_tail_id: self.last_compacted_tail_id.read().await.clone(),
             retry_attempt: *self.retry_attempt.read().await,
             recovery_phase: *self.recovery_phase.read().await,
+            summary_retry_count: *self.summary_retry_count.read().await,
         }
     }
 
@@ -242,12 +255,20 @@ impl CompactionRuntimeState {
         self.last_compacted_tail_id.read().await.clone()
     }
 
-    pub async fn clear_runtime_state(&self, clear_last_compacted_tail_id: bool) {
+    pub async fn clear_in_flight_state(&self, clear_last_compacted_tail_id: bool) {
         *self.phase.write().await = CompactionPhase::Idle;
+        *self.summary_retry_count.write().await = 0;
+        *self.current_request.write().await = None;
 
         if clear_last_compacted_tail_id {
             *self.last_compacted_tail_id.write().await = None;
         }
+    }
+
+    pub async fn clear_runtime_state(&self, clear_last_compacted_tail_id: bool) {
+        self.clear_in_flight_state(clear_last_compacted_tail_id)
+            .await;
+        self.reset_recovery_progress().await;
     }
 
     pub async fn retry_attempt(&self) -> u32 {
@@ -256,6 +277,28 @@ impl CompactionRuntimeState {
 
     pub async fn recovery_phase(&self) -> CompactionRecoveryPhase {
         *self.recovery_phase.read().await
+    }
+
+    pub async fn summary_retry_count(&self) -> u32 {
+        *self.summary_retry_count.read().await
+    }
+
+    pub async fn increment_summary_retry_count(&self) -> u32 {
+        let mut retry_count = self.summary_retry_count.write().await;
+        *retry_count += 1;
+        *retry_count
+    }
+
+    pub async fn reset_summary_retry_count(&self) {
+        *self.summary_retry_count.write().await = 0;
+    }
+
+    pub async fn current_request(&self) -> Option<CompactRequest> {
+        self.current_request.read().await.clone()
+    }
+
+    pub async fn set_current_request(&self, request: CompactRequest) {
+        *self.current_request.write().await = Some(request);
     }
 
     pub async fn increment_retry_attempt(&self) -> u32 {
@@ -309,6 +352,8 @@ impl CompactionRuntimeState {
             started_at_ms,
         });
         *self.last_compacted_tail_id.write().await = current_tail_id;
+        *self.summary_retry_count.write().await = 0;
+        *self.current_request.write().await = None;
         CompactionBeginOutcome::Started
     }
 
@@ -328,6 +373,8 @@ impl CompactionRuntimeState {
 
     pub async fn complete_success(&self) -> CompactionResumeAction {
         self.reset_recovery_progress().await;
+        self.reset_summary_retry_count().await;
+        *self.current_request.write().await = None;
         match std::mem::replace(&mut *self.phase.write().await, CompactionPhase::Idle) {
             CompactionPhase::Idle => CompactionResumeAction::Nothing,
             CompactionPhase::InFlight(in_flight) => match in_flight.kind {
@@ -419,6 +466,10 @@ pub struct AgentSession {
     /// Exact prompt-layout fields from the latest emitted completion request.
     /// Reused by compaction so the summarization call preserves provider cache prefixes.
     pub last_completion_request: Arc<RwLock<Option<CompactionParentRequest>>>,
+
+    /// Last raw input message ID included in the most recent emitted completion request.
+    /// Used to persist provider-reported prompt tokens onto the correct checkpoint message.
+    pub last_submitted_input_message_id: Arc<RwLock<Option<String>>>,
 }
 
 #[cfg(test)]

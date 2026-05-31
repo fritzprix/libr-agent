@@ -190,9 +190,12 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-6 h-6 rounded overflow-hidden flex-shrink-0 border border-border/50">
                 {preset.logo ? (
+                  /* ⚡ Bolt: Added lazy loading and async decoding to improve scroll performance for long lists */
                   <img
                     src={preset.logo}
                     alt={preset.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-contain"
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display =

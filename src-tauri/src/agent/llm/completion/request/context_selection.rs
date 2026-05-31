@@ -13,15 +13,19 @@ pub async fn trigger_preflight_compaction_for_messages_or_error(
     session_name: &str,
     messages: &[Message],
     parent_request: Option<CompactionParentRequest>,
+    measured_output_tokens_reserve: usize,
 ) -> Result<bool, AgentRuntimeError> {
     crate::agent::llm::completion::compaction::try_trigger_preflight_compaction(
         active_sessions,
         app_handle,
-        session_id,
-        session_name,
-        messages,
-        parent_request,
-        true,
+        crate::agent::llm::completion::compaction::PreflightCompactionTriggerInput {
+            session_id,
+            session_name,
+            messages,
+            parent_request,
+            measured_output_tokens_reserve,
+            resume_completion_after_compact: true,
+        },
     )
     .await
     .map_err(|error| {
@@ -72,50 +76,4 @@ pub fn resolve_preserved_calibration_ratio(
             tools_tokens,
         )
     })
-}
-
-pub fn try_apply_lossy_main_request_fallback(
-    messages: &[Message],
-    provider: &str,
-    safe_input_token_limit: usize,
-    system_prompt_tokens: usize,
-    tools_tokens: usize,
-    fallback_calibration_ratio: Option<f64>,
-) -> Option<Vec<Message>> {
-    let mut lossy_messages =
-        crate::agent::llm::context_selector::trim_messages_to_fit_conservative_limit(
-            messages,
-            provider,
-            safe_input_token_limit,
-            system_prompt_tokens,
-            tools_tokens,
-            fallback_calibration_ratio,
-        );
-
-    lossy_messages =
-        crate::agent::llm::context_selector::truncate_single_oversized_message_to_fit_conservative_limit(
-            &lossy_messages,
-            safe_input_token_limit,
-            system_prompt_tokens,
-            tools_tokens,
-            fallback_calibration_ratio,
-        );
-
-    if lossy_messages.is_empty() {
-        return None;
-    }
-
-    let conservative_total =
-        crate::agent::llm::token_utils::calculate_conservative_preflight_prompt_tokens(
-            &lossy_messages,
-            system_prompt_tokens,
-            tools_tokens,
-            fallback_calibration_ratio,
-        );
-
-    if conservative_total >= safe_input_token_limit {
-        return None;
-    }
-
-    Some(lossy_messages)
 }

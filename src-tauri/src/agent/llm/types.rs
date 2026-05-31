@@ -163,7 +163,7 @@ pub struct CompactionParentRequest {
 
 /// Event payload emitted as `llm:compact-request`.
 /// The frontend listener calls the LLM for a summary and returns via `agent_handle_compact_response`.
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactRequest {
     pub session_id: String,
@@ -181,8 +181,9 @@ pub struct CompactRequest {
     /// event so frontend submission reuses the exact same logical payload shape
     /// that Rust preflight already fitted.
     pub messages: Vec<Message>,
-    pub from_id: String,
     pub to_id: String,
+    /// Number of newly condensed messages represented by this compaction event.
+    pub compacted_delta_count: usize,
     /// The frontend-visible parent workflow request layout to replay for
     /// cache-friendly compaction. Rust-only volatile state stays server-side.
     pub parent_request: Option<CompactionParentRequest>,

@@ -219,5 +219,17 @@ describe('BaseAIService.compact', () => {
       AIServiceError,
     );
   });
-});
 
+  it('throws when compaction stream contains only non-content chunks and whitespace', async () => {
+    const service = new TestBaseAIService('test-key');
+    service.setCompactChunks([
+      JSON.stringify({ thinking: 'hidden reasoning' }),
+      JSON.stringify({ tool_calls: [{ id: 'call-1' }] }),
+      ' \n\t ',
+    ]);
+
+    await expect(service.compact(createMessages())).rejects.toMatchObject({
+      message: 'compact() received an empty response from streamChat',
+    });
+  });
+});

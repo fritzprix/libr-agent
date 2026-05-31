@@ -10,10 +10,7 @@ import type { ContextStrategy, ServiceConfig } from '@/context/SettingsContext';
 import { getLogger } from '@/lib/logger';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
-import {
-  factoryReset as backendFactoryReset,
-  clearAllSessions as backendClearAllSessions,
-} from '@/lib/backend/sessions';
+import { factoryReset as backendFactoryReset } from '@/lib/backend/sessions';
 import { useSettingsForm } from './useSettingsForm';
 
 const logger = getLogger('useSettingsPageController');
@@ -147,30 +144,6 @@ export function useSettingsPageController() {
   const handleFactoryReset = useCallback(async () => {
     setIsResetting(true);
     try {
-      try {
-        // ⚡ Bolt: Clear playbooks sequentially first because it depends on listing assistants,
-        // then clear the remaining independent databases concurrently using Promise.allSettled
-        // to prevent partial failure early rejects from racing with the backend reset.
-        await dbUtils.clearAllPlaybooks();
-        const results = await Promise.allSettled([
-          dbUtils.clearAllObjects(),
-          dbUtils.clearAllSessions(),
-          dbUtils.clearAllAssistants(),
-          dbUtils.clearAllMCPServers(),
-        ]);
-
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            logger.error(
-              `Frontend DB clear task ${index} failed:`,
-              result.reason,
-            );
-          }
-        });
-      } catch (error) {
-        logger.error('Failed to clear frontend DB during factory reset', error);
-      }
-
       await backendFactoryReset();
 
       toast.success(
@@ -202,7 +175,6 @@ export function useSettingsPageController() {
     setIsDeleting(true);
     try {
       await dbUtils.clearAllSessions();
-      await backendClearAllSessions();
       toast.success(
         t(
           'settings.dataReset.success',

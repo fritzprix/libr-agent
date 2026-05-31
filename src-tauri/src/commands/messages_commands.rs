@@ -66,17 +66,16 @@ pub async fn messages_get_page(
         .map_err(|e| e.to_string())
 }
 
-/// Get messages older than a cursor for a session in ascending chronological order.
+/// Get messages older than a row-id cursor for a session in ascending causal order.
 #[command]
 pub async fn messages_get_messages_before(
     session_id: String,
-    before_created_at: i64,
     before_row_id: i64,
     limit: u64,
 ) -> Result<MessageSlice, String> {
     let repo = get_message_repository();
     let slice = repo
-        .get_messages_before(&session_id, before_created_at, before_row_id, limit)
+        .get_messages_before(&session_id, before_row_id, limit)
         .await
         .map_err(|e| e.to_string())?;
 

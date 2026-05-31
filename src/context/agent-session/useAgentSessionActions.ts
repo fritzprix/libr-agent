@@ -74,6 +74,7 @@ export function useAgentSessionActionsLogic(
           assistantId: message.assistantId,
           attachments: message.attachments,
           toolUse: message.tool_use,
+          promptTokens: message.promptTokens,
           createdAt: now.getTime(),
           updatedAt: now.getTime(),
           source: message.source,

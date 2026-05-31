@@ -1,5 +1,5 @@
 import { useAssistantContext } from '@/context/AssistantContext';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import { Assistant } from '../../models/chat';
 import { Badge, Button } from '@/components/ui';
 import { EditorProvider } from '@/context/EditorContext';
@@ -47,6 +47,9 @@ export default function AssistantCard({
   const [edit, setEdit] = useState<boolean>(false);
   const { t } = useTranslation('common');
   const logger = getLogger('AssistantCard');
+
+  const uniqueId = useId();
+  const panelId = `assistant-card-panel-${uniqueId}`;
 
   const handleEditComplete = useCallback(
     async (assistant: Assistant) => {
@@ -146,6 +149,8 @@ export default function AssistantCard({
             size="icon"
             className="h-8 w-8 rounded-full hover:bg-primary/5 transition-colors"
             onClick={onToggle}
+            aria-expanded={isExpanded}
+            aria-controls={panelId}
             aria-label={
               isExpanded
                 ? t('assistant.card.collapse', 'Collapse configuration')
@@ -162,7 +167,7 @@ export default function AssistantCard({
 
         {/* Detailed Content */}
         {isExpanded && (
-          <div className="space-y-6 mb-6 relative z-10 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div id={panelId} className="space-y-6 mb-6 relative z-10 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="space-y-2">
               <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60 font-sans flex items-center gap-1.5">
                 <Square size={10} />

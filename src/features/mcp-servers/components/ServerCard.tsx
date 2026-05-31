@@ -53,9 +53,12 @@ export const ServerCard = React.memo(
             {/* Server logo */}
             <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 mt-0.5 border border-border/50">
               {server.metadata?.logo ? (
+                /* ⚡ Bolt: Added lazy loading and async decoding to prevent eager loading of background images */
                 <img
                   src={server.metadata.logo}
                   alt={serverName}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-contain"
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.display =
