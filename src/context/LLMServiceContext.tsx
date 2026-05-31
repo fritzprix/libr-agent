@@ -182,9 +182,10 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         }
 
         setCompactedRange(sessionId, {
-          fromId: compactContext.fromId,
           toId: compactContext.toId,
           summary: compactContext.summary,
+          latestIncludedPreview: compactContext.latestIncludedPreview,
+          condensedCount: compactContext.condensedCount,
         });
       } catch (error) {
         logger.warn('Failed to refresh compacted range', { sessionId, error });

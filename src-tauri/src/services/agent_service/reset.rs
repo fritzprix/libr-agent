@@ -10,6 +10,7 @@ impl AgentService {
     pub async fn clear_all_sessions(manager: &AgentSessionManager) -> Result<usize, String> {
         let sessions = manager.get_all_sessions().await?;
         let count = sessions.len();
+        let mut failed_sessions = Vec::new();
 
         for session in sessions {
             match manager.delete_session(session.id.clone()).await {
@@ -24,8 +25,17 @@ impl AgentService {
                         session.id,
                         error
                     );
+                    failed_sessions.push(session.id);
                 }
             }
+        }
+
+        if !failed_sessions.is_empty() {
+            return Err(format!(
+                "Failed to delete {} sessions: {:?}",
+                failed_sessions.len(),
+                failed_sessions
+            ));
         }
 
         if let Ok(session_manager) = get_session_manager() {

@@ -205,6 +205,7 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.7.32_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.32/LibrAgent_0.7.32_x64-setup.exe) · [`LibrAgent_0.7.32_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.32/LibrAgent_0.7.32_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.7.32_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.32/LibrAgent_0.7.32_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.7.32_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.32/LibrAgent_0.7.32_amd64.AppImage) · [`LibrAgent_0.7.32_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.32/LibrAgent_0.7.32_amd64.deb) · [`LibrAgent-0.7.32-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.7.32/LibrAgent-0.7.32-1.x86_64.rpm)

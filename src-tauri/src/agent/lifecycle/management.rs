@@ -140,6 +140,7 @@ pub async fn resume_session(
                 expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
                 last_completion_request: Arc::new(RwLock::new(None)),
+                last_submitted_input_message_id: Arc::new(RwLock::new(None)),
             },
         );
     }

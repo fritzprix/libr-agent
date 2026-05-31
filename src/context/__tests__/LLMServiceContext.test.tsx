@@ -66,7 +66,6 @@ describe('LLMServiceContext – Core', () => {
       (agentCommands.getAgentCompactContext as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'compact-1',
         sessionId: 'session-1',
-        fromId: 'msg-1',
         toId: 'msg-9',
         summary: 'Persisted summary',
         createdAt: Date.now(),
@@ -81,7 +80,6 @@ describe('LLMServiceContext – Core', () => {
       });
 
       expect(result.current.getCompactedRange('session-1')).toEqual({
-        fromId: 'msg-1',
         toId: 'msg-9',
         summary: 'Persisted summary',
       });

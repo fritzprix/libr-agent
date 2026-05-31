@@ -197,6 +197,20 @@ export interface SessionRuntimeState {
   servers: SessionRuntimeServerState[];
 }
 
+export interface PreflightTokenMetrics {
+  conservativePromptTokens: number;
+  promptAnchoredTotalTokens: number;
+  safeInputTokenLimit: number;
+  measuredOutputTokensReserve: number;
+  effectiveInputBudget: number;
+  totalBudgetTokens: number;
+  systemPromptTokens: number;
+  toolsTokens: number;
+  selectedMessageCount: number;
+  compactSummaryInjected: boolean;
+  preservedCalibrationRatio?: number | null;
+}
+
 /**
  * Tool execution result from frontend.
  * Mirrors `ToolExecutionResult` in `src-tauri/src/commands/agent_commands.rs`.

@@ -1,5 +1,6 @@
 pub mod channel_routing;
 pub mod compact_recovery;
+pub mod compaction_text;
 pub mod concurrency;
 pub mod config;
 pub mod context;

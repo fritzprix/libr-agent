@@ -22,6 +22,7 @@ pub struct Model {
     pub source: Option<String>,
     pub error: Option<String>,
     pub usage: Option<String>,
+    pub prompt_tokens: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

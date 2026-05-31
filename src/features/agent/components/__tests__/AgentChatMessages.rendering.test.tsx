@@ -16,13 +16,26 @@ import {
 // Vitest hoisted shared state
 // ---------------------------------------------------------------------------
 
-const { virtuosoMock, scrollToIndexMock, sessionState, chatState, hasVirtuosoHandle } =
+const {
+  virtuosoMock,
+  scrollToIndexMock,
+  sessionState,
+  chatState,
+  hasVirtuosoHandle,
+  compactedRange,
+} =
   vi.hoisted(() => ({
     virtuosoMock: vi.fn(),
     scrollToIndexMock: vi.fn(),
     sessionState: { session: { id: 'session-1', assistant: { name: 'Agent' } } },
     chatState: { messages: [] as Message[], workflowStatus: 'idle' as 'idle' | 'busy' },
     hasVirtuosoHandle: { current: true },
+    compactedRange: {
+      toId: 'tool-1',
+      summary: 'Compacted summary',
+      latestIncludedPreview: 'Backend latest preview',
+      condensedCount: 3,
+    },
   }));
 
 let groupedMessagesMock: GroupedMessage[] = [];
@@ -63,11 +76,7 @@ vi.mock('@/context/AgentSessionContext', () => ({
 
 vi.mock('@/context/LLMServiceContext', () => ({
   useLLMService: () => ({
-    getCompactedRange: () => ({
-      fromId: 'earlier-user',
-      toId: 'tool-1',
-      summary: 'Compacted summary',
-    }),
+    getCompactedRange: () => compactedRange,
   }),
 }));
 
@@ -95,8 +104,20 @@ vi.mock('@/features/agent/components/shared', () => ({
 }));
 
 vi.mock('../shared/CompactEventDivider', () => ({
-  CompactEventDivider: ({ summary }: { summary?: string }) => (
-    <div>{summary ?? 'compact divider'}</div>
+  CompactEventDivider: ({
+    summary,
+    latestIncludedPreview,
+    condensedCount,
+  }: {
+    summary?: string;
+    latestIncludedPreview?: string;
+    condensedCount?: number;
+  }) => (
+    <div>
+      <div>{summary ?? 'compact divider'}</div>
+      <div>{latestIncludedPreview ?? 'no latest preview'}</div>
+      <div>{condensedCount ?? 'no count'}</div>
+    </div>
   ),
 }));
 
@@ -150,6 +171,30 @@ describe('AgentChatMessages – rendering and layout helpers', () => {
     render(<AgentChatMessages />);
 
     expect(screen.getByText('Compacted summary')).toBeInTheDocument();
+  });
+
+  it('uses backend-provided compact metadata instead of re-extracting raw message text', () => {
+    chatState.messages = [
+      {
+        id: 'earlier-user',
+        sessionId: 'session-1',
+        threadId: 'session-1',
+        role: 'user',
+        content: [{ type: 'text', text: 'Earlier: leaked raw UI chrome' }],
+      },
+      {
+        ...baseMessage,
+        id: 'tool-1',
+        role: 'tool',
+        tool_call_id: 'call-1',
+        content: [{ type: 'text', text: 'Latest included: leaked raw UI chrome' }],
+      },
+    ];
+
+    render(<AgentChatMessages />);
+
+    expect(screen.getByText('Backend latest preview')).toBeInTheDocument();
+    expect(screen.queryByText(/leaked raw UI chrome/)).not.toBeInTheDocument();
   });
 
   it('opts the chat scroller out of browser scroll anchoring', () => {

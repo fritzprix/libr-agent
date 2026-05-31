@@ -30,6 +30,7 @@ describe('Message conversions', () => {
     attachments: [],
     tool_use: { id: 'tu1', name: 'tool1', input: {} },
     usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30, cachedPromptTokens: 5 },
+    promptTokens: 10,
     createdAt: now,
     updatedAt: now,
     source: 'assistant',
@@ -50,6 +51,7 @@ describe('Message conversions', () => {
     expect(rustMsg.toolCallId).toBe(fullMessage.tool_call_id);
     expect(rustMsg.toolUse).toEqual(fullMessage.tool_use);
     expect(rustMsg.usage).toEqual(fullMessage.usage);
+    expect(rustMsg.promptTokens).toBe(fullMessage.promptTokens);
 
     // Timestamp check
     expect(rustMsg.createdAt).toBe(nowTs);
@@ -75,6 +77,7 @@ describe('Message conversions', () => {
       toolCallId: 'tc1',
       toolUse: { id: 'tu1', name: 'tool1', input: {} },
       usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30, cachedPromptTokens: 5 },
+      promptTokens: 10,
       createdAt: nowTs,
       updatedAt: nowTs,
       source: 'assistant',
@@ -87,6 +90,7 @@ describe('Message conversions', () => {
     expect(msg.tool_call_id).toBe(rustMsg.toolCallId);
     expect(msg.tool_use).toEqual(rustMsg.toolUse);
     expect(msg.usage).toEqual(rustMsg.usage);
+    expect(msg.promptTokens).toBe(rustMsg.promptTokens);
     expect(msg.createdAt?.getTime()).toBe(nowTs);
   });
 

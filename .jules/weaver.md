@@ -4,3 +4,6 @@
 ## 2024-06-12 - Concurrent Mode Ref Mutation
 **Learning:** Mutating a React ref (`ref.current = value`) during the render cycle to sync previous prop values is a severe anti-pattern that violates the Rule of Purity and causes unpredictable bugs in Concurrent Mode. It also misses the opportunity to use "Adjusting State During Render" which tells React to restart the render immediately without committing the DOM.
 **Action:** Always use a local `useState` to track the previous prop or global value, and call `setState` directly during render to trigger an immediate restart, completely eradicating the extra `useEffect` re-render cycle.
+## 2026-05-24 - Adjusting State During Render for Context Resets
+**Learning:** React contexts like `MCPServerRegistryContext` and `AgentChatContext` used `useEffect` to clear local states (`allServers`, `pendingMessages`) when props or global dependencies like `settings.agentHubUrl` or `session.id` changed. This "Derived State" anti-pattern forces an unnecessary extra re-render cycle, hurting performance.
+**Action:** Replaced the `useEffect` syncing with the "Adjusting State During Render" pattern by storing the previous dependency in a local `useState` and calling state setters directly during the render phase when the dependency changes, triggering an immediate restart of the render.

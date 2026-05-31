@@ -91,6 +91,10 @@ After making any code changes, always run:
 pnpm refactor:validate
 ```
 
+**Execution rule:** Prefer repository `pnpm` scripts for validation and Rust workflow commands. Do **not** default to invoking `cargo` directly for routine validation in this repo, because the wrapper scripts encode the expected environment and direct `cargo run`/ad-hoc cargo execution can crash or diverge from repository behavior.
+
+**Review delegation rule:** Review-agent/sub-agent review is allowed, but only when the prompt is explicit and tightly scoped. When delegating review, name the exact files, subsystem, risk area, and review goal (for example: correctness regression, state handling, contract mismatch, or data-loss risk), and instruct the agent to report only concrete high-signal issues. Do **not** throw a vague “review the PR” prompt at a review agent, because that invites noise, busywork, and dumb detours.
+
 **Hard rule for agents and contributors:** Do **not** push commits, update a PR branch, or claim the work is ready if formatting has not been applied and re-checked. A passing focused test or `cargo check` is not enough if `cargo fmt --check` / `pnpm rust:fmt` / repository format checks would still fail. If the change touches Rust files, run formatting before push; if the change touches multiple areas, prefer `pnpm refactor:validate` before saying the work is ready.
 
 This ensures:

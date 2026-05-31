@@ -172,7 +172,9 @@ impl WorkspaceServer {
 
         // === ZIP PACKAGE EXPORT ===
         let package_name = name_param.unwrap_or_else(|| "workspace_export".to_string());
-        let zip_filename = format!("{package_name}_{timestamp}.zip");
+        let safe_package_name =
+            crate::services::FileExportService::sanitize_package_name(&package_name);
+        let zip_filename = format!("{safe_package_name}_{timestamp}.zip");
         let zip_path = exports_dir.join("packages").join(&zip_filename);
 
         let mut missing_files = Vec::new();

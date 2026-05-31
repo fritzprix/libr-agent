@@ -490,8 +490,8 @@ pub async fn compact_session_context(
     if !triggered {
         let message = if let Some(record) = previous_record {
             format!(
-                "No new compaction was needed for session {}. Existing compact summary already covers {} -> {}.",
-                session_id, record.from_id, record.to_id
+                "No new compaction was needed for session {}. Existing compact summary is already current through {}.",
+                session_id, record.to_id
             )
         } else {
             format!(
@@ -560,9 +560,7 @@ pub async fn compact_session_context(
     };
 
     let unchanged = previous_record.as_ref().is_some_and(|previous| {
-        previous.from_id == compact_record.from_id
-            && previous.to_id == compact_record.to_id
-            && previous.summary == compact_record.summary
+        previous.to_id == compact_record.to_id && previous.summary == compact_record.summary
     });
     let status = if unchanged { "noop" } else { "success" };
     let state_label = if unchanged {
@@ -571,12 +569,8 @@ pub async fn compact_session_context(
         "compacted"
     };
     let message = format!(
-        "Session {} {}.\n\nCompaction boundary: {} -> {}\n\nCompact summary:\n{}",
-        session_id,
-        state_label,
-        compact_record.from_id,
-        compact_record.to_id,
-        compact_record.summary
+        "Session {} {}.\n\nLatest compacted message: {}\n\nCompact summary:\n{}",
+        session_id, state_label, compact_record.to_id, compact_record.summary
     );
     let mut response_data = build_agent_tool_data(
         "compactSessionContext",
@@ -589,8 +583,13 @@ pub async fn compact_session_context(
     response_data.insert("sessionId".to_string(), Value::String(session_id));
     response_data.insert("status".to_string(), Value::String(status.to_string()));
     response_data.insert("compacted".to_string(), Value::Bool(!unchanged));
-    response_data.insert("fromId".to_string(), Value::String(compact_record.from_id));
     response_data.insert("toId".to_string(), Value::String(compact_record.to_id));
+    if let Some(condensed_count) = compact_record.condensed_count {
+        response_data.insert(
+            "condensedCount".to_string(),
+            Value::Number(condensed_count.into()),
+        );
+    }
     response_data.insert("summary".to_string(), Value::String(compact_record.summary));
     response_data.insert(
         "timeoutSeconds".to_string(),

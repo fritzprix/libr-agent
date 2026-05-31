@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 pub struct CompactContextRecord {
     pub id: String,
     pub session_id: String,
-    pub from_id: String,
     pub to_id: String,
+    pub condensed_count: Option<usize>,
     pub summary: String,
     pub created_at: i64,
 }
@@ -21,8 +21,8 @@ impl From<compact_context::Model> for CompactContextRecord {
         Self {
             id: model.id,
             session_id: model.session_id,
-            from_id: model.from_id,
             to_id: model.to_id,
+            condensed_count: model.condensed_count.map(|value| value as usize),
             summary: model.summary,
             created_at: model.created_at,
         }
@@ -58,8 +58,8 @@ impl CompactContextRepository for SqliteCompactContextRepository {
         let active_model = compact_context::ActiveModel {
             id: Set(record.id.clone()),
             session_id: Set(record.session_id.clone()),
-            from_id: Set(record.from_id.clone()),
             to_id: Set(record.to_id.clone()),
+            condensed_count: Set(record.condensed_count.map(|value| value as i32)),
             summary: Set(record.summary.clone()),
             created_at: Set(record.created_at),
         };
@@ -68,8 +68,8 @@ impl CompactContextRepository for SqliteCompactContextRepository {
             .on_conflict(
                 OnConflict::column(compact_context::Column::SessionId)
                     .update_columns([
-                        compact_context::Column::FromId,
                         compact_context::Column::ToId,
+                        compact_context::Column::CondensedCount,
                         compact_context::Column::Summary,
                         compact_context::Column::CreatedAt,
                     ])

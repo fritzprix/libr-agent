@@ -10,10 +10,7 @@ import type { ContextStrategy, ServiceConfig } from '@/context/SettingsContext';
 import { getLogger } from '@/lib/logger';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
-import {
-  factoryReset as backendFactoryReset,
-  clearAllSessions as backendClearAllSessions,
-} from '@/lib/backend/sessions';
+import { factoryReset as backendFactoryReset } from '@/lib/backend/sessions';
 import { useSettingsForm } from './useSettingsForm';
 
 const logger = getLogger('useSettingsPageController');
@@ -178,7 +175,6 @@ export function useSettingsPageController() {
     setIsDeleting(true);
     try {
       await dbUtils.clearAllSessions();
-      await backendClearAllSessions();
       toast.success(
         t(
           'settings.dataReset.success',
