@@ -504,6 +504,32 @@ export function useAgentChatScroll({
     ],
   );
 
+  const handleResizeObserverLayoutChange = useCallback(
+    (reason: 'content-resize-observer' | 'scroller-resize-observer') => {
+      if (prependCount > 0 || isPreservingPrependPositionRef.current) {
+        return;
+      }
+
+      markBottomAlignmentLayoutChanged(reason);
+      scheduleBottomAlignmentVerification(reason);
+      if (
+        !shouldFollowLatestRef.current &&
+        !visualBottomRef.current &&
+        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current)
+      ) {
+        return;
+      }
+
+      scheduleScrollToBottom(reason);
+    },
+    [
+      markBottomAlignmentLayoutChanged,
+      prependCount,
+      scheduleBottomAlignmentVerification,
+      scheduleScrollToBottom,
+    ],
+  );
+
   const handleVirtuosoAtBottomStateChange = useCallback(
     (atBottom: boolean) => {
       virtuosoAtBottomRef.current = atBottom;
@@ -754,21 +780,7 @@ export function useAgentChatScroll({
     }
 
     const observer = new ResizeObserver(() => {
-      if (prependCount > 0 || isPreservingPrependPositionRef.current) {
-        return;
-      }
-
-      markBottomAlignmentLayoutChanged('content-resize-observer');
-      scheduleBottomAlignmentVerification('content-resize-observer');
-      if (
-        !shouldFollowLatestRef.current &&
-        !visualBottomRef.current &&
-        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current)
-      ) {
-        return;
-      }
-
-      scheduleScrollToBottom('content-resize-observer');
+      handleResizeObserverLayoutChange('content-resize-observer');
     });
 
     observer.observe(content);
@@ -776,13 +788,7 @@ export function useAgentChatScroll({
     return () => {
       observer.disconnect();
     };
-  }, [
-    markBottomAlignmentLayoutChanged,
-    prependCount,
-    scheduleBottomAlignmentVerification,
-    scheduleScrollToBottom,
-    scrollerElement,
-  ]);
+  }, [handleResizeObserverLayoutChange, scrollerElement]);
 
   useEffect(() => {
     if (!scrollerElement || typeof ResizeObserver === 'undefined') {
@@ -790,21 +796,7 @@ export function useAgentChatScroll({
     }
 
     const observer = new ResizeObserver(() => {
-      if (prependCount > 0 || isPreservingPrependPositionRef.current) {
-        return;
-      }
-
-      markBottomAlignmentLayoutChanged('scroller-resize-observer');
-      scheduleBottomAlignmentVerification('scroller-resize-observer');
-      if (
-        !shouldFollowLatestRef.current &&
-        !visualBottomRef.current &&
-        !isBottomAlignmentActive(bottomAlignmentPhaseRef.current)
-      ) {
-        return;
-      }
-
-      scheduleScrollToBottom('scroller-resize-observer');
+      handleResizeObserverLayoutChange('scroller-resize-observer');
     });
 
     observer.observe(scrollerElement);
@@ -812,13 +804,7 @@ export function useAgentChatScroll({
     return () => {
       observer.disconnect();
     };
-  }, [
-    markBottomAlignmentLayoutChanged,
-    prependCount,
-    scheduleBottomAlignmentVerification,
-    scheduleScrollToBottom,
-    scrollerElement,
-  ]);
+  }, [handleResizeObserverLayoutChange, scrollerElement]);
 
   useEffect(() => {
     if (
