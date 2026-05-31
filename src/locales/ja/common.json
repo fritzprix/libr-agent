@@ -441,7 +441,8 @@
       "title": "高度な実行時制御",
       "toolResultInlineLimit": "ツール結果のインライン上限 (KB)",
       "toolResultInlineLimitDescription": "ツール出力をどれだけインライン表示するかを制御します。この値を超えると LibrAgent は完全な結果をワークスペースファイルに退避します。値を小さくするとエージェントのコンテキストをより軽く保てます。",
-      "toolResultInlineLimitPlaceholder": "例: 16"
+      "toolResultInlineLimitPlaceholder": "例: 16",
+      "loopPreventionThresholdPlaceholder": "例: 3"
     },
     "system": {
       "title": "システムとパフォーマンス",

@@ -466,7 +466,8 @@
       "title": "Contrôles d'exécution avancés",
       "summary": "Ces paramètres modifient les garde-fous d'exécution, les limites multi-agents et l'isolation du shell. La plupart des utilisateurs devraient les laisser tels quels.",
       "loopPreventionThreshold": "Seuil de prévention des boucles",
-      "loopPreventionThresholdDescription": "Nombre de résultats d'outils identiques répétés avant que l'agent ne tente une récupération naturelle ou ne déclenche un arrêt forcé."
+      "loopPreventionThresholdDescription": "Nombre de résultats d'outils identiques répétés avant que l'agent ne tente une récupération naturelle ou ne déclenche un arrêt forcé.",
+      "loopPreventionThresholdPlaceholder": "ex. 3"
     },
     "system": {
       "title": "Système & Performance",

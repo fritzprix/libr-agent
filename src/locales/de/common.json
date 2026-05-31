@@ -466,7 +466,8 @@
       "title": "Erweiterte Laufzeitsteuerung",
       "summary": "Diese Einstellungen ändern Laufzeitschutz, Multi-Agent-Limits und die Shell-Isolation. Die meisten Nutzer sollten sie unverändert lassen.",
       "loopPreventionThreshold": "Schwelle zur Schleifenvermeidung",
-      "loopPreventionThresholdDescription": "Anzahl identischer, wiederholter Tool-Ergebnisse, bevor der Agent eine natürliche Wiederherstellung versucht oder einen harten Stopp auslöst."
+      "loopPreventionThresholdDescription": "Anzahl identischer, wiederholter Tool-Ergebnisse, bevor der Agent eine natürliche Wiederherstellung versucht oder einen harten Stopp auslöst.",
+      "loopPreventionThresholdPlaceholder": "z. B. 3"
     },
     "system": {
       "title": "System & Leistung",

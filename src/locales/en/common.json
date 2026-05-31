@@ -467,7 +467,8 @@
       "title": "Advanced Runtime Controls",
       "summary": "These settings change runtime safety rails, multi-agent limits, and shell isolation. Most users should leave them alone.",
       "loopPreventionThreshold": "Loop Prevention Threshold",
-      "loopPreventionThresholdDescription": "Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop."
+      "loopPreventionThresholdDescription": "Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop.",
+      "loopPreventionThresholdPlaceholder": "e.g., 3"
     },
     "system": {
       "title": "System & Performance",
