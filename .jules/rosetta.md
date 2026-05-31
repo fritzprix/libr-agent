@@ -7,3 +7,6 @@
 ## 2026-05-20 - [AppSidebar]
 **Extracted:** 2 Strings
 **Languages updated:** EN, KO, ZH, JA, FR, ES, DE, PT
+## 2026-05-30 - AdvancedRuntimeControlsSection
+**Extracted:** 1 String
+**Languages updated:** EN, KO, DE, ES, FR, JA, PT, ZH

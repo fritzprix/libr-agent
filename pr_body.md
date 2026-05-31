@@ -1,19 +1,11 @@
-### 💡 What
+🌐 Scope
+- `src/features/settings/tabs/advanced/AdvancedRuntimeControlsSection.tsx`
 
-- Added `limit` and `offset` schema parameters to the builtin `tool__list` discovery tool in the `tool` server.
-- Mapped the raw JSON list response to a dense, paginated Markdown table.
-- Sanitized descriptions by escaping pipe characters and replacing newlines.
+🔑 Keys Added
+- 1 existing key reused (`settings.advanced.defaultSessionMaxFanoutPlaceholder`)
 
-### 🎯 Why
+🌍 Languages
+- EN, KO, DE, ES, FR, JA, PT, ZH
 
-- Resolves context window bloat when returning hundreds of cached tools from builtin or external servers.
-- Improves LLM readability by presenting tool properties (Source, Server, Tool, Status, Description) in an aligned table layout instead of a sprawling hierarchical list.
-
-### 📉 Token Impact
-
-- Output token usage scales linearly with `limit` (default: 50 rows) instead of growing uncontrollably with the user's inventory size.
-- Dense table formatting eliminates redundant structural prefixes and whitespace from previous list representations, compressing the payload per tool row.
-
-### 🛠️ Error Recovery
-
-- Includes actionable pagination hints at the bottom of the table, explicitly directing the LLM to call `tool__list` again with `offset` to fetch the next block of results if more tools exist.
+⚠️ Visual QA
+- Verified that longer text strings do not break Flex/Grid layouts.
