@@ -8,6 +8,7 @@
 //!  5. Record the run and compute the next fire time
 
 use std::collections::HashSet;
+use std::path::Path;
 use std::str::FromStr;
 
 use chrono::TimeZone;
@@ -70,8 +71,8 @@ pub async fn resolve_task_session_resolution(
     Ok(TaskSessionResolution::Create(session_id.to_string()))
 }
 
-fn is_stale_workspace_override_error(error: &str) -> bool {
-    error.starts_with("Path does not exist:") || error.starts_with("Path is not a directory:")
+fn is_stale_workspace_override(path: &str) -> bool {
+    !Path::new(path).is_dir()
 }
 
 pub async fn sync_task_workspace_override(
@@ -82,43 +83,41 @@ pub async fn sync_task_workspace_override(
     workspace_override: Option<&str>,
 ) -> Result<(), String> {
     if let Some(path) = workspace_override {
-        match WorkspaceService::set_override(session_id, path.to_string()).await {
-            Ok(()) => Ok(()),
-            Err(error) if is_stale_workspace_override_error(&error) => {
-                log::warn!(
-                    "⏰ Scheduled task '{}' ({}) references stale workspace override '{}'; \
-                     clearing override and falling back to the default workspace.",
-                    task_name,
-                    task_id,
-                    path
-                );
-                WorkspaceService::cancel_override(session_id).await?;
-                repo.update_scheduled_task(
-                    task_id,
-                    UpdateScheduledTaskParams {
-                        name: None,
-                        cron_expression: None,
-                        schedule_timezone: None,
-                        assistant_id: None,
-                        group_id: None,
-                        group_name: None,
-                        message: None,
-                        yolo_mode: None,
-                        workspace_override: Some(None),
-                        enabled: None,
-                        next_run_at: None,
-                    },
+        if is_stale_workspace_override(path) {
+            log::warn!(
+                "⏰ Scheduled task '{}' ({}) references stale workspace override '{}'; \
+                 clearing override and falling back to the default workspace.",
+                task_name,
+                task_id,
+                path
+            );
+            WorkspaceService::cancel_override(session_id).await?;
+            repo.update_scheduled_task(
+                task_id,
+                UpdateScheduledTaskParams {
+                    name: None,
+                    cron_expression: None,
+                    schedule_timezone: None,
+                    assistant_id: None,
+                    group_id: None,
+                    group_name: None,
+                    message: None,
+                    yolo_mode: None,
+                    workspace_override: Some(None),
+                    enabled: None,
+                    next_run_at: None,
+                },
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to clear stale workspace override for scheduled task {}: {}",
+                    task_id, e
                 )
-                .await
-                .map_err(|e| {
-                    format!(
-                        "Failed to clear stale workspace override for scheduled task {}: {}",
-                        task_id, e
-                    )
-                })?;
-                Ok(())
-            }
-            Err(error) => Err(error),
+            })?;
+            Ok(())
+        } else {
+            WorkspaceService::set_override(session_id, path.to_string()).await
         }
     } else {
         WorkspaceService::cancel_override(session_id).await

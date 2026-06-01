@@ -6,7 +6,7 @@ use tauri_mcp_agent_lib::repositories::{
 };
 use tauri_mcp_agent_lib::scheduled::runner::sync_task_workspace_override;
 use tauri_mcp_agent_lib::services::scheduled_task_service::{
-    CreateScheduledTaskInput, ScheduledTaskService,
+    CreateScheduledTaskInput, ScheduledTaskGovernanceSettings, ScheduledTaskService,
 };
 use tauri_mcp_agent_lib::set_session_repository;
 
@@ -56,7 +56,7 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
     let missing_workspace = temp_dir.path().join("missing-workspace");
     let missing_workspace_str = missing_workspace.to_string_lossy().to_string();
 
-    let task = ScheduledTaskService::create_scheduled_task(
+    let task = ScheduledTaskService::create_scheduled_task_with_governance(
         &scheduled_repo,
         CreateScheduledTaskInput {
             name: "Nightly report".to_string(),
@@ -70,6 +70,7 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
             created_by_session_id: Some(session_id.to_string()),
             workspace_override: Some(missing_workspace_str.clone()),
         },
+        &ScheduledTaskGovernanceSettings::default(),
     )
     .await
     .expect("scheduled task should be created");
