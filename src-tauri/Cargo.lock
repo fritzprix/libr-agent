@@ -4021,7 +4021,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libragent"
-version = "0.7.31"
+version = "0.7.32"
 dependencies = [
  "agent-response-guards",
  "ammonia",
@@ -4086,7 +4086,7 @@ dependencies = [
  "walkdir",
  "warp",
  "windows-sys 0.59.0",
- "zip 0.6.6",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -11093,6 +11093,7 @@ dependencies = [
  "indexmap 2.13.0",
  "memchr",
  "typed-path",
+ "zopfli",
 ]
 
 [[package]]
