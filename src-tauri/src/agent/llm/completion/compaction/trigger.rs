@@ -20,8 +20,7 @@ use super::selection::{
     find_preflight_compactable_end_exclusive,
 };
 
-// Re-export public items that compaction.rs imports from this module.
-// This keeps the external API stable without changes to compaction.rs.
+// Re-export public items to keep the external API and downstream imports stable.
 pub use super::preparation::advance_compaction_overflow_recovery_step_for_testing;
 pub use super::selection::{
     build_checkpoint_backoff_split_candidates_for_testing,
