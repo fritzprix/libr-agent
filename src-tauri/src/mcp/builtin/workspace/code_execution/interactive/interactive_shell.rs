@@ -1,7 +1,11 @@
 use serde_json::Value;
+use std::time::Duration;
 
+use crate::agent::events::AgentEvent;
+use crate::agent::tauri_events::emit_agent_event;
 use crate::mcp::builtin::workspace::{
-    PendingShellExecution, WorkspaceServer, PERSISTENT_SHELL_TOOL,
+    InteractiveShellInputType, PendingShellExecution, PendingShellInputResolution, WorkspaceServer,
+    INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS, PERSISTENT_SHELL_TOOL,
 };
 use crate::mcp::builtin::{
     error_guidance::{guided_error, ErrorCategory, ToolGroup},
@@ -9,17 +13,10 @@ use crate::mcp::builtin::{
 };
 use crate::mcp::types::MCPResult;
 
-// Import validation and ui from sibling modules
 use super::super::validation;
-use super::ui;
 
 impl WorkspaceServer {
-    /// Handle interactive shell execution (1st tool call)
-    /// Returns UIResource with execution_id for user input.
-    ///
-    /// The follow-up UI payload is base64-encoded UTF-8 for transport safety only.
-    /// It is not treated as a cryptographic protection layer because this UI runs
-    /// inside the same trusted local desktop app boundary as the callback handler.
+    /// Start an interactive shell execution and wait for the local user to provide input.
     pub(crate) async fn handle_interactive_shell(
         &self,
         command: &str,
@@ -30,17 +27,14 @@ impl WorkspaceServer {
 
         let execution_id = uuid::Uuid::new_v4().to_string();
         let session_id = session_id.to_string();
-
-        // Sanitize command for storage/logging
         let sanitized_command = sanitize_command_for_logging(command);
 
-        // Extract run_mode from 1st call (will be used in 2nd call)
         let run_mode = args
             .get("run_mode")
-            .and_then(|v| v.as_str())
+            .and_then(|value| value.as_str())
             .unwrap_or("sync")
             .to_string();
-        let requested_timeout = args.get("timeout").and_then(|v| v.as_u64());
+        let requested_timeout = args.get("timeout").and_then(|value| value.as_u64());
         let timeout = match utils::resolve_sync_timeout(requested_timeout) {
             Ok(timeout) => timeout,
             Err(max_timeout) => {
@@ -69,66 +63,185 @@ impl WorkspaceServer {
             }
         };
 
-        // Store pending execution
+        let Some(app_handle) = crate::state::get_app_handle() else {
+            return Ok(guided_error(
+                ErrorCategory::InternalError,
+                "Interactive shell input requires the desktop UI runtime".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Open the desktop app UI before retrying the interactive command".to_string(),
+                "Use a non-interactive command when no local UI is available".to_string(),
+            ])
+            .to_mcp_result());
+        };
+
+        let (prompt, input_type) = self.get_prompt_config(command, args);
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
         let pending = PendingShellExecution {
             execution_id: execution_id.clone(),
-            session_id,
-            executable_command: command.to_string(), // Will be executed (may get -S flag)
-            display_command: sanitized_command.clone(), // For logs/UI
-            run_mode,                                // Store for 2nd call
+            session_id: session_id.clone(),
+            executable_command: command.to_string(),
+            display_command: sanitized_command.clone(),
+            run_mode,
             timeout,
             created_at: chrono::Utc::now(),
+            prompt: prompt.clone(),
+            input_type: input_type.clone(),
+            response_tx: Some(response_tx),
         };
 
         self.pending_executions.insert(pending);
 
-        // Build UIResource with platform-aware prompt
-        let (prompt, input_type) = self.get_prompt_config(command, args);
-        let html = ui::build_shell_input_ui(&execution_id, prompt, input_type);
+        if let Err(error) = emit_agent_event(
+            app_handle,
+            AgentEvent::InteractiveShellInputRequested {
+                session_id: session_id.clone(),
+                execution_id: execution_id.clone(),
+                prompt,
+                input_type,
+                command: sanitized_command.clone(),
+            },
+        ) {
+            let _ = self.pending_executions.remove(&execution_id);
+            return Ok(guided_error(
+                ErrorCategory::InternalError,
+                "Failed to open the interactive input prompt".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Try the command again after the session UI is fully loaded".to_string(),
+                format!("Internal error: {}", error),
+            ])
+            .to_mcp_result());
+        }
 
-        // Create UI resource JSON
-        let _ui_resource = serde_json::json!({
-            "uri": format!("ui://shell-input/{}", execution_id),
-            "mimeType": "text/html",
-            "text": html,
-            "_meta": {
-                "title": "Shell Command Input",
-                "execution_id": execution_id,
-                "created_at": chrono::Utc::now().to_rfc3339()
+        let resolution = tokio::time::timeout(
+            Duration::from_secs(INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS),
+            response_rx,
+        )
+        .await;
+
+        match resolution {
+            Ok(Ok(PendingShellInputResolution::Submitted(user_input))) => {
+                if let Some(pending) = self.pending_executions.remove(&execution_id) {
+                    self.execute_interactive_shell_with_input(pending, user_input)
+                        .await
+                } else {
+                    Ok(guided_error(
+                        ErrorCategory::ResourceNotFound,
+                        format!(
+                            "Interactive execution '{}' is no longer available",
+                            execution_id
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run the original command again to open a fresh input prompt".to_string(),
+                        "Avoid submitting the same prompt from multiple windows".to_string(),
+                    ])
+                    .to_mcp_result())
+                }
             }
-        });
+            Ok(Ok(PendingShellInputResolution::Cancelled)) => {
+                Ok(MCPResult::informational(&format!(
+                    "Interactive command cancelled before execution.\n\nCommand: {}",
+                    sanitized_command
+                )))
+            }
+            Ok(Err(_)) => {
+                let _ = self.pending_executions.remove(&execution_id);
+                Ok(guided_error(
+                    ErrorCategory::InternalError,
+                    "Interactive shell prompt closed unexpectedly".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Run the original command again to reopen the prompt".to_string(),
+                    "Keep the session window open while entering the requested input".to_string(),
+                ])
+                .to_mcp_result())
+            }
+            Err(_) => {
+                let _ = self.pending_executions.remove(&execution_id);
+                let _ = emit_agent_event(
+                    app_handle,
+                    AgentEvent::InteractiveShellInputResolved {
+                        session_id,
+                        execution_id,
+                        outcome: "expired".to_string(),
+                    },
+                );
 
-        // Return response with text and resource
-        Ok(crate::mcp::builtin::utils::create_resource_response(
-            &format!("ui://shell-input/{}", execution_id),
-            "text/html",
-            &html,
-            "workspace",
-            PERSISTENT_SHELL_TOOL,
-            Some(&format!(
-                "⏳ Waiting for user input\nExecution ID: {execution_id}\nCommand: {sanitized_command}"
-            )),
-        ))
+                Ok(guided_error(
+                    ErrorCategory::Timeout,
+                    format!(
+                        "Interactive input timed out after {} minutes",
+                        INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS / 60
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Run the original command again to request a fresh prompt".to_string(),
+                    "Submit the requested input before the prompt expires".to_string(),
+                ])
+                .to_mcp_result())
+            }
+        }
     }
 
-    /// Get platform-aware prompt configuration for user input
-    /// Returns (prompt, input_type) tuple
-    fn get_prompt_config<'a>(&self, command: &str, args: &'a Value) -> (&'a str, &'a str) {
-        // Check if privilege escalation detected (Unix only)
+    pub(crate) fn emit_interactive_shell_resolution(
+        &self,
+        session_id: &str,
+        execution_id: &str,
+        outcome: &str,
+    ) -> Result<(), String> {
+        let Some(app_handle) = crate::state::get_app_handle() else {
+            return Err("AppHandle not available for interactive shell resolution".to_string());
+        };
+
+        emit_agent_event(
+            app_handle,
+            AgentEvent::InteractiveShellInputResolved {
+                session_id: session_id.to_string(),
+                execution_id: execution_id.to_string(),
+                outcome: outcome.to_string(),
+            },
+        )
+    }
+
+    /// Get platform-aware prompt configuration for user input.
+    fn get_prompt_config(
+        &self,
+        command: &str,
+        args: &Value,
+    ) -> (String, InteractiveShellInputType) {
         let is_privilege_cmd = validation::detect_privilege_escalation(command);
 
         if is_privilege_cmd {
-            ("Enter your sudo password:", "password")
+            (
+                "Enter your sudo password:".to_string(),
+                InteractiveShellInputType::Password,
+            )
         } else {
-            // Use custom prompt from args
             let prompt = args
-                .get("input_prompt")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Enter input:");
-            let input_type = args
-                .get("input_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("text");
+                .get("inputPrompt")
+                .or_else(|| args.get("input_prompt"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("Enter input:")
+                .to_string();
+            let input_type = match args
+                .get("inputType")
+                .or_else(|| args.get("input_type"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("text")
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "password" => InteractiveShellInputType::Password,
+                _ => InteractiveShellInputType::Text,
+            };
             (prompt, input_type)
         }
     }

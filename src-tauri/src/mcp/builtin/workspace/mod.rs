@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tracing::info;
 
@@ -27,6 +29,10 @@ pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentPowerShell";
 pub const RUN_SHELL_TOOL: &str = "runShell";
 #[cfg(windows)]
 pub const RUN_SHELL_TOOL: &str = "runPowerShell";
+pub(crate) const SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL: &str = "submitInteractiveShellInput";
+pub(crate) const CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL: &str = "cancelInteractiveShellInput";
+pub(crate) const INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS: u64 = 300;
+pub(crate) const INTERACTIVE_SHELL_INPUT_MAX_BYTES: usize = 65_536;
 
 // Module imports
 pub mod code_execution;
@@ -44,7 +50,33 @@ mod test_output_visibility;
 
 /// Pending execution state (server-side only)
 /// Stores metadata for shell commands awaiting user input
-#[derive(Debug, Clone)]
+pub enum PendingShellInputResolution {
+    Submitted(String),
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InteractiveShellInputType {
+    Text,
+    Password,
+}
+
+impl InteractiveShellInputType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Password => "password",
+        }
+    }
+}
+
+impl std::fmt::Display for InteractiveShellInputType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 pub struct PendingShellExecution {
     pub execution_id: String,
     pub session_id: String,
@@ -53,6 +85,25 @@ pub struct PendingShellExecution {
     pub run_mode: String,           // "sync" or "async" from 1st call
     pub timeout: u64,               // Command execution timeout in seconds
     pub created_at: DateTime<Utc>,
+    pub prompt: String,
+    pub input_type: InteractiveShellInputType,
+    pub response_tx: Option<oneshot::Sender<PendingShellInputResolution>>,
+}
+
+impl std::fmt::Debug for PendingShellExecution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingShellExecution")
+            .field("execution_id", &self.execution_id)
+            .field("session_id", &self.session_id)
+            .field("executable_command", &self.executable_command)
+            .field("display_command", &self.display_command)
+            .field("run_mode", &self.run_mode)
+            .field("timeout", &self.timeout)
+            .field("created_at", &self.created_at)
+            .field("prompt", &self.prompt)
+            .field("input_type", &self.input_type)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Thread-safe storage for pending shell executions
@@ -82,13 +133,30 @@ impl PendingExecutions {
         self.0.lock().unwrap().remove(id)
     }
 
-    /// Remove expired pending executions older than the given TTL
-    pub fn cleanup_expired(&self, ttl_seconds: u64) {
+    pub fn remove_if_session_matches(
+        &self,
+        id: &str,
+        session_id: &str,
+    ) -> Result<Option<PendingShellExecution>, ()> {
         let mut map = self.0.lock().unwrap();
-        let now = chrono::Utc::now();
-        let ttl_duration = chrono::Duration::seconds(ttl_seconds as i64);
+        match map.get(id) {
+            None => Ok(None),
+            Some(pending) if pending.session_id != session_id => Err(()),
+            Some(_) => Ok(map.remove(id)),
+        }
+    }
 
-        map.retain(|_id, pending| (now - pending.created_at) < ttl_duration);
+    pub fn remove_for_session(&self, session_id: &str) -> Vec<PendingShellExecution> {
+        let mut map = self.0.lock().unwrap();
+        let ids = map
+            .iter()
+            .filter(|(_, pending)| pending.session_id == session_id)
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+
+        ids.into_iter()
+            .filter_map(|id| map.remove(&id))
+            .collect::<Vec<_>>()
     }
 
     /// Get count of pending executions (for monitoring)
@@ -121,12 +189,6 @@ impl WorkspaceServer {
         let process_cleanup_task =
             Self::start_cleanup_task(process_registry.clone(), cleanup_shutdown.clone());
 
-        // Start cleanup task for pending shell executions (10-minute retention)
-        let pending_cleanup_task = Self::start_pending_executions_cleanup_task(
-            pending_executions.clone(),
-            cleanup_shutdown.clone(),
-        );
-
         Self {
             session_id,
             session_manager,
@@ -136,7 +198,7 @@ impl WorkspaceServer {
             shell_manager: Arc::new(persistent_shell::PersistentShellManager::new()),
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
             cleanup_shutdown,
-            cleanup_tasks: vec![process_cleanup_task, pending_cleanup_task],
+            cleanup_tasks: vec![process_cleanup_task],
         }
     }
 
@@ -168,26 +230,6 @@ impl WorkspaceServer {
                     break;
                 }
                 Self::cleanup_old_processes(&registry).await;
-            }
-        })
-    }
-
-    /// Start background task to cleanup pending shell executions (10-minute retention)
-    fn start_pending_executions_cleanup_task(
-        pending_executions: Arc<PendingExecutions>,
-        shutdown: Arc<AtomicBool>,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            use std::time::Duration;
-            let mut interval = tokio::time::interval(Duration::from_secs(60)); // Every minute
-
-            while !shutdown.load(Ordering::Relaxed) {
-                interval.tick().await;
-                if shutdown.load(Ordering::Relaxed) {
-                    break;
-                }
-                // Cleanup entries older than 10 minutes (600 seconds)
-                pending_executions.cleanup_expired(600);
             }
         })
     }
@@ -303,6 +345,12 @@ impl WorkspaceServer {
             "Cleaned up {} processes for session {}",
             process_count, session_id
         );
+
+        for pending in self.pending_executions.remove_for_session(session_id) {
+            if let Some(response_tx) = pending.response_tx {
+                let _ = response_tx.send(PendingShellInputResolution::Cancelled);
+            }
+        }
 
         // Cleanup persistent shell for this session
         if let Err(e) = self.shell_manager.terminate_shell(session_id).await {
@@ -700,7 +748,15 @@ Internal paths: .libragent/tmp/ (process outputs), .libragent/exports/ (exported
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        info!("Workspace tool called: {} with args: {:?}", tool_name, args);
+        let logged_args = if tool_name == SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL {
+            serde_json::json!({ "redacted": true })
+        } else {
+            args.clone()
+        };
+        info!(
+            "Workspace tool called: {} with args: {:?}",
+            tool_name, logged_args
+        );
 
         let target_session_id = session_id
             .clone()
@@ -740,13 +796,11 @@ Internal paths: .libragent/tmp/ (process outputs), .libragent/exports/ (exported
             }
             // Background process execution (platform-agnostic)
             "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
-            // Interactive shell execution (2nd tool for user input)
-            "executePendingShell" => {
-                self.handle_execute_pending_shell(args, &target_session_id)
+            SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL => {
+                self.handle_submit_interactive_shell_input(args, &target_session_id)
                     .await
             }
-            // Cancel pending execution (UI callback tool)
-            "cancelPendingExecution" => {
+            CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL => {
                 self.handle_cancel_pending_execution(args, &target_session_id)
                     .await
             }

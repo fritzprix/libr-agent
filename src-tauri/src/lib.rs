@@ -101,11 +101,11 @@ use commands::skill_management::{
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
-    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_update_install_capability,
-    get_workspace_dir, get_workspace_override, greet, list_workspace_file_paths,
-    list_workspace_file_paths_for_path, list_workspace_files, open_workspace_file_with_default_app,
-    open_workspace_in_explorer, open_workspace_in_terminal, read_local_file_as_base64, restart_app,
-    set_workspace_override,
+    cancel_interactive_shell_input, cancel_workspace_override, get_app_data_dir, get_app_logs_dir,
+    get_update_install_capability, get_workspace_dir, get_workspace_override, greet,
+    list_workspace_file_paths, list_workspace_file_paths_for_path, list_workspace_files,
+    open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
+    read_local_file_as_base64, restart_app, set_workspace_override, submit_interactive_shell_input,
 };
 
 // Re-export state management functions
@@ -211,6 +211,8 @@ pub fn run() {
                 get_workspace_override,
                 set_workspace_override,
                 cancel_workspace_override,
+                submit_interactive_shell_input,
+                cancel_interactive_shell_input,
                 get_workspace_dir,
                 read_local_file_as_base64,
                 // Interactive Browser commands

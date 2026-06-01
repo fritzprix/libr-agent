@@ -1,675 +1,294 @@
+use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
-use tracing::{info, warn};
+use tracing::{error, warn};
 
-use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+use crate::mcp::builtin::error_guidance::SuccessHint;
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::workspace::code_execution::normalization;
+use crate::mcp::builtin::workspace::code_execution::shell::format_duration_ms;
+use crate::mcp::builtin::workspace::{
+    PendingShellExecution, PendingShellInputResolution, WorkspaceServer,
+    INTERACTIVE_SHELL_INPUT_MAX_BYTES, PERSISTENT_SHELL_TOOL,
 };
 use crate::mcp::types::MCPResult;
-use crate::session_isolation::IsolatedProcessConfig;
 
-// Import WorkspaceServer and other types from the workspace module
-use crate::mcp::builtin::workspace::{terminal_manager, WorkspaceServer};
-
-// Import normalization from sibling modules
-use super::super::normalization;
-use super::super::shell::format_command_io_message;
-
-// Import security from sibling modules in interactive
-use super::security;
+#[derive(Debug, Deserialize)]
+struct SubmitInteractiveShellInputArgs {
+    execution_id: String,
+    input: String,
+}
 
 impl WorkspaceServer {
-    /// Handle execute_pending_shell tool call (2nd tool call)
-    /// Executes pending command with user input via stdin
-    pub async fn handle_execute_pending_shell(
+    pub(crate) async fn handle_submit_interactive_shell_input(
         &self,
         args: Value,
         session_id: &str,
     ) -> Result<MCPResult, String> {
-        use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
+        let args: SubmitInteractiveShellInputArgs =
+            serde_json::from_value(args).map_err(|e| format!("Invalid arguments: {}", e))?;
 
-        // Extract execution_id (support both camelCase and snake_case)
-        let execution_id = match args
-            .get("executionId")
-            .or_else(|| args.get("execution_id"))
-            .and_then(|v| v.as_str())
+        if args.input.len() > INTERACTIVE_SHELL_INPUT_MAX_BYTES {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Interactive input exceeds the {} byte limit",
+                    INTERACTIVE_SHELL_INPUT_MAX_BYTES
+                ),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Submit a shorter input and retry".to_string(),
+                "If you are pasting a large secret blob, trim it to the actual prompt value"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+
+        let mut pending = match self
+            .pending_executions
+            .remove_if_session_matches(&args.execution_id, session_id)
         {
-            Some(id) => id,
-            None => {
-                return Ok(missing_param_error("executionId", ToolGroup::Workspace));
+            Ok(Some(pending)) => pending,
+            Err(()) => {
+                return Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    "Interactive execution belongs to a different session".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Submit the prompt from the same agent session that created it".to_string(),
+                    "Run the command again in the active session if needed".to_string(),
+                ])
+                .to_mcp_result());
             }
-        };
-
-        // Extract user_input (support both camelCase and snake_case)
-        let encoded_input = match args
-            .get("userInput")
-            .or_else(|| args.get("user_input"))
-            .and_then(|v| v.as_str())
-        {
-            Some(input) => input,
-            None => {
-                return Ok(missing_param_error("userInput", ToolGroup::Workspace));
-            }
-        };
-
-        // Retrieve pending execution
-        let pending = match self.pending_executions.remove(execution_id) {
-            Some(p) => p,
-            None => {
+            Ok(None) => {
                 return Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
-                    format!("Execution '{}' not found or expired", execution_id),
+                    format!("Interactive execution '{}' not found", args.execution_id),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Execute the original command again to get a new execution_id".to_string(),
-                    format!("Execution requests expire after {} minutes", 5),
-                    "Ensure you're using the execution_id from the UI resource".to_string(),
+                    "The prompt may have expired or already been resolved".to_string(),
+                    "Run the original command again to request a fresh prompt".to_string(),
                 ])
                 .to_mcp_result());
             }
         };
 
-        // Validate session ownership
-        if pending.session_id != session_id {
+        let Some(response_tx) = pending.response_tx.take() else {
+            self.pending_executions.insert(pending);
             return Ok(guided_error(
-                ErrorCategory::PermissionDenied,
+                ErrorCategory::InvalidState,
                 format!(
-                    "Pending execution '{}' belongs to a different session",
-                    execution_id
+                    "Interactive execution '{}' is already being resolved",
+                    args.execution_id
                 ),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Ensure you are executing the command in the correct session".to_string(),
-                "Executions are isolated per session".to_string(),
+                "Wait for the current resolution to finish before retrying".to_string(),
+                "Run the original command again if the prompt appears stuck".to_string(),
             ])
             .to_mcp_result());
-        }
-
-        // Decode transport-encoded user input
-        let user_input = match security::decode_input_payload(encoded_input) {
-            Ok(s) => s,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::InternalError,
-                    "Decode user input failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "This is an internal error - the UI should send base64-encoded input"
-                        .to_string(),
-                    "Try executing the command again".to_string(),
-                    "Contact support if this persists".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-        };
-        let user_input = user_input.as_str();
-
-        // Validate timeout (5 minutes for user input)
-        const USER_INPUT_TIMEOUT_SECS: i64 = 300;
-        let elapsed = chrono::Utc::now()
-            .signed_duration_since(pending.created_at)
-            .num_seconds();
-        if elapsed > USER_INPUT_TIMEOUT_SECS {
-            return Ok(guided_error(
-                ErrorCategory::Timeout,
-                format!("Execution request expired after {} seconds", elapsed),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Execute the original command again to get a new execution_id".to_string(),
-                format!(
-                    "User input must be submitted within {} minutes",
-                    USER_INPUT_TIMEOUT_SECS / 60
-                ),
-                "Respond more quickly to interactive prompts".to_string(),
-            ])
-            .to_mcp_result());
-        }
-
-        // Auto-inject -S flag for sudo commands (Agent doesn't know about it)
-        #[cfg(unix)]
-        let final_command = if pending.executable_command.trim_start().starts_with("sudo ") {
-            // Check if -S flag already exists (defensive programming)
-            if pending.executable_command.contains("sudo -S ") {
-                pending.executable_command.clone()
-            } else {
-                // Insert -S flag after 'sudo'
-                pending.executable_command.replacen("sudo ", "sudo -S ", 1)
-            }
-        } else {
-            pending.executable_command.clone()
         };
 
-        #[cfg(windows)]
-        let final_command = pending.executable_command.clone();
+        self.pending_executions.insert(pending);
 
-        // Get workspace and session info
-        let session_id = pending.session_id.clone();
-        let workspace_path = self.get_workspace_dir(&session_id);
-
-        // Check if persistent shell should be used (default: true)
-        let use_persistent_shell = args
-            .get("use_persistent_shell")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        let current_dir = if use_persistent_shell && pending.run_mode == "sync" {
-            self.shell_manager
-                .get_shell_cwd(&session_id)
-                .await
-                .map(std::path::PathBuf::from)
-        } else {
-            None
-        };
-        if let Some(result) = self.apply_shell_policy_block(
-            crate::mcp::builtin::workspace::PERSISTENT_SHELL_TOOL,
-            &final_command,
-            &workspace_path,
-            current_dir.as_deref(),
-            None,
-        ) {
-            return Ok(result);
-        }
-
-        // Try persistent shell path first (if enabled)
-        if use_persistent_shell && pending.run_mode == "sync" {
-            let normalized_command = normalization::normalize_shell_command(&final_command);
-
-            // Execute with persistent shell (includes timeout and retry)
-            let execution_result = tokio::time::timeout(
-                Duration::from_secs(pending.timeout),
-                self.shell_manager.execute_with_input(
-                    session_id.clone(),
-                    workspace_path.clone(),
-                    &normalized_command,
-                    user_input,
-                ),
-            )
-            .await;
-
-            match execution_result {
-                Ok(Ok((stdout, stderr, exit_code, _cwd))) => {
-                    // Success - format and return result
-                    info!(
-                        "Interactive persistent shell executed: {} (session: {}, exit: {})",
-                        sanitize_command_for_logging(&pending.display_command),
-                        session_id,
-                        exit_code
-                    );
-
-                    // Redact sensitive user input from output
-                    let redacted_stdout =
-                        security::redact_sensitive_input(stdout.trim(), user_input);
-                    let redacted_stderr =
-                        security::redact_sensitive_input(stderr.trim(), user_input);
-
-                    let header = if exit_code == 0 {
-                        if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
-                            "Command executed successfully (no output)".to_string()
-                        } else {
-                            "Command executed successfully".to_string()
-                        }
-                    } else {
-                        format!("Command failed with exit code {exit_code}")
-                    };
-                    let result_text = format_command_io_message(
-                        &header,
-                        "STDOUT",
-                        &redacted_stdout,
-                        "STDERR",
-                        &redacted_stderr,
-                    );
-
-                    if exit_code == 0 {
-                        return Ok(MCPResult::success(&result_text));
-                    } else {
-                        return Ok(MCPResult::informational(&result_text));
-                    }
-                }
-                Ok(Err(e)) => {
-                    // Shell error - log and fallback to one-shot
-                    warn!(
-                        "Persistent shell execution with input failed: {}. Falling back to one-shot.",
-                        e
-                    );
-                }
-                Err(_) => {
-                    // Timeout
-                    return Ok(MCPResult::informational(&format!(
-                        "Command execution timeout after {} seconds",
-                        pending.timeout
-                    )));
-                }
-            }
-        }
-
-        // FALLBACK: One-shot execution with stdin injection (original implementation)
-
-        // Create isolation config
-        let normalized_command = normalization::normalize_shell_command(&final_command);
-        let isolation_level =
-            crate::mcp::builtin::workspace::utils::get_shell_isolation_level().await;
-        let isolation_config = IsolatedProcessConfig {
-            session_id: session_id.clone(),
-            workspace_path: workspace_path.clone(),
-            command: normalized_command,
-            args: vec![],
-            env_vars: HashMap::new(),
-            isolation_level,
-            shell_type: None, // Default to platform default shell
-        };
-
-        // Create isolated command
-        let mut cmd = match self
-            .isolation_manager
-            .create_isolated_command(isolation_config)
-            .await
+        if response_tx
+            .send(PendingShellInputResolution::Submitted(args.input))
+            .is_err()
         {
-            Ok(cmd) => cmd,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::InternalError,
-                    "Create isolated command failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Verify shell environment is properly configured".to_string(),
-                    "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
-                    "Ensure workspace isolation level is valid".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        // Configure stdio pipes
-        use std::process::Stdio;
-        cmd.stdin(Stdio::piped());
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    "Spawn process failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Verify the command syntax is correct".to_string(),
-                    "Check if required programs are installed".to_string(),
-                    "Ensure the command has execute permissions".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        // Write user input to stdin
-        if let Some(mut stdin) = child.stdin.take() {
-            // CRITICAL: Write password and close stdin
-            if let Err(e) = stdin.write_all(user_input.as_bytes()).await {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    "Write to stdin failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "The process may have crashed before accepting input".to_string(),
-                    "Try executing the command again".to_string(),
-                    "Check if the command expects input in a different format".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-            if let Err(e) = stdin.write_all(b"\n").await {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    "Write newline to stdin failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "The process may have closed stdin unexpectedly".to_string(),
-                    "Try executing the command again".to_string(),
-                    "Verify the command is still running".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-            drop(stdin); // Close stdin to signal EOF
+            let _ = self.pending_executions.remove(&args.execution_id);
+            return Ok(MCPResult::informational(
+                "Interactive shell prompt already expired or resolved.",
+            ));
         }
 
-        // SECURITY: user_input reference will be dropped at end of scope
+        let _ = self.emit_interactive_shell_resolution(session_id, &args.execution_id, "submitted");
 
-        // Execute based on run_mode from 1st call
-        if pending.run_mode == "sync" {
-            // Wait for completion with timeout
-            let output = match tokio::time::timeout(
-                Duration::from_secs(pending.timeout),
-                child.wait_with_output(),
-            )
-            .await
-            {
-                Ok(Ok(output)) => output,
-                Ok(Err(e)) => {
-                    return Ok(guided_error(
-                        ErrorCategory::OperationFailed,
-                        "Execute command with user input failed".to_string(),
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec![
-                        "The command may have invalid syntax or crashed".to_string(),
-                        "Verify the command works without user input first".to_string(),
-                        "Check system logs for more details".to_string(),
-                        format!("Error: {}", e),
-                    ])
-                    .to_mcp_result());
-                }
-                Err(_) => {
-                    let timeout_secs = pending.timeout;
-                    return Ok(guided_error(
-                        ErrorCategory::Timeout,
-                        format!("Command execution timeout after {} seconds", timeout_secs),
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec![
-                        format!("Increase timeout parameter (current: {}s)", timeout_secs),
-                        "Use \"runMode\": \"async\" for long-running commands".to_string(),
-                        "Verify the command isn't hanging waiting for additional input".to_string(),
-                    ])
-                    .to_mcp_result());
-                }
-            };
+        Ok(MCPResult::informational(
+            "Interactive shell input submitted successfully.",
+        ))
+    }
 
-            // SECURITY: Log sanitized command only
-            info!(
-                "Interactive shell executed: {} (session: {}, exit: {:?})",
-                pending.display_command,
-                session_id,
-                output.status.code()
-            );
+    pub(crate) async fn execute_interactive_shell_with_input(
+        &self,
+        pending: PendingShellExecution,
+        user_input: String,
+    ) -> Result<MCPResult, String> {
+        let session_id = pending.session_id.clone();
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
+        let previous_cwd = self.shell_manager.get_shell_cwd(&session_id).await;
+        let normalized_command =
+            normalization::normalize_shell_command(&pending.executable_command);
+        let execution_start = std::time::Instant::now();
 
-            // Format response
-            let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
-            let exit_code = output.status.code().unwrap_or(-1);
+        let timeout_duration = Duration::from_secs(pending.timeout);
+        let execution_result = tokio::time::timeout(
+            timeout_duration,
+            self.shell_manager.execute_with_input(
+                session_id.clone(),
+                workspace_path.clone(),
+                &normalized_command,
+                &user_input,
+            ),
+        )
+        .await;
 
-            // Redact sensitive user input from output
-            let redacted_stdout = security::redact_sensitive_input(stdout_str.trim(), user_input);
-            let redacted_stderr = security::redact_sensitive_input(stderr_str.trim(), user_input);
-
-            let success = exit_code == 0;
-
-            let header = if success {
-                format!(
-                    "Interactive command executed successfully (exit code: {})",
-                    exit_code
-                )
-            } else {
-                format!("Interactive command failed (exit code: {})", exit_code)
-            };
-            let result_text = format_command_io_message(
-                &header,
-                "STDOUT",
-                &redacted_stdout,
-                "STDERR",
-                &redacted_stderr,
-            );
-
-            let response_data = serde_json::json!({
-                "exit_code": exit_code,
-                "stdout": redacted_stdout,
-                "stderr": redacted_stderr,
-                "status": if success { "success" } else { "failed" }
-            });
-
-            if success {
-                let hint = SuccessHint::new(
-                    result_text,
-                    SuccessHint::for_tool("executePendingShell", ToolGroup::Workspace),
+        let (stdout, stderr, exit_code, cwd) = match execution_result {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {
+                warn!(
+                    "Interactive persistent shell execution timed out for session {}. Terminating shell to cleanup.",
+                    session_id
                 );
-                Ok(hint.to_mcp_result_with_data(Some(response_data)))
-            } else {
-                Ok(MCPResult::informational_with_data(
-                    &result_text,
-                    response_data,
-                ))
-            }
-        } else {
-            // Async mode: Return process_id immediately and spawn monitoring task
-            let process_id = cuid2::create_id();
 
-            // Create process tmp directory
-            let process_tmp_dir = workspace_path
-                .join(".libragent/tmp")
-                .join(format!("process_{process_id}"));
+                if let Err(error) = self.shell_manager.terminate_shell(&session_id).await {
+                    error!(
+                        "Failed to terminate timed out interactive shell for session {}: {}",
+                        session_id, error
+                    );
+                }
 
-            if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
                 return Ok(guided_error(
-                    ErrorCategory::InternalError,
-                    "Create process directory failed".to_string(),
+                    ErrorCategory::Timeout,
+                    format!(
+                        "Interactive command timed out after {} seconds",
+                        pending.timeout
+                    ),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Check workspace directory permissions".to_string(),
-                    "Ensure sufficient disk space is available".to_string(),
-                    "Verify tmp directory is writable".to_string(),
-                    format!("Error: {}", e),
+                    format!(
+                        "Re-run {} if you want to retry the interactive command",
+                        PERSISTENT_SHELL_TOOL
+                    ),
+                    "The persistent shell was terminated to recover from the stuck command"
+                        .to_string(),
                 ])
                 .to_mcp_result());
             }
+        };
 
-            let stdout_path = process_tmp_dir.join("stdout");
-            let stderr_path = process_tmp_dir.join("stderr");
+        let duration_ms = execution_start.elapsed().as_millis() as u64;
+        let structured_data = serde_json::json!({
+            "command": pending.display_command,
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "cwd": cwd,
+            "status": if exit_code == 0 { "finished" } else { "failed" },
+            "duration_ms": duration_ms,
+            "execution_type": "persistent"
+        });
 
-            // Register process
-            let cancel_token = tokio_util::sync::CancellationToken::new();
-            let entry = terminal_manager::ProcessEntry {
-                id: process_id.clone(),
-                name: None,
-                session_id: session_id.clone(),
-                command: sanitize_command_for_logging(&pending.display_command), // Sanitized version
-                status: terminal_manager::ProcessStatus::Running,
-                pid: child.id(),
-                exit_code: None,
-                started_at: chrono::Utc::now(),
-                finished_at: None,
-                stdout_path: stdout_path.to_string_lossy().to_string(),
-                stderr_path: stderr_path.to_string_lossy().to_string(),
-                stdout_size: 0,
-                stderr_size: 0,
-                last_poll_at: None,
-                poll_count: 0,
-                consecutive_running_polls: 0,
-                first_running_poll_at: None,
-            };
-
-            {
-                let mut registry = self.process_registry.write().await;
-                registry.entries.insert(process_id.clone(), entry);
-                registry
-                    .cancellation_tokens
-                    .insert(process_id.clone(), cancel_token.clone());
+        if exit_code != 0 {
+            let mut error_sections = Vec::new();
+            if !stdout.is_empty() {
+                error_sections.push(format!("Output:\n{stdout}"));
+            }
+            if !stderr.is_empty() {
+                error_sections.push(format!("Stderr:\n{stderr}"));
             }
 
-            // Spawn monitoring task
-            let registry = self.process_registry.clone();
-            let pid_copy = process_id.clone();
+            let error_output = if error_sections.is_empty() {
+                "No output captured.".to_string()
+            } else {
+                error_sections.join("\n\n")
+            };
 
-            tokio::spawn(async move {
-                // Execute using common spawn+stream logic would go here
-                // For now, simplified version
-                let result = child.wait_with_output().await;
-
-                let mut reg = registry.write().await;
-                if let Some(entry) = reg.entries.get_mut(&pid_copy) {
-                    match result {
-                        Ok(output) => {
-                            entry.exit_code = output.status.code();
-                            entry.status = if output.status.code().unwrap_or(-1) == 0 {
-                                terminal_manager::ProcessStatus::Finished
-                            } else {
-                                terminal_manager::ProcessStatus::Failed
-                            };
-                        }
-                        Err(_) => {
-                            entry.status = terminal_manager::ProcessStatus::Failed;
-                        }
-                    }
-                    entry.finished_at = Some(chrono::Utc::now());
-                }
-                reg.cancellation_tokens.remove(&pid_copy);
-            });
-
-            let hint = SuccessHint::new(
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
                 format!(
-                    "Interactive command running in background (ID: {})",
-                    process_id
+                    "Command failed with exit code: {}\n\n{}",
+                    exit_code, error_output
                 ),
-                vec![
-                    format!(
-                        "Use waitForProcess(\"{}\", 0) to check status, or waitForProcess(\"{}\") to block until done",
-                        process_id, process_id
-                    ),
-                    "Use readProcessOutput with 'both' to inspect stdout and stderr"
-                        .to_string(),
-                    "Use listProcesses to see all running processes".to_string(),
-                ],
-            );
-
-            let response_data = serde_json::json!({
-                "process_id": process_id,
-                "mode": "async"
-            });
-
-            Ok(hint.to_mcp_result_with_data(Some(response_data)))
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mcp::builtin::workspace::PendingShellExecution;
-    use crate::session::SessionManager;
-    use base64::{engine::general_purpose, Engine as _};
-    use serde_json::json;
-    use std::sync::Arc;
-    use tempfile::tempdir;
-
-    async fn create_server() -> WorkspaceServer {
-        let temp_dir = tempdir().unwrap();
-        let session_manager =
-            Arc::new(SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).unwrap());
-        WorkspaceServer::new("test-session".to_string(), session_manager)
-    }
-
-    #[tokio::test]
-    async fn test_execute_pending_shell_parameter_extraction() {
-        let server = create_server().await;
-        let execution_id = "test-execution-id";
-
-        // Pre-insert an entry
-        server.pending_executions.insert(PendingShellExecution {
-            execution_id: execution_id.to_string(),
-            session_id: "test-session".to_string(),
-            executable_command: "echo 'hello'".to_string(),
-            display_command: "echo 'hello'".to_string(),
-            run_mode: "sync".to_string(),
-            timeout: 30,
-            created_at: chrono::Utc::now(),
-        });
-
-        // Test with snake_case (fallback)
-        let encoded_input = general_purpose::STANDARD.encode("test input");
-        let args_snake = json!({
-            "execution_id": execution_id,
-            "user_input": encoded_input
-        });
-
-        // This will fail because we are in a test environment without a real process manager
-        // but we can check if it gets past parameter extraction.
-        // Actually, let's just test that it DOES NOT return missing_param_error.
-        let result = server
-            .handle_execute_pending_shell(args_snake, "test-session")
-            .await;
-
-        if let Ok(res) = result {
-            let res_json = serde_json::to_value(res).unwrap();
-            let content = res_json.get("content").and_then(|c| c.as_array()).unwrap();
-            let text = content[0].get("text").and_then(|t| t.as_str()).unwrap();
-            assert!(!text.contains("Missing executionId"));
-        }
-
-        // Test with camelCase (primary)
-        // Add it back since it was removed by previous call
-        server.pending_executions.insert(PendingShellExecution {
-            execution_id: execution_id.to_string(),
-            session_id: "test-session".to_string(),
-            executable_command: "echo 'hello'".to_string(),
-            display_command: "echo 'hello'".to_string(),
-            run_mode: "sync".to_string(),
-            timeout: 30,
-            created_at: chrono::Utc::now(),
-        });
-
-        let args_camel = json!({
-            "executionId": execution_id,
-            "userInput": general_purpose::STANDARD.encode("test input")
-        });
-
-        let result = server
-            .handle_execute_pending_shell(args_camel, "test-session")
-            .await;
-
-        if let Ok(res) = result {
-            let res_json = serde_json::to_value(res).unwrap();
-            let content = res_json.get("content").and_then(|c| c.as_array()).unwrap();
-            let text = content[0].get("text").and_then(|t| t.as_str()).unwrap();
-            assert!(!text.contains("Missing executionId"));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_execute_pending_shell_blocks_policy_denied_command() {
-        let server = create_server().await;
-        let execution_id = "blocked-execution-id";
-
-        server.pending_executions.insert(PendingShellExecution {
-            execution_id: execution_id.to_string(),
-            session_id: "test-session".to_string(),
-            executable_command: "cat ~/.ssh/id_rsa".to_string(),
-            display_command: "cat ~/.ssh/id_rsa".to_string(),
-            run_mode: "sync".to_string(),
-            timeout: 30,
-            created_at: chrono::Utc::now(),
-        });
-
-        let result = server
-            .handle_execute_pending_shell(
-                json!({
-                    "executionId": execution_id,
-                    "userInput": general_purpose::STANDARD.encode("ignored")
-                }),
-                "test-session",
+                ToolGroup::Workspace,
             )
-            .await
-            .expect("executePendingShell should return MCPResult");
+            .guidance(vec![
+                "Review the command output above for the exact failure reason".to_string(),
+                format!(
+                    "Re-run {} if the command needs another interactive attempt",
+                    PERSISTENT_SHELL_TOOL
+                ),
+            ])
+            .to_mcp_result());
+        }
 
-        let response = serde_json::to_value(result).expect("serialize result");
-        let text = response["content"][0]["text"]
-            .as_str()
-            .expect("text content should exist");
-        assert!(
-            text.contains("Shell command blocked by policy"),
-            "expected policy block message, got: {text}"
+        self.invalidate_context_cache().await;
+
+        let path_cwd = std::path::Path::new(&cwd);
+        let relative_cwd = path_cwd
+            .strip_prefix(&workspace_path)
+            .unwrap_or(path_cwd)
+            .to_string_lossy();
+        let display_cwd = if relative_cwd.is_empty() {
+            ".".to_string()
+        } else if relative_cwd.starts_with(".")
+            || relative_cwd.starts_with(std::path::MAIN_SEPARATOR)
+            || relative_cwd.contains(":")
+        {
+            relative_cwd.to_string()
+        } else {
+            format!(".{}{}", std::path::MAIN_SEPARATOR, relative_cwd)
+        };
+
+        let previous_display_cwd = previous_cwd.as_deref().map(|previous| {
+            let previous_path = std::path::Path::new(previous);
+            let relative_previous = previous_path
+                .strip_prefix(&workspace_path)
+                .unwrap_or(previous_path)
+                .to_string_lossy();
+
+            if relative_previous.is_empty() {
+                ".".to_string()
+            } else if relative_previous.starts_with(".")
+                || relative_previous.starts_with(std::path::MAIN_SEPARATOR)
+                || relative_previous.contains(":")
+            {
+                relative_previous.to_string()
+            } else {
+                format!(".{}{}", std::path::MAIN_SEPARATOR, relative_previous)
+            }
+        });
+
+        let cwd_changed = previous_display_cwd
+            .as_deref()
+            .map(|previous| previous != display_cwd)
+            .unwrap_or(display_cwd != ".");
+
+        let header = format!(
+            "Interactive command executed in {} (exit code: 0)",
+            format_duration_ms(duration_ms)
         );
+        let shell_state = format!(
+            "Persistent shell state (maintained for next {} call):\n  Working directory: {}\n  Exit code: {}",
+            PERSISTENT_SHELL_TOOL, display_cwd, exit_code
+        );
+        let file_tools_warning = if display_cwd != "." && cwd_changed {
+            "\n⚠️  readFile and listDirectory still use workspace root, not the shell CWD\n    Use absolute file-tool paths if you need the current shell directory"
+        } else {
+            ""
+        };
+
+        let text_message = if !stdout.is_empty() {
+            format!("{header}\n\nCommand output:\n{stdout}\n\n{shell_state}{file_tools_warning}")
+        } else {
+            format!("{header}\n\n{shell_state}{file_tools_warning}")
+        };
+
+        let hint = SuccessHint::new(
+            text_message,
+            vec![
+                "Command state (CWD, env vars) is preserved for the next call".to_string(),
+                "The interactive input was handled locally and was not added to chat history"
+                    .to_string(),
+            ],
+        );
+        Ok(hint.to_mcp_result_with_data(Some(structured_data)))
     }
 }

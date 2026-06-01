@@ -6,6 +6,7 @@ const logger = getLogger('RustBackendClient');
 
 interface SafeInvokeOptions {
   shouldSuppressErrorLogging?: (error: unknown) => boolean;
+  loggedArgs?: Record<string, unknown> | null;
 }
 
 /**
@@ -28,7 +29,10 @@ export async function safeInvoke<T>(
     typeof performance !== 'undefined' ? performance.now() : Date.now();
 
   try {
-    logger.debug('invoke', { cmd, args });
+    logger.debug('invoke', {
+      cmd,
+      args: options?.loggedArgs === undefined ? args : options.loggedArgs,
+    });
     const result = await invoke<T>(cmd, args ?? {});
     const durationMs =
       (typeof performance !== 'undefined' ? performance.now() : Date.now()) -

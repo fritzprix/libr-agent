@@ -98,6 +98,8 @@ pub fn create_execute_shell_tool() -> MCPTool {
         title: Some("Execute Shell Command (Persistent Session)".to_string()),
         description: "Run a shell command in a persistent session that preserves working directory and env vars across calls.\n\
                        Use when you need 'cd' to stick, 'export' to carry forward, or commands that require user input such as sudo.\n\
+                       If requireUserInput=true (or a sudo-like command is auto-detected), the tool stays a single synchronous call: the backend pauses, the UI collects the human input, then the same tool call resumes and returns the final result.\n\
+                       This is prompt-resume interactive input, not a PTY terminal for ncurses/full-screen apps.\n\
                        File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current directory automatically.\n\
                        For longer work: spawnProcess.\n\
                        For simple stateless commands: runShell."
@@ -244,6 +246,8 @@ pub fn create_execute_shell_tool() -> MCPTool {
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
         description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
                        - Use ';' to chain commands.\n\
+                       - If requireUserInput=true, or the command is auto-detected as a privilege-escalation prompt, the tool remains one synchronous call: the backend pauses, the UI collects the human input, then the same call resumes and returns the final result.\n\
+                       - This supports prompt-resume interactive input such as password/text prompts, not PTY-style full-screen terminal apps.\n\
                        - File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current location automatically.\n\
                        - For longer work: spawnProcess.\n\
                        - For simple stateless commands: runPowerShell."
@@ -296,78 +300,6 @@ pub fn create_spawn_process_tool() -> MCPTool {
 }
 
 // Macro to unify tool constant definition and creation function
-macro_rules! define_mcp_tool {
-    (
-        const $const_name:ident = $tool_name:expr;
-        fn $fn_name:ident();
-        title: $title:expr;
-        description: $desc:expr;
-        inputs: $props_ident:ident => $props_block:block;
-        required: $required:expr;
-    ) => {
-        pub const $const_name: &str = $tool_name;
-
-        pub fn $fn_name() -> MCPTool {
-            let mut $props_ident = HashMap::new();
-            $props_block
-
-            MCPTool {
-                name: $const_name.to_string(),
-                title: Some($title.to_string()),
-                description: $desc.to_string(),
-                input_schema: object_schema($props_ident, $required),
-                output_schema: None,
-                annotations: None,
-            }
-        }
-    };
-}
-
-define_mcp_tool! {
-    const EXECUTE_PENDING_SHELL = "executePendingShell";
-    fn create_execute_pending_shell_tool();
-    title: "Execute Pending Shell Command";
-    description: "[Internal callback] Continue a pending interactive shell execution with executionId and base64-encoded UTF-8 userInput.";
-    inputs: props => {
-        props.insert(
-            "executionId".to_string(),
-            string_prop(
-                None,
-                None,
-                Some("Execution ID returned from runInPersistentShell with requireUserInput"),
-            ),
-        );
-
-        props.insert(
-            "userInput".to_string(),
-            string_prop(
-                None,
-                None,
-                Some("Base64-encoded UTF-8 user input (password or text) to inject into command stdin"),
-            ),
-        );
-    };
-    required: vec!["executionId".to_string(), "userInput".to_string()];
-}
-
-define_mcp_tool! {
-    const CANCEL_PENDING_EXECUTION = "cancelPendingExecution";
-    fn create_cancel_pending_execution_tool();
-    title: "Cancel Pending Execution";
-    description: "[Internal callback] Cancel a pending interactive shell execution by executionId.";
-    inputs: props => {
-        props.insert(
-            "executionId".to_string(),
-            string_prop(
-                None,
-                None,
-                Some("Execution ID of the pending shell command to cancel"),
-            ),
-        );
-    };
-    required: vec!["executionId".to_string()];
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
