@@ -175,9 +175,10 @@ impl PendingExecutions {
     pub fn cleanup_expired(&self, ttl_seconds: u64) {
         let mut map = self.0.lock().unwrap();
         let now = chrono::Utc::now();
+        let ttl_limit = i64::try_from(ttl_seconds).unwrap_or(i64::MAX);
         map.retain(|_, exec| {
             let age = now.signed_duration_since(exec.created_at);
-            age.num_seconds() < ttl_seconds as i64
+            age.num_seconds() < ttl_limit
         });
     }
 }

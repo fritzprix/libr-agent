@@ -161,6 +161,7 @@ pub fn inject_sudo_stdin_flag(command: &str) -> String {
                     || prev == ')'
                     || prev == '{'
                     || prev == '}'
+                    || prev == '`'
             };
 
             let has_space_after = i + 4 < chars.len() && chars[i + 4].is_whitespace();
@@ -339,6 +340,10 @@ mod tests {
         assert_eq!(
             inject_sudo_stdin_flag("  sudo   apt update"),
             "  sudo -S   apt update"
+        );
+        assert_eq!(
+            inject_sudo_stdin_flag("`sudo apt update`"),
+            "`sudo -S apt update`"
         );
     }
 
