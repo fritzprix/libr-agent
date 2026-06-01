@@ -2,11 +2,17 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type ReactNode,
   type CSSProperties,
+  type FormEvent,
 } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
+import {
+  agentCallBuiltinTool,
+  cancelInteractiveShellInput,
+  submitInteractiveShellInput,
+} from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
 import { MCPContent } from '@/lib/mcp';
@@ -49,6 +55,17 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
 const logger = getLogger('AgentChatView');
@@ -157,6 +174,130 @@ function AgentChatComposer() {
   );
 }
 
+interface InteractiveShellPromptDialogProps {
+  sessionId: string;
+  promptState: ReturnType<
+    typeof useAgentSessionState
+  >['pendingInteractiveShellPrompt'];
+}
+
+function InteractiveShellPromptDialog({
+  sessionId,
+  promptState,
+}: InteractiveShellPromptDialogProps) {
+  const [inputValue, setInputValue] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setInputValue('');
+    setIsSubmitting(false);
+  }, [promptState?.executionId]);
+
+  const handleCancel = useCallback(async () => {
+    if (!promptState || isSubmitting) {
+      return;
+    }
+
+    const { executionId } = promptState;
+    setIsSubmitting(true);
+    try {
+      await cancelInteractiveShellInput(sessionId, executionId);
+    } catch (error) {
+      logger.error('Failed to cancel interactive shell prompt', error);
+      toast.error('Failed to cancel interactive prompt.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, promptState, sessionId]);
+
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+
+      if (!promptState || isSubmitting) {
+        return;
+      }
+
+      const { executionId } = promptState;
+      setIsSubmitting(true);
+      try {
+        await submitInteractiveShellInput(sessionId, executionId, inputValue);
+        setInputValue('');
+      } catch (error) {
+        logger.error('Failed to submit interactive shell input', error);
+        toast.error('Failed to submit interactive input.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [inputValue, isSubmitting, promptState, sessionId],
+  );
+
+  return (
+    <Dialog
+      open={promptState !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          void handleCancel();
+        }
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          void handleCancel();
+        }}
+        onInteractOutside={(event) => {
+          event.preventDefault();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Interactive shell input required</DialogTitle>
+          <DialogDescription>
+            {promptState?.command ?? 'A shell command'} is waiting for local
+            user input.
+          </DialogDescription>
+        </DialogHeader>
+
+        {promptState ? (
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="interactive-shell-input">
+                {promptState.prompt}
+              </Label>
+              <Input
+                autoFocus
+                id="interactive-shell-input"
+                type={promptState.inputType}
+                value={inputValue}
+                onChange={(event) => setInputValue(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={isSubmitting}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleCancel()}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                Submit
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * Agent Chat View - Compound Component Pattern
  *
@@ -183,7 +324,7 @@ function AgentChatInner() {
   const { t } = useTranslation();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const { session } = useAgentSessionState();
+  const { pendingInteractiveShellPrompt, session } = useAgentSessionState();
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
@@ -301,6 +442,12 @@ function AgentChatInner() {
 
   return (
     <>
+      {sessionId ? (
+        <InteractiveShellPromptDialog
+          sessionId={sessionId}
+          promptState={pendingInteractiveShellPrompt}
+        />
+      ) : null}
       <div
         className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-background font-sans shadow-[0_18px_48px_-28px_rgba(0,0,0,0.35)]"
         style={

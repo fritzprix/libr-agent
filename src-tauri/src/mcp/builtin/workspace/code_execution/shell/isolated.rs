@@ -299,8 +299,9 @@ impl WorkspaceServer {
                         "{}\n\n⚠️ NOTICE: Output indicates {} in non-interactive mode.\n\n\
                         If this command requires user input:\n\
                         1. Use {} with requireUserInput: true\n\
-                        2. Or add non-interactive flags: --yes, --force, -y\n\
-                        3. Or pipe input: echo y | command\n\n\
+                        2. That keeps a single synchronous tool call: the backend pauses, UI collects the input, then the same call resumes with the final result\n\
+                        3. Or add non-interactive flags: --yes, --force, -y\n\
+                        4. Or pipe input: echo y | command\n\n\
                         Detected indicator: {}",
                         text_message, indicator_type, PERSISTENT_SHELL_TOOL, indicator_type
                     );
@@ -312,6 +313,8 @@ impl WorkspaceServer {
                                 "For interactive commands, use {} with requireUserInput: true",
                                 PERSISTENT_SHELL_TOOL
                             ),
+                            "The agent still sees one synchronous call with a prompt-resume flow"
+                                .to_string(),
                             format!("Add non-interactive flags: {} --yes", command),
                             "Or use echo/stdin redirection for automated input".to_string(),
                         ],

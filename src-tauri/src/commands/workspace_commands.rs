@@ -5,6 +5,7 @@ use crate::session::get_session_manager;
 /// This module contains commands for workspace and application directory management,
 /// including file listing, data directories, and log directories.
 use base64::{engine::general_purpose, Engine as _};
+use serde::Deserialize;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -209,6 +210,90 @@ pub async fn list_workspace_file_paths_for_path(
 ) -> Result<Vec<String>, String> {
     crate::agent::references::list_relative_paths_in_root(Path::new(&workspace_path), max_depth)
         .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitInteractiveShellInputRequest {
+    pub session_id: String,
+    pub execution_id: String,
+    pub input: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelInteractiveShellInputRequest {
+    pub session_id: String,
+    pub execution_id: String,
+}
+
+#[tauri::command]
+pub async fn submit_interactive_shell_input(
+    request: SubmitInteractiveShellInputRequest,
+) -> Result<serde_json::Value, String> {
+    use crate::mcp::builtin::workspace::INTERACTIVE_SHELL_INPUT_MAX_BYTES;
+    use crate::mcp::builtin::workspace::SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL;
+    use crate::state::{get_app_handle, get_mcp_service_proxy_manager};
+
+    if request.input.len() > INTERACTIVE_SHELL_INPUT_MAX_BYTES {
+        return Err(format!(
+            "Interactive input exceeds the {} byte limit",
+            INTERACTIVE_SHELL_INPUT_MAX_BYTES
+        ));
+    }
+
+    let proxy_manager = get_mcp_service_proxy_manager();
+    proxy_manager
+        .ensure_configured_proxy(&request.session_id, get_app_handle().cloned())
+        .await?;
+
+    let proxy = proxy_manager
+        .get_proxy(&request.session_id)
+        .await
+        .ok_or_else(|| format!("No proxy found for session: {}", request.session_id))?;
+
+    let result = proxy
+        .call_builtin_internal(
+            "workspace",
+            SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL,
+            serde_json::json!({
+                "execution_id": request.execution_id,
+                "input": request.input,
+            }),
+        )
+        .await?;
+
+    serde_json::to_value(result).map_err(|e| format!("Failed to serialize MCPResult: {}", e))
+}
+
+#[tauri::command]
+pub async fn cancel_interactive_shell_input(
+    request: CancelInteractiveShellInputRequest,
+) -> Result<serde_json::Value, String> {
+    use crate::mcp::builtin::workspace::CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL;
+    use crate::state::{get_app_handle, get_mcp_service_proxy_manager};
+
+    let proxy_manager = get_mcp_service_proxy_manager();
+    proxy_manager
+        .ensure_configured_proxy(&request.session_id, get_app_handle().cloned())
+        .await?;
+
+    let proxy = proxy_manager
+        .get_proxy(&request.session_id)
+        .await
+        .ok_or_else(|| format!("No proxy found for session: {}", request.session_id))?;
+
+    let result = proxy
+        .call_builtin_internal(
+            "workspace",
+            CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL,
+            serde_json::json!({
+                "execution_id": request.execution_id,
+            }),
+        )
+        .await?;
+
+    serde_json::to_value(result).map_err(|e| format!("Failed to serialize MCPResult: {}", e))
 }
 
 pub async fn resolve_workspace_scoped_file_path(

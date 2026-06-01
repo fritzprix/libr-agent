@@ -117,7 +117,7 @@ impl WorkspaceServer {
             .unwrap_or(false);
         let auto_detect = validation::detect_privilege_escalation(raw_command);
 
-        // If user input required, return UIResource for interactive execution
+        // If user input is required, suspend the same synchronous tool call until the UI submits it.
         if require_input || auto_detect {
             return self
                 .handle_interactive_shell(raw_command, &args, session_id)

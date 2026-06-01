@@ -1,5 +1,6 @@
 use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent};
 use crate::agent::runtime_state::SessionRuntimeState;
+use crate::mcp::builtin::workspace::InteractiveShellInputType;
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
 use serde::{Deserialize, Serialize};
@@ -144,6 +145,24 @@ pub enum AgentEvent {
         metrics: PreflightTokenMetrics,
     },
 
+    /// Interactive shell execution is waiting for local user input.
+    #[serde(rename_all = "camelCase")]
+    InteractiveShellInputRequested {
+        session_id: String,
+        execution_id: String,
+        prompt: String,
+        input_type: InteractiveShellInputType,
+        command: String,
+    },
+
+    /// Interactive shell input request resolved locally.
+    #[serde(rename_all = "camelCase")]
+    InteractiveShellInputResolved {
+        session_id: String,
+        execution_id: String,
+        outcome: String,
+    },
+
     /// Resource updated (assistants, MCP servers, playbooks, etc.)
     /// Emitted when builtin tools modify global resources
     #[serde(rename_all = "camelCase")]
@@ -249,6 +268,21 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             metrics.total_budget_tokens,
             metrics.effective_input_budget,
             metrics.safe_input_token_limit
+        ),
+        AgentEvent::InteractiveShellInputRequested {
+            session_id,
+            execution_id,
+            input_type,
+            ..
+        } => format!(
+            "InteractiveShellInputRequested(session={session_id}, execution_id={execution_id}, input_type={input_type})"
+        ),
+        AgentEvent::InteractiveShellInputResolved {
+            session_id,
+            execution_id,
+            outcome,
+        } => format!(
+            "InteractiveShellInputResolved(session={session_id}, execution_id={execution_id}, outcome={outcome})"
         ),
         AgentEvent::ResourceUpdated {
             resource_type,

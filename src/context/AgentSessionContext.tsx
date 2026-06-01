@@ -77,6 +77,8 @@ export function AgentSessionProvider({
       preflightTokenMetrics: stateProps.state.preflightTokenMetrics,
       initializationStep: stateProps.state.initializationStep,
       pendingApprovals: stateProps.state.pendingApprovals,
+      pendingInteractiveShellPrompt:
+        stateProps.state.pendingInteractiveShellPrompt,
       yoloModeEnabled: stateProps.state.yoloModeEnabled,
       unsafeModeEnabled: stateProps.state.unsafeModeEnabled,
       executionMode: stateProps.state.executionMode,
@@ -95,6 +97,7 @@ export function AgentSessionProvider({
       stateProps.state.preflightTokenMetrics,
       stateProps.state.initializationStep,
       stateProps.state.pendingApprovals,
+      stateProps.state.pendingInteractiveShellPrompt,
       stateProps.state.yoloModeEnabled,
       stateProps.state.unsafeModeEnabled,
       stateProps.state.executionMode,

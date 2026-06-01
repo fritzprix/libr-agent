@@ -241,8 +241,8 @@ describe('GeminiService Tool Result Handling', () => {
                         id: 'call_1',
                         type: 'function',
                         function: {
-                            name: 'workspace__executePendingShell',
-                            arguments: JSON.stringify({ executionId: 'abc' }),
+                            name: 'workspace__spawnProcess',
+                            arguments: JSON.stringify({ command: 'echo hello' }),
                         },
                     },
                 ],
@@ -264,7 +264,7 @@ describe('GeminiService Tool Result Handling', () => {
         };
 
         expect(firstPart.functionCall?.name).toBe(
-            'workspace__executePendingShell',
+            'workspace__spawnProcess',
         );
         expect(firstPart.thoughtSignature).toBe(
             'skip_thought_signature_validator',
