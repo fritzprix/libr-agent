@@ -242,45 +242,38 @@ async fn apply_tool_loop_token_fence(
         return;
     }
 
-    let (
-        history_messages,
-        configured_max_output_tokens,
-        system_prompt_tokens,
-        tools_tokens,
-        fallback_calibration_ratio,
-    ) = {
+    // Clone Arc handles while holding the sessions read-lock (no async ops, fast).
+    // The guard is dropped at the end of this block so writers are not stalled
+    // during the subsequent inner async reads.
+    let (messages_lock, last_request_lock, agent_config_str) = {
         let sessions = active_sessions.read().await;
         let Some(session) = sessions.get(session_id) else {
             return;
         };
-
-        let history_messages = session.messages.read().await.clone();
-        let configured_max_output_tokens = session
-            .metadata
-            .agent_config
-            .as_deref()
-            .and_then(|config| crate::agent::AgentConfig::from_json(config).ok())
-            .and_then(|config| config.max_tokens);
-        let last_completion_request = session.last_completion_request.read().await.clone();
-        let (system_prompt_tokens, tools_tokens) =
-            estimate_parent_request_prefix_tokens(last_completion_request.as_ref());
-        let fallback_calibration_ratio =
-            try_derive_bpe_calibration_ratio(&history_messages, system_prompt_tokens, tools_tokens);
-
         (
-            history_messages,
-            configured_max_output_tokens,
-            system_prompt_tokens,
-            tools_tokens,
-            fallback_calibration_ratio,
+            Arc::clone(&session.messages),
+            Arc::clone(&session.last_completion_request),
+            session.metadata.agent_config.clone(),
         )
     };
+    // sessions guard is dropped here — writers can now acquire active_sessions
+
+    let history_messages = messages_lock.read().await.clone();
+    let last_completion_request = last_request_lock.read().await.clone();
+    let configured_max_output_tokens = agent_config_str
+        .as_deref()
+        .and_then(|config| crate::agent::AgentConfig::from_json(config).ok())
+        .and_then(|config| config.max_tokens);
+    let (system_prompt_tokens, tools_tokens) =
+        estimate_parent_request_prefix_tokens(last_completion_request.as_ref());
+    let fallback_calibration_ratio =
+        try_derive_bpe_calibration_ratio(&history_messages, system_prompt_tokens, tools_tokens);
 
     let output_reserve_tokens =
         derive_measured_output_tokens_reserve(&history_messages, configured_max_output_tokens);
     let safe_input_token_limit = context_settings
         .max_input_context()
-        .min(context_settings.model_max_limit);
+        .min(context_settings.model_max_limit());
     let effective_input_budget =
         calculate_effective_input_budget(safe_input_token_limit, output_reserve_tokens);
     let guarded_total_budget_limit = effective_input_budget
