@@ -525,11 +525,14 @@ export function AgentSessionListProvider({
    */
   const toggleBookmark = useCallback(
     async (sessionId: string) => {
-      // Compute new value from current (non-optimistic) state before the update
-      const session = sessions.find((s) => s.id === sessionId);
-      const newValue = !(session?.isBookmarked ?? false);
+      const session =
+        sessionsRef.current.find((candidate) => candidate.id === sessionId) ??
+        notificationSessionsRef.current.find(
+          (candidate) => candidate.id === sessionId,
+        );
+      const previousValue = session?.isBookmarked ?? false;
+      const newValue = !previousValue;
 
-      // Optimistic: set locally with the known new value
       mutateSessions(
         (prev) =>
           prev.map((s) =>
@@ -550,15 +553,14 @@ export function AgentSessionListProvider({
         });
       } catch (err) {
         logger.error('Failed to toggle bookmark', err);
-        // Revert optimistic update on failure using the inverse of what we set
         applySessionUpdate(sessionId, (session) => ({
           ...session,
-          isBookmarked: !newValue,
+          isBookmarked: previousValue,
         }));
         throw err;
       }
     },
-    [applySessionUpdate, mutateSessions, sessions],
+    [applySessionUpdate, mutateSessions],
   );
 
   const renameSession = useCallback(
