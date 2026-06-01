@@ -4,9 +4,10 @@ import {
   useAgentSessionActions,
   useAgentSessionState,
 } from '@/context/AgentSessionContext';
+import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
-import { useAgentChat } from '@/context/AgentChatContext';
+import { useAgentChatState } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,16 +25,9 @@ interface AgentChatHeaderProps {
   assistantName?: string;
 }
 
-export function AgentChatHeader({
-  children,
-  assistantName,
-}: AgentChatHeaderProps) {
+function CopyMessagesButton() {
   const { t } = useTranslation();
-  const { session } = useAgentSessionState();
-  const { renameSession } = useAgentSessionActions();
-  const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
-  const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
-  const { messages } = useAgentChat();
+  const { messages } = useAgentChatState();
   const [isCopying, setIsCopying] = useState(false);
   const { copyToClipboard } = useClipboard();
 
@@ -52,7 +46,46 @@ export function AgentChatHeader({
   };
 
   return (
-    <AgentSessionHeader onRenameSession={renameSession}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleCopyMessages}
+          disabled={isCopying}
+          aria-label={t('agent.header.copyAria')}
+          className="h-6 px-2"
+        >
+          {isCopying ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function AgentChatHeader({
+  children,
+  assistantName,
+}: AgentChatHeaderProps) {
+  const { t } = useTranslation();
+  const { session } = useAgentSessionState();
+  const { renameSession } = useAgentSessionActions();
+  const { toggleBookmark } = useAgentSessionListActions();
+  const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
+  const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
+
+  return (
+    <AgentSessionHeader
+      onRenameSession={renameSession}
+      isBookmarked={session?.isBookmarked}
+      onToggleBookmark={() => session?.id && toggleBookmark(session.id)}
+    >
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center">
           {children}
@@ -62,26 +95,7 @@ export function AgentChatHeader({
         </div>
 
         <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleCopyMessages}
-                disabled={isCopying}
-                aria-label={t('agent.header.copyAria')}
-                className="h-6 px-2"
-              >
-                {isCopying ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
-          </Tooltip>
+          <CopyMessagesButton />
 
           <Tooltip>
             <TooltipTrigger asChild>
