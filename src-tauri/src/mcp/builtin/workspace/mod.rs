@@ -170,6 +170,16 @@ impl PendingExecutions {
     pub fn count(&self) -> usize {
         self.0.lock().unwrap().len()
     }
+
+    /// Cleanup expired pending executions
+    pub fn cleanup_expired(&self, ttl_seconds: u64) {
+        let mut map = self.0.lock().unwrap();
+        let now = chrono::Utc::now();
+        map.retain(|_, exec| {
+            let age = now.signed_duration_since(exec.created_at);
+            age.num_seconds() < ttl_seconds as i64
+        });
+    }
 }
 
 #[derive(Debug)]
@@ -881,6 +891,9 @@ mod tests {
             run_mode: "sync".to_string(),
             timeout: 30,
             created_at: now - chrono::Duration::minutes(15),
+            prompt: "prompt".to_string(),
+            input_type: InteractiveShellInputType::Text,
+            response_tx: None,
         });
 
         // Add one new entry
@@ -892,6 +905,9 @@ mod tests {
             run_mode: "sync".to_string(),
             timeout: 30,
             created_at: now,
+            prompt: "prompt".to_string(),
+            input_type: InteractiveShellInputType::Text,
+            response_tx: None,
         });
 
         assert_eq!(pending.count(), 2);
