@@ -7,18 +7,28 @@ description: Comprehensive computer diagnosis and troubleshooting. Use this skil
 
 This skill allows Claude to act as a technical support assistant. It gathers system information using Python's `psutil` library (making it cross-platform), analyzes the metrics for common issues, and provides a structured report.
 
+## Path conventions
+
+Paths in this skill are relative to the directory containing this `SKILL.md`, not to the workspace root or the shell's current `./`.
+
+- Scripts in this skill use paths like `scripts/...`
+- Reference material in this skill uses paths like `references/...` and `assets/...`
+- When a command below says `python scripts/...`, resolve that script path against the skill's absolute Base Directory
+- In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
+- Files created in the examples are workspace files unless the instruction explicitly says otherwise
+
 ## Workflow
 
 1. **Information Gathering**:
    When a user reports an issue, execute the data collection script to snapshot the current system state.
    ```bash
-   python scripts/collect_info.py > sys_info.json
+   python "<skill-base-dir>/scripts/collect_info.py" > sys_info.json
    ```
 
 2. **Data Analysis**:
    Use the analysis script to parse the collected JSON and identify critical issues (high CPU/Memory, full disks).
    ```bash
-   python scripts/analyze_info.py sys_info.json > analysis_result.json
+   python "<skill-base-dir>/scripts/analyze_info.py" sys_info.json > analysis_result.json
    ```
 
 3. **Report Generation**:

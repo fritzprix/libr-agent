@@ -10,6 +10,17 @@ license: Proprietary. LICENSE.txt has complete terms
 
 A user may ask you to create, edit, or analyze the contents of a .docx file. A .docx file is essentially a ZIP archive containing XML files and other resources that you can read or edit. You have different tools and workflows available for different tasks.
 
+## Path conventions
+
+Paths in this skill are relative to the directory containing this `SKILL.md`, not to the workspace root or the shell's current `./`.
+
+- Scripts in this skill use paths like `ooxml/scripts/...`
+- References in this skill use paths like `references/...`
+- Local docs in this skill use paths like `docx-js.md` and `ooxml.md`
+- When a command below says `python ooxml/scripts/...`, resolve that script path against the skill's absolute Base Directory
+- In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
+- User/project files passed as arguments are workspace files unless the instruction explicitly says otherwise
+
 ## Workflow Decision Tree
 
 ### Reading/Analyzing Content
@@ -49,7 +60,7 @@ You need raw XML access for: comments, complex formatting, document structure, e
 
 #### Unpacking a file
 
-`python ooxml/scripts/unpack.py <office_file> <output_directory>`
+`python "<skill-base-dir>/ooxml/scripts/unpack.py" <office_file> <output_directory>`
 
 #### Key file structures
 
@@ -75,9 +86,9 @@ When editing an existing Word document, use the **Document library** (a Python l
 ### Workflow
 
 1. **MANDATORY - READ ENTIRE FILE**: Read [`ooxml.md`](ooxml.md) (~600 lines) completely from start to finish. **NEVER set any range limits when reading this file.** Read the full file content for the Document library API and XML patterns for directly editing document files.
-2. Unpack the document: `python ooxml/scripts/unpack.py <office_file> <output_directory>`
+2. Unpack the document: `python "<skill-base-dir>/ooxml/scripts/unpack.py" <office_file> <output_directory>`
 3. Create and run a Python script using the Document library (see "Document Library" section in ooxml.md)
-4. Pack the final document: `python ooxml/scripts/pack.py <input_directory> <office_file>`
+4. Pack the final document: `python "<skill-base-dir>/ooxml/scripts/pack.py" <input_directory> <office_file>`
 
 The Document library provides both high-level methods for common operations and direct DOM access for complex scenarios.
 
@@ -125,7 +136,7 @@ Example - Changing "30 days" to "60 days" in a sentence:
 
 3. **Read documentation and unpack**:
    - **MANDATORY - READ ENTIRE FILE**: Read [`ooxml.md`](ooxml.md) (~600 lines) completely from start to finish. **NEVER set any range limits when reading this file.** Pay special attention to the "Document Library" and "Tracked Change Patterns" sections.
-   - **Unpack the document**: `python ooxml/scripts/unpack.py <file.docx> <dir>`
+   - **Unpack the document**: `python "<skill-base-dir>/ooxml/scripts/unpack.py" <file.docx> <dir>`
    - **Note the suggested RSID**: The unpack script will suggest an RSID to use for your tracked changes. Copy this RSID for use in step 4b.
 
 4. **Implement changes in batches**: Group changes logically (by section, by type, or by proximity) and implement them together in a single script. This approach:
@@ -149,7 +160,7 @@ Example - Changing "30 days" to "60 days" in a sentence:
 5. **Pack the document**: After all batches are complete, convert the unpacked directory back to .docx:
 
    ```bash
-   python ooxml/scripts/pack.py unpacked reviewed-document.docx
+   python "<skill-base-dir>/ooxml/scripts/pack.py" unpacked reviewed-document.docx
    ```
 
 6. **Final verification**: Do a comprehensive check of the complete document:
