@@ -80,8 +80,140 @@ pub fn normalize_shell_command(raw_command: &str) -> String {
             normalized = fix_consecutive_quotes(&normalized);
         }
 
+        // 4. Inject -S flag for sudo commands to read from stdin in non-interactive/non-PTY shells
+        normalized = inject_sudo_stdin_flag(&normalized);
+
         normalized
     }
+}
+
+/// Inject -S flag for sudo commands to read from stdin in non-interactive/non-PTY shells
+#[cfg(not(windows))]
+pub fn inject_sudo_stdin_flag(command: &str) -> String {
+    let mut result = String::new();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escaped = false;
+    let chars: Vec<char> = command.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if in_single_quote {
+            if chars[i] == '\'' {
+                in_single_quote = false;
+            }
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        if in_double_quote {
+            if escaped {
+                escaped = false;
+            } else if chars[i] == '\\' {
+                escaped = true;
+            } else if chars[i] == '"' {
+                in_double_quote = false;
+            }
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        if escaped {
+            escaped = false;
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        if chars[i] == '\\' {
+            escaped = true;
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        if chars[i] == '\'' {
+            in_single_quote = true;
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        if chars[i] == '"' {
+            in_double_quote = true;
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        // Check for 'sudo' word outside of quotes
+        if chars[i..].starts_with(&['s', 'u', 'd', 'o']) {
+            // Check word boundaries for 'sudo'
+            let is_start_boundary = i == 0 || {
+                let prev = chars[i - 1];
+                prev.is_whitespace()
+                    || prev == ';'
+                    || prev == '&'
+                    || prev == '|'
+                    || prev == '('
+                    || prev == ')'
+                    || prev == '{'
+                    || prev == '}'
+            };
+
+            let has_space_after = i + 4 < chars.len() && chars[i + 4].is_whitespace();
+            let is_end_boundary = i + 4 == chars.len() || has_space_after;
+
+            if is_start_boundary && is_end_boundary {
+                result.push_str("sudo");
+                i += 4;
+
+                // Check if it's already followed by -S or --stdin
+                let mut next_idx = i;
+                while next_idx < chars.len() && chars[next_idx].is_whitespace() {
+                    next_idx += 1;
+                }
+
+                let mut already_has_stdin_flag = false;
+                if next_idx < chars.len() {
+                    let rest = &chars[next_idx..];
+                    if rest.starts_with(&['-', 'S']) {
+                        let after_flag = next_idx + 2;
+                        if after_flag == chars.len()
+                            || chars[after_flag].is_whitespace()
+                            || chars[after_flag] == ';'
+                            || chars[after_flag] == '&'
+                            || chars[after_flag] == '|'
+                        {
+                            already_has_stdin_flag = true;
+                        }
+                    } else if rest.starts_with(&['-', '-', 's', 't', 'd', 'i', 'n']) {
+                        let after_flag = next_idx + 7;
+                        if after_flag == chars.len()
+                            || chars[after_flag].is_whitespace()
+                            || chars[after_flag] == ';'
+                            || chars[after_flag] == '&'
+                            || chars[after_flag] == '|'
+                        {
+                            already_has_stdin_flag = true;
+                        }
+                    }
+                }
+
+                if !already_has_stdin_flag {
+                    result.push_str(" -S");
+                }
+                continue;
+            }
+        }
+
+        result.push(chars[i]);
+        i += 1;
+    }
+
+    result
 }
 
 /// Fix consecutive quotes based on context
@@ -175,6 +307,39 @@ mod tests {
 
         // Trailing backslash (should be preserved)
         assert_eq!(normalize_shell_command("echo hello \\"), "echo hello \\");
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_inject_sudo_stdin_flag() {
+        assert_eq!(
+            inject_sudo_stdin_flag("sudo apt update"),
+            "sudo -S apt update"
+        );
+        assert_eq!(
+            inject_sudo_stdin_flag("sudo -S apt update"),
+            "sudo -S apt update"
+        );
+        assert_eq!(
+            inject_sudo_stdin_flag("sudo --stdin apt update"),
+            "sudo --stdin apt update"
+        );
+        assert_eq!(
+            inject_sudo_stdin_flag("sudo -u root apt update"),
+            "sudo -S -u root apt update"
+        );
+        assert_eq!(
+            inject_sudo_stdin_flag("echo 'sudo apt update'"),
+            "echo 'sudo apt update'"
+        );
+        assert_eq!(
+            inject_sudo_stdin_flag("cd /tmp && sudo apt update"),
+            "cd /tmp && sudo -S apt update"
+        );
+        assert_eq!(
+            inject_sudo_stdin_flag("  sudo   apt update"),
+            "  sudo -S   apt update"
+        );
     }
 
     #[test]
