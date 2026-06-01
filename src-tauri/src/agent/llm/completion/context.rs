@@ -26,6 +26,10 @@ impl ContextManagementSettings {
     pub fn tool_call_group_visible_count(&self) -> usize {
         self.tool_call_group_visible_count
     }
+
+    pub fn model_max_limit(&self) -> usize {
+        self.model_max_limit
+    }
 }
 
 pub(crate) fn default_context_management_settings() -> ContextManagementSettings {
