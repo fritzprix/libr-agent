@@ -8,8 +8,9 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::workspace::code_execution::normalization;
 use crate::mcp::builtin::workspace::code_execution::shell::format_duration_ms;
 use crate::mcp::builtin::workspace::{
-    PendingShellExecution, PendingShellInputResolution, WorkspaceServer,
-    INTERACTIVE_SHELL_INPUT_MAX_BYTES, PERSISTENT_SHELL_TOOL,
+    InteractiveShellInputType, PendingExecutionLookupError, PendingShellExecution,
+    PendingShellInputResolution, WorkspaceServer, INTERACTIVE_SHELL_INPUT_MAX_BYTES,
+    PERSISTENT_SHELL_TOOL,
 };
 use crate::mcp::types::MCPResult;
 
@@ -50,7 +51,7 @@ impl WorkspaceServer {
             .remove_if_session_matches(&args.execution_id, session_id)
         {
             Ok(Some(pending)) => pending,
-            Err(()) => {
+            Err(PendingExecutionLookupError::SessionMismatch) => {
                 return Ok(guided_error(
                     ErrorCategory::PermissionDenied,
                     "Interactive execution belongs to a different session".to_string(),
@@ -175,23 +176,40 @@ impl WorkspaceServer {
         };
 
         let duration_ms = execution_start.elapsed().as_millis() as u64;
-        let structured_data = serde_json::json!({
-            "command": pending.display_command,
-            "exit_code": exit_code,
-            "stdout": stdout,
-            "stderr": stderr,
-            "cwd": cwd,
-            "status": if exit_code == 0 { "finished" } else { "failed" },
-            "duration_ms": duration_ms,
-            "execution_type": "persistent"
-        });
+        let redact_output = pending.input_type == InteractiveShellInputType::Password;
+        let output_redacted_notice =
+            "Command output was redacted because this prompt used password-mode interactive input.";
+        let structured_data = if redact_output {
+            serde_json::json!({
+                "command": pending.display_command,
+                "exit_code": exit_code,
+                "cwd": cwd,
+                "status": if exit_code == 0 { "finished" } else { "failed" },
+                "duration_ms": duration_ms,
+                "execution_type": "persistent",
+                "output_redacted": true
+            })
+        } else {
+            serde_json::json!({
+                "command": pending.display_command,
+                "exit_code": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
+                "cwd": cwd,
+                "status": if exit_code == 0 { "finished" } else { "failed" },
+                "duration_ms": duration_ms,
+                "execution_type": "persistent"
+            })
+        };
 
         if exit_code != 0 {
             let mut error_sections = Vec::new();
-            if !stdout.is_empty() {
+            if redact_output {
+                error_sections.push(output_redacted_notice.to_string());
+            } else if !stdout.is_empty() {
                 error_sections.push(format!("Output:\n{stdout}"));
             }
-            if !stderr.is_empty() {
+            if !redact_output && !stderr.is_empty() {
                 error_sections.push(format!("Stderr:\n{stderr}"));
             }
 
@@ -275,7 +293,9 @@ impl WorkspaceServer {
             ""
         };
 
-        let text_message = if !stdout.is_empty() {
+        let text_message = if redact_output {
+            format!("{header}\n\n{output_redacted_notice}\n\n{shell_state}{file_tools_warning}")
+        } else if !stdout.is_empty() {
             format!("{header}\n\nCommand output:\n{stdout}\n\n{shell_state}{file_tools_warning}")
         } else {
             format!("{header}\n\n{shell_state}{file_tools_warning}")

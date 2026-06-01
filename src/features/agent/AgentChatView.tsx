@@ -198,12 +198,14 @@ function InteractiveShellPromptDialog({
       return;
     }
 
+    const { executionId } = promptState;
     setIsSubmitting(true);
     try {
-      await cancelInteractiveShellInput(sessionId, promptState.executionId);
+      await cancelInteractiveShellInput(sessionId, executionId);
     } catch (error) {
       logger.error('Failed to cancel interactive shell prompt', error);
       toast.error('Failed to cancel interactive prompt.');
+    } finally {
       setIsSubmitting(false);
     }
   }, [isSubmitting, promptState, sessionId]);
@@ -216,17 +218,15 @@ function InteractiveShellPromptDialog({
         return;
       }
 
+      const { executionId } = promptState;
       setIsSubmitting(true);
       try {
-        await submitInteractiveShellInput(
-          sessionId,
-          promptState.executionId,
-          inputValue,
-        );
+        await submitInteractiveShellInput(sessionId, executionId, inputValue);
         setInputValue('');
       } catch (error) {
         logger.error('Failed to submit interactive shell input', error);
         toast.error('Failed to submit interactive input.');
+      } finally {
         setIsSubmitting(false);
       }
     },

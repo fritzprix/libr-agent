@@ -55,6 +55,11 @@ pub enum PendingShellInputResolution {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingExecutionLookupError {
+    SessionMismatch,
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InteractiveShellInputType {
@@ -137,11 +142,13 @@ impl PendingExecutions {
         &self,
         id: &str,
         session_id: &str,
-    ) -> Result<Option<PendingShellExecution>, ()> {
+    ) -> Result<Option<PendingShellExecution>, PendingExecutionLookupError> {
         let mut map = self.0.lock().unwrap();
         match map.get(id) {
             None => Ok(None),
-            Some(pending) if pending.session_id != session_id => Err(()),
+            Some(pending) if pending.session_id != session_id => {
+                Err(PendingExecutionLookupError::SessionMismatch)
+            }
             Some(_) => Ok(map.remove(id)),
         }
     }

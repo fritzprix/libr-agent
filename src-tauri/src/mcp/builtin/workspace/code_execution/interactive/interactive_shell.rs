@@ -88,7 +88,7 @@ impl WorkspaceServer {
             timeout,
             created_at: chrono::Utc::now(),
             prompt: prompt.clone(),
-            input_type: input_type.clone(),
+            input_type,
             response_tx: Some(response_tx),
         };
 
