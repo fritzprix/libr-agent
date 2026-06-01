@@ -18,7 +18,9 @@ use uuid::Uuid;
 use crate::agent::{AgentConfig, AgentSessionManager};
 use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
-use crate::repositories::{AssistantRepository, ScheduledTaskRepository, SessionRepository};
+use crate::repositories::{
+    AssistantRepository, ScheduledTaskRepository, SessionRepository, UpdateScheduledTaskParams,
+};
 use crate::scheduled::ScheduleTimezone;
 use crate::services::WorkspaceService;
 use crate::state::{
@@ -68,12 +70,56 @@ pub async fn resolve_task_session_resolution(
     Ok(TaskSessionResolution::Create(session_id.to_string()))
 }
 
-async fn sync_task_workspace_override(
+fn is_stale_workspace_override_error(error: &str) -> bool {
+    error.starts_with("Path does not exist:") || error.starts_with("Path is not a directory:")
+}
+
+pub async fn sync_task_workspace_override(
+    repo: &dyn ScheduledTaskRepository,
+    task_id: &str,
+    task_name: &str,
     session_id: &str,
     workspace_override: Option<&str>,
 ) -> Result<(), String> {
     if let Some(path) = workspace_override {
-        WorkspaceService::set_override(session_id, path.to_string()).await
+        match WorkspaceService::set_override(session_id, path.to_string()).await {
+            Ok(()) => Ok(()),
+            Err(error) if is_stale_workspace_override_error(&error) => {
+                log::warn!(
+                    "⏰ Scheduled task '{}' ({}) references stale workspace override '{}'; \
+                     clearing override and falling back to the default workspace.",
+                    task_name,
+                    task_id,
+                    path
+                );
+                WorkspaceService::cancel_override(session_id).await?;
+                repo.update_scheduled_task(
+                    task_id,
+                    UpdateScheduledTaskParams {
+                        name: None,
+                        cron_expression: None,
+                        schedule_timezone: None,
+                        assistant_id: None,
+                        group_id: None,
+                        group_name: None,
+                        message: None,
+                        yolo_mode: None,
+                        workspace_override: Some(None),
+                        enabled: None,
+                        next_run_at: None,
+                    },
+                )
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to clear stale workspace override for scheduled task {}: {}",
+                        task_id, e
+                    )
+                })?;
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
     } else {
         WorkspaceService::cancel_override(session_id).await
     }
@@ -219,7 +265,15 @@ async fn execute_task(
     }
 
     // ── 4. Synchronize workspace override before injecting the task message ───
-    sync_task_workspace_override(&session_id, task.workspace_override.as_deref()).await?;
+    let repo = get_scheduled_task_repository();
+    sync_task_workspace_override(
+        repo,
+        &task.id,
+        &task.name,
+        &session_id,
+        task.workspace_override.as_deref(),
+    )
+    .await?;
 
     // ── 5. Inject message and trigger workflow ────────────────────────────────
     let now_ts = chrono::Utc::now().timestamp_millis();
@@ -258,7 +312,6 @@ async fn execute_task(
         now_ms,
         &task.schedule_timezone,
     )?;
-    let repo = get_scheduled_task_repository();
     let new_session_id = is_new_session.then_some(session_id);
     repo.record_run(&task.id, new_session_id, now_ms, next_run_at)
         .await
