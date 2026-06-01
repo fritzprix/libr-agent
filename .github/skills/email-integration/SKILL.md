@@ -61,6 +61,7 @@ python scripts/setup_account.py --reset
 ```
 
 The script will:
+
 1. Prompt for email address (visible)
 2. Auto-detect server settings from domain (see `references/server-profiles.md`)
 3. Prompt for password using `getpass()` — **input is hidden**
@@ -125,6 +126,7 @@ python scripts/email_client.py --action search_email --query "<IMAP search strin
 ```
 
 Query construction examples:
+
 - "김철수한테 온 거" → `--query "FROM 김철수"`
 - "지난주 메일" → `--query "SINCE 26-May-2026"`
 - "프로젝트 관련" → `--query "SUBJECT 프로젝트"`
@@ -161,13 +163,13 @@ For bulk operations (e.g. "스팸함 비워"), confirm count with user before pr
 
 ## Error Handling
 
-| Error | Cause | Action |
-|---|---|---|
+| Error                  | Cause                                 | Action                                                          |
+| ---------------------- | ------------------------------------- | --------------------------------------------------------------- |
 | Auth failed (IMAP 535) | Wrong password or App Password needed | Run `setup_account.py --reset`, guide user to App Password docs |
-| Connection refused | Wrong host/port | Check `references/server-profiles.md`, offer to re-run setup |
-| Config not found | First run or deleted | Run `setup_account.py` |
-| SSL error | Port mismatch | Suggest switching 993↔143 or 587↔465 |
-| Send failed (SMTP 550) | Recipient rejected | Confirm address with user |
+| Connection refused     | Wrong host/port                       | Check `references/server-profiles.md`, offer to re-run setup    |
+| Config not found       | First run or deleted                  | Run `setup_account.py`                                          |
+| SSL error              | Port mismatch                         | Suggest switching 993↔143 or 587↔465                          |
+| Send failed (SMTP 550) | Recipient rejected                    | Confirm address with user                                       |
 
 Always provide the next concrete step, never just report the error.
 
