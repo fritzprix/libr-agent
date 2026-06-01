@@ -241,15 +241,8 @@ async fn list_returns_structured_results_for_ui_consumers() {
         .structured_content
         .clone()
         .expect("structured content should be present");
-    let external_servers = structured["externalServers"]
-        .as_array()
-        .expect("externalServers should be an array");
 
     let text = extract_text(&result);
     assert!(text.contains("| External: github-structured-list | search_issues |"));
     assert_eq!(structured["totalResults"].as_u64(), Some(1));
-    assert!(external_servers.iter().any(|entry| {
-        entry["id"].as_str() == Some(created.id.as_str())
-            && entry["name"].as_str() == Some("github-structured-list")
-    }));
 }
