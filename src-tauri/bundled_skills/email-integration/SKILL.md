@@ -13,6 +13,16 @@ license: Complete terms in LICENSE.txt
 
 Enables the agent to interact with any IMAP/SMTP mail server on behalf of the user.
 
+## Path conventions
+
+Paths in this skill are relative to the directory containing this `SKILL.md`, not to the workspace root or the shell's current `./`.
+
+- Scripts in this skill use paths like `scripts/...`
+- Reference material in this skill uses paths like `references/...`
+- When a command below says `python scripts/...`, resolve that script path against the skill's absolute Base Directory
+- In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
+- Files like config exports or attachments are workspace/user files unless the instruction explicitly says otherwise
+
 ## ⚠️ Security Rules (Mandatory)
 
 - **NEVER** ask for passwords or credentials in chat
@@ -38,7 +48,7 @@ Email integration involves these steps:
 Always start by checking if the account is configured:
 
 ```bash
-python scripts/validate_config.py
+python "<skill-base-dir>/scripts/validate_config.py"
 ```
 
 - Exit code `0` → configured, proceed to Step 3
@@ -52,13 +62,13 @@ python scripts/validate_config.py
 Tell the user setup is needed, then run in terminal:
 
 ```bash
-python scripts/setup_account.py
+python "<skill-base-dir>/scripts/setup_account.py"
 ```
 
 For reset after auth failure:
 
 ```bash
-python scripts/setup_account.py --reset
+python "<skill-base-dir>/scripts/setup_account.py" --reset
 ```
 
 The script will:
@@ -79,7 +89,7 @@ Classify the user's request into one of five actions and call `email_client.py`:
 ### Action: `read_inbox` — Browse received emails
 
 ```bash
-python scripts/email_client.py --action read_inbox [--limit N] [--filter unread|today|all]
+python "<skill-base-dir>/scripts/email_client.py" --action read_inbox [--limit N] [--filter unread|today|all]
 ```
 
 Use when: "메일 보여줘", "받은 편지함", "최근 메일", "안 읽은 메일"
@@ -91,7 +101,7 @@ Default: `--limit 10 --filter unread`
 ### Action: `read_email` — Read full email content
 
 ```bash
-python scripts/email_client.py --action read_email --uid <UID>
+python "<skill-base-dir>/scripts/email_client.py" --action read_email --uid <UID>
 ```
 
 Use when: user refers to a specific email by number/index from a previous list, or "이 메일 내용 보여줘"
@@ -103,7 +113,7 @@ The UID comes from a prior `read_inbox` call. Always mark as read after displayi
 ### Action: `send_email` — Compose and send
 
 ```bash
-python scripts/email_client.py --action send_email \
+python "<skill-base-dir>/scripts/email_client.py" --action send_email \
   --to "recipient@example.com" \
   --subject "제목" \
   --body "본문" \
@@ -122,7 +132,7 @@ For replies, always include `--reply-to-uid` so `In-Reply-To` and `References` h
 ### Action: `search_email` — Search by keyword/sender/date
 
 ```bash
-python scripts/email_client.py --action search_email --query "<IMAP search string>"
+python "<skill-base-dir>/scripts/email_client.py" --action search_email --query "<IMAP search string>"
 ```
 
 Query construction examples:
@@ -138,7 +148,7 @@ Refer to `references/request-patterns.md` for more examples.
 ### Action: `manage_email` — Mark/move/delete
 
 ```bash
-python scripts/email_client.py --action manage_email \
+python "<skill-base-dir>/scripts/email_client.py" --action manage_email \
   --uid <UID> \
   --op <mark_read|mark_unread|move|delete> \
   [--folder <destination_folder>]
@@ -164,9 +174,9 @@ For bulk operations (e.g. "스팸함 비워"), confirm count with user before pr
 
 | Error | Cause | Action |
 |---|---|---|
-| Auth failed (IMAP 535) | Wrong password or App Password needed | Run `setup_account.py --reset`, guide user to App Password docs |
+| Auth failed (IMAP 535) | Wrong password or App Password needed | Run `python "<skill-base-dir>/scripts/setup_account.py" --reset`, guide user to App Password docs |
 | Connection refused | Wrong host/port | Check `references/server-profiles.md`, offer to re-run setup |
-| Config not found | First run or deleted | Run `setup_account.py` |
+| Config not found | First run or deleted | Run `python "<skill-base-dir>/scripts/setup_account.py"` |
 | SSL error | Port mismatch | Suggest switching 993↔143 or 587↔465 |
 | Send failed (SMTP 550) | Recipient rejected | Confirm address with user |
 

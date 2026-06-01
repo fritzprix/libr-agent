@@ -68,6 +68,9 @@ def render_report(
     not_converted: list[Path],
     show_converted: bool,
 ) -> str:
+    skill_base_dir = Path(__file__).resolve().parent.parent
+    convert_script = (skill_base_dir / "scripts" / "convert_binary_docs.py").as_posix()
+    run_script = (skill_base_dir / "scripts" / "run.py").as_posix()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     total = len(converted) + len(not_converted)
     rate = (len(converted) / total * 100) if total else 0
@@ -109,10 +112,10 @@ def render_report(
             f"",
             f"```bash",
             f"# 전체 미변환 파일 변환",
-            f"python .github/skills/workspace-indexer/scripts/convert_binary_docs.py --root .",
+            f'python "{convert_script}" --root .',
             f"",
             f"# 또는 통합 실행기 사용",
-            f"python .github/skills/workspace-indexer/scripts/run.py --root .",
+            f'python "{run_script}" --root .',
             f"```",
             f"",
         ]

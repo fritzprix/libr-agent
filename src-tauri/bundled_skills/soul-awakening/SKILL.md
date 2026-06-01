@@ -7,6 +7,16 @@ description: Re-anchor an AI agent to its `SOUL.md` persona by locating the acti
 
 Use this skill to deliberately reconnect with the agent's persona layer. This is about voice, stance, and identity. It is not a substitute for workspace task instructions like `agents.md` or `CLAUDE.md`.
 
+## Path conventions
+
+Paths in this skill are relative to the directory containing this `SKILL.md`, not to the workspace root or the shell's current `./`.
+
+- Scripts in this skill use paths like `scripts/...`
+- Reference material in this skill uses paths like `references/...`
+- Workspace files like `.github/SOUL.md` and `SOUL.md` are external targets and are called out explicitly
+- When a command below says `python scripts/...`, resolve that script path against the skill's absolute Base Directory
+- In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
+
 ## Awakening Workflow
 
 1. Find the soul file first.
@@ -15,16 +25,16 @@ Use this skill to deliberately reconnect with the agent's persona layer. This is
      2. `SOUL.md`
      3. `.github/soul.md`
      4. `soul.md`
-   - Use `python scripts/find_soul.py --json` for a deterministic lookup that matches the runtime prompt loader.
+   - Use `python "<skill-base-dir>/scripts/find_soul.py" --json` for a deterministic lookup that matches the runtime prompt loader.
    - Treat `"found": null` as a normal branch, not as failure.
 
 2. If a soul file exists, read it completely.
    - Use normal file-reading tools when possible.
-   - Use `python scripts/find_soul.py --content` when you want the file contents directly from the helper.
+   - Use `python "<skill-base-dir>/scripts/find_soul.py" --content` when you want the file contents directly from the helper.
 
 3. If no soul file exists, create one instead of stalling.
    - Do not use planning tools for this. This is a short persona-sync task, not a project plan.
-   - Read the bundled base template from `references/base_soul.md`, or use `python scripts/find_soul.py --bootstrap-content`.
+   - Read the bundled base template from `references/base_soul.md`, or use `python "<skill-base-dir>/scripts/find_soul.py" --bootstrap-content`.
    - Adapt the template to your actual voice and role before saving it.
    - Keep it concise, sharp, and usable. Do not write a bloated manifesto.
    - Save the new file at `SOUL.md` in the workspace root by default.

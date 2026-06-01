@@ -16,6 +16,16 @@ description: |
 1. **Binary → Text 변환** — PDF, PPTX, DOCX, XLSX를 마크다운(.md)으로 변환
 2. **Index 구축** — 워크스페이스 파일 색인 + 키워드 맵을 `index.md`로 생성
 
+## Path conventions
+
+이 skill에서 언급하는 내부 경로는 모두 **이 `SKILL.md`가 있는 디렉터리 기준 상대 경로**이며, **workspace의 현재 디렉터리(`./`)와는 다릅니다.**
+
+- 스크립트: `scripts/...`
+- 기타 리소스: skill 디렉터리 내부 상대 경로
+- `python scripts/...` 같은 표기는 실제 실행 시 이 skill의 절대 Base Directory 기준으로 해석
+- 아래 예시에서 `<skill-base-dir>`는 이 skill이 실제 배포된 절대 경로를 뜻함
+- 워크스페이스 루트 같은 외부 경로는 별도로 명시된 인자(`--root`, `--out`)로 전달
+
 ## 스크립트 목록
 
 | 스크립트 | 역할 |
@@ -30,7 +40,7 @@ description: |
 
 ```bash
 # 자동 설치
-python .github/skills/workspace-indexer/scripts/install_deps.py
+python <skill-base-dir>/scripts/install_deps.py
 
 # 수동 설치
 pip install pymupdf python-docx python-pptx openpyxl
@@ -40,23 +50,23 @@ pip install pymupdf python-docx python-pptx openpyxl
 
 ### Task A: Binary 문서 → 마크다운 변환
 
-스크립트: `.github/skills/workspace-indexer/scripts/convert_binary_docs.py`
+스크립트: `scripts/convert_binary_docs.py`
 
 ```bash
 # dry-run으로 대상 파일 미리 확인
-python .github/skills/workspace-indexer/scripts/convert_binary_docs.py --root . --dry-run
+python <skill-base-dir>/scripts/convert_binary_docs.py --root . --dry-run
 
 # 전체 변환 (원본 파일 옆에 .md 생성)
-python .github/skills/workspace-indexer/scripts/convert_binary_docs.py --root .
+python <skill-base-dir>/scripts/convert_binary_docs.py --root .
 
 # 특정 형식만 변환
-python .github/skills/workspace-indexer/scripts/convert_binary_docs.py --root . --formats pdf docx
+python <skill-base-dir>/scripts/convert_binary_docs.py --root . --formats pdf docx
 
 # 별도 디렉터리에 출력
-python .github/skills/workspace-indexer/scripts/convert_binary_docs.py --root . --out ./converted
+python <skill-base-dir>/scripts/convert_binary_docs.py --root . --out ./converted
 
 # 기존 변환 파일 덮어쓰기
-python .github/skills/workspace-indexer/scripts/convert_binary_docs.py --root . --overwrite
+python <skill-base-dir>/scripts/convert_binary_docs.py --root . --overwrite
 ```
 
 **형식별 변환 방식:**
@@ -72,23 +82,23 @@ python .github/skills/workspace-indexer/scripts/convert_binary_docs.py --root . 
 
 ### Task B: index.md 구축
 
-스크립트: `.github/skills/workspace-indexer/scripts/build_index.py`
+스크립트: `scripts/build_index.py`
 
 ```bash
 # 기본 실행 (루트에 index.md 생성)
-python .github/skills/workspace-indexer/scripts/build_index.py --root .
+python <skill-base-dir>/scripts/build_index.py --root .
 
 # dry-run으로 파일 목록·키워드 미리 확인
-python .github/skills/workspace-indexer/scripts/build_index.py --root . --dry-run
+python <skill-base-dir>/scripts/build_index.py --root . --dry-run
 
 # 출력 위치 지정
-python .github/skills/workspace-indexer/scripts/build_index.py --root . --out docs/index.md
+python <skill-base-dir>/scripts/build_index.py --root . --out docs/index.md
 
 # 커스텀 키워드 파일 사용 (한 줄에 키워드 하나)
-python .github/skills/workspace-indexer/scripts/build_index.py --root . --keywords keywords.txt
+python <skill-base-dir>/scripts/build_index.py --root . --keywords keywords.txt
 
 # 특정 디렉터리 무시
-python .github/skills/workspace-indexer/scripts/build_index.py --root . --ignore-dirs tmp out
+python <skill-base-dir>/scripts/build_index.py --root . --ignore-dirs tmp out
 ```
 
 **index.md 구조:**
@@ -122,29 +132,29 @@ python .github/skills/workspace-indexer/scripts/build_index.py --root . --ignore
 
 ```bash
 # 전체 워크플로우 (권장)
-python .github/skills/workspace-indexer/scripts/run.py --root .
+python <skill-base-dir>/scripts/run.py --root .
 
 # 변환만 (색인 건너뜀)
-python .github/skills/workspace-indexer/scripts/run.py --root . --skip-index
+python <skill-base-dir>/scripts/run.py --root . --skip-index
 
 # 색인만 갱신 (변환 건너뜀)
-python .github/skills/workspace-indexer/scripts/run.py --root . --skip-convert
+python <skill-base-dir>/scripts/run.py --root . --skip-convert
 
 # dry-run으로 전체 미리 확인
-python .github/skills/workspace-indexer/scripts/run.py --root . --dry-run
+python <skill-base-dir>/scripts/run.py --root . --dry-run
 ```
 
 ### Task D: 변환 현황 확인
 
 ```bash
 # 콘솔에서 미변환 파일 확인
-python .github/skills/workspace-indexer/scripts/check_status.py --root .
+python <skill-base-dir>/scripts/check_status.py --root .
 
 # 변환 완료 파일 포함 전체 현황
-python .github/skills/workspace-indexer/scripts/check_status.py --root . --show-converted
+python <skill-base-dir>/scripts/check_status.py --root . --show-converted
 
 # 마크다운 리포트로 저장
-python .github/skills/workspace-indexer/scripts/check_status.py --root . --export conversion_status.md
+python <skill-base-dir>/scripts/check_status.py --root . --export conversion_status.md
 ```
 
 ## 주의사항
