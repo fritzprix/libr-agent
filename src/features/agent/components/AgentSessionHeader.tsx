@@ -50,7 +50,6 @@ export default function AgentSessionHeader({
   const [isSavingSessionName, setIsSavingSessionName] = useState(false);
   const sessionNameInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Fallback display if session is not yet loaded
   const resolvedSessionName =
     sessionName ??
     session?.name ??

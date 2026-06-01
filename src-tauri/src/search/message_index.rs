@@ -347,6 +347,7 @@ mod tests {
             source: None,
             error: None,
             usage: None,
+            prompt_tokens: None,
         };
 
         let doc = MessageDocument::from(model);
