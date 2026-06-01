@@ -9,7 +9,7 @@ import {
   normalizeSessionListResponse,
 } from './mappings';
 
-export const SESSION_LIST_PAGE_SIZE = 100;
+export const SESSION_LIST_PAGE_SIZE = 20;
 
 export interface InitialSessionListData {
   page: AgentSessionListResponse;

@@ -199,6 +199,44 @@ describe('AgentSessionListContext – toggleBookmark', () => {
         );
         expect(toggleCall?.args.bookmarked).toBe(true);
     });
+
+    it('uses notification sessions as the source of truth when the target is not in the main list', async () => {
+        const attentionSession = {
+            ...makeSession('n1', true),
+            lastAttentionAt: Date.now(),
+            lastAttentionReason: 'pendingApproval' as const,
+        };
+
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({ items: [], nextCursor: undefined });
+            }
+            if (cmd === 'agent_list_attention_sessions') {
+                return Promise.resolve([attentionSession]);
+            }
+            if (cmd === 'agent_toggle_session_bookmark') return Promise.resolve(undefined);
+            return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
+        });
+
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapper },
+        );
+
+        await waitFor(() =>
+            expect(result.current.state.notificationSessions).toHaveLength(1),
+        );
+
+        await act(async () => {
+            await result.current.actions.toggleBookmark('n1');
+        });
+
+        expect(result.current.state.notificationSessions[0].isBookmarked).toBe(false);
+        expect(safeInvoke).toHaveBeenCalledWith(
+            'agent_toggle_session_bookmark',
+            expect.objectContaining({ sessionId: 'n1', bookmarked: false }),
+        );
+    });
 });
 
 describe('AgentSessionListContext – renameSession', () => {

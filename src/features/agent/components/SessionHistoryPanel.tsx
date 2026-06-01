@@ -1,9 +1,10 @@
 import {
-  forwardRef,
   useCallback,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,12 +28,6 @@ import {
   Clock3,
   StarOff,
 } from 'lucide-react';
-import {
-  Virtuoso,
-  type Components,
-  type ItemProps,
-  type ListProps,
-} from 'react-virtuoso';
 import {
   buildChildrenMap,
   buildDescendantCounts,
@@ -78,6 +73,20 @@ interface SessionHistoryRow {
 }
 
 type SessionHistoryTranslate = ReturnType<typeof useTranslation>['t'];
+
+function findScrollParent(element: HTMLElement | null): HTMLElement | null {
+  let current = element?.parentElement ?? null;
+
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    if (overflowY === 'auto' || overflowY === 'scroll') {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return null;
+}
 
 interface BookmarkedSessionTileProps {
   session: AgentSession;
@@ -182,34 +191,6 @@ function BookmarkedSessionTile({
   );
 }
 
-const sessionHistoryVirtuosoComponents: Components<SessionHistoryRow> = {
-  List: forwardRef<HTMLDivElement, ListProps>(function SessionHistoryList(
-    { children, style, ...props },
-    ref,
-  ) {
-    return (
-      <div
-        {...props}
-        ref={ref}
-        role="list"
-        aria-labelledby="session-heading"
-        style={{ ...style, margin: 0, padding: 0 }}
-      >
-        {children}
-      </div>
-    );
-  }),
-  Item: forwardRef<HTMLDivElement, ItemProps<SessionHistoryRow>>(
-    function SessionHistoryItem({ children, style, ...props }, ref) {
-      return (
-        <div {...props} ref={ref} role="listitem" style={style}>
-          <div className="pb-4">{children}</div>
-        </div>
-      );
-    },
-  ),
-};
-
 const statusPriority: Record<string, number> = {
   busy: 1,
   idle: 2,
@@ -253,6 +234,9 @@ export function SessionHistoryPanel({
   emptyStateSubtitle,
 }: SessionHistoryPanelProps) {
   const { t } = useTranslation('common');
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const scrollParentRef = useRef<HTMLElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
@@ -304,6 +288,10 @@ export function SessionHistoryPanel({
   useEffect(() => {
     setCollapsedAutoExpandedSessionIds(new Set());
   }, [activeStatusFilter, deferredSearchQuery, selectedLineageId]);
+
+  useLayoutEffect(() => {
+    scrollParentRef.current = findScrollParent(rootRef.current);
+  }, []);
 
   const bookmarkedSessions = useMemo(
     () =>
@@ -581,9 +569,120 @@ export function SessionHistoryPanel({
     paused: `${t('sessionHistory.tabs.paused', 'Paused')} (${statusCounts.paused})`,
     error: `${t('sessionHistory.tabs.error', 'Error')} (${statusCounts.error})`,
   };
+  const handleEndReached = useCallback(() => {
+    if (!hasMoreSessions || isLoadingMoreSessions) {
+      return;
+    }
+
+    onLoadMore();
+  }, [hasMoreSessions, isLoadingMoreSessions, onLoadMore]);
+
+  const checkShouldLoadMore = useCallback(() => {
+    if (!hasMoreSessions || isLoadingMoreSessions) {
+      return;
+    }
+
+    const scrollParent = scrollParentRef.current;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!scrollParent || !sentinel) {
+      return;
+    }
+
+    const sentinelBottom = sentinel.getBoundingClientRect().bottom;
+    const scrollParentBottom = scrollParent.getBoundingClientRect().bottom;
+
+    if (sentinelBottom - scrollParentBottom <= 240) {
+      onLoadMore();
+    }
+  }, [hasMoreSessions, isLoadingMoreSessions, onLoadMore]);
+
+  useEffect(() => {
+    const scrollParent = scrollParentRef.current;
+    if (!scrollParent) {
+      return;
+    }
+
+    let frameId: number | null = null;
+    const scheduleCheck = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        checkShouldLoadMore();
+      });
+    };
+
+    scrollParent.addEventListener('scroll', scheduleCheck, { passive: true });
+    window.addEventListener('resize', scheduleCheck);
+    scheduleCheck();
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      scrollParent.removeEventListener('scroll', scheduleCheck);
+      window.removeEventListener('resize', scheduleCheck);
+    };
+  }, [checkShouldLoadMore]);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      checkShouldLoadMore();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [checkShouldLoadMore, displayRows.length]);
+
+  const renderSessionRow = useCallback(
+    ({
+      session,
+      nestingLevel,
+      lineageHint,
+      hasExpandableChildren,
+      isExpanded,
+      descendantStatusCounts: rowDescendantStatusCounts,
+    }: SessionHistoryRow) => (
+      <div key={session.id} role="listitem">
+        <div className="pb-4">
+          <SessionCard
+            session={session}
+            onResume={onResume}
+            onDelete={onDelete}
+            onDeleteOnly={onDeleteOnly}
+            onToggleBookmark={onToggleBookmark}
+            nestingLevel={nestingLevel}
+            lineageHint={lineageHint}
+            selectedLineageId={selectedLineageId}
+            descendantCount={descendantCounts.get(session.id) ?? 0}
+            descendantStatusCounts={rowDescendantStatusCounts}
+            hasExpandableChildren={hasExpandableChildren}
+            isExpanded={isExpanded}
+            onToggleExpand={handleToggleExpand}
+            onLineageSelect={(lineageId) =>
+              setSelectedLineageId((prev) =>
+                prev === lineageId ? null : lineageId,
+              )
+            }
+          />
+        </div>
+      </div>
+    ),
+    [
+      descendantCounts,
+      handleToggleExpand,
+      onDelete,
+      onDeleteOnly,
+      onResume,
+      onToggleBookmark,
+      selectedLineageId,
+    ],
+  );
 
   return (
-    <div className="flex min-h-full flex-col bg-background p-6">
+    <div ref={rootRef} className="flex min-h-full flex-col bg-background p-6">
       <div
         className={cn(
           HISTORY_CONTENT_RAIL_CLASS,
@@ -610,6 +709,15 @@ export function SessionHistoryPanel({
                   count: baseSessions.length,
                 },
               )}
+              {displayRows.length !== baseSessions.length
+                ? `, ${t(
+                    'sessionHistory.visibleCountSummary',
+                    '{{count}} visible in tree',
+                    {
+                      count: displayRows.length,
+                    },
+                  )}`
+                : ''}
               {hasMoreSessions
                 ? `, ${t('sessionHistory.moreAvailable', 'more available')}`
                 : ''}
@@ -848,68 +956,38 @@ export function SessionHistoryPanel({
             </div>
           </div>
         ) : (
-          <Virtuoso
-            useWindowScroll
+          <div
             className="w-full pb-4"
-            data={displayRows}
-            overscan={400}
-            computeItemKey={(_index, row) => row.session.id}
-            components={{
-              ...sessionHistoryVirtuosoComponents,
-              Footer: () =>
-                hasMoreSessions ? (
-                  <div className="flex justify-center py-4">
-                    <Button
-                      variant="outline"
-                      onClick={onLoadMore}
-                      disabled={isLoadingMoreSessions}
-                    >
-                      <RefreshCw
-                        className={cn(
-                          'mr-2 h-4 w-4',
-                          isLoadingMoreSessions && 'animate-spin',
-                        )}
-                      />
-                      {isLoadingMoreSessions
-                        ? t('sessionHistory.loadingMore', 'Loading more...')
-                        : t('sessionHistory.loadMore', 'Load more')}
-                    </Button>
-                  </div>
-                ) : null,
-            }}
-            itemContent={(
-              _index,
-              {
-                session,
-                nestingLevel,
-                lineageHint,
-                hasExpandableChildren,
-                isExpanded,
-                descendantStatusCounts: rowDescendantStatusCounts,
-              },
-            ) => (
-              <SessionCard
-                session={session}
-                onResume={onResume}
-                onDelete={onDelete}
-                onDeleteOnly={onDeleteOnly}
-                onToggleBookmark={onToggleBookmark}
-                nestingLevel={nestingLevel}
-                lineageHint={lineageHint}
-                selectedLineageId={selectedLineageId}
-                descendantCount={descendantCounts.get(session.id) ?? 0}
-                descendantStatusCounts={rowDescendantStatusCounts}
-                hasExpandableChildren={hasExpandableChildren}
-                isExpanded={isExpanded}
-                onToggleExpand={handleToggleExpand}
-                onLineageSelect={(lineageId) =>
-                  setSelectedLineageId((prev) =>
-                    prev === lineageId ? null : lineageId,
-                  )
-                }
-              />
-            )}
-          />
+            role="list"
+            aria-labelledby="session-heading"
+          >
+            {displayRows.map(renderSessionRow)}
+            <div
+              ref={loadMoreSentinelRef}
+              data-testid="session-history-load-more-sentinel"
+              aria-hidden="true"
+              className="h-px w-full"
+            />
+            {hasMoreSessions ? (
+              <div className="flex justify-center py-4">
+                <Button
+                  variant="outline"
+                  onClick={handleEndReached}
+                  disabled={isLoadingMoreSessions}
+                >
+                  <RefreshCw
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      isLoadingMoreSessions && 'animate-spin',
+                    )}
+                  />
+                  {isLoadingMoreSessions
+                    ? t('sessionHistory.loadingMore', 'Loading more...')
+                    : t('sessionHistory.loadMore', 'Load more')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
         )}
       </div>
     </div>

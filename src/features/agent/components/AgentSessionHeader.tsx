@@ -2,22 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useOptionalAgentSessionState } from '@/context/AgentSessionContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
-import {
-  Check,
-  Loader2,
-  Pencil,
-  X,
-  Bookmark,
-  BookmarkCheck,
-} from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import {
+  Bookmark,
+  BookmarkCheck,
+  Check,
+  Loader2,
+  Pencil,
+  X,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 interface AgentSessionHeaderProps {
   children?: React.ReactNode;
@@ -25,9 +25,9 @@ interface AgentSessionHeaderProps {
   sessionName?: string;
   sessionType?: string;
   isBookmarked?: boolean;
-  onToggleBookmark?: () => void;
   assistantNameClassName?: string;
   sessionNameClassName?: string;
+  onToggleBookmark?: () => void;
   onRenameSession?: (name: string) => Promise<void>;
 }
 
@@ -37,9 +37,9 @@ export default function AgentSessionHeader({
   sessionName,
   sessionType = 'Agent',
   isBookmarked,
-  onToggleBookmark,
   assistantNameClassName,
   sessionNameClassName,
+  onToggleBookmark,
   onRenameSession,
 }: AgentSessionHeaderProps) {
   const { t } = useTranslation('common');
@@ -50,7 +50,6 @@ export default function AgentSessionHeader({
   const [isSavingSessionName, setIsSavingSessionName] = useState(false);
   const sessionNameInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Fallback display if session is not yet loaded
   const resolvedSessionName =
     sessionName ??
     session?.name ??
@@ -60,44 +59,44 @@ export default function AgentSessionHeader({
     session?.assistant?.name ??
     t('agent.header.defaultAssistant', 'Agent');
   const canEditSessionName = Boolean(session?.id && onRenameSession);
-
-  const renderSessionTypeOrBookmark = () => {
-    if (isBookmarked !== undefined && onToggleBookmark) {
-      const tooltipLabel = isBookmarked
-        ? t('sessionHistory.actions.unbookmarkAria', 'Remove bookmark')
-        : t('sessionHistory.actions.bookmarkAria', 'Bookmark session');
-
-      return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              onClick={onToggleBookmark}
-              aria-label={tooltipLabel}
-            >
-              {isBookmarked ? (
-                <BookmarkCheck className="h-3.5 w-3.5 text-warning" />
-              ) : (
-                <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{tooltipLabel}</TooltipContent>
-        </Tooltip>
-      );
-    }
-    if (sessionType) {
-      return (
-        <span className="shrink-0 text-xs text-muted-foreground">
-          ({sessionType})
-        </span>
-      );
-    }
-    return null;
-  };
+  const sessionMetaAction =
+    isBookmarked !== undefined && onToggleBookmark ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              'h-7 w-7 shrink-0',
+              isBookmarked &&
+                'border-warning/20 bg-warning/10 text-warning-foreground hover:bg-warning/20',
+            )}
+            onClick={onToggleBookmark}
+            aria-label={
+              isBookmarked
+                ? t('sessionHistory.actions.unbookmarkAria', 'Remove bookmark')
+                : t('sessionHistory.actions.bookmarkAria', 'Bookmark session')
+            }
+          >
+            {isBookmarked ? (
+              <BookmarkCheck className="h-3.5 w-3.5 text-warning" />
+            ) : (
+              <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {isBookmarked
+            ? t('sessionHistory.actions.unbookmark', 'Remove bookmark')
+            : t('sessionHistory.actions.bookmark', 'Bookmark')}
+        </TooltipContent>
+      </Tooltip>
+    ) : sessionType ? (
+      <span className="shrink-0 text-xs text-muted-foreground">
+        ({sessionType})
+      </span>
+    ) : null;
 
   useEffect(() => {
     if (!isEditingSessionName) {
@@ -236,7 +235,7 @@ export default function AgentSessionHeader({
               >
                 <X className="h-4 w-4" />
               </Button>
-              {renderSessionTypeOrBookmark()}
+              {sessionMetaAction}
             </div>
           ) : (
             <>
@@ -249,7 +248,6 @@ export default function AgentSessionHeader({
               >
                 {resolvedSessionName}
               </span>
-              {renderSessionTypeOrBookmark()}
               {canEditSessionName && (
                 <Button
                   type="button"
@@ -262,6 +260,7 @@ export default function AgentSessionHeader({
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               )}
+              {sessionMetaAction}
             </>
           )}
         </div>

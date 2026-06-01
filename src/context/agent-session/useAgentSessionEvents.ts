@@ -287,6 +287,7 @@ export function useAgentSessionEvents(
           status: sessionMetadata.status,
           model: sessionMetadata.model,
           provider: sessionMetadata.provider,
+          isBookmarked: sessionMetadata.isBookmarked,
           assistant,
           createdAt: new Date(sessionMetadata.createdAt),
           updatedAt: sessionMetadata.updatedAt
