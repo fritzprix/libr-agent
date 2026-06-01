@@ -25,6 +25,7 @@ import email as email_lib
 import email.header
 import email.mime.multipart
 import email.mime.text
+import email.utils
 import imaplib
 import json
 import re
@@ -305,9 +306,11 @@ def action_search_email(cfg: dict, query: str, limit: int = 20) -> None:
     # Try UTF-8 search (RFC 6855), fall back to ASCII
     try:
         imap.literal = query.encode("utf-8")
-        _, uid_data = imap.uid("search", "CHARSET", "UTF-8", query)
+        _, uid_data = imap.uid("search", "CHARSET", "UTF-8")
     except Exception:
         _, uid_data = imap.uid("search", None, query)
+    finally:
+        imap.literal = None
 
     uids = uid_data[0].split() if uid_data and uid_data[0] else []
     uids = uids[-limit:][::-1]
@@ -343,14 +346,15 @@ def action_manage_email(cfg: dict, uid: str, op: str, folder: str | None = None)
             imap.logout()
             error_exit("--folder is required for move operation.")
         # Copy then delete original
-        _, copy_result = imap.uid("copy", uid, folder)
-        if copy_result and copy_result[0] == "OK":
+        copy_status, copy_result = imap.uid("copy", uid, folder)
+        if copy_status == "OK":
             imap.uid("store", uid, "+FLAGS", "\\Deleted")
             imap.expunge()
             result_msg = f"Moved to {folder}"
         else:
             imap.logout()
-            error_exit(f"Failed to copy to folder '{folder}'. Check folder name.")
+            details = copy_result[0].decode("utf-8", errors="replace") if copy_result and isinstance(copy_result[0], bytes) else copy_result
+            error_exit(f"Failed to copy to folder '{folder}'. Check folder name. Server response: {details}")
     else:
         imap.logout()
         error_exit(f"Unknown operation: {op}. Use: mark_read, mark_unread, delete, move")

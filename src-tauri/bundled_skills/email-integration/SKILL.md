@@ -3,10 +3,9 @@ name: email-integration
 description: |
   Integrates with any IMAP/SMTP mail server (Gmail, Outlook, Naver, Kakao, custom servers, etc.).
   Use when the user wants to read, send, search, reply to, or manage emails.
-  On first use, runs interactive account setup in the terminal to store credentials securely.
+  On first use, runs interactive account setup in the terminal to store credentials in a local config file with restricted permissions.
   Subsequent requests use the stored config without re-asking for credentials.
   Triggers on requests like: "메일 보여줘", "이메일 확인", "send email", "받은 편지함", "메일 보내줘", "메일 검색".
-license: Complete terms in LICENSE.txt
 ---
 
 # Email Integration Skill

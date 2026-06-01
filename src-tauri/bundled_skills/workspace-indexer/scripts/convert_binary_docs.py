@@ -2,29 +2,29 @@
 """
 Workspace Binary Document Converter
 ====================================
-Binary 형식 파일(pptx, pdf, docx, xlsx)을 텍스트/마크다운으로 변환합니다.
+Convert binary document files (PPTX, PDF, DOCX, XLSX) into text/Markdown.
 
 Usage:
     python convert_binary_docs.py [--root ROOT_DIR] [--out OUT_DIR] [--formats pdf pptx docx xlsx]
 
 Options:
-    --root      탐색할 루트 디렉터리 (기본값: 현재 디렉터리)
-    --out       변환된 파일을 저장할 디렉터리 (기본값: 원본 파일과 동일한 위치)
-    --formats   변환할 파일 형식 목록 (기본값: pdf pptx docx xlsx)
-    --overwrite 기존 변환 파일 덮어쓰기 (기본값: False)
-    --dry-run   실제 변환 없이 대상 파일 목록만 출력
+    --root      Root directory to scan (default: current directory)
+    --out       Output directory for converted files (default: next to the source file)
+    --formats   File formats to convert (default: pdf pptx docx xlsx)
+    --overwrite Overwrite existing converted files (default: False)
+    --dry-run   Print target files without converting anything
 
-의존성:
+Dependencies:
     pip install pymupdf python-docx python-pptx openpyxl
 
 Examples:
-    # 전체 워크스페이스 변환
+    # Convert the full workspace
     python convert_binary_docs.py --root . --out ./converted
 
-    # PDF만 변환
+    # Convert PDFs only
     python convert_binary_docs.py --root . --formats pdf
 
-    # dry-run으로 대상 파일 확인
+    # Preview target files with dry-run
     python convert_binary_docs.py --root . --dry-run
 """
 
@@ -36,7 +36,7 @@ SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv"}
 
 
 def find_binary_files(root: Path, formats: list[str]) -> list[Path]:
-    """지정된 형식의 binary 파일을 재귀 탐색합니다."""
+    """Recursively find binary files matching the requested formats."""
     exts = {f".{fmt.lstrip('.')}" for fmt in formats}
     result = []
     for p in root.rglob("*"):
@@ -48,7 +48,7 @@ def find_binary_files(root: Path, formats: list[str]) -> list[Path]:
 
 
 def convert_pdf(src: Path) -> str:
-    """PDF → Markdown 텍스트 변환."""
+    """Convert PDF content to Markdown text."""
     try:
         import fitz  # pymupdf
     except ImportError:
@@ -65,7 +65,7 @@ def convert_pdf(src: Path) -> str:
 
 
 def convert_docx(src: Path) -> str:
-    """DOCX → Markdown 텍스트 변환."""
+    """Convert DOCX content to Markdown text."""
     try:
         from docx import Document
     except ImportError:
@@ -88,7 +88,7 @@ def convert_docx(src: Path) -> str:
         else:
             lines.append(text)
 
-    # 테이블
+    # Tables
     for table in doc.tables:
         if not table.rows:
             continue
@@ -104,7 +104,7 @@ def convert_docx(src: Path) -> str:
 
 
 def convert_pptx(src: Path) -> str:
-    """PPTX → Markdown 텍스트 변환."""
+    """Convert PPTX content to Markdown text."""
     try:
         from pptx import Presentation
     except ImportError:
@@ -126,7 +126,7 @@ def convert_pptx(src: Path) -> str:
 
 
 def convert_xlsx(src: Path) -> str:
-    """XLSX → Markdown 테이블 변환."""
+    """Convert XLSX sheets into Markdown tables."""
     try:
         import openpyxl
     except ImportError:
@@ -137,7 +137,7 @@ def convert_xlsx(src: Path) -> str:
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         rows = list(ws.iter_rows(values_only=True))
-        # 빈 시트 스킵
+        # Skip empty sheets
         non_empty = [r for r in rows if any(c is not None for c in r)]
         if not non_empty:
             continue
@@ -161,7 +161,7 @@ CONVERTERS = {
 
 
 def convert_file(src: Path, out_dir: Path | None, overwrite: bool) -> tuple[Path, str]:
-    """단일 파일 변환. 반환값: (출력경로, 상태메시지)"""
+    """Convert a single file and return (output_path, status_message)."""
     ext = src.suffix.lower()
     converter = CONVERTERS.get(ext)
     if not converter:
@@ -176,7 +176,7 @@ def convert_file(src: Path, out_dir: Path | None, overwrite: bool) -> tuple[Path
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     content = converter(src)
-    header = f"# {src.name}\n\n> 원본: `{src}`  \n> 변환일시: {_now()}\n\n---\n\n"
+    header = f"# {src.name}\n\n> Source: `{src}`  \n> Converted at: {_now()}\n\n---\n\n"
     dest.write_text(header + content, encoding="utf-8")
     return dest, "OK"
 
@@ -187,9 +187,9 @@ def _now() -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Binary 문서 → Markdown 변환기")
-    parser.add_argument("--root", default=".", help="탐색 루트 디렉터리")
-    parser.add_argument("--out", default=None, help="출력 디렉터리 (없으면 원본 위치)")
+    parser = argparse.ArgumentParser(description="Binary document to Markdown converter")
+    parser.add_argument("--root", default=".", help="Root directory to scan")
+    parser.add_argument("--out", default=None, help="Output directory (defaults to the source file location)")
     parser.add_argument("--formats", nargs="+", default=["pdf", "pptx", "docx", "xlsx"])
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -199,7 +199,7 @@ def main():
     out_dir = Path(args.out).resolve() if args.out else None
 
     files = find_binary_files(root, args.formats)
-    print(f"발견된 파일: {len(files)}개\n")
+    print(f"Found files: {len(files)}\n")
 
     if args.dry_run:
         for f in files:
@@ -219,7 +219,7 @@ def main():
             results["ERROR"] += 1
             print(f"  ❌ [ERROR] {src.relative_to(root)}: {e}")
 
-    print(f"\n완료: {results}")
+    print(f"\nDone: {results}")
 
 
 if __name__ == "__main__":

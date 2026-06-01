@@ -18,7 +18,7 @@ Use this reference to determine the correct `--action` and arguments.
 | "최근 메일 20개" | `--action read_inbox --limit 20 --filter all` |
 | "전체 메일 목록" | `--action read_inbox --limit 20 --filter all` |
 | "Check my email" | `--action read_inbox --limit 10 --filter unread` |
-| "다음 10개 보여줘" | `--action read_inbox --limit 10 --filter all` (offset logic: show next page) |
+| "다음 10개 보여줘" | Re-run `--action read_inbox --limit 20 --filter all`, explain that offset pagination is not built in, and present items 11-20 from the expanded result |
 
 **Default:** `--limit 10 --filter unread`
 

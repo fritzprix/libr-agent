@@ -14,7 +14,6 @@ import argparse
 import getpass
 import imaplib
 import json
-import os
 import smtplib
 import ssl
 import stat
@@ -146,10 +145,14 @@ def test_imap(host: str, port: int, email: str, password: str) -> tuple[bool, st
 def test_smtp(host: str, port: int, email: str, password: str) -> tuple[bool, str]:
     """Test SMTP login. Returns (success, error_message)."""
     try:
-        with smtplib.SMTP(host, port, timeout=10) as smtp:
-            smtp.ehlo()
-            smtp.starttls(context=ssl.create_default_context())
-            smtp.login(email, password)
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=10, context=ssl.create_default_context()) as smtp:
+                smtp.login(email, password)
+        else:
+            with smtplib.SMTP(host, port, timeout=10) as smtp:
+                smtp.ehlo()
+                smtp.starttls(context=ssl.create_default_context())
+                smtp.login(email, password)
         return True, ""
     except smtplib.SMTPAuthenticationError as e:
         return False, f"SMTP auth failed: {e}"
