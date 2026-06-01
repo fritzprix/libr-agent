@@ -27,7 +27,7 @@ pub use session_commands::{
     agent_init_session_with_messages, agent_list_attention_sessions, agent_list_sessions,
     agent_mark_session_viewed, agent_open_session, agent_resume_session, agent_set_execution_mode,
     agent_set_unsafe_mode, agent_set_yolo_mode, agent_toggle_session_bookmark,
-    agent_update_session_config,
+    agent_update_session_config, agent_update_session_name,
 };
 pub use ui_actions::agent_execute_ui_tauri_action;
 pub use workflow_commands::{

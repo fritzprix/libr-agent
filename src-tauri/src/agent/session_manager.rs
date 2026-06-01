@@ -20,7 +20,7 @@ use tokio::sync::RwLock;
 mod approvals;
 #[path = "session_manager/channel.rs"]
 mod channel;
-#[path = "session_manager/compact.rs"]
+#[path = "session_manager/compact/mod.rs"]
 mod compact;
 #[path = "session_manager/execution_mode.rs"]
 pub mod execution_mode;
@@ -28,8 +28,15 @@ pub mod execution_mode;
 mod message_injection;
 
 pub use channel::format_channel_payload_for_test;
+pub use compact::build_compaction_hard_fallback_summary_for_testing;
+pub use compact::clamp_compact_summary_to_context_limit;
+pub use compact::clear_message_prompt_token_checkpoint_for_testing;
+pub use compact::compaction_fallback_artifact_relative_path_for_testing;
 pub use compact::handle_compact_error_with_dispatcher;
 pub use compact::should_retry_budget_related_blocking_compaction;
+pub use compact::validate_compact_summary_for_testing;
+pub use compact::CompactContextView;
+pub use compact::CompactSummaryClampResult;
 pub use execution_mode::ExecutionMode;
 
 /// Manages agent sessions and their workflows
@@ -669,6 +676,13 @@ impl AgentSessionManager {
         compact::get_compact_context(&self.active_sessions, session_id).await
     }
 
+    pub async fn get_compact_context_view(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<CompactContextView>, String> {
+        compact::get_compact_context_view(&self.active_sessions, session_id).await
+    }
+
     /// Save compacted context for a session
     pub async fn save_compact_context(
         &self,
@@ -682,18 +696,18 @@ impl AgentSessionManager {
     pub async fn handle_compact_response(
         &self,
         session_id: &str,
-        from_id: String,
         to_id: String,
+        compacted_delta_count: usize,
         summary: String,
-    ) -> Result<(), String> {
+    ) -> Result<compact::CompactResponseOutcome, String> {
         compact::handle_compact_response(compact::CompactResponseParams {
             active_sessions: &self.active_sessions,
             app_handle: &self.app_handle,
             session_repo: &self.session_repo,
             proxy_manager: &self.proxy_manager,
             session_id,
-            from_id,
             to_id,
+            compacted_delta_count,
             summary,
         })
         .await

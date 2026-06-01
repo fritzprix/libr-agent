@@ -191,7 +191,7 @@ impl FileExportService {
 
     /// Sanitizes package_name to prevent path traversal via malicious characters.
     pub fn sanitize_package_name(package_name: &str) -> String {
-        package_name
+        let sanitized: String = package_name
             .chars()
             .map(|c| {
                 if c.is_alphanumeric() || c == '-' || c == '_' {
@@ -200,6 +200,15 @@ impl FileExportService {
                     '_'
                 }
             })
-            .collect()
+            .collect();
+
+        // If the resulting name is empty or consists purely of underscores,
+        // fall back to a safe default "workspace_export".
+        let has_content = sanitized.chars().any(|c| c != '_');
+        if has_content {
+            sanitized
+        } else {
+            "workspace_export".to_string()
+        }
     }
 }

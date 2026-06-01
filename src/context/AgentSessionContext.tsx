@@ -28,7 +28,7 @@ export function AgentSessionProvider({
   children,
   sessionId,
 }: AgentSessionProviderProps) {
-  const { markSessionViewed, clearPendingApproval } =
+  const { markSessionViewed, clearPendingApproval, renameSession } =
     useAgentSessionListActions();
   const { refreshCompactedRange } = useLLMService();
   const stateProps = useAgentSessionStateLogic();
@@ -59,6 +59,7 @@ export function AgentSessionProvider({
   const customActions = useAgentSessionActionsLogic(sessionId, stateProps, {
     acknowledgeSessionAttention,
     clearPendingApproval,
+    renameSessionInList: renameSession,
   });
 
   const stateValue: AgentSessionStateContextValue = useMemo(
@@ -73,6 +74,7 @@ export function AgentSessionProvider({
       workflowStatus: stateProps.state.workflowStatus,
       workflowPhase: stateProps.state.workflowPhase,
       runtimeState: stateProps.state.runtimeState,
+      preflightTokenMetrics: stateProps.state.preflightTokenMetrics,
       initializationStep: stateProps.state.initializationStep,
       pendingApprovals: stateProps.state.pendingApprovals,
       yoloModeEnabled: stateProps.state.yoloModeEnabled,
@@ -90,6 +92,7 @@ export function AgentSessionProvider({
       stateProps.state.workflowStatus,
       stateProps.state.workflowPhase,
       stateProps.state.runtimeState,
+      stateProps.state.preflightTokenMetrics,
       stateProps.state.initializationStep,
       stateProps.state.pendingApprovals,
       stateProps.state.yoloModeEnabled,

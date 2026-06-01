@@ -149,6 +149,7 @@
     "seeAllSessions": "Ver todas as sessões →",
     "settings": "Configurações",
     "history": "Histórico",
+    "bookmarked": "Favoritas",
     "scheduledTasks": "Tarefas Agendadas",
     "session": "Sessão",
     "knowledge": "Conhecimento",
@@ -172,6 +173,15 @@
     "clearLineageFocus": "Limpar foco na linhagem",
     "noSessionsMatching": "Nenhuma sessão encontrada para \"{{query}}\"",
     "clearSearch": "Limpar pesquisa",
+    "bookmarkedSection": {
+      "heading": "Sessões favoritas",
+      "description": "As sessões marcadas ficam aqui para acesso rápido, enquanto o histórico completo continua logo abaixo.",
+      "resumeAria": "Abrir sessão favorita {{name}}",
+      "open": "Abrir sessão",
+      "lastUsed": "Usada {{time}}",
+      "defaultMeta": "Salva para acesso rápido",
+      "more": "+{{count}} mais no histórico"
+    },
     "toasts": {
       "deleted": "Sessão excluída",
       "deleteFailed": "Falha ao excluir sessão"
@@ -221,12 +231,18 @@
       "justNow": "agora mesmo",
       "subagentsCount_one": "+{{count}} subagente",
       "subagentsCount_other": "+{{count}} subagentes",
-      "subagentsKept": "Subagentes mantidos"
+      "subagentsKept": "Subagentes mantidos",
+      "bookmarkedBadge": "Favorita"
     },
     "actions": {
       "view": "Ver",
       "continue": "Continuar",
       "resume": "Retomar",
+      "bookmark": "Salvar",
+      "bookmarked": "Salva",
+      "bookmarkAria": "Salvar sessão",
+      "unbookmark": "Remover favorita",
+      "unbookmarkAria": "Remover favorita",
       "viewAria": "Ver sessão {{name}}",
       "continueAria": "Continuar sessão {{name}}",
       "resumeAria": "Retomar sessão {{name}}",
@@ -831,7 +847,17 @@
       "toggleWorkspaceAria": "Alternar Painel de Arquivos do Espaço de Trabalho",
       "toggleWorkspaceTooltip": "Alternar Painel de Arquivos do Espaço de Trabalho",
       "togglePlanningAria": "Alternar Painel de Planejamento de IA",
-      "togglePlanningTooltip": "Alternar Painel de Planejamento de IA"
+      "togglePlanningTooltip": "Alternar Painel de Planejamento de IA",
+      "defaultAssistant": "Agente",
+      "untitledSession": "Sessão sem título",
+      "sessionLabel": "Sessão",
+      "renameAria": "Renomear sessão",
+      "renameInputAria": "Editar título da sessão",
+      "renameSaveAria": "Salvar título da sessão",
+      "renameCancelAria": "Cancelar edição do título da sessão",
+      "renameSuccess": "Título da sessão atualizado",
+      "renameError": "Falha ao atualizar o título da sessão",
+      "renameEmptyError": "O título da sessão não pode ficar vazio"
     },
     "workspace": {
       "loadError": "Falha ao carregar diretório",

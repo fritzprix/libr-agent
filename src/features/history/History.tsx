@@ -28,7 +28,6 @@ export default function History() {
     deleteSessionOnly,
     toggleBookmark,
   } = useAgentSessionListActions();
-  const [activeTab, setActiveTab] = useState('all');
   const [activeStatusFilter, setActiveStatusFilter] = useState<
     'all' | SessionStatus
   >('all');
@@ -88,16 +87,14 @@ export default function History() {
   }, [loadMoreSessions, t]);
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden text-foreground">
+    <div className="flex min-h-full w-full flex-col text-foreground">
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={isSessionsListLoading}
         hasMoreSessions={hasMoreSessions}
         isLoadingMoreSessions={isLoadingMoreSessions}
-        activeTab={activeTab}
         activeStatusFilter={activeStatusFilter}
         searchQuery={searchQuery}
-        onActiveTabChange={setActiveTab}
         onActiveStatusFilterChange={setActiveStatusFilter}
         onSearchQueryChange={setSearchQuery}
         onRefresh={handleRefreshSessions}

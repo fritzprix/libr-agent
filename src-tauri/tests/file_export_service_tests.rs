@@ -35,3 +35,19 @@ fn sanitize_package_name_replaces_unsupported_characters() {
         "__trimmed_package__"
     );
 }
+
+#[test]
+fn sanitize_package_name_handles_empty_or_pure_special_chars() {
+    assert_eq!(
+        FileExportService::sanitize_package_name(""),
+        "workspace_export"
+    );
+    assert_eq!(
+        FileExportService::sanitize_package_name("../../../"),
+        "workspace_export"
+    );
+    assert_eq!(
+        FileExportService::sanitize_package_name("!@#$%"),
+        "workspace_export"
+    );
+}

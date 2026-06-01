@@ -17,11 +17,11 @@ pub async fn load_compact_context_record(
 
     if let Some(record) = &compact_context {
         log::info!(
-            "Loaded compact context during {}: session={} (range: {} to {})",
+            "Loaded compact context during {}: session={} (latest_compacted_message={}, condensed_count={:?})",
             operation,
             session_id,
-            record.from_id,
-            record.to_id
+            record.to_id,
+            record.condensed_count
         );
     }
 

@@ -33,6 +33,8 @@ mod m20260406_000028_create_gemini_context_caches;
 mod m20260506_000029_add_session_list_indexes;
 mod m20260510_000030_add_unsafe_mode_to_sessions;
 mod m20260524_000031_add_messages_created_at_index;
+mod m20260528_000032_refine_compact_context_contract;
+mod m20260528_000033_add_prompt_tokens_to_messages;
 
 pub struct Migrator;
 
@@ -71,6 +73,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260506_000029_add_session_list_indexes::Migration),
             Box::new(m20260510_000030_add_unsafe_mode_to_sessions::Migration),
             Box::new(m20260524_000031_add_messages_created_at_index::Migration),
+            Box::new(m20260528_000032_refine_compact_context_contract::Migration),
+            Box::new(m20260528_000033_add_prompt_tokens_to_messages::Migration),
         ]
     }
 }

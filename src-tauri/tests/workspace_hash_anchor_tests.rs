@@ -27,6 +27,16 @@ fn build_workspace_server(base_dir: &std::path::Path, session_id: &str) -> Works
     WorkspaceServer::new(session_id.to_string(), Arc::new(session_manager))
 }
 
+fn extract_anchor(hashlines: &str, line_index: usize) -> String {
+    hashlines
+        .lines()
+        .nth(line_index)
+        .and_then(|line| line.split('|').next())
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("anchor")
+        .to_string()
+}
+
 #[test]
 fn anchored_line_format_uses_single_opaque_anchor() {
     let rendered = format_as_hashlines("alpha\nbeta");
@@ -451,6 +461,272 @@ async fn edit_files_delete_only_response_does_not_claim_new_anchors_exist() {
         !text.contains("Anchors above are current for the edited ranges"),
         "delete-only success must not claim that new anchors are available: {text}"
     );
+}
+
+#[tokio::test]
+async fn edit_files_success_response_includes_diff_block_with_anchor_annotations() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-success-diff-anchors";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\n").expect("write sample file");
+
+    let original_hashlines = format_as_hashlines("alpha\nbeta\n");
+    let first_anchor = extract_anchor(&original_hashlines, 0);
+    let new_hashlines = format_as_hashlines("ALPHA\nbeta\n");
+    let new_first_anchor = extract_anchor(&new_hashlines, 0);
+    let new_second_anchor = extract_anchor(&new_hashlines, 1);
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "replace",
+                        "startLine": 1,
+                        "startAnchor": first_anchor,
+                        "content": "ALPHA"
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit batch should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Diff:\n```diff"),
+        "success response should include a diff block: {text}"
+    );
+    assert!(
+        text.contains(&format!("- 1:{first_anchor}|alpha")),
+        "diff should annotate removed lines with their original anchor: {text}"
+    );
+    assert!(
+        text.contains(&format!("+ 1:{new_first_anchor}|ALPHA")),
+        "diff should annotate added lines with their new anchor: {text}"
+    );
+    assert!(
+        text.contains(&format!("  2:{new_second_anchor}|beta")),
+        "diff should render context lines in readFile hashline format: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_files_delete_only_response_includes_diff_block() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-delete-only-diff";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(workspace_dir.join("sample.txt"), "alpha\nbeta\ngamma\n")
+        .expect("write sample file");
+
+    let original_hashlines = format_as_hashlines("alpha\nbeta\ngamma\n");
+    let second_anchor = extract_anchor(&original_hashlines, 1);
+    let new_hashlines = format_as_hashlines("alpha\ngamma\n");
+    let alpha_anchor = extract_anchor(&new_hashlines, 0);
+    let gamma_anchor = extract_anchor(&new_hashlines, 1);
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "delete",
+                        "startLine": 2,
+                        "startAnchor": second_anchor,
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("edit batch should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("Diff:\n```diff"),
+        "delete-only success should still include a diff block: {text}"
+    );
+    assert!(
+        text.contains(&format!("- 2:{second_anchor}|beta")),
+        "delete-only diff should annotate the removed line with its original anchor: {text}"
+    );
+    assert!(
+        text.contains(&format!("  1:{alpha_anchor}|alpha"))
+            && text.contains(&format!("  2:{gamma_anchor}|gamma")),
+        "delete-only diff should keep surrounding context lines: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_files_diff_preview_truncates_large_changes() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-diff-preview-truncation";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    let original_content = (1..=220)
+        .map(|idx| format!("old-{idx:03}-{}", "x".repeat(480)))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    let updated_content = (1..=220)
+        .map(|idx| format!("new-{idx:03}-{}", "y".repeat(480)))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+
+    std::fs::write(workspace_dir.join("sample.txt"), &original_content).expect("write sample file");
+
+    let original_hashlines = format_as_hashlines(&original_content);
+    let start_anchor = extract_anchor(&original_hashlines, 0);
+    let end_anchor = extract_anchor(&original_hashlines, 219);
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "replace",
+                        "startLine": 1,
+                        "endLine": 220,
+                        "startAnchor": start_anchor,
+                        "endAnchor": end_anchor,
+                        "content": updated_content,
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("large edit batch should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("more diff line(s) omitted"),
+        "large diffs should be truncated instead of dumping the full file: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_files_diff_preview_omitted_count_ignores_gap_markers() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-diff-preview-gap-marker-count";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    let target_lines = [2usize, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52];
+    let original_content = (1..=60)
+        .map(|idx| format!("line-{idx:02}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+
+    std::fs::write(workspace_dir.join("sample.txt"), &original_content).expect("write sample file");
+
+    let original_hashlines = format_as_hashlines(&original_content);
+    let anchor_lines: Vec<&str> = original_hashlines.lines().collect();
+    let edits = target_lines
+        .iter()
+        .map(|line_number| {
+            let start_anchor = anchor_lines[line_number - 1]
+                .split('|')
+                .next()
+                .and_then(|prefix| prefix.split(':').nth(1))
+                .expect("start anchor");
+
+            json!({
+                "path": "sample.txt",
+                "op": "replace",
+                "startLine": line_number,
+                "startAnchor": start_anchor,
+                "content": format!("updated-{line_number:02}"),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let result = server
+        .handle_edit_files(json!({ "edits": edits }), Some(session_id.to_string()))
+        .await
+        .expect("edit batch should succeed");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains("  ... 4 more diff line(s) omitted"),
+        "truncation should count only omitted diff lines, not omitted-gap markers: {text}"
+    );
+    assert!(
+        !text.contains("  ... 5 more diff line(s) omitted"),
+        "gap markers must not inflate omitted diff line counts: {text}"
+    );
+}
+
+#[tokio::test]
+async fn edit_files_delete_range_at_eof_does_not_panic() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-files-delete-range-eof";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let workspace_dir = server.get_workspace_dir(session_id);
+
+    std::fs::write(
+        workspace_dir.join("sample.txt"),
+        "alpha\nbeta\ngamma\ndelta\n",
+    )
+    .expect("write sample file");
+
+    let anchors = format_as_hashlines("alpha\nbeta\ngamma\ndelta\n");
+    let anchor_lines: Vec<&str> = anchors.lines().collect();
+    let start_anchor = anchor_lines[2]
+        .split('|')
+        .next()
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("start anchor");
+    let end_anchor = anchor_lines[3]
+        .split('|')
+        .next()
+        .and_then(|prefix| prefix.split(':').nth(1))
+        .expect("end anchor");
+
+    let result = server
+        .handle_edit_files(
+            json!({
+                "edits": [
+                    {
+                        "path": "sample.txt",
+                        "op": "delete",
+                        "startLine": 3,
+                        "endLine": 4,
+                        "startAnchor": start_anchor,
+                        "endAnchor": end_anchor
+                    }
+                ]
+            }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("delete range at EOF should return MCPResult");
+
+    assert_eq!(result.is_error, Some(false));
+    let text = extract_text_content(&result);
+    assert!(
+        text.contains(
+            "no new anchors were generated because these edits only removed existing lines"
+        ),
+        "delete-only range at EOF should explain missing anchors: {text}"
+    );
+    let updated = std::fs::read_to_string(workspace_dir.join("sample.txt")).expect("read updated");
+    assert_eq!(updated, "alpha\nbeta\n");
 }
 
 #[tokio::test]

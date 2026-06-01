@@ -8,10 +8,25 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { RefreshCw, Search, History, X, Bookmark } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  RefreshCw,
+  Search,
+  History,
+  X,
+  BookmarkCheck,
+  Clock3,
+  StarOff,
+} from 'lucide-react';
 import {
   Virtuoso,
   type Components,
@@ -26,6 +41,8 @@ import {
   type SessionStatus,
   type SessionStatusCounts,
 } from '@/lib/session-utils';
+import { formatRelativeTime } from '@/lib/date-utils';
+import { sortSessionsByLatestActivity } from '@/lib/session-metadata';
 import type { AgentSession } from '@/models/agent';
 import { SessionCard } from './SessionCard';
 
@@ -34,10 +51,8 @@ interface SessionHistoryPanelProps {
   isLoading: boolean;
   hasMoreSessions: boolean;
   isLoadingMoreSessions: boolean;
-  activeTab: string;
   activeStatusFilter: 'all' | SessionStatus;
   searchQuery: string;
-  onActiveTabChange: (value: string) => void;
   onActiveStatusFilterChange: (value: 'all' | SessionStatus) => void;
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
@@ -60,6 +75,111 @@ interface SessionHistoryRow {
   hasExpandableChildren: boolean;
   isExpanded: boolean;
   descendantStatusCounts?: SessionStatusCounts;
+}
+
+type SessionHistoryTranslate = ReturnType<typeof useTranslation>['t'];
+
+interface BookmarkedSessionTileProps {
+  session: AgentSession;
+  onResume: (sessionId: string) => void;
+  onToggleBookmark?: (sessionId: string) => void;
+  t: SessionHistoryTranslate;
+}
+
+const HISTORY_CONTENT_RAIL_CLASS = 'mx-auto w-full max-w-4xl';
+const HISTORY_SECTION_CLASS =
+  'rounded-xl border bg-card/80 p-4 shadow-sm shadow-black/5';
+
+function BookmarkedSessionTile({
+  session,
+  onResume,
+  onToggleBookmark,
+  t,
+}: BookmarkedSessionTileProps) {
+  const shortcutLabel =
+    session.name ||
+    t('sessionHistory.card.fallbackName', 'Session {{id}}', {
+      id: session.id.slice(0, 8),
+    });
+  const latestActivity =
+    formatRelativeTime(session.updatedAt ?? session.createdAt, new Date()) ||
+    t('sessionHistory.card.justNow', 'just now');
+  const statusLabel = t(
+    `sessionHistory.status.${session.status}`,
+    session.status,
+  );
+  const secondaryLabel =
+    session.assistant?.name ||
+    (session.provider && session.model
+      ? `${session.provider}/${session.model}`
+      : t(
+          'sessionHistory.bookmarkedSection.defaultMeta',
+          'Saved for quick access',
+        ));
+
+  return (
+    <article className="rounded-xl border bg-background/80 p-3 shadow-sm shadow-black/5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-2">
+            <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-foreground">
+              {shortcutLabel}
+            </h3>
+            <Badge
+              variant="secondary"
+              className="h-5 shrink-0 px-1.5 text-[10px]"
+            >
+              {statusLabel}
+            </Badge>
+          </div>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {secondaryLabel}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
+          onClick={() => onToggleBookmark?.(session.id)}
+          aria-label={t(
+            'sessionHistory.actions.unbookmarkAria',
+            'Remove bookmark',
+          )}
+        >
+          <StarOff className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+          <Clock3 className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">
+            {t('sessionHistory.bookmarkedSection.lastUsed', 'Used {{time}}', {
+              time: latestActivity,
+            })}
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 px-2"
+          onClick={() => onResume(session.id)}
+          aria-label={t(
+            'sessionHistory.bookmarkedSection.resumeAria',
+            'Open bookmarked session {{name}}',
+            { name: shortcutLabel },
+          )}
+        >
+          <BookmarkCheck className="h-4 w-4 text-warning" />
+          <span>
+            {t('sessionHistory.bookmarkedSection.open', 'Open session')}
+          </span>
+        </Button>
+      </div>
+    </article>
+  );
 }
 
 const sessionHistoryVirtuosoComponents: Components<SessionHistoryRow> = {
@@ -97,15 +217,27 @@ const statusPriority: Record<string, number> = {
   error: 4,
 };
 
+const statusFilterValues: Array<'all' | SessionStatus> = [
+  'all',
+  'busy',
+  'idle',
+  'paused',
+  'error',
+];
+
+function isSessionStatusFilterValue(
+  value: string,
+): value is 'all' | SessionStatus {
+  return statusFilterValues.includes(value as 'all' | SessionStatus);
+}
+
 export function SessionHistoryPanel({
   sessions,
   isLoading,
   hasMoreSessions,
   isLoadingMoreSessions,
-  activeTab,
   activeStatusFilter,
   searchQuery,
-  onActiveTabChange,
   onActiveStatusFilterChange,
   onSearchQueryChange,
   onRefresh,
@@ -154,9 +286,7 @@ export function SessionHistoryPanel({
     searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
 
   const filtersActive =
-    activeTab === 'bookmarked' ||
-    activeStatusFilter !== 'all' ||
-    deferredSearchQuery.trim().length > 0;
+    activeStatusFilter !== 'all' || deferredSearchQuery.trim().length > 0;
 
   useEffect(() => {
     if (!selectedLineageId) {
@@ -173,7 +303,20 @@ export function SessionHistoryPanel({
 
   useEffect(() => {
     setCollapsedAutoExpandedSessionIds(new Set());
-  }, [activeStatusFilter, activeTab, deferredSearchQuery, selectedLineageId]);
+  }, [activeStatusFilter, deferredSearchQuery, selectedLineageId]);
+
+  const bookmarkedSessions = useMemo(
+    () =>
+      sortSessionsByLatestActivity(
+        deferredSessions.filter((session) => session.isBookmarked === true),
+      ),
+    [deferredSessions],
+  );
+  const featuredBookmarkedSessions = bookmarkedSessions.slice(0, 5);
+  const remainingBookmarkedCount = Math.max(
+    bookmarkedSessions.length - featuredBookmarkedSessions.length,
+    0,
+  );
 
   const descendantCounts = useMemo(
     () => buildDescendantCounts(sessions),
@@ -188,7 +331,6 @@ export function SessionHistoryPanel({
   const {
     autoExpandedAncestorIds,
     baseSessions,
-    bookmarkedCount,
     displayRows,
     matchedSessionCount,
     statusCounts,
@@ -205,7 +347,6 @@ export function SessionHistoryPanel({
       paused: 0,
       error: 0,
     };
-    let nextBookmarkedCount = 0;
 
     lineageSessions.forEach((session) => {
       if (
@@ -213,15 +354,9 @@ export function SessionHistoryPanel({
       ) {
         nextStatusCounts[session.status as keyof typeof nextStatusCounts]++;
       }
-      if (session.isBookmarked) {
-        nextBookmarkedCount++;
-      }
     });
 
-    let filteredSessions =
-      activeTab === 'bookmarked'
-        ? lineageSessions.filter((session) => session.isBookmarked === true)
-        : lineageSessions;
+    let filteredSessions = lineageSessions;
 
     if (activeStatusFilter !== 'all') {
       filteredSessions = filteredSessions.filter(
@@ -387,14 +522,12 @@ export function SessionHistoryPanel({
     return {
       autoExpandedAncestorIds: nextAutoExpandedAncestorIds,
       baseSessions: lineageSessions,
-      bookmarkedCount: nextBookmarkedCount,
       displayRows: rows,
       matchedSessionCount: matchedSessions.length,
       statusCounts: nextStatusCounts,
     };
   }, [
     activeStatusFilter,
-    activeTab,
     collapsedAutoExpandedSessionIds,
     descendantStatusCounts,
     deferredSearchQuery,
@@ -441,295 +574,343 @@ export function SessionHistoryPanel({
     ],
   );
 
+  const statusFilterLabelByValue: Record<'all' | SessionStatus, string> = {
+    all: t('sessionHistory.statusFilter.all', 'All statuses'),
+    busy: `${t('sessionHistory.tabs.busy', 'Busy')} (${statusCounts.busy})`,
+    idle: `${t('sessionHistory.tabs.idle', 'Idle')} (${statusCounts.idle})`,
+    paused: `${t('sessionHistory.tabs.paused', 'Paused')} (${statusCounts.paused})`,
+    error: `${t('sessionHistory.tabs.error', 'Error')} (${statusCounts.error})`,
+  };
+
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background p-6">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
-              <History size={28} />
-            </div>
-            <div>
-              <h1
-                className="text-2xl text-foreground font-semibold tracking-tight"
-                id="session-heading"
-              >
-                {defaultHeading}
-              </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {defaultDescription} (
+    <div className="flex min-h-full flex-col bg-background p-6">
+      <div
+        className={cn(
+          HISTORY_CONTENT_RAIL_CLASS,
+          'mb-8 flex items-center justify-between gap-3',
+        )}
+      >
+        <div className="flex items-center gap-4">
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
+            <History size={28} />
+          </div>
+          <div>
+            <h1
+              className="text-2xl font-semibold tracking-tight text-foreground"
+              id="session-heading"
+            >
+              {defaultHeading}
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {defaultDescription} (
+              {t(
+                'sessionHistory.loadedCountSummary',
+                '{{count}} loaded sessions',
+                {
+                  count: baseSessions.length,
+                },
+              )}
+              {hasMoreSessions
+                ? `, ${t('sessionHistory.moreAvailable', 'more available')}`
+                : ''}
+              {filtersActive
+                ? `, ${t(
+                    'sessionHistory.matchCountSummary',
+                    '{{count}} matching filters',
+                    { count: matchedSessionCount },
+                  )}`
+                : ''}
+              )
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRefresh}
+          disabled={isLoading}
+          aria-label={t('sessionHistory.refreshAria', 'Refresh sessions')}
+          className="h-9 w-9"
+        >
+          <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+        </Button>
+      </div>
+
+      {!selectedLineageId && bookmarkedSessions.length > 0 && (
+        <section
+          id="bookmarked-sessions"
+          className={cn(
+            HISTORY_CONTENT_RAIL_CLASS,
+            HISTORY_SECTION_CLASS,
+            'mb-4',
+          )}
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <BookmarkCheck className="h-4 w-4 text-warning" />
+                <h2 className="text-sm font-semibold text-foreground">
+                  {t(
+                    'sessionHistory.bookmarkedSection.heading',
+                    'Bookmarked Sessions',
+                  )}
+                </h2>
+                <Badge variant="secondary">{bookmarkedSessions.length}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
                 {t(
-                  'sessionHistory.loadedCountSummary',
-                  '{{count}} loaded sessions',
-                  { count: baseSessions.length },
+                  'sessionHistory.bookmarkedSection.description',
+                  'Pinned sessions stay here for quick access while the full history remains below.',
                 )}
-                {hasMoreSessions
-                  ? `, ${t('sessionHistory.moreAvailable', 'more available')}`
-                  : ''}
-                {filtersActive
-                  ? `, ${t(
-                      'sessionHistory.matchCountSummary',
-                      '{{count}} matching filters',
-                      { count: matchedSessionCount },
-                    )}`
-                  : ''}
-                )
+              </p>
+            </div>
+            {remainingBookmarkedCount > 0 && (
+              <Badge variant="outline" className="h-6 px-2">
+                {t(
+                  'sessionHistory.bookmarkedSection.more',
+                  '+{{count}} more in history',
+                  { count: remainingBookmarkedCount },
+                )}
+              </Badge>
+            )}
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {featuredBookmarkedSessions.map((session) => (
+              <BookmarkedSessionTile
+                key={session.id}
+                session={session}
+                onResume={onResume}
+                onToggleBookmark={onToggleBookmark}
+                t={t}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div
+        className={cn(
+          HISTORY_CONTENT_RAIL_CLASS,
+          HISTORY_SECTION_CLASS,
+          'mb-4 flex flex-col gap-3',
+        )}
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder={defaultSearchPlaceholder}
+              value={searchQuery}
+              onChange={(event) => onSearchQueryChange(event.target.value)}
+              className="pl-10 pr-10"
+              aria-label={t('sessionHistory.searchAria', 'Search sessions')}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => onSearchQueryChange('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 transform rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t('sessionHistory.clearSearchAria', 'Clear search')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 md:w-56 md:shrink-0">
+            <span className="text-xs font-medium text-muted-foreground">
+              {t('sessionHistory.statusFilter.label', 'Status')}
+            </span>
+            <Select
+              value={activeStatusFilter}
+              onValueChange={(value) => {
+                if (isSessionStatusFilterValue(value)) {
+                  onActiveStatusFilterChange(value);
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full"
+                aria-label={t('sessionHistory.statusFilter.label', 'Status')}
+              >
+                <SelectValue>
+                  {statusFilterLabelByValue[activeStatusFilter]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {statusFilterValues.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {statusFilterLabelByValue[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {selectedLineageId && (
+        <div
+          className={cn(
+            HISTORY_CONTENT_RAIL_CLASS,
+            'mt-3 flex items-center gap-2 text-xs text-muted-foreground',
+          )}
+        >
+          <span>
+            {t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', {
+              id: selectedLineageId.slice(0, 8),
+            })}
+          </span>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            onClick={() => setSelectedLineageId(null)}
+          >
+            {t('sessionHistory.showAllLineages', 'Show all lineages')}
+          </Button>
+        </div>
+      )}
+
+      <div
+        className={cn(
+          HISTORY_CONTENT_RAIL_CLASS,
+          'mt-6 min-h-[18rem] transition-opacity duration-200',
+          isPending ? 'opacity-50' : 'opacity-100',
+        )}
+        aria-busy={isPending}
+      >
+        {isPending && (
+          <div className="sr-only" aria-live="polite">
+            {t('sessionHistory.filteringStatus', 'Filtering sessions...')}
+          </div>
+        )}
+        {isLoading && sessions.length === 0 ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <RefreshCw className="mx-auto mb-2 h-8 w-8 animate-spin" />
+              <p className="text-sm">
+                {t('sessionHistory.loading', 'Loading sessions...')}
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRefresh}
-            disabled={isLoading}
-            aria-label={t('sessionHistory.refreshAria', 'Refresh sessions')}
-            className="h-9 w-9"
-          >
-            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-          </Button>
-        </div>
-
-        <Tabs
-          defaultValue="all"
-          value={activeTab}
-          onValueChange={onActiveTabChange}
-          className="mb-4 w-full shrink-0"
-        >
-          <TabsList className="w-full justify-start overflow-x-auto">
-            <TabsTrigger value="all" className="flex-1">
-              {t('sessionHistory.tabs.all', 'All')} ({statusCounts.all})
-            </TabsTrigger>
-            <TabsTrigger value="bookmarked" className="flex-1">
-              <Bookmark className="mr-1.5 h-3.5 w-3.5" />
-              {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} (
-              {bookmarkedCount})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            {t('sessionHistory.statusFilter.label', 'Status')}
-          </span>
-          <Button
-            variant={activeStatusFilter === 'all' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => onActiveStatusFilterChange('all')}
-            aria-pressed={activeStatusFilter === 'all'}
-          >
-            {t('sessionHistory.statusFilter.all', 'All statuses')}
-          </Button>
-          <Button
-            variant={activeStatusFilter === 'busy' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => onActiveStatusFilterChange('busy')}
-            aria-pressed={activeStatusFilter === 'busy'}
-          >
-            {t('sessionHistory.tabs.busy', 'Busy')} ({statusCounts.busy})
-          </Button>
-          <Button
-            variant={activeStatusFilter === 'idle' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => onActiveStatusFilterChange('idle')}
-            aria-pressed={activeStatusFilter === 'idle'}
-          >
-            {t('sessionHistory.tabs.idle', 'Idle')} ({statusCounts.idle})
-          </Button>
-          <Button
-            variant={activeStatusFilter === 'paused' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => onActiveStatusFilterChange('paused')}
-            aria-pressed={activeStatusFilter === 'paused'}
-          >
-            {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused})
-          </Button>
-          <Button
-            variant={activeStatusFilter === 'error' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => onActiveStatusFilterChange('error')}
-            aria-pressed={activeStatusFilter === 'error'}
-          >
-            {t('sessionHistory.tabs.error', 'Error')} ({statusCounts.error})
-          </Button>
-        </div>
-
-        <div className="relative shrink-0">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            type="text"
-            placeholder={defaultSearchPlaceholder}
-            value={searchQuery}
-            onChange={(event) => onSearchQueryChange(event.target.value)}
-            className="pl-10 pr-10"
-            aria-label={t('sessionHistory.searchAria', 'Search sessions')}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => onSearchQueryChange('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-sm"
-              aria-label={t('sessionHistory.clearSearchAria', 'Clear search')}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-        {selectedLineageId && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <span>
-              {t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', {
-                id: selectedLineageId.slice(0, 8),
-              })}
-            </span>
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0"
-              onClick={() => setSelectedLineageId(null)}
-            >
-              {t('sessionHistory.showAllLineages', 'Show all lineages')}
-            </Button>
-          </div>
-        )}
-
-        {/* Content */}
-        <div
-          className={cn(
-            'mt-6 flex min-h-0 flex-1 flex-col transition-opacity duration-200',
-            isPending ? 'opacity-50' : 'opacity-100',
-          )}
-          aria-busy={isPending}
-        >
-          {isPending && (
-            <div className="sr-only" aria-live="polite">
-              {t('sessionHistory.filteringStatus', 'Filtering sessions...')}
-            </div>
-          )}
-          {isLoading && sessions.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-muted-foreground">
-                <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-                <p className="text-sm">
-                  {t('sessionHistory.loading', 'Loading sessions...')}
-                </p>
-              </div>
-            </div>
-          ) : displayRows.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-muted-foreground">
-                {selectedLineageId ? (
-                  <>
-                    <p className="text-sm">
-                      {t(
-                        'sessionHistory.noSessionsInLineage',
-                        'No sessions visible in lineage {{id}}',
-                        { id: selectedLineageId.slice(0, 8) },
-                      )}
-                    </p>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      onClick={() => setSelectedLineageId(null)}
-                      className="mt-2"
-                    >
-                      {t(
-                        'sessionHistory.clearLineageFocus',
-                        'Clear lineage focus',
-                      )}
-                    </Button>
-                  </>
-                ) : searchQuery.trim() ? (
-                  <>
-                    <p className="text-sm">
-                      {t(
-                        'sessionHistory.noSessionsMatching',
-                        'No sessions found matching "{{query}}"',
-                        { query: searchQuery },
-                      )}
-                    </p>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      onClick={() => onSearchQueryChange('')}
-                      className="mt-2"
-                    >
-                      {t('sessionHistory.clearSearch', 'Clear search')}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm">{defaultEmptyTitle}</p>
-                    <p className="text-xs mt-2">{defaultEmptySubtitle}</p>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <Virtuoso
-              className="min-h-0 flex-1 max-w-2xl pr-2 pb-4"
-              style={{ height: '100%' }}
-              data={displayRows}
-              overscan={400}
-              computeItemKey={(_index, row) => row.session.id}
-              components={{
-                ...sessionHistoryVirtuosoComponents,
-                Footer: () =>
-                  hasMoreSessions ? (
-                    <div className="flex justify-center py-4">
-                      <Button
-                        variant="outline"
-                        onClick={onLoadMore}
-                        disabled={isLoadingMoreSessions}
-                      >
-                        <RefreshCw
-                          className={cn(
-                            'mr-2 h-4 w-4',
-                            isLoadingMoreSessions && 'animate-spin',
-                          )}
-                        />
-                        {isLoadingMoreSessions
-                          ? t('sessionHistory.loadingMore', 'Loading more...')
-                          : t('sessionHistory.loadMore', 'Load more')}
-                      </Button>
-                    </div>
-                  ) : null,
-              }}
-              itemContent={(
-                _index,
-                {
-                  session,
-                  nestingLevel,
-                  lineageHint,
-                  hasExpandableChildren,
-                  isExpanded,
-                  descendantStatusCounts: rowDescendantStatusCounts,
-                },
-              ) => (
-                <SessionCard
-                  session={session}
-                  onResume={onResume}
-                  onDelete={onDelete}
-                  onDeleteOnly={onDeleteOnly}
-                  onToggleBookmark={onToggleBookmark}
-                  nestingLevel={nestingLevel}
-                  lineageHint={lineageHint}
-                  selectedLineageId={selectedLineageId}
-                  descendantCount={descendantCounts.get(session.id) ?? 0}
-                  descendantStatusCounts={rowDescendantStatusCounts}
-                  hasExpandableChildren={hasExpandableChildren}
-                  isExpanded={isExpanded}
-                  onToggleExpand={handleToggleExpand}
-                  onLineageSelect={(lineageId) =>
-                    setSelectedLineageId((prev) =>
-                      prev === lineageId ? null : lineageId,
-                    )
-                  }
-                />
+        ) : displayRows.length === 0 ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              {selectedLineageId ? (
+                <>
+                  <p className="text-sm">
+                    {t(
+                      'sessionHistory.noSessionsInLineage',
+                      'No sessions visible in lineage {{id}}',
+                      { id: selectedLineageId.slice(0, 8) },
+                    )}
+                  </p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => setSelectedLineageId(null)}
+                    className="mt-2"
+                  >
+                    {t(
+                      'sessionHistory.clearLineageFocus',
+                      'Clear lineage focus',
+                    )}
+                  </Button>
+                </>
+              ) : searchQuery.trim() ? (
+                <>
+                  <p className="text-sm">
+                    {t(
+                      'sessionHistory.noSessionsMatching',
+                      'No sessions found matching "{{query}}"',
+                      { query: searchQuery },
+                    )}
+                  </p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => onSearchQueryChange('')}
+                    className="mt-2"
+                  >
+                    {t('sessionHistory.clearSearch', 'Clear search')}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm">{defaultEmptyTitle}</p>
+                  <p className="mt-2 text-xs">{defaultEmptySubtitle}</p>
+                </>
               )}
-            />
-          )}
-        </div>
+            </div>
+          </div>
+        ) : (
+          <Virtuoso
+            useWindowScroll
+            className="w-full pb-4"
+            data={displayRows}
+            overscan={400}
+            computeItemKey={(_index, row) => row.session.id}
+            components={{
+              ...sessionHistoryVirtuosoComponents,
+              Footer: () =>
+                hasMoreSessions ? (
+                  <div className="flex justify-center py-4">
+                    <Button
+                      variant="outline"
+                      onClick={onLoadMore}
+                      disabled={isLoadingMoreSessions}
+                    >
+                      <RefreshCw
+                        className={cn(
+                          'mr-2 h-4 w-4',
+                          isLoadingMoreSessions && 'animate-spin',
+                        )}
+                      />
+                      {isLoadingMoreSessions
+                        ? t('sessionHistory.loadingMore', 'Loading more...')
+                        : t('sessionHistory.loadMore', 'Load more')}
+                    </Button>
+                  </div>
+                ) : null,
+            }}
+            itemContent={(
+              _index,
+              {
+                session,
+                nestingLevel,
+                lineageHint,
+                hasExpandableChildren,
+                isExpanded,
+                descendantStatusCounts: rowDescendantStatusCounts,
+              },
+            ) => (
+              <SessionCard
+                session={session}
+                onResume={onResume}
+                onDelete={onDelete}
+                onDeleteOnly={onDeleteOnly}
+                onToggleBookmark={onToggleBookmark}
+                nestingLevel={nestingLevel}
+                lineageHint={lineageHint}
+                selectedLineageId={selectedLineageId}
+                descendantCount={descendantCounts.get(session.id) ?? 0}
+                descendantStatusCounts={rowDescendantStatusCounts}
+                hasExpandableChildren={hasExpandableChildren}
+                isExpanded={isExpanded}
+                onToggleExpand={handleToggleExpand}
+                onLineageSelect={(lineageId) =>
+                  setSelectedLineageId((prev) =>
+                    prev === lineageId ? null : lineageId,
+                  )
+                }
+              />
+            )}
+          />
+        )}
       </div>
     </div>
   );

@@ -41,9 +41,17 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
         .structured_content
         .as_ref()
         .expect("structured content expected");
+    let next_actions = structured
+        .get("nextActions")
+        .and_then(|value| value.as_array())
+        .expect("nextActions array expected");
+    let follow_up_action = next_actions
+        .first()
+        .expect("messageToSession follow-up expected");
 
     assert!(text.contains("Session session-terminal-123 is terminal (idle)."));
     assert!(text.contains("All subtasks completed successfully."));
+    assert!(text.contains("If you need more detail, use messageToSession"));
     assert_eq!(
         structured
             .get("responseStatus")
@@ -61,6 +69,32 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
     assert_eq!(
         structured.get("result").and_then(|value| value.as_str()),
         Some("All subtasks completed successfully.")
+    );
+    assert_eq!(
+        follow_up_action
+            .get("toolName")
+            .and_then(|value| value.as_str()),
+        Some("messageToSession")
+    );
+    assert_eq!(
+        follow_up_action
+            .get("reason")
+            .and_then(|value| value.as_str()),
+        Some("Request the child session for more detail, file contents, or full output.")
+    );
+    assert_eq!(
+        follow_up_action
+            .get("args")
+            .and_then(|value| value.get("sessionId"))
+            .and_then(|value| value.as_str()),
+        Some("session-terminal-123")
+    );
+    assert_eq!(
+        follow_up_action
+            .get("args")
+            .and_then(|value| value.get("message"))
+            .and_then(|value| value.as_str()),
+        Some("Please share the complete output or file contents.")
     );
 }
 

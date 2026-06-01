@@ -200,3 +200,80 @@ describe('AgentSessionListContext – toggleBookmark', () => {
         expect(toggleCall?.args.bookmarked).toBe(true);
     });
 });
+
+describe('AgentSessionListContext – renameSession', () => {
+    const makeSession = (id: string, name: string) => ({
+        id,
+        name,
+        status: 'idle' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        isBookmarked: false,
+    });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        __resetAgentSessionListStartupCacheForTests();
+        (listen as ReturnType<typeof vi.fn>).mockResolvedValue(vi.fn());
+    });
+
+    it('renames a session optimistically and sends the trimmed title to IPC', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({
+                    items: [makeSession('s1', 'Original Title')],
+                    nextCursor: undefined,
+                });
+            }
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
+            if (cmd === 'agent_update_session_name') return Promise.resolve(undefined);
+            return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
+        });
+
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapper },
+        );
+
+        await waitFor(() => expect(result.current.state.sessions).toHaveLength(1));
+
+        await act(async () => {
+            await result.current.actions.renameSession('s1', '  Renamed Title  ');
+        });
+
+        expect(result.current.state.sessions[0].name).toBe('Renamed Title');
+        expect(safeInvoke).toHaveBeenCalledWith('agent_update_session_name', {
+            sessionId: 's1',
+            name: 'Renamed Title',
+        });
+    });
+
+    it('reverts the optimistic title update when IPC fails', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve({
+                    items: [makeSession('s1', 'Original Title')],
+                    nextCursor: undefined,
+                });
+            }
+            if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
+            if (cmd === 'agent_update_session_name') {
+                return Promise.reject(new Error('rename failed'));
+            }
+            return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
+        });
+
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapper },
+        );
+
+        await waitFor(() => expect(result.current.state.sessions).toHaveLength(1));
+
+        await act(async () => {
+            await result.current.actions.renameSession('s1', 'Renamed Title').catch(() => {/* expected */});
+        });
+
+        expect(result.current.state.sessions[0].name).toBe('Original Title');
+    });
+});

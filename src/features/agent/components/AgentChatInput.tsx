@@ -43,7 +43,7 @@ interface AgentChatInputProps {
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
-  const { session } = useAgentSessionState();
+  const { session, messages } = useAgentSessionState();
   const { submit, isSessionLoading, workflowStatus, cancel, resume } =
     useAgentChat();
   const { isCompacting } = useLLMService();
@@ -112,6 +112,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     commitPendingFiles,
     clearPendingFiles,
     refetchSessionFiles,
+    hasPersistedMessages: messages.length > 0,
     onSubmitted: refreshScopedSkills,
   });
 

@@ -15,6 +15,7 @@ export function useAgentSessionActionsLogic(
   externalActions: {
     acknowledgeSessionAttention: (viewedAt?: Date) => Promise<void>;
     clearPendingApproval: (sessionId: string, toolCallId: string) => void;
+    renameSessionInList: (sessionId: string, name: string) => Promise<void>;
   },
 ) {
   const { state, setters } = stateProps;
@@ -74,6 +75,7 @@ export function useAgentSessionActionsLogic(
           assistantId: message.assistantId,
           attachments: message.attachments,
           toolUse: message.tool_use,
+          promptTokens: message.promptTokens,
           createdAt: now.getTime(),
           updatedAt: now.getTime(),
           source: message.source,
@@ -236,6 +238,42 @@ export function useAgentSessionActionsLogic(
     [setters],
   );
 
+  const renameSession = useCallback(
+    async (name: string) => {
+      if (!state.session) {
+        throw new Error('No active session initialized');
+      }
+
+      const normalizedName = name.trim();
+      if (!normalizedName) {
+        throw new Error('Session title cannot be empty');
+      }
+
+      const previousName = state.session.name;
+      if (previousName === normalizedName) {
+        return;
+      }
+
+      setters.setSession((prev) =>
+        prev ? { ...prev, name: normalizedName } : prev,
+      );
+
+      try {
+        await externalActions.renameSessionInList(
+          state.session.id,
+          normalizedName,
+        );
+      } catch (err) {
+        setters.setSession((prev) =>
+          prev ? { ...prev, name: previousName } : prev,
+        );
+        logger.error('Failed to rename session', err);
+        throw err;
+      }
+    },
+    [externalActions, setters, state.session],
+  );
+
   return {
     sendMessage,
     stopSession,
@@ -246,5 +284,6 @@ export function useAgentSessionActionsLogic(
     toggleYoloMode,
     toggleUnsafeMode,
     updateSessionConfig,
+    renameSession,
   };
 }

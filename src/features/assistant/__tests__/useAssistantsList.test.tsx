@@ -95,6 +95,7 @@ describe('useAssistantsList', () => {
   });
 
   it('handles search and prevents stale results', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let resolveFirstSearch!: (val: Assistant[]) => void;
     mockSearchAssistants
       .mockReturnValueOnce(new Promise((res) => { resolveFirstSearch = res; }))
@@ -106,6 +107,11 @@ describe('useAssistantsList', () => {
       result.current.handleSearch('first');
     });
     
+    // Advance timers to trigger debounced query
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
     // Rerender to trigger SWR re-fetch for 'first'
     rerender();
     
@@ -113,6 +119,11 @@ describe('useAssistantsList', () => {
       result.current.handleSearch('second');
     });
     
+    // Advance timers to trigger debounced query
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
     // Rerender to trigger SWR re-fetch for 'second'
     rerender();
 
@@ -127,9 +138,11 @@ describe('useAssistantsList', () => {
 
     // SWR handles race conditions: it only cares about the latest key ('second')
     expect(result.current.searchResults).toEqual([createMockAssistant('2', 'Result 2')]);
+    vi.useRealTimers();
   });
 
   it('clears results when search query is emptied', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { result } = renderHook(() => useAssistantsList(), { wrapper });
     
     await act(async () => {
@@ -137,10 +150,48 @@ describe('useAssistantsList', () => {
     });
     
     await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
+    await act(async () => {
       result.current.handleSearch('');
     });
     
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
     expect(result.current.searchResults).toBeNull();
     expect(result.current.searchQuery).toBe('');
+    vi.useRealTimers();
+  });
+
+  it('synchronizes searchQuery and searchResults to hide stale results and show searching status during debounce window', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockSearchAssistants.mockResolvedValueOnce([createMockAssistant('2', 'Result 2')]);
+
+    const { result } = renderHook(() => useAssistantsList(), { wrapper });
+
+    await act(async () => {
+      result.current.handleSearch('typing');
+    });
+
+    // During the debounce window:
+    // searchQuery is 'typing' but debouncedSearchQuery is still ''
+    expect(result.current.searchQuery).toBe('typing');
+    expect(result.current.isSearching).toBe(true); // Should show loading spinner
+    expect(result.current.searchResults).toBeNull(); // Should hide stale results
+
+    // Advance fake timers by 300ms to trigger debounced query
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
+    // Now it should resolve
+    await waitFor(() => {
+      expect(result.current.isSearching).toBe(false);
+    });
+    expect(result.current.searchResults).toEqual([createMockAssistant('2', 'Result 2')]);
+    vi.useRealTimers();
   });
 });

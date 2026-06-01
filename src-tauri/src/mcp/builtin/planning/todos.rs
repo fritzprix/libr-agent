@@ -1,3 +1,4 @@
+use super::errors::{planning_follow_up_read_notice, planning_read_error, planning_write_error};
 use crate::mcp::builtin::error_guidance::{
     guided_error, invalid_input_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -95,16 +96,21 @@ pub async fn add_todo(
         .await
     {
         Ok(id) => {
-            let summary_text = repo
-                .get_planning_summary(session_id)
-                .await
-                .unwrap_or_default();
+            let mut next_hints = vec![format!(
+                "Use updateTodo(todoId={}, action='done') to mark as done",
+                id
+            )];
+            let summary_text = match repo.get_planning_summary(session_id).await {
+                Ok(summary_text) => summary_text,
+                Err(error) => {
+                    let notice = planning_follow_up_read_notice("updated planning summary", &error);
+                    next_hints.push(notice.hint);
+                    notice.suffix
+                }
+            };
             let hint = SuccessHint::new(
                 format!("Added todo #{}: {}{}", id, title, summary_text),
-                vec![format!(
-                    "Use updateTodo(todoId={}, action='done') to mark as done",
-                    id
-                )],
+                next_hints,
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "id": cuid2::create_id(),
@@ -113,16 +119,14 @@ pub async fn add_todo(
                 "todo": title
             }))))
         }
-        Err(e) => Ok(guided_error(
-            ErrorCategory::DatabaseError,
-            format!("Failed to add todo: {}", e),
-            ToolGroup::Planning,
-        )
-        .with_guidance(vec![
-            "Try again - this may be a transient database error".to_string(),
-            "Use getCurrentState to verify if the todo was created".to_string(),
-        ])
-        .to_mcp_result()),
+        Err(e) => Ok(planning_write_error(
+            "add this todo",
+            &e,
+            vec![
+                "Use getCurrentState to verify whether the todo was created.".to_string(),
+                "Retry only if the todo is still missing.".to_string(),
+            ],
+        )),
     }
 }
 
@@ -172,53 +176,68 @@ pub async fn check_todo(
             .to_mcp_result());
         }
         Err(e) => {
-            return Ok(guided_error(
-                ErrorCategory::DatabaseError,
-                format!("Failed to fetch todo: {}", e),
-                ToolGroup::Planning,
-            )
-            .with_guidance(vec!["Try again".to_string()])
-            .to_mcp_result())
+            return Ok(planning_read_error(
+                "read the requested todo",
+                &e,
+                vec![
+                    "Use getCurrentState to refresh the current todo list.".to_string(),
+                    "Retry after the planning store settles.".to_string(),
+                ],
+            ))
         }
     };
     let todo_content = todo.content.clone();
 
     // 3. Update (no parent auto-completion logic)
     if let Err(e) = repo.check_todo(todo_id, checked, summary).await {
-        return Ok(guided_error(
-            ErrorCategory::DatabaseError,
-            format!("Failed to update todo: {}", e),
-            ToolGroup::Planning,
-        )
-        .with_guidance(vec![
-            "Try again".to_string(),
-            "Use getCurrentState to verify the final status".to_string(),
-        ])
-        .to_mcp_result());
+        return Ok(planning_write_error(
+            "update this todo",
+            &e,
+            vec![
+                "Use getCurrentState to verify the final todo status before retrying.".to_string(),
+                "Retry only if the status did not change.".to_string(),
+            ],
+        ));
     }
 
     let action = if checked { "completed" } else { "reopened" };
-    let summary_text = repo
-        .get_planning_summary(session_id)
-        .await
-        .unwrap_or_default();
+    let mut follow_up_hints = Vec::new();
+    let summary_text = match repo.get_planning_summary(session_id).await {
+        Ok(summary_text) => summary_text,
+        Err(error) => {
+            let notice = planning_follow_up_read_notice("updated planning summary", &error);
+            follow_up_hints.push(notice.hint);
+            notice.suffix
+        }
+    };
 
     // Check if all todos are now done (only when checking as done)
     let next_hints = if checked {
-        let updated_todos = repo.list_todos(session_id, true).await.unwrap_or_default();
-        let remaining = updated_todos.iter().filter(|t| !t.is_checked).count();
-        if remaining == 0 && !updated_todos.is_empty() {
-            vec![
-                "All todos complete! Use reflect to review what went well and what could improve."
-                    .to_string(),
-            ]
-        } else if remaining > 0 {
-            vec![format!(
-                "{} todo(s) remaining — use getCurrentState to see the list",
-                remaining
-            )]
-        } else {
-            vec![]
+        match repo.list_todos(session_id, true).await {
+            Ok(updated_todos) => {
+                let remaining = updated_todos.iter().filter(|t| !t.is_checked).count();
+                if remaining == 0 && !updated_todos.is_empty() {
+                    vec![
+                        "All todos complete! Use reflect to review what went well and what could improve."
+                            .to_string(),
+                    ]
+                } else if remaining > 0 {
+                    vec![format!(
+                        "{} todo(s) remaining — use getCurrentState to see the list",
+                        remaining
+                    )]
+                } else {
+                    vec![]
+                }
+            }
+            Err(error) => {
+                let notice = planning_follow_up_read_notice("updated todo list", &error);
+                follow_up_hints.push(notice.hint);
+                vec![
+                    "The todo status update succeeded, but the refreshed task list is unavailable right now."
+                        .to_string(),
+                ]
+            }
         }
     } else {
         vec![format!(
@@ -226,6 +245,8 @@ pub async fn check_todo(
             todo_id
         )]
     };
+    let mut next_hints = next_hints;
+    next_hints.extend(follow_up_hints);
 
     let hint = SuccessHint::new(
         format!(
@@ -283,45 +304,49 @@ pub async fn cancel_todo(
             .to_mcp_result());
         }
         Err(e) => {
-            return Ok(guided_error(
-                ErrorCategory::DatabaseError,
-                format!("Failed to fetch todo: {}", e),
-                ToolGroup::Planning,
-            )
-            .with_guidance(vec!["Try again".to_string()])
-            .to_mcp_result())
+            return Ok(planning_read_error(
+                "read the requested todo",
+                &e,
+                vec![
+                    "Use getCurrentState to refresh the current todo list.".to_string(),
+                    "Retry after the planning store settles.".to_string(),
+                ],
+            ))
         }
     };
     let todo_content = todo.content.clone();
 
     // 3. Delete single todo (no batch, no "delete all")
     if let Err(e) = repo.delete_todos(session_id, vec![todo_id]).await {
-        return Ok(guided_error(
-            ErrorCategory::DatabaseError,
-            format!("Failed to delete todo: {}", e),
-            ToolGroup::Planning,
-        )
-        .with_guidance(vec![
-            "Try again".to_string(),
-            "Use getCurrentState to verify if it was removed".to_string(),
-        ])
-        .to_mcp_result());
+        return Ok(planning_write_error(
+            "remove this todo",
+            &e,
+            vec![
+                "Use getCurrentState to verify whether the todo is still present.".to_string(),
+                "Retry only if the todo was not removed.".to_string(),
+            ],
+        ));
     }
 
-    let summary_text = repo
-        .get_planning_summary(session_id)
-        .await
-        .unwrap_or_default();
+    let mut next_hints = vec![
+        "Use addTodo to create a replacement if needed".to_string(),
+        "Use getCurrentState to verify the updated task list".to_string(),
+    ];
+    let summary_text = match repo.get_planning_summary(session_id).await {
+        Ok(summary_text) => summary_text,
+        Err(error) => {
+            let notice = planning_follow_up_read_notice("updated planning summary", &error);
+            next_hints.push(notice.hint);
+            notice.suffix
+        }
+    };
 
     let hint = SuccessHint::new(
         format!(
             "Removed todo #{}: {}{}",
             todo_id, todo_content, summary_text
         ),
-        vec![
-            "Use addTodo to create a replacement if needed".to_string(),
-            "Use getCurrentState to verify the updated task list".to_string(),
-        ],
+        next_hints,
     );
 
     Ok(hint.to_mcp_result_with_data(Some(json!({

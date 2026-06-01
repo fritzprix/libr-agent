@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next';
  * what slice was summarized without exposing internal IDs.
  */
 interface CompactEventDividerProps {
-  earlierPreview?: string;
   latestIncludedPreview?: string;
   condensedCount?: number;
   summary?: string;
@@ -22,7 +21,6 @@ function previewLabel(preview: string | undefined, fallback: string): string {
 }
 
 export function CompactEventDivider({
-  earlierPreview,
   latestIncludedPreview,
   condensedCount,
   summary,
@@ -64,18 +62,6 @@ export function CompactEventDivider({
               {t('agent.compactDivider.label', 'Context compacted')}
             </div>
             <div className="mt-1 space-y-1 text-xs text-muted-foreground">
-              <div>
-                <span className="font-medium">
-                  {t('agent.compactDivider.earlier', 'Earlier')}:
-                </span>{' '}
-                {previewLabel(
-                  earlierPreview,
-                  t(
-                    'agent.compactDivider.earlierFallback',
-                    'Earlier conversation context',
-                  ),
-                )}
-              </div>
               <div>
                 <span className="font-medium">
                   {t('agent.compactDivider.latestIncluded', 'Latest included')}:

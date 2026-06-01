@@ -1,11 +1,10 @@
 mod context;
+mod errors;
 mod goals;
 mod todos;
 mod tools;
 
-use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
-};
+use crate::mcp::builtin::error_guidance::{missing_param_error, SuccessHint, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -90,13 +89,15 @@ impl BuiltinMCPServer for PlanningServer {
                 let repo = crate::state::get_planning_repository();
                 match repo.clear_session(&target_session_id).await {
                     Ok(_) => Ok(MCPResult::success("✓ Session planning state cleared")),
-                    Err(e) => Ok(guided_error(
-                        ErrorCategory::DatabaseError,
-                        format!("Failed to clear session: {}", e),
-                        ToolGroup::Planning,
-                    )
-                    .with_guidance(vec!["Try again".to_string()])
-                    .to_mcp_result()),
+                    Err(e) => Ok(errors::planning_write_error(
+                        "clear the session planning state",
+                        &e,
+                        vec![
+                            "Use getCurrentState to verify what is still present before retrying."
+                                .to_string(),
+                            "Retry only if the planning state is still there.".to_string(),
+                        ],
+                    )),
                 }
             }
             "getCurrentState" => {

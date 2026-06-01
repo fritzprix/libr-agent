@@ -1,6 +1,5 @@
-use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
-};
+use super::errors::{planning_follow_up_read_notice, planning_write_error};
+use crate::mcp::builtin::error_guidance::{missing_param_error, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 use crate::repositories::PlanningRepository;
 use crate::state::get_planning_repository;
@@ -31,17 +30,22 @@ pub async fn create_goal(
     match repo.create_goal(session_id, goal_text).await {
         Ok(id) => {
             let response_id = cuid2::create_id();
-            let summary = repo
-                .get_planning_summary(session_id)
-                .await
-                .unwrap_or_default();
+            let mut next_hints = vec![
+                "Use addTodo to break down this goal into tasks".to_string(),
+                "Use getCurrentState to review the full plan".to_string(),
+            ];
+            let summary = match repo.get_planning_summary(session_id).await {
+                Ok(summary) => summary,
+                Err(error) => {
+                    let notice = planning_follow_up_read_notice("updated planning summary", &error);
+                    next_hints.push(notice.hint);
+                    notice.suffix
+                }
+            };
 
             let hint = SuccessHint::new(
                 format!("✓ Goal created: {}{}", goal_text, summary),
-                vec![
-                    "Use addTodo to break down this goal into tasks".to_string(),
-                    "Use getCurrentState to review the full plan".to_string(),
-                ],
+                next_hints,
             );
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -51,16 +55,14 @@ pub async fn create_goal(
                 "goalId": id
             }))))
         }
-        Err(e) => Ok(guided_error(
-            ErrorCategory::DatabaseError,
-            format!("Failed to create goal: {}", e),
-            ToolGroup::Planning,
-        )
-        .with_guidance(vec![
-            "Try again - this may be a transient error".to_string(),
-            "Use getCurrentState to check if a goal is already active".to_string(),
-        ])
-        .to_mcp_result()),
+        Err(e) => Ok(planning_write_error(
+            "create the goal",
+            &e,
+            vec![
+                "Use getCurrentState to verify whether a goal is already active.".to_string(),
+                "Retry only if the goal was not created.".to_string(),
+            ],
+        )),
     }
 }
 
@@ -89,17 +91,23 @@ pub async fn update_goal(
         Ok(updated) => {
             if updated {
                 let response_id = cuid2::create_id();
-                let summary = repo
-                    .get_planning_summary(session_id)
-                    .await
-                    .unwrap_or_default();
+                let mut next_hints = vec![
+                    "Use addTodo to add tasks for this updated goal".to_string(),
+                    "Use getCurrentState to review changes".to_string(),
+                ];
+                let summary = match repo.get_planning_summary(session_id).await {
+                    Ok(summary) => summary,
+                    Err(error) => {
+                        let notice =
+                            planning_follow_up_read_notice("updated planning summary", &error);
+                        next_hints.push(notice.hint);
+                        notice.suffix
+                    }
+                };
 
                 let hint = SuccessHint::new(
                     format!("✓ Goal updated: {}{}", goal_text, summary),
-                    vec![
-                        "Use addTodo to add tasks for this updated goal".to_string(),
-                        "Use getCurrentState to review changes".to_string(),
-                    ],
+                    next_hints,
                 );
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -112,16 +120,14 @@ pub async fn update_goal(
                 create_goal(db, session_id, args).await
             }
         }
-        Err(e) => Ok(guided_error(
-            ErrorCategory::DatabaseError,
-            format!("Failed to update goal: {}", e),
-            ToolGroup::Planning,
-        )
-        .with_guidance(vec![
-            "Try again - database might be busy".to_string(),
-            "Use createGoal if no goal exists yet".to_string(),
-        ])
-        .to_mcp_result()),
+        Err(e) => Ok(planning_write_error(
+            "update the active goal",
+            &e,
+            vec![
+                "Use getCurrentState to confirm whether the goal changed.".to_string(),
+                "Use createGoal if no goal exists yet.".to_string(),
+            ],
+        )),
     }
 }
 
@@ -141,15 +147,13 @@ pub async fn clear_goal(
             );
             Ok(hint.to_mcp_result())
         }
-        Err(e) => Ok(guided_error(
-            ErrorCategory::DatabaseError,
-            format!("Failed to clear goal: {}", e),
-            ToolGroup::Planning,
-        )
-        .with_guidance(vec![
-            "Try again".to_string(),
-            "Use getCurrentState to see if it was already cleared".to_string(),
-        ])
-        .to_mcp_result()),
+        Err(e) => Ok(planning_write_error(
+            "clear the active goal",
+            &e,
+            vec![
+                "Use getCurrentState to see whether the goal is still active.".to_string(),
+                "Retry only if the goal was not cleared.".to_string(),
+            ],
+        )),
     }
 }

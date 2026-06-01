@@ -60,10 +60,7 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
             onClick={() => setIsExpanded(!isExpanded)}
             aria-expanded={isExpanded}
             aria-controls={contentId}
-            aria-label={
-              toggleAriaLabel ||
-              t('baseBubble.toggle', { title, defaultValue: `Toggle ${title}` })
-            }
+            aria-label={toggleAriaLabel || title}
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {isExpanded ? (

@@ -21,13 +21,13 @@ use super::management::update_session_status_with_dispatcher;
 async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
     let message_repo = crate::state::get_message_repository();
 
-    // Load messages for the session (up to MAX_CACHED_MESSAGES)
-    let page = message_repo
-        .get_page(session_id, 1, MAX_CACHED_MESSAGES as u64)
+    // Only the most recent causal window matters for unresolved tool-call recovery.
+    let recent_slice = message_repo
+        .get_recent_slice(session_id, MAX_CACHED_MESSAGES as u64)
         .await
         .map_err(|e| format!("Failed to load messages for tombstone check: {}", e))?;
 
-    let messages = page.items;
+    let messages = recent_slice.items;
 
     // Collect all resolved tool_call_ids (role="tool" messages with a tool_call_id)
     let resolved_ids: HashSet<String> = messages
@@ -72,6 +72,7 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
                 thinking_signature: None,
                 assistant_id: None,
                 usage: None,
+                prompt_tokens: None,
                 attachments: None,
                 tool_use: None,
                 created_at: now,
@@ -128,6 +129,7 @@ fn build_recovered_session(
         expected_response_id: Arc::new(RwLock::new(None)),
         cached_stable_prompt: Arc::new(RwLock::new(None)),
         last_completion_request: Arc::new(RwLock::new(None)),
+        last_submitted_input_message_id: Arc::new(RwLock::new(None)),
     }
 }
 

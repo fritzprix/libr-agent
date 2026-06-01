@@ -17,6 +17,7 @@ import { ensureSchemaTypeField, processMessageContent } from './utils';
 import { OpenAIPromptDiagnosticsTracker } from './openai/diagnostics';
 import { convertToOpenAIMessages } from './openai/message-converter';
 import { fetchOpenAIModels } from './openai/models';
+import { summarizeMessageIngredients } from './request-ingredients';
 import {
   buildAutomaticPromptCacheKey,
   withPromptCaching,
@@ -34,6 +35,50 @@ import type {
 import { isOpenAIStreamUsage } from './openai/types';
 
 const logger = getLogger('OpenAIService');
+
+function summarizeOpenAIRequestIngredients(params: {
+  modelName: string;
+  systemPrompt?: string;
+  sanitizedMessages: Message[];
+  openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+  tools?: OpenAIChatCompletionTool[];
+  request: OpenAIStreamingRequest;
+  requestId: string;
+}) {
+  const {
+    modelName,
+    systemPrompt,
+    sanitizedMessages,
+    openaiMessages,
+    tools,
+    request,
+    requestId,
+  } = params;
+
+  const openaiRoleCounts: Record<string, number> = {};
+  const { messageCount: sanitizedMessageCount, ...messageSummary } =
+    summarizeMessageIngredients(sanitizedMessages);
+
+  for (const message of openaiMessages) {
+    openaiRoleCounts[message.role] = (openaiRoleCounts[message.role] ?? 0) + 1;
+  }
+
+  return {
+    requestId,
+    model: modelName,
+    systemPromptLength: systemPrompt?.length ?? 0,
+    sanitizedMessageCount,
+    openaiMessageCount: openaiMessages.length,
+    toolsCount: tools?.length ?? 0,
+    toolChoice: request.tool_choice ?? 'none',
+    maxCompletionTokens: request.max_completion_tokens,
+    stream: request.stream,
+    promptCacheKeyPresent: typeof request.prompt_cache_key === 'string',
+    promptCacheRetention: request.prompt_cache_retention ?? null,
+    ...messageSummary,
+    openaiRoleCounts,
+  };
+}
 
 /**
  * An AI service implementation for OpenAI's language models.
@@ -238,6 +283,18 @@ export class OpenAIService extends BaseAIService<
       );
 
       const requestId = this.promptDiagnostics.createRequestId();
+      this.logger.info(
+        '🧪 OpenAI API request ingredients',
+        summarizeOpenAIRequestIngredients({
+          modelName,
+          systemPrompt: options.systemPrompt,
+          sanitizedMessages,
+          openaiMessages,
+          tools,
+          request,
+          requestId,
+        }),
+      );
       this.promptDiagnostics.logPromptDiagnostics({
         mode: 'stream',
         model: modelName,

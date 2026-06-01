@@ -32,6 +32,35 @@ pub enum DbError {
     ResourceNotFound(String),
 }
 
+impl DbError {
+    pub fn is_sqlite_busy(&self) -> bool {
+        match self {
+            DbError::SeaOrmQueryFailed(sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(
+                err,
+            )))
+            | DbError::SeaOrmQueryFailed(sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(
+                err,
+            )))
+            | DbError::SeaOrmQueryFailed(sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(
+                err,
+            ))) => match err {
+                sea_orm::SqlxError::Database(db_err) => {
+                    let code = db_err.code().map(|code| code.into_owned());
+                    let message = db_err.message().to_ascii_lowercase();
+
+                    matches!(
+                        code.as_deref(),
+                        Some("5" | "6" | "SQLITE_BUSY" | "SQLITE_LOCKED")
+                    ) || message.contains("database is locked")
+                        || message.contains("database table is locked")
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
 /// Convert DbError to String for Tauri command compatibility
 impl From<DbError> for String {
     fn from(err: DbError) -> String {
