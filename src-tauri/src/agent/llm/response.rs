@@ -221,6 +221,21 @@ async fn initialize_pending_execution(
     }
 }
 
+pub async fn initialize_pending_execution_for_testing(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    assistant_message_id: &str,
+    tool_calls: &[ToolCall],
+) {
+    initialize_pending_execution(
+        active_sessions,
+        session_id,
+        assistant_message_id,
+        tool_calls,
+    )
+    .await;
+}
+
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
     session_repo: &Arc<dyn SessionRepository>,

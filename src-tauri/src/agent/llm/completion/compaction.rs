@@ -1,6 +1,9 @@
+mod diagnostics;
 mod hints;
 mod instruction;
 mod payload;
+mod preparation;
+mod selection;
 mod trigger;
 
 use crate::models::chat::Message;

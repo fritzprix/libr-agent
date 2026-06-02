@@ -46,6 +46,7 @@ function createBaseSessionState(): AgentSessionStateContextValue {
     preflightTokenMetrics: null,
     initializationStep: null,
     pendingApprovals: [],
+    pendingInteractiveShellPrompt: null,
     executionMode: 'normal',
     yoloModeEnabled: false,
     unsafeModeEnabled: false,

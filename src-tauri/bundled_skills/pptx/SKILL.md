@@ -10,6 +10,17 @@ license: Proprietary. LICENSE.txt has complete terms
 
 A user may ask you to create, edit, or analyze the contents of a .pptx file. A .pptx file is essentially a ZIP archive containing XML files and other resources that you can read or edit. You have different tools and workflows available for different tasks.
 
+## Path conventions
+
+Paths in this skill are relative to the directory containing this `SKILL.md`, not to the workspace root or the shell's current `./`.
+
+- Scripts in this skill use paths like `scripts/...` or `ooxml/scripts/...`
+- References in this skill use paths like `references/...`
+- Do not rewrite these as project-root paths or repository-specific absolute paths
+- When a command below says `python scripts/...` or `python ooxml/scripts/...`, resolve that script path against the skill's absolute Base Directory
+- In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
+- User/project files passed as arguments are workspace files unless the instruction explicitly says otherwise
+
 ## Reading and analyzing content
 
 ### Text extraction
@@ -27,9 +38,7 @@ You need raw XML access for: comments, speaker notes, slide layouts, animations,
 
 #### Unpacking a file
 
-`python ooxml/scripts/unpack.py <office_file> <output_dir>`
-
-**Note**: The unpack.py script is located at `skills/pptx/ooxml/scripts/unpack.py` relative to the project root. If the script doesn't exist at this path, use `find . -name "unpack.py"` to locate it.
+`python "<skill-base-dir>/ooxml/scripts/unpack.py" <office_file> <output_dir>`
 
 #### Key file structures
 
@@ -177,7 +186,7 @@ When creating a new PowerPoint presentation from scratch, use the **html2pptx** 
    - Add charts and tables to placeholder areas using PptxGenJS API
    - Save the presentation using `pptx.writeFile()`
 4. **Visual validation**: Generate thumbnails and inspect for layout issues
-   - Create thumbnail grid: `python scripts/thumbnail.py output.pptx workspace/thumbnails --cols 4`
+   - Create thumbnail grid: `python "<skill-base-dir>/scripts/thumbnail.py" output.pptx workspace/thumbnails --cols 4`
    - Read and carefully examine the thumbnail image for:
      - **Text cutoff**: Text being cut off by header bars, shapes, or slide edges
      - **Text overlap**: Text overlapping with other text or shapes
@@ -193,10 +202,10 @@ When edit slides in an existing PowerPoint presentation, you need to work with t
 ### Workflow
 
 1. **MANDATORY - READ ENTIRE FILE**: Read [`ooxml.md`](ooxml.md) (~500 lines) completely from start to finish. **NEVER set any range limits when reading this file.** Read the full file content for detailed guidance on OOXML structure and editing workflows before any presentation editing.
-2. Unpack the presentation: `python ooxml/scripts/unpack.py <office_file> <output_dir>`
+2. Unpack the presentation: `python "<skill-base-dir>/ooxml/scripts/unpack.py" <office_file> <output_dir>`
 3. Edit the XML files (primarily `ppt/slides/slide{N}.xml` and related files)
-4. **CRITICAL**: Validate immediately after each edit and fix any validation errors before proceeding: `python ooxml/scripts/validate.py <dir> --original <file>`
-5. Pack the final presentation: `python ooxml/scripts/pack.py <input_directory> <office_file>`
+4. **CRITICAL**: Validate immediately after each edit and fix any validation errors before proceeding: `python "<skill-base-dir>/ooxml/scripts/validate.py" <dir> --original <file>`
+5. Pack the final presentation: `python "<skill-base-dir>/ooxml/scripts/pack.py" <input_directory> <office_file>`
 
 ## Creating a new PowerPoint presentation **using a template**
 
@@ -207,7 +216,7 @@ When you need to create a presentation that follows an existing template's desig
 1. **Extract template text AND create visual thumbnail grid**:
    - Extract text: `python -m markitdown template.pptx > template-content.md`
    - Read `template-content.md`: Read the entire file to understand the contents of the template presentation. **NEVER set any range limits when reading this file.**
-   - Create thumbnail grids: `python scripts/thumbnail.py template.pptx`
+   - Create thumbnail grids: `python "<skill-base-dir>/scripts/thumbnail.py" template.pptx`
    - See [Creating Thumbnail Grids](#creating-thumbnail-grids) section for more details
 
 2. **Analyze template and save inventory to a file**:
@@ -269,7 +278,7 @@ When you need to create a presentation that follows an existing template's desig
 4. **Duplicate, reorder, and delete slides using `rearrange.py`**:
    - Use the `scripts/rearrange.py` script to create a new presentation with slides in the desired order:
      ```bash
-     python scripts/rearrange.py template.pptx working.pptx 0,34,34,50,52
+     python "<skill-base-dir>/scripts/rearrange.py" template.pptx working.pptx 0,34,34,50,52
      ```
    - The script handles duplicating repeated slides, deleting unused slides, and reordering automatically
    - Slide indices are 0-based (first slide is 0, second is 1, etc.)
@@ -278,7 +287,7 @@ When you need to create a presentation that follows an existing template's desig
 5. **Extract ALL text using the `inventory.py` script**:
    - **Run inventory extraction**:
      ```bash
-     python scripts/inventory.py working.pptx text-inventory.json
+     python "<skill-base-dir>/scripts/inventory.py" working.pptx text-inventory.json
      ```
    - **Read text-inventory.json**: Read the entire text-inventory.json file to understand all shapes and their properties. **NEVER set any range limits when reading this file.**
 
@@ -409,7 +418,7 @@ When you need to create a presentation that follows an existing template's desig
 7. **Apply replacements using the `replace.py` script**
 
    ```bash
-   python scripts/replace.py working.pptx replacement-text.json output.pptx
+   python "<skill-base-dir>/scripts/replace.py" working.pptx replacement-text.json output.pptx
    ```
 
    The script will:
@@ -439,14 +448,14 @@ When you need to create a presentation that follows an existing template's desig
 To create visual thumbnail grids of PowerPoint slides for quick analysis and reference:
 
 ```bash
-python scripts/thumbnail.py template.pptx [output_prefix]
+python "<skill-base-dir>/scripts/thumbnail.py" template.pptx [output_prefix]
 ```
 
 **Features**:
 
 - Creates: `thumbnails.jpg` (or `thumbnails-1.jpg`, `thumbnails-2.jpg`, etc. for large decks)
 - Default: 5 columns, max 30 slides per grid (5×6)
-- Custom prefix: `python scripts/thumbnail.py template.pptx my-grid`
+- Custom prefix: `python "<skill-base-dir>/scripts/thumbnail.py" template.pptx my-grid`
   - Note: The output prefix should include the path if you want output in a specific directory (e.g., `workspace/my-grid`)
 - Adjust columns: `--cols 4` (range: 3-6, affects slides per grid)
 - Grid limits: 3 cols = 12 slides/grid, 4 cols = 20, 5 cols = 30, 6 cols = 42
@@ -463,10 +472,10 @@ python scripts/thumbnail.py template.pptx [output_prefix]
 
 ```bash
 # Basic usage
-python scripts/thumbnail.py presentation.pptx
+python "<skill-base-dir>/scripts/thumbnail.py" presentation.pptx
 
 # Combine options: custom name, columns
-python scripts/thumbnail.py template.pptx analysis --cols 4
+python "<skill-base-dir>/scripts/thumbnail.py" template.pptx analysis --cols 4
 ```
 
 ## Converting Slides to Images

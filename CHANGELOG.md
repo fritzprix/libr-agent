@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.2] - 2026-06-03
+
+### 🐛 Fixes
+
+- **Non-Interactive Email Setup**: Hardened and aligned email presets to ensure email integration configuration works smoothly in non-interactive setups.
+- **Compaction Checkpoint Fallback**: Stabilized context compaction checkpoint fallback behavior for improved runtime session recovery.
+
+### 🔧 Internal
+
+- **Integration Test Consolidation**: Consolidated 113+ separate integration test binaries into a single unified test target (`integration_tests.rs`) to eliminate over 460 GiB of Cargo test storage bloat and resolve parallel `OnceLock` initialization panics.
+
+## [0.8.1] - 2026-06-02
+
+### 🚀 Features
+
+- **New Built-in Skills for Search & Email Workflows**: Added bundled `workspace-indexer` and `email-integration` skills so agents can index mixed workspace documents more effectively and connect to real inbox workflows with guided setup.
+- **Faster Session Navigation UX**: Added bookmark toggling directly in the active agent chat header and improved session-history incremental loading so large session lists are easier to manage without dumping everything up front.
+
+### 🐛 Fixes
+
+- **Workspace Shell Execution Reliability**: Fixed sudo/password input timeout handling, safer command normalization, TTL clamping, and pending interactive shell execution flow so privileged workspace commands behave more predictably.
+- **Scheduled Workspace Recovery**: Resolved stale scheduled-workspace override handling and related interactive prompt blockers that could leave background task flows misaligned or stuck.
+- **Agent Runtime Stability & Privacy**: Reduced active-session lock contention in the tool loop and added fence redaction so long-running agent execution stays more reliable and less noisy.
+
+### 🔧 Internal
+
+- **Compaction & Shell Modularization**: Split compaction trigger logic and interactive persistent-shell flows into smaller focused modules to make future maintenance less brittle.
+- **Bundled Skill & Dependency Maintenance**: Refreshed bundled-skill review tooling, synchronized generated service metadata, and updated backend dependencies.
+
 ## [0.8.0] - 2026-05-31
 
 ### 🚀 Features

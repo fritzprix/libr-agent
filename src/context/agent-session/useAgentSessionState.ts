@@ -8,7 +8,12 @@ import type {
   SessionRuntimeState,
 } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
-import type { ExecutionMode, WorkflowPhase, PendingApproval } from './types';
+import type {
+  ExecutionMode,
+  PendingApproval,
+  PendingInteractiveShellPrompt,
+  WorkflowPhase,
+} from './types';
 import { buildMessageError } from './utils';
 
 const DEFAULT_RUNTIME_STATE: SessionRuntimeState = {
@@ -46,6 +51,8 @@ export function useAgentSessionState() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
   );
+  const [pendingInteractiveShellPrompt, setPendingInteractiveShellPrompt] =
+    useState<PendingInteractiveShellPrompt | null>(null);
   const [yoloModeEnabled, setYoloModeEnabled] = useState(false);
   const [unsafeModeEnabled, setUnsafeModeEnabled] = useState(false);
   const executionMode: ExecutionMode = unsafeModeEnabled
@@ -110,6 +117,7 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPreflightTokenMetrics,
       setPendingApprovals,
+      setPendingInteractiveShellPrompt,
       setYoloModeEnabled,
       setUnsafeModeEnabled,
       applyLocalViewedAt,
@@ -129,6 +137,7 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPreflightTokenMetrics,
       setPendingApprovals,
+      setPendingInteractiveShellPrompt,
       setYoloModeEnabled,
       setUnsafeModeEnabled,
       applyLocalViewedAt,
@@ -171,6 +180,7 @@ export function useAgentSessionState() {
       preflightTokenMetrics,
       initializationStep,
       pendingApprovals,
+      pendingInteractiveShellPrompt,
       yoloModeEnabled,
       unsafeModeEnabled,
       executionMode,

@@ -1,9 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionHistoryPanel } from '../SessionHistoryPanel';
 import type { AgentSession } from '@/models/agent';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import type { ReactNode } from 'react';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -54,51 +53,25 @@ vi.mock('../SessionCard', () => ({
   ),
 }));
 
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({
-    data,
-    itemContent,
-    components,
-  }: {
-    data: unknown[];
-    itemContent: (index: number, item: unknown) => ReactNode;
-    components?: {
-      List?: (props: { children: ReactNode }) => ReactNode;
-      Item?: (props: { children: ReactNode }) => ReactNode;
-      Footer?: () => ReactNode;
-    };
-  }) => (
-    (() => {
-      const items = data.map((item, index) => {
-        const content = itemContent(index, item);
-        return components?.Item ? (
-          <components.Item key={index}>{content}</components.Item>
-        ) : (
-          <div key={index}>{content}</div>
-        );
-      });
-
-      const listChildren = (
-        <>
-          {items}
-          {components?.Footer ? <components.Footer /> : null}
-        </>
-      );
-
-      return components?.List ? (
-        <components.List>{listChildren}</components.List>
-      ) : (
-        <div>{listChildren}</div>
-      );
-    })()
-  ),
-}));
-
 global.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
   disconnect() {}
 };
+
+let animationFrameQueue: FrameRequestCallback[] = [];
+
+global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+  animationFrameQueue.push(callback);
+  return animationFrameQueue.length;
+}) as typeof global.requestAnimationFrame;
+
+global.cancelAnimationFrame = ((id: number) => {
+  const index = id - 1;
+  if (index >= 0 && index < animationFrameQueue.length) {
+    animationFrameQueue[index] = () => {};
+  }
+}) as typeof global.cancelAnimationFrame;
 
 function createSession(
   id: string,
@@ -131,7 +104,37 @@ const defaultProps = {
   onToggleBookmark: () => {},
 };
 
+function flushAnimationFrames() {
+  const callbacks = [...animationFrameQueue];
+  animationFrameQueue = [];
+  callbacks.forEach((callback) => callback(performance.now()));
+}
+
+function mockElementRect(
+  element: Element,
+  rect: Partial<DOMRect> & Pick<DOMRect, 'bottom'>,
+) {
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({
+      x: 0,
+      y: 0,
+      top: rect.top ?? 0,
+      right: rect.right ?? 0,
+      bottom: rect.bottom,
+      left: rect.left ?? 0,
+      width: rect.width ?? 0,
+      height: rect.height ?? 0,
+      toJSON: () => ({}),
+    }),
+  });
+}
+
 describe('SessionHistoryPanel', () => {
+  beforeEach(() => {
+    animationFrameQueue = [];
+  });
+
   it('correctly calculates descendant counts for a session tree', () => {
     const sessions: AgentSession[] = [
       createSession('root', 'Root'),
@@ -181,7 +184,7 @@ describe('SessionHistoryPanel', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('renders the virtualized session list with list semantics', () => {
+  it('renders the session list with list semantics', () => {
     render(
       <SessionHistoryPanel
         sessions={[createSession('root', 'Root')]}
@@ -195,6 +198,80 @@ describe('SessionHistoryPanel', () => {
     const sessionList = screen.getByRole('list');
     expect(sessionList).toHaveAttribute('aria-labelledby', 'session-heading');
     expect(screen.getAllByRole('listitem')).not.toHaveLength(0);
+  });
+
+  it('loads more sessions when the load more button is pressed', () => {
+    const onLoadMore = vi.fn();
+
+    render(
+      <SessionHistoryPanel
+        sessions={[createSession('root', 'Root')]}
+        isLoading={false}
+        {...defaultProps}
+        hasMoreSessions
+        onLoadMore={onLoadMore}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not load more sessions while a page is already loading', () => {
+    const onLoadMore = vi.fn();
+
+    render(
+      <SessionHistoryPanel
+        sessions={[createSession('root', 'Root')]}
+        isLoading={false}
+        {...defaultProps}
+        hasMoreSessions
+        isLoadingMoreSessions
+        onLoadMore={onLoadMore}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Loading more...' }));
+
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it('loads more sessions when the sentinel approaches the nearest scrollable parent', () => {
+    const onLoadMore = vi.fn();
+    const { container } = render(
+      <div data-testid="scroll-parent" style={{ overflowY: 'auto' }}>
+        <SessionHistoryPanel
+          sessions={[createSession('root', 'Root')]}
+          isLoading={false}
+          {...defaultProps}
+          hasMoreSessions
+          onLoadMore={onLoadMore}
+          activeStatusFilter="all"
+          searchQuery=""
+        />
+      </div>,
+    );
+
+    const scrollParent = container.firstElementChild;
+    expect(scrollParent).not.toBeNull();
+
+    const sentinel = screen.getByTestId('session-history-load-more-sentinel');
+    mockElementRect(scrollParent!, { bottom: 800, top: 0, height: 800 });
+    mockElementRect(sentinel, { bottom: 1200, top: 1199, height: 1 });
+
+    flushAnimationFrames();
+    expect(onLoadMore).not.toHaveBeenCalled();
+
+    mockElementRect(sentinel, { bottom: 900, top: 899, height: 1 });
+    fireEvent.scroll(scrollParent!);
+    flushAnimationFrames();
+
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
 
   it('expands child sessions when the root is toggled', () => {

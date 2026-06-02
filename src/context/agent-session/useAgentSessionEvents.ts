@@ -219,6 +219,26 @@ export function useAgentSessionEvents(
               break;
             }
 
+            case 'interactiveShellInputRequested': {
+              setters.setPendingInteractiveShellPrompt({
+                executionId: payload.executionId,
+                prompt: payload.prompt,
+                inputType: payload.inputType,
+                command: payload.command,
+              });
+              setters.setWorkflowPhase('using_tools');
+              break;
+            }
+
+            case 'interactiveShellInputResolved': {
+              setters.setPendingInteractiveShellPrompt((currentPrompt) =>
+                currentPrompt?.executionId === payload.executionId
+                  ? null
+                  : currentPrompt,
+              );
+              break;
+            }
+
             case 'channelPermissionRequest': {
               break;
             }
@@ -231,6 +251,7 @@ export function useAgentSessionEvents(
                 prev ? { ...prev, status: nextStatus } : null,
               );
               setters.setWorkflowPhase('idle');
+              setters.setPendingInteractiveShellPrompt(null);
               logger.info('Workflow phase: idle', {
                 sessionId,
                 reason: payload.reason,
@@ -266,6 +287,7 @@ export function useAgentSessionEvents(
           status: sessionMetadata.status,
           model: sessionMetadata.model,
           provider: sessionMetadata.provider,
+          isBookmarked: sessionMetadata.isBookmarked,
           assistant,
           createdAt: new Date(sessionMetadata.createdAt),
           updatedAt: sessionMetadata.updatedAt

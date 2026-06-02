@@ -6,6 +6,7 @@ import {
     useAgentSessionListState,
     useAgentSessionListActions,
 } from '../AgentSessionListContext';
+import { SESSION_LIST_PAGE_SIZE } from '../agent-session-list/startup-cache';
 import { safeInvoke } from '@/lib/backend/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Assistant } from '@/models/chat';
@@ -151,7 +152,7 @@ describe('AgentSessionListContext', () => {
         });
 
         expect(safeInvoke).toHaveBeenCalledWith('agent_list_sessions', {
-            request: { limit: 100 },
+            request: { limit: SESSION_LIST_PAGE_SIZE },
         });
     });
 
@@ -212,7 +213,7 @@ describe('AgentSessionListContext', () => {
 
         await waitFor(() => {
             expect(safeInvoke).toHaveBeenCalledWith('agent_list_sessions', {
-                request: { limit: 100 },
+                request: { limit: SESSION_LIST_PAGE_SIZE },
             });
         });
 

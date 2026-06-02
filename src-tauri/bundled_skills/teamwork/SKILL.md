@@ -7,6 +7,16 @@ description: Build and scaffold a multi-agent collaboration workspace with the r
 
 Build a task force only when the work is genuinely multi-track. If one capable agent can finish the job cleanly, use one agent.
 
+## Path conventions
+
+Paths in this skill are relative to the directory containing this `SKILL.md` unless the document explicitly says otherwise, and they are not relative to the workspace root or the shell's current `./`.
+
+- Scripts in this skill use paths like `scripts/...`
+- Reference material in this skill uses paths like `references/...`
+- Paths such as workspace `skills/`, `agents.md`, or task-force artifact directories are external workspace targets and are called out explicitly
+- When a command below says `python scripts/...`, resolve that script path against the skill's absolute Base Directory
+- In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
+
 ## Non-Negotiable Rules
 
 1. **One team, one effective workspace.** The governing coordinator and org-visible children keep the normal parent/override workspace inheritance model.
@@ -190,7 +200,7 @@ Prefer deterministic scaffolding:
 prepareTeamworkWorkspace()
 # -> returns artifactPath
 
-python scripts/init_task_force.py \
+python "<skill-base-dir>/scripts/init_task_force.py" \
   --output "/absolute/path/from/prepareTeamworkWorkspace" \
   --team-name "Research Strike Team" \
   --objective "Build a reusable research and implementation team" \

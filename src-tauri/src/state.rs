@@ -120,7 +120,9 @@ pub fn get_app_handle() -> Option<&'static AppHandle> {
 /// # Panics
 /// This function will panic if the URL is already set.
 pub fn set_sqlite_db_url(url: String) {
-    SQLITE_DB_URL.set(url).expect("SQLite DB URL already set");
+    unsafe {
+        force_set(&SQLITE_DB_URL, url);
+    }
 }
 
 /// Gets a reference to the global SQLite database URL, if it has been set.
@@ -178,9 +180,9 @@ pub async fn wait_for_managed_skills_sync() {
 /// # Panics
 /// This function will panic if the connection is already set.
 pub fn set_database_connection(db: DatabaseConnection) {
-    DATABASE_CONNECTION
-        .set(db)
-        .expect("Database connection already initialized");
+    unsafe {
+        force_set(&DATABASE_CONNECTION, db);
+    }
 }
 
 /// Gets a reference to the global database connection.
@@ -201,9 +203,9 @@ pub fn get_database_connection() -> &'static DatabaseConnection {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_message_repository(repo: SqliteMessageRepository) {
-    MESSAGE_REPOSITORY
-        .set(repo)
-        .expect("Message repository already initialized");
+    unsafe {
+        force_set(&MESSAGE_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global message repository.
@@ -224,9 +226,9 @@ pub fn get_message_repository() -> &'static SqliteMessageRepository {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_attachments_repository(repo: SqliteAttachmentsRepository) {
-    ATTACHMENTS_REPOSITORY
-        .set(repo)
-        .expect("Attachments repository already initialized");
+    unsafe {
+        force_set(&ATTACHMENTS_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global attachments repository.
@@ -247,9 +249,9 @@ pub fn get_attachments_repository() -> &'static SqliteAttachmentsRepository {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_session_repository(repo: SqliteSessionRepository) {
-    SESSION_REPOSITORY
-        .set(repo)
-        .expect("Session repository already initialized");
+    unsafe {
+        force_set(&SESSION_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global session repository.
@@ -272,9 +274,9 @@ pub fn try_get_session_repository() -> Option<&'static SqliteSessionRepository> 
 
 /// Sets the global settings repository instance.
 pub fn set_settings_repository(repo: SqliteSettingsRepository) {
-    SETTINGS_REPOSITORY
-        .set(repo)
-        .expect("Settings repository already initialized");
+    unsafe {
+        force_set(&SETTINGS_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global settings repository.
@@ -291,9 +293,9 @@ pub fn try_get_settings_repository() -> Option<&'static SqliteSettingsRepository
 
 /// Sets the global MCP server repository instance.
 pub fn set_mcp_server_repository(repo: SqliteMCPServerRepository) {
-    MCP_SERVER_REPOSITORY
-        .set(repo)
-        .expect("MCP server repository already initialized");
+    unsafe {
+        force_set(&MCP_SERVER_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global MCP server repository.
@@ -308,9 +310,9 @@ pub fn get_mcp_server_repository() -> &'static SqliteMCPServerRepository {
 /// # Panics
 /// This function will panic if the manager is already set.
 pub fn set_mcp_service_proxy_manager(manager: Arc<MCPServiceProxyManager>) {
-    MCP_SERVICE_PROXY_MANAGER
-        .set(manager)
-        .expect("MCP Service Proxy Manager already initialized");
+    unsafe {
+        force_set(&MCP_SERVICE_PROXY_MANAGER, manager);
+    }
 }
 
 /// Gets a reference to the global MCP service proxy manager.
@@ -334,9 +336,9 @@ pub fn get_mcp_service_proxy_manager() -> Arc<MCPServiceProxyManager> {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_assistant_repository(repo: SqliteAssistantRepository) {
-    ASSISTANT_REPOSITORY
-        .set(repo)
-        .expect("Assistant repository already initialized");
+    unsafe {
+        force_set(&ASSISTANT_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global assistant repository.
@@ -357,9 +359,9 @@ pub fn get_assistant_repository() -> &'static SqliteAssistantRepository {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_playbook_repository(repo: SqlitePlaybookRepository) {
-    PLAYBOOK_REPOSITORY
-        .set(repo)
-        .expect("Playbook repository already initialized");
+    unsafe {
+        force_set(&PLAYBOOK_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global playbook repository.
@@ -380,9 +382,9 @@ pub fn get_playbook_repository() -> &'static SqlitePlaybookRepository {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_knowledge_repository(repo: SqliteKnowledgeRepository) {
-    KNOWLEDGE_REPOSITORY
-        .set(repo)
-        .expect("Knowledge repository already initialized");
+    unsafe {
+        force_set(&KNOWLEDGE_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global knowledge repository.
@@ -400,9 +402,9 @@ pub fn get_knowledge_repository() -> &'static SqliteKnowledgeRepository {
 
 /// Sets the global knowledge v2 repository instance.
 pub fn set_knowledge_v2_repository(repo: SqliteKnowledgeV2Repository) {
-    KNOWLEDGE_V2_REPOSITORY
-        .set(repo)
-        .expect("Knowledge v2 repository already initialized");
+    unsafe {
+        force_set(&KNOWLEDGE_V2_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global knowledge v2 repository.
@@ -417,9 +419,9 @@ pub fn get_knowledge_v2_repository() -> &'static SqliteKnowledgeV2Repository {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_planning_repository(repo: SqlitePlanningRepository) {
-    PLANNING_REPOSITORY
-        .set(repo)
-        .expect("Planning repository already initialized");
+    unsafe {
+        force_set(&PLANNING_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global planning repository.
@@ -440,9 +442,9 @@ pub fn get_planning_repository() -> &'static SqlitePlanningRepository {
 /// # Panics
 /// This function will panic if the repository is already set.
 pub fn set_scheduled_task_repository(repo: SqliteScheduledTaskRepository) {
-    SCHEDULED_TASK_REPOSITORY
-        .set(repo)
-        .expect("Scheduled task repository already initialized");
+    unsafe {
+        force_set(&SCHEDULED_TASK_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global scheduled task repository.
@@ -457,9 +459,9 @@ pub fn get_scheduled_task_repository() -> &'static SqliteScheduledTaskRepository
 
 /// Sets the global compact context repository instance.
 pub fn set_compact_context_repository(repo: SqliteCompactContextRepository) {
-    COMPACT_CONTEXT_REPOSITORY
-        .set(repo)
-        .expect("Compact context repository already initialized");
+    unsafe {
+        force_set(&COMPACT_CONTEXT_REPOSITORY, repo);
+    }
 }
 
 /// Gets a reference to the global compact context repository.
@@ -549,4 +551,44 @@ pub fn try_get_active_sessions() -> Option<&'static Arc<TokioRwLock<HashMap<Stri
 pub async fn get_session_cancel_pending(session_id: &str) -> Option<Arc<AtomicBool>> {
     let sessions = get_active_sessions().read().await;
     sessions.get(session_id).map(|s| s.cancel_pending.clone())
+}
+
+unsafe fn reset_lock<T>(lock: &OnceLock<T>) {
+    let ptr = lock as *const OnceLock<T> as *mut OnceLock<T>;
+    let _ = std::ptr::replace(ptr, OnceLock::new());
+}
+
+unsafe fn force_set<T>(lock: &OnceLock<T>, value: T) {
+    let ptr = lock as *const OnceLock<T> as *mut OnceLock<T>;
+    let new_lock = OnceLock::new();
+    let _ = new_lock.set(value);
+    let _ = std::ptr::replace(ptr, new_lock);
+}
+
+/// Reset all global OnceLock structures. Primarily used for integration testing.
+pub fn reset_state() {
+    unsafe {
+        reset_lock(&MCP_SERVICE_PROXY_MANAGER);
+        reset_lock(&SQLITE_DB_URL);
+        reset_lock(&DATABASE_CONNECTION);
+        reset_lock(&MESSAGE_REPOSITORY);
+        reset_lock(&ATTACHMENTS_REPOSITORY);
+        reset_lock(&SESSION_REPOSITORY);
+        reset_lock(&SETTINGS_REPOSITORY);
+        reset_lock(&MCP_SERVER_REPOSITORY);
+        reset_lock(&ASSISTANT_REPOSITORY);
+        reset_lock(&PLAYBOOK_REPOSITORY);
+        reset_lock(&KNOWLEDGE_REPOSITORY);
+        reset_lock(&KNOWLEDGE_V2_REPOSITORY);
+        reset_lock(&PLANNING_REPOSITORY);
+        reset_lock(&SCHEDULED_TASK_REPOSITORY);
+        reset_lock(&COMPACT_CONTEXT_REPOSITORY);
+        reset_lock(&APP_HANDLE);
+        reset_lock(&SESSION_BUS);
+        reset_lock(&CONCURRENCY_GATE);
+        reset_lock(&ACTIVE_SESSIONS);
+        reset_lock(&SKILLS_CATALOG_REVISION);
+        reset_lock(&MANAGED_SKILLS_SYNC_STATE);
+        reset_lock(&STARTUP_TIMER);
+    }
 }

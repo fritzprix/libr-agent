@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.8.0"
+version = "0.8.2"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -42,7 +42,7 @@ keyring = "3.0"
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 tauri-plugin-log = "2"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
-log = "0.4.29"
+log = "0.4.30"
 fern = "0.7"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
@@ -94,7 +94,7 @@ migration = { path = "migration" }
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 tauri-plugin-mcp-bridge = "0.11.2"
 sqlite-vec = "0.1.9"
-fastembed = "5.13.4"
+fastembed = "5.15.0"
 
 [dev-dependencies]
 # test-util enables tokio::time::pause() / advance() for time-controlled async tests.

@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import AgentSessionHeader from './AgentSessionHeader';
 import {
   useAgentSessionActions,
   useAgentSessionState,
 } from '@/context/AgentSessionContext';
+import {
+  useAgentSessionListActions,
+  useAgentSessionListState,
+} from '@/context/AgentSessionListContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
 import { useAgentChat } from '@/context/AgentChatContext';
@@ -31,11 +35,34 @@ export function AgentChatHeader({
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { renameSession } = useAgentSessionActions();
+  const { toggleBookmark } = useAgentSessionListActions();
+  const { sessions, notificationSessions } = useAgentSessionListState();
   const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
   const { messages } = useAgentChat();
   const [isCopying, setIsCopying] = useState(false);
+  const [bookmarkOverride, setBookmarkOverride] = useState<
+    boolean | undefined
+  >();
   const { copyToClipboard } = useClipboard();
+  const activeSessionMetadata = useMemo(() => {
+    if (!session?.id) {
+      return undefined;
+    }
+
+    return (
+      sessions.find((candidate) => candidate.id === session.id) ??
+      notificationSessions.find((candidate) => candidate.id === session.id)
+    );
+  }, [notificationSessions, session?.id, sessions]);
+  const isBookmarked =
+    bookmarkOverride ??
+    activeSessionMetadata?.isBookmarked ??
+    session?.isBookmarked;
+
+  useEffect(() => {
+    setBookmarkOverride(undefined);
+  }, [activeSessionMetadata?.isBookmarked, session?.id, session?.isBookmarked]);
 
   const handleCopyMessages = async () => {
     if (isCopying) return;
@@ -51,8 +78,30 @@ export function AgentChatHeader({
     }
   };
 
+  const handleToggleBookmark = async () => {
+    if (!session?.id) {
+      return;
+    }
+
+    const nextValue = !(isBookmarked ?? false);
+    setBookmarkOverride(nextValue);
+
+    try {
+      await toggleBookmark(session.id);
+    } catch {
+      setBookmarkOverride(undefined);
+      toast.error(t('agent.header.bookmarkError', 'Failed to update bookmark'));
+    }
+  };
+
   return (
-    <AgentSessionHeader onRenameSession={renameSession}>
+    <AgentSessionHeader
+      onRenameSession={renameSession}
+      isBookmarked={isBookmarked}
+      onToggleBookmark={() => {
+        void handleToggleBookmark();
+      }}
+    >
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center">
           {children}

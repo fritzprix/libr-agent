@@ -68,11 +68,32 @@ export type AgentEventPayload =
       metrics: PreflightTokenMetrics;
     }
   | {
+      type: 'interactiveShellInputRequested';
+      sessionId: string;
+      executionId: string;
+      prompt: string;
+      inputType: 'password' | 'text';
+      command: string;
+    }
+  | {
+      type: 'interactiveShellInputResolved';
+      sessionId: string;
+      executionId: string;
+      outcome: string;
+    }
+  | {
       type: 'resourceUpdated';
       resourceType: string;
       action: string;
       resourceId?: string;
     };
+
+export interface PendingInteractiveShellPrompt {
+  executionId: string;
+  prompt: string;
+  inputType: 'password' | 'text';
+  command: string;
+}
 
 export type WorkflowPhase =
   | 'idle'
@@ -103,6 +124,7 @@ export interface AgentSessionStateContextValue {
     status: 'running' | 'complete' | 'error';
   } | null;
   pendingApprovals: PendingApproval[];
+  pendingInteractiveShellPrompt: PendingInteractiveShellPrompt | null;
   yoloModeEnabled: boolean;
   unsafeModeEnabled: boolean;
   executionMode: ExecutionMode;

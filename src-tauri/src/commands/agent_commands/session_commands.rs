@@ -14,7 +14,7 @@ use crate::state::get_session_repository;
 use std::collections::HashMap;
 use tauri::{command, State};
 
-const DEFAULT_SESSION_LIST_LIMIT: u64 = 100;
+const DEFAULT_SESSION_LIST_LIMIT: u64 = 20;
 const MAX_SESSION_LIST_LIMIT: u64 = 200;
 
 /// Create a new agent session
