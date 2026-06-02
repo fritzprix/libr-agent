@@ -8,8 +8,9 @@ Supports both:
 
 Preferred agent flow:
   - Collect email address and any custom server overrides outside the script
-  - Collect the password through a single hidden shell prompt
-  - Pass the password via a temporary environment variable to --password-env
+  - Collect the password through a single hidden shell prompt in a first shell call
+  - Run setup_account.py in a second visible shell call with --password-env so
+    non-secret diagnostics remain visible to the agent
 
 Usage:
     python setup_account.py                         # Interactive wizard
@@ -28,6 +29,8 @@ import ssl
 import stat
 import sys
 from pathlib import Path
+
+NETWORK_TIMEOUT_SECONDS = 15
 
 # ---------------------------------------------------------------------------
 # Server presets — domain suffix → (imap_host, imap_port, smtp_host, smtp_port)
@@ -254,7 +257,12 @@ def test_imap(host: str, port: int, email: str, password: str) -> tuple[bool, st
     """Test IMAP login. Returns (success, error_message)."""
     try:
         context = ssl.create_default_context()
-        with imaplib.IMAP4_SSL(host, port, ssl_context=context) as imap:
+        with imaplib.IMAP4_SSL(
+            host,
+            port,
+            ssl_context=context,
+            timeout=NETWORK_TIMEOUT_SECONDS,
+        ) as imap:
             imap.login(email, password)
         return True, ""
     except imaplib.IMAP4.error as e:
@@ -267,10 +275,15 @@ def test_smtp(host: str, port: int, email: str, password: str) -> tuple[bool, st
     """Test SMTP login. Returns (success, error_message)."""
     try:
         if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=10, context=ssl.create_default_context()) as smtp:
+            with smtplib.SMTP_SSL(
+                host,
+                port,
+                timeout=NETWORK_TIMEOUT_SECONDS,
+                context=ssl.create_default_context(),
+            ) as smtp:
                 smtp.login(email, password)
         else:
-            with smtplib.SMTP(host, port, timeout=10) as smtp:
+            with smtplib.SMTP(host, port, timeout=NETWORK_TIMEOUT_SECONDS) as smtp:
                 smtp.ehlo()
                 smtp.starttls(context=ssl.create_default_context())
                 smtp.login(email, password)

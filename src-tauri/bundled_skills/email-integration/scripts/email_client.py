@@ -45,11 +45,15 @@ CONFIG_PATH = Path.home() / ".libragent" / "email_config"
 
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
-        error_exit("Config not found. Run setup_account.py first.")
+        error_exit(
+            "Config not found. Run the skill's non-interactive setup flow first."
+        )
     try:
         return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        error_exit("Config file is corrupted. Run setup_account.py --reset.")
+        error_exit(
+            "Config file is corrupted. Re-run the skill's non-interactive setup flow with reset."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +123,18 @@ def connect_imap(cfg: dict) -> imaplib.IMAP4_SSL:
     """Open and authenticate IMAP connection."""
     ctx = ssl.create_default_context()
     try:
-        imap = imaplib.IMAP4_SSL(cfg["imap_host"], cfg["imap_port"], ssl_context=ctx)
+        imap = imaplib.IMAP4_SSL(
+            cfg["imap_host"],
+            cfg["imap_port"],
+            ssl_context=ctx,
+            timeout=15,
+        )
         imap.login(cfg["email"], cfg["password"])
         return imap
     except imaplib.IMAP4.error as e:
-        error_exit(f"IMAP auth failed: {e}. Run setup_account.py --reset.")
+        error_exit(
+            f"IMAP auth failed: {e}. Re-run the skill's non-interactive setup flow with reset."
+        )
     except OSError as e:
         error_exit(f"IMAP connection failed: {e}")
 
@@ -144,7 +155,9 @@ def connect_smtp(cfg: dict) -> smtplib.SMTP:
         smtp.login(cfg["email"], cfg["password"])
         return smtp
     except smtplib.SMTPAuthenticationError as e:
-        error_exit(f"SMTP auth failed: {e}. Run setup_account.py --reset.")
+        error_exit(
+            f"SMTP auth failed: {e}. Re-run the skill's non-interactive setup flow with reset."
+        )
     except OSError as e:
         error_exit(f"SMTP connection failed: {e}")
 

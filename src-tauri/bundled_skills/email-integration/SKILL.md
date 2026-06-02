@@ -66,7 +66,7 @@ Instead:
 1. Determine the email address.
 2. For known domains, use the preset profile from `references/server-profiles.md`.
 3. For custom/self-hosted domains, ask for all four values in chat first: IMAP host/port and SMTP host/port.
-4. Collect the password through a **single hidden shell prompt** and pass it to `setup_account.py` through a temporary environment variable.
+4. Collect the password through a **single hidden shell prompt**, store it in a temporary environment variable in the persistent shell, then run `setup_account.py` in a separate visible command that reuses that variable.
 
 ### Preferred PowerShell pattern in LibrAgent
 
@@ -75,54 +75,58 @@ Run `runInPersistentPowerShell` with:
 - `requireUserInput=true`
 - `inputType=password`
 - an `inputPrompt` like `이메일 비밀번호 또는 앱 비밀번호를 입력하세요:`
+- an explicit setup timeout such as `timeout=90`
 
-Command for known preset domains:
+Use a **two-step PowerShell flow** in LibrAgent:
 
-```powershell
-$env:LIBRAGENT_EMAIL_PASSWORD = Read-Host
-try {
-  python "<skill-base-dir>/scripts/setup_account.py" `
-    --email "user@example.com" `
-    --use-preset-servers `
-    --password-env LIBRAGENT_EMAIL_PASSWORD
-} finally {
-  Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
-}
-```
+1. Hidden prompt call: set the temporary password environment variable.
+2. Visible setup call: run `setup_account.py ... --password-env ...` with no hidden input so the script's non-secret diagnostics remain visible.
+3. Cleanup call: remove the temporary environment variable.
 
-Command for reset after auth failure:
+Hidden prompt command:
 
 ```powershell
 $env:LIBRAGENT_EMAIL_PASSWORD = Read-Host
-try {
-  python "<skill-base-dir>/scripts/setup_account.py" `
-    --reset `
-    --email "user@example.com" `
-    --use-preset-servers `
-    --password-env LIBRAGENT_EMAIL_PASSWORD
-} finally {
-  Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
-}
 ```
 
-Command for custom/self-hosted domains:
+Visible setup command for known preset domains:
 
 ```powershell
-$env:LIBRAGENT_EMAIL_PASSWORD = Read-Host
-try {
-  python "<skill-base-dir>/scripts/setup_account.py" `
-    --email "user@example.com" `
-    --imap-host "imap.example.com" `
-    --imap-port 993 `
-    --smtp-host "smtp.example.com" `
-    --smtp-port 587 `
-    --password-env LIBRAGENT_EMAIL_PASSWORD
-} finally {
-  Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
-}
+python "<skill-base-dir>/scripts/setup_account.py" `
+  --email "user@example.com" `
+  --use-preset-servers `
+  --password-env LIBRAGENT_EMAIL_PASSWORD
 ```
 
-On non-PowerShell shells, use the same pattern: collect one hidden password in the shell, export it temporarily, run `setup_account.py --password-env ...`, then clear it.
+Visible setup command for reset after auth failure:
+
+```powershell
+python "<skill-base-dir>/scripts/setup_account.py" `
+  --reset `
+  --email "user@example.com" `
+  --use-preset-servers `
+  --password-env LIBRAGENT_EMAIL_PASSWORD
+```
+
+Visible setup command for custom/self-hosted domains:
+
+```powershell
+python "<skill-base-dir>/scripts/setup_account.py" `
+  --email "user@example.com" `
+  --imap-host "imap.example.com" `
+  --imap-port 993 `
+  --smtp-host "smtp.example.com" `
+  --smtp-port 587 `
+  --password-env LIBRAGENT_EMAIL_PASSWORD
+```
+
+Cleanup command:
+
+```powershell
+Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
+```
+
+On non-PowerShell shells, use the same two-step pattern: collect one hidden password in the shell, export it temporarily, run `setup_account.py --password-env ...` in a separate visible command, then clear it.
 
 After successful setup, proceed to Step 3 with the original user request.
 
@@ -220,9 +224,9 @@ For bulk operations (e.g. "스팸함 비워"), confirm count with user before pr
 
 | Error | Cause | Action |
 |---|---|---|
-| Auth failed (IMAP 535) | Wrong password or App Password needed | Run `python "<skill-base-dir>/scripts/setup_account.py" --reset`, guide user to App Password docs |
-| Connection refused | Wrong host/port | Check `references/server-profiles.md`, offer to re-run setup |
-| Config not found | First run or deleted | Run `python "<skill-base-dir>/scripts/setup_account.py"` |
+| Auth failed (IMAP 535) | Wrong password or App Password needed | Re-run Step 2 with `--reset` using the hidden-prompt + visible setup flow, then guide the user to the provider's App Password docs |
+| Connection refused | Wrong host/port | Check `references/server-profiles.md`, re-collect the four server fields in chat, then re-run Step 2 with an explicit setup timeout |
+| Config not found | First run or deleted | Run Step 2's non-interactive setup flow; do **not** launch the old bare wizard |
 | SSL error | Port mismatch | Suggest switching 993↔143 or 587↔465 |
 | Send failed (SMTP 550) | Recipient rejected | Confirm address with user |
 

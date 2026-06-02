@@ -118,7 +118,7 @@ Use your **Kakao account password**.
 
 ## Custom / Self-Hosted
 
-No preset. `setup_account.py` will prompt for all fields manually.
+No preset. In LibrAgent, collect the four server values in chat first, then pass them to `setup_account.py` with explicit `--imap-host`, `--imap-port`, `--smtp-host`, and `--smtp-port` arguments.
 
 Common patterns:
 
