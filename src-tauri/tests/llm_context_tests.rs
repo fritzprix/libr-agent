@@ -11,7 +11,8 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     build_overflow_recovery_compaction_messages,
     derive_tail_recompaction_recovery_plan_for_testing,
     find_preflight_compactable_end_exclusive_for_testing, fit_compaction_request_messages_to_limit,
-    inspect_compaction_payload, merge_consecutive_user_messages, normalize_request_messages,
+    has_prompt_checkpoint_compaction_target, inspect_compaction_payload,
+    merge_consecutive_user_messages, normalize_request_messages,
     preview_preflight_compaction_selection, resolve_context_management_settings,
     resolve_preserved_calibration_ratio, should_skip_same_tail_compaction,
     uses_compaction_strategy,
@@ -585,6 +586,129 @@ fn test_preflight_compactable_end_respects_effective_budget_after_output_reserve
 
     assert_eq!(full_budget_end, 4);
     assert_eq!(reserve_adjusted_end, 1);
+}
+
+#[test]
+fn test_preflight_compactable_end_falls_back_to_latest_checkpoint_when_overflow_window_starts_before_first_checkpoint(
+) {
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user")
+            .text("checkpoint 0")
+            .prompt_tokens(27_195)
+            .build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text("checkpoint 1")
+            .prompt_tokens(34_492)
+            .build(),
+        TestMessageBuilder::new("m2", "user")
+            .text("checkpoint 2")
+            .prompt_tokens(35_271)
+            .build(),
+        TestMessageBuilder::new("m3", "tool")
+            .text("latest checkpoint")
+            .prompt_tokens(127_783)
+            .build(),
+        TestMessageBuilder::new("m4", "assistant")
+            .text("post-checkpoint assistant")
+            .build(),
+        TestMessageBuilder::new("m5", "user")
+            .text("latest request")
+            .source(MessageSource::Ui)
+            .build(),
+    ];
+
+    let compactable_end_exclusive =
+        find_preflight_compactable_end_exclusive_for_testing(&messages, None, Some(127_165));
+
+    assert_eq!(compactable_end_exclusive, 4);
+}
+
+#[test]
+fn test_prompt_checkpoint_compaction_target_survives_degenerate_near_overflow_window() {
+    let messages = vec![
+        TestMessageBuilder::new("m0", "user")
+            .text("checkpoint 0")
+            .prompt_tokens(27_195)
+            .build(),
+        TestMessageBuilder::new("m1", "assistant")
+            .text("checkpoint 1")
+            .prompt_tokens(34_492)
+            .build(),
+        TestMessageBuilder::new("m2", "user")
+            .text("checkpoint 2")
+            .prompt_tokens(35_271)
+            .build(),
+        TestMessageBuilder::new("m3", "tool")
+            .text("latest checkpoint")
+            .prompt_tokens(127_783)
+            .build(),
+        TestMessageBuilder::new("m4", "assistant")
+            .text("post-checkpoint assistant")
+            .build(),
+        TestMessageBuilder::new("m5", "user")
+            .text("latest request")
+            .source(MessageSource::Ui)
+            .build(),
+    ];
+
+    assert!(has_prompt_checkpoint_compaction_target(
+        &messages, None, 127_165
+    ));
+}
+
+#[test]
+fn test_preflight_compactable_end_advances_past_tool_result_when_checkpoint_fallback_would_orphan_tail(
+) {
+    let mut latest_checkpoint_owner = TestMessageBuilder::new("m1", "assistant")
+        .text("assistant tool owner checkpoint")
+        .prompt_tokens(127_783)
+        .build();
+    latest_checkpoint_owner.tool_calls = Some(vec![AgentToolCall {
+        id: "call_compaction_1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__readFile".to_string(),
+            arguments: "{\"path\":\"notes.txt\"}".to_string(),
+        },
+    }]);
+    let mut tool_result = TestMessageBuilder::new("m2", "tool")
+        .text("tool result")
+        .build();
+    tool_result.tool_call_id = Some("call_compaction_1".to_string());
+
+    let messages = vec![
+        TestMessageBuilder::new("m0", "assistant")
+            .text("older compact summary")
+            .source(MessageSource::CompactSummary)
+            .build(),
+        latest_checkpoint_owner,
+        tool_result,
+        TestMessageBuilder::new("m3", "user")
+            .text("latest request")
+            .source(MessageSource::Ui)
+            .build(),
+    ];
+    let compact_record = CompactContextRecord {
+        id: "compact-1".to_string(),
+        session_id: TEST_SESSION_ID.to_string(),
+        to_id: "m0".to_string(),
+        condensed_count: Some(1),
+        summary: "Existing summary".to_string(),
+        created_at: 123,
+    };
+
+    let compactable_end_exclusive = find_preflight_compactable_end_exclusive_for_testing(
+        &messages,
+        Some(&compact_record),
+        Some(127_165),
+    );
+
+    assert_eq!(compactable_end_exclusive, 3);
+    assert!(has_prompt_checkpoint_compaction_target(
+        &messages,
+        Some(&compact_record),
+        127_165
+    ));
 }
 
 #[test]
