@@ -9,10 +9,10 @@ pub use compaction::{
     build_compaction_request_payload_for_testing, build_overflow_recovery_compaction_messages,
     derive_tail_recompaction_recovery_plan_for_testing,
     find_preflight_compactable_end_exclusive_for_testing, fit_compaction_request_messages_to_limit,
-    inspect_compaction_payload, preview_preflight_compaction_selection,
-    should_skip_same_tail_compaction, trigger_manual_compaction_for_session,
-    trigger_preflight_compaction_for_session, CompactionPayloadDiagnostics,
-    CompactionPayloadMessageDiagnostic, CompactionPreservationHints,
+    has_prompt_checkpoint_compaction_target, inspect_compaction_payload,
+    preview_preflight_compaction_selection, should_skip_same_tail_compaction,
+    trigger_manual_compaction_for_session, trigger_preflight_compaction_for_session,
+    CompactionPayloadDiagnostics, CompactionPayloadMessageDiagnostic, CompactionPreservationHints,
     CompactionRequestPayloadPreview, CompactionSelectionPreview, TailRecompactionRecoveryPlan,
 };
 pub use context::{

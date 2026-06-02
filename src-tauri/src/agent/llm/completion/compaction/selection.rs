@@ -125,6 +125,18 @@ fn retained_tail_has_orphan_tool_messages(messages: &[Message], split_idx: usize
     })
 }
 
+fn find_next_ownership_safe_split(
+    messages: &[Message],
+    delta_start_idx: usize,
+    split_idx: usize,
+) -> Option<usize> {
+    let starting_split_idx = split_idx.max(delta_start_idx.saturating_add(1));
+
+    (starting_split_idx..=messages.len()).find(|candidate_split_idx| {
+        !retained_tail_has_orphan_tool_messages(messages, *candidate_split_idx)
+    })
+}
+
 pub(super) fn build_checkpoint_backoff_split_candidates(
     messages: &[Message],
     compact_context_record: Option<&CompactContextRecord>,
@@ -189,10 +201,20 @@ fn find_prompt_checkpoint_compactable_end_exclusive(
                     .is_some_and(|value| value > compaction_window_start)
             })
             .unwrap_or(latest_checkpoint_relative_idx);
-        return Some(delta_start_idx + preserve_relative_idx);
+        if preserve_relative_idx > 0 {
+            return find_next_ownership_safe_split(
+                messages,
+                delta_start_idx,
+                delta_start_idx + preserve_relative_idx,
+            );
+        }
     }
 
-    Some(delta_start_idx + latest_checkpoint_relative_idx + 1)
+    find_next_ownership_safe_split(
+        messages,
+        delta_start_idx,
+        delta_start_idx + latest_checkpoint_relative_idx + 1,
+    )
 }
 
 pub fn has_prompt_checkpoint_compaction_target(
