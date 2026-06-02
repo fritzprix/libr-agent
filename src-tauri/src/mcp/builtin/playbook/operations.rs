@@ -209,13 +209,20 @@ pub async fn list_playbooks(
     let formatted_list = if playbooks.is_empty() {
         format!("No playbooks found for assistant {}.", assistant_id)
     } else {
-        let mut body = String::from("| # | ID | Goal | Initial Command | Steps | Created At |\n|---|---|---|---|---|---|\n");
+        let mut body = String::from(
+            "| # | ID | Goal | Initial Command | Steps | Created At |\n|---|---|---|---|---|---|\n",
+        );
         for (i, p) in playbooks.iter().enumerate() {
             let created = chrono::DateTime::from_timestamp_millis(p.created_at)
                 .map(|dt| dt.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
             let goal_esc = p.goal.replace('|', "\\|").replace('\n', " ");
-            let cmd_esc = p.initial_command.as_deref().unwrap_or("").replace('|', "\\|").replace('\n', " ");
+            let cmd_esc = p
+                .initial_command
+                .as_deref()
+                .unwrap_or("")
+                .replace('|', "\\|")
+                .replace('\n', " ");
             body.push_str(&format!(
                 "| {} | `{}` | {} | `{}` | {} | {} |\n",
                 (offset as i64) + (i as i64) + 1,
