@@ -24,7 +24,7 @@ def main() -> None:
     if not CONFIG_PATH.exists():
         print(json.dumps({
             "status": "missing",
-            "message": "No config found. Run setup_account.py to configure.",
+            "message": "No config found. Run the skill's Step 2 non-interactive setup flow to configure email, server fields, and password.",
             "action": "setup",
         }))
         sys.exit(1)
