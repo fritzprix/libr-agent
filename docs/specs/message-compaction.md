@@ -342,7 +342,10 @@ Quick mental model first:
 function runTurn(state) {
   const projectedPromptLoad = estimateNextPromptLoadFromLastTruth(state);
 
-  if (projectedPromptLoad == null || projectedPromptLoad >= state.maxInputContext) {
+  if (
+    projectedPromptLoad == null ||
+    projectedPromptLoad >= state.maxInputContext
+  ) {
     const splitCandidates = newestCheckpointAnchorsFirst(state.liveMessages);
 
     if (splitCandidates.length === 0) {

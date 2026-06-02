@@ -209,18 +209,47 @@ pub async fn list_playbooks(
     let formatted_list = if playbooks.is_empty() {
         format!("No playbooks found for assistant {}.", assistant_id)
     } else {
-        playbooks
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                format!(
-                    "{}. {}",
-                    (offset as i64) + (i as i64) + 1,
-                    format_playbook_summary(p)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        let mut body = String::from(
+            "| # | ID | Goal | Initial Command | Steps | Created At |\n|---|---|---|---|---|---|\n",
+        );
+        for (i, p) in playbooks.iter().enumerate() {
+            let created = chrono::DateTime::from_timestamp_millis(p.created_at)
+                .map(|dt| dt.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let goal_esc = p
+                .goal
+                .replace('|', "\\|")
+                .replace('\r', "")
+                .replace('\n', " ");
+            let cmd_esc = p
+                .initial_command
+                .as_deref()
+                .unwrap_or("")
+                .replace('|', "\\|")
+                .replace('\r', "")
+                .replace('\n', " ");
+            body.push_str(&format!(
+                "| {} | `{}` | {} | {} | {} | {} |\n",
+                (offset as i64) + (i as i64) + 1,
+                p.id,
+                goal_esc,
+                cmd_esc,
+                p.workflow.len(),
+                created
+            ));
+        }
+
+        let end_idx = offset as i64 + playbooks.len() as i64;
+        if end_idx < total_items {
+            body.push_str(&format!(
+                "\n*(Showing {} to {} of {} total playbooks. Call this tool again with page: {} to see more)*",
+                offset + 1,
+                end_idx,
+                total_items,
+                page + 1
+            ));
+        }
+        body
     };
 
     let page_result = json!({
