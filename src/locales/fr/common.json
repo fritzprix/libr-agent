@@ -180,7 +180,8 @@
       "open": "Ouvrir la session",
       "lastUsed": "Utilisée {{time}}",
       "defaultMeta": "Enregistrée pour un accès rapide",
-      "more": "+{{count}} de plus dans l'historique"
+      "more": "+{{count}} autres favoris",
+      "browseAll": "Parcourir tous les favoris"
     },
     "toasts": {
       "deleted": "Session supprimée",
@@ -197,6 +198,19 @@
     "statusFilter": {
       "label": "Statut",
       "all": "Tous les statuts"
+    },
+    "bookmarkFilter": {
+      "focused": "Affichage des sessions favorites",
+      "clear": "Afficher toutes les sessions",
+      "empty": "Aucune session favorite pour le moment"
+    },
+    "sort": {
+      "label": "Trier les sessions",
+      "updatedAt": "Activité récente",
+      "createdAt": "Création",
+      "name": "Nom",
+      "ascending": "Trier par ordre croissant",
+      "descending": "Trier par ordre décroissant"
     },
     "lineageHint": {
       "child": "↳ Enfant de {{parentName}}",

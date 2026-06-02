@@ -180,7 +180,8 @@
       "open": "Open session",
       "lastUsed": "Used {{time}}",
       "defaultMeta": "Saved for quick access",
-      "more": "+{{count}} more in history"
+      "more": "+{{count}} more bookmarked",
+      "browseAll": "Browse all bookmarked"
     },
     "toasts": {
       "deleted": "Session deleted",
@@ -197,6 +198,19 @@
     "statusFilter": {
       "label": "Status",
       "all": "All statuses"
+    },
+    "bookmarkFilter": {
+      "focused": "Showing bookmarked sessions",
+      "clear": "Show all sessions",
+      "empty": "No bookmarked sessions yet"
+    },
+    "sort": {
+      "label": "Sort sessions",
+      "updatedAt": "Recent activity",
+      "createdAt": "Created",
+      "name": "Name",
+      "ascending": "Sort ascending",
+      "descending": "Sort descending"
     },
     "lineageHint": {
       "child": "↳ Child of {{parentName}}",

@@ -180,7 +180,8 @@
       "open": "세션 열기",
       "lastUsed": "{{time}} 사용",
       "defaultMeta": "빠르게 다시 열 수 있도록 저장됨",
-      "more": "기록에 {{count}}개 더 있음"
+      "more": "북마크 {{count}}개 더",
+      "browseAll": "모든 북마크 탐색"
     },
     "toasts": {
       "deleted": "세션이 삭제되었습니다",
@@ -197,6 +198,19 @@
     "statusFilter": {
       "label": "상태",
       "all": "모든 상태"
+    },
+    "bookmarkFilter": {
+      "focused": "북마크한 세션만 표시 중",
+      "clear": "모든 세션 보기",
+      "empty": "북마크한 세션이 없습니다"
+    },
+    "sort": {
+      "label": "세션 정렬",
+      "updatedAt": "최신 활동",
+      "createdAt": "생성일",
+      "name": "이름",
+      "ascending": "오름차순 정렬",
+      "descending": "내림차순 정렬"
     },
     "lineageHint": {
       "child": "↳ {{parentName}}의 하위 세션",
