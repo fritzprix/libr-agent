@@ -216,15 +216,20 @@ pub async fn list_playbooks(
             let created = chrono::DateTime::from_timestamp_millis(p.created_at)
                 .map(|dt| dt.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
-            let goal_esc = p.goal.replace('|', "\\|").replace('\n', " ");
+            let goal_esc = p
+                .goal
+                .replace('|', "\\|")
+                .replace('\r', "")
+                .replace('\n', " ");
             let cmd_esc = p
                 .initial_command
                 .as_deref()
                 .unwrap_or("")
                 .replace('|', "\\|")
+                .replace('\r', "")
                 .replace('\n', " ");
             body.push_str(&format!(
-                "| {} | `{}` | {} | `{}` | {} | {} |\n",
+                "| {} | `{}` | {} | {} | {} | {} |\n",
                 (offset as i64) + (i as i64) + 1,
                 p.id,
                 goal_esc,
