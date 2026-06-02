@@ -3,7 +3,7 @@ name: email-integration
 description: |
   Integrates with any IMAP/SMTP mail server (Gmail, Outlook, Naver, Kakao, custom servers, etc.).
   Use when the user wants to read, send, search, reply to, or manage emails.
-  On first use, runs interactive account setup in the terminal to store credentials in a local config file with restricted permissions.
+  On first use, collect the email/server settings, capture the password through a single hidden shell prompt, and run setup_account.py non-interactively to store credentials in a local config file with restricted permissions.
   Subsequent requests use the stored config without re-asking for credentials.
   Triggers on requests like: "메일 보여줘", "이메일 확인", "send email", "받은 편지함", "메일 보내줘", "메일 검색".
 ---
@@ -24,10 +24,11 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 
 ## ⚠️ Security Rules (Mandatory)
 
-- **NEVER** ask for passwords or credentials in chat
+- **NEVER** ask for passwords, app passwords, or other secrets in chat
 - **NEVER** display or repeat the contents of `~/.libragent/email_config`
-- **ALWAYS** use `setup_account.py` for credential collection — it uses `getpass()` so input is hidden in terminal
-- If the user accidentally pastes credentials in chat, acknowledge receipt, do NOT echo them back, and immediately run setup to store them properly
+- Ask for the email address and custom server overrides in chat only when needed; collect the password only through a hidden shell prompt
+- **ALWAYS** use `setup_account.py` to persist credentials
+- If the user accidentally pastes a password or other secret in chat, acknowledge receipt, do NOT echo it back, and immediately run setup to store it properly
 
 ---
 
@@ -36,7 +37,7 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 Email integration involves these steps:
 
 1. **Detect config** — run `validate_config.py` to check if account is configured
-2. **Setup (first time only)** — run `setup_account.py` interactively in terminal
+2. **Setup (first time only)** — gather non-secret setup fields, then run `setup_account.py` with args plus one hidden password prompt
 3. **Dispatch action** — classify the user's request and call `email_client.py` with the right action
 4. **Present results** — format and summarize the output for the user
 
@@ -58,24 +59,70 @@ python "<skill-base-dir>/scripts/validate_config.py"
 
 ## Step 2: Account Setup (First Time or Reset)
 
-Tell the user setup is needed, then run in terminal:
+Do **not** run `python "<skill-base-dir>/scripts/setup_account.py"` bare inside LibrAgent. That old terminal wizard asks for multiple prompts and can time out under the current prompt-resume shell contract.
 
-```bash
-python "<skill-base-dir>/scripts/setup_account.py"
+Instead:
+
+1. Determine the email address.
+2. For known domains, use the preset profile from `references/server-profiles.md`.
+3. For custom/self-hosted domains, ask for all four values in chat first: IMAP host/port and SMTP host/port.
+4. Collect the password through a **single hidden shell prompt** and pass it to `setup_account.py` through a temporary environment variable.
+
+### Preferred PowerShell pattern in LibrAgent
+
+Run `runInPersistentPowerShell` with:
+
+- `requireUserInput=true`
+- `inputType=password`
+- an `inputPrompt` like `이메일 비밀번호 또는 앱 비밀번호를 입력하세요:`
+
+Command for known preset domains:
+
+```powershell
+$env:LIBRAGENT_EMAIL_PASSWORD = Read-Host
+try {
+  python "<skill-base-dir>/scripts/setup_account.py" `
+    --email "user@example.com" `
+    --use-preset-servers `
+    --password-env LIBRAGENT_EMAIL_PASSWORD
+} finally {
+  Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
+}
 ```
 
-For reset after auth failure:
+Command for reset after auth failure:
 
-```bash
-python "<skill-base-dir>/scripts/setup_account.py" --reset
+```powershell
+$env:LIBRAGENT_EMAIL_PASSWORD = Read-Host
+try {
+  python "<skill-base-dir>/scripts/setup_account.py" `
+    --reset `
+    --email "user@example.com" `
+    --use-preset-servers `
+    --password-env LIBRAGENT_EMAIL_PASSWORD
+} finally {
+  Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
+}
 ```
 
-The script will:
-1. Prompt for email address (visible)
-2. Auto-detect server settings from domain (see `references/server-profiles.md`)
-3. Prompt for password using `getpass()` — **input is hidden**
-4. Test the connection live
-5. Save to `~/.libragent/email_config` with restricted permissions
+Command for custom/self-hosted domains:
+
+```powershell
+$env:LIBRAGENT_EMAIL_PASSWORD = Read-Host
+try {
+  python "<skill-base-dir>/scripts/setup_account.py" `
+    --email "user@example.com" `
+    --imap-host "imap.example.com" `
+    --imap-port 993 `
+    --smtp-host "smtp.example.com" `
+    --smtp-port 587 `
+    --password-env LIBRAGENT_EMAIL_PASSWORD
+} finally {
+  Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
+}
+```
+
+On non-PowerShell shells, use the same pattern: collect one hidden password in the shell, export it temporarily, run `setup_account.py --password-env ...`, then clear it.
 
 After successful setup, proceed to Step 3 with the original user request.
 

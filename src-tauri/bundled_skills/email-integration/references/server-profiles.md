@@ -1,7 +1,8 @@
 # Mail Server Profiles
 
 Reference for `setup_account.py` auto-detection and manual troubleshooting.
-When a domain matches, these settings are applied as defaults (user can override).
+When a domain matches, these settings can be applied directly with `--use-preset-servers`.
+For custom/self-hosted domains, pass all four server flags explicitly.
 
 ---
 
