@@ -53,7 +53,7 @@ python "<skill-base-dir>/scripts/validate_config.py"
 
 - Exit code `0` → configured, proceed to Step 3
 - Exit code `1` → not configured, go to Step 2
-- Exit code `2` → config exists but invalid (e.g. wrong password), go to Step 2 with `--reset` flag
+- Exit code `2` → config exists but is incomplete/corrupt, go to Step 2 with `--reset` flag
 
 ---
 
@@ -64,8 +64,8 @@ Do **not** run `python "<skill-base-dir>/scripts/setup_account.py"` bare inside 
 Instead:
 
 1. Determine the email address.
-2. For known domains, use the preset profile from `references/server-profiles.md`.
-3. For custom/self-hosted domains, ask for all four values in chat first: IMAP host/port and SMTP host/port.
+2. For known preset domains from `references/server-profiles.md`, use the preset flow.
+3. For custom/self-hosted domains, including corporate Microsoft 365 domains outside `*.onmicrosoft.com`, ask for all four values in chat first: IMAP host/port and SMTP host/port.
 4. Collect the password through a **single hidden shell prompt**, store it in a temporary environment variable in the persistent shell, then run `setup_account.py` in a separate visible command that reuses that variable.
 
 ### Preferred PowerShell pattern in LibrAgent
@@ -83,11 +83,15 @@ Use a **two-step PowerShell flow** in LibrAgent:
 2. Visible setup call: run `setup_account.py ... --password-env ...` with no hidden input so the script's non-secret diagnostics remain visible.
 3. Cleanup call: remove the temporary environment variable.
 
+Use `--password-env` for this two-step persistent-shell pattern. If the runtime can pipe the hidden password directly into the setup command's stdin without exposing it, `--password-stdin` is a more private alternative.
+
 Hidden prompt command:
 
 ```powershell
 $env:LIBRAGENT_EMAIL_PASSWORD = Read-Host
 ```
+
+This `Read-Host` snippet is safe **only** when LibrAgent is enforcing hidden password input for that call. Running it directly in a normal terminal will echo the password on screen.
 
 Visible setup command for known preset domains:
 
@@ -126,7 +130,7 @@ Cleanup command:
 Remove-Item Env:LIBRAGENT_EMAIL_PASSWORD -ErrorAction SilentlyContinue
 ```
 
-On non-PowerShell shells, use the same two-step pattern: collect one hidden password in the shell, export it temporarily, run `setup_account.py --password-env ...` in a separate visible command, then clear it.
+On non-PowerShell shells, use the same two-step pattern: collect one hidden password in the shell, export it temporarily, run `setup_account.py --password-env ...` in a separate visible command, then clear it. If the shell/tool runtime can securely pipe the hidden password straight into stdin, use `setup_account.py --password-stdin` instead of a temporary environment variable.
 
 After successful setup, proceed to Step 3 with the original user request.
 

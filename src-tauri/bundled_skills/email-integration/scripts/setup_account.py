@@ -73,6 +73,23 @@ SERVER_PRESETS = {
         "smtp_port": 587,
         "auth_note": "Same as Outlook — enable IMAP in settings first.",
     },
+    "live.com": {
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.office365.com",
+        "smtp_port": 587,
+        "auth_note": "Same as Outlook — enable IMAP in settings first.",
+    },
+    "onmicrosoft.com": {
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.office365.com",
+        "smtp_port": 587,
+        "auth_note": (
+            "Microsoft 365 may require IMAP or SMTP AUTH to be enabled by the tenant admin.\n"
+            "Custom corporate domains are not auto-detected; use explicit server flags for those."
+        ),
+    },
     "naver.com": {
         "imap_host": "imap.naver.com",
         "imap_port": 993,
@@ -107,6 +124,36 @@ SERVER_PRESETS = {
             "Generate one at: https://login.yahoo.com/account/security"
         ),
     },
+    "icloud.com": {
+        "imap_host": "imap.mail.me.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.mail.me.com",
+        "smtp_port": 587,
+        "auth_note": (
+            "iCloud Mail requires an app-specific password.\n"
+            "Generate one at: https://appleid.apple.com"
+        ),
+    },
+    "me.com": {
+        "imap_host": "imap.mail.me.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.mail.me.com",
+        "smtp_port": 587,
+        "auth_note": (
+            "iCloud Mail requires an app-specific password.\n"
+            "Generate one at: https://appleid.apple.com"
+        ),
+    },
+    "mac.com": {
+        "imap_host": "imap.mail.me.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.mail.me.com",
+        "smtp_port": 587,
+        "auth_note": (
+            "iCloud Mail requires an app-specific password.\n"
+            "Generate one at: https://appleid.apple.com"
+        ),
+    },
 }
 
 CONFIG_PATH = Path.home() / ".libragent" / "email_config"
@@ -122,7 +169,14 @@ def fail(message: str, exit_code: int = 1) -> None:
 def get_preset(email: str) -> dict | None:
     """Return server preset for the given email domain, or None if unknown."""
     domain = email.split("@")[-1].lower()
-    return SERVER_PRESETS.get(domain)
+    preset = SERVER_PRESETS.get(domain)
+    if preset:
+        return preset
+
+    if domain.endswith(".onmicrosoft.com"):
+        return SERVER_PRESETS["onmicrosoft.com"]
+
+    return None
 
 
 def server_from_preset(preset: dict) -> dict:

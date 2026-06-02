@@ -1,8 +1,9 @@
 # Mail Server Profiles
 
 Reference for `setup_account.py` auto-detection and manual troubleshooting.
-When a domain matches, these settings can be applied directly with `--use-preset-servers`.
-For custom/self-hosted domains, pass all four server flags explicitly.
+Known preset domains can be applied directly with `--use-preset-servers`.
+Auto-detected presets currently include: `gmail.com`, `googlemail.com`, `outlook.com`, `hotmail.com`, `live.com`, `*.onmicrosoft.com`, `naver.com`, `kakao.com`, `daum.net`, `yahoo.com`, `icloud.com`, `me.com`, and `mac.com`.
+For custom/self-hosted domains, including corporate domains outside `*.onmicrosoft.com`, pass all four server flags explicitly.
 
 ---
 
@@ -44,7 +45,7 @@ Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP
 
 ---
 
-## Microsoft 365 / Work Outlook (`*.onmicrosoft.com`, corporate domains)
+## Microsoft 365 / Work Outlook (`*.onmicrosoft.com`)
 
 | Setting | Value |
 | --- | --- |
@@ -53,9 +54,13 @@ Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP
 | SMTP host | `smtp.office365.com` |
 | SMTP port | `587` (STARTTLS) |
 
+**Auto-detected only for `*.onmicrosoft.com` addresses.**
+
 **Note:** Corporate M365 tenants may block Basic Auth (username/password).
 If login fails, the admin needs to enable SMTP AUTH per-mailbox:
 `Exchange Admin Center → Mailboxes → [user] → Mail flow settings → Authenticated SMTP`
+
+For custom corporate domains that are backed by Microsoft 365, collect and pass the four server values explicitly instead of relying on `--use-preset-servers`.
 
 ---
 
