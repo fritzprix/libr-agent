@@ -7,3 +7,6 @@
 ## 2026-05-20 - Markdown Table Density
 **Learning:** Converting grouped Markdown lists into dense Markdown tables significantly improves token density and LLM readability for tools returning collections like `listTools`.
 **Action:** When mapping list responses, flatten grouped hierarchies into Markdown tables and escape pipe characters and newlines in description fields.
+## 2024-06-02 - Markdown Tables for MCP List Responses
+**Learning:** The LLM context window gets bloated and readability suffers when list endpoints return unstructured text representations or raw JSON strings.
+**Action:** Always format MCP list tool responses (e.g., `listPlaybooks`) as dense Markdown tables. Always sanitize data by escaping pipe characters (`|` to `\|`) and replacing newlines (`\n` to spaces) to prevent breaking the table structure.
