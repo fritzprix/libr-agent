@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.2] - 2026-06-03
+
+### 🐛 Fixes
+
+- **Non-Interactive Email Setup**: Hardened and aligned email presets to ensure email integration configuration works smoothly in non-interactive setups.
+- **Compaction Checkpoint Fallback**: Stabilized context compaction checkpoint fallback behavior for improved runtime session recovery.
+
+### 🔧 Internal
+
+- **Integration Test Consolidation**: Consolidated 113+ separate integration test binaries into a single unified test target (`integration_tests.rs`) to eliminate over 460 GiB of Cargo test storage bloat and resolve parallel `OnceLock` initialization panics.
+
 ## [0.8.1] - 2026-06-02
 
 ### 🚀 Features
