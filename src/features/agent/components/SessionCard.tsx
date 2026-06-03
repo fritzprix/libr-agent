@@ -219,10 +219,6 @@ export function SessionCard({
     updatedAtLabel,
     createdAtLabel,
   ].filter((value): value is string => Boolean(value));
-  const contentIndentStyle =
-    nestingLevel > 0
-      ? { paddingLeft: `${Math.min(nestingLevel, 4) * 14}px` }
-      : undefined;
 
   return (
     <article
@@ -235,6 +231,7 @@ export function SessionCard({
       aria-label={t('sessionHistory.card.ariaLabel', 'Session: {{name}}', {
         name: sessionNameFallback,
       })}
+      data-nesting-level={nestingLevel}
     >
       <div
         className={cn(
@@ -243,7 +240,7 @@ export function SessionCard({
         )}
         aria-hidden="true"
       />
-      <div className="space-y-2.5" style={contentIndentStyle}>
+      <div className="space-y-2.5">
         <div className="grid grid-cols-[auto,minmax(0,1fr),auto] items-start gap-2">
           <div className="pt-0.5">
             {hasExpandableChildren ? (

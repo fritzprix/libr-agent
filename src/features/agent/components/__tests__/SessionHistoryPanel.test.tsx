@@ -202,6 +202,32 @@ describe('SessionHistoryPanel', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('applies row-level indentation for expanded child sessions', () => {
+    const sessions: AgentSession[] = [
+      createSession('root', 'Root'),
+      createSession('child', 'Child', { parentSessionId: 'root' }),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
+
+    const rootRow = screen.getByTestId('session-card-root').closest('[role="listitem"]');
+    const childRow = screen.getByTestId('session-card-child').closest('[role="listitem"]');
+
+    expect(rootRow).not.toHaveStyle({ paddingLeft: '18px' });
+    expect(childRow).toHaveStyle({ paddingLeft: '18px' });
+    expect(childRow?.firstElementChild).toHaveClass('border-l', 'pl-3');
+  });
+
   it('sorts root sessions by latest activity descending by default', () => {
     const sessions: AgentSession[] = [
       createSession('older', 'Older Session', {

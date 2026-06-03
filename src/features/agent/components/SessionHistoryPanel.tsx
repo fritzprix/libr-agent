@@ -108,6 +108,8 @@ const HISTORY_CONTENT_RAIL_CLASS = 'mx-auto w-full max-w-4xl';
 const HISTORY_SECTION_CLASS =
   'rounded-xl border bg-card/80 p-4 shadow-sm shadow-black/5';
 const BOOKMARK_PREVIEW_LIMIT = 6;
+const TREE_INDENT_PX = 18;
+const MAX_TREE_INDENT_LEVEL = 8;
 const sessionSortValues: SessionSortKey[] = ['updatedAt', 'createdAt', 'name'];
 
 function getSessionDisplayName(
@@ -762,32 +764,53 @@ export function SessionHistoryPanel({
       hasExpandableChildren,
       isExpanded,
       descendantStatusCounts: rowDescendantStatusCounts,
-    }: SessionHistoryRow) => (
-      <div key={session.id} role="listitem">
-        <div className="pb-4">
-          <SessionCard
-            session={session}
-            onResume={onResume}
-            onDelete={onDelete}
-            onDeleteOnly={onDeleteOnly}
-            onToggleBookmark={onToggleBookmark}
-            nestingLevel={nestingLevel}
-            lineageHint={lineageHint}
-            selectedLineageId={selectedLineageId}
-            descendantCount={descendantCounts.get(session.id) ?? 0}
-            descendantStatusCounts={rowDescendantStatusCounts}
-            hasExpandableChildren={hasExpandableChildren}
-            isExpanded={isExpanded}
-            onToggleExpand={handleToggleExpand}
-            onLineageSelect={(lineageId) =>
-              setSelectedLineageId((prev) =>
-                prev === lineageId ? null : lineageId,
-              )
-            }
-          />
+    }: SessionHistoryRow) => {
+      const indentationPx =
+        nestingLevel > 0
+          ? Math.min(nestingLevel, MAX_TREE_INDENT_LEVEL) * TREE_INDENT_PX
+          : 0;
+
+      return (
+        <div
+          key={session.id}
+          role="listitem"
+          style={
+            indentationPx > 0
+              ? { paddingLeft: `${indentationPx}px` }
+              : undefined
+          }
+        >
+          <div
+            className={cn(
+              'pb-4',
+              nestingLevel > 0 &&
+                'border-l border-border/50 pl-3 dark:border-border/60',
+            )}
+          >
+            <SessionCard
+              session={session}
+              onResume={onResume}
+              onDelete={onDelete}
+              onDeleteOnly={onDeleteOnly}
+              onToggleBookmark={onToggleBookmark}
+              nestingLevel={nestingLevel}
+              lineageHint={lineageHint}
+              selectedLineageId={selectedLineageId}
+              descendantCount={descendantCounts.get(session.id) ?? 0}
+              descendantStatusCounts={rowDescendantStatusCounts}
+              hasExpandableChildren={hasExpandableChildren}
+              isExpanded={isExpanded}
+              onToggleExpand={handleToggleExpand}
+              onLineageSelect={(lineageId) =>
+                setSelectedLineageId((prev) =>
+                  prev === lineageId ? null : lineageId,
+                )
+              }
+            />
+          </div>
         </div>
-      </div>
-    ),
+      );
+    },
     [
       descendantCounts,
       handleToggleExpand,
