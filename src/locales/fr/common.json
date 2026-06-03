@@ -1025,7 +1025,7 @@
     "metrics": {
       "completionTokens": "Completion Tokens",
       "tokensPerSecond": "Tokens per second",
-      "cacheHit": "Cache Hit: {{count}} tokens ({{percent}}%)",
+      "cacheHit": "Cache Hit: {{countStr}} tokens ({{percent}}%)",
       "promptTokens": "Prompt Tokens",
       "promptTokensCache": "Prompt Tokens (Read from Cache: {{read}}, Created: {{created}})",
       "preflightContext": "Backend preflight context estimate: {{display}}{{limit}} tokens. Reserved output: {{reserved}}. Total budget: {{totalBudget}}. Effective input budget: {{effectiveBudget}}. Provider prompt tokens: {{providerTokens}}. System prompt: {{systemPrompt}}. Tools: {{tools}}. Selected messages: {{selectedMessages}}.{{prefill}}"

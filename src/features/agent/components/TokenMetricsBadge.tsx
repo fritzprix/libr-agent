@@ -161,11 +161,14 @@ export function TokenMetricsBadge({
           <span
             data-testid="cache-hit-indicator"
             className="flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 bg-cyan-400/10 px-1 rounded border border-cyan-400/20 shrink-0"
-            title={t('agent.metrics.cacheHit', {
-              count: formatNumber(cachedTokens),
-              percent: cacheHitPercent,
-              defaultValue: `Cache Hit: ${formatNumber(cachedTokens)} tokens (${cacheHitPercent}%)`,
-            })}
+            title={t(
+              'agent.metrics.cacheHit',
+              `Cache Hit: ${formatNumber(cachedTokens)} tokens (${cacheHitPercent}%)`,
+              {
+                countStr: formatNumber(cachedTokens),
+                percent: cacheHitPercent,
+              },
+            )}
           >
             <Zap size={10} className="fill-current" />
             {cacheIndicatorText}
