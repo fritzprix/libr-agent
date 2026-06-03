@@ -180,7 +180,8 @@
       "open": "打开会话",
       "lastUsed": "最近使用于 {{time}}",
       "defaultMeta": "已保存，方便快速返回",
-      "more": "历史记录中还有 {{count}} 个"
+      "more": "还有 {{count}} 个书签",
+      "browseAll": "查看全部书签"
     },
     "toasts": {
       "deleted": "会话已删除",
@@ -197,6 +198,19 @@
     "statusFilter": {
       "label": "状态",
       "all": "所有状态"
+    },
+    "bookmarkFilter": {
+      "focused": "正在显示已加书签的会话",
+      "clear": "显示所有会话",
+      "empty": "还没有已加书签的会话"
+    },
+    "sort": {
+      "label": "排序会话",
+      "updatedAt": "最近活动",
+      "createdAt": "创建时间",
+      "name": "名称",
+      "ascending": "按升序排序",
+      "descending": "按降序排序"
     },
     "lineageHint": {
       "child": "↳ {{parentName}} 的子级",

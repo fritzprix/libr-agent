@@ -27,6 +27,8 @@ import {
   BookmarkCheck,
   Clock3,
   StarOff,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   buildChildrenMap,
@@ -37,7 +39,10 @@ import {
   type SessionStatusCounts,
 } from '@/lib/session-utils';
 import { formatRelativeTime } from '@/lib/date-utils';
-import { sortSessionsByLatestActivity } from '@/lib/session-metadata';
+import {
+  getLatestSessionActivityTimestamp,
+  sortSessionsByLatestActivity,
+} from '@/lib/session-metadata';
 import type { AgentSession } from '@/models/agent';
 import { SessionCard } from './SessionCard';
 
@@ -61,6 +66,8 @@ interface SessionHistoryPanelProps {
   searchPlaceholder?: string;
   emptyStateTitle?: string;
   emptyStateSubtitle?: string;
+  initialSortKey?: SessionSortKey;
+  initialSortDirection?: SessionSortDirection;
 }
 
 interface SessionHistoryRow {
@@ -73,6 +80,8 @@ interface SessionHistoryRow {
 }
 
 type SessionHistoryTranslate = ReturnType<typeof useTranslation>['t'];
+type SessionSortKey = 'updatedAt' | 'createdAt' | 'name';
+type SessionSortDirection = 'asc' | 'desc';
 
 function findScrollParent(element: HTMLElement | null): HTMLElement | null {
   let current = element?.parentElement ?? null;
@@ -98,25 +107,91 @@ interface BookmarkedSessionTileProps {
 const HISTORY_CONTENT_RAIL_CLASS = 'mx-auto w-full max-w-4xl';
 const HISTORY_SECTION_CLASS =
   'rounded-xl border bg-card/80 p-4 shadow-sm shadow-black/5';
+const BOOKMARK_PREVIEW_LIMIT = 6;
+const TREE_INDENT_PX = 18;
+const MAX_TREE_INDENT_LEVEL = 8;
+const sessionSortValues: SessionSortKey[] = ['updatedAt', 'createdAt', 'name'];
 
-function BookmarkedSessionTile({
+function getSessionDisplayName(
+  session: AgentSession,
+  t: SessionHistoryTranslate,
+): string {
+  return (
+    session.name ||
+    t('sessionHistory.card.fallbackName', 'Session {{id}}', {
+      id: session.id.slice(0, 8),
+    })
+  );
+}
+
+function isSessionSortKey(value: string): value is SessionSortKey {
+  return sessionSortValues.includes(value as SessionSortKey);
+}
+
+function getSessionSortTimestamp(
+  session: AgentSession,
+  sortKey: Extract<SessionSortKey, 'updatedAt' | 'createdAt'>,
+): number {
+  if (sortKey === 'updatedAt') {
+    return getLatestSessionActivityTimestamp(session);
+  }
+
+  return session.createdAt.getTime();
+}
+
+function compareSessionsBySort(
+  left: AgentSession,
+  right: AgentSession,
+  sortKey: SessionSortKey,
+  sortDirection: SessionSortDirection,
+  t: SessionHistoryTranslate,
+): number {
+  let comparison = 0;
+
+  if (sortKey === 'name') {
+    comparison = getSessionDisplayName(left, t).localeCompare(
+      getSessionDisplayName(right, t),
+      undefined,
+      {
+        numeric: true,
+        sensitivity: 'base',
+      },
+    );
+  } else {
+    comparison =
+      getSessionSortTimestamp(left, sortKey) -
+      getSessionSortTimestamp(right, sortKey);
+  }
+
+  if (comparison === 0) {
+    return 0;
+  }
+
+  return sortDirection === 'asc' ? comparison : -comparison;
+}
+
+function compareSessionsByLatestActivityDesc(
+  left: AgentSession,
+  right: AgentSession,
+): number {
+  return (
+    getSessionSortTimestamp(right, 'updatedAt') -
+    getSessionSortTimestamp(left, 'updatedAt')
+  );
+}
+
+function BookmarkedSessionRow({
   session,
   onResume,
   onToggleBookmark,
   t,
 }: BookmarkedSessionTileProps) {
-  const shortcutLabel =
-    session.name ||
-    t('sessionHistory.card.fallbackName', 'Session {{id}}', {
-      id: session.id.slice(0, 8),
-    });
+  const shortcutLabel = getSessionDisplayName(session, t);
   const latestActivity =
-    formatRelativeTime(session.updatedAt ?? session.createdAt, new Date()) ||
-    t('sessionHistory.card.justNow', 'just now');
-  const statusLabel = t(
-    `sessionHistory.status.${session.status}`,
-    session.status,
-  );
+    formatRelativeTime(
+      new Date(getLatestSessionActivityTimestamp(session)),
+      new Date(),
+    ) || t('sessionHistory.card.justNow', 'just now');
   const secondaryLabel =
     session.assistant?.name ||
     (session.provider && session.model
@@ -127,67 +202,48 @@ function BookmarkedSessionTile({
         ));
 
   return (
-    <article className="rounded-xl border bg-background/80 p-3 shadow-sm shadow-black/5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2">
-            <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-foreground">
-              {shortcutLabel}
-            </h3>
-            <Badge
-              variant="secondary"
-              className="h-5 shrink-0 px-1.5 text-[10px]"
-            >
-              {statusLabel}
-            </Badge>
+    <div className="flex items-center gap-2 rounded-lg border bg-background/80 px-3 py-2 shadow-sm shadow-black/5">
+      <Button
+        type="button"
+        variant="ghost"
+        className="-my-1 h-auto min-w-0 flex-1 justify-start px-2 py-1"
+        onClick={() => onResume(session.id)}
+        aria-label={t(
+          'sessionHistory.bookmarkedSection.resumeAria',
+          'Open bookmarked session {{name}}',
+          { name: shortcutLabel },
+        )}
+      >
+        <div className="min-w-0 flex-1 text-left">
+          <div className="truncate text-sm font-semibold leading-5 text-foreground">
+            {shortcutLabel}
           </div>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {secondaryLabel}
-          </p>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="truncate">{secondaryLabel}</span>
+            <span aria-hidden="true">•</span>
+            <Clock3 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {t('sessionHistory.bookmarkedSection.lastUsed', 'Used {{time}}', {
+                time: latestActivity,
+              })}
+            </span>
+          </div>
         </div>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 shrink-0"
-          onClick={() => onToggleBookmark?.(session.id)}
-          aria-label={t(
-            'sessionHistory.actions.unbookmarkAria',
-            'Remove bookmark',
-          )}
-        >
-          <StarOff className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </div>
-
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-          <Clock3 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">
-            {t('sessionHistory.bookmarkedSection.lastUsed', 'Used {{time}}', {
-              time: latestActivity,
-            })}
-          </span>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 px-2"
-          onClick={() => onResume(session.id)}
-          aria-label={t(
-            'sessionHistory.bookmarkedSection.resumeAria',
-            'Open bookmarked session {{name}}',
-            { name: shortcutLabel },
-          )}
-        >
-          <BookmarkCheck className="h-4 w-4 text-warning" />
-          <span>
-            {t('sessionHistory.bookmarkedSection.open', 'Open session')}
-          </span>
-        </Button>
-      </div>
-    </article>
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 shrink-0"
+        onClick={() => onToggleBookmark?.(session.id)}
+        aria-label={t(
+          'sessionHistory.actions.unbookmarkAria',
+          'Remove bookmark',
+        )}
+      >
+        <StarOff className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </div>
   );
 }
 
@@ -232,14 +288,22 @@ export function SessionHistoryPanel({
   searchPlaceholder,
   emptyStateTitle,
   emptyStateSubtitle,
+  initialSortKey = 'updatedAt',
+  initialSortDirection = 'desc',
 }: SessionHistoryPanelProps) {
   const { t } = useTranslation('common');
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<HTMLElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const historyControlsRef = useRef<HTMLDivElement | null>(null);
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
+  const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
+  const [activeSortKey, setActiveSortKey] =
+    useState<SessionSortKey>(initialSortKey);
+  const [activeSortDirection, setActiveSortDirection] =
+    useState<SessionSortDirection>(initialSortDirection);
   const [manuallyExpandedSessionIds, setManuallyExpandedSessionIds] = useState<
     Set<string>
   >(() => new Set());
@@ -270,7 +334,9 @@ export function SessionHistoryPanel({
     searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
 
   const filtersActive =
-    activeStatusFilter !== 'all' || deferredSearchQuery.trim().length > 0;
+    activeStatusFilter !== 'all' ||
+    deferredSearchQuery.trim().length > 0 ||
+    showBookmarkedOnly;
 
   useEffect(() => {
     if (!selectedLineageId) {
@@ -287,7 +353,14 @@ export function SessionHistoryPanel({
 
   useEffect(() => {
     setCollapsedAutoExpandedSessionIds(new Set());
-  }, [activeStatusFilter, deferredSearchQuery, selectedLineageId]);
+  }, [
+    activeSortDirection,
+    activeSortKey,
+    activeStatusFilter,
+    deferredSearchQuery,
+    selectedLineageId,
+    showBookmarkedOnly,
+  ]);
 
   useLayoutEffect(() => {
     scrollParentRef.current = findScrollParent(rootRef.current);
@@ -300,7 +373,10 @@ export function SessionHistoryPanel({
       ),
     [deferredSessions],
   );
-  const featuredBookmarkedSessions = bookmarkedSessions.slice(0, 5);
+  const featuredBookmarkedSessions = bookmarkedSessions.slice(
+    0,
+    BOOKMARK_PREVIEW_LIMIT,
+  );
   const remainingBookmarkedCount = Math.max(
     bookmarkedSessions.length - featuredBookmarkedSessions.length,
     0,
@@ -328,15 +404,18 @@ export function SessionHistoryPanel({
           (session) => session.lineageId === selectedLineageId,
         )
       : deferredSessions;
+    const bookmarkedScopeSessions = showBookmarkedOnly
+      ? lineageSessions.filter((session) => session.isBookmarked === true)
+      : lineageSessions;
     const nextStatusCounts = {
-      all: lineageSessions.length,
+      all: bookmarkedScopeSessions.length,
       busy: 0,
       idle: 0,
       paused: 0,
       error: 0,
     };
 
-    lineageSessions.forEach((session) => {
+    bookmarkedScopeSessions.forEach((session) => {
       if (
         Object.prototype.hasOwnProperty.call(nextStatusCounts, session.status)
       ) {
@@ -344,7 +423,7 @@ export function SessionHistoryPanel({
       }
     });
 
-    let filteredSessions = lineageSessions;
+    let filteredSessions = bookmarkedScopeSessions;
 
     if (activeStatusFilter !== 'all') {
       filteredSessions = filteredSessions.filter(
@@ -355,9 +434,28 @@ export function SessionHistoryPanel({
     const matchedSessions = [
       ...filterSessions(filteredSessions, deferredSearchQuery),
     ].sort((a, b) => {
+      const sortDiff = compareSessionsBySort(
+        a,
+        b,
+        activeSortKey,
+        activeSortDirection,
+        t,
+      );
+      if (sortDiff !== 0) {
+        return sortDiff;
+      }
+
       const statusDiff =
         (statusPriority[a.status] ?? 999) - (statusPriority[b.status] ?? 999);
-      if (statusDiff !== 0) return statusDiff;
+      if (statusDiff !== 0) {
+        return statusDiff;
+      }
+
+      const latestActivityDiff = compareSessionsByLatestActivityDesc(a, b);
+      if (latestActivityDiff !== 0) {
+        return latestActivityDiff;
+      }
+
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
 
@@ -509,13 +607,15 @@ export function SessionHistoryPanel({
 
     return {
       autoExpandedAncestorIds: nextAutoExpandedAncestorIds,
-      baseSessions: lineageSessions,
+      baseSessions: bookmarkedScopeSessions,
       displayRows: rows,
       matchedSessionCount: matchedSessions.length,
       statusCounts: nextStatusCounts,
     };
   }, [
     activeStatusFilter,
+    activeSortDirection,
+    activeSortKey,
     collapsedAutoExpandedSessionIds,
     descendantStatusCounts,
     deferredSearchQuery,
@@ -523,6 +623,7 @@ export function SessionHistoryPanel({
     filtersActive,
     manuallyExpandedSessionIds,
     selectedLineageId,
+    showBookmarkedOnly,
     t,
   ]);
 
@@ -569,6 +670,25 @@ export function SessionHistoryPanel({
     paused: `${t('sessionHistory.tabs.paused', 'Paused')} (${statusCounts.paused})`,
     error: `${t('sessionHistory.tabs.error', 'Error')} (${statusCounts.error})`,
   };
+  const sortLabelByValue: Record<SessionSortKey, string> = {
+    updatedAt: t('sessionHistory.sort.updatedAt', 'Recent activity'),
+    createdAt: t('sessionHistory.sort.createdAt', 'Created'),
+    name: t('sessionHistory.sort.name', 'Name'),
+  };
+  const handleBrowseBookmarkedHistory = useCallback(() => {
+    setShowBookmarkedOnly(true);
+    window.requestAnimationFrame(() => {
+      historyControlsRef.current?.scrollIntoView?.({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  }, []);
+  const sortDirectionToggleLabel =
+    activeSortDirection === 'asc'
+      ? t('sessionHistory.sort.descending', 'Sort descending')
+      : t('sessionHistory.sort.ascending', 'Sort ascending');
+
   const handleEndReached = useCallback(() => {
     if (!hasMoreSessions || isLoadingMoreSessions) {
       return;
@@ -644,32 +764,52 @@ export function SessionHistoryPanel({
       hasExpandableChildren,
       isExpanded,
       descendantStatusCounts: rowDescendantStatusCounts,
-    }: SessionHistoryRow) => (
-      <div key={session.id} role="listitem">
-        <div className="pb-4">
-          <SessionCard
-            session={session}
-            onResume={onResume}
-            onDelete={onDelete}
-            onDeleteOnly={onDeleteOnly}
-            onToggleBookmark={onToggleBookmark}
-            nestingLevel={nestingLevel}
-            lineageHint={lineageHint}
-            selectedLineageId={selectedLineageId}
-            descendantCount={descendantCounts.get(session.id) ?? 0}
-            descendantStatusCounts={rowDescendantStatusCounts}
-            hasExpandableChildren={hasExpandableChildren}
-            isExpanded={isExpanded}
-            onToggleExpand={handleToggleExpand}
-            onLineageSelect={(lineageId) =>
-              setSelectedLineageId((prev) =>
-                prev === lineageId ? null : lineageId,
-              )
-            }
-          />
+    }: SessionHistoryRow) => {
+      const indentationPx =
+        nestingLevel > 0
+          ? Math.min(nestingLevel, MAX_TREE_INDENT_LEVEL) * TREE_INDENT_PX
+          : 0;
+
+      return (
+        <div
+          key={session.id}
+          role="listitem"
+          style={
+            indentationPx > 0
+              ? { paddingLeft: `${indentationPx}px` }
+              : undefined
+          }
+        >
+          <div
+            className={cn(
+              'pb-4',
+              nestingLevel > 0 &&
+                'border-l border-border/50 pl-3 dark:border-border/60',
+            )}
+          >
+            <SessionCard
+              session={session}
+              onResume={onResume}
+              onDelete={onDelete}
+              onDeleteOnly={onDeleteOnly}
+              onToggleBookmark={onToggleBookmark}
+              lineageHint={lineageHint}
+              selectedLineageId={selectedLineageId}
+              descendantCount={descendantCounts.get(session.id) ?? 0}
+              descendantStatusCounts={rowDescendantStatusCounts}
+              hasExpandableChildren={hasExpandableChildren}
+              isExpanded={isExpanded}
+              onToggleExpand={handleToggleExpand}
+              onLineageSelect={(lineageId) =>
+                setSelectedLineageId((prev) =>
+                  prev === lineageId ? null : lineageId,
+                )
+              }
+            />
+          </div>
         </div>
-      </div>
-    ),
+      );
+    },
     [
       descendantCounts,
       handleToggleExpand,
@@ -744,60 +884,79 @@ export function SessionHistoryPanel({
         </Button>
       </div>
 
-      {!selectedLineageId && bookmarkedSessions.length > 0 && (
-        <section
-          id="bookmarked-sessions"
-          className={cn(
-            HISTORY_CONTENT_RAIL_CLASS,
-            HISTORY_SECTION_CLASS,
-            'mb-4',
-          )}
-        >
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <BookmarkCheck className="h-4 w-4 text-warning" />
-                <h2 className="text-sm font-semibold text-foreground">
-                  {t(
-                    'sessionHistory.bookmarkedSection.heading',
-                    'Bookmarked Sessions',
-                  )}
-                </h2>
-                <Badge variant="secondary">{bookmarkedSessions.length}</Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  'sessionHistory.bookmarkedSection.description',
-                  'Pinned sessions stay here for quick access while the full history remains below.',
-                )}
-              </p>
-            </div>
-            {remainingBookmarkedCount > 0 && (
-              <Badge variant="outline" className="h-6 px-2">
-                {t(
-                  'sessionHistory.bookmarkedSection.more',
-                  '+{{count}} more in history',
-                  { count: remainingBookmarkedCount },
-                )}
-              </Badge>
+      {!selectedLineageId &&
+        !showBookmarkedOnly &&
+        bookmarkedSessions.length > 0 && (
+          <section
+            id="bookmarked-sessions"
+            className={cn(
+              HISTORY_CONTENT_RAIL_CLASS,
+              HISTORY_SECTION_CLASS,
+              'mb-4',
             )}
-          </div>
+          >
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <BookmarkCheck className="h-4 w-4 text-warning" />
+                  <h2 className="text-sm font-semibold text-foreground">
+                    {t(
+                      'sessionHistory.bookmarkedSection.heading',
+                      'Bookmarked Sessions',
+                    )}
+                  </h2>
+                  <Badge variant="secondary">{bookmarkedSessions.length}</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'sessionHistory.bookmarkedSection.description',
+                    'Pinned sessions stay here for quick access while the full history remains below.',
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {remainingBookmarkedCount > 0 && (
+                  <Badge variant="outline" className="h-6 px-2">
+                    {t(
+                      'sessionHistory.bookmarkedSection.more',
+                      '+{{count}} more bookmarked',
+                      { count: remainingBookmarkedCount },
+                    )}
+                  </Badge>
+                )}
+                {remainingBookmarkedCount > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBrowseBookmarkedHistory}
+                  >
+                    {t(
+                      'sessionHistory.bookmarkedSection.browseAll',
+                      'Browse all bookmarked',
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
 
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {featuredBookmarkedSessions.map((session) => (
-              <BookmarkedSessionTile
-                key={session.id}
-                session={session}
-                onResume={onResume}
-                onToggleBookmark={onToggleBookmark}
-                t={t}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+            <div className="mt-3 flex flex-col gap-2" role="list">
+              {featuredBookmarkedSessions.map((session) => (
+                <div key={session.id} role="listitem">
+                  <BookmarkedSessionRow
+                    session={session}
+                    onResume={onResume}
+                    onToggleBookmark={onToggleBookmark}
+                    t={t}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
       <div
+        ref={historyControlsRef}
         className={cn(
           HISTORY_CONTENT_RAIL_CLASS,
           HISTORY_SECTION_CLASS,
@@ -827,10 +986,68 @@ export function SessionHistoryPanel({
             )}
           </div>
 
-          <div className="flex items-center gap-2 md:w-56 md:shrink-0">
-            <span className="text-xs font-medium text-muted-foreground">
-              {t('sessionHistory.statusFilter.label', 'Status')}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            <Button
+              type="button"
+              size="sm"
+              variant={showBookmarkedOnly ? 'secondary' : 'outline'}
+              className="shrink-0"
+              aria-pressed={showBookmarkedOnly}
+              onClick={() =>
+                setShowBookmarkedOnly((previousState) => !previousState)
+              }
+            >
+              <BookmarkCheck className="mr-2 h-4 w-4" />
+              {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} (
+              {bookmarkedSessions.length})
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2 md:w-64 md:shrink-0">
+            <Select
+              value={activeSortKey}
+              onValueChange={(value) => {
+                if (isSessionSortKey(value)) {
+                  setActiveSortKey(value);
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full"
+                aria-label={t('sessionHistory.sort.label', 'Sort sessions')}
+              >
+                <SelectValue>{sortLabelByValue[activeSortKey]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {sessionSortValues.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {sortLabelByValue[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() =>
+                setActiveSortDirection((previousState) =>
+                  previousState === 'asc' ? 'desc' : 'asc',
+                )
+              }
+              aria-label={sortDirectionToggleLabel}
+            >
+              {activeSortDirection === 'asc' ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+
+          <div className="md:w-56 md:shrink-0">
             <Select
               value={activeStatusFilter}
               onValueChange={(value) => {
@@ -860,26 +1077,48 @@ export function SessionHistoryPanel({
         </div>
       </div>
 
-      {selectedLineageId && (
+      {(selectedLineageId || showBookmarkedOnly) && (
         <div
           className={cn(
             HISTORY_CONTENT_RAIL_CLASS,
-            'mt-3 flex items-center gap-2 text-xs text-muted-foreground',
+            'mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground',
           )}
         >
-          <span>
-            {t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', {
-              id: selectedLineageId.slice(0, 8),
-            })}
-          </span>
-          <Button
-            variant="link"
-            size="sm"
-            className="h-auto p-0"
-            onClick={() => setSelectedLineageId(null)}
-          >
-            {t('sessionHistory.showAllLineages', 'Show all lineages')}
-          </Button>
+          {selectedLineageId && (
+            <>
+              <span>
+                {t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', {
+                  id: selectedLineageId.slice(0, 8),
+                })}
+              </span>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0"
+                onClick={() => setSelectedLineageId(null)}
+              >
+                {t('sessionHistory.showAllLineages', 'Show all lineages')}
+              </Button>
+            </>
+          )}
+          {showBookmarkedOnly && (
+            <>
+              <span>
+                {t(
+                  'sessionHistory.bookmarkFilter.focused',
+                  'Showing bookmarked sessions',
+                )}
+              </span>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0"
+                onClick={() => setShowBookmarkedOnly(false)}
+              >
+                {t('sessionHistory.bookmarkFilter.clear', 'Show all sessions')}
+              </Button>
+            </>
+          )}
         </div>
       )}
 
@@ -945,6 +1184,26 @@ export function SessionHistoryPanel({
                     className="mt-2"
                   >
                     {t('sessionHistory.clearSearch', 'Clear search')}
+                  </Button>
+                </>
+              ) : showBookmarkedOnly ? (
+                <>
+                  <p className="text-sm">
+                    {t(
+                      'sessionHistory.bookmarkFilter.empty',
+                      'No bookmarked sessions yet',
+                    )}
+                  </p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => setShowBookmarkedOnly(false)}
+                    className="mt-2"
+                  >
+                    {t(
+                      'sessionHistory.bookmarkFilter.clear',
+                      'Show all sessions',
+                    )}
                   </Button>
                 </>
               ) : (
