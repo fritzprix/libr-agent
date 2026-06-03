@@ -29,10 +29,20 @@ Examples:
 """
 
 import argparse
+import io
 import sys
 from pathlib import Path
 
-SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv"}
+# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+if sys.platform.startswith("win"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
+# Cwd 독립적인 임포트를 위해 sys.path에 scripts 디렉토리 추가
+sys.path.append(str(Path(__file__).resolve().parent))
+from utils import get_source_from_md, get_path_hash
+
+SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv", ".libragent", "attachments"}
 
 
 def find_binary_files(root: Path, formats: list[str]) -> list[Path]:
@@ -160,7 +170,7 @@ CONVERTERS = {
 }
 
 
-def convert_file(src: Path, out_dir: Path | None, overwrite: bool) -> tuple[Path, str]:
+def convert_file(src: Path, out_dir: Path | None, overwrite: bool, used_dests: set[str]) -> tuple[Path, str]:
     """Convert a single file and return (output_path, status_message)."""
     ext = src.suffix.lower()
     converter = CONVERTERS.get(ext)
@@ -168,16 +178,55 @@ def convert_file(src: Path, out_dir: Path | None, overwrite: bool) -> tuple[Path
         return src, "SKIP (no converter)"
 
     dest_dir = out_dir if out_dir else src.parent
-    dest = dest_dir / (src.stem + ".md")
-
-    if dest.exists() and not overwrite:
-        return dest, "SKIP (exists)"
+    
+    base_dest = dest_dir / (src.stem + ".md")
+    dest = base_dest
+    dest_key = str(dest.resolve().as_posix())
+    
+    # Resolve unique filename by appending path hash if conflict occurs
+    if dest_key in used_dests or (dest.exists() and not overwrite):
+        source_in_md = get_source_from_md(dest)
+        if source_in_md and Path(source_in_md).resolve() == src.resolve():
+            # Same source, safe to skip
+            used_dests.add(dest_key)
+            return dest, "SKIP (exists)"
+        else:
+            # Different source (collision) -> append short hash of source path
+            path_hash = get_path_hash(src)
+            dest = dest_dir / f"{src.stem}_{path_hash}.md"
+            dest_key = str(dest.resolve().as_posix())
+            
+            # Resolve potential hash collisions
+            counter = 1
+            while True:
+                if dest_key in used_dests:
+                    dest = dest_dir / f"{src.stem}_{path_hash}_{counter}.md"
+                    dest_key = str(dest.resolve().as_posix())
+                    counter += 1
+                    continue
+                if dest.exists() and not overwrite:
+                    source_in_md = get_source_from_md(dest)
+                    if source_in_md and Path(source_in_md).resolve() == src.resolve():
+                        used_dests.add(dest_key)
+                        return dest, "SKIP (exists)"
+                    else:
+                        dest = dest_dir / f"{src.stem}_{path_hash}_{counter}.md"
+                        dest_key = str(dest.resolve().as_posix())
+                        counter += 1
+                        continue
+                break
 
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # Performance logging for large files (e.g. pptx > 5MB)
+    size_mb = src.stat().st_size / (1024 * 1024)
+    if size_mb > 5:
+        print(f"       ⌛ Converting large file ({size_mb:.1f} MB)... this may take a moment.")
 
     content = converter(src)
     header = f"# {src.name}\n\n> Source: `{src}`  \n> Converted at: {_now()}\n\n---\n\n"
     dest.write_text(header + content, encoding="utf-8")
+    used_dests.add(dest_key)
     return dest, "OK"
 
 
@@ -207,9 +256,10 @@ def main():
         return
 
     results = {"OK": 0, "SKIP (exists)": 0, "SKIP (no converter)": 0, "ERROR": 0}
+    used_dests = set()
     for src in files:
         try:
-            dest, status = convert_file(src, out_dir, args.overwrite)
+            dest, status = convert_file(src, out_dir, args.overwrite, used_dests)
             results[status] = results.get(status, 0) + 1
             icon = "✅" if status == "OK" else "⏭️"
             print(f"  {icon} [{status}] {src.relative_to(root)}")

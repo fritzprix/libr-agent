@@ -12,8 +12,14 @@ Usage:
 
 import argparse
 import importlib
+import io
 import subprocess
 import sys
+
+# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+if sys.platform.startswith("win"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 # 형식별 필요 패키지
 FORMAT_DEPS: dict[str, list[tuple[str, str]]] = {

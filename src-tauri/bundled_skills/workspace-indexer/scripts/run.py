@@ -37,9 +37,16 @@ Examples:
 """
 
 import argparse
+import io
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+if sys.platform.startswith("win"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 SCRIPT_DIR = Path(__file__).parent
 CONVERT_SCRIPT = SCRIPT_DIR / "convert_binary_docs.py"
@@ -51,7 +58,12 @@ def run_step(label: str, cmd: list[str]) -> bool:
     print(f"\n{'='*60}")
     print(f"  {label}")
     print(f"{'='*60}")
-    result = subprocess.run(cmd)
+    
+    # Windows에서 하위 프로세스의 UTF-8 출력을 강제하기 위해 환경 변수 상속 및 설정
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    
+    result = subprocess.run(cmd, env=env)
     if result.returncode != 0:
         print(f"\n❌ {label} 실패 (exit code {result.returncode})")
         return False
