@@ -10,3 +10,6 @@
 ## 2024-05-31 - AdvancedRuntimeControlsSection
 **Extracted:** 1 Strings
 **Languages updated:** EN, KO, FR, ES, DE, ZH, JA, PT
+## 2025-05-18 - Misc UI Attributes
+**Extracted:** 10
+**Languages updated:** EN, KO, FR, ES, DE, ZH, JA, PT

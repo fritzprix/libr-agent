@@ -4,6 +4,7 @@ import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
 import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 import { calculateCacheHitPercent } from './token-metrics';
+import { useTranslation } from 'react-i18next';
 import { formatNumber } from '@/lib/utils';
 
 interface TokenMetricsBadgeProps {
@@ -21,6 +22,7 @@ export function TokenMetricsBadge({
   className = '',
   compact: compactProp,
 }: TokenMetricsBadgeProps) {
+  const { t } = useTranslation();
   // Get display preferences from settings
   const { value: settings } = useSettings();
   const displaySettings = settings.display || {
@@ -109,10 +111,31 @@ export function TokenMetricsBadge({
           className="flex items-center gap-0.5 text-primary"
           title={
             preflight
-              ? `Backend preflight context estimate: ${promptDisplayLabel}${inputLimitLabel ? ` / ${inputLimitLabel}` : ''} tokens. Reserved output: ${formatNumber(preflight.measuredOutputTokensReserve)}. Total budget: ${formatNumber(preflight.totalBudgetTokens)}. Effective input budget: ${formatNumber(preflight.effectiveInputBudget)}. Provider prompt tokens: ${providerPromptLabel}. System prompt: ${formatNumber(preflight.systemPromptTokens)}. Tools: ${formatNumber(preflight.toolsTokens)}. Selected messages: ${formatNumber(preflight.selectedMessageCount)}.${prefillInfo}`
+              ? t('agent.metrics.preflightContext', {
+                  display: promptDisplayLabel,
+                  limit: inputLimitLabel ? ` / ${inputLimitLabel}` : '',
+                  reserved: formatNumber(preflight.measuredOutputTokensReserve),
+                  totalBudget: formatNumber(preflight.totalBudgetTokens),
+                  effectiveBudget: formatNumber(preflight.effectiveInputBudget),
+                  providerTokens: providerPromptLabel,
+                  systemPrompt: formatNumber(preflight.systemPromptTokens),
+                  tools: formatNumber(preflight.toolsTokens),
+                  selectedMessages: formatNumber(
+                    preflight.selectedMessageCount,
+                  ),
+                  prefill: prefillInfo,
+                  defaultValue: `Backend preflight context estimate: ${promptDisplayLabel}${inputLimitLabel ? ` / ${inputLimitLabel}` : ''} tokens. Reserved output: ${formatNumber(preflight.measuredOutputTokensReserve)}. Total budget: ${formatNumber(preflight.totalBudgetTokens)}. Effective input budget: ${formatNumber(preflight.effectiveInputBudget)}. Provider prompt tokens: ${providerPromptLabel}. System prompt: ${formatNumber(preflight.systemPromptTokens)}. Tools: ${formatNumber(preflight.toolsTokens)}. Selected messages: ${formatNumber(preflight.selectedMessageCount)}.${prefillInfo}`,
+                })
               : (hasCacheHit
-                  ? `Prompt Tokens (Read from Cache: ${formatNumber(cachedTokens)}, Created: ${formatNumber(usage.details?.cacheCreationInputTokens || 0)})`
-                  : 'Prompt Tokens') + prefillInfo
+                  ? t('agent.metrics.promptTokensCache', {
+                      read: formatNumber(cachedTokens),
+                      created: formatNumber(
+                        usage.details?.cacheCreationInputTokens || 0,
+                      ),
+                      defaultValue: `Prompt Tokens (Read from Cache: ${formatNumber(cachedTokens)}, Created: ${formatNumber(usage.details?.cacheCreationInputTokens || 0)})`,
+                    })
+                  : t('agent.metrics.promptTokens', 'Prompt Tokens')) +
+                prefillInfo
           }
         >
           <ArrowUp size={10} className="stroke-[3]" />
@@ -127,7 +150,7 @@ export function TokenMetricsBadge({
         {/* Output Tokens */}
         <span
           className="flex items-center gap-0.5 text-success"
-          title="Completion Tokens"
+          title={t('agent.metrics.completionTokens', 'Completion Tokens')}
         >
           <ArrowDown size={10} className="stroke-[3]" />
           {formatNumber(usage.completionTokens ?? 0)}
@@ -138,7 +161,11 @@ export function TokenMetricsBadge({
           <span
             data-testid="cache-hit-indicator"
             className="flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 bg-cyan-400/10 px-1 rounded border border-cyan-400/20 shrink-0"
-            title={`Cache Hit: ${formatNumber(cachedTokens)} tokens (${cacheHitPercent}%)`}
+            title={t('agent.metrics.cacheHit', {
+              count: formatNumber(cachedTokens),
+              percent: cacheHitPercent,
+              defaultValue: `Cache Hit: ${formatNumber(cachedTokens)} tokens (${cacheHitPercent}%)`,
+            })}
           >
             <Zap size={10} className="fill-current" />
             {cacheIndicatorText}
@@ -151,7 +178,7 @@ export function TokenMetricsBadge({
             <span className="text-muted-foreground mx-0.5">•</span>
             <span
               className="flex items-center gap-0.5 text-warning"
-              title="Tokens per second"
+              title={t('agent.metrics.tokensPerSecond', 'Tokens per second')}
             >
               <Gauge size={10} className="stroke-[3]" />
               {tpsFormatted}{' '}

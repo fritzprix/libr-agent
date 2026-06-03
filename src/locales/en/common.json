@@ -716,7 +716,11 @@
       "sseDesc": "Keep enabled for streaming responses. Disable for stateless HTTP.",
       "cancel": "Cancel",
       "save": "Save",
-      "saving": "Saving..."
+      "saving": "Saving...",
+      "envVarKeyAria": "Environment variable key",
+      "envVarValueAria": "Environment variable value",
+      "headerKeyAria": "Custom header key",
+      "headerValueAria": "Custom header value"
     },
     "toasts": {
       "saved": "Extension saved successfully",
@@ -802,7 +806,10 @@
   "agent": {
     "messages": {
       "loadingOlder": "Loading older messages...",
-      "scrollToLoadOlder": "Scroll up to load older messages"
+      "scrollToLoadOlder": "Scroll up to load older messages",
+      "copyTextContentAria": "Copy text content",
+      "copied": "Copied!",
+      "copy": "Copy"
     },
     "draft": {
       "send": "Send message",
@@ -926,7 +933,10 @@
       "resumeAriaLabel": "Resume workflow",
       "resumeTooltip": "Resume",
       "sendAriaLabel": "Send message",
-      "sendTooltip": "Send"
+      "sendTooltip": "Send",
+      "tokenSuggestionsAria": "Input token suggestions",
+      "stepsCount_one": "{{count}} step",
+      "stepsCount_other": "{{count}} steps"
     },
     "toolGroup": {
       "header_one": "Tool Executions ({{count}} call)",
@@ -1036,6 +1046,14 @@
       "imageAlt": "Tool output",
       "unsupportedAudio": "Your browser does not support the audio element.",
       "unsupportedVideo": "Your browser does not support the video element."
+    },
+    "metrics": {
+      "completionTokens": "Completion Tokens",
+      "tokensPerSecond": "Tokens per second",
+      "cacheHit": "Cache Hit: {{count}} tokens ({{percent}}%)",
+      "promptTokens": "Prompt Tokens",
+      "promptTokensCache": "Prompt Tokens (Read from Cache: {{read}}, Created: {{created}})",
+      "preflightContext": "Backend preflight context estimate: {{display}}{{limit}} tokens. Reserved output: {{reserved}}. Total budget: {{totalBudget}}. Effective input budget: {{effectiveBudget}}. Provider prompt tokens: {{providerTokens}}. System prompt: {{systemPrompt}}. Tools: {{tools}}. Selected messages: {{selectedMessages}}.{{prefill}}"
     }
   },
   "scheduledTasks": {

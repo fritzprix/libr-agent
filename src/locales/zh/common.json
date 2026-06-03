@@ -708,7 +708,11 @@
       "sseDesc": "为流式响应保持启用状态。对于无状态 HTTP 请禁用。",
       "cancel": "取消",
       "save": "保存",
-      "saving": "正在保存..."
+      "saving": "正在保存...",
+      "envVarKeyAria": "Environment variable key",
+      "envVarValueAria": "Environment variable value",
+      "headerKeyAria": "Custom header key",
+      "headerValueAria": "Custom header value"
     },
     "toasts": {
       "saved": "扩展保存成功",
@@ -794,7 +798,10 @@
   "agent": {
     "messages": {
       "loadingOlder": "正在加载更早的消息...",
-      "scrollToLoadOlder": "向上滚动以加载更早的消息"
+      "scrollToLoadOlder": "向上滚动以加载更早的消息",
+      "copyTextContentAria": "Copy text content",
+      "copied": "Copied!",
+      "copy": "Copy"
     },
     "draft": {
       "send": "发送消息",
@@ -918,7 +925,10 @@
       "resumeAriaLabel": "恢复工作流",
       "resumeTooltip": "恢复",
       "sendAriaLabel": "发送消息",
-      "sendTooltip": "发送"
+      "sendTooltip": "发送",
+      "tokenSuggestionsAria": "Input token suggestions",
+      "stepsCount_one": "{{count}} step",
+      "stepsCount_other": "{{count}} steps"
     },
     "toolGroup": {
       "header_one": "工具执行 ({{count}} 次调用)",
@@ -1011,6 +1021,14 @@
       "failedToStartPlaybookWorkflow": "启动剧本工作流失败",
       "sessionContextUnavailable": "会话上下文不可用。",
       "sessionNotFoundOrFailed": "未找到会话或加载失败。"
+    },
+    "metrics": {
+      "completionTokens": "Completion Tokens",
+      "tokensPerSecond": "Tokens per second",
+      "cacheHit": "Cache Hit: {{count}} tokens ({{percent}}%)",
+      "promptTokens": "Prompt Tokens",
+      "promptTokensCache": "Prompt Tokens (Read from Cache: {{read}}, Created: {{created}})",
+      "preflightContext": "Backend preflight context estimate: {{display}}{{limit}} tokens. Reserved output: {{reserved}}. Total budget: {{totalBudget}}. Effective input budget: {{effectiveBudget}}. Provider prompt tokens: {{providerTokens}}. System prompt: {{systemPrompt}}. Tools: {{tools}}. Selected messages: {{selectedMessages}}.{{prefill}}"
     }
   },
   "scheduledTasks": {

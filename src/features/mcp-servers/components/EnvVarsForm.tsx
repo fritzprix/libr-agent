@@ -170,7 +170,10 @@ export function EnvVarsForm({
                         handleUpdateEnvVar(item.id, 'key', e.target.value)
                       }
                       className="h-8 text-sm font-mono"
-                      aria-label="Environment variable key"
+                      aria-label={t(
+                        'mcpServer.dialog.envVarKeyAria',
+                        'Environment variable key',
+                      )}
                     />
                   </div>
                   <div className="flex-1">
@@ -185,7 +188,10 @@ export function EnvVarsForm({
                       }
                       type="password" // Mask values for security
                       className="h-8 text-sm font-mono"
-                      aria-label="Environment variable value"
+                      aria-label={t(
+                        'mcpServer.dialog.envVarValueAria',
+                        'Environment variable value',
+                      )}
                     />
                   </div>
                   <Tooltip>

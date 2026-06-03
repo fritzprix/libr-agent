@@ -717,7 +717,11 @@
       "sseDesc": "스트리밍 응답을 위해 활성화 상태를 유지하세요. 상태 비저장 HTTP에는 비활성화하세요.",
       "cancel": "취소",
       "save": "저장",
-      "saving": "저장 중..."
+      "saving": "저장 중...",
+      "envVarKeyAria": "Environment variable key",
+      "envVarValueAria": "Environment variable value",
+      "headerKeyAria": "Custom header key",
+      "headerValueAria": "Custom header value"
     },
     "toasts": {
       "saved": "확장 기능이 저장되었습니다",
@@ -803,7 +807,10 @@
   "agent": {
     "messages": {
       "loadingOlder": "이전 메시지를 불러오는 중...",
-      "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기"
+      "scrollToLoadOlder": "위로 스크롤하여 이전 메시지 불러오기",
+      "copyTextContentAria": "Copy text content",
+      "copied": "Copied!",
+      "copy": "Copy"
     },
     "draft": {
       "send": "메시지 보내기",
@@ -927,7 +934,10 @@
       "resumeAriaLabel": "워크플로 재개",
       "resumeTooltip": "재개",
       "sendAriaLabel": "메시지 보내기",
-      "sendTooltip": "보내기"
+      "sendTooltip": "보내기",
+      "tokenSuggestionsAria": "Input token suggestions",
+      "stepsCount_one": "{{count}} step",
+      "stepsCount_other": "{{count}} steps"
     },
     "toolGroup": {
       "header_one": "도구 실행 ({{count}}회 호출)",
@@ -1020,6 +1030,14 @@
       "failedToStartPlaybookWorkflow": "플레이북 워크플로우를 시작하지 못했습니다",
       "sessionContextUnavailable": "세션 컨텍스트를 사용할 수 없습니다.",
       "sessionNotFoundOrFailed": "세션을 찾을 수 없거나 불러오지 못했습니다."
+    },
+    "metrics": {
+      "completionTokens": "Completion Tokens",
+      "tokensPerSecond": "Tokens per second",
+      "cacheHit": "Cache Hit: {{count}} tokens ({{percent}}%)",
+      "promptTokens": "Prompt Tokens",
+      "promptTokensCache": "Prompt Tokens (Read from Cache: {{read}}, Created: {{created}})",
+      "preflightContext": "Backend preflight context estimate: {{display}}{{limit}} tokens. Reserved output: {{reserved}}. Total budget: {{totalBudget}}. Effective input budget: {{effectiveBudget}}. Provider prompt tokens: {{providerTokens}}. System prompt: {{systemPrompt}}. Tools: {{tools}}. Selected messages: {{selectedMessages}}.{{prefill}}"
     }
   },
   "scheduledTasks": {

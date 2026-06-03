@@ -100,7 +100,10 @@ export function InputTokenDropdown({
   return (
     <ul
       role="listbox"
-      aria-label="Input token suggestions"
+      aria-label={t(
+        'agent.input.tokenSuggestionsAria',
+        'Input token suggestions',
+      )}
       className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-60 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md text-sm"
     >
       {mode.kind === 'types'
@@ -211,8 +214,9 @@ export function InputTokenDropdown({
                     </span>
                     {playbook.workflow.length > 0 && (
                       <span className="text-xs text-muted-foreground">
-                        {playbook.workflow.length} step
-                        {playbook.workflow.length !== 1 ? 's' : ''}
+                        {t('agent.input.stepsCount', {
+                          count: playbook.workflow.length,
+                        })}
                       </span>
                     )}
                   </li>

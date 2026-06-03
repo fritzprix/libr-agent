@@ -289,7 +289,10 @@ export function HttpForm({
                               )
                             }
                             className="h-8 text-sm"
-                            aria-label="Custom header key"
+                            aria-label={t(
+                              'mcpServer.dialog.headerKeyAria',
+                              'Custom header key',
+                            )}
                           />
                         </div>
                         <div className="flex-1">
@@ -307,7 +310,10 @@ export function HttpForm({
                               )
                             }
                             className="h-8 text-sm"
-                            aria-label="Custom header value"
+                            aria-label={t(
+                              'mcpServer.dialog.headerValueAria',
+                              'Custom header value',
+                            )}
                           />
                         </div>
                         <Tooltip>
