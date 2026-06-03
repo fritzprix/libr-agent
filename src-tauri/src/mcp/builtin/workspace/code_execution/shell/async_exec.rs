@@ -60,7 +60,7 @@ impl WorkspaceServer {
                 .entries
                 .values()
                 .filter(|e| e.session_id == session_id)
-                .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
+                .filter(|e| terminal_manager::is_active_process_status(&e.status))
                 .count();
 
             if running_count >= MAX_CONCURRENT_PROCESSES {
@@ -220,31 +220,37 @@ impl WorkspaceServer {
                 match result {
                     Ok((pid, exit_code, streaming_handle)) => {
                         entry.pid = pid;
-                        let code = exit_code.unwrap_or(-1);
-                        entry.status = if code == 0 {
-                            terminal_manager::ProcessStatus::Finished
-                        } else {
-                            terminal_manager::ProcessStatus::Failed
-                        };
                         entry.exit_code = exit_code;
-                        entry.finished_at = Some(chrono::Utc::now());
+                        entry.finished_at.get_or_insert_with(chrono::Utc::now);
 
                         // Update file sizes
                         entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
                         entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
+
+                        if entry.status != terminal_manager::ProcessStatus::Killed {
+                            let code = exit_code.unwrap_or(-1);
+                            entry.status = if code == 0 {
+                                terminal_manager::ProcessStatus::Finished
+                            } else {
+                                terminal_manager::ProcessStatus::Failed
+                            };
+                        }
 
                         // Store streaming handle for real-time access (after entry mutations)
                         reg.streaming_handles
                             .insert(pid_copy.clone(), streaming_handle);
                     }
                     Err(e) => {
-                        entry.status = terminal_manager::ProcessStatus::Failed;
-                        entry.finished_at = Some(chrono::Utc::now());
+                        entry.finished_at.get_or_insert_with(chrono::Utc::now);
                         error!("Process {} execution error: {}", pid_copy, e);
 
                         // Update file sizes even on error
                         entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
                         entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
+
+                        if entry.status != terminal_manager::ProcessStatus::Killed {
+                            entry.status = terminal_manager::ProcessStatus::Failed;
+                        }
                     }
                 }
             }

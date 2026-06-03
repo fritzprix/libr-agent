@@ -42,7 +42,7 @@ impl WorkspaceServer {
                 .entries
                 .values()
                 .filter(|e| e.session_id == session_id)
-                .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
+                .filter(|e| terminal_manager::is_active_process_status(&e.status))
                 .take(5)
                 .map(|e| format!("{} [{}]", e.id, e.command))
                 .collect();

@@ -43,7 +43,7 @@ impl OutputSelection {
 }
 
 fn status_label(status: &terminal_manager::ProcessStatus) -> String {
-    format!("{status:?}").to_lowercase()
+    terminal_manager::process_status_label(status)
 }
 
 fn stream_file_path(entry: &terminal_manager::ProcessEntry, stream: &str) -> PathBuf {
