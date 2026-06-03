@@ -30,14 +30,24 @@ Examples:
 """
 
 import argparse
+import io
 import re
 import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+if sys.platform.startswith("win"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
+# Cwd 독립적인 임포트를 위해 sys.path에 scripts 디렉토리 추가
+sys.path.append(str(Path(__file__).resolve().parent))
+from utils import get_source_from_md
+
 # 무시할 기본 디렉터리
-DEFAULT_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv", ".mypy_cache"}
+DEFAULT_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv", ".mypy_cache", ".libragent", "attachments"}
 
 # 텍스트로 처리할 확장자
 TEXT_EXTS = {".md", ".txt", ".py", ".sh", ".json", ".yaml", ".yml", ".toml", ".csv", ".html", ".js", ".ts"}
@@ -92,15 +102,21 @@ def extract_keywords_from_files(text_files: list[Path], root: Path) -> dict[str,
     텍스트 파일에서 키워드(헤딩) 추출.
     반환: {keyword: [rel_path1, rel_path2, ...]}
     """
-    keyword_map: dict[str, list[str]] = defaultdict(list)
+    keyword_map: dict[str, set[str]] = defaultdict(set)
     for p in text_files:
         if p.suffix.lower() != ".md":
             continue
         headings = extract_headings(p)
         rel = str(p.relative_to(root).as_posix())
         for h in headings:
-            keyword_map[h].append(rel)
-    return dict(keyword_map)
+            keyword_map[h].add(rel)
+            # 단어 단위 토큰도 키워드로 추가하여 한글/영어 매핑/검색 개선
+            words = re.findall(r'[a-zA-Z0-9가-힣]+', h)
+            for w in words:
+                if len(w) >= 2 and w != h:
+                    keyword_map[w].add(rel)
+    # 리스트로 변환 및 정렬하여 일관된 출력 보장 (O(n) 성능 유지)
+    return {kw: sorted(list(files)) for kw, files in keyword_map.items()}
 
 
 def load_custom_keywords(keyword_file: Path, text_files: list[Path], root: Path) -> dict[str, list[str]]:
@@ -175,14 +191,33 @@ def render_index(
     # --- Binary 문서 ---
     lines += [f"---", f"", f"## Binary 문서 목록", f""]
     if binary_files:
+        # 마크다운 파일들의 Source 헤더를 읽어 binary 파일과 매핑 구축
+        src_to_md = {}
+        for p_md in text_files:
+            if p_md.suffix.lower() == ".md":
+                source_path = get_source_from_md(p_md)
+                if source_path:
+                    try:
+                        resolved_src = str(Path(source_path).resolve().as_posix())
+                        src_to_md[resolved_src] = str(p_md.relative_to(root).as_posix())
+                    except Exception:
+                        pass
+
         lines.append("| 파일명 | 경로 | 크기 | 변환 파일 |")
         lines.append("| --- | --- | --- | --- |")
         for p in sorted(binary_files):
             rel = str(p.relative_to(root).as_posix())
             size_kb = p.stat().st_size / 1024
-            md_path = p.with_suffix(".md")
-            md_rel = str(md_path.relative_to(root).as_posix()) if md_path.exists() else "-"
-            converted = f"[MD]({md_rel})" if md_path.exists() else "❌ 미변환"
+            resolved_p = str(p.resolve().as_posix())
+            
+            # 소스 매핑에서 먼저 찾고, 없으면 기존 규칙(같은 경로의 .md) 사용
+            md_rel = src_to_md.get(resolved_p)
+            if not md_rel:
+                md_path = p.with_suffix(".md")
+                if md_path.exists():
+                    md_rel = str(md_path.relative_to(root).as_posix())
+                    
+            converted = f"[MD]({md_rel})" if md_rel else "❌ 미변환"
             lines.append(f"| `{p.name}` | `{rel}` | {size_kb:.1f} KB | {converted} |")
     else:
         lines.append("_(Binary 문서 없음)_")

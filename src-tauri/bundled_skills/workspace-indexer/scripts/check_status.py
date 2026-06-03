@@ -24,10 +24,20 @@ Examples:
 """
 
 import argparse
+import io
+import sys
 from datetime import datetime
 from pathlib import Path
 
-SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv"}
+# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+if sys.platform.startswith("win"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
+sys.path.append(str(Path(__file__).resolve().parent))
+from utils import get_source_from_md
+
+SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv", ".libragent", "attachments"}
 
 
 def collect_binary_files(root: Path, formats: list[str], skip_dirs: set[str]) -> list[Path]:
@@ -43,13 +53,46 @@ def collect_binary_files(root: Path, formats: list[str], skip_dirs: set[str]) ->
     return result
 
 
-def check_conversion(files: list[Path]) -> tuple[list[Path], list[Path]]:
-    """변환 완료 / 미완료 파일 분리."""
-    converted, not_converted = [], []
+def build_source_to_md_map(root: Path, skip_dirs: set[str]) -> dict[str, Path]:
+    source_to_md: dict[str, Path] = {}
+    for md_path in sorted(root.rglob("*.md")):
+        if md_path.is_dir():
+            continue
+        if any(part in skip_dirs for part in md_path.relative_to(root).parts):
+            continue
+        source_path = get_source_from_md(md_path)
+        if not source_path:
+            continue
+        try:
+            source_to_md[str(Path(source_path).resolve().as_posix())] = md_path
+        except Exception:
+            continue
+    return source_to_md
+
+
+def resolve_converted_markdown(source_path: Path, source_to_md: dict[str, Path]) -> Path | None:
+    mapped_md = source_to_md.get(str(source_path.resolve().as_posix()))
+    if mapped_md and mapped_md.exists():
+        return mapped_md
+
+    default_md = source_path.with_suffix(".md")
+    if default_md.exists():
+        return default_md
+
+    return None
+
+
+def check_conversion(
+    files: list[Path],
+    source_to_md: dict[str, Path],
+) -> tuple[list[tuple[Path, Path]], list[Path]]:
+    """Split files into converted and not converted entries."""
+    converted: list[tuple[Path, Path]] = []
+    not_converted: list[Path] = []
     for f in files:
-        md = f.with_suffix(".md")
-        if md.exists():
-            converted.append(f)
+        md_path = resolve_converted_markdown(f, source_to_md)
+        if md_path is not None:
+            converted.append((f, md_path))
         else:
             not_converted.append(f)
     return converted, not_converted
@@ -64,7 +107,7 @@ def format_size(path: Path) -> str:
 
 def render_report(
     root: Path,
-    converted: list[Path],
+    converted: list[tuple[Path, Path]],
     not_converted: list[Path],
     show_converted: bool,
 ) -> str:
@@ -131,10 +174,11 @@ def render_report(
             f"| 파일명 | 원본 크기 | 변환 파일 |",
             f"| --- | --- | --- |",
         ]
-        for p in converted:
-            rel = str(p.relative_to(root).as_posix())
-            md_rel = str(p.with_suffix(".md").relative_to(root).as_posix())
-            lines.append(f"| `{p.name}` | {format_size(p)} | [`{p.stem}.md`]({md_rel}) |")
+        for source_path, md_path in converted:
+            md_rel = str(md_path.relative_to(root).as_posix())
+            lines.append(
+                f"| `{source_path.name}` | {format_size(source_path)} | [`{md_path.name}`]({md_rel}) |"
+            )
         lines.append("")
 
     return "\n".join(lines)
@@ -153,7 +197,8 @@ def main():
     skip_dirs = SKIP_DIRS | set(args.ignore_dirs)
 
     files = collect_binary_files(root, args.formats, skip_dirs)
-    converted, not_converted = check_conversion(files)
+    source_to_md = build_source_to_md_map(root, skip_dirs)
+    converted, not_converted = check_conversion(files, source_to_md)
 
     total = len(files)
     rate = (len(converted) / total * 100) if total else 0
@@ -172,9 +217,8 @@ def main():
 
     if args.show_converted and converted:
         print(f"\n✅ 변환 완료 ({len(converted)}개):")
-        for p in converted:
-            md = p.with_suffix(".md")
-            print(f"   {p.relative_to(root)}  →  {md.relative_to(root)}")
+        for source_path, md_path in converted:
+            print(f"   {source_path.relative_to(root)}  →  {md_path.relative_to(root)}")
 
     # 마크다운 리포트 저장
     if args.export:
