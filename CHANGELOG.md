@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.3] - 2026-06-04
+
+### 🚀 Features
+
+- **Clearer Session History Navigation**: Refined bookmark ordering, nested tree indentation, and session-history sorting so large session lists are easier to scan.
+
+### 🐛 Fixes
+
+- **Workspace Execution Timeout Reliability**: Fixed timeout handoff and wait-budget handling for workspace shell and process flows, reducing stuck or premature terminal waits.
+- **Workspace Indexer Robustness**: Hardened the bundled workspace indexer against document-conversion failures and output-name collisions so indexing runs behave more reliably across messy files and Windows-style edge cases.
+
+### 🔧 Internal
+
+- **Windows Test Bootstrap Maintenance**: Stabilized integration-test startup on Windows and cleaned up related session-history internals to keep the `dev/0.8.x` release line easier to maintain.
+
 ## [0.8.2] - 2026-06-03
 
 ### 🐛 Fixes
