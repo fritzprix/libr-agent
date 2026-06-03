@@ -149,6 +149,13 @@ fn decode_process_output(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).to_string()
 }
 
+pub async fn read_output_file(file_path: &PathBuf) -> Result<String, String> {
+    let bytes = tokio::fs::read(file_path)
+        .await
+        .map_err(|e| format!("Failed to read output file '{}': {e}", file_path.display()))?;
+    Ok(strip_ansi_escapes(&decode_process_output(&bytes)))
+}
+
 /// Spawn process and stream stdout/stderr to files (common logic for sync/async)
 /// Returns (pid, exit_code, stdout_content, stderr_content)
 /// Respects cancellation token for graceful shutdown

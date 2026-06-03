@@ -22,7 +22,7 @@ impl WorkspaceServer {
             .values()
             .filter(|e| e.session_id == session_id)
             .filter(|e| match status_filter {
-                "running" => matches!(e.status, terminal_manager::ProcessStatus::Running),
+                "running" => terminal_manager::is_active_process_status(&e.status),
                 "finished" => matches!(
                     e.status,
                     terminal_manager::ProcessStatus::Finished
@@ -35,7 +35,7 @@ impl WorkspaceServer {
                     "process_id": e.id,
                     "name": e.name,
                     "command": e.command,
-                    "status": format!("{:?}", e.status).to_lowercase(),
+                    "status": terminal_manager::process_status_label(&e.status),
                     "pid": e.pid,
                     "started_at": e.started_at.to_rfc3339(),
                     "exit_code": e.exit_code,
@@ -54,7 +54,7 @@ impl WorkspaceServer {
             .entries
             .values()
             .filter(|e| e.session_id == session_id)
-            .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
+            .filter(|e| terminal_manager::is_active_process_status(&e.status))
             .count();
         let finished = registry
             .entries

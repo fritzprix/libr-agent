@@ -321,7 +321,7 @@ impl WorkspaceServer {
 
                 // Kill running processes
                 if let Some(pid) = entry.pid {
-                    if matches!(entry.status, terminal_manager::ProcessStatus::Running) {
+                    if terminal_manager::is_active_process_status(&entry.status) {
                         info!("Killing running process {} (PID {})", id, pid);
 
                         #[cfg(unix)]
@@ -673,7 +673,7 @@ Internal paths: .libragent/tmp/ (process outputs), .libragent/exports/ (exported
                         .entries
                         .values()
                         .filter(|e| e.session_id == session_id)
-                        .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
+                        .filter(|e| terminal_manager::is_active_process_status(&e.status))
                         .map(|e| (e.id.clone(), e.command.clone()))
                         .collect();
 

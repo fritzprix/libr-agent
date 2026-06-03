@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
@@ -43,6 +44,34 @@ impl WorkspaceServer {
 
         // Track execution time
         let execution_start = std::time::Instant::now();
+
+        const MAX_CONCURRENT_PROCESSES: usize = 20;
+        {
+            let registry = self.process_registry.read().await;
+            let active_count = registry
+                .entries
+                .values()
+                .filter(|e| e.session_id == session_id)
+                .filter(|e| terminal_manager::is_active_process_status(&e.status))
+                .count();
+
+            if active_count >= MAX_CONCURRENT_PROCESSES {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    format!(
+                        "Maximum concurrent processes limit reached ({}/{})",
+                        active_count, MAX_CONCURRENT_PROCESSES
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Use listProcesses to see active processes".to_string(),
+                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                    "Wait for some processes to finish before starting new ones".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        }
 
         // Generate process ID for sync execution
         let process_id = cuid2::create_id();
@@ -106,10 +135,12 @@ impl WorkspaceServer {
             }
         };
 
-        // Create cancellation token
+        let process_permit = crate::state::get_concurrency_gate()
+            .acquire_active_process()
+            .await?;
         let cancel_token = CancellationToken::new();
+        let completion_notifier = Arc::new(tokio::sync::Notify::new());
 
-        // Register process in registry
         let entry = terminal_manager::ProcessEntry {
             id: process_id.clone(),
             name: None,
@@ -137,71 +168,189 @@ impl WorkspaceServer {
             registry
                 .cancellation_tokens
                 .insert(process_id.clone(), cancel_token.clone());
+            registry
+                .completion_notifiers
+                .insert(process_id.clone(), completion_notifier.clone());
         }
 
-        // Execute command with timeout using common spawn+stream logic
-        let timeout_duration = Duration::from_secs(timeout_secs);
-        let execution_result = tokio::time::timeout(
-            timeout_duration,
-            process::spawn_and_stream_to_files(
+        let registry = self.process_registry.clone();
+        let pid_copy = process_id.clone();
+        let stdout_path_for_task = stdout_path.clone();
+        let stderr_path_for_task = stderr_path.clone();
+
+        tokio::spawn(async move {
+            let _process_permit = process_permit;
+
+            {
+                let mut reg = registry.write().await;
+                if let Some(entry) = reg.entries.get_mut(&pid_copy) {
+                    entry.status = terminal_manager::ProcessStatus::Running;
+                }
+            }
+
+            let result = process::spawn_and_stream_to_files(
                 cmd,
-                stdout_path.clone(),
-                stderr_path.clone(),
-                format!("sync:{process_id}"),
-                cancel_token.clone(),
-            ),
-        )
-        .await;
+                stdout_path_for_task.clone(),
+                stderr_path_for_task.clone(),
+                format!("sync:{pid_copy}"),
+                cancel_token,
+            )
+            .await;
 
-        // Update registry with result
-        let mut reg = self.process_registry.write().await;
+            let mut reg = registry.write().await;
+            if let Some(entry) = reg.entries.get_mut(&pid_copy) {
+                match result {
+                    Ok((pid, exit_code, _, _)) => {
+                        entry.pid = pid;
+                        entry.exit_code = exit_code;
+                        entry.finished_at.get_or_insert_with(chrono::Utc::now);
+                        entry.stdout_size =
+                            terminal_manager::get_file_size(&stdout_path_for_task).await;
+                        entry.stderr_size =
+                            terminal_manager::get_file_size(&stderr_path_for_task).await;
 
-        match execution_result {
-            Ok(Ok((pid, exit_code, stdout, stderr))) => {
-                // Measure duration
+                        if entry.status != terminal_manager::ProcessStatus::Killed {
+                            entry.status = if exit_code.unwrap_or(-1) == 0 {
+                                terminal_manager::ProcessStatus::Finished
+                            } else {
+                                terminal_manager::ProcessStatus::Failed
+                            };
+                        }
+                    }
+                    Err(e) => {
+                        let error_text = format!("Failed to execute isolated shell command: {e}");
+                        let _ = tokio::fs::write(&stderr_path_for_task, format!("{error_text}\n"))
+                            .await;
+
+                        entry.finished_at.get_or_insert_with(chrono::Utc::now);
+                        entry.stdout_size =
+                            terminal_manager::get_file_size(&stdout_path_for_task).await;
+                        entry.stderr_size =
+                            terminal_manager::get_file_size(&stderr_path_for_task).await;
+
+                        if entry.status != terminal_manager::ProcessStatus::Killed {
+                            entry.status = terminal_manager::ProcessStatus::Failed;
+                        }
+
+                        error!("Process {} execution error: {}", pid_copy, e);
+                    }
+                }
+            }
+
+            reg.cancellation_tokens.remove(&pid_copy);
+            let notifier = reg.completion_notifiers.get(&pid_copy).cloned();
+            drop(reg);
+
+            if let Some(notifier) = notifier {
+                notifier.notify_waiters();
+            }
+        });
+
+        let timeout_duration = Duration::from_secs(timeout_secs);
+        let terminal_entry = loop {
+            {
+                let registry = self.process_registry.read().await;
+                let Some(entry) = registry.entries.get(&process_id).cloned() else {
+                    return Ok(guided_error(
+                        ErrorCategory::InternalError,
+                        format!("Process {} disappeared before completion", process_id),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Retry the command once".to_string(),
+                        "If this persists, inspect workspace tool logs".to_string(),
+                    ])
+                    .to_mcp_result());
+                };
+
+                if terminal_manager::is_terminal_process_status(&entry.status) {
+                    break Some(entry);
+                }
+            }
+
+            let remaining = timeout_duration.saturating_sub(execution_start.elapsed());
+            if remaining.is_zero() {
+                break None;
+            }
+
+            let notifier = {
+                let registry = self.process_registry.read().await;
+                registry.completion_notifiers.get(&process_id).cloned()
+            };
+
+            let wait_slice = remaining.min(Duration::from_millis(100));
+            if let Some(notifier) = notifier {
+                let _ = tokio::time::timeout(wait_slice, notifier.notified()).await;
+            } else {
+                tokio::time::sleep(wait_slice).await;
+            }
+        };
+
+        match terminal_entry {
+            Some(entry) => {
                 let duration_ms = execution_start.elapsed().as_millis() as u64;
+                let stdout_result = process::read_output_file(&stdout_path).await;
+                let stderr_result = process::read_output_file(&stderr_path).await;
+                let actual_exit_code = entry.exit_code.unwrap_or(-1);
+                let success = entry.status == terminal_manager::ProcessStatus::Finished
+                    && actual_exit_code == 0;
 
-                // Update registry entry
-                if let Some(entry) = reg.entries.get_mut(&process_id) {
-                    entry.pid = pid;
-                    entry.exit_code = exit_code;
-                    entry.status = if exit_code.unwrap_or(-1) == 0 {
-                        terminal_manager::ProcessStatus::Finished
-                    } else {
-                        terminal_manager::ProcessStatus::Failed
-                    };
-                    entry.finished_at = Some(chrono::Utc::now());
-                    entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
-                    entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
+                {
+                    let mut reg = self.process_registry.write().await;
+                    reg.entries.remove(&process_id);
+                    reg.cancellation_tokens.remove(&process_id);
+                    reg.completion_notifiers.remove(&process_id);
+                    reg.streaming_handles.remove(&process_id);
                 }
 
-                // Remove cancellation token
-                reg.cancellation_tokens.remove(&process_id);
-                drop(reg);
-
-                // Cleanup temp directory
                 let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
 
-                let success = exit_code.unwrap_or(-1) == 0;
-                let actual_exit_code = exit_code.unwrap_or(-1);
+                let stdout = match stdout_result {
+                    Ok(stdout) => stdout,
+                    Err(error) => {
+                        return Ok(guided_error(
+                            ErrorCategory::OperationFailed,
+                            error,
+                            ToolGroup::Workspace,
+                        )
+                        .guidance(vec![
+                            "Retry the command once".to_string(),
+                            "If this persists, inspect workspace process logs".to_string(),
+                        ])
+                        .to_mcp_result());
+                    }
+                };
+                let stderr = match stderr_result {
+                    Ok(stderr) => stderr,
+                    Err(error) => {
+                        return Ok(guided_error(
+                            ErrorCategory::OperationFailed,
+                            error,
+                            ToolGroup::Workspace,
+                        )
+                        .guidance(vec![
+                            "Retry the command once".to_string(),
+                            "If this persists, inspect workspace process logs".to_string(),
+                        ])
+                        .to_mcp_result());
+                    }
+                };
 
-                // Construct JSON response with enhanced metadata
                 let response = serde_json::json!({
                     "command": command,
                     "exit_code": actual_exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
-                    "status": if success { "finished" } else { "failed" },
+                    "status": terminal_manager::process_status_label(&entry.status),
                     "duration_ms": duration_ms,
                     "execution_type": "isolated"
                 });
 
                 info!(
-                    "Isolated shell command executed: {} (session: {}, exit: {:?}, duration: {}ms)",
-                    command, session_id, exit_code, duration_ms
+                    "Isolated shell command executed: {} (session: {}, status: {:?}, exit: {:?}, duration: {}ms)",
+                    command, session_id, entry.status, entry.exit_code, duration_ms
                 );
 
-                // ✅ CRITICAL FIX: Handle non-zero exit codes as errors
                 if !success {
                     let error_output = if !stderr.is_empty() {
                         format!("Error output:\n{}", stderr)
@@ -211,7 +360,6 @@ impl WorkspaceServer {
                         "No error output captured".to_string()
                     };
 
-                    // Provide context-specific guidance based on exit code
                     let guidance = match actual_exit_code {
                         1 => vec![
                             "General command failure - review error output above".to_string(),
@@ -257,17 +405,13 @@ impl WorkspaceServer {
                     .to_mcp_result());
                 }
 
-                // Enhanced text response with explicit status and output visibility
                 let header = format!(
                     "Command executed in {} (exit code: 0)",
                     format_duration_ms(duration_ms)
                 );
-
-                // Include output in text message if available (CRITICAL FIX for sync visibility)
                 let text_message =
                     format_command_io_message(&header, "Output", &stdout, "Stderr", &stderr);
 
-                // ✅ ENHANCED: Detect signs of interactive prompts or cancelled operations
                 let output_lower = (stdout.clone() + &stderr).to_lowercase();
                 let cancellation_indicators = [
                     "operation cancelled",
@@ -287,7 +431,6 @@ impl WorkspaceServer {
                     .iter()
                     .any(|indicator| output_lower.contains(indicator));
 
-                // If interactive indicators detected, provide enhanced guidance
                 if detected_cancellation || detected_prompt {
                     let indicator_type = if detected_cancellation {
                         "operation was cancelled"
@@ -329,96 +472,66 @@ impl WorkspaceServer {
                 );
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }
-            Ok(Err(e)) => {
-                // Update registry entry to Failed
-                if let Some(entry) = reg.entries.get_mut(&process_id) {
-                    entry.status = terminal_manager::ProcessStatus::Failed;
-                    entry.finished_at = Some(chrono::Utc::now());
-                }
-                reg.cancellation_tokens.remove(&process_id);
-                drop(reg);
+            None => {
+                self.invalidate_context_cache().await;
 
-                // Cleanup temp directory
-                let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
-
-                error!(
-                    "Failed to execute isolated shell command '{}': {}",
-                    command, e
-                );
-                Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    e.to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Verify the command syntax is correct".to_string(),
-                    "Check if required programs are installed".to_string(),
-                    "Use listDirectory to verify file paths exist".to_string(),
-                ])
-                .to_mcp_result())
-            }
-            Err(_) => {
-                // Timeout - cancel the process
-                cancel_token.cancel();
-
-                // Update registry entry to Killed
-                if let Some(entry) = reg.entries.get_mut(&process_id) {
-                    entry.status = terminal_manager::ProcessStatus::Killed;
-                    entry.finished_at = Some(chrono::Utc::now());
-                }
-                reg.cancellation_tokens.remove(&process_id);
-                drop(reg);
-
-                // Cleanup temp directory
-                let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
-
-                error!(
-                    "Isolated shell command '{}' timed out after {} seconds",
-                    command, timeout_secs
-                );
-
-                // ✅ ENHANCED: Check if timeout might be due to waiting for interactive input
-                let might_be_interactive = validation::is_likely_interactive_command(command);
-
-                let error_message = if might_be_interactive {
-                    format!(
-                        "Command timed out after {} seconds (possibly waiting for interactive input)",
-                        timeout_secs
-                    )
-                } else {
-                    format!("Command timed out after {} seconds", timeout_secs)
+                let status = {
+                    let registry = self.process_registry.read().await;
+                    registry
+                        .entries
+                        .get(&process_id)
+                        .map(|entry| terminal_manager::process_status_label(&entry.status))
+                        .unwrap_or_else(|| "running".to_string())
                 };
 
-                let mut guidance = Vec::new();
+                warn!(
+                    "Isolated shell command '{}' exceeded sync timeout after {} seconds; handing off to background process {}",
+                    command, timeout_secs, process_id
+                );
+
+                let might_be_interactive = validation::is_likely_interactive_command(command);
+                let mut message = format!(
+                    "Command exceeded the synchronous wait window after {} seconds and is still running in background.\n\nProcess ID: {}\nStatus: {}\nExit code: pending",
+                    timeout_secs, process_id, status
+                );
 
                 if might_be_interactive {
-                    guidance.push(
-                        "⚠️ This command may be waiting for interactive input (password, prompts, confirmations)".to_string()
+                    message.push_str(
+                        "\n\nThe command also looks interactive, so verify it is not waiting for prompts or passwords.",
                     );
-                    guidance.push(format!(
-                        "Use {} with requireUserInput: true for interactive commands",
-                        PERSISTENT_SHELL_TOOL
-                    ));
-                    guidance.push(
-                        "Or add non-interactive flags: --yes, --force, -y, --non-interactive"
-                            .to_string(),
-                    );
-                    guidance
-                        .push("Examples: npm init --yes, npx create-vite . --force".to_string());
-                } else {
-                    guidance.push(format!(
-                        "Increase timeout parameter (current: {}s)",
-                        timeout_secs
-                    ));
-                    guidance.push("Use spawnProcess for long-running background tasks".to_string());
-                    guidance.push("Use waitForProcess(processId, 0) to check status, or waitForProcess(processId) to block until done".to_string());
                 }
 
-                Ok(
-                    guided_error(ErrorCategory::Timeout, error_message, ToolGroup::Workspace)
-                        .guidance(guidance)
-                        .to_mcp_result(),
-                )
+                let mut next_actions = vec![
+                    format!(
+                        "Use waitForProcess(\"{}\", 0) to check current status",
+                        process_id
+                    ),
+                    format!(
+                        "Use readProcessOutput(\"{}\", \"both\") to inspect stdout and stderr",
+                        process_id
+                    ),
+                    format!("Use stopProcess(\"{}\") to terminate it", process_id),
+                ];
+
+                if might_be_interactive {
+                    next_actions.insert(
+                        0,
+                        format!(
+                            "If the command needed input, rerun it with {} and requireUserInput: true",
+                            PERSISTENT_SHELL_TOOL
+                        ),
+                    );
+                }
+
+                let response = serde_json::json!({
+                    "command": command,
+                    "process_id": process_id,
+                    "status": status,
+                    "timeout_seconds": timeout_secs,
+                    "execution_type": "isolated_background_handoff"
+                });
+
+                Ok(SuccessHint::new(message, next_actions).to_mcp_result_with_data(Some(response)))
             }
         }
     }
