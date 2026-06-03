@@ -31,7 +31,6 @@ interface SessionCardProps {
   session: AgentSession;
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
-  nestingLevel?: number;
   lineageHint?: string;
   selectedLineageId?: string | null;
   onLineageSelect?: (lineageId: string) => void;
@@ -61,7 +60,6 @@ export function SessionCard({
   session,
   onResume,
   onDelete,
-  nestingLevel = 0,
   lineageHint,
   selectedLineageId = null,
   onLineageSelect,
@@ -231,7 +229,6 @@ export function SessionCard({
       aria-label={t('sessionHistory.card.ariaLabel', 'Session: {{name}}', {
         name: sessionNameFallback,
       })}
-      data-nesting-level={nestingLevel}
     >
       <div
         className={cn(

@@ -793,7 +793,6 @@ export function SessionHistoryPanel({
               onDelete={onDelete}
               onDeleteOnly={onDeleteOnly}
               onToggleBookmark={onToggleBookmark}
-              nestingLevel={nestingLevel}
               lineageHint={lineageHint}
               selectedLineageId={selectedLineageId}
               descendantCount={descendantCounts.get(session.id) ?? 0}
