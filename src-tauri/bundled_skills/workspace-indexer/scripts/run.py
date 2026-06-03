@@ -58,11 +58,12 @@ def run_step(label: str, cmd: list[str]) -> bool:
     print(f"\n{'='*60}")
     print(f"  {label}")
     print(f"{'='*60}")
-    
-    # Windows에서 하위 프로세스의 UTF-8 출력을 강제하기 위해 환경 변수 상속 및 설정
+
     env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    
+    if sys.platform.startswith("win"):
+        # Windows에서 하위 프로세스의 UTF-8 출력을 강제
+        env["PYTHONIOENCODING"] = "utf-8"
+
     result = subprocess.run(cmd, env=env)
     if result.returncode != 0:
         print(f"\n❌ {label} 실패 (exit code {result.returncode})")

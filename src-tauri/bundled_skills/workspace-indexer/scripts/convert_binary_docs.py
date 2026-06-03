@@ -50,7 +50,7 @@ def find_binary_files(root: Path, formats: list[str]) -> list[Path]:
     exts = {f".{fmt.lstrip('.')}" for fmt in formats}
     result = []
     for p in root.rglob("*"):
-        if any(part in SKIP_DIRS for part in p.parts):
+        if any(part in SKIP_DIRS for part in p.relative_to(root).parts):
             continue
         if p.suffix.lower() in exts and p.is_file():
             result.append(p)
@@ -170,6 +170,21 @@ CONVERTERS = {
 }
 
 
+def is_same_source_markdown(dest: Path, src: Path) -> bool:
+    """Return True when the existing markdown file was generated from the same source."""
+    if not dest.exists():
+        return False
+
+    source_in_md = get_source_from_md(dest)
+    if not source_in_md:
+        return False
+
+    try:
+        return Path(source_in_md).resolve() == src.resolve()
+    except OSError:
+        return False
+
+
 def convert_file(src: Path, out_dir: Path | None, overwrite: bool, used_dests: set[str]) -> tuple[Path, str]:
     """Convert a single file and return (output_path, status_message)."""
     ext = src.suffix.lower()
@@ -178,43 +193,34 @@ def convert_file(src: Path, out_dir: Path | None, overwrite: bool, used_dests: s
         return src, "SKIP (no converter)"
 
     dest_dir = out_dir if out_dir else src.parent
-    
     base_dest = dest_dir / (src.stem + ".md")
-    dest = base_dest
-    dest_key = str(dest.resolve().as_posix())
-    
-    # Resolve unique filename by appending path hash if conflict occurs
-    if dest_key in used_dests or (dest.exists() and not overwrite):
-        source_in_md = get_source_from_md(dest)
-        if source_in_md and Path(source_in_md).resolve() == src.resolve():
-            # Same source, safe to skip
-            used_dests.add(dest_key)
-            return dest, "SKIP (exists)"
-        else:
-            # Different source (collision) -> append short hash of source path
-            path_hash = get_path_hash(src)
+    path_hash = get_path_hash(src)
+    collision_index = 0
+
+    while True:
+        if collision_index == 0:
+            dest = base_dest
+        elif collision_index == 1:
             dest = dest_dir / f"{src.stem}_{path_hash}.md"
-            dest_key = str(dest.resolve().as_posix())
-            
-            # Resolve potential hash collisions
-            counter = 1
-            while True:
-                if dest_key in used_dests:
-                    dest = dest_dir / f"{src.stem}_{path_hash}_{counter}.md"
-                    dest_key = str(dest.resolve().as_posix())
-                    counter += 1
-                    continue
-                if dest.exists() and not overwrite:
-                    source_in_md = get_source_from_md(dest)
-                    if source_in_md and Path(source_in_md).resolve() == src.resolve():
-                        used_dests.add(dest_key)
-                        return dest, "SKIP (exists)"
-                    else:
-                        dest = dest_dir / f"{src.stem}_{path_hash}_{counter}.md"
-                        dest_key = str(dest.resolve().as_posix())
-                        counter += 1
-                        continue
-                break
+        else:
+            dest = dest_dir / f"{src.stem}_{path_hash}_{collision_index - 1}.md"
+
+        dest_key = str(dest.resolve().as_posix())
+
+        if dest_key in used_dests:
+            collision_index += 1
+            continue
+
+        if not dest.exists():
+            break
+
+        if is_same_source_markdown(dest, src):
+            if not overwrite:
+                used_dests.add(dest_key)
+                return dest, "SKIP (exists)"
+            break
+
+        collision_index += 1
 
     dest_dir.mkdir(parents=True, exist_ok=True)
 
