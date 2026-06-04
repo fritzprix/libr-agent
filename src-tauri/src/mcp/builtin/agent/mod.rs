@@ -4,7 +4,8 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::{
-    build_child_sessions_context, build_explicit_org_layer_context, SqliteSessionRepository,
+    build_child_sessions_context, build_explicit_org_layer_context, SessionRepository,
+    SqliteSessionRepository,
 };
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
@@ -183,7 +184,9 @@ impl BuiltinMCPServer for AgentServer {
         let repo = SqliteSessionRepository::new(self.get_db().clone());
         if let Ok(Some(session)) = repo.get_session(&self.session_id).await {
             // Build child sessions context (always exposed if children exist)
-            if let Ok(Some(child_context)) = build_child_sessions_context(&repo, &self.session_id).await {
+            if let Ok(Some(child_context)) =
+                build_child_sessions_context(&repo, &self.session_id).await
+            {
                 context_prompt.push('\n');
                 context_prompt.push_str(&child_context);
                 volatility = ContextVolatility::Medium;
@@ -191,7 +194,9 @@ impl BuiltinMCPServer for AgentServer {
 
             // Build org layer context (only if organization metadata exists on the session)
             if session.org_id.is_some() {
-                if let Ok(Some(org_layer_context)) = build_explicit_org_layer_context(&repo, &session).await {
+                if let Ok(Some(org_layer_context)) =
+                    build_explicit_org_layer_context(&repo, &session).await
+                {
                     context_prompt.push('\n');
                     context_prompt.push_str(&org_layer_context);
                     volatility = ContextVolatility::Medium;

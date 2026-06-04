@@ -33,7 +33,11 @@ pub async fn build_explicit_org_layer_context(
         .collect();
 
     // Deterministically sort siblings by updated_at DESC, then id DESC
-    siblings.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| b.id.cmp(&a.id)));
+    siblings.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| b.id.cmp(&a.id))
+    });
 
     let siblings: Vec<&SessionMetadata> = siblings.into_iter().take(5).collect();
 
@@ -67,5 +71,3 @@ fn find_session<'a>(
 ) -> Option<&'a SessionMetadata> {
     sessions.iter().find(|session| session.id == session_id)
 }
-
-

@@ -1,4 +1,4 @@
-use super::{format_session_label, DbError, SessionMetadata, SessionRepository};
+use super::{format_session_label, DbError, SessionRepository};
 
 /// Build service context for direct child sessions of the current session.
 ///

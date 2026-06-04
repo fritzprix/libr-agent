@@ -541,10 +541,7 @@ impl SessionRepository for SqliteSessionRepository {
             .all(&self.db)
             .await?;
 
-        models
-            .into_iter()
-            .map(SessionMetadata::try_from)
-            .collect()
+        models.into_iter().map(SessionMetadata::try_from).collect()
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError> {
