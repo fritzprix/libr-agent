@@ -155,7 +155,13 @@ pub fn is_terminal_process_status(status: &ProcessStatus) -> bool {
 }
 
 pub fn process_status_label(status: &ProcessStatus) -> String {
-    format!("{status:?}").to_lowercase()
+    match status {
+        ProcessStatus::Starting => "starting".to_string(),
+        ProcessStatus::Running => "running".to_string(),
+        ProcessStatus::Finished => "finished".to_string(),
+        ProcessStatus::Failed => "failed".to_string(),
+        ProcessStatus::Killed => "killed".to_string(),
+    }
 }
 
 /// Read last N lines from file (max 100, text only)

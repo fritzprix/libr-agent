@@ -33,12 +33,12 @@ import io
 import sys
 from pathlib import Path
 
-# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+# Prevent UnicodeEncodeError on Windows due to cp949 encoding
 if sys.platform.startswith("win"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
-# Cwd 독립적인 임포트를 위해 sys.path에 scripts 디렉토리 추가
+# Add scripts directory to sys.path for Cwd-independent imports
 sys.path.append(str(Path(__file__).resolve().parent))
 from utils import get_source_from_md, get_path_hash
 

@@ -2,12 +2,12 @@
 """
 Dependency Installer for workspace-indexer
 ==========================================
-필요한 Python 패키지를 확인하고 없으면 자동 설치합니다.
+Checks for required Python packages and installs them if missing.
 
 Usage:
-    python install_deps.py           # 전체 설치
-    python install_deps.py --check   # 설치 여부만 확인 (설치 안 함)
-    python install_deps.py --fmt pdf docx  # 특정 형식 필요 패키지만 설치
+    python install_deps.py           # Install all dependencies
+    python install_deps.py --check   # Only check if installed (do not install)
+    python install_deps.py --fmt pdf docx  # Only install packages for specific formats
 """
 
 import argparse
@@ -16,12 +16,12 @@ import io
 import subprocess
 import sys
 
-# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+# Prevent UnicodeEncodeError on Windows due to cp949 encoding
 if sys.platform.startswith("win"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
-# 형식별 필요 패키지
+# Required packages per file format
 FORMAT_DEPS: dict[str, list[tuple[str, str]]] = {
     "pdf":  [("fitz", "pymupdf")],
     "docx": [("docx", "python-docx")],
@@ -33,7 +33,7 @@ ALL_FORMATS = list(FORMAT_DEPS.keys())
 
 
 def check_package(import_name: str) -> bool:
-    """패키지가 임포트 가능한지 확인."""
+    """Check if a package can be imported."""
     try:
         importlib.import_module(import_name)
         return True
@@ -42,7 +42,7 @@ def check_package(import_name: str) -> bool:
 
 
 def install_package(pip_name: str) -> bool:
-    """pip으로 패키지 설치. 성공 여부 반환."""
+    """Install package via pip. Return True on success."""
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", pip_name],
         capture_output=True,
@@ -52,43 +52,43 @@ def install_package(pip_name: str) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="workspace-indexer 의존성 설치")
-    parser.add_argument("--check", action="store_true", help="확인만 (설치 안 함)")
+    parser = argparse.ArgumentParser(description="workspace-indexer dependency installer")
+    parser.add_argument("--check", action="store_true", help="Check only (do not install)")
     parser.add_argument(
         "--fmt", nargs="+", choices=ALL_FORMATS,
         default=ALL_FORMATS,
-        help="특정 형식만 처리 (기본: 전체)",
+        help="Process specific formats only (default: all)",
     )
     args = parser.parse_args()
 
-    print("=== workspace-indexer 의존성 확인 ===\n")
+    print("=== Checking workspace-indexer dependencies ===\n")
 
     all_ok = True
     for fmt in args.fmt:
         for import_name, pip_name in FORMAT_DEPS[fmt]:
             installed = check_package(import_name)
-            status = "✅ 설치됨" if installed else "❌ 없음"
+            status = "✅ Installed" if installed else "❌ Missing"
             print(f"  [{fmt:4s}] {pip_name:15s}  {status}")
 
             if not installed:
                 all_ok = False
                 if not args.check:
-                    print(f"         → pip install {pip_name} 실행 중...")
+                    print(f"         → Running pip install {pip_name}...")
                     ok = install_package(pip_name)
                     if ok:
-                        print(f"         ✅ 설치 완료")
+                        print(f"         ✅ Installation completed")
                     else:
-                        print(f"         ❌ 설치 실패 — 수동 실행: pip install {pip_name}")
+                        print(f"         ❌ Installation failed — please run manually: pip install {pip_name}")
 
     print()
     if all_ok:
-        print("✅ 모든 의존성이 충족되어 있습니다.")
+        print("✅ All dependencies are met.")
     elif args.check:
-        print("⚠️  누락된 패키지가 있습니다.")
-        print("   설치하려면: python install_deps.py")
+        print("⚠️  Some dependencies are missing.")
+        print("   To install: python install_deps.py")
         sys.exit(1)
     else:
-        # 설치 후 재확인
+        # Re-check after installation
         still_missing = [
             pip_name
             for fmt in args.fmt
@@ -96,10 +96,10 @@ def main():
             if not check_package(import_name)
         ]
         if still_missing:
-            print(f"❌ 설치 실패 패키지: {', '.join(still_missing)}")
+            print(f"❌ Failed to install packages: {', '.join(still_missing)}")
             sys.exit(1)
         else:
-            print("✅ 모든 의존성 설치 완료.")
+            print("✅ All dependencies installed successfully.")
 
 
 if __name__ == "__main__":
