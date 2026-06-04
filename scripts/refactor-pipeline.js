@@ -222,6 +222,7 @@ async function runStage(stage, stageIndex, totalStages, runDir) {
       cwd: repoRoot,
       env: applyStageEnvironment(buildStageEnvironment(), stage),
       stdio: ['inherit', 'pipe', 'pipe'],
+      shell: process.platform === 'win32' ? true : undefined,
     });
   } catch (error) {
     logStream.end();

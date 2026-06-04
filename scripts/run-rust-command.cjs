@@ -103,6 +103,7 @@ const result = spawnSync('cargo', cargoArgs, {
   cwd: path.join(__dirname, '..', 'src-tauri'),
   env,
   stdio: 'inherit',
+  shell: process.platform === 'win32' ? true : undefined,
 });
 
 if (result.error) {
