@@ -173,6 +173,7 @@
     "clearLineageFocus": "Clear lineage focus",
     "noSessionsMatching": "No sessions found matching \"{{query}}\"",
     "clearSearch": "Clear search",
+    "bookmarkedCountSummary": "{{count}} bookmarked sessions",
     "bookmarkedSection": {
       "heading": "Bookmarked Sessions",
       "description": "Pinned sessions stay here for quick access while the full history remains below.",
@@ -180,8 +181,8 @@
       "open": "Open session",
       "lastUsed": "Used {{time}}",
       "defaultMeta": "Saved for quick access",
-      "more": "+{{count}} more bookmarked",
-      "browseAll": "Browse all bookmarked"
+      "more": "+{{count}} more bookmarked sessions",
+      "browseAll": "Browse all bookmarked sessions"
     },
     "toasts": {
       "deleted": "Session deleted",

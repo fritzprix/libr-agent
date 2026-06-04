@@ -842,13 +842,21 @@ export function SessionHistoryPanel({
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {defaultDescription} (
-              {t(
-                'sessionHistory.loadedCountSummary',
-                '{{count}} loaded sessions',
-                {
-                  count: baseSessions.length,
-                },
-              )}
+              {showBookmarkedOnly
+                ? t(
+                    'sessionHistory.bookmarkedCountSummary',
+                    '{{count}} bookmarked sessions',
+                    {
+                      count: baseSessions.length,
+                    },
+                  )
+                : t(
+                    'sessionHistory.loadedCountSummary',
+                    '{{count}} loaded sessions',
+                    {
+                      count: baseSessions.length,
+                    },
+                  )}
               {displayRows.length !== baseSessions.length
                 ? `, ${t(
                     'sessionHistory.visibleCountSummary',

@@ -2,26 +2,26 @@
 """
 Workspace Index Builder
 ========================
-워크스페이스를 탐색하여 index.md (파일 색인 + 키워드 맵)를 생성합니다.
+Scans the workspace to generate index.md (file index + keyword map).
 
 Usage:
     python build_index.py [--root ROOT_DIR] [--out OUTPUT_MD] [--keywords KEYWORDS_FILE]
                           [--ignore-dirs DIR1 DIR2 ...] [--dry-run]
 
 Options:
-    --root          탐색할 루트 디렉터리 (기본값: 현재 디렉터리)
-    --out           출력할 index.md 경로 (기본값: ROOT/index.md)
-    --keywords      키워드 목록 파일 (.txt, 한 줄에 하나씩). 없으면 자동 추출.
-    --ignore-dirs   무시할 디렉터리 이름 (기본값: .git __pycache__ node_modules .github)
-    --dry-run       파일 목록과 키워드만 출력, 파일 저장 안 함
-    --max-keyword-files  키워드당 최대 파일 수 (기본값: 20)
+    --root          Root directory to scan (default: current directory)
+    --out           Output index.md path (default: ROOT/index.md)
+    --keywords      Keywords file (.txt, one keyword per line). If omitted, extracted automatically.
+    --ignore-dirs   Directories to ignore (default: .git __pycache__ node_modules .github)
+    --dry-run       Print files and keywords only, do not save to file
+    --max-keyword-files  Maximum number of files per keyword (default: 20)
 
 Features:
-    - 워크스페이스 내 모든 텍스트 파일(md, txt, py 등)과 binary 파일 목록화
-    - 마크다운 파일의 # 헤딩에서 키워드 자동 추출
-    - 각 키워드가 등장하는 파일 목록 생성 (키워드 맵)
-    - 디렉터리별 파일 트리 생성
-    - binary 파일 목록 별도 섹션으로 분리
+    - Lists all text files (md, txt, py, etc.) and binary files in the workspace
+    - Automatically extracts keywords from H1-H3 headings in Markdown files
+    - Generates a map of files containing each keyword (keyword map)
+    - Generates directory-based file trees
+    - Separates binary documents into a dedicated section
 
 Examples:
     python build_index.py --root . --out index.md
@@ -37,30 +37,30 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+# Prevent UnicodeEncodeError on Windows due to cp949 encoding
 if sys.platform.startswith("win"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
-# Cwd 독립적인 임포트를 위해 sys.path에 scripts 디렉토리 추가
+# Add scripts directory to sys.path for Cwd-independent imports
 sys.path.append(str(Path(__file__).resolve().parent))
 from utils import get_source_from_md
 
-# 무시할 기본 디렉터리
+# Default directories to ignore
 DEFAULT_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github", "venv", ".venv", ".mypy_cache", ".libragent", "attachments"}
 
-# 텍스트로 처리할 확장자
+# Extensions to treat as text
 TEXT_EXTS = {".md", ".txt", ".py", ".sh", ".json", ".yaml", ".yml", ".toml", ".csv", ".html", ".js", ".ts"}
 
-# Binary 문서 확장자
+# Binary document extensions
 BINARY_DOC_EXTS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".ppt", ".doc"}
 
-# 색인에 포함할 확장자 (전체)
+# Extensions to include in the index (total)
 INDEX_EXTS = TEXT_EXTS | BINARY_DOC_EXTS | {".ipynb"}
 
 
 def collect_files(root: Path, skip_dirs: set[str]) -> tuple[list[Path], list[Path]]:
-    """텍스트 파일과 binary 파일을 분리하여 반환."""
+    """Separate text files and binary files and return them."""
     text_files, binary_files = [], []
     for p in sorted(root.rglob("*")):
         if p.is_dir():
@@ -78,7 +78,7 @@ def collect_files(root: Path, skip_dirs: set[str]) -> tuple[list[Path], list[Pat
 
 
 def extract_headings(path: Path) -> list[str]:
-    """마크다운 파일에서 # 헤딩 텍스트 추출."""
+    """Extract heading text (H1-H3) from markdown file."""
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -88,7 +88,7 @@ def extract_headings(path: Path) -> list[str]:
         m = re.match(r"^#{1,3}\s+(.+)", line)
         if m:
             heading = m.group(1).strip()
-            # 마크다운 링크, 코드 제거
+            # Remove markdown links and inline code formatting
             heading = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", heading)
             heading = re.sub(r"`[^`]+`", "", heading)
             heading = heading.strip()
@@ -99,8 +99,8 @@ def extract_headings(path: Path) -> list[str]:
 
 def extract_keywords_from_files(text_files: list[Path], root: Path) -> dict[str, list[str]]:
     """
-    텍스트 파일에서 키워드(헤딩) 추출.
-    반환: {keyword: [rel_path1, rel_path2, ...]}
+    Extract keywords (headings) from text files.
+    Returns: {keyword: [rel_path1, rel_path2, ...]}
     """
     keyword_map: dict[str, set[str]] = defaultdict(set)
     for p in text_files:
@@ -110,17 +110,17 @@ def extract_keywords_from_files(text_files: list[Path], root: Path) -> dict[str,
         rel = str(p.relative_to(root).as_posix())
         for h in headings:
             keyword_map[h].add(rel)
-            # 단어 단위 토큰도 키워드로 추가하여 한글/영어 매핑/검색 개선
+            # Add word-level tokens as keywords to improve Korean/English mapping and search
             words = re.findall(r'[a-zA-Z0-9가-힣]+', h)
             for w in words:
                 if len(w) >= 2 and w != h:
                     keyword_map[w].add(rel)
-    # 리스트로 변환 및 정렬하여 일관된 출력 보장 (O(n) 성능 유지)
+    # Convert to list and sort to guarantee consistent output (maintaining O(n) performance)
     return {kw: sorted(list(files)) for kw, files in keyword_map.items()}
 
 
 def load_custom_keywords(keyword_file: Path, text_files: list[Path], root: Path) -> dict[str, list[str]]:
-    """사용자 정의 키워드 파일에서 키워드를 읽고, 파일 내 등장 여부 매핑."""
+    """Read keywords from custom keywords file and map them if they appear in files."""
     keywords = [line.strip() for line in keyword_file.read_text(encoding="utf-8").splitlines() if line.strip()]
     keyword_map: dict[str, list[str]] = defaultdict(list)
     for p in text_files:
@@ -136,12 +136,12 @@ def load_custom_keywords(keyword_file: Path, text_files: list[Path], root: Path)
 
 
 def build_dir_tree(all_files: list[Path], root: Path) -> dict[str, list[Path]]:
-    """디렉터리별 파일 그룹핑. POSIX 경로를 키로 사용하여 OS 무관하게 일관성 유지."""
+    """Group files by directory. Uses POSIX path keys to maintain OS-independent consistency."""
     tree: dict[str, list[Path]] = defaultdict(list)
     for p in all_files:
         rel = p.relative_to(root)
         parts = rel.parts
-        # str(Path(...))는 Windows에서 백슬래시를 반환하므로 as_posix() 사용
+        # Use as_posix() because str(Path(...)) returns backslashes on Windows
         dir_key = Path(*parts[:-1]).as_posix() if len(parts) > 1 else "."
         tree[dir_key].append(p)
     return dict(tree)
@@ -158,28 +158,28 @@ def render_index(
     lines = [
         f"# Workspace Index",
         f"",
-        f"> 생성일시: {now}  ",
-        f"> 루트: `{root}`  ",
-        f"> 텍스트 파일: **{len(text_files)}개** | Binary 문서: **{len(binary_files)}개**",
+        f"> Generated at: {now}  ",
+        f"> Root: `{root}`  ",
+        f"> Text Files: **{len(text_files)}** | Binary Documents: **{len(binary_files)}**",
         f"",
         f"---",
         f"",
-        f"## 목차",
+        f"## Table of Contents",
         f"",
-        f"1. [파일 색인 (텍스트)](#파일-색인-텍스트)",
-        f"2. [Binary 문서 목록](#binary-문서-목록)",
-        f"3. [키워드 맵](#키워드-맵)",
+        f"1. [File Index (Text)](#file-index-text)",
+        f"2. [Binary Documents](#binary-documents)",
+        f"3. [Keyword Map](#keyword-map)",
         f"",
         f"---",
         f"",
     ]
 
-    # --- 텍스트 파일 색인 ---
-    lines += [f"## 파일 색인 (텍스트)", f""]
+    # --- Text File Index ---
+    lines += [f"## File Index (Text)", f""]
     tree = build_dir_tree(text_files, root)
     for dir_key in sorted(tree.keys()):
         if dir_key == ".":
-            lines.append(f"### 📁 (루트)")
+            lines.append(f"### 📁 (Root)")
         else:
             lines.append(f"### 📁 {dir_key}")
         for p in sorted(tree[dir_key]):
@@ -188,10 +188,10 @@ def render_index(
             lines.append(f"- [`{p.name}`]({rel}) ({size_kb:.1f} KB)")
         lines.append("")
 
-    # --- Binary 문서 ---
-    lines += [f"---", f"", f"## Binary 문서 목록", f""]
+    # --- Binary Documents ---
+    lines += [f"---", f"", f"## Binary Documents", f""]
     if binary_files:
-        # 마크다운 파일들의 Source 헤더를 읽어 binary 파일과 매핑 구축
+        # Read the Source header of markdown files to build a mapping to binary files
         src_to_md = {}
         for p_md in text_files:
             if p_md.suffix.lower() == ".md":
@@ -203,30 +203,30 @@ def render_index(
                     except Exception:
                         pass
 
-        lines.append("| 파일명 | 경로 | 크기 | 변환 파일 |")
+        lines.append("| Filename | Path | Size | Converted File |")
         lines.append("| --- | --- | --- | --- |")
         for p in sorted(binary_files):
             rel = str(p.relative_to(root).as_posix())
             size_kb = p.stat().st_size / 1024
             resolved_p = str(p.resolve().as_posix())
-            
-            # 소스 매핑에서 먼저 찾고, 없으면 기존 규칙(같은 경로의 .md) 사용
+
+            # Look up in source map first; if not found, fall back to default path (.md)
             md_rel = src_to_md.get(resolved_p)
             if not md_rel:
                 md_path = p.with_suffix(".md")
                 if md_path.exists():
                     md_rel = str(md_path.relative_to(root).as_posix())
-                    
-            converted = f"[MD]({md_rel})" if md_rel else "❌ 미변환"
+
+            converted = f"[MD]({md_rel})" if md_rel else "❌ Non-converted"
             lines.append(f"| `{p.name}` | `{rel}` | {size_kb:.1f} KB | {converted} |")
     else:
-        lines.append("_(Binary 문서 없음)_")
+        lines.append("_(No binary documents)_")
     lines.append("")
 
-    # --- 키워드 맵 ---
-    lines += [f"---", f"", f"## 키워드 맵", f""]
+    # --- Keyword Map ---
+    lines += [f"---", f"", f"## Keyword Map", f""]
     if keyword_map:
-        lines.append(f"총 **{len(keyword_map)}개** 키워드")
+        lines.append(f"Total **{len(keyword_map)}** keywords")
         lines.append("")
         for kw in sorted(keyword_map.keys(), key=lambda x: x.lower()):
             file_list = keyword_map[kw][:max_keyword_files]
@@ -235,20 +235,20 @@ def render_index(
             for rel in file_list:
                 lines.append(f"- [`{Path(rel).name}`]({rel})")
             if overflow > 0:
-                lines.append(f"- _외 {overflow}개 파일_")
+                lines.append(f"- _and {overflow} more files_")
             lines.append("")
     else:
-        lines.append("_(키워드 없음)_")
+        lines.append("_(No keywords)_")
 
     return "\n".join(lines)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Workspace Index Builder")
-    parser.add_argument("--root", default=".", help="탐색 루트 디렉터리")
-    parser.add_argument("--out", default=None, help="출력 index.md 경로")
-    parser.add_argument("--keywords", default=None, help="커스텀 키워드 파일 (.txt)")
-    parser.add_argument("--ignore-dirs", nargs="+", default=[], help="추가로 무시할 디렉터리")
+    parser.add_argument("--root", default=".", help="Scan root directory")
+    parser.add_argument("--out", default=None, help="Output index.md path")
+    parser.add_argument("--keywords", default=None, help="Custom keywords file (.txt)")
+    parser.add_argument("--ignore-dirs", nargs="+", default=[], help="Additional directories to ignore")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-keyword-files", type=int, default=20)
     args = parser.parse_args()
@@ -257,39 +257,39 @@ def main():
     skip_dirs = DEFAULT_SKIP_DIRS | set(args.ignore_dirs)
     out_path = Path(args.out).resolve() if args.out else root / "index.md"
 
-    print(f"🔍 탐색 중: {root}")
+    print(f"🔍 Scanning: {root}")
     text_files, binary_files = collect_files(root, skip_dirs)
-    print(f"   텍스트: {len(text_files)}개 | Binary: {len(binary_files)}개")
+    print(f"   Text: {len(text_files)} | Binary: {len(binary_files)}")
 
     if args.keywords:
         kw_file = Path(args.keywords)
         if not kw_file.exists():
-            print(f"❌ 키워드 파일 없음: {kw_file}", file=sys.stderr)
+            print(f"❌ Keywords file not found: {kw_file}", file=sys.stderr)
             sys.exit(1)
         keyword_map = load_custom_keywords(kw_file, text_files, root)
-        print(f"   커스텀 키워드: {len(keyword_map)}개 매핑됨")
+        print(f"   Custom keywords: {len(keyword_map)} mapped")
     else:
         keyword_map = extract_keywords_from_files(text_files, root)
-        print(f"   자동 추출 키워드: {len(keyword_map)}개")
+        print(f"   Auto-extracted keywords: {len(keyword_map)}")
 
     if args.dry_run:
-        print("\n=== 텍스트 파일 ===")
+        print("\n=== Text Files ===")
         for f in text_files[:20]:
             print(f"  {f.relative_to(root)}")
         if len(text_files) > 20:
-            print(f"  ... 외 {len(text_files)-20}개")
-        print("\n=== Binary 파일 ===")
+            print(f"  ... and {len(text_files)-20} more")
+        print("\n=== Binary Files ===")
         for f in binary_files[:20]:
             print(f"  {f.relative_to(root)}")
-        print("\n=== 키워드 샘플 (상위 20개) ===")
+        print("\n=== Keyword Samples (Top 20) ===")
         for kw in list(sorted(keyword_map.keys()))[:20]:
-            print(f"  '{kw}': {len(keyword_map[kw])}개 파일")
+            print(f"  '{kw}': {len(keyword_map[kw])} files")
         return
 
     content = render_index(root, text_files, binary_files, keyword_map, args.max_keyword_files)
     out_path.write_text(content, encoding="utf-8")
-    print(f"\n✅ 저장됨: {out_path}")
-    print(f"   크기: {len(content):,} bytes")
+    print(f"\n✅ Saved to: {out_path}")
+    print(f"   Size: {len(content):,} bytes")
 
 
 if __name__ == "__main__":

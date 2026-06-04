@@ -2,7 +2,7 @@
 """
 Workspace Indexer — Unified Runner
 ====================================
-binary 변환 + index.md 구축을 한 번에 실행하는 통합 진입점.
+Unified entry point to run binary conversion and build index.md in one step.
 
 Usage:
     python run.py [--root ROOT] [--out OUT] [--formats pdf pptx docx xlsx]
@@ -10,29 +10,29 @@ Usage:
                   [--index-out INDEX_MD] [--keywords KEYWORDS_FILE]
                   [--ignore-dirs DIR1 DIR2] [--dry-run]
 
-주요 옵션:
-    --root          워크스페이스 루트 (기본값: 현재 디렉터리)
-    --out           변환 파일 출력 디렉터리 (기본값: 원본 파일 위치)
-    --formats       변환할 형식 (기본값: pdf pptx docx xlsx)
-    --overwrite     기존 변환 파일 덮어쓰기
-    --skip-convert  binary 변환 건너뜀 (색인만 갱신)
-    --skip-index    index.md 생성 건너뜀 (변환만 수행)
-    --index-out     index.md 출력 경로 (기본값: ROOT/index.md)
-    --keywords      커스텀 키워드 파일 (.txt)
-    --ignore-dirs   추가로 무시할 디렉터리
-    --dry-run       실제 파일 저장 없이 동작만 시뮬레이션
+Main Options:
+    --root          Workspace root (default: current directory)
+    --out           Converted files output directory (default: same as source file)
+    --formats       Formats to convert (default: pdf pptx docx xlsx)
+    --overwrite     Overwrite existing converted files
+    --skip-convert  Skip binary conversion (refresh index only)
+    --skip-index    Skip index.md generation (perform conversion only)
+    --index-out     index.md output path (default: ROOT/index.md)
+    --keywords      Custom keywords file (.txt)
+    --ignore-dirs   Additional directories to ignore
+    --dry-run       Simulate operations without saving files
 
 Examples:
-    # 전체 워크플로우
+    # Full workflow
     python run.py --root .
 
-    # 변환만 (PDF/DOCX)
+    # Conversion only (PDF/DOCX)
     python run.py --root . --skip-index --formats pdf docx
 
-    # 색인만 갱신
+    # Index refresh only
     python run.py --root . --skip-convert
 
-    # dry-run으로 미리 확인
+    # Dry-run preview
     python run.py --root . --dry-run
 """
 
@@ -43,7 +43,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Windows에서 cp949 인코딩으로 인한 UnicodeEncodeError 방지
+# Prevent UnicodeEncodeError on Windows due to cp949 encoding
 if sys.platform.startswith("win"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
@@ -54,19 +54,19 @@ INDEX_SCRIPT = SCRIPT_DIR / "build_index.py"
 
 
 def run_step(label: str, cmd: list[str]) -> bool:
-    """서브프로세스로 스크립트 실행. 성공 여부 반환."""
+    """Run script in subprocess. Return True on success."""
     print(f"\n{'='*60}")
     print(f"  {label}")
     print(f"{'='*60}")
 
     env = os.environ.copy()
     if sys.platform.startswith("win"):
-        # Windows에서 하위 프로세스의 UTF-8 출력을 강제
+        # Force UTF-8 encoding for subprocesses on Windows
         env["PYTHONIOENCODING"] = "utf-8"
 
     result = subprocess.run(cmd, env=env)
     if result.returncode != 0:
-        print(f"\n❌ {label} 실패 (exit code {result.returncode})")
+        print(f"\n❌ {label} failed (exit code {result.returncode})")
         return False
     return True
 
@@ -99,60 +99,60 @@ def build_index_cmd(args) -> list[str]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="workspace-indexer 통합 실행기",
+        description="workspace-indexer unified runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--root", default=".", help="워크스페이스 루트 디렉터리")
-    parser.add_argument("--out", default=None, help="변환 파일 출력 디렉터리")
+    parser.add_argument("--root", default=".", help="Workspace root directory")
+    parser.add_argument("--out", default=None, help="Output directory for converted files")
     parser.add_argument("--formats", nargs="+", default=["pdf", "pptx", "docx", "xlsx"])
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--skip-convert", action="store_true", help="binary 변환 건너뜀")
-    parser.add_argument("--skip-index", action="store_true", help="index.md 생성 건너뜀")
-    parser.add_argument("--index-out", default=None, help="index.md 출력 경로")
-    parser.add_argument("--keywords", default=None, help="커스텀 키워드 파일")
-    parser.add_argument("--ignore-dirs", nargs="+", default=[], help="무시할 디렉터리")
+    parser.add_argument("--skip-convert", action="store_true", help="Skip binary conversion")
+    parser.add_argument("--skip-index", action="store_true", help="Skip index.md generation")
+    parser.add_argument("--index-out", default=None, help="Output path for index.md")
+    parser.add_argument("--keywords", default=None, help="Custom keywords file")
+    parser.add_argument("--ignore-dirs", nargs="+", default=[], help="Directories to ignore")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
     print(f"🗂️  Workspace Indexer")
-    print(f"   루트: {root}")
-    print(f"   모드: {'dry-run' if args.dry_run else 'live'}")
+    print(f"   Root: {root}")
+    print(f"   Mode: {'dry-run' if args.dry_run else 'live'}")
     steps = []
     if not args.skip_convert:
-        steps.append("binary 변환")
+        steps.append("binary conversion")
     if not args.skip_index:
-        steps.append("index.md 구축")
-    print(f"   단계: {' → '.join(steps) if steps else '(없음)'}\n")
+        steps.append("index.md building")
+    print(f"   Steps: {' → '.join(steps) if steps else '(none)'}\n")
 
     success = True
 
-    # Step 1: binary 변환
+    # Step 1: binary conversion
     if not args.skip_convert:
         cmd = build_convert_cmd(args)
-        ok = run_step("Step 1: Binary 문서 → Markdown 변환", cmd)
+        ok = run_step("Step 1: Binary Documents → Markdown Conversion", cmd)
         if not ok:
             success = False
 
-    # Step 2: index.md 구축
+    # Step 2: index.md building
     if not args.skip_index:
         cmd = build_index_cmd(args)
-        ok = run_step("Step 2: index.md 구축", cmd)
+        ok = run_step("Step 2: Building index.md", cmd)
         if not ok:
             success = False
 
-    # 최종 결과
+    # Final results
     print(f"\n{'='*60}")
     if success:
         if not args.dry_run:
             index_path = args.index_out or str(root / "index.md")
-            print(f"✅ 완료!")
+            print(f"✅ Completed!")
             if not args.skip_index:
                 print(f"   index.md → {index_path}")
         else:
-            print(f"✅ dry-run 완료 (파일 저장 없음)")
+            print(f"✅ dry-run completed (no files saved)")
     else:
-        print(f"⚠️  일부 단계에서 오류가 발생했습니다.")
+        print(f"⚠️  Errors occurred in some steps.")
         sys.exit(1)
 
 
