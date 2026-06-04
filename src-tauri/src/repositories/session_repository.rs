@@ -236,6 +236,12 @@ pub trait SessionRepository: Send + Sync {
     /// Get direct child session IDs for a parent session ID
     async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError>;
 
+    /// Get direct child session metadata for a parent session ID, sorted by updated_at descending
+    async fn get_child_sessions(
+        &self,
+        parent_session_id: &str,
+    ) -> Result<Vec<SessionMetadata>, DbError>;
+
     /// Delete a session
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError>;
 
@@ -435,6 +441,7 @@ impl SessionRepository for SqliteSessionRepository {
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
         let models = Session::find()
             .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
             .all(&self.db)
             .await?;
 
@@ -519,6 +526,22 @@ impl SessionRepository for SqliteSessionRepository {
             .await?;
 
         Ok(models.into_iter().map(|m| m.id).collect())
+    }
+
+    async fn get_child_sessions(
+        &self,
+        parent_session_id: &str,
+    ) -> Result<Vec<SessionMetadata>, DbError> {
+        use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+
+        let models = Session::find()
+            .filter(session::Column::ParentSessionId.eq(parent_session_id))
+            .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
+            .all(&self.db)
+            .await?;
+
+        models.into_iter().map(SessionMetadata::try_from).collect()
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError> {

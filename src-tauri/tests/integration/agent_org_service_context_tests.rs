@@ -1,8 +1,8 @@
 use crate::common;
 
 use tauri_mcp_agent_lib::repositories::{
-    build_explicit_org_layer_context, SessionMetadata, SessionRepository, SessionStatus,
-    SqliteSessionRepository,
+    build_child_sessions_context, build_explicit_org_layer_context, SessionMetadata,
+    SessionRepository, SessionStatus, SqliteSessionRepository,
 };
 
 fn build_session(
@@ -92,7 +92,8 @@ async fn org_service_context_includes_only_local_org_layer_for_org_sessions() {
     .await
     .expect("different depth session should persist");
 
-    let context = build_explicit_org_layer_context(&repo, "child-a")
+    let session = repo.get_session("child-a").await.unwrap().unwrap();
+    let context = build_explicit_org_layer_context(&repo, &session)
         .await
         .expect("org layer context should build")
         .expect("org session should receive org layer context");
@@ -135,7 +136,8 @@ async fn org_service_context_omits_org_section_for_non_org_sessions() {
     .await
     .expect("solo session should persist");
 
-    let context = build_explicit_org_layer_context(&repo, "solo")
+    let session = repo.get_session("solo").await.unwrap().unwrap();
+    let context = build_explicit_org_layer_context(&repo, &session)
         .await
         .expect("org layer context should build");
 
@@ -162,12 +164,181 @@ async fn org_service_context_omits_org_section_when_root_session_id_is_missing()
     .await
     .expect("partial org session should persist");
 
-    let context = build_explicit_org_layer_context(&repo, "partial-org")
+    let session = repo.get_session("partial-org").await.unwrap().unwrap();
+    let context = build_explicit_org_layer_context(&repo, &session)
         .await
         .expect("org layer context should build");
 
     assert!(
         context.is_none(),
         "sessions missing org_root_session_id must not receive org context"
+    );
+}
+
+#[tokio::test]
+async fn org_service_context_includes_child_sessions_even_without_org() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+
+    // Parent session with no org info
+    repo.upsert_session(&build_session(
+        "parent-x",
+        "Parent Coordinator",
+        None,
+        Some(0),
+        None,
+        None,
+        None,
+    ))
+    .await
+    .expect("parent session should persist");
+
+    // Child session a
+    repo.upsert_session(&build_session(
+        "child-1",
+        "Child Agent A",
+        Some("parent-x"),
+        Some(1),
+        None,
+        None,
+        None,
+    ))
+    .await
+    .expect("child session a should persist");
+
+    // Child session b (with status: Busy to verify status formatting)
+    let mut child2 = build_session(
+        "child-2",
+        "Child Agent B",
+        Some("parent-x"),
+        Some(1),
+        None,
+        None,
+        None,
+    );
+    child2.status = SessionStatus::Busy;
+    repo.upsert_session(&child2)
+        .await
+        .expect("child session b should persist");
+
+    let context = build_child_sessions_context(&repo, "parent-x")
+        .await
+        .expect("child context should build")
+        .expect("child context should not be empty");
+
+    assert!(
+        context.contains("## Child Sessions"),
+        "context should contain Child Sessions header"
+    );
+    assert!(
+        context.contains("- child-1 — Child Agent A (status: idle)"),
+        "should contain child-1 with correct status formatting"
+    );
+    assert!(
+        context.contains("- child-2 — Child Agent B (status: busy)"),
+        "should contain child-2 with correct status formatting"
+    );
+}
+
+#[tokio::test]
+async fn agent_server_get_service_context_composes_child_and_org_context() {
+    use std::sync::Arc;
+    use tauri_mcp_agent_lib::mcp::builtin::agent::AgentServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+
+    // 1. Create a parent session with org info
+    repo.upsert_session(&build_session(
+        "parent-org-session",
+        "Parent Coordinator",
+        None,
+        Some(0),
+        Some("org-beta"),
+        Some("Beta Org"),
+        Some("parent-org-session"),
+    ))
+    .await
+    .expect("parent session should persist");
+
+    // 2. Create a child session
+    repo.upsert_session(&build_session(
+        "child-org-session",
+        "Child Analyst",
+        Some("parent-org-session"),
+        Some(1),
+        Some("org-beta"),
+        Some("Beta Org"),
+        Some("parent-org-session"),
+    ))
+    .await
+    .expect("child session should persist");
+
+    // 3. Initialize AgentServer
+    let server = AgentServer::new("parent-org-session".to_string(), Arc::new(db), None)
+        .await
+        .expect("AgentServer should initialize");
+
+    // 4. Retrieve service context
+    let context = server.get_service_context(None).await;
+    let prompt = context.context_prompt;
+
+    // 5. Assert it contains both child and org details
+    assert!(prompt.contains("## Child Sessions"));
+    assert!(prompt.contains("- child-org-session — Child Analyst (status: idle)"));
+    assert!(prompt.contains("## Explicit Org Layer"));
+    assert!(prompt.contains("- Org: Beta Org"));
+}
+
+#[tokio::test]
+async fn org_service_context_truncates_child_sessions_exceeding_max_limit() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+
+    // Create a parent session
+    repo.upsert_session(&build_session(
+        "parent-limit",
+        "Parent Coordinator",
+        None,
+        Some(0),
+        None,
+        None,
+        None,
+    ))
+    .await
+    .expect("parent session should persist");
+
+    // Create 25 child sessions
+    for i in 1..=25 {
+        let child_id = format!("child-{}", i);
+        let child_name = format!("Child Agent {}", i);
+        repo.upsert_session(&build_session(
+            &child_id,
+            &child_name,
+            Some("parent-limit"),
+            Some(1),
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("child session should persist");
+    }
+
+    let context = build_child_sessions_context(&repo, "parent-limit")
+        .await
+        .expect("child context should build")
+        .expect("child context should not be empty");
+
+    assert!(
+        context.contains("## Child Sessions"),
+        "context should contain Child Sessions header"
+    );
+
+    // Verify it contains the truncation note indicating 5 more omitted
+    assert!(
+        context.contains("- ... and 5 more omitted"),
+        "should contain the truncation note indicating 5 more omitted"
     );
 }

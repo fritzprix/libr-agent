@@ -3,7 +3,10 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
-use crate::repositories::{build_explicit_org_layer_context, SqliteSessionRepository};
+use crate::repositories::{
+    build_child_sessions_context, build_explicit_org_layer_context, SessionRepository,
+    SqliteSessionRepository,
+};
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
@@ -60,16 +63,17 @@ impl AgentServer {
             icon: None,
         }
     }
-
-    async fn build_org_layer_context(&self) -> Result<Option<String>, String> {
-        let repo = SqliteSessionRepository::new(self.get_db().clone());
-        build_explicit_org_layer_context(&repo, &self.session_id)
-            .await
-            .map_err(|error| format!("Failed to load org layer context: {}", error))
-    }
 }
 
 pub const NAME: &str = "agent";
+
+pub const AGENT_DELEGATION_HEADER: &str = concat!(
+    "# Agent Delegation\n\n",
+    "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
+    "- `agent__startSession` starts delegated work.\n",
+    "- `agent__messageToSession` resumes or retries an existing delegated session.\n",
+    "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
+);
 
 #[async_trait]
 impl BuiltinMCPServer for AgentServer {
@@ -173,20 +177,31 @@ impl BuiltinMCPServer for AgentServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let mut context_prompt = concat!(
-            "# Agent Delegation\n\n",
-            "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
-            "- `agent__startSession` starts delegated work.\n",
-            "- `agent__messageToSession` resumes or retries an existing delegated session.\n",
-            "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
-        )
-        .to_string();
+        let mut context_prompt = AGENT_DELEGATION_HEADER.to_string();
 
         let mut volatility = ContextVolatility::Stable;
-        if let Ok(Some(org_layer_context)) = self.build_org_layer_context().await {
-            context_prompt.push('\n');
-            context_prompt.push_str(&org_layer_context);
-            volatility = ContextVolatility::Medium;
+
+        let repo = SqliteSessionRepository::new(self.get_db().clone());
+        if let Ok(Some(session)) = repo.get_session(&self.session_id).await {
+            // Build child sessions context (always exposed if children exist)
+            if let Ok(Some(child_context)) =
+                build_child_sessions_context(&repo, &self.session_id).await
+            {
+                context_prompt.push('\n');
+                context_prompt.push_str(&child_context);
+                volatility = ContextVolatility::Medium;
+            }
+
+            // Build org layer context (only if organization metadata exists on the session)
+            if session.org_id.is_some() {
+                if let Ok(Some(org_layer_context)) =
+                    build_explicit_org_layer_context(&repo, &session).await
+                {
+                    context_prompt.push('\n');
+                    context_prompt.push_str(&org_layer_context);
+                    volatility = ContextVolatility::Medium;
+                }
+            }
         }
 
         ServiceContext::new(context_prompt).with_volatility(volatility)
