@@ -115,7 +115,8 @@ pub async fn resolve_skills(
     let settings_repo = get_settings_repository();
     if let Ok(Some(setting)) = settings_repo.get("additionalSkillPaths").await {
         if let Ok(paths) = serde_json::from_str::<Vec<String>>(&setting.value) {
-            let valid_paths = paths.into_iter()
+            let valid_paths = paths
+                .into_iter()
                 .map(PathBuf::from)
                 .filter(|p| p.exists() && p.is_dir());
             for path in valid_paths {

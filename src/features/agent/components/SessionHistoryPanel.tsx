@@ -50,10 +50,7 @@ import {
   type SessionSortKey,
   type SessionSortDirection,
 } from './session-history-utils';
-import {
-  computeSessionTree,
-  type SessionHistoryRow,
-} from './session-tree';
+import { computeSessionTree, type SessionHistoryRow } from './session-tree';
 import { useInfiniteScroll } from './use-session-scroll';
 import { BookmarkedSessionRow } from './BookmarkedSessionRow';
 

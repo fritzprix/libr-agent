@@ -82,7 +82,9 @@ function getMatchedAndSortedSessions({
 }): AgentSession[] {
   let filtered = sessions;
   if (activeStatusFilter !== 'all') {
-    filtered = filtered.filter((session) => session.status === activeStatusFilter);
+    filtered = filtered.filter(
+      (session) => session.status === activeStatusFilter,
+    );
   }
 
   return [...filterSessions(filtered, searchQuery)].sort((a, b) => {
@@ -278,7 +280,9 @@ export function computeSessionTree({
 }: ComputeSessionTreeParams) {
   // 1. Determine base lineage sessions
   const lineageSessions = selectedLineageId
-    ? deferredSessions.filter((session) => session.lineageId === selectedLineageId)
+    ? deferredSessions.filter(
+        (session) => session.lineageId === selectedLineageId,
+      )
     : deferredSessions;
 
   // 2. Filter by bookmarks if needed
@@ -313,11 +317,12 @@ export function computeSessionTree({
   const childrenByParent = buildChildrenMap(lineageSessions);
 
   // 7. Resolve visible sessions and automatically expanded ancestors
-  const { visibleIds, autoExpandedAncestorIds } = resolveVisibleAndAutoExpandedSessions({
-    matchedSessions,
-    sessionById,
-    filtersActive,
-  });
+  const { visibleIds, autoExpandedAncestorIds } =
+    resolveVisibleAndAutoExpandedSessions({
+      matchedSessions,
+      sessionById,
+      filtersActive,
+    });
 
   // 8. Merge manually expanded and auto-expanded ancestors
   const effectiveExpandedSessionIds = new Set(manuallyExpandedSessionIds);
@@ -348,7 +353,9 @@ export function computeSessionTree({
       if (!visibleIds.has(session.id)) {
         return false;
       }
-      return !session.parentSessionId || !visibleIds.has(session.parentSessionId);
+      return (
+        !session.parentSessionId || !visibleIds.has(session.parentSessionId)
+      );
     })
     .sort(sortByCurrentOrder);
 
