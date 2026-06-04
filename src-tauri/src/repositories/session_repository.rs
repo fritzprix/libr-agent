@@ -516,6 +516,7 @@ impl SessionRepository for SqliteSessionRepository {
 
         let models = Session::find()
             .filter(session::Column::ParentSessionId.eq(parent_session_id))
+            .order_by_desc(session::Column::CreatedAt)
             .order_by_desc(session::Column::Id)
             .all(&self.db)
             .await?;
