@@ -6,7 +6,7 @@ use super::copy_dir_recursive;
 use super::scan_skills_internal_cached;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::session::get_session_manager;
-use crate::state::{get_settings_repository, wait_for_managed_skills_sync};
+use crate::state::{try_get_settings_repository, wait_for_managed_skills_sync};
 use log;
 use std::collections::HashSet;
 use std::fs;
@@ -14,10 +14,6 @@ use std::path::{Path, PathBuf};
 
 pub async fn get_default_skills_directory() -> Result<String, String> {
     Ok(get_user_skills_directory()?.to_string_lossy().to_string())
-}
-
-pub async fn get_configured_skills_directory() -> Result<String, String> {
-    get_default_skills_directory().await
 }
 
 pub fn get_system_skills_directory() -> Result<PathBuf, String> {
@@ -56,6 +52,49 @@ fn merge_skill_layers(skill_layers: Vec<Vec<SkillMetadata>>) -> Vec<SkillMetadat
 
     merged_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
     merged_skills
+}
+
+const AGENT_SKILL_PATTERNS: &[&str] = &[
+    ".agents/skills",
+    ".gemini/skills",
+    ".copilot/skills",
+    ".cursor/skills",
+    ".windsurf/skills",
+    ".claude/skills",
+    ".cline/skills",
+    ".continue/skills",
+];
+
+fn find_workspace_root(workspace_dir: &Path) -> Option<PathBuf> {
+    // 1. If it ends with .libragent/skills, parent of parent is the root
+    if workspace_dir.ends_with(".libragent/skills") {
+        return workspace_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf());
+    }
+
+    // 2. Otherwise traverse upwards (max 20 levels deep) to find directory containing .libragent or .git
+    let mut current = workspace_dir.to_path_buf();
+    for _ in 0..20 {
+        if current.join(".libragent").exists() || current.join(".git").exists() {
+            return Some(current);
+        }
+        if !current.pop() {
+            break;
+        }
+    }
+
+    // 3. Fallback: parent directory
+    workspace_dir.parent().map(|p| p.to_path_buf())
+}
+
+fn discover_agent_skill_dirs(workspace_root: &Path) -> Vec<PathBuf> {
+    AGENT_SKILL_PATTERNS
+        .iter()
+        .map(|p| workspace_root.join(p))
+        .filter(|p| p.exists() && p.is_dir())
+        .collect()
 }
 
 pub async fn get_managed_skills_overview() -> Result<ManagedSkillsOverview, String> {
@@ -107,21 +146,31 @@ pub async fn resolve_skills(
 
     let mut skill_layers = Vec::new();
     let mut sources: Vec<(Option<PathBuf>, &str, &str)> = vec![
-        (workspace_dir, "workspace", "workspace"),
+        (workspace_dir.clone(), "workspace", "workspace"),
         (assistant_dir, "assistant", "assistant"),
     ];
 
-    // 설정 저장소에서 추가 스킬 경로(additionalSkillPaths)를 읽어와 동적으로 레퍼런스 레이어 병합
-    let settings_repo = get_settings_repository();
-    if let Ok(Some(setting)) = settings_repo.get("additionalSkillPaths").await {
-        if let Ok(paths) = serde_json::from_str::<Vec<String>>(&setting.value) {
-            let valid_paths = paths
-                .into_iter()
-                .map(PathBuf::from)
-                .filter(|p| p.exists() && p.is_dir());
-            for path in valid_paths {
-                sources.push((Some(path), "custom_reference", "custom"));
+    // Read additional skill paths from the settings repository and dynamically merge reference layers
+    if let Some(settings_repo) = try_get_settings_repository() {
+        if let Ok(Some(setting)) = settings_repo.get("additionalSkillPaths").await {
+            if let Ok(paths) = serde_json::from_str::<Vec<String>>(&setting.value) {
+                let valid_paths = paths
+                    .into_iter()
+                    .map(PathBuf::from)
+                    .filter(|p| p.exists() && p.is_dir());
+                for path in valid_paths {
+                    sources.push((Some(path), "custom_reference", "custom"));
+                }
             }
+        }
+    }
+
+    // Auto-discover agent hidden directories
+    let workspace_root = workspace_dir.as_ref().and_then(|d| find_workspace_root(d));
+    if let Some(ws) = workspace_root {
+        for path in discover_agent_skill_dirs(&ws) {
+            log::info!("Auto-discovered agent skills directory: {:?}", path);
+            sources.push((Some(path), "agent_import", "agent"));
         }
     }
 
@@ -176,21 +225,19 @@ pub fn migrate_workspace_skills_to_libragent(workspace_path: &Path) -> Result<()
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create .libragent folder: {}", e))?;
 
-        // 1. fs::rename 우선 시도 (동일 파일 시스템 시 원자적 처리)
+        // 1. Try fs::rename first (atomic operation if on same filesystem)
         if fs::rename(&old_skills, &new_skills).is_ok() {
             log::info!("Successfully migrated workspace skills via rename");
             return Ok(());
         }
 
-        // 2. rename 실패 시 복사 + 삭제 폴백
+        // 2. Fallback: copy then remove if rename fails
         copy_dir_recursive(&old_skills, &new_skills)
             .map_err(|e| format!("Skills migration copy failed: {}", e))?;
 
-        if new_skills.exists() {
-            fs::remove_dir_all(&old_skills)
-                .map_err(|e| format!("Failed to remove legacy skills folder: {}", e))?;
-            log::info!("Successfully migrated workspace skills to .libragent/skills (fallback)");
-        }
+        fs::remove_dir_all(&old_skills)
+            .map_err(|e| format!("Failed to remove legacy skills folder: {}", e))?;
+        log::info!("Successfully migrated workspace skills to .libragent/skills (fallback)");
     }
 
     Ok(())
@@ -216,9 +263,19 @@ pub fn collect_allowed_skill_roots(
 ) -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
+    let workspace_root = workspace_dir.as_ref().and_then(|d| find_workspace_root(d));
+
     if let Some(directory) = workspace_dir {
         roots.push(directory);
     }
+
+    // Add agent skill directories
+    if let Some(ws) = workspace_root {
+        for path in discover_agent_skill_dirs(&ws) {
+            roots.push(path);
+        }
+    }
+
     if let Some(directory) = assistant_dir {
         roots.push(directory);
     }

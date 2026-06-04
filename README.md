@@ -5,9 +5,12 @@
 
 [한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
+[![Version](https://img.shields.io/github/v/release/fritzprix/libr-agent)](https://github.com/fritzprix/libr-agent/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
+[![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
 LibrAgent is a **local-first agent workspace** built on Tauri + Rust + React. It is designed for people who want more than chat: real file access, shell execution, browser automation, MCP extensibility, and multi-agent workflows that can keep going for hours instead of falling apart after one demo loop.
 
@@ -101,7 +104,7 @@ LibrAgent treats security as a first-class architectural concern:
 MCP (Model Context Protocol) is the open standard behind LibrAgent's extensibility model. LibrAgent treats it not as a feature — but as the architectural backbone:
 
 - **Full transport support**: stdio, HTTP, SSE, and OAuth 2.1 — the complete spec
-- **12+ built-in servers**: Planning, Knowledge (RAG), Browser Automation, Workspace, Shell Execution, Content Store, and more
+- **15+ built-in servers**: Planning, Knowledge, Browser Automation, Workspace, Shell Execution, Content Store, and more
 - **Preset catalog**: Install GitHub, Brave Search, Filesystem, and other popular servers in one click
 - **Session-isolated instances**: Each agent session has independent MCP server state — no interference between parallel agents
 - **Import from anywhere**: Migrate MCP configs from Cursor, VS Code, Claude Code, or Windsurf automatically
@@ -156,7 +159,8 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 - **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **specialized operations**: `computer-diagnosis` and other focused helpers
 
-_Important: `bootstrap` is a builtin capability often used alongside these skills. Bundled Skills are the reusable procedures; builtins and MCP tools are the execution substrate underneath._
+> [!IMPORTANT]
+> **`bootstrap` is a builtin capability** often used alongside these skills. Bundled Skills are the reusable procedures, while builtins and MCP tools provide the execution substrate underneath.
 
 ---
 
@@ -289,7 +293,7 @@ pnpm tauri dev
 LibrAgent is MIT licensed and built in the open. Contributions are welcome — whether that's new bundled skills, MCP integrations, bug fixes, or architecture improvements.
 
 - 📖 [Contributing Guide](CONTRIBUTING.md)
-- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues)
+- 🐛 [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 - 💬 [Discussions](https://github.com/fritzprix/libr-agent/discussions)
 
 **License**: MIT
