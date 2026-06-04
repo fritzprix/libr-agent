@@ -8,7 +8,7 @@ use crate::entity::playbook::{self, Entity as PlaybookEntity};
 use crate::utils::pagination::{Page, PaginationParams};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Order,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 
@@ -150,7 +150,8 @@ impl PlaybookRepository for SqlitePlaybookRepository {
 
         // Get paginated items
         let items = query
-            .order_by(playbook::Column::UpdatedAt, Order::Desc)
+            .order_by_desc(playbook::Column::UpdatedAt)
+            .order_by_desc(playbook::Column::Id)
             .limit(page_size)
             .offset(offset)
             .all(&self.db)
@@ -236,7 +237,8 @@ impl PlaybookRepository for SqlitePlaybookRepository {
                 "LOWER(goal) LIKE ?",
                 vec![sea_orm::Value::from(query_pattern)],
             ))
-            .order_by(playbook::Column::UpdatedAt, Order::Desc)
+            .order_by_desc(playbook::Column::UpdatedAt)
+            .order_by_desc(playbook::Column::Id)
             .all(&self.db)
             .await
             .map_err(DbError::SeaOrmQueryFailed)
@@ -249,7 +251,8 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         PlaybookEntity::find()
             .filter(playbook::Column::AssistantId.eq(assistant_id))
             .filter(playbook::Column::IsBookmarked.eq(true))
-            .order_by(playbook::Column::UpdatedAt, Order::Desc)
+            .order_by_desc(playbook::Column::UpdatedAt)
+            .order_by_desc(playbook::Column::Id)
             .all(&self.db)
             .await
             .map_err(DbError::SeaOrmQueryFailed)

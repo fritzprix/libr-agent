@@ -518,10 +518,12 @@ impl SessionRepository for SqliteSessionRepository {
     }
 
     async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError> {
-        use sea_orm::{ColumnTrait, QueryFilter};
+        use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
 
         let models = Session::find()
             .filter(session::Column::ParentSessionId.eq(parent_session_id))
+            .order_by_desc(session::Column::CreatedAt)
+            .order_by_desc(session::Column::Id)
             .all(&self.db)
             .await?;
 
