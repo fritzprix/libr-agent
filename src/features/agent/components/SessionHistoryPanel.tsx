@@ -2,7 +2,6 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -25,26 +24,38 @@ import {
   History,
   X,
   BookmarkCheck,
-  Clock3,
-  StarOff,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
 import {
-  buildChildrenMap,
   buildDescendantCounts,
   buildDescendantStatusCounts,
-  filterSessions,
   type SessionStatus,
-  type SessionStatusCounts,
 } from '@/lib/session-utils';
-import { formatRelativeTime } from '@/lib/date-utils';
-import {
-  getLatestSessionActivityTimestamp,
-  sortSessionsByLatestActivity,
-} from '@/lib/session-metadata';
+import { sortSessionsByLatestActivity } from '@/lib/session-metadata';
 import type { AgentSession } from '@/models/agent';
 import { SessionCard } from './SessionCard';
+
+// Extracted modules
+import {
+  HISTORY_CONTENT_RAIL_CLASS,
+  HISTORY_SECTION_CLASS,
+  BOOKMARK_PREVIEW_LIMIT,
+  TREE_INDENT_PX,
+  MAX_TREE_INDENT_LEVEL,
+  sessionSortValues,
+  statusFilterValues,
+  isSessionSortKey,
+  isSessionStatusFilterValue,
+  type SessionSortKey,
+  type SessionSortDirection,
+} from './session-history-utils';
+import {
+  computeSessionTree,
+  type SessionHistoryRow,
+} from './session-tree';
+import { useInfiniteScroll } from './use-session-scroll';
+import { BookmarkedSessionRow } from './BookmarkedSessionRow';
 
 interface SessionHistoryPanelProps {
   sessions: AgentSession[];
@@ -68,204 +79,6 @@ interface SessionHistoryPanelProps {
   emptyStateSubtitle?: string;
   initialSortKey?: SessionSortKey;
   initialSortDirection?: SessionSortDirection;
-}
-
-interface SessionHistoryRow {
-  session: AgentSession;
-  nestingLevel: number;
-  lineageHint?: string;
-  hasExpandableChildren: boolean;
-  isExpanded: boolean;
-  descendantStatusCounts?: SessionStatusCounts;
-}
-
-type SessionHistoryTranslate = ReturnType<typeof useTranslation>['t'];
-type SessionSortKey = 'updatedAt' | 'createdAt' | 'name';
-type SessionSortDirection = 'asc' | 'desc';
-
-function findScrollParent(element: HTMLElement | null): HTMLElement | null {
-  let current = element?.parentElement ?? null;
-
-  while (current) {
-    const { overflowY } = window.getComputedStyle(current);
-    if (overflowY === 'auto' || overflowY === 'scroll') {
-      return current;
-    }
-    current = current.parentElement;
-  }
-
-  return null;
-}
-
-interface BookmarkedSessionTileProps {
-  session: AgentSession;
-  onResume: (sessionId: string) => void;
-  onToggleBookmark?: (sessionId: string) => void;
-  t: SessionHistoryTranslate;
-}
-
-const HISTORY_CONTENT_RAIL_CLASS = 'mx-auto w-full max-w-4xl';
-const HISTORY_SECTION_CLASS =
-  'rounded-xl border bg-card/80 p-4 shadow-sm shadow-black/5';
-const BOOKMARK_PREVIEW_LIMIT = 6;
-const TREE_INDENT_PX = 18;
-const MAX_TREE_INDENT_LEVEL = 8;
-const sessionSortValues: SessionSortKey[] = ['updatedAt', 'createdAt', 'name'];
-
-function getSessionDisplayName(
-  session: AgentSession,
-  t: SessionHistoryTranslate,
-): string {
-  return (
-    session.name ||
-    t('sessionHistory.card.fallbackName', 'Session {{id}}', {
-      id: session.id.slice(0, 8),
-    })
-  );
-}
-
-function isSessionSortKey(value: string): value is SessionSortKey {
-  return sessionSortValues.includes(value as SessionSortKey);
-}
-
-function getSessionSortTimestamp(
-  session: AgentSession,
-  sortKey: Extract<SessionSortKey, 'updatedAt' | 'createdAt'>,
-): number {
-  if (sortKey === 'updatedAt') {
-    return getLatestSessionActivityTimestamp(session);
-  }
-
-  return session.createdAt.getTime();
-}
-
-function compareSessionsBySort(
-  left: AgentSession,
-  right: AgentSession,
-  sortKey: SessionSortKey,
-  sortDirection: SessionSortDirection,
-  t: SessionHistoryTranslate,
-): number {
-  let comparison = 0;
-
-  if (sortKey === 'name') {
-    comparison = getSessionDisplayName(left, t).localeCompare(
-      getSessionDisplayName(right, t),
-      undefined,
-      {
-        numeric: true,
-        sensitivity: 'base',
-      },
-    );
-  } else {
-    comparison =
-      getSessionSortTimestamp(left, sortKey) -
-      getSessionSortTimestamp(right, sortKey);
-  }
-
-  if (comparison === 0) {
-    return 0;
-  }
-
-  return sortDirection === 'asc' ? comparison : -comparison;
-}
-
-function compareSessionsByLatestActivityDesc(
-  left: AgentSession,
-  right: AgentSession,
-): number {
-  return (
-    getSessionSortTimestamp(right, 'updatedAt') -
-    getSessionSortTimestamp(left, 'updatedAt')
-  );
-}
-
-function BookmarkedSessionRow({
-  session,
-  onResume,
-  onToggleBookmark,
-  t,
-}: BookmarkedSessionTileProps) {
-  const shortcutLabel = getSessionDisplayName(session, t);
-  const latestActivity =
-    formatRelativeTime(
-      new Date(getLatestSessionActivityTimestamp(session)),
-      new Date(),
-    ) || t('sessionHistory.card.justNow', 'just now');
-  const secondaryLabel =
-    session.assistant?.name ||
-    (session.provider && session.model
-      ? `${session.provider}/${session.model}`
-      : t(
-          'sessionHistory.bookmarkedSection.defaultMeta',
-          'Saved for quick access',
-        ));
-
-  return (
-    <div className="flex items-center gap-2 rounded-lg border bg-background/80 px-3 py-2 shadow-sm shadow-black/5">
-      <Button
-        type="button"
-        variant="ghost"
-        className="-my-1 h-auto min-w-0 flex-1 justify-start px-2 py-1"
-        onClick={() => onResume(session.id)}
-        aria-label={t(
-          'sessionHistory.bookmarkedSection.resumeAria',
-          'Open bookmarked session {{name}}',
-          { name: shortcutLabel },
-        )}
-      >
-        <div className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm font-semibold leading-5 text-foreground">
-            {shortcutLabel}
-          </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="truncate">{secondaryLabel}</span>
-            <span aria-hidden="true">•</span>
-            <Clock3 className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">
-              {t('sessionHistory.bookmarkedSection.lastUsed', 'Used {{time}}', {
-                time: latestActivity,
-              })}
-            </span>
-          </div>
-        </div>
-      </Button>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 shrink-0"
-        onClick={() => onToggleBookmark?.(session.id)}
-        aria-label={t(
-          'sessionHistory.actions.unbookmarkAria',
-          'Remove bookmark',
-        )}
-      >
-        <StarOff className="h-4 w-4" aria-hidden="true" />
-      </Button>
-    </div>
-  );
-}
-
-const statusPriority: Record<string, number> = {
-  busy: 1,
-  idle: 2,
-  paused: 3,
-  error: 4,
-};
-
-const statusFilterValues: Array<'all' | SessionStatus> = [
-  'all',
-  'busy',
-  'idle',
-  'paused',
-  'error',
-];
-
-function isSessionStatusFilterValue(
-  value: string,
-): value is 'all' | SessionStatus {
-  return statusFilterValues.includes(value as 'all' | SessionStatus);
 }
 
 export function SessionHistoryPanel({
@@ -293,7 +106,6 @@ export function SessionHistoryPanel({
 }: SessionHistoryPanelProps) {
   const { t } = useTranslation('common');
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const scrollParentRef = useRef<HTMLElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const historyControlsRef = useRef<HTMLDivElement | null>(null);
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
@@ -362,10 +174,6 @@ export function SessionHistoryPanel({
     showBookmarkedOnly,
   ]);
 
-  useLayoutEffect(() => {
-    scrollParentRef.current = findScrollParent(rootRef.current);
-  }, []);
-
   const bookmarkedSessions = useMemo(
     () =>
       sortSessionsByLatestActivity(
@@ -398,234 +206,45 @@ export function SessionHistoryPanel({
     displayRows,
     matchedSessionCount,
     statusCounts,
-  } = useMemo(() => {
-    const lineageSessions = selectedLineageId
-      ? deferredSessions.filter(
-          (session) => session.lineageId === selectedLineageId,
-        )
-      : deferredSessions;
-    const bookmarkedScopeSessions = showBookmarkedOnly
-      ? lineageSessions.filter((session) => session.isBookmarked === true)
-      : lineageSessions;
-    const nextStatusCounts = {
-      all: bookmarkedScopeSessions.length,
-      busy: 0,
-      idle: 0,
-      paused: 0,
-      error: 0,
-    };
-
-    bookmarkedScopeSessions.forEach((session) => {
-      if (
-        Object.prototype.hasOwnProperty.call(nextStatusCounts, session.status)
-      ) {
-        nextStatusCounts[session.status as keyof typeof nextStatusCounts]++;
-      }
-    });
-
-    let filteredSessions = bookmarkedScopeSessions;
-
-    if (activeStatusFilter !== 'all') {
-      filteredSessions = filteredSessions.filter(
-        (session) => session.status === activeStatusFilter,
-      );
-    }
-
-    const matchedSessions = [
-      ...filterSessions(filteredSessions, deferredSearchQuery),
-    ].sort((a, b) => {
-      const sortDiff = compareSessionsBySort(
-        a,
-        b,
+  } = useMemo(
+    () =>
+      computeSessionTree({
+        deferredSessions,
+        selectedLineageId,
+        showBookmarkedOnly,
+        activeStatusFilter,
+        deferredSearchQuery,
         activeSortKey,
         activeSortDirection,
+        manuallyExpandedSessionIds,
+        collapsedAutoExpandedSessionIds,
+        descendantStatusCounts,
         t,
-      );
-      if (sortDiff !== 0) {
-        return sortDiff;
-      }
+      }),
+    [
+      deferredSessions,
+      selectedLineageId,
+      showBookmarkedOnly,
+      activeStatusFilter,
+      deferredSearchQuery,
+      activeSortKey,
+      activeSortDirection,
+      manuallyExpandedSessionIds,
+      collapsedAutoExpandedSessionIds,
+      descendantStatusCounts,
+      t,
+    ],
+  );
 
-      const statusDiff =
-        (statusPriority[a.status] ?? 999) - (statusPriority[b.status] ?? 999);
-      if (statusDiff !== 0) {
-        return statusDiff;
-      }
-
-      const latestActivityDiff = compareSessionsByLatestActivityDesc(a, b);
-      if (latestActivityDiff !== 0) {
-        return latestActivityDiff;
-      }
-
-      return b.createdAt.getTime() - a.createdAt.getTime();
-    });
-
-    // Bolt: Eliminate .map() array allocation, map manually
-    const sessionById = new Map<string, AgentSession>();
-    for (let i = 0; i < lineageSessions.length; i++) {
-      sessionById.set(lineageSessions[i].id, lineageSessions[i]);
-    }
-    const childrenByParent = buildChildrenMap(lineageSessions);
-    const visibleIds = new Set<string>();
-    const nextAutoExpandedAncestorIds = new Set<string>();
-
-    matchedSessions.forEach((session) => {
-      let current: AgentSession | undefined = session;
-      while (current) {
-        // Bolt: Break early if already visible to prevent O(N * Depth) traversal
-        if (visibleIds.has(current.id)) {
-          break;
-        }
-
-        visibleIds.add(current.id);
-        const parent: AgentSession | undefined = current.parentSessionId
-          ? sessionById.get(current.parentSessionId)
-          : undefined;
-        if (parent && filtersActive) {
-          nextAutoExpandedAncestorIds.add(parent.id);
-        }
-        current = parent;
-      }
-    });
-
-    const effectiveExpandedSessionIds = new Set(manuallyExpandedSessionIds);
-    nextAutoExpandedAncestorIds.forEach((sessionId) => {
-      if (!collapsedAutoExpandedSessionIds.has(sessionId)) {
-        effectiveExpandedSessionIds.add(sessionId);
-      }
-    });
-
-    // Bolt: Eliminate .map() array allocation, map manually
-    const sortIndexById = new Map<string, number>();
-    for (let i = 0; i < matchedSessions.length; i++) {
-      sortIndexById.set(matchedSessions[i].id, i);
-    }
-    const orderCache = new Map<string, number>();
-    const orderForSession = (session: AgentSession): number => {
-      const cachedOrder = orderCache.get(session.id);
-      if (cachedOrder !== undefined) {
-        return cachedOrder;
-      }
-
-      let computedOrder: number;
-      const indexOrder = sortIndexById.get(session.id);
-      if (indexOrder !== undefined) {
-        computedOrder = indexOrder;
-      } else {
-        const descendants = childrenByParent.get(session.id) || [];
-        // Bolt: Replaced .filter().map() with single-pass manual loop
-        // to prevent allocating intermediate arrays.
-        let minDescendantOrder = Number.MAX_SAFE_INTEGER;
-        for (let i = 0; i < descendants.length; i++) {
-          const child = descendants[i];
-          if (visibleIds.has(child.id)) {
-            const childOrder = orderForSession(child);
-            if (childOrder < minDescendantOrder) {
-              minDescendantOrder = childOrder;
-            }
-          }
-        }
-        computedOrder = minDescendantOrder;
-      }
-
-      orderCache.set(session.id, computedOrder);
-      return computedOrder;
-    };
-
-    const sortByCurrentOrder = (a: AgentSession, b: AgentSession) => {
-      const orderDiff = orderForSession(a) - orderForSession(b);
-      if (orderDiff !== 0) {
-        return orderDiff;
-      }
-
-      const statusDiff =
-        (statusPriority[a.status] ?? 999) - (statusPriority[b.status] ?? 999);
-      if (statusDiff !== 0) {
-        return statusDiff;
-      }
-
-      return b.createdAt.getTime() - a.createdAt.getTime();
-    };
-
-    for (const children of childrenByParent.values()) {
-      children.sort(sortByCurrentOrder);
-    }
-
-    const roots = lineageSessions
-      .filter((session) => {
-        if (!visibleIds.has(session.id)) {
-          return false;
-        }
-
-        return (
-          !session.parentSessionId || !visibleIds.has(session.parentSessionId)
-        );
-      })
-      .sort(sortByCurrentOrder);
-
-    const rows: SessionHistoryRow[] = [];
-
-    const walk = (session: AgentSession, nestingLevel: number) => {
-      const visibleChildren = (childrenByParent.get(session.id) || []).filter(
-        (child) => visibleIds.has(child.id),
-      );
-      const parentName = session.parentSessionId
-        ? sessionById.get(session.parentSessionId)?.name ||
-          t('sessionHistory.card.fallbackName', 'Session {{id}}', {
-            id: session.parentSessionId.slice(0, 8),
-          })
-        : undefined;
-      const hasExpandableChildren = visibleChildren.length > 0;
-      const isExpanded = hasExpandableChildren
-        ? effectiveExpandedSessionIds.has(session.id)
-        : false;
-
-      rows.push({
-        session,
-        nestingLevel,
-        lineageHint: parentName
-          ? t('sessionHistory.lineageHint.child', '↳ Child of {{parentName}}', {
-              parentName,
-            })
-          : t('sessionHistory.lineageHint.topLevel', 'Top-level session'),
-        hasExpandableChildren,
-        isExpanded,
-        descendantStatusCounts: descendantStatusCounts.get(session.id),
-      });
-
-      if (!isExpanded) {
-        return;
-      }
-
-      visibleChildren.forEach((child) => {
-        walk(child, nestingLevel + 1);
-      });
-    };
-
-    roots.forEach((root) => {
-      walk(root, 0);
-    });
-
-    return {
-      autoExpandedAncestorIds: nextAutoExpandedAncestorIds,
-      baseSessions: bookmarkedScopeSessions,
-      displayRows: rows,
-      matchedSessionCount: matchedSessions.length,
-      statusCounts: nextStatusCounts,
-    };
-  }, [
-    activeStatusFilter,
-    activeSortDirection,
-    activeSortKey,
-    collapsedAutoExpandedSessionIds,
-    descendantStatusCounts,
-    deferredSearchQuery,
-    deferredSessions,
-    filtersActive,
-    manuallyExpandedSessionIds,
-    selectedLineageId,
-    showBookmarkedOnly,
-    t,
-  ]);
+  // Custom hook for infinite scroll logic
+  useInfiniteScroll({
+    rootRef,
+    loadMoreSentinelRef,
+    hasMoreSessions,
+    isLoadingMoreSessions,
+    onLoadMore,
+    displayRowsLength: displayRows.length,
+  });
 
   const handleToggleExpand = useCallback(
     (sessionId: string) => {
@@ -696,65 +315,6 @@ export function SessionHistoryPanel({
 
     onLoadMore();
   }, [hasMoreSessions, isLoadingMoreSessions, onLoadMore]);
-
-  const checkShouldLoadMore = useCallback(() => {
-    if (!hasMoreSessions || isLoadingMoreSessions) {
-      return;
-    }
-
-    const scrollParent = scrollParentRef.current;
-    const sentinel = loadMoreSentinelRef.current;
-    if (!scrollParent || !sentinel) {
-      return;
-    }
-
-    const sentinelBottom = sentinel.getBoundingClientRect().bottom;
-    const scrollParentBottom = scrollParent.getBoundingClientRect().bottom;
-
-    if (sentinelBottom - scrollParentBottom <= 240) {
-      onLoadMore();
-    }
-  }, [hasMoreSessions, isLoadingMoreSessions, onLoadMore]);
-
-  useEffect(() => {
-    const scrollParent = scrollParentRef.current;
-    if (!scrollParent) {
-      return;
-    }
-
-    let frameId: number | null = null;
-    const scheduleCheck = () => {
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
-      frameId = window.requestAnimationFrame(() => {
-        frameId = null;
-        checkShouldLoadMore();
-      });
-    };
-
-    scrollParent.addEventListener('scroll', scheduleCheck, { passive: true });
-    window.addEventListener('resize', scheduleCheck);
-    scheduleCheck();
-
-    return () => {
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
-      scrollParent.removeEventListener('scroll', scheduleCheck);
-      window.removeEventListener('resize', scheduleCheck);
-    };
-  }, [checkShouldLoadMore]);
-
-  useEffect(() => {
-    const frameId = window.requestAnimationFrame(() => {
-      checkShouldLoadMore();
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [checkShouldLoadMore, displayRows.length]);
 
   const renderSessionRow = useCallback(
     ({
@@ -927,7 +487,7 @@ export function SessionHistoryPanel({
                   <Badge variant="outline" className="h-6 px-2">
                     {t(
                       'sessionHistory.bookmarkedSection.more',
-                      '+{{count}} more bookmarked',
+                      '+{{count}} more bookmarked sessions',
                       { count: remainingBookmarkedCount },
                     )}
                   </Badge>
@@ -941,7 +501,7 @@ export function SessionHistoryPanel({
                   >
                     {t(
                       'sessionHistory.bookmarkedSection.browseAll',
-                      'Browse all bookmarked',
+                      'Browse all bookmarked sessions',
                     )}
                   </Button>
                 )}

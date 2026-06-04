@@ -538,9 +538,9 @@ describe('SessionHistoryPanel', () => {
       />,
     );
 
-    expect(screen.getByText('+1 more bookmarked')).toBeInTheDocument();
+    expect(screen.getByText('+1 more bookmarked sessions')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Browse all bookmarked' }),
+      screen.getByRole('button', { name: 'Browse all bookmarked sessions' }),
     ).toBeInTheDocument();
   });
 
