@@ -441,6 +441,7 @@ impl SessionRepository for SqliteSessionRepository {
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
         let models = Session::find()
             .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
             .all(&self.db)
             .await?;
 
@@ -536,6 +537,7 @@ impl SessionRepository for SqliteSessionRepository {
         let models = Session::find()
             .filter(session::Column::ParentSessionId.eq(parent_session_id))
             .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
             .all(&self.db)
             .await?;
 

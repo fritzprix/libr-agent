@@ -21,7 +21,7 @@ pub async fn build_explicit_org_layer_context(
         .as_ref()
         .and_then(|parent_id| find_session(&all_sessions, parent_id));
 
-    let siblings: Vec<&SessionMetadata> = all_sessions
+    let mut siblings: Vec<&SessionMetadata> = all_sessions
         .iter()
         .filter(|candidate| candidate.id != session.id)
         .filter(|candidate| candidate.org_id.as_deref() == Some(org_id.as_str()))
@@ -30,8 +30,12 @@ pub async fn build_explicit_org_layer_context(
         })
         .filter(|candidate| candidate.depth == session.depth)
         .filter(|candidate| candidate.parent_session_id == session.parent_session_id)
-        .take(5)
         .collect();
+
+    // Deterministically sort siblings by updated_at DESC, then id DESC
+    siblings.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| b.id.cmp(&a.id)));
+
+    let siblings: Vec<&SessionMetadata> = siblings.into_iter().take(5).collect();
 
     let mut parts = vec![
         "## Explicit Org Layer".to_string(),
