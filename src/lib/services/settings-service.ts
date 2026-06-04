@@ -59,6 +59,7 @@ export interface SystemSettings {
   httpServerPort: number;
   httpServerExpose: boolean;
   mcpServerStartupTimeoutSeconds: number;
+  mcpServerVerificationTimeoutSeconds: number;
   mcpToolTimeoutSeconds: number;
   searchIndexFrequencyMinutes: number;
   scheduledTaskMinimumIntervalMinutes: number;
@@ -136,6 +137,7 @@ export const DEFAULT_SETTING: Settings = {
     httpServerPort: 3030,
     httpServerExpose: false,
     mcpServerStartupTimeoutSeconds: 60,
+    mcpServerVerificationTimeoutSeconds: 30,
     mcpToolTimeoutSeconds: 0,
     searchIndexFrequencyMinutes: 5,
     scheduledTaskMinimumIntervalMinutes: 0,

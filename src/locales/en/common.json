@@ -528,6 +528,8 @@
       "webActionTimeoutDescription": "How long the AI waits for a webpage to load or a click to finish.",
       "mcpServerStartupTimeout": "MCP Server Startup Timeout (Sec)",
       "mcpServerStartupTimeoutDescription": "How long to wait for MCP tool servers to initialize. Increase if servers fail to start.",
+      "mcpServerVerificationTimeout": "MCP Server Verification Timeout (Sec)",
+      "mcpServerVerificationTimeoutDescription": "How long to wait for MCP server verification. Prevents indefinite UI lock when testing connections.",
       "mcpToolTimeout": "MCP Tool Execution Timeout (Sec)",
       "mcpToolTimeoutDisabled": "Disabled",
       "mcpToolTimeoutDescription": "How long to wait for a single tool call before cancelling it. Set to 0 to disable (recommended for long-running agent tools like awaitAgent).",
@@ -543,6 +545,7 @@
         "searchIndexFrequency": "e.g., 5",
         "webActionTimeout": "e.g., 30",
         "mcpServerStartupTimeout": "e.g., 60",
+        "mcpServerVerificationTimeout": "e.g., 30",
         "mcpToolTimeout": "0 (disabled)",
         "activeSessionRetention": "e.g., 24",
         "httpServerPort": "e.g., 3030"

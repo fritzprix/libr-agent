@@ -105,6 +105,35 @@ function SystemBackgroundTasksSectionComponent({
 
       <NumberSettingField
         label={t(
+          'settings.system.mcpServerVerificationTimeout',
+          'MCP Server Verification Timeout (Sec)',
+        )}
+        description={t(
+          'settings.system.mcpServerVerificationTimeoutDescription',
+          'How long to wait for MCP server verification. Prevents indefinite UI lock when testing connections.',
+        )}
+        placeholder={t(
+          'settings.system.placeholders.mcpServerVerificationTimeout',
+          'e.g., 30',
+        )}
+        min={5}
+        max={120}
+        value={localSystemSettings.mcpServerVerificationTimeoutSeconds}
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: 30,
+            min: 5,
+            max: 120,
+          })
+        }
+        onValueChange={(value) =>
+          onChange('mcpServerVerificationTimeoutSeconds', value)
+        }
+        containerClassName="min-w-0"
+      />
+
+      <NumberSettingField
+        label={t(
           'settings.system.mcpToolTimeout',
           'MCP Tool Execution Timeout (Sec)',
         )}

@@ -1,6 +1,7 @@
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::{MCPServerManager, MCPTool};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::repositories::settings_repository::SettingsRepository;
 use serde_json::Value;
 
 pub struct McpServerService;
@@ -113,6 +114,23 @@ impl McpServerService {
             .clone()
             .unwrap_or_else(|| "unnamed_server".to_string());
 
+        let mut timeout_seconds = 30; // Default fallback to 30 seconds
+        if let Ok(settings_repo) = std::panic::catch_unwind(crate::state::get_settings_repository) {
+            if let Ok(Some(model)) = settings_repo.get("systemSettings").await {
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct SystemSettings {
+                    mcp_server_verification_timeout_seconds: Option<u64>,
+                }
+
+                if let Ok(settings) = serde_json::from_str::<SystemSettings>(&model.value) {
+                    if let Some(timeout) = settings.mcp_server_verification_timeout_seconds {
+                        timeout_seconds = timeout;
+                    }
+                }
+            }
+        }
+
         // Create a throw-away MCPServerManager (no builtins needed)
         let probe_manager = MCPServerManager {
             connections: std::sync::Arc::new(tokio::sync::Mutex::new(
@@ -122,26 +140,57 @@ impl McpServerService {
             oauth_manager: std::sync::Arc::new(crate::mcp::oauth::OAuthManager::new()),
         };
 
-        // Connect — this blocks until the MCP handshake completes
-        probe_manager
-            .start_server(config)
-            .await
-            .map_err(|e| format!("Failed to connect to '{}': {}", server_name, e))?;
+        let timeout_duration = std::time::Duration::from_secs(timeout_seconds);
 
-        // List tools
-        let tools_result = probe_manager.list_tools(&server_name).await;
+        let probe_result = {
+            let probe_manager_ref = &probe_manager;
+            let server_name_ref = &server_name;
+            let config_clone = config.clone();
 
-        // Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
-        if let Err(e) = probe_manager.stop_server(&server_name).await {
-            log::warn!(
-                "[probe] Failed to stop MCP server '{}' cleanly: {}",
-                server_name,
-                e
-            );
+            let probe_fut = async move {
+                // Connect — this blocks until the MCP handshake completes
+                probe_manager_ref
+                    .start_server(config_clone)
+                    .await
+                    .map_err(|e| format!("Failed to connect to '{}': {}", server_name_ref, e))?;
+
+                // List tools
+                let tools_result = probe_manager_ref.list_tools(server_name_ref).await;
+
+                // Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
+                if let Err(e) = probe_manager_ref.stop_server(server_name_ref).await {
+                    log::warn!(
+                        "[probe] Failed to stop MCP server '{}' cleanly: {}",
+                        server_name_ref,
+                        e
+                    );
+                }
+
+                // Return tools or error
+                tools_result
+                    .map_err(|e| format!("Failed to list tools from '{}': {}", server_name_ref, e))
+            };
+
+            tokio::time::timeout(timeout_duration, probe_fut).await
+        };
+
+        match probe_result {
+            Ok(result) => result,
+            Err(_) => {
+                // If it timed out, try to stop the server if it started.
+                if let Err(e) = probe_manager.stop_server(&server_name).await {
+                    log::warn!(
+                        "[probe-timeout] Failed to stop MCP server '{}' during cleanup: {}",
+                        server_name,
+                        e
+                    );
+                }
+                Err(format!(
+                    "Server '{}' verification timed out after {} seconds",
+                    server_name, timeout_seconds
+                ))
+            }
         }
-
-        // Return tools or error
-        tools_result.map_err(|e| format!("Failed to list tools from '{}': {}", server_name, e))
     }
 
     /// Probe a single MCP server by ID: connect, list tools, disconnect.

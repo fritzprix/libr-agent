@@ -65,6 +65,8 @@ function getSystemComparableState(settings: SettingsFormState) {
     webActionTimeoutSeconds: settings.system.webActionTimeoutSeconds,
     mcpServerStartupTimeoutSeconds:
       settings.system.mcpServerStartupTimeoutSeconds,
+    mcpServerVerificationTimeoutSeconds:
+      settings.system.mcpServerVerificationTimeoutSeconds,
     mcpToolTimeoutSeconds: settings.system.mcpToolTimeoutSeconds,
     scheduledTaskMinimumIntervalMinutes:
       settings.system.scheduledTaskMinimumIntervalMinutes,
