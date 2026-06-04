@@ -5,7 +5,7 @@
 
 use crate::entity::scheduled_task::{self, Entity as ScheduledTaskEntity};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, Order,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
     QueryFilter, QueryOrder, Set,
 };
 
@@ -139,8 +139,9 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         &self,
         assistant_id: Option<&str>,
     ) -> Result<Vec<scheduled_task::Model>, DbErr> {
-        let query =
-            ScheduledTaskEntity::find().order_by(scheduled_task::Column::CreatedAt, Order::Asc);
+        let query = ScheduledTaskEntity::find()
+            .order_by_asc(scheduled_task::Column::CreatedAt)
+            .order_by_asc(scheduled_task::Column::Id);
 
         if let Some(aid) = assistant_id {
             query
@@ -156,9 +157,9 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         ScheduledTaskEntity::find()
             .filter(scheduled_task::Column::Enabled.eq(true))
             .filter(scheduled_task::Column::NextRunAt.lte(now_ms))
-            .order_by(scheduled_task::Column::NextRunAt, Order::Asc)
-            .order_by(scheduled_task::Column::CreatedAt, Order::Asc)
-            .order_by(scheduled_task::Column::Id, Order::Asc)
+            .order_by_asc(scheduled_task::Column::NextRunAt)
+            .order_by_asc(scheduled_task::Column::CreatedAt)
+            .order_by_asc(scheduled_task::Column::Id)
             .all(&self.db)
             .await
     }
