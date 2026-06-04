@@ -1,15 +1,9 @@
-use super::{DbError, SessionMetadata, SessionRepository};
+use super::{format_session_label, DbError, SessionMetadata, SessionRepository};
 
 pub async fn build_explicit_org_layer_context(
     repo: &dyn SessionRepository,
-    session_id: &str,
+    session: &SessionMetadata,
 ) -> Result<Option<String>, DbError> {
-    let session = repo.get_session(session_id).await?;
-
-    let Some(session) = session else {
-        return Ok(None);
-    };
-
     let Some(org_name) = session.org_name.clone() else {
         return Ok(None);
     };
@@ -70,9 +64,4 @@ fn find_session<'a>(
     sessions.iter().find(|session| session.id == session_id)
 }
 
-fn format_session_label(session: &SessionMetadata) -> String {
-    match session.name.as_deref() {
-        Some(name) if !name.is_empty() => format!("{} — {}", session.id, name),
-        _ => session.id.clone(),
-    }
-}
+

@@ -10,6 +10,7 @@ pub mod message_repository;
 pub mod planning_repository;
 pub mod playbook_repository;
 pub mod scheduled_task_repository;
+pub mod session_child_context;
 pub mod session_org_context;
 pub mod session_repository;
 pub mod settings_repository;
@@ -37,9 +38,17 @@ pub use scheduled_task_repository::{
     CreateScheduledTaskParams, ScheduledTaskRepository, SqliteScheduledTaskRepository,
     UpdateScheduledTaskParams,
 };
+pub use session_child_context::build_child_sessions_context;
 pub use session_org_context::build_explicit_org_layer_context;
 pub use session_repository::{
     SessionListCursor, SessionListPage, SessionMetadata, SessionRepository, SessionStatus,
     SqliteSessionRepository,
 };
 pub use settings_repository::{SettingsRepository, SqliteSettingsRepository};
+
+pub(crate) fn format_session_label(session: &SessionMetadata) -> String {
+    match session.name.as_deref() {
+        Some(name) if !name.is_empty() => format!("{} — {}", session.id, name),
+        _ => session.id.clone(),
+    }
+}
