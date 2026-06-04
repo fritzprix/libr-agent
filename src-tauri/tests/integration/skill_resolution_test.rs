@@ -414,7 +414,16 @@ async fn test_resolve_skills_same_name_collision_agent_precedence() {
 
 #[tokio::test]
 async fn test_resolve_skills_agent_auto_discover_all_patterns() {
-    let patterns = [".gemini/skills", ".cursor/skills", ".copilot/skills"];
+    let patterns = [
+        ".agents/skills",
+        ".gemini/skills",
+        ".copilot/skills",
+        ".cursor/skills",
+        ".windsurf/skills",
+        ".claude/skills",
+        ".cline/skills",
+        ".continue/skills",
+    ];
     for pattern in &patterns {
         let system = TempDir::new().unwrap();
         let user = TempDir::new().unwrap();

@@ -145,10 +145,19 @@ pub async fn resolve_skills(
     wait_for_managed_skills_sync().await;
 
     let mut skill_layers = Vec::new();
-    let mut sources: Vec<(Option<PathBuf>, &str, &str)> = vec![
-        (workspace_dir.clone(), "workspace", "workspace"),
-        (assistant_dir, "assistant", "assistant"),
-    ];
+    let mut sources: Vec<(Option<PathBuf>, &str, &str)> =
+        vec![(workspace_dir.clone(), "workspace", "workspace")];
+
+    // Auto-discover agent hidden directories
+    let workspace_root = workspace_dir.as_ref().and_then(|d| find_workspace_root(d));
+    if let Some(ws) = workspace_root {
+        for path in discover_agent_skill_dirs(&ws) {
+            log::info!("Auto-discovered agent skills directory: {:?}", path);
+            sources.push((Some(path), "agent_import", "agent"));
+        }
+    }
+
+    sources.push((assistant_dir, "assistant", "assistant"));
 
     // Read additional skill paths from the settings repository and dynamically merge reference layers
     if let Some(settings_repo) = try_get_settings_repository() {
@@ -162,15 +171,6 @@ pub async fn resolve_skills(
                     sources.push((Some(path), "custom_reference", "custom"));
                 }
             }
-        }
-    }
-
-    // Auto-discover agent hidden directories
-    let workspace_root = workspace_dir.as_ref().and_then(|d| find_workspace_root(d));
-    if let Some(ws) = workspace_root {
-        for path in discover_agent_skill_dirs(&ws) {
-            log::info!("Auto-discovered agent skills directory: {:?}", path);
-            sources.push((Some(path), "agent_import", "agent"));
         }
     }
 

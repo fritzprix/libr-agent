@@ -21,16 +21,16 @@ Unified repository wiki system: bi-directional linking + binary conversion + ful
 ## Quick Start
 
 ```bash
+# Run the python commands relative to the skill's Base Directory
 # Wiki initialization (metadata, links, backlinks)
-cd docs/
-python3 ../.agents/skills/repo-wiki/scripts/repo-wiki.py wiki init
-python3 ../.agents/skills/repo-wiki/scripts/repo-wiki.py wiki add --all
-python3 ../.agents/skills/repo-wiki/scripts/repo-wiki.py wiki backlinks --build
-python3 ../.agents/skills/repo-wiki/scripts/repo-wiki.py wiki links --check
+python3 scripts/repo-wiki.py wiki init
+python3 scripts/repo-wiki.py wiki add --all
+python3 scripts/repo-wiki.py wiki backlinks --build
+python3 scripts/repo-wiki.py wiki links --check
 
 # Binary conversion + indexing
-python3 ../.agents/skills/repo-wiki/scripts/repo-wiki.py convert --root .
-python3 ../.agents/skills/repo-wiki/scripts/repo-wiki.py index --root .
+python3 scripts/repo-wiki.py convert --root .
+python3 scripts/repo-wiki.py index --root .
 ```
 
 ## Commands
@@ -180,8 +180,8 @@ Use `references/metadata-schema.md` for frontmatter field definitions and valida
 ## Prerequisites
 
 ```bash
-# Automatic install
-python3 .agents/skills/repo-wiki/scripts/install_deps.py
+# Automatic install (run from the skill's Base Directory)
+python3 scripts/install_deps.py
 
 # Manual install
 pip install pymupdf python-docx python-pptx openpyxl
