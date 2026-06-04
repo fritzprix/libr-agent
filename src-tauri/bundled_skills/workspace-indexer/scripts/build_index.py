@@ -115,7 +115,7 @@ def extract_keywords_from_files(text_files: list[Path], root: Path) -> dict[str,
             for w in words:
                 if len(w) >= 2 and w != h:
                     keyword_map[w].add(rel)
-    # Convert to list and sort to guarantee consistent output (maintaining O(n) performance)
+    # Convert to list and sort to guarantee consistent output
     return {kw: sorted(list(files)) for kw, files in keyword_map.items()}
 
 
