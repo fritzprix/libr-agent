@@ -14,17 +14,22 @@ pub async fn build_child_sessions_context(
         return Ok(None);
     }
 
-    let mut parts = vec![
-        "## Child Sessions".to_string(),
-        String::new(),
-    ];
+    let mut parts = vec!["## Child Sessions".to_string(), String::new()];
 
-    for child in &children {
+    let max_render = 20;
+    let render_count = children.len().min(max_render);
+
+    for child in &children[..render_count] {
         let label = format_session_label(child);
         parts.push(format!("- {} (status: {})", label, child.status.as_str()));
     }
 
+    if children.len() > max_render {
+        parts.push(format!(
+            "- ... and {} more omitted",
+            children.len() - max_render
+        ));
+    }
+
     Ok(Some(parts.join("\n")))
 }
-
-

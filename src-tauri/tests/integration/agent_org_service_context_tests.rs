@@ -276,13 +276,9 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     .expect("child session should persist");
 
     // 3. Initialize AgentServer
-    let server = AgentServer::new(
-        "parent-org-session".to_string(),
-        db.clone(),
-        None,
-    )
-    .await
-    .expect("AgentServer should initialize");
+    let server = AgentServer::new("parent-org-session".to_string(), db.clone(), None)
+        .await
+        .expect("AgentServer should initialize");
 
     // 4. Retrieve service context
     let context = server.get_service_context(None).await;
@@ -293,4 +289,56 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     assert!(prompt.contains("- child-org-session — Child Analyst (status: idle)"));
     assert!(prompt.contains("## Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org"));
+}
+
+#[tokio::test]
+async fn org_service_context_truncates_child_sessions_exceeding_max_limit() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+
+    // Create a parent session
+    repo.upsert_session(&build_session(
+        "parent-limit",
+        "Parent Coordinator",
+        None,
+        Some(0),
+        None,
+        None,
+        None,
+    ))
+    .await
+    .expect("parent session should persist");
+
+    // Create 25 child sessions
+    for i in 1..=25 {
+        let child_id = format!("child-{}", i);
+        let child_name = format!("Child Agent {}", i);
+        repo.upsert_session(&build_session(
+            &child_id,
+            &child_name,
+            Some("parent-limit"),
+            Some(1),
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("child session should persist");
+    }
+
+    let context = build_child_sessions_context(&repo, "parent-limit")
+        .await
+        .expect("child context should build")
+        .expect("child context should not be empty");
+
+    assert!(
+        context.contains("## Child Sessions"),
+        "context should contain Child Sessions header"
+    );
+
+    // Verify it contains the truncation note indicating 5 more omitted
+    assert!(
+        context.contains("- ... and 5 more omitted"),
+        "should contain the truncation note indicating 5 more omitted"
+    );
 }
