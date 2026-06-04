@@ -276,7 +276,7 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     .expect("child session should persist");
 
     // 3. Initialize AgentServer
-    let server = AgentServer::new("parent-org-session".to_string(), db.clone(), None)
+    let server = AgentServer::new("parent-org-session".to_string(), Arc::new(db), None)
         .await
         .expect("AgentServer should initialize");
 
