@@ -191,7 +191,10 @@ fn seed_skill_scopes(
             "ASSISTANT_SCOPE_TOKEN",
         ),
         write_skill(
-            &server.get_workspace_dir(session_id).join("skills"),
+            &server
+                .get_workspace_dir(session_id)
+                .join(".libragent")
+                .join("skills"),
             &workspace_dir_name,
             "WORKSPACE_SCOPE_TOKEN",
         ),
@@ -227,7 +230,7 @@ fn skill_scope_root_paths(
         },
         SkillScopeFixture {
             label: "workspace-scope-root".to_string(),
-            directory: workspace_dir.join("skills"),
+            directory: workspace_dir.join(".libragent").join("skills"),
             skill_file: PathBuf::new(),
             token: "workspace-skill".to_string(),
         },
@@ -411,7 +414,10 @@ async fn read_file_allows_shadowed_lower_precedence_skill_by_absolute_path() {
         "SYSTEM_SHADOWED_TOKEN",
     );
     let workspace_winner = write_skill_with_name(
-        &server.get_workspace_dir(session_id).join("skills"),
+        &server
+            .get_workspace_dir(session_id)
+            .join(".libragent")
+            .join("skills"),
         "workspace-shadowing-skill",
         "shared-skill",
         "WORKSPACE_WINNER_TOKEN",

@@ -57,6 +57,12 @@ Before auditing, internalize these 5 critical rules:
 - Format: "❌ Problem. 💡 Use toolName() to fix"
 - Never raw "Not Found" without context
 
+#### **Rule 6: The "Zero TMI" Context Rule (Information Architecture)**
+
+- **Never** leak internal system architectures (e.g., Rust struct names, routing mechanisms) to the AI agent
+- Keep context prompts, descriptions, and hints focused ONLY on what the agent needs to _act_
+- Make service context prompts as static as possible; avoid injecting volatile data (like system-wide tool counts) to maximize LLM prompt caching
+
 ---
 
 ## Step 2: Gather Code Artifacts
@@ -326,6 +332,41 @@ return Ok(operation_failed_error(
 
 ---
 
+### 🔕 **Auditing Rule 6: The "Zero TMI" Context Rule**
+
+**What to Look For:**
+
+```rust
+// ❌ VIOLATION: Exposing internal Rust structs and volatile system state
+let structured_state = json!({
+    "mode": "session-isolated",
+    "note": "External servers are managed per-session through MCPServiceProxy"
+});
+
+let hint = "Session-level attachment should also reference this Server ID because of the proxy hierarchy.";
+```
+
+```rust
+// ✅ COMPLIANT: Simple, actionable, static context
+let structured_state = json!({ "status": "ready" });
+
+let hint = "To enable this server, add its Server ID to an agent using agent__update()";
+```
+
+**Audit Checklist:**
+
+- [ ] Context prompts do not mention backend classes, structural abstractions, or implementation code names
+- [ ] Tool descriptions use practical, actionable terms rather than system-level architectural jargon (e.g., avoid "platform/server inventory gating mechanism")
+- [ ] Service configurations favor static text over dynamically injecting metrics like total tool counts (which harms prompt cache performance)
+- [ ] Hints emphasize _how to use_ the tool rather than explaining _how the tool works inside_
+
+**Common Issues:**
+
+- Explaining _why_ a constraint exists by describing the backend architecture
+- Injecting counts or timestamps into static context prompts just for the sake of completeness
+
+---
+
 ## Step 4: Document Findings
 
 ### Compliance Matrix Template
@@ -340,6 +381,7 @@ return Ok(operation_failed_error(
 | 3. Dual-Channel Response  | ✅/⚠️/🔴 | A-F   | [Details] |
 | 4. AI-Native Descriptions | ✅/⚠️/🔴 | A-F   | [Details] |
 | 5. Success Hint Pattern   | ✅/⚠️/🔴 | A-F   | [Details] |
+| 6. Zero TMI Context Rule  | ✅/⚠️/🔴 | A-F   | [Details] |
 
 **Overall Grade:** [A-F] - [Summary]
 ```
@@ -567,7 +609,7 @@ Before submitting audit findings:
 // Code examples
 ````
 
-### [Repeat for Rules 2-5]
+### [Repeat for Rules 2-6]
 
 ## Priority Fixes
 
@@ -656,9 +698,10 @@ When reviewing PR:
 - [ ] UPDATE/DELETE operations validate before mutation
 - [ ] Response text includes all critical IDs
 - [ ] Error messages suggest recovery tools
-- [ ] Tool descriptions are AI-native
+- [ ] Tool descriptions are AI-native and avoid architectural jargon
 - [ ] No human UI verbs in descriptions
-- [ ] Success/error hints are context-specific
+- [ ] Success/error hints are context-specific and actionable (Zero TMI)
+- [ ] Shared context prompts are static to maximize LLM cache performance
 - [ ] Structured content mirrors text content
 
 ---

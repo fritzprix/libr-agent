@@ -14,6 +14,7 @@ const env = {
 const result = spawnSync(pnpmCommand, ['vitest', 'run', ...extraArgs], {
   env,
   stdio: 'inherit',
+  shell: process.platform === 'win32' ? true : undefined,
 });
 
 if (result.error) {

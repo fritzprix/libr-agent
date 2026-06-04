@@ -34,7 +34,6 @@ export const statusFilterValues: Array<'all' | SessionStatus> = [
   'error',
 ];
 
-
 export function getSessionDisplayName(
   session: AgentSession,
   t: SessionHistoryTranslate,
