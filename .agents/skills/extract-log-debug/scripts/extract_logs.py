@@ -24,6 +24,13 @@ import sys
 import argparse
 from pathlib import Path
 
+# Prevent encoding errors on Windows console
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
+
 
 def get_log_path():
     """Get platform-specific Tauri log path."""
