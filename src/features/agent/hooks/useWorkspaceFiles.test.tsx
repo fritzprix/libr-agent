@@ -89,4 +89,57 @@ describe('useWorkspaceFiles', () => {
     );
     expect(listWorkspaceFilePaths).not.toHaveBeenCalled();
   });
+
+  it('caps the results at 30 (MAX_RESULTS)', async () => {
+    const manyPaths = Array.from({ length: 40 }, (_, i) => `src/file_${i}.ts`);
+    vi.mocked(listWorkspaceFilePaths).mockResolvedValue(manyPaths);
+
+    const { result } = renderHook(() =>
+      useWorkspaceFiles('session-1', ''),
+    );
+
+    await waitFor(() => {
+      expect(result.current.length).toBe(30);
+      expect(result.current).toEqual(manyPaths.slice(0, 30));
+    });
+  });
+
+  it('filters results with startsWith when query ends with a slash, otherwise uses includes', async () => {
+    const paths = [
+      'src/components/Button.tsx',
+      'src/hooks/useWorkspaceFiles.ts',
+      'components/Card.tsx',
+    ];
+    vi.mocked(listWorkspaceFilePaths).mockResolvedValue(paths);
+
+    const { result, rerender } = renderHook(
+      ({ query }: { query: string | null }) =>
+        useWorkspaceFiles('session-1', query),
+      {
+        initialProps: { query: '' },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current).toEqual(paths);
+    });
+
+    // Query 'components' without trailing slash -> should use includes -> matches 'src/components/...' and 'components/...'
+    rerender({ query: 'components' });
+    expect(result.current).toEqual([
+      'src/components/Button.tsx',
+      'components/Card.tsx',
+    ]);
+
+    // Query 'components/' with trailing slash -> should use startsWith -> matches 'components/Card.tsx'
+    rerender({ query: 'components/' });
+    expect(result.current).toEqual(['components/Card.tsx']);
+
+    // Query 'src/' with trailing slash -> should use startsWith -> matches 'src/components/Button.tsx' and 'src/hooks/useWorkspaceFiles.ts'
+    rerender({ query: 'src/' });
+    expect(result.current).toEqual([
+      'src/components/Button.tsx',
+      'src/hooks/useWorkspaceFiles.ts',
+    ]);
+  });
 });
