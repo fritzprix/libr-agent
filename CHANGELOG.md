@@ -6,7 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### 🚀 Features
 
+- **Expanded Skill Directory Auto-Discovery**: Agents now auto-discover skill directories from `.agents`, `.gemini`, `.cursor`, and other popular IDE locations, making imported skills available without manual configuration.
+- **Child Session Visibility & Limits**: Exposed child session list and status in agent service context for better debugging, with a hard cap of 20 child sessions to prevent context token bloat.
+- **Improved Context Limit Error Detection**: Added prefill context overflow detection so agents surface clearer error messages when approaching token limits.
+- **Theme Centralization & UI Polish**: Moved `useIsDarkMode` to a centralized hook, improved inline code contrast in dark mode, softened blockquote borders, and enhanced link hover feedback with background highlight.
 - **Workspace File Autocomplete**: Increased autocomplete suggestions limit from 10 to 30 and optimized filtering to use prefix matching when the query ends with a directory slash.
+
+### 🐛 Fixes
+
+- **Deterministic Child Session Ordering**: Added `CreatedAt` sort prior to `Id` in child session queries to ensure consistent ordering across restarts.
+- **Prompt Cache Stability**: Unified SeaORM sorting to `order_by_asc/desc` and added secondary sort on `id DESC` to prevent cache instability from non-deterministic ordering.
+- **Session History Sorting Priority**: Fixed status sorting priority bug in the modularized `SessionHistoryPanel`.
+- **Workspace Indexer & Session History**: Addressed PR review feedback for workspace indexer edge cases and session history pagination.
+
+### 🔧 Internal
+
+- **Workspace Skills Migration**: Migrated workspace skills to `.libragent/skills` with dynamic settings references and cleaned up multi-agent trace artifacts.
+- **Session Repository Trait**: Introduced `SessionRepository` trait in agent server context for better testability.
+- **Integration Test Maintenance**: Updated workspace skill access regression tests for the `.libragent/skills` migration.
 
 ## [0.8.3] - 2026-06-04
 
