@@ -649,4 +649,67 @@ describe('SessionHistoryPanel', () => {
     expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
     expect(screen.getByTestId('session-card-child-beta')).toBeInTheDocument();
   });
+
+  it('supports controlled showBookmarkedOnly prop', () => {
+    const sessions: AgentSession[] = [
+      createSession('root', 'Root'),
+      createSession('bookmarked-child', 'Bookmarked Child', {
+        parentSessionId: 'root',
+        isBookmarked: true,
+      }),
+    ];
+
+    const { rerender } = render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={true}
+      />,
+    );
+
+    expect(screen.getByText('Showing bookmarked sessions')).toBeInTheDocument();
+
+    rerender(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={false}
+      />,
+    );
+
+    expect(screen.queryByText('Showing bookmarked sessions')).not.toBeInTheDocument();
+  });
+
+  it('triggers onShowBookmarkedOnlyChange callback when clicked', () => {
+    const sessions: AgentSession[] = [
+      createSession('root', 'Root'),
+      createSession('bookmarked-child', 'Bookmarked Child', {
+        parentSessionId: 'root',
+        isBookmarked: true,
+      }),
+    ];
+    const onShowBookmarkedOnlyChange = vi.fn();
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={false}
+        onShowBookmarkedOnlyChange={onShowBookmarkedOnlyChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bookmarked (1)' }));
+
+    expect(onShowBookmarkedOnlyChange).toHaveBeenCalledWith(true);
+  });
 });
