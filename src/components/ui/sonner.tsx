@@ -1,4 +1,4 @@
-import { useTheme } from 'next-themes';
+import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Toaster as Sonner, ToasterProps } from 'sonner';
@@ -8,14 +8,13 @@ const Toaster = ({
   toastOptions,
   ...props
 }: ToasterProps) => {
-  // Prefer resolvedTheme so the toaster receives the actual theme being used
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDarkMode();
   const { t } = useTranslation();
 
   return (
     <Sonner
       closeButton={closeButton}
-      theme={(resolvedTheme ?? 'system') as ToasterProps['theme']}
+      theme={isDark ? 'dark' : 'light'}
       className="toaster group"
       toastOptions={{
         closeButtonAriaLabel: t('common.close', 'Close'),

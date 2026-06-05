@@ -374,7 +374,8 @@ impl PlanningRepository for SqlitePlanningRepository {
     ) -> Result<Vec<planning_todo::Model>, DbError> {
         let mut query = planning_todo::Entity::find()
             .filter(planning_todo::Column::SessionId.eq(session_id))
-            .order_by_asc(planning_todo::Column::CreatedAt);
+            .order_by_asc(planning_todo::Column::CreatedAt)
+            .order_by_asc(planning_todo::Column::Id);
 
         if !include_checked {
             query = query.filter(planning_todo::Column::IsChecked.eq(false));
@@ -545,6 +546,7 @@ impl PlanningRepository for SqlitePlanningRepository {
         planning_scratchpad::Entity::find()
             .filter(planning_scratchpad::Column::SessionId.eq(session_id))
             .order_by_desc(planning_scratchpad::Column::CreatedAt)
+            .order_by_desc(planning_scratchpad::Column::Id)
             .all(&self.db)
             .await
             .map_err(DbError::SeaOrmQueryFailed)

@@ -47,8 +47,7 @@ impl WorkspaceServer {
                     entry.last_poll_at = Some(now);
                     entry.poll_count += 1;
 
-                    let is_running =
-                        matches!(entry.status, terminal_manager::ProcessStatus::Running);
+                    let is_running = terminal_manager::is_active_process_status(&entry.status);
                     if is_running {
                         if entry.first_running_poll_at.is_none() {
                             entry.first_running_poll_at = Some(now);
@@ -113,7 +112,7 @@ impl WorkspaceServer {
             ) {
                 let response = serde_json::json!({
                     "process_id": process_id,
-                    "status": format!("{:?}", status).to_lowercase(),
+                    "status": terminal_manager::process_status_label(&status),
                     "command": entry_data.command,
                     "exit_code": entry_data.exit_code,
                     "pid": entry_data.pid,
@@ -132,7 +131,7 @@ impl WorkspaceServer {
             if is_polling_mode {
                 let response = serde_json::json!({
                     "process_id": process_id,
-                    "status": format!("{:?}", status).to_lowercase(),
+                    "status": terminal_manager::process_status_label(&status),
                     "command": entry_data.command,
                     "exit_code": entry_data.exit_code,
                     "pid": entry_data.pid,
@@ -182,16 +181,18 @@ impl WorkspaceServer {
             // 4. Wait before next loop iteration.
             // Use push-notification (notifier) with a 30s heartbeat fallback so the loop
             // wakes up immediately when the process finishes instead of busy-polling every 100ms.
+            let remaining = timeout.saturating_sub(start_time.elapsed());
+            let wait_slice = remaining.min(tokio::time::Duration::from_secs(30));
             match notifier {
                 Some(n) => {
                     tokio::select! {
                         _ = n.notified() => {}
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {}
+                        _ = tokio::time::sleep(wait_slice) => {}
                     }
                 }
                 None => {
                     // Defensive fallback: notifier missing (shouldn't happen for valid processes).
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(wait_slice.min(std::time::Duration::from_millis(500))).await;
                 }
             }
         }

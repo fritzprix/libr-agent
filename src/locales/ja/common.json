@@ -179,7 +179,8 @@
       "open": "セッションを開く",
       "lastUsed": "{{time}} に使用",
       "defaultMeta": "すぐ戻れるよう保存済み",
-      "more": "履歴にさらに {{count}} 件"
+      "more": "さらに {{count}} 件のブックマーク",
+      "browseAll": "すべてのブックマークを表示"
     },
     "toasts": {
       "deleted": "セッションを削除しました",
@@ -263,6 +264,19 @@
     "statusFilter": {
       "all": "すべてのステータス",
       "label": "ステータス"
+    },
+    "bookmarkFilter": {
+      "focused": "ブックマークしたセッションを表示中",
+      "clear": "すべてのセッションを表示",
+      "empty": "ブックマークしたセッションはまだありません"
+    },
+    "sort": {
+      "label": "セッションを並び替え",
+      "updatedAt": "最新のアクティビティ",
+      "createdAt": "作成日",
+      "name": "名前",
+      "ascending": "昇順で並び替え",
+      "descending": "降順で並び替え"
     }
   },
   "settings": {

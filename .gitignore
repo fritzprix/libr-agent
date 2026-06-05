@@ -26,12 +26,19 @@ dist-ssr
 prompt
 error.txt
 error_*.txt
-.claude
+.claude/
 .jules/
 .worktrees/
 .vscode
-.agent
 .serena
+
+# 에이전트별 로컬 설정/캐시 무시하되 공유 스킬은 보존
+.agent/*
+!.agent/skills/
+.agents/*
+!.agents/skills/
+.gemini/*
+!.gemini/skills/
 # LangGraph API
 .langgraph_api
 log.txt

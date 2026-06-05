@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.4] - 2026-06-05
+
+### 🚀 Features
+
+- **Expanded Skill Directory Auto-Discovery**: Agents now auto-discover skill directories from `.agents`, `.gemini`, `.cursor`, and other popular IDE locations, making imported skills available without manual configuration.
+- **Child Session Visibility & Limits**: Exposed child session list and status in agent service context for better debugging, with a hard cap of 20 child sessions to prevent context token bloat.
+- **Improved Context Limit Error Detection**: Added prefill context overflow detection so agents surface clearer error messages when approaching token limits.
+- **Theme Centralization & UI Polish**: Moved `useIsDarkMode` to a centralized hook, improved inline code contrast in dark mode, softened blockquote borders, and enhanced link hover feedback with background highlight.
+
+### 🐛 Fixes
+
+- **Deterministic Child Session Ordering**: Added `CreatedAt` sort prior to `Id` in child session queries to ensure consistent ordering across restarts.
+- **Prompt Cache Stability**: Unified SeaORM sorting to `order_by_asc/desc` and added secondary sort on `id DESC` to prevent cache instability from non-deterministic ordering.
+- **Session History Sorting Priority**: Fixed status sorting priority bug in the modularized `SessionHistoryPanel`.
+- **Workspace Indexer & Session History**: Addressed PR review feedback for workspace indexer edge cases and session history pagination.
+
+### 🔧 Internal
+
+- **Workspace Skills Migration**: Migrated workspace skills to `.libragent/skills` with dynamic settings references and cleaned up multi-agent trace artifacts.
+- **Session Repository Trait**: Introduced `SessionRepository` trait in agent server context for better testability.
+- **Integration Test Maintenance**: Updated workspace skill access regression tests for the `.libragent/skills` migration.
+
+## [0.8.3] - 2026-06-04
+
+### 🚀 Features
+
+- **Clearer Session History Navigation**: Refined bookmark ordering, nested tree indentation, and session-history sorting so large session lists are easier to scan.
+
+### 🐛 Fixes
+
+- **Workspace Execution Timeout Reliability**: Fixed timeout handoff and wait-budget handling for workspace shell and process flows, reducing stuck or premature terminal waits.
+- **Workspace Indexer Robustness**: Hardened the bundled workspace indexer against document-conversion failures and output-name collisions so indexing runs behave more reliably across messy files and Windows-style edge cases.
+
+### 🔧 Internal
+
+- **Windows Test Bootstrap Maintenance**: Stabilized integration-test startup on Windows and cleaned up related session-history internals to keep the `dev/0.8.x` release line easier to maintain.
+
+
 ## [0.8.2] - 2026-06-03
 
 ### 🐛 Fixes

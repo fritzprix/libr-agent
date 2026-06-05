@@ -143,6 +143,27 @@ pub fn create_process_registry() -> ProcessRegistry {
     }))
 }
 
+pub fn is_active_process_status(status: &ProcessStatus) -> bool {
+    matches!(status, ProcessStatus::Starting | ProcessStatus::Running)
+}
+
+pub fn is_terminal_process_status(status: &ProcessStatus) -> bool {
+    matches!(
+        status,
+        ProcessStatus::Finished | ProcessStatus::Failed | ProcessStatus::Killed
+    )
+}
+
+pub fn process_status_label(status: &ProcessStatus) -> String {
+    match status {
+        ProcessStatus::Starting => "starting".to_string(),
+        ProcessStatus::Running => "running".to_string(),
+        ProcessStatus::Finished => "finished".to_string(),
+        ProcessStatus::Failed => "failed".to_string(),
+        ProcessStatus::Killed => "killed".to_string(),
+    }
+}
+
 /// Read last N lines from file (max 100, text only)
 /// For large files (>1MB), uses optimized seek-from-end strategy
 pub async fn tail_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, String> {

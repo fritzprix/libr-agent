@@ -34,7 +34,8 @@ pub fn create_run_shell_tool() -> MCPTool {
         title: Some("Run Shell Command (Isolated)".to_string()),
         description: "Run a synchronous shell command (bash/sh). Stateless — each call starts fresh at workspace root.\n\
                         Use 'cd dir && command' for subdirectories.\n\
-                       For persistent cd/env vars: runInPersistentShell. For longer or non-blocking tasks: spawnProcess."
+                       If the command exceeds the sync timeout, it stays alive in background and returns a processId for waitForProcess/readProcessOutput/stopProcess.\n\
+                       For persistent cd/env vars: runInPersistentShell. For explicitly non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,

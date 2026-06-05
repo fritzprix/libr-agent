@@ -180,7 +180,8 @@
       "open": "Sitzung öffnen",
       "lastUsed": "Verwendet {{time}}",
       "defaultMeta": "Für den Schnellzugriff gespeichert",
-      "more": "+{{count}} weitere im Verlauf"
+      "more": "+{{count}} weitere Favoriten",
+      "browseAll": "Alle Favoriten anzeigen"
     },
     "toasts": {
       "deleted": "Sitzung gelöscht",
@@ -197,6 +198,19 @@
     "statusFilter": {
       "label": "Status",
       "all": "Alle Status"
+    },
+    "bookmarkFilter": {
+      "focused": "Favoriten-Sitzungen werden angezeigt",
+      "clear": "Alle Sitzungen anzeigen",
+      "empty": "Noch keine Favoriten-Sitzungen"
+    },
+    "sort": {
+      "label": "Sitzungen sortieren",
+      "updatedAt": "Neueste Aktivität",
+      "createdAt": "Erstellt",
+      "name": "Name",
+      "ascending": "Aufsteigend sortieren",
+      "descending": "Absteigend sortieren"
     },
     "lineageHint": {
       "child": "↳ Kind von {{parentName}}",

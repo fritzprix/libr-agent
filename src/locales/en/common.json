@@ -173,6 +173,7 @@
     "clearLineageFocus": "Clear lineage focus",
     "noSessionsMatching": "No sessions found matching \"{{query}}\"",
     "clearSearch": "Clear search",
+    "bookmarkedCountSummary": "{{count}} bookmarked sessions",
     "bookmarkedSection": {
       "heading": "Bookmarked Sessions",
       "description": "Pinned sessions stay here for quick access while the full history remains below.",
@@ -180,7 +181,8 @@
       "open": "Open session",
       "lastUsed": "Used {{time}}",
       "defaultMeta": "Saved for quick access",
-      "more": "+{{count}} more in history"
+      "more": "+{{count}} more bookmarked sessions",
+      "browseAll": "Browse all bookmarked sessions"
     },
     "toasts": {
       "deleted": "Session deleted",
@@ -197,6 +199,19 @@
     "statusFilter": {
       "label": "Status",
       "all": "All statuses"
+    },
+    "bookmarkFilter": {
+      "focused": "Showing bookmarked sessions",
+      "clear": "Show all sessions",
+      "empty": "No bookmarked sessions yet"
+    },
+    "sort": {
+      "label": "Sort sessions",
+      "updatedAt": "Recent activity",
+      "createdAt": "Created",
+      "name": "Name",
+      "ascending": "Sort ascending",
+      "descending": "Sort descending"
     },
     "lineageHint": {
       "child": "↳ Child of {{parentName}}",

@@ -279,12 +279,24 @@ export function mapSessionMetadataToAgentSession(
   };
 }
 
+export function getLatestSessionActivityTimestamp(
+  session: AgentSession,
+): number {
+  return (
+    session.lastMessageAt?.getTime() ??
+    session.updatedAt?.getTime() ??
+    session.createdAt.getTime()
+  );
+}
+
 export function sortSessionsByLatestActivity(
   sessions: AgentSession[],
 ): AgentSession[] {
-  return sessions.slice().sort((a, b) => {
-    const timeA = a.updatedAt?.getTime() || a.createdAt.getTime();
-    const timeB = b.updatedAt?.getTime() || b.createdAt.getTime();
-    return timeB - timeA;
-  });
+  return sessions
+    .slice()
+    .sort(
+      (left, right) =>
+        getLatestSessionActivityTimestamp(right) -
+        getLatestSessionActivityTimestamp(left),
+    );
 }

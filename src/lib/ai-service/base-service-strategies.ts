@@ -164,7 +164,11 @@ function classifyProviderErrorKind(args: {
     normalizedMessage?.includes('context window exceeded') ||
     normalizedMessage?.includes('prompt is too long') ||
     normalizedMessage?.includes('prompt too long') ||
-    normalizedMessage?.includes('exceeds max context window')
+    normalizedMessage?.includes('exceeds max context window') ||
+    normalizedMessage?.includes('prefill context too large') ||
+    normalizedMessage?.includes(
+      'predicted peak would exceed prefill safety cap',
+    )
   ) {
     return 'context_limit';
   }

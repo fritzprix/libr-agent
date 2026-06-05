@@ -262,6 +262,15 @@ export function normalizeAIServiceError(error: unknown): {
     normalizedStatus === 'rate_limit_exceeded' ||
     lowerRawMessage.includes('rate limit') ||
     lowerRawMessage.includes('too many requests');
+  const isContextLimit =
+    lowerRawMessage.includes('context size has been exceeded') ||
+    lowerRawMessage.includes('maximum context length') ||
+    lowerRawMessage.includes('context window exceeded') ||
+    lowerRawMessage.includes('prompt is too long') ||
+    lowerRawMessage.includes('prompt too long') ||
+    lowerRawMessage.includes('exceeds max context window') ||
+    lowerRawMessage.includes('prefill context too large') ||
+    lowerRawMessage.includes('predicted peak would exceed prefill safety cap');
 
   if (isSpendingCapError(error)) {
     const billingMessage = billingUrl
@@ -284,6 +293,16 @@ export function normalizeAIServiceError(error: unknown): {
         'Rate limit exceeded. Please wait a moment and try again.',
       recoverable: true,
       errorCode: 'RATE_LIMIT_EXCEEDED',
+    };
+  }
+
+  if (isContextLimit) {
+    return {
+      type: 'CONTEXT_LIMIT_ERROR',
+      displayMessage:
+        normalizedProviderMessage ?? 'Context size has been exceeded.',
+      recoverable: true,
+      errorCode: 'CONTEXT_LIMIT_EXCEEDED',
     };
   }
 

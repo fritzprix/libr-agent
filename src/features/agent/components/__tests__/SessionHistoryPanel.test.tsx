@@ -59,6 +59,18 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
+if (!HTMLElement.prototype.hasPointerCapture) {
+  HTMLElement.prototype.hasPointerCapture = () => false;
+}
+
+if (!HTMLElement.prototype.setPointerCapture) {
+  HTMLElement.prototype.setPointerCapture = () => {};
+}
+
+if (!HTMLElement.prototype.releasePointerCapture) {
+  HTMLElement.prototype.releasePointerCapture = () => {};
+}
+
 let animationFrameQueue: FrameRequestCallback[] = [];
 
 global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
@@ -130,6 +142,12 @@ function mockElementRect(
   });
 }
 
+function getRenderedSessionIds(): string[] {
+  return screen
+    .getAllByTestId(/^session-card-/)
+    .map((element) => element.getAttribute('data-testid')?.replace('session-card-', '') ?? '');
+}
+
 describe('SessionHistoryPanel', () => {
   beforeEach(() => {
     animationFrameQueue = [];
@@ -182,6 +200,132 @@ describe('SessionHistoryPanel', () => {
     expect(
       screen.queryByTestId('session-card-grandchild'),
     ).not.toBeInTheDocument();
+  });
+
+  it('applies row-level indentation for expanded child sessions', () => {
+    const sessions: AgentSession[] = [
+      createSession('root', 'Root'),
+      createSession('child', 'Child', { parentSessionId: 'root' }),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
+
+    const rootRow = screen.getByTestId('session-card-root').closest('[role="listitem"]');
+    const childRow = screen.getByTestId('session-card-child').closest('[role="listitem"]');
+
+    expect(rootRow).not.toHaveStyle({ paddingLeft: '18px' });
+    expect(childRow).toHaveStyle({ paddingLeft: '18px' });
+    expect(childRow?.firstElementChild).toHaveClass('border-l', 'pl-3');
+  });
+
+  it('sorts root sessions by latest activity descending by default', () => {
+    const sessions: AgentSession[] = [
+      createSession('older', 'Older Session', {
+        updatedAt: new Date('2026-03-18T00:00:00Z'),
+      }),
+      createSession('newest', 'Newest Session', {
+        updatedAt: new Date('2026-03-21T00:00:00Z'),
+      }),
+      createSession('middle', 'Middle Session', {
+        updatedAt: new Date('2026-03-20T00:00:00Z'),
+      }),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    expect(getRenderedSessionIds()).toEqual(['newest', 'middle', 'older']);
+  });
+
+  it('prioritizes lastMessageAt over updatedAt for latest activity sorting', () => {
+    const sessions: AgentSession[] = [
+      createSession('metadata-only', 'Metadata Only', {
+        updatedAt: new Date('2026-03-21T00:00:00Z'),
+      }),
+      createSession('recent-message', 'Recent Message', {
+        updatedAt: new Date('2026-03-20T00:00:00Z'),
+        lastMessageAt: new Date('2026-03-22T00:00:00Z'),
+      }),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    expect(getRenderedSessionIds()).toEqual(['recent-message', 'metadata-only']);
+  });
+
+  it('toggles the session sort direction', () => {
+    const sessions: AgentSession[] = [
+      createSession('older', 'Older Session', {
+        updatedAt: new Date('2026-03-18T00:00:00Z'),
+      }),
+      createSession('newest', 'Newest Session', {
+        updatedAt: new Date('2026-03-21T00:00:00Z'),
+      }),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sort ascending' }));
+
+    expect(getRenderedSessionIds()).toEqual(['older', 'newest']);
+    expect(
+      screen.getByRole('button', { name: 'Sort descending' }),
+    ).toBeInTheDocument();
+  });
+
+  it('sorts sessions by name when the sort key changes', () => {
+    const sessions: AgentSession[] = [
+      createSession('zebra', 'Zebra'),
+      createSession('apple', 'Apple'),
+      createSession('mango', 'Mango'),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        initialSortKey="name"
+        initialSortDirection="asc"
+      />,
+    );
+
+    expect(getRenderedSessionIds()).toEqual(['apple', 'mango', 'zebra']);
   });
 
   it('renders the session list with list semantics', () => {
@@ -381,6 +525,7 @@ describe('SessionHistoryPanel', () => {
       createSession('s4', 'Session 4', { isBookmarked: true }),
       createSession('s5', 'Session 5', { isBookmarked: true }),
       createSession('s6', 'Session 6', { isBookmarked: true }),
+      createSession('s7', 'Session 7', { isBookmarked: true }),
     ];
 
     render(
@@ -393,7 +538,75 @@ describe('SessionHistoryPanel', () => {
       />,
     );
 
-    expect(screen.getByText('+1 more in history')).toBeInTheDocument();
+    expect(screen.getByText('+1 more bookmarked sessions')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Browse all bookmarked sessions' }),
+    ).toBeInTheDocument();
+  });
+
+  it('sorts bookmarked preview sessions by latest message activity', () => {
+    const sessions: AgentSession[] = [
+      createSession('metadata-bookmark', 'Metadata Bookmark', {
+        isBookmarked: true,
+        updatedAt: new Date('2026-03-21T00:00:00Z'),
+      }),
+      createSession('message-bookmark', 'Message Bookmark', {
+        isBookmarked: true,
+        updatedAt: new Date('2026-03-20T00:00:00Z'),
+        lastMessageAt: new Date('2026-03-22T00:00:00Z'),
+      }),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    const bookmarkedButtons = screen.getAllByRole('button', {
+      name: /Open bookmarked session /,
+    });
+
+    expect(bookmarkedButtons[0]).toHaveAccessibleName(
+      'Open bookmarked session Message Bookmark',
+    );
+    expect(bookmarkedButtons[1]).toHaveAccessibleName(
+      'Open bookmarked session Metadata Bookmark',
+    );
+  });
+
+  it('can focus the main history list on bookmarked sessions', () => {
+    const sessions: AgentSession[] = [
+      createSession('root', 'Root'),
+      createSession('bookmarked-child', 'Bookmarked Child', {
+        parentSessionId: 'root',
+        isBookmarked: true,
+      }),
+      createSession('other-root', 'Other Root'),
+    ];
+
+    render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bookmarked (1)' }));
+
+    expect(screen.getByText('Showing bookmarked sessions')).toBeInTheDocument();
+    expect(screen.getByTestId('session-card-root')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('session-card-bookmarked-child'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('session-card-other-root')).not.toBeInTheDocument();
   });
 
   it('resets collapsed auto-expanded lineage state when the filter context changes', () => {
