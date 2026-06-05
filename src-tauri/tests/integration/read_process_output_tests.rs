@@ -9,7 +9,6 @@ use tauri_mcp_agent_lib::agent::concurrency::{
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
 use tauri_mcp_agent_lib::lifecycle::repositories::init_repositories;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::WorkspaceServer;
-use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus};
