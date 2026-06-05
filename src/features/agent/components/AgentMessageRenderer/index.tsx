@@ -12,7 +12,7 @@ import { getLogger } from '@/lib/logger';
 import { CodeBlock } from './components/CodeBlock';
 import { ContentItemRenderer } from './components/ContentItemRenderer';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
-import { useIsDarkMode } from './hooks/useIsDarkMode';
+import { useIsDarkMode } from '@/hooks/use-is-dark-mode';
 import { useUIActionHandler } from './hooks/useUIActionHandler';
 import type { AgentMessageRendererProps, RenderItem } from './types';
 import { groupContent } from './utils/contentGrouping';
@@ -51,13 +51,13 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
       code: ({
         children,
         className,
-        node,
+        node: _node, // ReactMarkdown passes node prop which is invalid on HTML element, destructure to filter it out
         ...props
       }: React.ComponentPropsWithoutRef<'code'> & {
         inline?: boolean;
         node?: unknown;
       }) => {
-        void node;
+        void _node;
         return (
           <CodeBlock isDark={isDark} className={className} {...props}>
             {children}
