@@ -94,7 +94,7 @@ export const STATIC_MARKDOWN_COMPONENTS: Omit<
   ),
   blockquote: ({ children, ...props }: MarkdownReflessProps<'blockquote'>) => (
     <blockquote
-      className="border-l-4 border-primary pl-4 italic my-2 text-muted-foreground"
+      className="border-l-4 border-muted-foreground/30 pl-4 italic my-2 text-muted-foreground"
       {...props}
     >
       {children}
@@ -118,7 +118,7 @@ export const STATIC_MARKDOWN_COMPONENTS: Omit<
     return (
       <a
         href={href}
-        className="text-primary hover:text-primary/90 underline font-medium"
+        className="text-primary hover:bg-primary/10 rounded px-1 py-0.5 underline underline-offset-4 font-medium transition-colors"
         target="_blank"
         rel="noopener noreferrer"
         {...props}

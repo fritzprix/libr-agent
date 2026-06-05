@@ -8,12 +8,17 @@ export const CodeBlock = memo(
     children,
     className,
     isDark,
+    inline: _inline, // Exclude custom markdown prop from DOM props
+    node: _node, // Exclude custom markdown prop from DOM props
     ...props
   }: React.ComponentPropsWithoutRef<'code'> & {
     inline?: boolean;
     node?: unknown;
     isDark?: boolean;
   }) => {
+    void _inline;
+    void _node;
+
     // Distinguish inline code vs block code
     // ReactMarkdown passes className="language-xxx" for code blocks
     const match = /language-(\w+)/.exec(className || '');
@@ -23,7 +28,7 @@ export const CodeBlock = memo(
       // Inline code
       return (
         <code
-          className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-400 border border-border break-all"
+          className="px-1.5 py-0.5 bg-slate-200/60 dark:bg-slate-800/60 rounded text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-300 border border-border/80 break-all"
           {...props}
         >
           {children}
