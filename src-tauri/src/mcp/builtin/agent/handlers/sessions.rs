@@ -43,7 +43,7 @@ pub fn parse_message_to_session_wait_config(
     let wait_for_response = args
         .get("waitForResponse")
         .and_then(|value| value.as_bool())
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     if !wait_for_response {
         return Ok((false, None));

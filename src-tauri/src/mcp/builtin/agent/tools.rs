@@ -208,7 +208,7 @@ fn message_to_session_tool() -> MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
         description:
-            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Returns immediately unless waitForResponse=true."
+            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Blocks/waits for the response unless waitForResponse=false."
                 .to_string(),
         input_schema: object_prop(
             vec![
@@ -223,8 +223,8 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "waitForResponse".to_string(),
                     {
-                        let mut schema = boolean_prop(Some("If true, block until the child reaches a terminal response after receiving this message."));
-                        schema.default = Some(json!(false));
+                        let mut schema = boolean_prop(Some("If true (default), block until the child reaches a terminal response after receiving this message."));
+                        schema.default = Some(json!(true));
                         schema
                     },
                 ),

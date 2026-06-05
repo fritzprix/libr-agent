@@ -103,6 +103,15 @@ fn message_to_session_uses_default_timeout_when_waiting() {
 }
 
 #[test]
+fn message_to_session_defaults_to_waiting_when_omitted() {
+    let (wait_for_response, timeout_seconds) = parse_message_to_session_wait_config(&json!({}))
+        .expect("waiting path should supply a default timeout when omitted");
+
+    assert!(wait_for_response);
+    assert_eq!(timeout_seconds, Some(3600));
+}
+
+#[test]
 fn message_to_session_rejects_invalid_timeout_when_waiting() {
     let result = parse_message_to_session_wait_config(&json!({
         "waitForResponse": true,
