@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## [0.8.3] - 2026-06-04
+
 ## [0.8.4] - 2026-06-05
 
 ### 🚀 Features
@@ -24,7 +25,6 @@ All notable changes to this project will be documented in this file.
 - **Workspace Skills Migration**: Migrated workspace skills to `.libragent/skills` with dynamic settings references and cleaned up multi-agent trace artifacts.
 - **Session Repository Trait**: Introduced `SessionRepository` trait in agent server context for better testability.
 - **Integration Test Maintenance**: Updated workspace skill access regression tests for the `.libragent/skills` migration.
-
 
 ### 🚀 Features
 
