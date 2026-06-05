@@ -599,3 +599,93 @@ pub async fn compact_session_context(
     Ok(SuccessHint::new(message, vec![])
         .to_mcp_result_with_data(Some(Value::Object(response_data))))
 }
+
+pub async fn delete_session(
+    server: &AgentServer,
+    args: Value,
+    caller_session_id: &str,
+) -> Result<MCPResult, String> {
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
+    let session_id = read_required_string(&args, "sessionId")?;
+
+    // 1. Prevent self-deletion (matching stopSession pattern)
+    if caller_session_id == session_id {
+        return Ok(self_target_session_action_result(
+            "deleteSession",
+            "Self-deletion is not allowed via deleteSession.",
+            vec![
+                "If the current session should be removed, use the normal session deletion controls in the UI instead."
+                    .to_string(),
+            ],
+        ));
+    }
+
+    // 2. Perform lineage permissions check (reuse load_accessible_delegated_session)
+    let _target_session = match load_accessible_delegated_session(
+        manager,
+        caller_session_id,
+        &session_id,
+        "deleteSession",
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(result) => return Ok(result),
+    };
+
+    // 3. Execute cascade deletion
+    let deleted_ids = manager.delete_session(session_id.clone()).await?;
+
+    // 4. Clean up lineage metadata (sync with Tauri command behavior to prevent memory leaks)
+    for deleted_id in &deleted_ids {
+        crate::services::agent_service::remove_lineage(deleted_id).await;
+    }
+
+    // 5. Compose the response message
+    // Provide a list of deleted descendant IDs so that the AI agent can parse and comprehend it
+    let cascade_count = deleted_ids.len() - 1; // Exclude self
+    let message = if cascade_count > 0 {
+        let descendant_list = deleted_ids
+            .get(1..)
+            .unwrap_or(&[])
+            .iter()
+            .map(|id| format!("  - {}", id))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "Session {} deleted.\nCascade removed {} descendant session(s):\n{}",
+            session_id, cascade_count, descendant_list
+        )
+    } else {
+        format!("Session {} deleted.", session_id)
+    };
+
+    let hint = SuccessHint::new(message.clone(), vec![]);
+    let mut response_data = build_agent_tool_data(
+        "deleteSession",
+        "session",
+        Some(&session_id),
+        &message,
+        "success",
+        vec![],
+    );
+    response_data.insert("sessionId".to_string(), Value::String(session_id));
+    response_data.insert("deleted".to_string(), Value::Bool(true));
+    response_data.insert(
+        "descendantCount".to_string(),
+        Value::Number(cascade_count.into()),
+    );
+    response_data.insert(
+        "deletedIds".to_string(),
+        Value::Array(
+            deleted_ids
+                .iter()
+                .map(|id| Value::String(id.clone()))
+                .collect(),
+        ),
+    );
+
+    Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
+}
