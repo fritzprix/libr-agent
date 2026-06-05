@@ -234,6 +234,32 @@ describe('AI Service Utils', () => {
         errorCode: 'RATE_LIMIT_EXCEEDED',
       });
     });
+
+    it('maps prefill memory overflow payloads to context-limit errors', () => {
+      const error = new AIServiceError(
+        'openai streaming failed: Prefill context too large for available memory (pre-chunk guard at 2048 tokens, kv_len=81920): predicted peak would exceed prefill safety cap 46.7GB (90% of effective ceiling 51.8GB)',
+        AIServiceProvider.OpenAI,
+        undefined,
+        undefined,
+        {
+          kind: 'unknown',
+          retryable: false,
+          rawPayload: {
+            message:
+              'Prefill context too large for available memory (pre-chunk guard at 2048 tokens, kv_len=81920): predicted peak would exceed prefill safety cap 46.7GB (90% of effective ceiling 51.8GB)',
+            type: 'server_error',
+          },
+        },
+      );
+
+      expect(normalizeAIServiceError(error)).toEqual({
+        type: 'CONTEXT_LIMIT_ERROR',
+        displayMessage:
+          'Prefill context too large for available memory (pre-chunk guard at 2048 tokens, kv_len=81920): predicted peak would exceed prefill safety cap 46.7GB (90% of effective ceiling 51.8GB)',
+        recoverable: true,
+        errorCode: 'CONTEXT_LIMIT_EXCEEDED',
+      });
+    });
   });
 
   describe('processMessageContent', () => {

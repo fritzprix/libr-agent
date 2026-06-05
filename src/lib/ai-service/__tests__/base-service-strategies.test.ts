@@ -78,4 +78,38 @@ describe('throwStreamingError', () => {
 
     throw new Error('Expected throwStreamingError to throw');
   });
+
+  it('classifies prefill memory overflow as a context-limit error', () => {
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+
+    try {
+      throwStreamingError({
+        error: {
+          error: {
+            type: 'server_error',
+            message:
+              'Prefill context too large for available memory (pre-chunk guard at 2048 tokens, kv_len=81920): predicted peak would exceed prefill safety cap 46.7GB (90% of effective ceiling 51.8GB)',
+          },
+        },
+        context,
+        logger,
+        provider: AIServiceProvider.OpenAI,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIServiceError);
+      if (!(error instanceof AIServiceError)) {
+        throw error;
+      }
+
+      expect(error.metadata.kind).toBe('context_limit');
+      expect(error.metadata.retryable).toBe(false);
+      expect(error.metadata.providerStatus).toBe('server_error');
+      return;
+    }
+
+    throw new Error('Expected throwStreamingError to throw');
+  });
 });
