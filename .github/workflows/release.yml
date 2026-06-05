@@ -54,7 +54,7 @@ jobs:
       - name: Sync node version and setup cache
         uses: actions/setup-node@v5
         with:
-          node-version: 'lts/*'
+          node-version: '20'
           cache: 'pnpm'
 
       - name: Install frontend dependencies
