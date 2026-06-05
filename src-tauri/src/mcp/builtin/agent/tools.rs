@@ -208,7 +208,7 @@ fn message_to_session_tool() -> MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
         description:
-            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Blocks/waits for the response unless waitForResponse=false."
+            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Waits for the child's response unless waitForResponse=false."
                 .to_string(),
         input_schema: object_prop(
             vec![
