@@ -15,7 +15,7 @@ function depthForQuery(query: string): number {
   return 8;
 }
 
-const MAX_RESULTS = 10;
+const MAX_RESULTS = 30;
 
 /**
  * Fetches and filters workspace file paths for `@file:` autocomplete.
@@ -66,6 +66,12 @@ export function useWorkspaceFiles(
 
   const lower = query.toLowerCase();
   return allPaths
-    .filter((p) => p.toLowerCase().includes(lower))
+    .filter((p) => {
+      const pLower = p.toLowerCase();
+      if (query.endsWith('/')) {
+        return pLower.startsWith(lower);
+      }
+      return pLower.includes(lower);
+    })
     .slice(0, MAX_RESULTS);
 }

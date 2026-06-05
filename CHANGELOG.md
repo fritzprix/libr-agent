@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - **Child Session Visibility & Limits**: Exposed child session list and status in agent service context for better debugging, with a hard cap of 20 child sessions to prevent context token bloat.
 - **Improved Context Limit Error Detection**: Added prefill context overflow detection so agents surface clearer error messages when approaching token limits.
 - **Theme Centralization & UI Polish**: Moved `useIsDarkMode` to a centralized hook, improved inline code contrast in dark mode, softened blockquote borders, and enhanced link hover feedback with background highlight.
+- **Workspace File Autocomplete**: Increased autocomplete suggestions limit from 10 to 30 and optimized filtering to use prefix matching when the query ends with a directory slash.
 
 ### 🐛 Fixes
 
@@ -38,7 +39,6 @@ All notable changes to this project will be documented in this file.
 ### 🔧 Internal
 
 - **Windows Test Bootstrap Maintenance**: Stabilized integration-test startup on Windows and cleaned up related session-history internals to keep the `dev/0.8.x` release line easier to maintain.
-
 
 ## [0.8.2] - 2026-06-03
 
