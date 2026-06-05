@@ -2,7 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.8.3] - 2026-06-04
 ## [0.8.4] - 2026-06-05
 
 ### 🚀 Features
@@ -25,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - **Session Repository Trait**: Introduced `SessionRepository` trait in agent server context for better testability.
 - **Integration Test Maintenance**: Updated workspace skill access regression tests for the `.libragent/skills` migration.
 
+## [0.8.3] - 2026-06-04
 
 ### 🚀 Features
 
@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 ### 🔧 Internal
 
 - **Windows Test Bootstrap Maintenance**: Stabilized integration-test startup on Windows and cleaned up related session-history internals to keep the `dev/0.8.x` release line easier to maintain.
+
 
 ## [0.8.2] - 2026-06-03
 
