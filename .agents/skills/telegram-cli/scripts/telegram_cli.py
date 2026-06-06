@@ -31,15 +31,7 @@ try:
     from telethon import TelegramClient
     from telethon.errors import (
         FloodWaitError,
-        ChatAdminRequiredError,
-        ChatForwardsForbiddenError,
-        ChatIdInvalidError,
-        ChatNotModifiedError,
-        FilePartMissingError,
-        PeerFloodError,
         RPCError,
-        UserNotMutualContactError,
-        UserNotParticipantError,
     )
     from telethon.tl.functions.messages import (
         GetMessagesRequest,
@@ -275,7 +267,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 
 def action_get_messages(args: argparse.Namespace, config: dict) -> int:
@@ -334,7 +326,7 @@ def action_get_messages(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 
 def action_list_chats(args: argparse.Namespace, config: dict) -> int:
@@ -380,7 +372,7 @@ def action_list_chats(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 
 def action_search_messages(args: argparse.Namespace, config: dict) -> int:
@@ -439,7 +431,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 
 def action_download_file(args: argparse.Namespace, config: dict) -> int:
@@ -543,7 +535,7 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 
 def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
@@ -602,7 +594,7 @@ def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 
 # ─── Main ─────────────────────────────────────────────────────────────

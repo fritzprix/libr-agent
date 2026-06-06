@@ -117,7 +117,7 @@ def action_send_code(args: argparse.Namespace) -> int:
         )
         return 3
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 def action_sign_in(args: argparse.Namespace) -> int:
     """Complete authorization using code and optionally 2FA password."""
@@ -220,7 +220,7 @@ def action_sign_in(args: argparse.Namespace) -> int:
         )
         return 3
     finally:
-        client.loop.run_until_complete(client.disconnect())
+        client.disconnect()
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Telegram setup script")
