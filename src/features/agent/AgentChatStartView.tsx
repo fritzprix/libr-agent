@@ -125,17 +125,17 @@ export default function AgentChatStartView() {
   }, [assistants, createSession, navigate, playbookId]);
 
   const handleAssistantSelect = useCallback(
-    (assistant: AssistantSummary) => {
-      setStartingAssistantId(assistant.id);
-      navigate(`/agent/draft?assistantId=${assistant.id}`);
+    (assistantId: string) => {
+      setStartingAssistantId(assistantId);
+      navigate(`/agent/draft?assistantId=${assistantId}`);
     },
     [navigate],
   );
 
   const handleStartSelection = useCallback(
-    (assistant: AssistantSummary) => {
+    (assistantId: string) => {
       setIsCreating(true);
-      handleAssistantSelect(assistant);
+      handleAssistantSelect(assistantId);
     },
     [handleAssistantSelect],
   );
