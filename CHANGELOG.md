@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.6] - 2026-06-06
+
+### 🐛 Fixes
+
+- **Telegram Skill Compatibility**: Fixed an `ImportError` on Telethon startup by removing unused error class imports and resolved a `TypeError` by calling `client.disconnect()` synchronously.
+
+## [0.8.5] - 2026-06-06
+
+### 🚀 Features
+
+- **New Bundled telegram-cli Skill**: Added a new bundled `telegram-cli` skill allowing agents to interact with Telegram (sending/reading messages, downloading files) using a Telethon-based CLI wrapper.
+- **Built-in Session Deletion Tool**: Added a new `deleteSession` built-in MCP tool to support programmatically deleting agent sessions.
+- **Improved Workspace File Autocomplete**: Enhanced client-side autocomplete matching logic for referencing files via `@file:`, employing directory prefix matching when the query ends with a slash and increasing the suggestions limit.
+- **Synchronized Message to Session Flow**: Changed the default value of `waitForResponse` to `true` in the `messageToSession` tool for more reliable sequential agent coordination.
+
+### 🐛 Fixes
+
+- **Bookmark Filter State Persistence**: Synchronized the bookmarked sessions filter state with the URL hash in the session history panel to ensure UI state is preserved across routing events.
+
+### 🔧 Internal
+
+- **Workspace Built-in MCP Modularization**: Modularized the workspace server built-in MCP server by splitting its code into smaller files (`context.rs`, `dispatch.rs`, `types.rs`, `workspace_server.rs`) for cleaner maintenance.
+- **Component Interface Simplification**: Simplified the `onSelect` prop of the `AssistantSelectionCard` to pass a simple assistant ID string, and cleaned up unused imports/tool descriptions.
+
 ## [0.8.4] - 2026-06-05
 
 ### 🚀 Features
@@ -10,6 +34,7 @@ All notable changes to this project will be documented in this file.
 - **Child Session Visibility & Limits**: Exposed child session list and status in agent service context for better debugging, with a hard cap of 20 child sessions to prevent context token bloat.
 - **Improved Context Limit Error Detection**: Added prefill context overflow detection so agents surface clearer error messages when approaching token limits.
 - **Theme Centralization & UI Polish**: Moved `useIsDarkMode` to a centralized hook, improved inline code contrast in dark mode, softened blockquote borders, and enhanced link hover feedback with background highlight.
+- **Workspace File Autocomplete**: Increased autocomplete suggestions limit from 10 to 30 and optimized filtering to use prefix matching when the query ends with a directory slash.
 
 ### 🐛 Fixes
 
@@ -38,7 +63,6 @@ All notable changes to this project will be documented in this file.
 ### 🔧 Internal
 
 - **Windows Test Bootstrap Maintenance**: Stabilized integration-test startup on Windows and cleaned up related session-history internals to keep the `dev/0.8.x` release line easier to maintain.
-
 
 ## [0.8.2] - 2026-06-03
 

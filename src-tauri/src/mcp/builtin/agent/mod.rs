@@ -113,6 +113,7 @@ impl BuiltinMCPServer for AgentServer {
                 handlers::compact_session_context(self, args, &session_id).await
             }
             "stopSession" => handlers::stop_session(self, args, &session_id).await,
+            "deleteSession" => handlers::delete_session(self, args, &session_id).await,
             "createAssistant" => {
                 let assistant_server = self.legacy_assistant_server().await?;
                 crate::mcp::builtin::assistant::operations::create_assistant(

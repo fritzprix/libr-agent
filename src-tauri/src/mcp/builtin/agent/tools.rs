@@ -16,6 +16,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         check_session_tool(),
         compact_session_context_tool(),
         stop_session_tool(),
+        delete_session_tool(),
     ]
 }
 
@@ -208,7 +209,7 @@ fn message_to_session_tool() -> MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
         description:
-            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Returns immediately unless waitForResponse=true."
+            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. This can also be used to explicitly wake paused or error sessions and retry the delegated workflow from the latest stable state. Waits for the child's response unless waitForResponse=false."
                 .to_string(),
         input_schema: object_prop(
             vec![
@@ -223,8 +224,8 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "waitForResponse".to_string(),
                     {
-                        let mut schema = boolean_prop(Some("If true, block until the child reaches a terminal response after receiving this message."));
-                        schema.default = Some(json!(false));
+                        let mut schema = boolean_prop(Some("If true (default), block until the child reaches a terminal response after receiving this message."));
+                        schema.default = Some(json!(true));
                         schema
                     },
                 ),
@@ -314,6 +315,23 @@ fn compact_session_context_tool() -> MCPTool {
                         Some("Maximum seconds to wait for the compaction to finish and return the new compact summary."),
                     ),
                 ),
+            ],
+            vec!["sessionId".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn delete_session_tool() -> MCPTool {
+    MCPTool {
+        name: "deleteSession".to_string(),
+        title: Some("Delete Agent Session".to_string()),
+        description: "Permanently delete a delegated descendant session and all its data. Self-deletion is not allowed. Only descendant sessions of the current session can be deleted via this tool.".to_string(),
+        input_schema: object_prop(
+            vec![
+                ("sessionId".to_string(), string_prop_required("ID of the session to delete.")),
             ],
             vec!["sessionId".to_string()],
             None,

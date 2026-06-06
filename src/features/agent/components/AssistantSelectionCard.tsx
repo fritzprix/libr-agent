@@ -6,7 +6,7 @@ interface AssistantSelectionCardProps {
   assistant: AssistantSummary;
   isStarting: boolean;
   disabled: boolean;
-  onSelect: (assistant: AssistantSummary) => void;
+  onSelect: (assistantId: string) => void;
 }
 
 export function AssistantSelectionCard({
@@ -17,7 +17,7 @@ export function AssistantSelectionCard({
 }: AssistantSelectionCardProps) {
   return (
     <button
-      onClick={() => onSelect(assistant)}
+      onClick={() => onSelect(assistant.id)}
       disabled={disabled}
       aria-label={`Start session with ${assistant.name}`}
       aria-busy={isStarting}

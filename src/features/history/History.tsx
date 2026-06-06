@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   useAgentSessionListActions,
@@ -14,6 +14,7 @@ const logger = getLogger('History');
 
 export default function History() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation('common');
   const {
     sessions,
@@ -32,6 +33,19 @@ export default function History() {
     'all' | SessionStatus
   >('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const showBookmarkedOnly = location.hash === '#bookmarked-sessions';
+
+  const handleShowBookmarkedOnlyChange = useCallback(
+    (value: boolean) => {
+      if (value) {
+        navigate('/history#bookmarked-sessions', { replace: true });
+      } else {
+        navigate('/history', { replace: true });
+      }
+    },
+    [navigate],
+  );
 
   const handleResumeSession = useCallback(
     (sessionId: string) => {
@@ -103,6 +117,8 @@ export default function History() {
         onDelete={handleDeleteSession}
         onDeleteOnly={handleDeleteSessionOnly}
         onToggleBookmark={toggleBookmark}
+        showBookmarkedOnly={showBookmarkedOnly}
+        onShowBookmarkedOnlyChange={handleShowBookmarkedOnlyChange}
         heading={t('sessionHistory.heading', 'Session History')}
         description={t(
           'sessionHistory.description',

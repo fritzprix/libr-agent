@@ -205,10 +205,10 @@ _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente ju
 Descarga el último instalador para tu plataforma desde la **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.4_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.4/LibrAgent_0.8.4_x64-setup.exe) · [`LibrAgent_0.8.4_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.4/LibrAgent_0.8.4_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.4_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.4/LibrAgent_0.8.4_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.4_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.4/LibrAgent_0.8.4_amd64.AppImage) · [`LibrAgent_0.8.4_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.4/LibrAgent_0.8.4_amd64.deb) · [`LibrAgent-0.8.4-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.4/LibrAgent-0.8.4-1.x86_64.rpm)
-- **Todos los archivos de la release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.4)
+- **Windows:** [`LibrAgent_0.8.6_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_x64-setup.exe) · [`LibrAgent_0.8.6_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.6_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.6_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_amd64.AppImage) · [`LibrAgent_0.8.6_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_amd64.deb) · [`LibrAgent-0.8.6-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent-0.8.6-1.x86_64.rpm)
+- **Todos los archivos de la release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.6)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Configuración para desarrolladores:**

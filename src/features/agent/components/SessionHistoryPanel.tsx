@@ -76,6 +76,8 @@ interface SessionHistoryPanelProps {
   emptyStateSubtitle?: string;
   initialSortKey?: SessionSortKey;
   initialSortDirection?: SessionSortDirection;
+  showBookmarkedOnly?: boolean;
+  onShowBookmarkedOnlyChange?: (value: boolean) => void;
 }
 
 export function SessionHistoryPanel({
@@ -100,6 +102,8 @@ export function SessionHistoryPanel({
   emptyStateSubtitle,
   initialSortKey = 'updatedAt',
   initialSortDirection = 'desc',
+  showBookmarkedOnly: controlledShowBookmarkedOnly,
+  onShowBookmarkedOnlyChange,
 }: SessionHistoryPanelProps) {
   const { t } = useTranslation('common');
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -108,7 +112,26 @@ export function SessionHistoryPanel({
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
-  const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
+  const [localShowBookmarkedOnly, setLocalShowBookmarkedOnly] = useState(false);
+  const showBookmarkedOnly =
+    controlledShowBookmarkedOnly !== undefined
+      ? controlledShowBookmarkedOnly
+      : localShowBookmarkedOnly;
+
+  const setShowBookmarkedOnly = useCallback(
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      if (controlledShowBookmarkedOnly !== undefined) {
+        const nextValue =
+          typeof value === 'function'
+            ? value(controlledShowBookmarkedOnly)
+            : value;
+        onShowBookmarkedOnlyChange?.(nextValue);
+      } else {
+        setLocalShowBookmarkedOnly(value);
+      }
+    },
+    [controlledShowBookmarkedOnly, onShowBookmarkedOnlyChange],
+  );
   const [activeSortKey, setActiveSortKey] =
     useState<SessionSortKey>(initialSortKey);
   const [activeSortDirection, setActiveSortDirection] =
