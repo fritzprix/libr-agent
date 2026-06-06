@@ -69,7 +69,10 @@ impl WorkspaceServer {
         if paths_array.len() == 1 {
             if let Some(path_str) = paths_array[0].as_str() {
                 // Canonicalize the candidate path and ensure it stays within the workspace safely
-                if let Ok(canon_check) = crate::utils::security::resolve_secure_path(&workspace_dir_canon, path_str).await {
+                if let Ok(canon_check) =
+                    crate::utils::security::resolve_secure_path(&workspace_dir_canon, path_str)
+                        .await
+                {
                     if canon_check.is_file() {
                         is_single_file_mode = true;
                         single_file_path = Some(canon_check);
@@ -181,7 +184,10 @@ impl WorkspaceServer {
         let mut missing_files = Vec::new();
         for file_value in paths_array {
             if let Some(path_str) = file_value.as_str() {
-                if let Ok(file_path) = crate::utils::security::resolve_secure_path(&workspace_dir_canon, path_str).await {
+                if let Ok(file_path) =
+                    crate::utils::security::resolve_secure_path(&workspace_dir_canon, path_str)
+                        .await
+                {
                     if !file_path.exists() {
                         missing_files.push(path_str.to_string());
                     }
@@ -236,7 +242,12 @@ impl WorkspaceServer {
 
         for file_value in paths_array {
             if let Some(path_str) = file_value.as_str() {
-                let source_path = match crate::utils::security::resolve_secure_path(&workspace_dir_canon, path_str).await {
+                let source_path = match crate::utils::security::resolve_secure_path(
+                    &workspace_dir_canon,
+                    path_str,
+                )
+                .await
+                {
                     Ok(path) => path,
                     Err(_) => continue,
                 };
