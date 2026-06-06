@@ -16,6 +16,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         check_session_tool(),
         compact_session_context_tool(),
         stop_session_tool(),
+        delete_session_tool(),
     ]
 }
 
@@ -314,6 +315,23 @@ fn compact_session_context_tool() -> MCPTool {
                         Some("Maximum seconds to wait for the compaction to finish and return the new compact summary."),
                     ),
                 ),
+            ],
+            vec!["sessionId".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn delete_session_tool() -> MCPTool {
+    MCPTool {
+        name: "deleteSession".to_string(),
+        title: Some("Delete Agent Session".to_string()),
+        description: "Permanently delete a delegated descendant session and all its data. Self-deletion is not allowed. Only descendant sessions of the current session can be deleted via this tool.".to_string(),
+        input_schema: object_prop(
+            vec![
+                ("sessionId".to_string(), string_prop_required("ID of the session to delete.")),
             ],
             vec!["sessionId".to_string()],
             None,

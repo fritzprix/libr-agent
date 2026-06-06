@@ -542,6 +542,6 @@ pub use orgs::{
     inspect_teamwork_scaffold, TeamworkScaffoldStatus,
 };
 pub use sessions::{
-    compact_session_context, message_to_session, parse_message_to_session_wait_config,
-    start_session, stop_session,
+    compact_session_context, delete_session, message_to_session,
+    parse_message_to_session_wait_config, start_session, stop_session,
 };
