@@ -30,8 +30,12 @@ Choose one scope based on intended reach:
 ```
 
 `skillsDirectory` is set in Settings → System → Skills Directory.
-Retrieve the current value: call `get_default_skills_directory`.
-The returned path is used verbatim as the `<location>` value in the system prompt, so the path you write the file to must match exactly.
+Since the Tauri command `get_default_skills_directory` is not exposed to the agent as an MCP tool, do **NOT** attempt to call it directly. Instead:
+1. **Inspect `<available_skills>`**: Read the system prompt's `<available_skills>` block. Look at the `<location>` of any existing global skill (e.g. `/home/alice/.local/share/libr-agent/skills/mcp-builder/SKILL.md`) and extract the parent directory (`/home/alice/.local/share/libr-agent/skills`).
+2. **OS Standard Default Paths**: If no skills are listed, look for or check the existence of standard global skills directories:
+   * **Linux**: `~/.local/share/libr-agent/skills/`
+   * **macOS**: `~/Library/Application Support/libr-agent/skills/`
+   * **Windows**: `%APPDATA%\libr-agent\skills\`
 Example resolved path: `C:\Users\alice\AppData\Roaming\LibrAgent\skills\my-skill\SKILL.md`
 
 ### Assistant scope
@@ -47,12 +51,12 @@ Example: `C:\Users\alice\AppData\Roaming\LibrAgent\assistants\asst_abc123\skills
 ### Workspace scope
 
 ```text
-{workspace-root}/skills/
+{workspace-root}/.libragent/skills/
 └── {skill-name}/
     └── SKILL.md
 ```
 
-Example: `/home/alice/project/skills/my-skill/SKILL.md`
+Example: `/home/alice/project/.libragent/skills/my-skill/SKILL.md`
 The workspace root is the session's working directory. It is visible in the system prompt under:
 
 ```text
@@ -62,6 +66,27 @@ The workspace root is the session's working directory. It is visible in the syst
 
 Read this value directly — no tool call needed.
 
+> [!NOTE]
+> The Rust backend automatically migrates legacy `{workspace-root}/skills` to `{workspace-root}/.libragent/skills` if it exists.
+
+### Agent scope (Auto-discovered)
+
+```text
+{workspace-root}/{agent-directory}/skills/
+└── {skill-name}/
+    └── SKILL.md
+```
+
+LibrAgent automatically scans specific agent tool directories under the workspace root. You can deploy skills into these paths for local agent development:
+*   `.agents/skills/` (LibrAgent local development directory)
+*   `.gemini/skills/`
+*   `.cursor/skills/`
+*   `.copilot/skills/`
+*   `.windsurf/skills/`
+*   `.claude/skills/`
+*   `.cline/skills/`
+*   `.continue/skills/`
+
 ## Deployment Procedure
 
 ### Step 1 — Determine the target path
@@ -69,14 +94,14 @@ Read this value directly — no tool call needed.
 For **workspace** (most common):
 
 ```text
-{workspace-root}/skills/{skill-name}/SKILL.md
+{workspace-root}/.libragent/skills/{skill-name}/SKILL.md
 ```
 
-Read the `Workspace Root` from the active Workspace service context.
+Read the `Workspace Root` from the active Workspace service context. Alternatively, deploy to an **agent import path** (e.g. `{workspace-root}/.agents/skills/{skill-name}/SKILL.md`) for IDE-specific agent development.
 
 For **global**:
 
-1. Call `get_default_skills_directory` to retrieve the path.
+1. Retrieve the `skillsDirectory` path by analyzing `<available_skills>` location paths in the system prompt, or falling back to checking standard OS default paths.
 2. Append `/{skill-name}/SKILL.md`.
 
 For **assistant**:
@@ -113,10 +138,7 @@ Check that:
 2. The `source` attribute matches the intended scope (`"workspace"`, `"assistant"`, or `"global"`).
 3. The `<location>` path points to the file you just wrote.
 
-Alternatively, call the Tauri command directly:
-
-- **Workspace / Global**: Call `scan_skills_directory` on the parent `skills/` folder and check that the skill name appears.
-- **Assistant**: Call `get_aggregated_skills` with the assistant ID and confirm the skill appears with the expected `source`.
+Alternatively, inspect the target folder contents using `listDirectory` to verify the files are physically present on disk.
 
 ### Step 4 — Announce the result
 
@@ -142,7 +164,7 @@ Skills are merged across scopes with **first-wins by name (lowercase)**. Scope p
 Use this intentionally:
 
 - Deploy a workspace-scoped override to temporarily patch a global skill for one session.
-- Deploy an assistant-scoped copy (via `copy_global_to_assistant`) to customize a global skill for one assistant without affecting others.
+- Deploy an assistant-scoped copy (by copying the global skill directory files to the assistant skills directory) to customize a global skill for one assistant without affecting others.
 
 ## Common Mistakes
 
