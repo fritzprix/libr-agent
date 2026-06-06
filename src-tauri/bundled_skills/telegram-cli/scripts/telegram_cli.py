@@ -123,7 +123,11 @@ def resolve_chat(client: TelegramClient, chat_identifier: str) -> any:
         resolved = client.loop.run_until_complete(
             client(ResolveUsernameRequest(username))
         )
-        return resolved.users[0] if resolved.users else None
+        if resolved.users:
+            return resolved.users[0]
+        if resolved.chats:
+            return resolved.chats[0]
+        return None
     except Exception:
         pass
 
@@ -146,17 +150,17 @@ def format_message(msg: Message) -> dict:
     }
 
     # Add file info if media is a document
-    if msg.media and isinstance(msg.media, Document):
+    if msg.document:
         attr = next(
-            (a for a in msg.media.attributes if isinstance(a, DocumentAttributeFilename)),
+            (a for a in msg.document.attributes if isinstance(a, DocumentAttributeFilename)),
             None,
         )
         result["file_name"] = attr.file_name if attr else "unknown"
-        result["file_size"] = msg.media.size
-        result["mime_type"] = msg.media.mime_type
+        result["file_size"] = msg.document.size
+        result["mime_type"] = msg.document.mime_type
 
     # Add photo info
-    if msg.media and isinstance(msg.media, Photo):
+    if msg.photo:
         result["photo"] = True
 
     return result
@@ -194,6 +198,13 @@ def format_chat(peer) -> dict:
 
 def action_send_message(args: argparse.Namespace, config: dict) -> int:
     """Send a message to a chat."""
+    if not args.chat or not args.message:
+        print(
+            json.dumps({"status": "error", "message": "Missing required arguments: --chat and --message are required."}),
+            file=sys.stderr,
+        )
+        return 3
+
     client = create_client(config)
     try:
         client.loop.run_until_complete(client.connect())
@@ -212,26 +223,35 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
             )
             return 2
 
-        result = client.loop.run_until_complete(
-            client.send_message(peer, args.message)
-        )
-
-        output = {
-            "status": "ok",
-            "message_id": result.id,
-            "chat": args.chat,
-            "sent_at": result.date.isoformat() if result.date else None,
-        }
-
         if args.file:
-            output["attachment"] = args.file
-            # Send file
             file_path = Path(args.file)
-            if file_path.exists():
-                client.loop.run_until_complete(
-                    client.send_file(peer, str(file_path), caption=args.message)
+            if not file_path.exists():
+                print(
+                    json.dumps({"status": "error", "message": f"File not found: {args.file}"}),
+                    file=sys.stderr,
                 )
-                output["file_sent"] = True
+                return 3
+            result = client.loop.run_until_complete(
+                client.send_file(peer, str(file_path), caption=args.message)
+            )
+            output = {
+                "status": "ok",
+                "message_id": result.id,
+                "chat": args.chat,
+                "sent_at": result.date.isoformat() if result.date else None,
+                "attachment": args.file,
+                "file_sent": True
+            }
+        else:
+            result = client.loop.run_until_complete(
+                client.send_message(peer, args.message)
+            )
+            output = {
+                "status": "ok",
+                "message_id": result.id,
+                "chat": args.chat,
+                "sent_at": result.date.isoformat() if result.date else None,
+            }
 
         print(json.dumps(output))
         return 0
@@ -255,7 +275,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 
 def action_get_messages(args: argparse.Namespace, config: dict) -> int:
@@ -314,7 +334,7 @@ def action_get_messages(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 
 def action_list_chats(args: argparse.Namespace, config: dict) -> int:
@@ -360,7 +380,7 @@ def action_list_chats(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 
 def action_search_messages(args: argparse.Namespace, config: dict) -> int:
@@ -419,7 +439,7 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 
 def action_download_file(args: argparse.Namespace, config: dict) -> int:
@@ -443,18 +463,25 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
             return 2
 
         # Get the message
-        messages = client.loop.run_until_complete(
+        res = client.loop.run_until_complete(
             client.get_messages(peer, ids=args.message_id)
         )
-        if not messages:
+        if not res:
             print(
                 json.dumps({"status": "error", "message": "Message not found"}),
                 file=sys.stderr,
             )
             return 2
 
-        msg = messages[0]
-        if not msg.media or not isinstance(msg.media, (Document, Photo)):
+        msg = res[0] if isinstance(res, list) else res
+        if not msg:
+            print(
+                json.dumps({"status": "error", "message": "Message not found"}),
+                file=sys.stderr,
+            )
+            return 2
+
+        if not msg.document and not msg.photo:
             print(
                 json.dumps({"status": "error", "message": "Message has no downloadable file"}),
                 file=sys.stderr,
@@ -467,15 +494,15 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
 
         # Get file name
         file_name = "download"
-        if isinstance(msg.media, Document):
+        if msg.document:
             attr = next(
-                (a for a in msg.media.attributes if isinstance(a, DocumentAttributeFilename)),
+                (a for a in msg.document.attributes if isinstance(a, DocumentAttributeFilename)),
                 None,
             )
             if attr:
                 file_name = attr.file_name
             else:
-                ext = msg.media.mime_type.split("/")[-1] if msg.media.mime_type else "bin"
+                ext = msg.document.mime_type.split("/")[-1] if msg.document.mime_type else "bin"
                 file_name = f"file_{msg.id}.{ext}"
         else:
             file_name = f"photo_{msg.id}.jpg"
@@ -485,11 +512,13 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
             client.download_media(msg, file=str(out_path))
         )
 
+        size = msg.document.size if msg.document else out_path.stat().st_size
+
         print(
             json.dumps({
                 "status": "ok",
                 "file": str(out_path),
-                "size": msg.media.size,
+                "size": size,
                 "message_id": msg.id,
             })
         )
@@ -514,7 +543,7 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 
 def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
@@ -573,7 +602,7 @@ def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 
 # ─── Main ─────────────────────────────────────────────────────────────

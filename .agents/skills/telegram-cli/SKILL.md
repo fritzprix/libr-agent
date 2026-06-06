@@ -25,11 +25,11 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 
 ## ⚠️ Security Rules (Mandatory)
 
-- **NEVER** ask for API hash, 2FA password, or other secrets in chat
+- **NEVER** ask for 2FA password, verification codes, or other transient secrets in chat
 - **NEVER** display or repeat the contents of `~/.libragent/telegram_config.json`
-- Ask for the phone number and custom overrides in chat only when needed; collect secrets through a hidden shell prompt
+- Collect transient secrets (verification codes, 2FA passwords) exclusively through interactive hidden shell prompts (`requireUserInput=true`)
 - **ALWAYS** use `setup.py` to persist credentials and session
-- If the user accidentally pastes a password or API hash in chat, acknowledge receipt, do NOT echo it back, and immediately run setup to store it properly
+- If the user accidentally pastes a password or code in chat, acknowledge receipt, do NOT echo it back, and immediately run setup to store it properly
 
 ---
 
@@ -64,7 +64,7 @@ python "<skill-base-dir>/scripts/check_config.py"
 
 - Exit code `0` → configured, proceed to Step 3
 - Exit code `1` → not configured, go to Step 2
-- Exit code `2` → config exists but is incomplete/corrupt, go to Step 2 with `--reset` flag
+- Exit code `2` → config exists but is incomplete/corrupt, go to Step 2 to reconfigure/overwrite it
 
 ---
 
@@ -86,7 +86,7 @@ If the user doesn't have API credentials, guide them to:
 
 ### 2.2: Two-Step Authentication Flow
 
-Use the same two-step PowerShell pattern as email-integration:
+Use the stdin redirection pattern with workspace interactive prompts (no environment variables needed):
 
 #### 1. Collect API credentials in chat
 
@@ -96,67 +96,45 @@ Ask the user for:
 - `api_hash` (string)
 - `phone` (international format, e.g., `+821012345678`)
 
-#### 2. Hidden prompt for authentication code/password
+#### 2. Interactive setup commands
 
-Run `runInPersistentPowerShell` with:
+**Step A — Send verification code:**
 
-- `requireUserInput=true`
-- `inputType=password`
-- an `inputPrompt` like `텔레그램 인증 코드를 입력하세요:`
-- an explicit setup timeout such as `timeout=120`
-
-**Step A — Send code request:**
-
-```powershell
-python "<skill-base-dir>/scripts/setup.py" `
-  --api-id 12345678 `
-  --api-hash "abcdef0123456789..." `
-  --phone "+821012345678" `
+```bash
+python "<skill-base-dir>/scripts/setup.py" \
+  --api-id 12345678 \
+  --api-hash "abcdef0123456789..." \
+  --phone "+821012345678" \
   --action send_code
 ```
 
-This will return a confirmation that the code was sent.
+This will output a confirmation JSON indicating that the SMS code was sent.
 
-**Step B — Hidden prompt for code:**
+**Step B — Sign in with code (Interactive):**
 
-```powershell
-$env:LIBRAGENT_TELEGRAM_CODE = Read-Host
-```
+Execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
 
-**Step C — Sign in with code:**
+- `requireUserInput=true`
+- `inputType=text`
+- `inputPrompt=텔레그램 인증 코드를 입력하세요:`
+- Command:
+  ```bash
+  python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-stdin
+  ```
 
-```powershell
-python "<skill-base-dir>/scripts/setup.py" `
-  --api-id 12345678 `
-  --api-hash "abcdef0123456789..." `
-  --phone "+821012345678" `
-  --action sign_in `
-  --code-env LIBRAGENT_TELEGRAM_CODE
-```
+If this returns a successful auth JSON, the configuration is complete.
 
-**Step D — Handle 2FA (if prompted):**
+**Step C — Handle 2FA (if prompted):**
 
-If the user has 2FA enabled, run:
+If Step B returns a status of `"password_needed"`, execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
 
-```powershell
-$env:LIBRAGENT_TELEGRAM_PASSWORD = Read-Host
-```
-
-```powershell
-python "<skill-base-dir>/scripts/setup.py" `
-  --api-id 12345678 `
-  --api-hash "abcdef0123456789..." `
-  --phone "+821012345678" `
-  --action sign_in `
-  --password-env LIBRAGENT_TELEGRAM_PASSWORD
-```
-
-**Cleanup command:**
-
-```powershell
-Remove-Item Env:LIBRAGENT_TELEGRAM_CODE -ErrorAction SilentlyContinue
-Remove-Item Env:LIBRAGENT_TELEGRAM_PASSWORD -ErrorAction SilentlyContinue
-```
+- `requireUserInput=true`
+- `inputType=password`
+- `inputPrompt=텔레그램 2FA 비밀번호를 입력하세요:`
+- Command:
+  ```bash
+  python "<skill-base-dir>/scripts/setup.py" --action sign_in --password-stdin
+  ```
 
 After successful setup, proceed to Step 3 with the original user request.
 

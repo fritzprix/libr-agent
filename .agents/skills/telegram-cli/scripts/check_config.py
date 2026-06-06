@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Check LibrAgent Telegram config and session validity.
+Check LibrAgent Telegram config and session file existence.
 
 Exit codes:
-  0 — Config exists, session file exists, and session is valid
+  0 — Config exists and session file exists
   1 — Config or session does not exist (first-time setup needed)
   2 — Config exists but is invalid / corrupt (reset needed)
 

@@ -47,6 +47,10 @@ def save_config(api_id: int, api_hash: str, phone: str, phone_code_hash: str = "
         config_data["phone_code_hash"] = phone_code_hash
         
     CONFIG_PATH.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
+    try:
+        os.chmod(CONFIG_PATH, 0o600)
+    except OSError:
+        pass
 
 def load_config() -> dict:
     """Load configuration from ~/.libragent/telegram_config.json."""
@@ -113,7 +117,7 @@ def action_send_code(args: argparse.Namespace) -> int:
         )
         return 3
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 def action_sign_in(args: argparse.Namespace) -> int:
     """Complete authorization using code and optionally 2FA password."""
@@ -216,7 +220,7 @@ def action_sign_in(args: argparse.Namespace) -> int:
         )
         return 3
     finally:
-        client.disconnect()
+        client.loop.run_until_complete(client.disconnect())
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Telegram setup script")

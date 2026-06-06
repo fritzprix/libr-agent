@@ -177,7 +177,7 @@ Remove-Item Env:LIBRAGENT_TELEGRAM_PASSWORD -ErrorAction SilentlyContinue
 | `check_config.py`  | ✅ 완료   | Exit code 0/1/2 로직              |
 | `telegram_cli.py`  | ✅ 완료   | dispatch 패턴, 6개 액션           |
 | `setup.py`         | ✅ 완료   | `--action send_code/sign_in` 지원 |
-| `requirements.txt` | ⬜ 미생성 | `telethon` 의존성 정의            |
+| `requirements.txt` | ✅ 완료   | `telethon` 의존성 정의            |
 
 ---
 
