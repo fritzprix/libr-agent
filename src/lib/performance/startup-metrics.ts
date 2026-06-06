@@ -99,18 +99,24 @@ function nowMs(): number {
 function summarizeLongTasks(
   longTasks: readonly StartupLongTaskEntry[],
 ): StartupLongTaskSummary {
-  return longTasks.reduce<StartupLongTaskSummary>(
-    (summary, task) => ({
-      count: summary.count + 1,
-      totalDurationMs: summary.totalDurationMs + task.durationMs,
-      maxDurationMs: Math.max(summary.maxDurationMs, task.durationMs),
-    }),
-    {
-      count: 0,
-      totalDurationMs: 0,
-      maxDurationMs: 0,
-    },
-  );
+  // ⚡ Bolt: Replace .reduce() with for-loop to avoid allocating a new object on every iteration
+  let count = 0;
+  let totalDurationMs = 0;
+  let maxDurationMs = 0;
+
+  for (const task of longTasks) {
+    count++;
+    totalDurationMs += task.durationMs;
+    if (task.durationMs > maxDurationMs) {
+      maxDurationMs = task.durationMs;
+    }
+  }
+
+  return {
+    count,
+    totalDurationMs,
+    maxDurationMs,
+  };
 }
 
 function summarizeIpcCalls(
