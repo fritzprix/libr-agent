@@ -47,12 +47,12 @@ Example: `C:\Users\alice\AppData\Roaming\LibrAgent\assistants\asst_abc123\skills
 ### Workspace scope
 
 ```text
-{workspace-root}/skills/
+{workspace-root}/.libragent/skills/
 └── {skill-name}/
     └── SKILL.md
 ```
 
-Example: `/home/alice/project/skills/my-skill/SKILL.md`
+Example: `/home/alice/project/.libragent/skills/my-skill/SKILL.md`
 The workspace root is the session's working directory. It is visible in the system prompt under:
 
 ```text
@@ -62,6 +62,27 @@ The workspace root is the session's working directory. It is visible in the syst
 
 Read this value directly — no tool call needed.
 
+> [!NOTE]
+> The Rust backend automatically migrates legacy `{workspace-root}/skills` to `{workspace-root}/.libragent/skills` if it exists.
+
+### Agent scope (Auto-discovered)
+
+```text
+{workspace-root}/{agent-directory}/skills/
+└── {skill-name}/
+    └── SKILL.md
+```
+
+LibrAgent automatically scans specific agent tool directories under the workspace root. You can deploy skills into these paths for local agent development:
+*   `.agents/skills/` (LibrAgent local development directory)
+*   `.gemini/skills/`
+*   `.cursor/skills/`
+*   `.copilot/skills/`
+*   `.windsurf/skills/`
+*   `.claude/skills/`
+*   `.cline/skills/`
+*   `.continue/skills/`
+
 ## Deployment Procedure
 
 ### Step 1 — Determine the target path
@@ -69,10 +90,10 @@ Read this value directly — no tool call needed.
 For **workspace** (most common):
 
 ```text
-{workspace-root}/skills/{skill-name}/SKILL.md
+{workspace-root}/.libragent/skills/{skill-name}/SKILL.md
 ```
 
-Read the `Workspace Root` from the active Workspace service context.
+Read the `Workspace Root` from the active Workspace service context. Alternatively, deploy to an **agent import path** (e.g. `{workspace-root}/.agents/skills/{skill-name}/SKILL.md`) for IDE-specific agent development.
 
 For **global**:
 
