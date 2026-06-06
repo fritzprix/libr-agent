@@ -328,7 +328,7 @@ fn delete_session_tool() -> MCPTool {
     MCPTool {
         name: "deleteSession".to_string(),
         title: Some("Delete Agent Session".to_string()),
-        description: "Permanently delete a delegated child session and all its data. Self-deletion is not allowed. Only descendant sessions of the current session can be deleted via this tool.".to_string(),
+        description: "Permanently delete a delegated descendant session and all its data. Self-deletion is not allowed. Only descendant sessions of the current session can be deleted via this tool.".to_string(),
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to delete.")),

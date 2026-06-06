@@ -659,6 +659,20 @@ fn message_to_session_tool_schema_supports_inline_waiting() {
 }
 
 #[test]
+fn delete_session_tool_schema_is_exposed() {
+    let delete_tool = agent_tools::all_tools()
+        .into_iter()
+        .find(|tool| tool.name == "deleteSession")
+        .expect("deleteSession tool must exist");
+    let props = extract_object_properties(&delete_tool.input_schema, "deleteSession");
+
+    assert!(
+        props.contains_key("sessionId"),
+        "deleteSession input_schema must include 'sessionId'"
+    );
+}
+
+#[test]
 fn tool_transport_schema_allows_env_and_header_maps() {
     let register_tool = tool_tools::register_server_tool();
     let props = extract_object_properties(&register_tool.input_schema, "register");

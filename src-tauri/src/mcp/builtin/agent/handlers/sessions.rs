@@ -675,7 +675,7 @@ pub async fn delete_session(
     response_data.insert("deleted".to_string(), Value::Bool(true));
     response_data.insert(
         "descendantCount".to_string(),
-        Value::Number(cascade_count.into()),
+        Value::Number((cascade_count as u64).into()),
     );
     response_data.insert(
         "deletedIds".to_string(),
