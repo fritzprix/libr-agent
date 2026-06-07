@@ -2,14 +2,13 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
-use crate::mcp::builtin::session_api::formatting::{
-    latest_assistant_message_text, latest_tool_message_text,
-};
+use crate::mcp::builtin::session_api::formatting::latest_session_output;
 use crate::mcp::builtin::session_api::utils::{
-    build_agent_session_tool_data, build_agent_tool_data,
+    build_agent_session_tool_data, build_agent_tool_data, fetch_session_messages_for_result,
+    CHECK_SESSION_RESULT_MESSAGE_LIMIT,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
-use crate::repositories::{message_repository::MessageRepository, SessionMetadata};
+use crate::repositories::SessionMetadata;
 
 fn read_optional_string(args: &Value, key: &str) -> Result<Option<String>, String> {
     match args.get(key) {
@@ -331,19 +330,6 @@ fn recovery_action_for_session(session_id: &str, status: &str, reason: &str) -> 
     })
 }
 
-fn latest_session_output(messages_value: &[Value]) -> String {
-    let (_, mut assistant_text) = latest_assistant_message_text(messages_value, None)
-        .unwrap_or(("none".to_string(), "No final answer yet.".to_string()));
-
-    if assistant_text == "[assistant message has no text content]" {
-        if let Some(tool_text) = latest_tool_message_text(messages_value) {
-            assistant_text = format!("[Tool Response Fallback]\n{}", tool_text);
-        }
-    }
-
-    assistant_text
-}
-
 pub fn build_paused_check_session_result_from_messages(
     session_id: &str,
     turn_count: usize,
@@ -487,16 +473,11 @@ async fn build_terminal_check_session_result(
     status: &str,
     turn_count: usize,
 ) -> Result<MCPResult, String> {
-    let repo = crate::state::get_message_repository();
-    let messages = repo
-        .get_messages_by_session(session_id, 5)
-        .await
-        .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
-
-    let messages_value: Vec<Value> = messages
-        .into_iter()
-        .map(|m| serde_json::to_value(m).unwrap_or_default())
-        .collect();
+    let messages_value = fetch_session_messages_for_result(
+        session_id,
+        CHECK_SESSION_RESULT_MESSAGE_LIMIT,
+    )
+    .await?;
 
     Ok(build_terminal_check_session_result_from_messages(
         session_id,
@@ -510,16 +491,11 @@ async fn build_paused_check_session_result(
     session_id: &str,
     turn_count: usize,
 ) -> Result<MCPResult, String> {
-    let repo = crate::state::get_message_repository();
-    let messages = repo
-        .get_messages_by_session(session_id, 5)
-        .await
-        .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
-
-    let messages_value: Vec<Value> = messages
-        .into_iter()
-        .map(|m| serde_json::to_value(m).unwrap_or_default())
-        .collect();
+    let messages_value = fetch_session_messages_for_result(
+        session_id,
+        CHECK_SESSION_RESULT_MESSAGE_LIMIT,
+    )
+    .await?;
 
     Ok(build_paused_check_session_result_from_messages(
         session_id,

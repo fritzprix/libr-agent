@@ -89,6 +89,23 @@ fn assistant_message_has_only_internal_ui_callback_tool_calls(message: &Message)
         .unwrap_or(false)
 }
 
+async fn persist_assistant_message_to_db(message: &Message) {
+    let repo = crate::state::get_message_repository();
+    if let Err(error) = repo.insert(message).await {
+        log::error!(
+            "Failed to save assistant message to DB: msg_id={}, error={}",
+            message.id,
+            error
+        );
+    }
+}
+
+fn spawn_persist_assistant_message_to_db(message: Message) {
+    tokio::spawn(async move {
+        persist_assistant_message_to_db(&message).await;
+    });
+}
+
 async fn cache_assistant_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -368,19 +385,7 @@ pub async fn handle_llm_response(
     crate::agent::tauri_events::emit_agent_event(app_handle, message_added_event)
         .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
-    // 3. Persist to DB asynchronously
     let msg_for_db = assistant_message.clone();
-
-    tokio::spawn(async move {
-        let repo = crate::state::get_message_repository();
-        if let Err(e) = repo.insert(&msg_for_db).await {
-            log::error!(
-                "Failed to save assistant message to DB: msg_id={}, error={}",
-                msg_for_db.id,
-                e
-            );
-        }
-    });
 
     // Parse tool calls
     // ⚡ Bolt: Use take() to move the vector out of the struct instead of cloning it, saving a deep copy.
@@ -393,6 +398,7 @@ pub async fn handle_llm_response(
         let has_pending = session_has_pending_events(active_sessions, &session_id).await;
 
         if has_pending {
+            spawn_persist_assistant_message_to_db(msg_for_db);
             log::info!(
                 "🔄 Pending messages detected for session {}. Continuing workflow.",
                 session_id
@@ -409,6 +415,9 @@ pub async fn handle_llm_response(
             .map(|_| ())
             .map_err(String::from);
         }
+
+        // Ensure the final assistant row is visible before waking terminal waiters.
+        persist_assistant_message_to_db(&msg_for_db).await;
 
         // No pending messages remain, so finish the workflow now.
         crate::agent::lifecycle::update_session_status(
@@ -429,6 +438,8 @@ pub async fn handle_llm_response(
 
         log::info!("Completed workflow for session: {}", session_id);
     } else {
+        spawn_persist_assistant_message_to_db(msg_for_db);
+
         // Tools found! Initiate execution
         log::info!(
             "Processing {} tool calls for session: {}",
