@@ -14,8 +14,10 @@ pub struct Model {
     pub id: String,
     /// User-defined label for the task
     pub name: String,
-    /// Standard cron expression (5 or 6 fields); interpretation depends on `schedule_timezone`
-    pub cron_expression: String,
+    /// `GLOBAL` for cron-backed tasks, `SESSION` for in-session callbacks
+    pub task_category: String,
+    /// Standard cron expression (5 or 6 fields); NULL for SESSION one-shot tasks
+    pub cron_expression: Option<String>,
     /// Schedule interpretation mode: "utc" for legacy tasks, "local" for new UI-created tasks
     pub schedule_timezone: String,
     /// Assistant (agent) that owns and executes this task

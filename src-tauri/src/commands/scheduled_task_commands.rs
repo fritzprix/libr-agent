@@ -39,19 +39,21 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
                 return None;
             }
 
-            compute_next_run_for_schedule_timezone(
-                &m.cron_expression,
-                chrono::Utc::now().timestamp_millis(),
-                &m.schedule_timezone,
-            )
-            .ok()
-            .flatten()
+            m.cron_expression.as_deref().and_then(|cron| {
+                compute_next_run_for_schedule_timezone(
+                    cron,
+                    chrono::Utc::now().timestamp_millis(),
+                    &m.schedule_timezone,
+                )
+                .ok()
+                .flatten()
+            })
         });
 
         Self {
             id: m.id,
             name: m.name,
-            cron_expression: m.cron_expression,
+            cron_expression: m.cron_expression.unwrap_or_default(),
             schedule_timezone: m.schedule_timezone,
             assistant_id: m.assistant_id,
             group_id: m.group_id,
@@ -112,7 +114,8 @@ pub async fn create_scheduled_task(
         get_scheduled_task_repository(),
         CreateScheduledTaskInput {
             name: request.name,
-            cron_expression: request.cron_expression,
+            task_category: crate::scheduled::TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some(request.cron_expression),
             schedule_timezone: request
                 .schedule_timezone
                 .unwrap_or_else(|| default_schedule_timezone().to_string()),
@@ -122,7 +125,9 @@ pub async fn create_scheduled_task(
             message: request.message,
             yolo_mode: request.yolo_mode,
             created_by_session_id: None,
+            session_id: None,
             workspace_override: request.workspace_override,
+            next_run_at: None,
         },
     )
     .await

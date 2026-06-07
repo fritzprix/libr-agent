@@ -5,7 +5,7 @@ use tauri_mcp_agent_lib::scheduled::runner::{
     compute_next_run_for_schedule_timezone, compute_next_run_for_timezone,
 };
 use tauri_mcp_agent_lib::scheduled::{
-    normalize_cron, SCHEDULE_TIMEZONE_LOCAL, SCHEDULE_TIMEZONE_UTC,
+    normalize_cron, TASK_CATEGORY_GLOBAL, SCHEDULE_TIMEZONE_LOCAL, SCHEDULE_TIMEZONE_UTC,
 };
 
 #[test]
@@ -114,7 +114,8 @@ fn disabled_legacy_utc_tasks_expose_a_future_display_run() {
     let dto = ScheduledTaskDto::from(ScheduledTaskModel {
         id: "task-1".to_string(),
         name: "Legacy UTC task".to_string(),
-        cron_expression: "0 9 * * *".to_string(),
+        task_category: TASK_CATEGORY_GLOBAL.to_string(),
+        cron_expression: Some("0 9 * * *".to_string()),
         schedule_timezone: SCHEDULE_TIMEZONE_UTC.to_string(),
         assistant_id: "assistant-1".to_string(),
         group_id: None,

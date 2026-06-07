@@ -22,7 +22,7 @@ use crate::models::chat::{Message, MessageSource};
 use crate::repositories::{
     AssistantRepository, ScheduledTaskRepository, SessionRepository, UpdateScheduledTaskParams,
 };
-use crate::scheduled::ScheduleTimezone;
+use crate::scheduled::{is_one_shot_task, is_session_task, ScheduleTimezone};
 use crate::services::WorkspaceService;
 use crate::state::{
     get_active_sessions, get_assistant_repository, get_scheduled_task_repository,
@@ -157,6 +157,25 @@ async fn execute_task(
     task: &crate::entity::scheduled_task::Model,
     now_ms: i64,
 ) -> Result<(), String> {
+    if is_session_task(&task.task_category) {
+        execute_session_callback(manager, task, now_ms).await
+    } else {
+        execute_global_task(manager, task, now_ms).await
+    }
+}
+
+async fn execute_global_task(
+    manager: &AgentSessionManager,
+    task: &crate::entity::scheduled_task::Model,
+    now_ms: i64,
+) -> Result<(), String> {
+    let cron_expression = task.cron_expression.as_deref().ok_or_else(|| {
+        format!(
+            "GLOBAL task '{}' ({}) is missing a cron expression",
+            task.name, task.id
+        )
+    })?;
+
     // ── 1. Build AgentConfig from stored assistant ────────────────────────────
     let assistant = get_assistant_repository()
         .get_assistant(&task.assistant_id)
@@ -166,10 +185,6 @@ async fn execute_task(
 
     let agent_config = AgentConfig::from_json(&assistant.config)?;
 
-    // Ensure the assistant ID and name are embedded in the config.
-    // The assistant entity stores `id` and `name` as separate DB columns from `config`,
-    // so the config JSON may not contain the correct values on its own.
-    // In particular, `name` defaults to "Unknown Assistant" if not set in the config JSON.
     let agent_config = AgentConfig {
         id: Some(task.assistant_id.clone()),
         name: assistant.name.clone(),
@@ -177,8 +192,6 @@ async fn execute_task(
     };
 
     // ── 2. Resolve session (create on first run OR after session loss) ──────────
-    // A stored session_id may be stale after an app restart or session cleanup.
-    // Check active_sessions first; recreate if missing.
     let active_sessions = get_active_sessions();
 
     let active_session_ids = {
@@ -195,7 +208,6 @@ async fn execute_task(
 
     let (session_id, is_new_session) = match resolution {
         TaskSessionResolution::ReuseActive(sid) => {
-            // Ensure YOLO mode is synced even for reused sessions
             if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
                 log::warn!(
                     "⏰ Failed to sync YOLO mode for existing session {}: {}",
@@ -228,7 +240,6 @@ async fn execute_task(
                 )
                 .await?;
 
-            // Apply YOLO mode from task to the new session
             if task.yolo_mode {
                 if let Err(e) = manager.set_yolo_mode(&sid, true).await {
                     log::warn!("⏰ Failed to set YOLO mode for new session {}: {}", sid, e);
@@ -238,32 +249,19 @@ async fn execute_task(
         }
     };
 
-    // ── 3. Skip if session is currently running ───────────────────────────────
-    {
-        let sessions = active_sessions.read().await;
-        if let Some(session) = sessions.get(&session_id) {
-            if session.is_running {
-                log::info!(
-                    "⏰ Skipping task '{}' — session {} is busy",
-                    task.name,
-                    session_id
-                );
-                // Record the skip so we don't hot-loop (reschedule for next occurrence)
-                let next_run_at = compute_next_run_for_schedule_timezone(
-                    &task.cron_expression,
-                    now_ms,
-                    &task.schedule_timezone,
-                )?;
-                let repo = get_scheduled_task_repository();
-                repo.record_run(&task.id, None, now_ms, next_run_at)
-                    .await
-                    .map_err(|e| format!("Failed to record skipped run: {e}"))?;
-                return Ok(());
-            }
-        }
+    if is_session_busy(&active_sessions, &session_id, &task.name, task.id.as_str()).await {
+        let next_run_at = compute_next_run_for_schedule_timezone(
+            cron_expression,
+            now_ms,
+            &task.schedule_timezone,
+        )?;
+        let repo = get_scheduled_task_repository();
+        repo.record_run(&task.id, None, now_ms, next_run_at)
+            .await
+            .map_err(|e| format!("Failed to record skipped run: {e}"))?;
+        return Ok(());
     }
 
-    // ── 4. Synchronize workspace override before injecting the task message ───
     let repo = get_scheduled_task_repository();
     sync_task_workspace_override(
         repo,
@@ -274,11 +272,183 @@ async fn execute_task(
     )
     .await?;
 
-    // ── 5. Inject message and trigger workflow ────────────────────────────────
+    inject_scheduled_message(manager, &session_id, task).await?;
+
+    let next_run_at =
+        compute_next_run_for_schedule_timezone(cron_expression, now_ms, &task.schedule_timezone)?;
+    let new_session_id = is_new_session.then_some(session_id);
+    repo.record_run(&task.id, new_session_id, now_ms, next_run_at)
+        .await
+        .map_err(|e| format!("Failed to record run: {e}"))?;
+
+    log::info!("⏰ Triggered scheduled task '{}'", task.name);
+    Ok(())
+}
+
+async fn execute_session_callback(
+    manager: &AgentSessionManager,
+    task: &crate::entity::scheduled_task::Model,
+    now_ms: i64,
+) -> Result<(), String> {
+    let session_id = task.session_id.as_deref().ok_or_else(|| {
+        format!(
+            "SESSION task '{}' ({}) is missing a pinned session_id",
+            task.name, task.id
+        )
+    })?;
+
+    let active_sessions = get_active_sessions();
+    let active_session_ids = {
+        let sessions = active_sessions.read().await;
+        sessions.keys().cloned().collect::<HashSet<_>>()
+    };
+    let session_repo = get_session_repository();
+
+    let session_exists_in_repo = session_repo
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to load session {session_id}: {e}"))?
+        .is_some();
+
+    if !active_session_ids.contains(session_id) && !session_exists_in_repo {
+        let repo = get_scheduled_task_repository();
+        repo.update_scheduled_task(
+            &task.id,
+            UpdateScheduledTaskParams {
+                enabled: Some(false),
+                next_run_at: Some(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|e| format!("Failed to disable orphaned SESSION task {}: {e}", task.id))?;
+        log::warn!(
+            "⏰ SESSION task '{}' ({}) disabled — target session {} no longer exists",
+            task.name,
+            task.id,
+            session_id
+        );
+        return Ok(());
+    }
+
+    if !active_session_ids.contains(session_id) {
+        manager.resume_session(session_id).await?;
+    }
+
+    if let Err(e) = manager.set_yolo_mode(session_id, task.yolo_mode).await {
+        log::warn!(
+            "⏰ Failed to sync YOLO mode for session callback {}: {}",
+            session_id,
+            e
+        );
+    }
+
+    if is_session_busy(&active_sessions, session_id, &task.name, task.id.as_str()).await {
+        if is_one_shot_task(&task.cron_expression) {
+            log::info!(
+                "⏰ SESSION one-shot '{}' ({}) skipped — session {} is busy; \
+                 will retry on the next scheduler tick",
+                task.name,
+                task.id,
+                session_id
+            );
+        } else {
+            let cron_expression = task.cron_expression.as_deref().ok_or_else(|| {
+                format!(
+                    "SESSION recurring task '{}' ({}) is missing a cron expression",
+                    task.name, task.id
+                )
+            })?;
+            let next_run_at = compute_next_run_for_schedule_timezone(
+                cron_expression,
+                now_ms,
+                &task.schedule_timezone,
+            )?;
+            let repo = get_scheduled_task_repository();
+            repo.record_run(&task.id, None, now_ms, next_run_at)
+                .await
+                .map_err(|e| format!("Failed to record skipped SESSION run: {e}"))?;
+        }
+        return Ok(());
+    }
+
+    let repo = get_scheduled_task_repository();
+    sync_task_workspace_override(
+        repo,
+        &task.id,
+        &task.name,
+        session_id,
+        task.workspace_override.as_deref(),
+    )
+    .await?;
+
+    inject_scheduled_message(manager, session_id, task).await?;
+
+    if is_one_shot_task(&task.cron_expression) {
+        repo.record_run(&task.id, None, now_ms, None)
+            .await
+            .map_err(|e| format!("Failed to record one-shot SESSION run: {e}"))?;
+        repo.update_scheduled_task(
+            &task.id,
+            UpdateScheduledTaskParams {
+                enabled: Some(false),
+                next_run_at: Some(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|e| format!("Failed to disable one-shot SESSION task {}: {e}", task.id))?;
+    } else {
+        let cron_expression = task.cron_expression.as_deref().ok_or_else(|| {
+            format!(
+                "SESSION recurring task '{}' ({}) is missing a cron expression",
+                task.name, task.id
+            )
+        })?;
+        let next_run_at = compute_next_run_for_schedule_timezone(
+            cron_expression,
+            now_ms,
+            &task.schedule_timezone,
+        )?;
+        repo.record_run(&task.id, None, now_ms, next_run_at)
+            .await
+            .map_err(|e| format!("Failed to record SESSION run: {e}"))?;
+    }
+
+    log::info!("⏰ Triggered SESSION callback '{}'", task.name);
+    Ok(())
+}
+
+async fn is_session_busy(
+    active_sessions: &std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, crate::agent::state::AgentSession>>>,
+    session_id: &str,
+    task_name: &str,
+    task_id: &str,
+) -> bool {
+    let sessions = active_sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        if session.is_running {
+            log::info!(
+                "⏰ Skipping task '{}' ({}) — session {} is busy",
+                task_name,
+                task_id,
+                session_id
+            );
+            return true;
+        }
+    }
+    false
+}
+
+async fn inject_scheduled_message(
+    manager: &AgentSessionManager,
+    session_id: &str,
+    task: &crate::entity::scheduled_task::Model,
+) -> Result<(), String> {
     let now_ts = chrono::Utc::now().timestamp_millis();
     let user_message = Message {
         id: Uuid::new_v4().to_string(),
-        session_id: session_id.clone(),
+        session_id: session_id.to_string(),
         role: "user".to_string(),
         content: vec![MCPContent::Text {
             text: task.message.clone(),
@@ -302,21 +472,8 @@ async fn execute_task(
     };
 
     manager
-        .inject_messages(session_id.clone(), vec![user_message])
+        .inject_messages(session_id.to_string(), vec![user_message])
         .await?;
-
-    // ── 6. Record the run and schedule the next fire time ─────────────────────
-    let next_run_at = compute_next_run_for_schedule_timezone(
-        &task.cron_expression,
-        now_ms,
-        &task.schedule_timezone,
-    )?;
-    let new_session_id = is_new_session.then_some(session_id);
-    repo.record_run(&task.id, new_session_id, now_ms, next_run_at)
-        .await
-        .map_err(|e| format!("Failed to record run: {e}"))?;
-
-    log::info!("⏰ Triggered scheduled task '{}'", task.name);
     Ok(())
 }
 
@@ -330,9 +487,6 @@ pub fn compute_next_run_for_timezone<Tz: TimeZone>(
     let normalized = super::normalize_cron(cron_expression);
     let schedule = Schedule::from_str(&normalized).ok()?;
 
-    // Use reference_ms + 1s as the baseline for the next occurrence.
-    // This provides a tiny epsilon to prevent double-firing on the same tick,
-    // while remaining much more accurate than the previous 60s hardcoded offset.
     let after = timezone
         .timestamp_millis_opt(reference_ms + 1000)
         .single()?;
@@ -376,25 +530,18 @@ mod tests {
 
     #[test]
     fn test_compute_next_run_accuracy() {
-        // Cron: every minute at 0 seconds
         let cron = "0 * * * * * *";
 
-        // 1. Reference is exactly at boundary :00 (12:00:00)
-        let ref_ms = 1740988800000; // 2025-03-03 12:00:00 UTC
+        let ref_ms = 1740988800000;
         let next = compute_next_run_for_timezone(cron, ref_ms, chrono::Utc).unwrap();
-        // Should be 12:01:00 (ref + 1s buffer makes it look after 12:00:01)
         assert_eq!(next, ref_ms + 60000);
 
-        // 2. Reference is just before boundary :59 (11:59:59)
         let ref_ms = 1740988799000;
         let next = compute_next_run_for_timezone(cron, ref_ms, chrono::Utc).unwrap();
-        // Should be 12:01:00 (ref + 1s buffer makes it 12:00:00, .after() takes us to 12:01:00)
         assert_eq!(next, 1740988860000);
 
-        // 3. Reference is well before boundary (11:59:30)
         let ref_ms = 1740988770000;
         let next = compute_next_run_for_timezone(cron, ref_ms, chrono::Utc).unwrap();
-        // Should be 12:00:00
         assert_eq!(next, 1740988800000);
     }
 }

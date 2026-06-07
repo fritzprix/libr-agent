@@ -60,6 +60,9 @@ impl BuiltinMCPServer for ScheduledTaskServer {
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
+            "scheduleCallback" => {
+                handlers::handle_schedule_callback(self, args, session_id).await
+            }
             "createScheduledTask" => {
                 handlers::handle_create_scheduled_task(self, args, session_id).await
             }

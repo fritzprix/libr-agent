@@ -3,9 +3,13 @@ use super::ScheduledTaskServer;
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
 };
-use crate::repositories::{AssistantRepository, UpdateScheduledTaskParams};
+use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
+use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
+use crate::scheduled::TASK_CATEGORY_SESSION;
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
-use crate::state::{get_assistant_repository, get_scheduled_task_repository};
+use crate::state::{
+    get_assistant_repository, get_scheduled_task_repository, get_session_repository,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -61,6 +65,15 @@ pub struct ToggleScheduledTaskArgs {
     enabled: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleCallbackArgs {
+    message: String,
+    name: Option<String>,
+    delay_seconds: Option<u64>,
+    cron_expression: Option<String>,
+}
+
 pub async fn handle_create_scheduled_task(
     _server: &ScheduledTaskServer,
     args: Value,
@@ -84,7 +97,8 @@ pub async fn handle_create_scheduled_task(
         get_scheduled_task_repository(),
         CreateScheduledTaskInput {
             name: args.name,
-            cron_expression: args.cron_expression,
+            task_category: crate::scheduled::TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some(args.cron_expression),
             schedule_timezone: args
                 .schedule_timezone
                 .unwrap_or_else(|| default_schedule_timezone().to_string()),
@@ -94,7 +108,9 @@ pub async fn handle_create_scheduled_task(
             message: args.message,
             yolo_mode: args.yolo_mode.unwrap_or(false),
             created_by_session_id: session_id,
+            session_id: None,
             workspace_override: args.workspace_override,
+            next_run_at: None,
         },
     )
     .await
@@ -425,6 +441,97 @@ pub async fn handle_toggle_scheduled_task(
     }))))
 }
 
+pub async fn handle_schedule_callback(
+    server: &ScheduledTaskServer,
+    args: Value,
+    session_id: Option<String>,
+) -> Result<crate::mcp::types::MCPResult, String> {
+    let args: ScheduleCallbackArgs = match parse_args(args, "scheduleCallback") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+
+    let session_id = session_id
+        .or_else(|| Some(server.session_id.clone()))
+        .ok_or_else(|| "scheduleCallback requires an active session context".to_string())?;
+
+    let assistant_id = match resolve_assistant_id_for_session(&session_id).await {
+        Ok(assistant_id) => assistant_id,
+        Err(result) => return Ok(result),
+    };
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let schedule_timezone = default_schedule_timezone().to_string();
+
+    let (cron_expression, next_run_at) = match (args.delay_seconds, args.cron_expression) {
+        (Some(delay), None) => (None, Some(now_ms + (delay as i64) * 1000)),
+        (None, Some(cron)) => {
+            let next_run_at = compute_next_run_for_schedule_timezone(
+                &cron,
+                now_ms,
+                schedule_timezone.as_str(),
+            )?
+            .ok_or_else(|| format!("Invalid cron expression '{}': no future occurrences", cron))?;
+            (Some(cron), Some(next_run_at))
+        }
+        (Some(_), Some(_)) => {
+            return Ok(invalid_input_error(
+                "Provide exactly one of delaySeconds or cronExpression, not both",
+                ToolGroup::ScheduledTask,
+            ));
+        }
+        (None, None) => {
+            return Ok(invalid_input_error(
+                "Provide exactly one of delaySeconds or cronExpression",
+                ToolGroup::ScheduledTask,
+            ));
+        }
+    };
+
+    let created = match ScheduledTaskService::create_scheduled_task(
+        get_scheduled_task_repository(),
+        CreateScheduledTaskInput {
+            name: args
+                .name
+                .unwrap_or_else(|| "Scheduled Callback".to_string()),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression,
+            schedule_timezone,
+            assistant_id,
+            group_id: None,
+            group_name: None,
+            message: args.message,
+            yolo_mode: false,
+            created_by_session_id: Some(session_id.clone()),
+            session_id: Some(session_id),
+            workspace_override: None,
+            next_run_at,
+        },
+    )
+    .await
+    {
+        Ok(task) => task,
+        Err(error) => return Ok(service_error_result("Schedule Callback", &error)),
+    };
+
+    Ok(SuccessHint::new(
+        format!(
+            "Session callback scheduled (ID: {}).\n\n{}\n\n💡 Use getScheduledTask(\"{}\") to inspect it or toggleScheduledTask(\"{}\", enabled=false) to cancel.",
+            created.id,
+            render_task_detail(&created),
+            created.id,
+            created.id
+        ),
+        vec![format!(
+            "Use getScheduledTask(\"{}\") to inspect the callback before scheduling another",
+            created.id
+        )],
+    )
+    .to_mcp_result_with_data(Some(json!({
+        "task": task_to_json(&created)
+    }))))
+}
+
 pub async fn handle_delete_scheduled_task(
     _server: &ScheduledTaskServer,
     args: Value,
@@ -547,6 +654,59 @@ async fn validate_workspace_override(path_str: &str) -> Result<(), crate::mcp::t
     })?;
 
     Ok(())
+}
+
+async fn resolve_assistant_id_for_session(
+    session_id: &str,
+) -> Result<String, crate::mcp::types::MCPResult> {
+    let session = get_session_repository()
+        .get_session(session_id)
+        .await
+        .map_err(|error| {
+            service_error_result(
+                "Resolve Session",
+                &format!("Failed to load session '{session_id}': {error}"),
+            )
+        })?
+        .ok_or_else(|| {
+            invalid_input_error(
+                &format!("Session '{session_id}' not found"),
+                ToolGroup::ScheduledTask,
+            )
+        })?;
+
+    let config_str = session.agent_config.ok_or_else(|| {
+        invalid_input_error(
+            &format!("Session '{session_id}' has no assistant configuration"),
+            ToolGroup::ScheduledTask,
+        )
+    })?;
+
+    let config: serde_json::Value = serde_json::from_str(&config_str).map_err(|error| {
+        invalid_input_error(
+            &format!("Invalid agent_config for session '{session_id}': {error}"),
+            ToolGroup::ScheduledTask,
+        )
+    })?;
+
+    let assistant_id = config
+        .get("assistant_id")
+        .or_else(|| config.get("assistantId"))
+        .or_else(|| config.get("id"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            invalid_input_error(
+                &format!("Session '{session_id}' agent_config is missing assistant id"),
+                ToolGroup::ScheduledTask,
+            )
+        })?;
+
+    if let Err(result) = validate_assistant_id(&assistant_id).await {
+        return Err(result);
+    }
+
+    Ok(assistant_id)
 }
 
 fn service_error_result(operation: &str, error: &str) -> crate::mcp::types::MCPResult {
