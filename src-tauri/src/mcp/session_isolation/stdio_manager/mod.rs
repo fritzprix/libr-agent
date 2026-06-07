@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 mod cleanup;
 mod execution;
 mod lifecycle;
+mod permissions;
 #[cfg(test)]
 mod tests;
 
@@ -47,6 +48,9 @@ pub struct SessionMCPManager {
     /// Workspace directory for the session.
     /// External MCP child processes no longer use this as forced CWD.
     pub(crate) workspace_dir: std::path::PathBuf,
+
+    /// Native channel events intercepted from stdio MCP servers.
+    pub(crate) channel_event_tx: super::channel_events::ChannelEventSender,
 }
 
 impl SessionMCPManager {

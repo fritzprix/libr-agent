@@ -1,4 +1,7 @@
+pub mod channel_dispatch;
+pub mod channel_events;
 pub mod channel_metadata;
+pub mod channel_transport;
 /// Session isolation module for MCP server management.
 ///
 /// This module provides per-session isolation for external MCP servers,

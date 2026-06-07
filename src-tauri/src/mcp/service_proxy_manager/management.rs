@@ -341,4 +341,24 @@ impl MCPServiceProxyManager {
 
         false
     }
+
+    pub async fn broadcast_channel_permission_request(
+        &self,
+        session_id: &str,
+        request: crate::mcp::types::ChannelPermissionRequest,
+    ) -> Result<(), String> {
+        let stdio_manager = {
+            let stdio_managers = self.session_stdio_managers.read().await;
+            stdio_managers.get(session_id).cloned()
+        };
+
+        let Some(manager) = stdio_manager else {
+            return Ok(());
+        };
+
+        manager
+            .broadcast_permission_request(request)
+            .await
+            .map_err(|error| error.to_string())
+    }
 }

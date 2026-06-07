@@ -158,17 +158,37 @@ impl ToolExecutionContext<'_> {
         {
             let channel_event = crate::agent::events::AgentEvent::ChannelPermissionRequest {
                 session_id: self.session_id.to_string(),
-                request_id,
+                request_id: request_id.clone(),
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
                 approval_kind,
-                description,
-                input_preview,
+                description: description.clone(),
+                input_preview: input_preview.clone(),
             };
             if let Err(error) =
                 crate::agent::tauri_events::emit_agent_event(self.app_handle, channel_event)
             {
                 log::error!("Failed to emit ChannelPermissionRequest event: {}", error);
+            }
+
+            if let Err(error) = self
+                .proxy_manager
+                .broadcast_channel_permission_request(
+                    self.session_id,
+                    crate::mcp::types::ChannelPermissionRequest {
+                        request_id,
+                        tool_name: tool_name.to_string(),
+                        description,
+                        input_preview,
+                    },
+                )
+                .await
+            {
+                log::warn!(
+                    "Failed to broadcast native channel permission request for session {}: {}",
+                    self.session_id,
+                    error
+                );
             }
         }
 

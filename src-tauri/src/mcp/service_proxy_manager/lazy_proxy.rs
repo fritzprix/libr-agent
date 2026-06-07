@@ -84,11 +84,18 @@ impl MCPServiceProxyManager {
         let workspace_dir =
             crate::session::resolve_session_workspace_dir(&self.session_manager, session_id)
                 .await?;
+        let (channel_event_tx, channel_event_rx) =
+            crate::mcp::session_isolation::channel_events::create_channel_event_bus();
+        crate::mcp::session_isolation::channel_dispatch::spawn_session_channel_dispatch_task(
+            session_id.to_string(),
+            channel_event_rx,
+        );
         let empty_stdio = SessionMCPManager::new(
             session_id.to_string(),
             HashMap::new(),
             SessionIsolationConfig::default(),
             workspace_dir,
+            channel_event_tx,
         );
         let empty_http = HttpSessionManager::new(session_id.to_string(), HashMap::new());
 

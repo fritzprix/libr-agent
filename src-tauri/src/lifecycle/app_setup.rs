@@ -686,6 +686,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // SP6: Expose the shared sessions map globally so builtin MCP tools can read
     //      per-session cancellation tokens without Tauri managed-state access.
     crate::state::init_active_sessions(agent_session_manager.active_sessions_arc());
+    crate::state::init_channel_dispatch_agent(agent_session_manager.clone());
 
     app.manage(agent_session_manager);
 

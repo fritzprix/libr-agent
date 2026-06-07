@@ -4,7 +4,6 @@ use crate::mcp::session_isolation::process::MCPProcess;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use dashmap::DashMap;
 use log::{debug, info};
-use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,6 +21,7 @@ impl SessionMCPManager {
         server_configs: HashMap<String, MCPServerConfig>,
         config: crate::mcp::session_isolation_config::SessionIsolationConfig,
         workspace_dir: std::path::PathBuf,
+        channel_event_tx: crate::mcp::session_isolation::channel_events::ChannelEventSender,
     ) -> Self {
         let idle_timeout = Duration::from_secs(config.idle_timeout_minutes * 60);
 
@@ -36,6 +36,7 @@ impl SessionMCPManager {
             active_call_tokens: Arc::new(RwLock::new(HashMap::new())),
             channel_metadata: Arc::new(RwLock::new(HashMap::new())),
             workspace_dir,
+            channel_event_tx,
         }
     }
 
@@ -142,7 +143,12 @@ impl SessionMCPManager {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let transport = TokioChildProcess::new(cmd)
+        let transport =
+            crate::mcp::session_isolation::channel_transport::spawn_channel_aware_stdio(
+                cmd,
+                server_name.to_string(),
+                self.channel_event_tx.clone(),
+            )
             .map_err(|e| SessionMCPError::SpawnFailed(format!("{}", e)))?;
 
         debug!("Created transport for command: {} {:?}", command, args);
