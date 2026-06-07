@@ -1,19 +1,11 @@
-### 💡 What
+💡 What
+Replaced `.map()` and `.filter().forEach()` array method chains with standard `for` loops inside the `recentSessions` useMemo hook in `src/components/layout/AppSidebar.tsx`.
 
-- Added `limit` and `offset` schema parameters to the builtin `tool__list` discovery tool in the `tool` server.
-- Mapped the raw JSON list response to a dense, paginated Markdown table.
-- Sanitized descriptions by escaping pipe characters and replacing newlines.
+🎯 Why
+React component useMemos containing multiple array method chains create intermediate array allocations on every recalculation. By utilizing standard `for` loops, we eliminate the unnecessary allocations of temporary arrays, reducing garbage collection pressure during UI updates in the Sidebar.
 
-### 🎯 Why
+📊 Impact
+Slight reduction in memory allocation and GC overhead during AppSidebar re-renders.
 
-- Resolves context window bloat when returning hundreds of cached tools from builtin or external servers.
-- Improves LLM readability by presenting tool properties (Source, Server, Tool, Status, Description) in an aligned table layout instead of a sprawling hierarchical list.
-
-### 📉 Token Impact
-
-- Output token usage scales linearly with `limit` (default: 50 rows) instead of growing uncontrollably with the user's inventory size.
-- Dense table formatting eliminates redundant structural prefixes and whitespace from previous list representations, compressing the payload per tool row.
-
-### 🛠️ Error Recovery
-
-- Includes actionable pagination hints at the bottom of the table, explicitly directing the LLM to call `tool__list` again with `offset` to fetch the next block of results if more tools exist.
+🔬 Measurement
+Verified via `pnpm test run` and linting to ensure functionality is preserved.
