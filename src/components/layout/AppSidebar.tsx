@@ -98,9 +98,14 @@ export default function AppSidebar() {
     };
 
     const sortedSessions = [...sessions].sort(sortByPriority);
-    const sessionById = new Map(
-      sortedSessions.map((session) => [session.id, session]),
-    );
+
+    // ⚡ Bolt: Replaced .map() with a single-pass loop to avoid intermediate array allocation
+    const sessionById = new Map<string, (typeof sessions)[number]>();
+    for (let i = 0; i < sortedSessions.length; i++) {
+      const session = sortedSessions[i];
+      sessionById.set(session.id, session);
+    }
+
     const childrenByParent = buildChildrenMap(sortedSessions);
     const rows: Array<{
       session: (typeof sessions)[number];
@@ -120,23 +125,25 @@ export default function AppSidebar() {
       rows.push({ session, nestingLevel });
 
       const children = childrenByParent.get(session.id) || [];
-      children.forEach((child) => {
-        pushSession(child, Math.min(nestingLevel + 1, 2));
-      });
+      // ⚡ Bolt: Replaced .forEach() with a loop for slight performance gain
+      for (let i = 0; i < children.length; i++) {
+        pushSession(children[i], Math.min(nestingLevel + 1, 2));
+      }
     };
 
-    sortedSessions
-      .filter(
-        (session) =>
-          !session.parentSessionId || !sessionById.has(session.parentSessionId),
-      )
-      .forEach((root) => {
-        pushSession(root, 0);
-      });
+    // ⚡ Bolt: Replaced .filter().forEach() chain with a single-pass loop to eliminate array allocation
+    for (let i = 0; i < sortedSessions.length; i++) {
+      const session = sortedSessions[i];
+      if (!session.parentSessionId || !sessionById.has(session.parentSessionId)) {
+        pushSession(session, 0);
+      }
+    }
 
-    sortedSessions.forEach((session) => {
+    // ⚡ Bolt: Replaced .forEach() with a loop
+    for (let i = 0; i < sortedSessions.length; i++) {
+      const session = sortedSessions[i];
       pushSession(session, session.parentSessionId ? 1 : 0);
-    });
+    }
 
     return rows;
   }, [sessions]);
