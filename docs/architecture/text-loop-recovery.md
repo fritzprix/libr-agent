@@ -115,11 +115,11 @@ the loop may continue until a later report succeeds or the user aborts.
 
 ### Other non-goals
 
-| Outcome | Behavior | Why |
-| ------- | -------- | --- |
-| Stale report (`expected_response_id` mismatch) | `Ignored` | A newer request owns the session |
-| Session not found | `Ignored` | Nothing to recover |
-| Report IPC failure (frontend) | Stream continues | See follow-up: local abort on report failure |
+| Outcome                                        | Behavior         | Why                                          |
+| ---------------------------------------------- | ---------------- | -------------------------------------------- |
+| Stale report (`expected_response_id` mismatch) | `Ignored`        | A newer request owns the session             |
+| Session not found                              | `Ignored`        | Nothing to recover                           |
+| Report IPC failure (frontend)                  | Stream continues | See follow-up: local abort on report failure |
 
 ## Test plan
 
