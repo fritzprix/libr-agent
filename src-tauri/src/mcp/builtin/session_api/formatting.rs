@@ -445,8 +445,8 @@ mod tests {
             ]
         })];
 
-        let (message_id, text) = latest_assistant_message_text(&messages, None)
-            .expect("assistant text should be found");
+        let (message_id, text) =
+            latest_assistant_message_text(&messages, None).expect("assistant text should be found");
 
         assert_eq!(message_id, "assistant-final");
         assert_eq!(text, "Final answer for the delegated task.");

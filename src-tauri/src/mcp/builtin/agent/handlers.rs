@@ -473,11 +473,8 @@ async fn build_terminal_check_session_result(
     status: &str,
     turn_count: usize,
 ) -> Result<MCPResult, String> {
-    let messages_value = fetch_session_messages_for_result(
-        session_id,
-        CHECK_SESSION_RESULT_MESSAGE_LIMIT,
-    )
-    .await?;
+    let messages_value =
+        fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
 
     Ok(build_terminal_check_session_result_from_messages(
         session_id,
@@ -491,11 +488,8 @@ async fn build_paused_check_session_result(
     session_id: &str,
     turn_count: usize,
 ) -> Result<MCPResult, String> {
-    let messages_value = fetch_session_messages_for_result(
-        session_id,
-        CHECK_SESSION_RESULT_MESSAGE_LIMIT,
-    )
-    .await?;
+    let messages_value =
+        fetch_session_messages_for_result(session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT).await?;
 
     Ok(build_paused_check_session_result_from_messages(
         session_id,

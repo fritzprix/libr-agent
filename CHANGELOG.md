@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [0.8.6] - 2026-06-06
 
+### 🚀 Features
+
+- **Terminal Wait Flows**: Fixed race conditions and stale terminal session results in `checkSession` and wait flows by awaiting the final database insert and providing an in-memory fallback for incomplete slices.
+
 ### 🐛 Fixes
 
 - **Telegram Skill Compatibility**: Fixed an `ImportError` on Telethon startup by removing unused error class imports and resolved a `TypeError` by calling `client.disconnect()` synchronously.

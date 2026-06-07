@@ -77,7 +77,6 @@ impl WorkspaceServer {
             "export" => self.handle_export(args, session_id).await,
 
             // ── Terminal / Process management tools ───────────────────────────
-            // ── Terminal / Process management tools ───────────────────────────
             "readProcessOutput" => {
                 self.handle_read_process_output(args, &target_session_id)
                     .await

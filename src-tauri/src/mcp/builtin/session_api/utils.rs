@@ -366,8 +366,9 @@ pub async fn fetch_session_messages_for_result(
 
     let mut messages_value: Vec<Value> = messages
         .into_iter()
-        .map(|message| serde_json::to_value(message).unwrap_or_default())
-        .collect();
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<Value>, serde_json::Error>>()
+        .map_err(|e| format!("Failed to serialize session messages: {}", e))?;
 
     let output = latest_session_output(&messages_value);
     if session_output_is_missing(&output) {
