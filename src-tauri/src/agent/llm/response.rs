@@ -175,13 +175,14 @@ async fn persist_prompt_token_checkpoint(
     }
 }
 
-async fn reset_repeated_thinking_retry_count(
+async fn reset_streaming_recovery_retry_counts(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) {
     let active = active_sessions.read().await;
     if let Some(session) = active.get(session_id) {
         *session.repeated_thinking_retry_count.write().await = 0;
+        *session.repeated_text_loop_retry_count.write().await = 0;
     }
 }
 
@@ -387,7 +388,7 @@ pub async fn handle_llm_response(
     let tool_calls: Vec<ToolCall> = assistant_message.tool_calls.take().unwrap_or_default();
 
     if tool_calls.is_empty() {
-        reset_repeated_thinking_retry_count(active_sessions, &session_id).await;
+        reset_streaming_recovery_retry_counts(active_sessions, &session_id).await;
 
         // Check for pending messages before finishing
         let has_pending = session_has_pending_events(active_sessions, &session_id).await;
@@ -436,7 +437,7 @@ pub async fn handle_llm_response(
             session_id
         );
 
-        reset_repeated_thinking_retry_count(active_sessions, &session_id).await;
+        reset_streaming_recovery_retry_counts(active_sessions, &session_id).await;
 
         // Update status to Busy
         crate::agent::lifecycle::update_session_status(

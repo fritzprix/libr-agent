@@ -119,10 +119,11 @@ pub struct CompletionRequest {
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StreamingIssueKind {
     RepeatedThinkingLoop,
+    RepeatedTextLoop,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

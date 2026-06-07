@@ -118,7 +118,9 @@ export interface AgentResponse<T = unknown> {
   data?: T;
 }
 
-export type StreamingIssueKind = 'REPEATED_THINKING_LOOP';
+export type StreamingIssueKind =
+  | 'REPEATED_THINKING_LOOP'
+  | 'REPEATED_TEXT_LOOP';
 
 export interface StreamingIssueReport {
   sessionId: string;

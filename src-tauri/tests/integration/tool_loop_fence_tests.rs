@@ -77,6 +77,7 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         cache_initialized: Arc::new(AtomicBool::new(true)),
         last_synced_at: Arc::new(RwLock::new(None)),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
+        repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         context_registry: Arc::new(ContextRegistry::new()),

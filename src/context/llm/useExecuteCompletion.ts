@@ -36,11 +36,12 @@ import {
   hasRenderableAssistantOutput,
 } from './streaming-message-utils';
 import { detectRepeatedThinkingLoop } from './repeatedThinkingDetector';
+import { detectRepeatedTextLoop } from './repeatedTailDetector';
 
 const logger = getLogger('useExecuteCompletion');
 const STREAMING_TEXT_THROTTLE_MS = 50;
 const STREAMING_TOOL_CALL_THROTTLE_MS = 100;
-const REPEATED_THINKING_CHECK_INTERVAL = 5;
+const REPEATED_TAIL_CHECK_INTERVAL = 5;
 type RequestTerminationReason = 'aborted' | 'superseded';
 
 function createExecutionError(
@@ -265,6 +266,10 @@ export function useExecuteCompletion({
         let thinkingSignature: string | undefined;
         let repeatedThinkingIssueReported = false;
         let repeatedThinkingCheckCounter = 0;
+        let currentStreamingText = '';
+        let hasToolCallInStream = false;
+        let repeatedTextIssueReported = false;
+        let repeatedTextCheckCounter = 0;
 
         const startTime = performance.now();
         const ensureRequestStillActive = (phase: string) => {
@@ -355,6 +360,39 @@ export function useExecuteCompletion({
             } else {
               content.push({ type: 'text', text: chunk.content });
             }
+
+            currentStreamingText += chunk.content;
+
+            if (!hasToolCallInStream && !repeatedTextIssueReported) {
+              repeatedTextCheckCounter += 1;
+              const textDetection =
+                repeatedTextCheckCounter % REPEATED_TAIL_CHECK_INTERVAL === 0 &&
+                currentStreamingText
+                  ? detectRepeatedTextLoop(currentStreamingText)
+                  : null;
+              if (textDetection) {
+                repeatedTextIssueReported = true;
+                logger.warn('Detected repeated text pattern during streaming', {
+                  sessionId,
+                  responseMessageId,
+                  ...textDetection,
+                });
+                void reportLLMStreamingIssue({
+                  sessionId,
+                  responseMessageId,
+                  issueKind: 'REPEATED_TEXT_LOOP',
+                  observedTailChars: textDetection.observedTailChars,
+                  patternLength: textDetection.patternLength,
+                  repetitionCount: textDetection.repetitionCount,
+                }).catch((error: unknown) => {
+                  logger.warn('Failed to report repeated text pattern', {
+                    sessionId,
+                    responseMessageId,
+                    error,
+                  });
+                });
+              }
+            }
           }
 
           // 2. Accumulate Thinking
@@ -380,8 +418,7 @@ export function useExecuteCompletion({
             if (!repeatedThinkingIssueReported) {
               repeatedThinkingCheckCounter += 1;
               const detection =
-                repeatedThinkingCheckCounter %
-                  REPEATED_THINKING_CHECK_INTERVAL ===
+                repeatedThinkingCheckCounter % REPEATED_TAIL_CHECK_INTERVAL ===
                   0 && currentThinkingText
                   ? detectRepeatedThinkingLoop(currentThinkingText)
                   : null;
@@ -430,6 +467,7 @@ export function useExecuteCompletion({
             indexedToolCalls.size + directToolCalls.length;
 
           if (hasToolCallUpdate) {
+            hasToolCallInStream = true;
             toolCallChunks.forEach((toolCallChunk) => {
               if (isParsedIndexedToolCallDelta(toolCallChunk)) {
                 const { index } = toolCallChunk;
