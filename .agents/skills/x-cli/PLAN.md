@@ -9,7 +9,7 @@ Enable agents to interact with X (Twitter) on behalf of the user to post tweets 
 ## Technology Stack
 
 - **Python 3**: For CLI scripts.
-- **Twikit (>=2.0.0)**: A library using Twitter's private/internal API. It operates synchronously, which matches the CLI pattern perfectly.
+- **Twikit (>=2.0.0)**: A library using Twitter's private/internal API with an async client API, wrapped by `asyncio.run()` in the CLI scripts.
 - **JSON Configuration**: Config and session cookies stored under `~/.libragent/`.
 
 ## File Structure

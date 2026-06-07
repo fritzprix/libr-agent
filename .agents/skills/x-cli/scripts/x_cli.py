@@ -37,6 +37,10 @@ try:
         if not key_byte_indices:
             raise Exception("Couldn't get KEY_BYTE indices from ondemand script.")
         key_byte_indices = list(map(int, key_byte_indices))
+        if len(key_byte_indices) < 2:
+            raise Exception(
+                f"Expected at least 2 KEY_BYTE indices from ondemand script, got {len(key_byte_indices)}."
+            )
         return key_byte_indices[0], key_byte_indices[1:]
         
     _tx_mod.ClientTransaction.get_indices = _patched_get_indices
@@ -47,13 +51,26 @@ try:
     from twikit.user import User
     
     class SafeDict(dict):
+        def __init__(self, *args, _ctx=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._ctx = _ctx
+
         def __getitem__(self, key):
             try:
                 val = super().__getitem__(key)
                 if isinstance(val, dict) and not isinstance(val, SafeDict):
-                    return SafeDict(val)
+                    child_ctx = 'entities' if self._ctx == 'legacy' and key == 'entities' else self._ctx
+                    return SafeDict(val, _ctx=child_ctx)
                 return val
             except KeyError:
+                if key == 'entities' and self._ctx == 'legacy':
+                    return SafeDict(_ctx='entities')
+                if self._ctx == 'legacy' and key in ('description', 'url'):
+                    return ""
+                if self._ctx == 'entities' and key == 'description':
+                    return SafeDict({'urls': []}, _ctx='entities')
+                if self._ctx == 'entities' and key == 'url':
+                    return SafeDict(_ctx='entities')
                 if key in ('withheld_in_countries', 'pinned_tweet_ids_str', 'description_urls', 'urls'):
                     return []
                 if key in ('possibly_sensitive', 'can_dm', 'can_media_tag', 'want_retweets', 
@@ -64,8 +81,6 @@ try:
                            'friends_count', 'favourites_count', 'listed_count', 'media_count', 
                            'statuses_count'):
                     return 0
-                if key in ('entities', 'description', 'url'):
-                    return SafeDict()
                 return ""
 
         def get(self, key, default=None):
@@ -78,7 +93,7 @@ try:
     def _patched_user_init(self, client, data):
         safe_data = SafeDict(data)
         if 'legacy' in safe_data:
-            safe_data['legacy'] = SafeDict(safe_data['legacy'])
+            safe_data['legacy'] = SafeDict(safe_data['legacy'], _ctx='legacy')
         _original_user_init(self, client, safe_data)
         
     User.__init__ = _patched_user_init
@@ -221,11 +236,13 @@ async def run_cli(args) -> int:
             if not args.query:
                 print(json.dumps({"status": "error", "message": "Query is required."}), file=sys.stderr)
                 return 3
-            tweets = await client.search_tweet(args.query, count=args.limit)
+            search_count = min(max(args.limit, 1), 20)
+            tweets = await client.search_tweet(args.query, args.product, count=search_count)
             formatted = [format_tweet(t) for t in tweets]
             print(json.dumps({
                 "status": "ok",
                 "query": args.query,
+                "product": args.product,
                 "count": len(formatted),
                 "tweets": formatted
             }, ensure_ascii=False))
@@ -269,6 +286,12 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=10, help="Number of tweets to retrieve")
     parser.add_argument("--username", help="X username/screen_name of target user")
     parser.add_argument("--query", help="Search query")
+    parser.add_argument(
+        "--product",
+        choices=["Top", "Latest", "Media"],
+        default="Top",
+        help="Search result type for search_tweets (default: Top)",
+    )
     parser.add_argument("--tweet-id", help="Target tweet ID")
 
     args = parser.parse_args()

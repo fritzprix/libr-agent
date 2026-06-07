@@ -38,6 +38,10 @@ try:
         if not key_byte_indices:
             raise Exception("Couldn't get KEY_BYTE indices from ondemand script.")
         key_byte_indices = list(map(int, key_byte_indices))
+        if len(key_byte_indices) < 2:
+            raise Exception(
+                f"Expected at least 2 KEY_BYTE indices from ondemand script, got {len(key_byte_indices)}."
+            )
         return key_byte_indices[0], key_byte_indices[1:]
         
     _tx_mod.ClientTransaction.get_indices = _patched_get_indices
@@ -48,13 +52,26 @@ try:
     from twikit.user import User
     
     class SafeDict(dict):
+        def __init__(self, *args, _ctx=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._ctx = _ctx
+
         def __getitem__(self, key):
             try:
                 val = super().__getitem__(key)
                 if isinstance(val, dict) and not isinstance(val, SafeDict):
-                    return SafeDict(val)
+                    child_ctx = 'entities' if self._ctx == 'legacy' and key == 'entities' else self._ctx
+                    return SafeDict(val, _ctx=child_ctx)
                 return val
             except KeyError:
+                if key == 'entities' and self._ctx == 'legacy':
+                    return SafeDict(_ctx='entities')
+                if self._ctx == 'legacy' and key in ('description', 'url'):
+                    return ""
+                if self._ctx == 'entities' and key == 'description':
+                    return SafeDict({'urls': []}, _ctx='entities')
+                if self._ctx == 'entities' and key == 'url':
+                    return SafeDict(_ctx='entities')
                 if key in ('withheld_in_countries', 'pinned_tweet_ids_str', 'description_urls', 'urls'):
                     return []
                 if key in ('possibly_sensitive', 'can_dm', 'can_media_tag', 'want_retweets', 
@@ -65,8 +82,6 @@ try:
                            'friends_count', 'favourites_count', 'listed_count', 'media_count', 
                            'statuses_count'):
                     return 0
-                if key in ('entities', 'description', 'url'):
-                    return SafeDict()
                 return ""
 
         def get(self, key, default=None):
@@ -79,7 +94,7 @@ try:
     def _patched_user_init(self, client, data):
         safe_data = SafeDict(data)
         if 'legacy' in safe_data:
-            safe_data['legacy'] = SafeDict(safe_data['legacy'])
+            safe_data['legacy'] = SafeDict(safe_data['legacy'], _ctx='legacy')
         _original_user_init(self, client, safe_data)
         
     User.__init__ = _patched_user_init
@@ -122,7 +137,10 @@ def is_blocked_credentials_login_error(error_message: str) -> bool:
 def build_cookie_setup_command() -> str:
     script_path = Path(__file__).resolve()
     if 'com.fritzprix.libragent' in str(script_path) or 'bundled_skills' in str(script_path):
-        return 'python <x-cli-path>/setup.py --username "<your_username>" --email "<your_email@domain.com>" --cookie-login'
+        return (
+            'python "<skill-base-dir>/scripts/setup.py" '
+            '--username "<your_username>" --email "<your_email@domain.com>" --cookie-login'
+        )
     return f'python "{script_path}" --username "<your_username>" --email "<your_email@domain.com>" --cookie-login'
 
 
@@ -229,7 +247,10 @@ def main() -> int:
     )
     parser.add_argument("--password-stdin", action="store_true", help="Read password from stdin")
     parser.add_argument("--password", help="X password")
-    parser.add_argument("--totp-secret", help="Optional 2FA TOTP secret key")
+    parser.add_argument(
+        "--totp-secret",
+        help='Optional 2FA TOTP secret key. Pass "-" to enter it via a hidden prompt.',
+    )
     parser.add_argument("--auth-token", help="Browser auth_token cookie value")
     parser.add_argument("--ct0", help="Browser ct0 cookie value")
 
@@ -238,6 +259,15 @@ def main() -> int:
     password = args.password
     if args.password_stdin and not (args.auth_token and args.ct0):
         password = sys.stdin.readline().strip()
+
+    totp_secret = args.totp_secret
+    if totp_secret == "-":
+        try:
+            totp_secret = prompt_required_value("X TOTP secret key를 입력하세요: ", secret=True)
+        except ValueError as e:
+            print(json.dumps({"status": "error", "message": str(e)}), file=sys.stderr)
+            return 3
+    args.totp_secret = totp_secret
 
     try:
         password, auth_token, ct0 = resolve_auth_inputs(args, password)

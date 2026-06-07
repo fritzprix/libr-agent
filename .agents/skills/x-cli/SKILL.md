@@ -5,7 +5,7 @@ description: |
   Use when the user wants to: (1) post tweets (with text or media), (2) view home timeline,
   (3) view a user's tweets, (4) search tweets, (5) like/favorite a tweet, or (6) retweet a tweet.
   On first use, guide the user through credential setup (username, email, password, optional TOTP) or browser cookie setup.
-  Store session and config in ~/.libragent/x_config.json.
+  Store config in ~/.libragent/x_config.json and session cookies in ~/.libragent/x_cookies.json.
   Subsequent requests use the stored session without re-authentication.
   Triggers on requests like: "트윗 올려줘", "트위터 피드 보여줘", "post a tweet", "like tweet", "retweet".
 ---
@@ -136,8 +136,11 @@ python "<skill-base-dir>/scripts/x_cli.py" --action get_user_tweets \
 ```bash
 python "<skill-base-dir>/scripts/x_cli.py" --action search_tweets \
   --query "검색어" \
+  [--product Top|Latest|Media] \
   [--limit 10]
 ```
+
+`--product` defaults to `Top`. Twikit accepts at most 20 results per search request.
 
 ### Action: `like_tweet` — Like/favorite a tweet
 
