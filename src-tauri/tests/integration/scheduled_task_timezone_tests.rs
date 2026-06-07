@@ -5,7 +5,7 @@ use tauri_mcp_agent_lib::scheduled::runner::{
     compute_next_run_for_schedule_timezone, compute_next_run_for_timezone,
 };
 use tauri_mcp_agent_lib::scheduled::{
-    normalize_cron, TASK_CATEGORY_GLOBAL, SCHEDULE_TIMEZONE_LOCAL, SCHEDULE_TIMEZONE_UTC,
+    normalize_cron, SCHEDULE_TIMEZONE_LOCAL, SCHEDULE_TIMEZONE_UTC, TASK_CATEGORY_GLOBAL,
 };
 
 #[test]

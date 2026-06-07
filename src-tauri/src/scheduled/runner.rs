@@ -249,7 +249,7 @@ async fn execute_global_task(
         }
     };
 
-    if is_session_busy(&active_sessions, &session_id, &task.name, task.id.as_str()).await {
+    if is_session_busy(active_sessions, &session_id, &task.name, task.id.as_str()).await {
         let next_run_at = compute_next_run_for_schedule_timezone(
             cron_expression,
             now_ms,
@@ -343,7 +343,7 @@ async fn execute_session_callback(
         );
     }
 
-    if is_session_busy(&active_sessions, session_id, &task.name, task.id.as_str()).await {
+    if is_session_busy(active_sessions, session_id, &task.name, task.id.as_str()).await {
         if is_one_shot_task(&task.cron_expression) {
             log::info!(
                 "⏰ SESSION one-shot '{}' ({}) skipped — session {} is busy; \
@@ -420,7 +420,9 @@ async fn execute_session_callback(
 }
 
 async fn is_session_busy(
-    active_sessions: &std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, crate::agent::state::AgentSession>>>,
+    active_sessions: &std::sync::Arc<
+        tokio::sync::RwLock<std::collections::HashMap<String, crate::agent::state::AgentSession>>,
+    >,
     session_id: &str,
     task_name: &str,
     task_id: &str,

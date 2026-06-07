@@ -71,10 +71,7 @@ impl ScheduledTaskService {
                 return Err("SESSION tasks require a session_id".to_string());
             }
         } else if input.task_category != TASK_CATEGORY_GLOBAL {
-            return Err(format!(
-                "Unknown task_category '{}'",
-                input.task_category
-            ));
+            return Err(format!("Unknown task_category '{}'", input.task_category));
         } else if input.cron_expression.as_deref().is_none_or(str::is_empty) {
             return Err("GLOBAL tasks require a cron_expression".to_string());
         }
@@ -264,8 +261,7 @@ impl ScheduledTaskService {
         let next_run_at = if enabled {
             let schedule_timezone = normalize_schedule_timezone(&existing.schedule_timezone)?;
             let cron_expression = existing.cron_expression.as_deref().ok_or_else(|| {
-                "Cannot re-enable a one-shot session callback without a cron expression"
-                    .to_string()
+                "Cannot re-enable a one-shot session callback without a cron expression".to_string()
             })?;
             enforce_minimum_interval(cron_expression, schedule_timezone, governance)?;
             Some(

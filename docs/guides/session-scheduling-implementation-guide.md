@@ -11,22 +11,26 @@
 ### Phase 1: Core Logic
 
 #### 단계 1: DB 마이그레이션
+
 - [ ] `scheduled_tasks` 테이블에 `task_category TEXT NOT NULL DEFAULT 'GLOBAL'` 추가
 - [ ] `cron_expression` 컬럼 Nullable 로 변경
 - [ ] `src-tauri/migration/src/lib.rs`에 마이그레이션 등록
 
 #### 단계 2: Entity & Repository
+
 - [ ] `src-tauri/src/entity/scheduled_task.rs` — `task_category: String` 추가, `cron_expression: Option<String>` 변경
 - [ ] `src-tauri/src/repositories/scheduled_task_repository.rs` — `CreateScheduledTaskParams`에 `task_category`, `session_id`, `next_run_at` 확장
 - [ ] `UpdateScheduledTaskParams`에 `task_category` 추가 (필요 시)
 
 #### 단계 3: Service Layer
+
 - [ ] `src-tauri/src/services/scheduled_task_service.rs` — `CreateScheduledTaskInput`에 `task_category`, `session_id`, `next_run_at` 추가
 - [ ] SESSION + one-shot: `enforce_minimum_interval` 우회 (`cron_expression` NULL 일 때)
 - [ ] SESSION: `session_id` 필수 검증
 - [ ] SESSION + `delaySeconds`: cron 계산 대신 전달된 `next_run_at` 사용
 
 #### 단계 4: Runner 분기
+
 - [ ] `src-tauri/src/scheduled/runner.rs` — `execute_task`에 `task_category` match 분기
 - [ ] `execute_global_task`: 기존 로직 추출 (변경 없음)
 - [ ] `execute_session_callback`: pinned `session_id` 직접 주입
@@ -34,12 +38,14 @@
 - [ ] 세션 소실 시: `enabled = false` + 경고 로그 (GLOBAL 과 달리 새 세션 생성 금지)
 
 #### 단계 5: MCP 도구
+
 - [ ] `src-tauri/src/mcp/builtin/scheduled_task/tools.rs` — `scheduleCallback` 도구 스키마 추가
 - [ ] `handlers.rs` — `handle_schedule_callback` 구현 (`ScheduledTaskService` 경유)
 - [ ] `mod.rs` — dispatch 등록
 - [ ] `src-tauri/src/mcp/server/tools.rs` — static tool 목록 갱신
 
 #### 단계 6: Tests
+
 - [ ] `scheduled_task_policy_tests.rs` — SESSION governance 예외
 - [ ] Runner SESSION 분기 통합 테스트 (one-shot 완료, 세션 소실, resume)
 - [ ] MCP `scheduleCallback` handler 테스트
@@ -47,16 +53,19 @@
 ### Phase 2: Frontend
 
 #### 단계 7: Tauri Commands
+
 - [ ] `src-tauri/src/commands/scheduled_task_commands.rs` — 세션별 스케줄 list/cancel API
 - [ ] `task_category = 'SESSION'` + `session_id` 필터
 
 #### 단계 8: UI
+
 - [ ] 세션 사이드바 "Schedules" 섹션
 - [ ] One-Shot: 카운트다운 + 취소 버튼
 - [ ] Recurring: 다음 실행 시각 + 삭제 버튼
 - [ ] `src/lib/backend/scheduled-tasks` — 프론트엔드 타입·API 연동
 
 ### Phase 3: Polish
+
 - [ ] User Interruption: 사용자 메시지 전송 시 해당 세션의 SESSION 스케줄 일괄 취소
 - [ ] 세션별 동시성 락 (busy 세션 skip 로직 재사용 또는 강화)
 
@@ -65,6 +74,7 @@
 ## 📐 데이터 모델 상세
 
 ### 기존 `scheduled_tasks` 테이블 (변경 전)
+
 ```sql
 CREATE TABLE scheduled_tasks (
     id TEXT PRIMARY KEY,
@@ -88,6 +98,7 @@ CREATE TABLE scheduled_tasks (
 ```
 
 ### 변경 후
+
 ```sql
 ALTER TABLE scheduled_tasks ADD COLUMN task_category TEXT NOT NULL DEFAULT 'GLOBAL';
 -- cron_expression: NOT NULL 제약 제거 (SESSION one-shot 에서 NULL 허용)

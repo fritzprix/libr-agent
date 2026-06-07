@@ -466,12 +466,11 @@ pub async fn handle_schedule_callback(
     let (cron_expression, next_run_at) = match (args.delay_seconds, args.cron_expression) {
         (Some(delay), None) => (None, Some(now_ms + (delay as i64) * 1000)),
         (None, Some(cron)) => {
-            let next_run_at = compute_next_run_for_schedule_timezone(
-                &cron,
-                now_ms,
-                schedule_timezone.as_str(),
-            )?
-            .ok_or_else(|| format!("Invalid cron expression '{}': no future occurrences", cron))?;
+            let next_run_at =
+                compute_next_run_for_schedule_timezone(&cron, now_ms, schedule_timezone.as_str())?
+                    .ok_or_else(|| {
+                        format!("Invalid cron expression '{}': no future occurrences", cron)
+                    })?;
             (Some(cron), Some(next_run_at))
         }
         (Some(_), Some(_)) => {
@@ -702,9 +701,7 @@ async fn resolve_assistant_id_for_session(
             )
         })?;
 
-    if let Err(result) = validate_assistant_id(&assistant_id).await {
-        return Err(result);
-    }
+    validate_assistant_id(&assistant_id).await?;
 
     Ok(assistant_id)
 }

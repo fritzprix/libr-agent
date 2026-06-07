@@ -2,6 +2,7 @@
 //!
 //! **Down migration warning:** `down()` copies only `task_category = 'GLOBAL'` rows.
 //! Any `SESSION` tasks are dropped during rollback — back up before reverting.
+use crate::helpers::column_exists;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::Statement;
 

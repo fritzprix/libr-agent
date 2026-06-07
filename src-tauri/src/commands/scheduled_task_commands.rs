@@ -3,6 +3,7 @@
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
 use crate::repositories::UpdateScheduledTaskParams;
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
+use crate::scheduled::TASK_CATEGORY_GLOBAL;
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::get_scheduled_task_repository;
 use serde::{Deserialize, Serialize};
@@ -144,7 +145,12 @@ pub async fn list_scheduled_tasks(
         assistant_id.as_deref(),
     )
     .await
-    .map(|v| v.into_iter().map(ScheduledTaskDto::from).collect())
+    .map(|v| {
+        v.into_iter()
+            .filter(|t| t.task_category == TASK_CATEGORY_GLOBAL)
+            .map(ScheduledTaskDto::from)
+            .collect()
+    })
 }
 
 /// Get a single scheduled task by ID
@@ -152,7 +158,10 @@ pub async fn list_scheduled_tasks(
 pub async fn get_scheduled_task(id: String) -> Result<Option<ScheduledTaskDto>, String> {
     ScheduledTaskService::get_scheduled_task(get_scheduled_task_repository(), &id)
         .await
-        .map(|opt| opt.map(ScheduledTaskDto::from))
+        .map(|opt| {
+            opt.filter(|t| t.task_category == TASK_CATEGORY_GLOBAL)
+                .map(ScheduledTaskDto::from)
+        })
 }
 
 /// Update a scheduled task
