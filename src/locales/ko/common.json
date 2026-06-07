@@ -98,7 +98,9 @@
     "created": "생성:",
     "workspace": "워크스페이스:",
     "sessionId": "Session ID:",
-    "workspaceValue": "워크스페이스"
+    "workspaceValue": "워크스페이스",
+    "formatNotSupported": "표시할 수 없는 파일 내용 형식입니다.",
+    "notAvailable": "파일 내용을 사용할 수 없습니다."
   },
   "fileAttachment": {
     "attachFiles": "파일 첨부",
