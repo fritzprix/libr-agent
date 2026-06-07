@@ -240,6 +240,24 @@ export function useAgentSessionEvents(
             }
 
             case 'channelPermissionRequest': {
+              setters.setWorkflowPhase('waiting_approval');
+              setters.setPendingApprovals((prev) => {
+                if (prev.some((p) => p.toolCallId === payload.toolCallId)) {
+                  return prev;
+                }
+                return [
+                  ...prev,
+                  {
+                    toolCallId: payload.toolCallId,
+                    toolName: payload.toolName,
+                    arguments: payload.inputPreview,
+                    approvalKind: payload.approvalKind,
+                    requestId: payload.requestId,
+                    description: payload.description,
+                    inputPreview: payload.inputPreview,
+                  },
+                ];
+              });
               break;
             }
 

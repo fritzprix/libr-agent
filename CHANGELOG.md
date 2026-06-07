@@ -2,7 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.7] - 2026-06-07
+
+### 🚀 Features
+
+- **LLM Streaming Recovery**: Added detection for repeated text loops during streaming recovery to improve reliability of long-running assistant responses.
+- **Session Scheduling Extension**: Enhanced the scheduler with in-session callbacks (N:1) to support more complex multi-session orchestration patterns.
+
+### 🐛 Fixes
+
+- **Session Result Delivery**: Ensured `checkSession` consistently returns the final assistant answer instead of intermediate states.
+- **X-CLI Robustness**: Improved `x-cli` skill compatibility with Twikit and increased overall robustness against scraping errors.
+
+### 🔧 Internal
+
+- **Documentation Formatting**: Formatted all READMEs and documentation files using Prettier for consistent styling.
+
 ## [0.8.6] - 2026-06-06
+
+### 🚀 Features
+
+- **Terminal Wait Flows**: Fixed race conditions and stale terminal session results in `checkSession` and wait flows by awaiting the final database insert and providing an in-memory fallback for incomplete slices.
 
 ### 🐛 Fixes
 

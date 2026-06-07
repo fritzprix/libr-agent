@@ -1,6 +1,7 @@
 use crate::common;
 
 use tauri_mcp_agent_lib::repositories::SqliteScheduledTaskRepository;
+use tauri_mcp_agent_lib::scheduled::TASK_CATEGORY_GLOBAL;
 use tauri_mcp_agent_lib::services::scheduled_task_service::{
     CreateScheduledTaskInput, ScheduledTaskGovernanceSettings, ScheduledTaskService,
 };
@@ -13,7 +14,8 @@ fn create_input(
 ) -> CreateScheduledTaskInput {
     CreateScheduledTaskInput {
         name: name.to_string(),
-        cron_expression: cron.to_string(),
+        task_category: TASK_CATEGORY_GLOBAL.to_string(),
+        cron_expression: Some(cron.to_string()),
         schedule_timezone: "local".to_string(),
         assistant_id: "assistant-1".to_string(),
         group_id: group_id.map(ToString::to_string),
@@ -21,7 +23,9 @@ fn create_input(
         message: format!("Run task {}", name),
         yolo_mode: false,
         created_by_session_id: Some("session-origin".to_string()),
+        session_id: None,
         workspace_override: None,
+        next_run_at: None,
     }
 }
 

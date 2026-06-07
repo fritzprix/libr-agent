@@ -205,10 +205,10 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows：** [`LibrAgent_0.8.6_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_x64-setup.exe) · [`LibrAgent_0.8.6_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.8.6_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.8.6_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_amd64.AppImage) · [`LibrAgent_0.8.6_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent_0.8.6_amd64.deb) · [`LibrAgent-0.8.6-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.6/LibrAgent-0.8.6-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.6)
+- **Windows：** [`LibrAgent_0.8.7_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.7/LibrAgent_0.8.7_x64-setup.exe) · [`LibrAgent_0.8.7_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.7/LibrAgent_0.8.7_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.8.7_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.7/LibrAgent_0.8.7_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.8.7_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.7/LibrAgent_0.8.7_amd64.AppImage) · [`LibrAgent_0.8.7_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.7/LibrAgent_0.8.7_amd64.deb) · [`LibrAgent-0.8.7-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.7/LibrAgent-0.8.7-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.7)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **开发者设置：**

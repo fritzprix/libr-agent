@@ -57,6 +57,7 @@ fn create_manager(
             http_connection_pool_size: 10,
         },
         workspace_dir,
+        tauri_mcp_agent_lib::mcp::session_isolation::channel_events::create_detached_channel_event_sender(),
     )
 }
 

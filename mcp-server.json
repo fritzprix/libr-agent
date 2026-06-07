@@ -287,6 +287,25 @@
         }
       }
     },
+    "telegram": {
+      "category": "messaging",
+      "description": "Interact with Telegram — send messages, read chats, search, download files, and receive real-time channel notifications.",
+      "logo": "https://telegram.org/img/apple-touch-icon.png",
+      "command": "npx",
+      "args": ["-y", "@fre4x/telegram"],
+      "env": {
+        "TELEGRAM_MCP_SESSION": "~/.libragent/telegram_mcp",
+        "MOCK": "false"
+      },
+      "variableDefinitions": {
+        "TELEGRAM_MCP_SESSION": {
+          "required": false,
+          "label": "Telegram MCP Session Path",
+          "description": "GramJS StringSession path. Default: ~/.libragent/telegram_mcp",
+          "type": "text"
+        }
+      }
+    },
     "benchmark": {
       "category": "devtools",
       "description": "Run GAIA benchmark challenges to evaluate AI agent capabilities.",

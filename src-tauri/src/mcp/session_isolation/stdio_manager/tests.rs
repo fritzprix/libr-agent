@@ -6,6 +6,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+fn create_test_channel_event_tx() -> crate::mcp::session_isolation::channel_events::ChannelEventSender {
+    crate::mcp::session_isolation::channel_events::create_detached_channel_event_sender()
+}
+
 fn canonicalize_existing_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -49,6 +53,7 @@ fn create_test_manager() -> SessionMCPManager {
         configs,
         config,
         std::env::current_dir().unwrap(),
+        create_test_channel_event_tx(),
     )
 }
 
@@ -111,7 +116,13 @@ fn create_integration_manager_with_workspace(
         http_connection_pool_size: 10,
     };
 
-    SessionMCPManager::new("test-session".to_string(), configs, config, workspace_dir)
+    SessionMCPManager::new(
+        "test-session".to_string(),
+        configs,
+        config,
+        workspace_dir,
+        create_test_channel_event_tx(),
+    )
 }
 
 fn create_integration_manager() -> SessionMCPManager {
@@ -388,6 +399,7 @@ fn test_command_args_structure() {
         configs,
         config,
         std::env::current_dir().unwrap(),
+        create_test_channel_event_tx(),
     );
     let server_config = manager.server_configs.get("npx-server").unwrap();
 

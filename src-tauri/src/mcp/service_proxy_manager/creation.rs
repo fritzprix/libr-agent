@@ -363,11 +363,19 @@ impl MCPServiceProxyManager {
         settings_ms = settings_start.elapsed().as_millis();
         let tool_discovery_timeout = Duration::from_secs(config.process_startup_timeout_seconds);
 
+        let (channel_event_tx, channel_event_rx) =
+            crate::mcp::session_isolation::channel_events::create_channel_event_bus();
+        crate::mcp::session_isolation::channel_dispatch::spawn_session_channel_dispatch_task(
+            session_id.clone(),
+            channel_event_rx,
+        );
+
         let stdio_manager = SessionMCPManager::new(
             session_id.clone(),
             loaded.stdio_configs.clone(),
             config,
             workspace_dir,
+            channel_event_tx,
         );
         let http_manager = HttpSessionManager::new(session_id.clone(), loaded.http_configs.clone());
 

@@ -68,6 +68,7 @@ pub mod resume_proxy_rehydration_tests;
 pub mod runtime_state_sequence_tests;
 pub mod runtime_state_summary_tests;
 pub mod scheduled_task_policy_tests;
+pub mod scheduled_task_session_callback_tests;
 pub mod scheduled_task_timezone_tests;
 pub mod scheduled_task_workspace_override_tests;
 pub mod scratchpad_schema_tests;

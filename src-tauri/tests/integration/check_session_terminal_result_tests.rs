@@ -99,6 +99,33 @@ fn terminal_check_session_result_includes_final_answer_without_waiting() {
 }
 
 #[test]
+fn terminal_check_session_result_uses_last_text_block_in_assistant_content() {
+    let result = build_terminal_check_session_result_from_messages(
+        "session-terminal-multi-text",
+        "idle",
+        2,
+        &[json!({
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Working on it..."},
+                {"type": "thinking", "thinking": "internal reasoning"},
+                {"type": "text", "text": "All subtasks completed successfully."}
+            ]
+        })],
+    );
+
+    let structured = result
+        .structured_content
+        .as_ref()
+        .expect("structured content expected");
+
+    assert_eq!(
+        structured.get("result").and_then(|value| value.as_str()),
+        Some("All subtasks completed successfully.")
+    );
+}
+
+#[test]
 fn terminal_check_session_result_falls_back_to_tool_text_when_assistant_has_no_text() {
     let result = build_terminal_check_session_result_from_messages(
         "session-terminal-456",

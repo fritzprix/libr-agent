@@ -4,7 +4,10 @@ use crate::repositories::{
     CreateScheduledTaskParams, ScheduledTaskRepository, UpdateScheduledTaskParams,
 };
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
-use crate::scheduled::{normalize_cron, ScheduleTimezone, SCHEDULE_TIMEZONE_LOCAL};
+use crate::scheduled::{
+    is_one_shot_task, is_session_task, normalize_cron, ScheduleTimezone, SCHEDULE_TIMEZONE_LOCAL,
+    TASK_CATEGORY_GLOBAL,
+};
 use crate::state::get_settings_repository;
 use chrono::TimeZone;
 use cron::Schedule;
@@ -31,7 +34,8 @@ impl Default for ScheduledTaskGovernanceSettings {
 
 pub struct CreateScheduledTaskInput {
     pub name: String,
-    pub cron_expression: String,
+    pub task_category: String,
+    pub cron_expression: Option<String>,
     pub schedule_timezone: String,
     pub assistant_id: String,
     pub group_id: Option<String>,
@@ -39,7 +43,9 @@ pub struct CreateScheduledTaskInput {
     pub message: String,
     pub yolo_mode: bool,
     pub created_by_session_id: Option<String>,
+    pub session_id: Option<String>,
     pub workspace_override: Option<String>,
+    pub next_run_at: Option<i64>,
 }
 
 impl ScheduledTaskService {
@@ -58,28 +64,62 @@ impl ScheduledTaskService {
     ) -> Result<ScheduledTaskModel, String> {
         let now_ms = chrono::Utc::now().timestamp_millis();
         let normalized_schedule_timezone = normalize_schedule_timezone(&input.schedule_timezone)?;
-        enforce_minimum_interval(
-            &input.cron_expression,
-            normalized_schedule_timezone,
-            governance,
-        )?;
-        let (group_id, group_name) =
-            normalize_group_fields_with_repo(repo, input.group_id, input.group_name).await?;
-        enforce_group_limit(repo, group_id.as_deref(), None, governance).await?;
-        let next_run_at = compute_next_run_for_schedule_timezone(
-            &input.cron_expression,
-            now_ms,
-            normalized_schedule_timezone,
-        )?
-        .ok_or_else(|| {
-            format!(
-                "Invalid cron expression '{}': no future occurrences found",
-                input.cron_expression
-            )
-        })?;
+        let is_session = is_session_task(&input.task_category);
+
+        if is_session {
+            if input.session_id.as_deref().is_none_or(str::is_empty) {
+                return Err("SESSION tasks require a session_id".to_string());
+            }
+        } else if input.task_category != TASK_CATEGORY_GLOBAL {
+            return Err(format!("Unknown task_category '{}'", input.task_category));
+        } else if input.cron_expression.as_deref().is_none_or(str::is_empty) {
+            return Err("GLOBAL tasks require a cron_expression".to_string());
+        }
+
+        let is_one_shot = is_session && is_one_shot_task(&input.cron_expression);
+        if !is_one_shot {
+            if let Some(cron_expression) = input.cron_expression.as_deref() {
+                enforce_minimum_interval(
+                    cron_expression,
+                    normalized_schedule_timezone,
+                    governance,
+                )?;
+            } else {
+                return Err("Recurring tasks require a cron_expression".to_string());
+            }
+        }
+
+        let (group_id, group_name) = if is_session {
+            (None, None)
+        } else {
+            normalize_group_fields_with_repo(repo, input.group_id, input.group_name).await?
+        };
+        if !is_session {
+            enforce_group_limit(repo, group_id.as_deref(), None, governance).await?;
+        }
+
+        let next_run_at = if let Some(precomputed) = input.next_run_at {
+            precomputed
+        } else if let Some(cron_expression) = input.cron_expression.as_deref() {
+            compute_next_run_for_schedule_timezone(
+                cron_expression,
+                now_ms,
+                normalized_schedule_timezone,
+            )?
+            .ok_or_else(|| {
+                format!(
+                    "Invalid cron expression '{}': no future occurrences found",
+                    cron_expression
+                )
+            })?
+        } else {
+            return Err("Either next_run_at or cron_expression is required".to_string());
+        };
+
         repo.create_scheduled_task(CreateScheduledTaskParams {
             id: Uuid::new_v4().to_string(),
             name: input.name,
+            task_category: input.task_category,
             cron_expression: input.cron_expression,
             schedule_timezone: normalized_schedule_timezone.to_string(),
             assistant_id: input.assistant_id,
@@ -88,6 +128,7 @@ impl ScheduledTaskService {
             message: input.message,
             yolo_mode: input.yolo_mode,
             created_by_session_id: input.created_by_session_id,
+            session_id: input.session_id,
             workspace_override: input.workspace_override,
             next_run_at: Some(next_run_at),
         })
@@ -153,7 +194,10 @@ impl ScheduledTaskService {
             let effective_cron_expression = params
                 .cron_expression
                 .as_deref()
-                .unwrap_or(existing.cron_expression.as_str());
+                .or(existing.cron_expression.as_deref())
+                .ok_or_else(|| {
+                    "Cannot recompute next run for a task without a cron expression".to_string()
+                })?;
             let next_run_at = compute_next_run_for_schedule_timezone(
                 effective_cron_expression,
                 now_ms,
@@ -216,19 +260,18 @@ impl ScheduledTaskService {
             .ok_or_else(|| format!("ScheduledTask {id} not found"))?;
         let next_run_at = if enabled {
             let schedule_timezone = normalize_schedule_timezone(&existing.schedule_timezone)?;
-            enforce_minimum_interval(&existing.cron_expression, schedule_timezone, governance)?;
+            let cron_expression = existing.cron_expression.as_deref().ok_or_else(|| {
+                "Cannot re-enable a one-shot session callback without a cron expression".to_string()
+            })?;
+            enforce_minimum_interval(cron_expression, schedule_timezone, governance)?;
             Some(
-                compute_next_run_for_schedule_timezone(
-                    &existing.cron_expression,
-                    now_ms,
-                    schedule_timezone,
-                )?
-                .ok_or_else(|| {
-                    format!(
-                        "Invalid cron expression '{}': no future occurrences found",
-                        existing.cron_expression
-                    )
-                })?,
+                compute_next_run_for_schedule_timezone(cron_expression, now_ms, schedule_timezone)?
+                    .ok_or_else(|| {
+                        format!(
+                            "Invalid cron expression '{}': no future occurrences found",
+                            cron_expression
+                        )
+                    })?,
             )
         } else {
             existing.next_run_at

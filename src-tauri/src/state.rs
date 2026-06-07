@@ -6,6 +6,7 @@
 use crate::agent::concurrency::ConcurrencyGate;
 use crate::agent::session_bus::SessionBus;
 use crate::agent::state::AgentSession;
+use crate::agent::AgentSessionManager;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SqliteAssistantRepository, SqliteAttachmentsRepository, SqliteCompactContextRepository,
@@ -79,6 +80,9 @@ static CONCURRENCY_GATE: OnceLock<ConcurrencyGate> = OnceLock::new();
 /// Shared Arc from AgentSessionManager so external subsystems (e.g. builtin MCP tools)
 /// can read per-session cancellation tokens without going through Tauri managed state.
 static ACTIVE_SESSIONS: OnceLock<Arc<TokioRwLock<HashMap<String, AgentSession>>>> = OnceLock::new();
+
+/// Shared clone of AgentSessionManager for native channel notification dispatch.
+static CHANNEL_DISPATCH_AGENT: OnceLock<AgentSessionManager> = OnceLock::new();
 /// A global revision for skill-directory derived caches.
 static SKILLS_CATALOG_REVISION: OnceLock<AtomicU64> = OnceLock::new();
 /// Coordinates background startup preparation of managed skills directories.
@@ -528,6 +532,18 @@ pub fn init_active_sessions(sessions: Arc<TokioRwLock<HashMap<String, AgentSessi
     }
 }
 
+/// Store a clone of AgentSessionManager for native MCP channel dispatch tasks.
+pub fn init_channel_dispatch_agent(manager: AgentSessionManager) {
+    if CHANNEL_DISPATCH_AGENT.set(manager).is_err() {
+        log::warn!("CHANNEL_DISPATCH_AGENT already initialized");
+    }
+}
+
+/// Return the channel dispatch AgentSessionManager when initialization has completed.
+pub fn try_get_channel_dispatch_agent() -> Option<&'static AgentSessionManager> {
+    CHANNEL_DISPATCH_AGENT.get()
+}
+
 /// Return a reference to the global active sessions map.
 ///
 /// # Panics
@@ -587,6 +603,7 @@ pub fn reset_state() {
         reset_lock(&SESSION_BUS);
         reset_lock(&CONCURRENCY_GATE);
         reset_lock(&ACTIVE_SESSIONS);
+        reset_lock(&CHANNEL_DISPATCH_AGENT);
         reset_lock(&SKILLS_CATALOG_REVISION);
         reset_lock(&MANAGED_SKILLS_SYNC_STATE);
         reset_lock(&STARTUP_TIMER);

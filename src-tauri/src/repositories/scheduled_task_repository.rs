@@ -13,7 +13,8 @@ use sea_orm::{
 pub struct CreateScheduledTaskParams {
     pub id: String,
     pub name: String,
-    pub cron_expression: String,
+    pub task_category: String,
+    pub cron_expression: Option<String>,
     pub schedule_timezone: String,
     pub assistant_id: String,
     pub group_id: Option<String>,
@@ -21,11 +22,13 @@ pub struct CreateScheduledTaskParams {
     pub message: String,
     pub yolo_mode: bool,
     pub created_by_session_id: Option<String>,
+    pub session_id: Option<String>,
     pub workspace_override: Option<String>,
     pub next_run_at: Option<i64>,
 }
 
 /// Parameters for updating a scheduled task
+#[derive(Default)]
 pub struct UpdateScheduledTaskParams {
     pub name: Option<String>,
     pub cron_expression: Option<String>,
@@ -112,6 +115,7 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         let model = scheduled_task::ActiveModel {
             id: Set(params.id),
             name: Set(params.name),
+            task_category: Set(params.task_category),
             cron_expression: Set(params.cron_expression),
             schedule_timezone: Set(params.schedule_timezone),
             assistant_id: Set(params.assistant_id),
@@ -120,7 +124,7 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             message: Set(params.message),
             yolo_mode: Set(params.yolo_mode),
             created_by_session_id: Set(params.created_by_session_id),
-            session_id: Set(None),
+            session_id: Set(params.session_id),
             workspace_override: Set(params.workspace_override),
             enabled: Set(true),
             last_run_at: Set(None),
@@ -176,7 +180,7 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             active.name = Set(v);
         }
         if let Some(v) = params.cron_expression {
-            active.cron_expression = Set(v);
+            active.cron_expression = Set(Some(v));
         }
         if let Some(v) = params.schedule_timezone {
             active.schedule_timezone = Set(v);
