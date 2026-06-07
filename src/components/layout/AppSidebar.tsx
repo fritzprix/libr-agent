@@ -128,7 +128,10 @@ export default function AppSidebar() {
     // ⚡ Bolt: Replaced .filter().forEach() chain with a single-pass loop to eliminate array allocation
     for (let i = 0; i < sortedSessions.length; i++) {
       const session = sortedSessions[i];
-      if (!session.parentSessionId || !sessionById.has(session.parentSessionId)) {
+      if (
+        !session.parentSessionId ||
+        !sessionById.has(session.parentSessionId)
+      ) {
         pushSession(session, 0);
       }
     }
