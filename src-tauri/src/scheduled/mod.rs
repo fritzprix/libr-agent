@@ -11,6 +11,17 @@ pub use worker::SchedulerWorker;
 pub const SCHEDULE_TIMEZONE_UTC: &str = "utc";
 pub const SCHEDULE_TIMEZONE_LOCAL: &str = "local";
 
+pub const TASK_CATEGORY_GLOBAL: &str = "GLOBAL";
+pub const TASK_CATEGORY_SESSION: &str = "SESSION";
+
+pub fn is_session_task(category: &str) -> bool {
+    category == TASK_CATEGORY_SESSION
+}
+
+pub fn is_one_shot_task(cron_expression: &Option<String>) -> bool {
+    cron_expression.is_none()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduleTimezone {
     Utc,

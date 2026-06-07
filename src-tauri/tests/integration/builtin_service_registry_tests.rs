@@ -357,10 +357,11 @@ fn scheduled_task_static_tool_surface_is_exposed() {
 
     assert_eq!(
         tools.len(),
-        6,
-        "scheduled_task should expose six public tools"
+        7,
+        "scheduled_task should expose seven public tools"
     );
     for expected in [
+        "scheduleCallback",
         "createScheduledTask",
         "listScheduledTasks",
         "getScheduledTask",
@@ -378,7 +379,7 @@ fn scheduled_task_static_tool_surface_is_exposed() {
         .into_iter()
         .find(|info| info.name == "scheduled_task")
         .expect("scheduled_task must appear in builtin server definitions");
-    assert_eq!(server_info.tool_count, 6);
+    assert_eq!(server_info.tool_count, 7);
     assert_eq!(server_info.metadata.display_name, "Scheduled Tasks");
 }
 

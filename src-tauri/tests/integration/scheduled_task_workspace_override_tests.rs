@@ -5,6 +5,7 @@ use tauri_mcp_agent_lib::repositories::{
     SqliteScheduledTaskRepository, SqliteSessionRepository,
 };
 use tauri_mcp_agent_lib::scheduled::runner::sync_task_workspace_override;
+use tauri_mcp_agent_lib::scheduled::TASK_CATEGORY_GLOBAL;
 use tauri_mcp_agent_lib::services::scheduled_task_service::{
     CreateScheduledTaskInput, ScheduledTaskGovernanceSettings, ScheduledTaskService,
 };
@@ -60,7 +61,8 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
         &scheduled_repo,
         CreateScheduledTaskInput {
             name: "Nightly report".to_string(),
-            cron_expression: "0 9 * * *".to_string(),
+            task_category: TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some("0 9 * * *".to_string()),
             schedule_timezone: "local".to_string(),
             assistant_id: "assistant-1".to_string(),
             group_id: None,
@@ -68,7 +70,9 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
             message: "Generate report".to_string(),
             yolo_mode: false,
             created_by_session_id: Some(session_id.to_string()),
+            session_id: None,
             workspace_override: Some(missing_workspace_str.clone()),
+            next_run_at: None,
         },
         &ScheduledTaskGovernanceSettings::default(),
     )

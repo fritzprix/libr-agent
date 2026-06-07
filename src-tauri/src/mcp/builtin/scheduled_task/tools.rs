@@ -3,6 +3,7 @@ use crate::mcp::MCPTool;
 
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
+        schedule_callback_tool(),
         create_scheduled_task_tool(),
         list_scheduled_tasks_tool(),
         get_scheduled_task_tool(),
@@ -10,6 +11,55 @@ pub fn all_tools() -> Vec<MCPTool> {
         toggle_scheduled_task_tool(),
         delete_scheduled_task_tool(),
     ]
+}
+
+fn schedule_callback_tool() -> MCPTool {
+    MCPTool {
+        name: "scheduleCallback".to_string(),
+        title: Some("Schedule Session Callback".to_string()),
+        description: "Schedule a one-shot delay or recurring callback for the current session. Use delaySeconds for a single future injection, or cronExpression for recurring callbacks."
+            .to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "message".to_string(),
+                    string_prop(
+                        Some(1),
+                        Some(8000),
+                        Some("Message to inject when the callback fires."),
+                    ),
+                ),
+                (
+                    "name".to_string(),
+                    string_prop(
+                        Some(1),
+                        Some(120),
+                        Some("Optional label shown in schedule lists."),
+                    ),
+                ),
+                (
+                    "delaySeconds".to_string(),
+                    integer_prop(
+                        Some(1),
+                        Some(86400),
+                        Some("One-shot delay in seconds. Mutually exclusive with cronExpression."),
+                    ),
+                ),
+                (
+                    "cronExpression".to_string(),
+                    string_prop(
+                        Some(1),
+                        Some(120),
+                        Some("Cron expression for recurring session callbacks. Mutually exclusive with delaySeconds."),
+                    ),
+                ),
+            ],
+            vec!["message".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
 }
 
 fn create_scheduled_task_tool() -> MCPTool {
