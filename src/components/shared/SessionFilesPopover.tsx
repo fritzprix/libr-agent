@@ -87,12 +87,18 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             // However, let's keep the logic aligned with what the legacy tool did if possible.
             // Legacy tool seemed to handle a custom 'structuredContent' field in result.
             // Let's assume the Rust tool returns standard MCP content now.
-            content = 'File content format not supported for display.';
+            content = t(
+              'sessionFiles.formatNotSupported',
+              'File content format not supported for display.',
+            );
           } else {
-            content = 'File content not availble.';
+            content = t(
+              'sessionFiles.notAvailable',
+              'File content not available.',
+            );
           }
         } else {
-          content = 'File content not available';
+          content = t('sessionFiles.notAvailable', 'File content not available.');
         }
 
         // Refined logic based on expected Rust output for read

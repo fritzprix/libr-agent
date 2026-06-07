@@ -98,7 +98,9 @@
     "created": "Created:",
     "workspace": "Workspace:",
     "sessionId": "Session ID:",
-    "workspaceValue": "Workspace"
+    "workspaceValue": "Workspace",
+    "formatNotSupported": "File content format not supported for display.",
+    "notAvailable": "File content not available."
   },
   "fileAttachment": {
     "attachFiles": "Attach files",
