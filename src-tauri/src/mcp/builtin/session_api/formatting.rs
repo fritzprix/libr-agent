@@ -253,7 +253,7 @@ pub fn latest_assistant_message_text(
             None => continue,
         };
 
-        for item in content {
+        for item in content.iter().rev() {
             let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
             if item_type != "text" {
                 continue;
@@ -284,11 +284,6 @@ pub fn latest_tool_message_text(messages: &[Value]) -> Option<String> {
     for message in messages {
         let role = message.get("role").and_then(|v| v.as_str()).unwrap_or("");
 
-        // If we reach an assistant message, we've gone past the latest tool responses.
-        if role == "assistant" {
-            break;
-        }
-
         if role != "tool" {
             continue;
         }
@@ -308,6 +303,26 @@ pub fn latest_tool_message_text(messages: &[Value]) -> Option<String> {
         }
     }
     None
+}
+
+pub fn latest_session_output(messages: &[Value]) -> String {
+    let (_, mut assistant_text) = latest_assistant_message_text(messages, None)
+        .unwrap_or(("none".to_string(), "No final answer yet.".to_string()));
+
+    if assistant_text == "[assistant message has no text content]" {
+        if let Some(tool_text) = latest_tool_message_text(messages) {
+            assistant_text = format!("[Tool Response Fallback]\n{}", tool_text);
+        }
+    }
+
+    assistant_text
+}
+
+pub fn session_output_is_missing(output: &str) -> bool {
+    matches!(
+        output,
+        "No final answer yet." | "[assistant message has no text content]"
+    )
 }
 
 #[cfg(test)]
@@ -416,5 +431,43 @@ mod tests {
     fn terminal_status_error_is_terminal() {
         assert!(is_terminal_status("error"));
         assert!(is_terminal_status("failed"));
+    }
+
+    #[test]
+    fn latest_assistant_message_text_prefers_last_text_block_in_content() {
+        let messages = vec![json!({
+            "role": "assistant",
+            "id": "assistant-final",
+            "content": [
+                {"type": "text", "text": "Working on it..."},
+                {"type": "thinking", "thinking": "internal reasoning"},
+                {"type": "text", "text": "Final answer for the delegated task."}
+            ]
+        })];
+
+        let (message_id, text) =
+            latest_assistant_message_text(&messages, None).expect("assistant text should be found");
+
+        assert_eq!(message_id, "assistant-final");
+        assert_eq!(text, "Final answer for the delegated task.");
+    }
+
+    #[test]
+    fn latest_tool_message_text_skips_leading_assistant_without_text() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [{"type": "tool_call", "name": "workspace__readFile"}]
+            }),
+            json!({
+                "role": "tool",
+                "content": [{"type": "text", "text": "Structured tool output summary"}]
+            }),
+        ];
+
+        assert_eq!(
+            latest_tool_message_text(&messages).as_deref(),
+            Some("Structured tool output summary")
+        );
     }
 }

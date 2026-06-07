@@ -224,7 +224,7 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "waitForResponse".to_string(),
                     {
-                        let mut schema = boolean_prop(Some("If true (default), block until the child reaches a terminal response after receiving this message."));
+                        let mut schema = boolean_prop(Some("If true, block until the child reaches a terminal response after receiving this message."));
                         schema.default = Some(json!(true));
                         schema
                     },

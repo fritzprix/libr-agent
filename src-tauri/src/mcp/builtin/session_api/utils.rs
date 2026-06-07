@@ -5,7 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
-use super::formatting::{extract_session_status, is_terminal_status, truncate_text};
+use super::formatting::{
+    extract_session_status, is_terminal_status, latest_session_output, session_output_is_missing,
+    truncate_text,
+};
 use super::types::MessageSummaryOptions;
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::{MCPContent, MCPResult};
@@ -13,6 +16,7 @@ use crate::repositories::{MessageRepository, SessionRepository};
 
 pub const SWARM_CONTEXT_PREVIEW_LIMIT: usize = 20;
 pub const SWARM_MESSAGE_PREVIEW_MAX_CHARS: usize = 140;
+pub const CHECK_SESSION_RESULT_MESSAGE_LIMIT: u64 = 20;
 
 pub fn success_result<T: serde::Serialize>(text: String, data: T) -> MCPResult {
     MCPResult {
@@ -323,16 +327,62 @@ pub async fn fetch_session_value(
 }
 
 pub async fn fetch_messages_value(session_id: &str, limit: u64) -> Result<Value, String> {
+    let messages_value = fetch_session_messages_for_result(session_id, limit).await?;
+    Ok(json!({ "messages": messages_value }))
+}
+
+async fn fetch_cached_session_messages_newest_first(
+    session_id: &str,
+    limit: usize,
+) -> Option<Vec<Value>> {
+    let sessions = crate::state::try_get_active_sessions()?;
+    let active = sessions.read().await;
+    let session = active.get(session_id)?;
+    let cached_messages = session.messages.read().await;
+    if cached_messages.is_empty() {
+        return None;
+    }
+
+    let take = limit.min(cached_messages.len());
+    let newest_first = cached_messages
+        .iter()
+        .rev()
+        .take(take)
+        .filter_map(|message| serde_json::to_value(message).ok())
+        .collect::<Vec<_>>();
+
+    Some(newest_first)
+}
+
+pub async fn fetch_session_messages_for_result(
+    session_id: &str,
+    limit: u64,
+) -> Result<Vec<Value>, String> {
     let repo = crate::state::get_message_repository();
     let messages = repo
         .get_messages_by_session(session_id, limit)
         .await
         .map_err(|e| format!("Failed to fetch session messages: {}", e))?;
 
-    let messages_json = serde_json::to_value(messages)
+    let mut messages_value: Vec<Value> = messages
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<Value>, serde_json::Error>>()
         .map_err(|e| format!("Failed to serialize session messages: {}", e))?;
 
-    Ok(json!({ "messages": messages_json }))
+    let output = latest_session_output(&messages_value);
+    if session_output_is_missing(&output) {
+        if let Some(cached) =
+            fetch_cached_session_messages_newest_first(session_id, limit as usize).await
+        {
+            let cached_output = latest_session_output(&cached);
+            if !session_output_is_missing(&cached_output) {
+                messages_value = cached;
+            }
+        }
+    }
+
+    Ok(messages_value)
 }
 
 /// Consolidates timeout handling for spawnAgent, awaitAgent, and checkSession.
