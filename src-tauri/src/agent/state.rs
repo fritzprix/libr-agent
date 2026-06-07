@@ -431,11 +431,15 @@ pub struct AgentSession {
     /// Last DB sync timestamp (for debugging/monitoring)
     pub last_synced_at: Arc<RwLock<Option<SystemTime>>>,
 
-    /// Counts Rust-owned recovery retries after non-productive completions
-    /// (streaming repeated-thinking loops or completed thinking-only turns)
+    /// Counts Rust-owned recovery retries after non-productive thinking
+    /// completions (streaming repeated-thinking loops or thinking-only turns)
     /// during a single workflow turn. Reset when a new workflow starts or the
     /// assistant produces meaningful progress.
     pub repeated_thinking_retry_count: Arc<RwLock<u32>>,
+
+    /// Counts Rust-owned recovery retries after streaming repeated-text loops.
+    /// Independent from `repeated_thinking_retry_count`.
+    pub repeated_text_loop_retry_count: Arc<RwLock<u32>>,
 
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,

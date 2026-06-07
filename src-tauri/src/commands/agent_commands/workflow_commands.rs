@@ -89,22 +89,42 @@ pub async fn agent_report_llm_streaming_issue(
             ),
             "ignored",
         ),
-        crate::agent::llm::StreamingIssueOutcome::Retried { retry_count } => (
-            format!(
-                "Retried completion after repeated thinking loop for session {} (retry {}/{})",
-                report.session_id,
-                retry_count,
-                crate::agent::llm::REPEATED_THINKING_MAX_RETRIES
-            ),
-            "retried",
-        ),
-        crate::agent::llm::StreamingIssueOutcome::Failed => (
-            format!(
-                "Stopped workflow after repeated thinking loop for session {}",
-                report.session_id
-            ),
-            "failed",
-        ),
+        crate::agent::llm::StreamingIssueOutcome::Retried { retry_count } => {
+            let (label, max_retries) = match report.issue_kind {
+                crate::agent::llm::types::StreamingIssueKind::RepeatedThinkingLoop => (
+                    "repeated thinking loop",
+                    crate::agent::llm::REPEATED_THINKING_MAX_RETRIES,
+                ),
+                crate::agent::llm::types::StreamingIssueKind::RepeatedTextLoop => (
+                    "repeated text loop",
+                    crate::agent::llm::REPEATED_TEXT_LOOP_MAX_RETRIES,
+                ),
+            };
+            (
+                format!(
+                    "Retried completion after {label} for session {} (retry {}/{max_retries})",
+                    report.session_id, retry_count,
+                ),
+                "retried",
+            )
+        }
+        crate::agent::llm::StreamingIssueOutcome::Failed => {
+            let label = match report.issue_kind {
+                crate::agent::llm::types::StreamingIssueKind::RepeatedThinkingLoop => {
+                    "repeated thinking loop"
+                }
+                crate::agent::llm::types::StreamingIssueKind::RepeatedTextLoop => {
+                    "repeated text loop"
+                }
+            };
+            (
+                format!(
+                    "Stopped workflow after {label} for session {}",
+                    report.session_id
+                ),
+                "failed",
+            )
+        }
     };
 
     Ok(AgentResponse {
