@@ -149,7 +149,10 @@ mod tests {
                 meta: HashMap::new(),
             },
         });
-        assert!(result.is_ok(), "detached sender should not be closed immediately");
+        assert!(
+            result.is_ok(),
+            "detached sender should not be closed immediately"
+        );
     }
 
     #[test]

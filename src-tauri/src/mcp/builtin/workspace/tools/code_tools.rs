@@ -93,6 +93,16 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some("Input type: 'password' (hidden) or 'text' (visible). Auto-set to 'password' for sudo commands."),
         ),
     );
+    props.insert(
+        "stdinDelivery".to_string(),
+        enum_prop(
+            vec!["host", "child"],
+            "host",
+            Some(
+                "How to deliver interactive input: 'host' for Read-Host/sudo (default), 'child' to pipe into subprocess stdin (auto-detected for --code-stdin/--password-stdin).",
+            ),
+        ),
+    );
 
     MCPTool {
         name: "runInPersistentShell".to_string(),
@@ -239,6 +249,16 @@ pub fn create_execute_shell_tool() -> MCPTool {
             vec!["password", "text"],
             "text",
             Some("Input type: 'password' (hidden) or 'text' (visible)"),
+        ),
+    );
+    props.insert(
+        "stdinDelivery".to_string(),
+        enum_prop(
+            vec!["host", "child"],
+            "host",
+            Some(
+                "How to deliver interactive input: 'host' for Read-Host (default), 'child' to pipe into subprocess stdin (auto-detected for --code-stdin/--password-stdin).",
+            ),
         ),
     );
 

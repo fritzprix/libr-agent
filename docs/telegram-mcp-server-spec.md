@@ -92,11 +92,13 @@ client = TelegramClient(
 ```
 
 **장점:**
+
 - 별도 인증 절차 불필요
 - telegram-cli 스킬과 동일한 세션 파일 공유
 - telegram-cli가 재인증하면 MCP 서버도 자동으로 반영
 
 **단점:**
+
 - 설정 파일이 이미 구성되어 있어야 함 (첫 사용 시 telegram-cli 스킬 먼저 실행 필요)
 - 동시 접속 제한 (Telethon是同한 세션 파일 동시 사용 시 충돌 가능성 — 해결책: 세션 객체 복사 또는 독립 세션 파일)
 
@@ -115,10 +117,12 @@ client = TelegramClient(
 ```
 
 **장점:**
+
 - telegram-cli와 독립적 (충돌 없음)
 - telegram-cli가 로그아웃해도 MCP 서버는 유지 가능
 
 **단점:**
+
 - 첫 실행 시 인증 코드 수신 → 입력 필요 (telegram-cli와 별도 설정 필요)
 
 ### 2.3 권장 사항
@@ -235,18 +239,18 @@ LibrAgent                     Telegram MCP Server
 
 **meta 필드 설명:**
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `chat_id` | string | Telegram chat ID (음수: 그룹/채널, 양수: 개인) |
-| `chat_name` | string | 채팅 이름 (또는 사용자 이름) |
-| `chat_type` | string | `"private"`, `"group"`, `"channel"`, `"supergroup"` |
-| `sender_id` | integer | 발신자 Telegram user ID |
-| `sender_name` | string | 발신자 이름 (first_name last_name) |
-| `message_id` | integer | Telegram 메시지 ID |
-| `timestamp` | string | ISO 8601 형식 메시지 수신 시간 |
-| `has_media` | boolean | 미디어 첨부 여부 |
-| `media_type` | string \| null | `"photo"`, `"document"`, `"audio"`, `"video"` 등 |
-| `media_url` | string \| null | 미디어 다운로드 URL (필요시) |
+| 필드          | 타입           | 설명                                                |
+| ------------- | -------------- | --------------------------------------------------- |
+| `chat_id`     | string         | Telegram chat ID (음수: 그룹/채널, 양수: 개인)      |
+| `chat_name`   | string         | 채팅 이름 (또는 사용자 이름)                        |
+| `chat_type`   | string         | `"private"`, `"group"`, `"channel"`, `"supergroup"` |
+| `sender_id`   | integer        | 발신자 Telegram user ID                             |
+| `sender_name` | string         | 발신자 이름 (first_name last_name)                  |
+| `message_id`  | integer        | Telegram 메시지 ID                                  |
+| `timestamp`   | string         | ISO 8601 형식 메시지 수신 시간                      |
+| `has_media`   | boolean        | 미디어 첨부 여부                                    |
+| `media_type`  | string \| null | `"photo"`, `"document"`, `"audio"`, `"video"` 등    |
+| `media_url`   | string \| null | 미디어 다운로드 URL (필요시)                        |
 
 ### 3.4 Channel 구독 설정
 
@@ -359,10 +363,12 @@ Telegram 메시지 발송
 
 ```json
 {
-  "content": [{
-    "type": "text",
-    "text": "✅ 텔레그램 메시지 발송 완료\n  받는 곳: @example_channel\n  발송 시각: 2025-06-03T14:30:00Z"
-  }],
+  "content": [
+    {
+      "type": "text",
+      "text": "✅ 텔레그램 메시지 발송 완료\n  받는 곳: @example_channel\n  발송 시각: 2025-06-03T14:30:00Z"
+    }
+  ],
   "structuredContent": {
     "message_id": 123,
     "chat": "@example_channel",
@@ -406,10 +412,12 @@ Telegram 메시지 발송
 
 ```json
 {
-  "content": [{
-    "type": "text",
-    "text": "📨 텔레그램 메시지 (@example_channel)\n\n#  날짜        내용\n1  06/03 14:23  회의는 14시에 시작됩니다.\n2  06/03 13:45  [이미지]\n3  06/03 12:00 新功能 배포 완료"
-  }],
+  "content": [
+    {
+      "type": "text",
+      "text": "📨 텔레그램 메시지 (@example_channel)\n\n#  날짜        내용\n1  06/03 14:23  회의는 14시에 시작됩니다.\n2  06/03 13:45  [이미지]\n3  06/03 12:00 新功能 배포 완료"
+    }
+  ],
   "structuredContent": {
     "chat": "@example_channel",
     "count": 3,
@@ -444,10 +452,12 @@ Telegram 메시지 발송
 
 ```json
 {
-  "content": [{
-    "type": "text",
-    "text": "💬 텔레그램 채팅 목록 (총 5개)\n\n#  이름              유형       마지막 활동\n1  ● LibrAgent Dev   채널       10분 전\n2  ● 프로젝트 A      그룹(42)   3시간 전\n3  김철수            개인       어제"
-  }],
+  "content": [
+    {
+      "type": "text",
+      "text": "💬 텔레그램 채팅 목록 (총 5개)\n\n#  이름              유형       마지막 활동\n1  ● LibrAgent Dev   채널       10분 전\n2  ● 프로젝트 A      그룹(42)   3시간 전\n3  김철수            개인       어제"
+    }
+  ],
   "structuredContent": {
     "count": 5,
     "chats": [
@@ -647,7 +657,7 @@ MCP 서버가 LibrAgent에 보내는 응답:
   "method": "claude/channel/permission/verdict",
   "params": {
     "requestId": "unique-request-id",
-    "behavior": "allow"  // 또는 "deny"
+    "behavior": "allow" // 또는 "deny"
   }
 }
 ```
@@ -694,10 +704,10 @@ def load_telegram_config(mcp_session_path=None):
             "Telegram config not found. "
             "Configure via LibrAgent's telegram-cli skill first."
         )
-    
+
     with open(CONFIG_PATH) as f:
         config = json.load(f)
-    
+
     session_path = mcp_session_path or DEFAULT_SESSION_PATH
     return config, Path(session_path)
 ```
@@ -781,7 +791,7 @@ async def main():
     await client.connect()
     if not await client.is_user_authorized():
         raise RuntimeError("Not authorized. Configure Telegram first.")
-    
+
     async with mcp:
         await client.run_until_disconnected()
 

@@ -1,6 +1,4 @@
-use super::channel_events::{
-    try_emit_channel_event, try_parse_channel_event, ChannelEventSender,
-};
+use super::channel_events::{try_emit_channel_event, try_parse_channel_event, ChannelEventSender};
 use futures::{SinkExt, StreamExt};
 use rmcp::{
     service::{RoleClient, RxJsonRpcMessage, TxJsonRpcMessage},

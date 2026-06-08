@@ -55,6 +55,15 @@ impl std::fmt::Display for InteractiveShellInputType {
     }
 }
 
+/// How interactive shell input is delivered to the executed command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StdinDelivery {
+    /// Feed input as the next line on the persistent shell stdin (Read-Host, sudo).
+    Host,
+    /// Pipe input into the command so child processes can read sys.stdin (python --code-stdin).
+    Child,
+}
+
 pub struct PendingShellExecution {
     pub execution_id: String,
     pub session_id: String,
@@ -65,6 +74,7 @@ pub struct PendingShellExecution {
     pub created_at: DateTime<Utc>,
     pub prompt: String,
     pub input_type: InteractiveShellInputType,
+    pub stdin_delivery: StdinDelivery,
     pub response_tx: Option<oneshot::Sender<PendingShellInputResolution>>,
 }
 
@@ -80,6 +90,7 @@ impl std::fmt::Debug for PendingShellExecution {
             .field("created_at", &self.created_at)
             .field("prompt", &self.prompt)
             .field("input_type", &self.input_type)
+            .field("stdin_delivery", &self.stdin_delivery)
             .finish_non_exhaustive()
     }
 }
@@ -176,6 +187,7 @@ mod tests {
             created_at: now - chrono::Duration::minutes(15),
             prompt: "prompt".to_string(),
             input_type: InteractiveShellInputType::Text,
+            stdin_delivery: StdinDelivery::Host,
             response_tx: None,
         });
 
@@ -190,6 +202,7 @@ mod tests {
             created_at: now,
             prompt: "prompt".to_string(),
             input_type: InteractiveShellInputType::Text,
+            stdin_delivery: StdinDelivery::Host,
             response_tx: None,
         });
 

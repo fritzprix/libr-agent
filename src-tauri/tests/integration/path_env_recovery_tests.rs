@@ -19,3 +19,25 @@ fn test_isolated_env_uses_effective_path() {
 
     assert_eq!(isolated_path, effective_path);
 }
+
+#[cfg(windows)]
+#[test]
+fn test_effective_path_includes_discovered_python_scripts_when_present() {
+    use tauri_mcp_agent_lib::utils::windows_path_discovery::find_python_install_root;
+
+    let Some(python_root) = find_python_install_root() else {
+        return;
+    };
+
+    let scripts_dir = python_root.join("Scripts");
+    if !scripts_dir.is_dir() {
+        return;
+    }
+
+    let effective_path = get_effective_path();
+    assert!(
+        effective_path.contains(&scripts_dir.to_string_lossy().replace('/', "\\"))
+            || effective_path.contains(scripts_dir.to_string_lossy().as_ref()),
+        "effective PATH should prepend discovered Python Scripts directory"
+    );
+}

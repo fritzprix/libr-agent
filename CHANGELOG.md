@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🐛 Fixes
+
+- **Windows Jupyter MCP Startup**: Fixed `@fre4x/jupyter` MCP server crashing on launch by centralizing Windows PATH discovery (Python, pip, pipx, jupyter binaries) into a shared `windows_path_discovery` module with `OnceLock` caching, replacing the previous per-call async subprocess detection that was slow and missed standard install locations.
+
+### 🔧 Internal
+
+- **Windows PATH Discovery Consolidation**: Removed duplicate `windows_python.rs` and merged logic into `utils/windows_path_discovery.rs` with static caching, expanded detection to `ProgramFiles/Python`, `ProgramFiles(x86)/Python`, `APPDATA/Python/*/Scripts`, and `USERPROFILE/.local/bin`, and unified `env.rs` Unix/Windows path merge logic via shared `merge_with_current_path()` helper.
+
+### 🚀 Features
+
+- **Agent Init Bundled Skill**: Ship `agent-init` exclusively via `src-tauri/bundled_skills` so managed `system_skills` copies refresh on app start; generates tailored `agents.md` / `AGENTS.md` guidance from code, docs, or mixed workspaces.
+
+### 🔧 Internal
+
+- **Agent Init Skill**: Removed duplicate `.agents/skills/agent-init` copy and synced formatted SKILL.md into the bundled layer with `.force_update`.
+## [0.8.8] - 2026-06-08
+
+### 🚀 Features
+
+- **MCP Stdio Channel Notifications**: Added a native stdio channel notification pipeline so external MCP servers can push channel events into agent sessions with tighter session-isolated transport handling.
+
+### 🐛 Fixes
+
+- **Telegram CLI Skill**: Fixed `check_config` reporting success before sign-in completed by verifying Telethon authorization, repaired broken message search (`iter_messages` instead of removed `client.search`), and hardened chat resolution plus required argument validation.
+
+### 🔧 Internal
+
+- **Telegram CLI Skill**: Consolidated on bundled `telegram-cli` only (removed duplicate `.agents/skills` copy), dropped obsolete `PLAN.md`, refreshed SKILL.md for PowerShell and unauthorized-session handling, and added `.force_update` to refresh managed system skill copies on app start.
+
 ## [0.8.7] - 2026-06-07
 
 ### 🚀 Features

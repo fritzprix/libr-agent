@@ -6,6 +6,7 @@ use anyhow::Result;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::persistent_shell::{
     PersistentShell, PersistentShellManager,
 };
+use tauri_mcp_agent_lib::mcp::builtin::workspace::StdinDelivery;
 use tauri_mcp_agent_lib::session_isolation::types::ShellType;
 
 // ── PersistentShell tests ────────────────────────────────────────────────────
@@ -149,7 +150,9 @@ async fn test_input_injection_safety() -> Result<()> {
     {
         let command = "echo 'ignoring input'";
         let dangerous_input = "touch injected_file\nexit 1";
-        let (stdout, _, exit_code, _) = shell.execute_with_input(command, dangerous_input).await?;
+        let (stdout, _, exit_code, _) = shell
+            .execute_with_input(command, dangerous_input, StdinDelivery::Host)
+            .await?;
         assert_eq!(exit_code, 0);
         assert!(stdout.contains("ignoring input"));
         assert!(!injected_file.exists(), "Injected command was executed!");
@@ -442,5 +445,45 @@ async fn test_cleanup_all() -> Result<()> {
     let _ = std::fs::remove_dir_all(&ws1);
     let _ = std::fs::remove_dir_all(&ws2);
     let _ = std::fs::remove_dir_all(&ws3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_child_stdin_delivery_pipes_input_to_python() -> Result<()> {
+    let temp_dir = std::env::temp_dir().join("ps_test_child_stdin");
+    std::fs::create_dir_all(&temp_dir)?;
+
+    #[cfg(unix)]
+    let mut shell = PersistentShell::new(
+        "test-child-stdin".to_string(),
+        temp_dir.clone(),
+        ShellType::Bash,
+    )
+    .await?;
+    #[cfg(windows)]
+    let mut shell = PersistentShell::new(
+        "test-child-stdin".to_string(),
+        temp_dir.clone(),
+        ShellType::PowerShell,
+    )
+    .await?;
+
+    #[cfg(unix)]
+    let command = "python3 -c \"import sys; print(sys.stdin.readline().strip())\"";
+    #[cfg(windows)]
+    let command = "python -c \"import sys; print(sys.stdin.readline().strip())\"";
+
+    let (stdout, _, exit_code, _) = shell
+        .execute_with_input(command, "hello-child-stdin", StdinDelivery::Child)
+        .await?;
+
+    assert_eq!(exit_code, 0, "child stdin pipe should succeed");
+    assert!(
+        stdout.contains("hello-child-stdin"),
+        "stdout should contain piped input, got: {stdout}"
+    );
+
+    shell.terminate().await?;
+    let _ = std::fs::remove_dir_all(&temp_dir);
     Ok(())
 }

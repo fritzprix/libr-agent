@@ -137,6 +137,7 @@ impl PersistentShellManager {
         workspace_path: std::path::PathBuf,
         command: &str,
         user_input: &str,
+        stdin_delivery: crate::mcp::builtin::workspace::StdinDelivery,
     ) -> Result<(String, String, i32, String), String> {
         // Try with retry on failure
         match self
@@ -145,6 +146,7 @@ impl PersistentShellManager {
                 workspace_path.clone(),
                 command,
                 user_input,
+                stdin_delivery,
             )
             .await
         {
@@ -161,8 +163,14 @@ impl PersistentShellManager {
                 drop(shells);
 
                 // Retry once with new shell
-                self.execute_with_input_internal(session_id, workspace_path, command, user_input)
-                    .await
+                self.execute_with_input_internal(
+                    session_id,
+                    workspace_path,
+                    command,
+                    user_input,
+                    stdin_delivery,
+                )
+                .await
             }
         }
     }
@@ -174,12 +182,13 @@ impl PersistentShellManager {
         workspace_path: std::path::PathBuf,
         command: &str,
         user_input: &str,
+        stdin_delivery: crate::mcp::builtin::workspace::StdinDelivery,
     ) -> Result<(String, String, i32, String), String> {
         let shell = self.get_or_create_shell(session_id, workspace_path).await?;
         let mut shell_guard = shell.lock().await;
 
         shell_guard
-            .execute_with_input(command, user_input)
+            .execute_with_input(command, user_input, stdin_delivery)
             .await
             .map_err(|e| format!("Shell execution with input failed: {e}"))
     }
