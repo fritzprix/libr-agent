@@ -3,8 +3,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::process::Command as AsyncCommand;
 use tracing::info;
 
-use super::windows_python::detect_python_path;
-
 /// Monotonic counter for unique script filenames within a process lifetime.
 static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -33,14 +31,10 @@ pub async fn create_basic_isolated_command(
     // Set working directory
     cmd.current_dir(&config.workspace_path);
 
-    // Smart Discovery: Auto-detect Python path to be used later
-    let detected_python = detect_python_path().await;
-    let python_path_str = detected_python.as_ref().map(|p| p.to_string_lossy());
-
     // Apply environment isolation: clear all inherited environment variables
     cmd.env_clear();
 
-    // Re-apply whitelisted essential system variables
+    // Re-apply whitelisted essential system variables (PATH includes discovered Python/pip/pipx dirs)
     for (k, v) in crate::utils::env::get_isolated_env() {
         cmd.env(k, v);
     }
@@ -54,36 +48,7 @@ pub async fn create_basic_isolated_command(
         cmd.env(key, value);
     }
 
-    // Construct PATH environment variable carefully
-    let current_path = crate::utils::env::get_effective_path();
-    let mut new_path = current_path.clone();
-
-    if let Some(python_str) = &python_path_str {
-        // Simple check to avoid duplicate appending if it's already in PATH
-        if !current_path.contains(python_str.as_ref()) {
-            if let Some(python_path) = &detected_python {
-                let scripts_dir = python_path.join("Scripts");
-                let lib_bin_dir = python_path.join("Library").join("bin");
-
-                // PREPEND to PATH to ensure this Python takes precedence over WindowsApps shim
-                new_path = format!(
-                    "{};{};{};{}",
-                    python_str,
-                    scripts_dir.to_string_lossy(),
-                    lib_bin_dir.to_string_lossy(),
-                    current_path
-                );
-                info!(
-                    "Smart Discovery: Prepended Python at {} to PATH",
-                    python_str
-                );
-            }
-        }
-    }
-
-    cmd.env("PATH", &new_path);
-
-    info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
+    info!("Windows environment configured: workspace isolated, PATH preserved (with discovered tool dirs)");
     let path_len = crate::utils::env::get_effective_path().len();
     let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
     let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
