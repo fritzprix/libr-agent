@@ -147,9 +147,19 @@ pub async fn list_assistants(
             ];
 
             for a in &assistants {
-                let name = a["name"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
-                let id = a["id"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
-                let description = extract_assistant_description(&a["config"]).replace('|', "\\|").replace('\n', " ");
+                let name = a["name"]
+                    .as_str()
+                    .unwrap_or("?")
+                    .replace('|', "\\|")
+                    .replace('\n', " ");
+                let id = a["id"]
+                    .as_str()
+                    .unwrap_or("?")
+                    .replace('|', "\\|")
+                    .replace('\n', " ");
+                let description = extract_assistant_description(&a["config"])
+                    .replace('|', "\\|")
+                    .replace('\n', " ");
                 assistants_text_lines.push(format!("| {} | `{}` | {} |", name, id, description));
             }
             let assistants_text = assistants_text_lines.join("\n");
@@ -263,14 +273,20 @@ pub async fn search_assistant(
                 .collect();
 
             // Format list for AI readability
-            let mut assistants_text_lines = vec![
-                "| Name | ID |".to_string(),
-                "|---|---|".to_string(),
-            ];
+            let mut assistants_text_lines =
+                vec!["| Name | ID |".to_string(), "|---|---|".to_string()];
 
             for a in &assistants {
-                let name = a["name"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
-                let id = a["id"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
+                let name = a["name"]
+                    .as_str()
+                    .unwrap_or("?")
+                    .replace('|', "\\|")
+                    .replace('\n', " ");
+                let id = a["id"]
+                    .as_str()
+                    .unwrap_or("?")
+                    .replace('|', "\\|")
+                    .replace('\n', " ");
                 assistants_text_lines.push(format!("| {} | `{}` |", name, id));
             }
             let assistants_text = assistants_text_lines.join("\n");
