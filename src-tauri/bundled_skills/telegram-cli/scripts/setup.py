@@ -31,8 +31,15 @@ except ImportError:
 CONFIG_DIR = Path.home() / ".libragent"
 CONFIG_PATH = CONFIG_DIR / "telegram_config.json"
 SESSION_NAME = "telegram_session"
-SESSION_PATH = CONFIG_DIR / f"{SESSION_NAME}.session"
 CLIENT_SESSION_PATH = CONFIG_DIR / SESSION_NAME
+
+
+def disconnect_client(client: TelegramClient) -> None:
+    """Disconnect a Telethon client, supporting sync and async disconnect()."""
+    disconnect = client.disconnect()
+    if disconnect is not None:
+        client.loop.run_until_complete(disconnect)
+
 
 def save_config(api_id: int, api_hash: str, phone: str, phone_code_hash: str = "") -> None:
     """Save configuration to ~/.libragent/telegram_config.json."""
@@ -45,12 +52,13 @@ def save_config(api_id: int, api_hash: str, phone: str, phone_code_hash: str = "
     }
     if phone_code_hash:
         config_data["phone_code_hash"] = phone_code_hash
-        
+
     CONFIG_PATH.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
     try:
         os.chmod(CONFIG_PATH, 0o600)
     except OSError:
         pass
+
 
 def load_config() -> dict:
     """Load configuration from ~/.libragent/telegram_config.json."""
@@ -60,6 +68,7 @@ def load_config() -> dict:
         return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+
 
 def action_send_code(args: argparse.Namespace) -> int:
     """Send verification code to the phone number."""
@@ -87,14 +96,14 @@ def action_send_code(args: argparse.Namespace) -> int:
         client.loop.run_until_complete(client.connect())
         sent_code = client.loop.run_until_complete(client.send_code_request(phone))
         phone_code_hash = sent_code.phone_code_hash
-        
+
         save_config(int(api_id), api_hash, phone, phone_code_hash)
-        
+
         print(
             json.dumps({
                 "status": "code_sent",
                 "phone_code_hash": phone_code_hash,
-                "message": "Verification code has been sent to your Telegram account/phone."
+                "message": "Verification code has been sent to your Telegram account/phone.",
             })
         )
         return 0
@@ -117,7 +126,8 @@ def action_send_code(args: argparse.Namespace) -> int:
         )
         return 3
     finally:
-        client.disconnect()
+        disconnect_client(client)
+
 
 def action_sign_in(args: argparse.Namespace) -> int:
     """Complete authorization using code and optionally 2FA password."""
@@ -166,8 +176,15 @@ def action_sign_in(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
-        
+
         if code:
+            if not phone_code_hash:
+                print(
+                    json.dumps({"status": "error", "message": "Missing phone_code_hash. Run send_code again before sign_in."}),
+                    file=sys.stderr,
+                )
+                return 1
+
             try:
                 client.loop.run_until_complete(
                     client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
@@ -178,7 +195,7 @@ def action_sign_in(args: argparse.Namespace) -> int:
                 print(
                     json.dumps({
                         "status": "password_needed",
-                        "message": "Two-factor authentication (2FA) is enabled. Please enter your 2FA password."
+                        "message": "Two-factor authentication (2FA) is enabled. Please enter your 2FA password.",
                     })
                 )
                 return 0
@@ -196,7 +213,7 @@ def action_sign_in(args: argparse.Namespace) -> int:
                 return 2
 
         print(
-            json.dumps({"status": "error", "message": "No code or password provided via env vars."}),
+            json.dumps({"status": "error", "message": "No verification code or 2FA password provided."}),
             file=sys.stderr,
         )
         return 1
@@ -220,7 +237,8 @@ def action_sign_in(args: argparse.Namespace) -> int:
         )
         return 3
     finally:
-        client.disconnect()
+        disconnect_client(client)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Telegram setup script")
@@ -237,10 +255,11 @@ def main() -> int:
 
     if args.action == "send_code":
         return action_send_code(args)
-    elif args.action == "sign_in":
+    if args.action == "sign_in":
         return action_sign_in(args)
 
     return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

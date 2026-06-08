@@ -26,26 +26,19 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
-    from telethon import TelegramClient
+    from telethon import TelegramClient, utils
     from telethon.errors import (
         FloodWaitError,
         RPCError,
     )
-    from telethon.tl.functions.messages import (
-        GetMessagesRequest,
-        SearchRequest,
-    )
-    from telethon.tl.functions.channels import GetChannelsRequest
-    from telethon.tl.functions.contacts import ResolveUsernameRequest
     from telethon.tl.types import (
         Channel,
         Chat,
         User,
         Message,
-        Document,
-        Photo,
         DocumentAttributeFilename,
     )
 except ImportError:
@@ -80,7 +73,7 @@ def load_config() -> dict:
 
 
 def get_session_path(config: dict) -> Path:
-    """Get the session file path."""
+    """Get the Telethon session base path (without .session suffix)."""
     session_name = config.get("session_name", "telegram_session")
     return Path.home() / ".libragent" / session_name
 
@@ -88,60 +81,112 @@ def get_session_path(config: dict) -> Path:
 # ─── Client Factory ──────────────────────────────────────────────────
 
 def create_client(config: dict) -> TelegramClient:
-    """Create and connect a TelegramClient from config."""
+    """Create a TelegramClient from config."""
     session_path = get_session_path(config)
-    client = TelegramClient(
+    return TelegramClient(
         str(session_path),
         api_id=int(config["api_id"]),
         api_hash=config["api_hash"],
     )
-    return client
+
+
+def disconnect_client(client: TelegramClient) -> None:
+    """Disconnect a Telethon client, supporting sync and async disconnect()."""
+    disconnect = client.disconnect()
+    if disconnect is not None:
+        client.loop.run_until_complete(disconnect)
+
+
+def ensure_authorized(client: TelegramClient) -> bool:
+    """Return True when the client session is authorized."""
+    client.loop.run_until_complete(client.connect())
+    return client.loop.run_until_complete(client.is_user_authorized())
+
+
+def require_chat_arg(args: argparse.Namespace, action: str) -> bool:
+    """Validate that --chat was provided for chat-scoped actions."""
+    if args.chat:
+        return True
+
+    print(
+        json.dumps({"status": "error", "message": f"Missing required argument: --chat is required for {action}."}),
+        file=sys.stderr,
+    )
+    return False
+
+
+def require_query_arg(args: argparse.Namespace) -> bool:
+    """Validate that --query was provided for search_messages."""
+    if args.query:
+        return True
+
+    print(
+        json.dumps({"status": "error", "message": "Missing required argument: --query is required for search_messages."}),
+        file=sys.stderr,
+    )
+    return False
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────
 
-def resolve_chat(client: TelegramClient, chat_identifier: str) -> any:
-    """Resolve a chat identifier (username, ID, or 'me') to a Peer."""
+def resolve_chat(client: TelegramClient, chat_identifier: str) -> Any | None:
+    """Resolve a chat identifier (username, ID, or 'me') to a Telethon entity."""
     if chat_identifier == "me":
         return "me"
 
-    # Try as username
-    if chat_identifier.startswith("@"):
-        username = chat_identifier[1:]
-    else:
-        username = chat_identifier
-
     try:
-        resolved = client.loop.run_until_complete(
-            client(ResolveUsernameRequest(username))
-        )
-        if resolved.users:
-            return resolved.users[0]
-        if resolved.chats:
-            return resolved.chats[0]
+        return client.loop.run_until_complete(client.get_entity(chat_identifier))
+    except (ValueError, TypeError, RPCError):
         return None
     except Exception:
-        pass
+        return None
 
-    # Try as numeric ID
-    try:
-        return int(chat_identifier)
-    except ValueError:
-        pass
 
+async def collect_messages(
+    client: TelegramClient,
+    entity: Any | None,
+    *,
+    limit: int,
+    search: str | None = None,
+    offset_id: int = 0,
+) -> list[Message]:
+    """Collect messages via iter_messages into a list."""
+    messages: list[Message] = []
+    kwargs: dict[str, Any] = {"limit": limit}
+    if search:
+        kwargs["search"] = search
+    if offset_id:
+        kwargs["offset_id"] = offset_id
+
+    async for message in client.iter_messages(entity, **kwargs):
+        if message:
+            messages.append(message)
+
+    return messages
+
+
+def format_sender(msg: Message) -> str | None:
+    """Format a message sender label when entity data is available."""
+    sender = getattr(msg, "sender", None)
+    if isinstance(sender, User):
+        return f"{sender.first_name or ''} {sender.last_name or ''}".strip() or sender.username
+    if isinstance(sender, (Chat, Channel)):
+        return sender.title
+    if msg.sender_id:
+        return str(msg.sender_id)
     return None
 
 
 def format_message(msg: Message) -> dict:
     """Format a Telegram message for output."""
-    result = {
+    result: dict[str, Any] = {
         "id": msg.id,
         "date": msg.date.isoformat() if msg.date else None,
         "text": msg.text if msg.text else "",
         "has_media": bool(msg.media),
+        "from": format_sender(msg),
     }
 
-    # Add file info if media is a document
     if msg.document:
         attr = next(
             (a for a in msg.document.attributes if isinstance(a, DocumentAttributeFilename)),
@@ -151,33 +196,32 @@ def format_message(msg: Message) -> dict:
         result["file_size"] = msg.document.size
         result["mime_type"] = msg.document.mime_type
 
-    # Add photo info
     if msg.photo:
         result["photo"] = True
 
     return result
 
 
-def format_chat(peer) -> dict:
+def format_chat(peer: Any) -> dict:
     """Format a chat/channel/user for output."""
     if isinstance(peer, User):
-        name = f"{peer.first_name} {peer.last_name}".strip()
+        name = f"{peer.first_name or ''} {peer.last_name or ''}".strip()
         return {
-            "id": peer.id,
+            "id": utils.get_peer_id(peer),
             "name": name,
             "type": "private",
             "username": getattr(peer, "username", None),
         }
-    elif isinstance(peer, Chat):
+    if isinstance(peer, Chat):
         return {
-            "id": -peer.id,
+            "id": utils.get_peer_id(peer),
             "name": peer.title,
             "type": "group",
             "member_count": getattr(peer, "participants_count", 0),
         }
-    elif isinstance(peer, Channel):
+    if isinstance(peer, Channel):
         return {
-            "id": -1000000000000 - peer.id if peer.id < 10**12 else -peer.id,
+            "id": utils.get_peer_id(peer),
             "name": peer.title,
             "type": "channel" if not peer.megagroup else "supergroup",
             "subscriber_count": getattr(peer, "subscribers_count", 0),
@@ -190,17 +234,17 @@ def format_chat(peer) -> dict:
 
 def action_send_message(args: argparse.Namespace, config: dict) -> int:
     """Send a message to a chat."""
-    if not args.chat or not args.message:
-        print(
-            json.dumps({"status": "error", "message": "Missing required arguments: --chat and --message are required."}),
-            file=sys.stderr,
-        )
+    if not require_chat_arg(args, "send_message") or not args.message:
+        if not args.message:
+            print(
+                json.dumps({"status": "error", "message": "Missing required argument: --message is required for send_message."}),
+                file=sys.stderr,
+            )
         return 3
 
     client = create_client(config)
     try:
-        client.loop.run_until_complete(client.connect())
-        if not client.loop.run_until_complete(client.is_user_authorized()):
+        if not ensure_authorized(client):
             print(
                 json.dumps({"status": "error", "message": "Not authorized. Run setup first."}),
                 file=sys.stderr,
@@ -232,7 +276,7 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
                 "chat": args.chat,
                 "sent_at": result.date.isoformat() if result.date else None,
                 "attachment": args.file,
-                "file_sent": True
+                "file_sent": True,
             }
         else:
             result = client.loop.run_until_complete(
@@ -267,15 +311,17 @@ def action_send_message(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        disconnect_client(client)
 
 
 def action_get_messages(args: argparse.Namespace, config: dict) -> int:
     """Get recent messages from a chat."""
+    if not require_chat_arg(args, "get_messages"):
+        return 3
+
     client = create_client(config)
     try:
-        client.loop.run_until_complete(client.connect())
-        if not client.loop.run_until_complete(client.is_user_authorized()):
+        if not ensure_authorized(client):
             print(
                 json.dumps({"status": "error", "message": "Not authorized. Run setup first."}),
                 file=sys.stderr,
@@ -290,12 +336,17 @@ def action_get_messages(args: argparse.Namespace, config: dict) -> int:
             )
             return 2
 
-        limit = min(args.limit, 100)  # Telegram API max
+        limit = min(args.limit, 100)
+        offset_id = args.offset_id if args.offset_offset is None else args.offset_offset
         messages = client.loop.run_until_complete(
-            client.get_messages(peer, limit=limit, offset_id=args.offset_offset)
+            collect_messages(
+                client,
+                peer,
+                limit=limit,
+                offset_id=offset_id,
+            )
         )
-
-        msgs = [format_message(m) for m in messages if m]
+        msgs = [format_message(m) for m in messages]
 
         print(
             json.dumps({
@@ -326,15 +377,14 @@ def action_get_messages(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        disconnect_client(client)
 
 
 def action_list_chats(args: argparse.Namespace, config: dict) -> int:
     """List all chats."""
     client = create_client(config)
     try:
-        client.loop.run_until_complete(client.connect())
-        if not client.loop.run_until_complete(client.is_user_authorized()):
+        if not ensure_authorized(client):
             print(
                 json.dumps({"status": "error", "message": "Not authorized. Run setup first."}),
                 file=sys.stderr,
@@ -372,15 +422,17 @@ def action_list_chats(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        disconnect_client(client)
 
 
 def action_search_messages(args: argparse.Namespace, config: dict) -> int:
     """Search messages."""
+    if not require_query_arg(args):
+        return 3
+
     client = create_client(config)
     try:
-        client.loop.run_until_complete(client.connect())
-        if not client.loop.run_until_complete(client.is_user_authorized()):
+        if not ensure_authorized(client):
             print(
                 json.dumps({"status": "error", "message": "Not authorized. Run setup first."}),
                 file=sys.stderr,
@@ -389,23 +441,28 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
 
         limit = min(args.limit, 50)
         peer = resolve_chat(client, args.chat) if args.chat else None
-
-        if peer:
-            messages = client.loop.run_until_complete(
-                client.search(peer, query=args.query, limit=limit)
+        if args.chat and not peer:
+            print(
+                json.dumps({"status": "error", "message": f"Chat not found: {args.chat}"}),
+                file=sys.stderr,
             )
-        else:
-            # Global search across all chats
-            messages = client.loop.run_until_complete(
-                client.search(args.query, limit=limit)
-            )
+            return 2
 
-        msgs = [format_message(m) for m in messages if m]
+        messages = client.loop.run_until_complete(
+            collect_messages(
+                client,
+                peer,
+                limit=limit,
+                search=args.query,
+            )
+        )
+        msgs = [format_message(m) for m in messages]
 
         print(
             json.dumps({
                 "status": "ok",
                 "query": args.query,
+                "chat": args.chat,
                 "count": len(msgs),
                 "messages": msgs,
             })
@@ -431,15 +488,23 @@ def action_search_messages(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        disconnect_client(client)
 
 
 def action_download_file(args: argparse.Namespace, config: dict) -> int:
     """Download a file from a message."""
+    if not require_chat_arg(args, "download_file"):
+        return 3
+    if not args.message_id:
+        print(
+            json.dumps({"status": "error", "message": "Missing required argument: --message_id is required for download_file."}),
+            file=sys.stderr,
+        )
+        return 3
+
     client = create_client(config)
     try:
-        client.loop.run_until_complete(client.connect())
-        if not client.loop.run_until_complete(client.is_user_authorized()):
+        if not ensure_authorized(client):
             print(
                 json.dumps({"status": "error", "message": "Not authorized. Run setup first."}),
                 file=sys.stderr,
@@ -454,7 +519,6 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
             )
             return 2
 
-        # Get the message
         res = client.loop.run_until_complete(
             client.get_messages(peer, ids=args.message_id)
         )
@@ -480,11 +544,9 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
             )
             return 2
 
-        # Determine destination
         dest = Path(args.dest) if args.dest else Path.cwd()
         dest.mkdir(parents=True, exist_ok=True)
 
-        # Get file name
         file_name = "download"
         if msg.document:
             attr = next(
@@ -535,15 +597,17 @@ def action_download_file(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        disconnect_client(client)
 
 
 def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
     """Get chat/channel information."""
+    if not require_chat_arg(args, "get_chat_info"):
+        return 3
+
     client = create_client(config)
     try:
-        client.loop.run_until_complete(client.connect())
-        if not client.loop.run_until_complete(client.is_user_authorized()):
+        if not ensure_authorized(client):
             print(
                 json.dumps({"status": "error", "message": "Not authorized. Run setup first."}),
                 file=sys.stderr,
@@ -560,7 +624,6 @@ def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
 
         chat_info = format_chat(peer)
 
-        # Get recent messages for activity info
         recent = client.loop.run_until_complete(
             client.get_messages(peer, limit=1)
         )
@@ -594,7 +657,7 @@ def action_get_chat_info(args: argparse.Namespace, config: dict) -> int:
         )
         return 1
     finally:
-        client.disconnect()
+        disconnect_client(client)
 
 
 # ─── Main ─────────────────────────────────────────────────────────────
@@ -618,13 +681,23 @@ def main() -> int:
     parser.add_argument("--message", help="Message text (for send_message)")
     parser.add_argument("--query", help="Search query (for search_messages)")
     parser.add_argument("--limit", type=int, default=20, help="Number of messages (default: 20)")
-    parser.add_argument("--offset_offset", type=int, default=0, help="Offset for pagination")
+    parser.add_argument(
+        "--offset_id",
+        type=int,
+        default=0,
+        help="Message ID to paginate from (older messages come before this ID)",
+    )
+    parser.add_argument(
+        "--offset_offset",
+        type=int,
+        default=None,
+        help="Deprecated alias for --offset_id",
+    )
     parser.add_argument("--message_id", type=int, help="Message ID (for download_file)")
     parser.add_argument("--file", help="File path (for send_message)")
     parser.add_argument("--dest", help="Destination path (for download_file)")
 
     args = parser.parse_args()
-
     config = load_config()
 
     actions = {

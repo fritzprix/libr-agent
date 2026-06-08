@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Check LibrAgent Telegram config and session file existence.
+Check LibrAgent Telegram config, session file, and authorization state.
 
 Exit codes:
-  0 — Config exists and session file exists
-  1 — Config or session does not exist (first-time setup needed)
+  0 — Config exists, session file exists, and user is authorized
+  1 — Config/session missing or user is not authorized (setup needed)
   2 — Config exists but is invalid / corrupt (reset needed)
 
 Prints a JSON status object to stdout.
@@ -16,6 +16,37 @@ from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".libragent" / "telegram_config.json"
 REQUIRED_FIELDS = {"api_id", "api_hash", "phone", "session_name"}
+
+
+def get_session_base_path(session_name: str) -> Path:
+    """Return Telethon session base path (without .session suffix)."""
+    return Path.home() / ".libragent" / session_name
+
+
+def check_authorization(cfg: dict) -> tuple[bool, str | None]:
+    """
+    Verify the Telethon session is authorized.
+
+    Returns (authorized, error_message).
+    """
+    try:
+        from telethon import TelegramClient
+    except ImportError:
+        return False, "telethon is not installed. Run: pip3 install telethon"
+
+    session_path = get_session_base_path(cfg["session_name"])
+    client = TelegramClient(str(session_path), int(cfg["api_id"]), cfg["api_hash"])
+
+    try:
+        client.loop.run_until_complete(client.connect())
+        authorized = client.loop.run_until_complete(client.is_user_authorized())
+        return authorized, None
+    except Exception as exc:
+        return False, f"Failed to verify Telegram session: {exc}"
+    finally:
+        disconnect = client.disconnect()
+        if disconnect is not None:
+            client.loop.run_until_complete(disconnect)
 
 
 def main() -> int:
@@ -76,7 +107,7 @@ def main() -> int:
             return 2
 
     # --- Check session file existence ---
-    session_file = Path.home() / ".libragent" / f"{cfg['session_name']}.session"
+    session_file = get_session_base_path(cfg["session_name"]).with_suffix(".session")
     if not session_file.exists():
         print(
             json.dumps(
@@ -89,14 +120,39 @@ def main() -> int:
         )
         return 1
 
-    # --- All good ---
+    # --- Verify Telethon authorization ---
+    authorized, auth_error = check_authorization(cfg)
+    if auth_error:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": auth_error,
+                    "action": "setup",
+                }
+            )
+        )
+        return 1
+
+    if not authorized:
+        print(
+            json.dumps(
+                {
+                    "status": "unauthorized",
+                    "message": "Session file exists but is not authorized. Complete Step 2 sign_in (verification code and 2FA if needed).",
+                    "action": "setup",
+                }
+            )
+        )
+        return 1
+
     print(
         json.dumps(
             {
                 "status": "ok",
                 "phone": cfg["phone"],
                 "session_name": cfg["session_name"],
-                "message": "Config and session are valid.",
+                "message": "Config, session, and authorization are valid.",
             }
         )
     )
