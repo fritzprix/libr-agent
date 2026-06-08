@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::mcp::builtin::workspace::StdinDelivery;
 use crate::session_isolation::types::ShellType;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
@@ -456,21 +457,36 @@ impl PersistentShell {
     /// # Arguments
     /// * `command` - Shell command to execute
     /// * `user_input` - Input to inject via stdin
+    /// * `stdin_delivery` - Whether input is for the host shell or a child process
     ///
     /// # Returns
     /// Tuple of (stdout, stderr, exit_code, cwd)
     ///
     /// # Security
-    /// Input is passed via stdin pipe, not visible in process command line
+    /// Host delivery keeps secrets off the command line. Child delivery pipes input into the command.
     pub async fn execute_with_input(
         &mut self,
         command: &str,
         user_input: &str,
+        stdin_delivery: StdinDelivery,
     ) -> Result<(String, String, i32, String)> {
+        #[cfg(windows)]
+        if stdin_delivery == StdinDelivery::Child {
+            let piped_command = format!(
+                "{} | {command}",
+                format_powershell_stdin_literal(user_input)
+            );
+            debug!(
+                "Executing child-stdin piped command in session {}: {}",
+                self.session_id, piped_command
+            );
+            return self.execute(&piped_command).await;
+        }
+
         let sentinel = generate_sentinel();
 
         debug!(
-            "Executing command with input in session {}: {}",
+            "Executing command with host stdin in session {}: {}",
             self.session_id, command
         );
 
@@ -553,6 +569,21 @@ impl PersistentShell {
         self.child.kill().await?;
         Ok(())
     }
+}
+
+/// Format user input as a PowerShell literal suitable for piping into a child process.
+#[cfg(windows)]
+fn format_powershell_stdin_literal(value: &str) -> String {
+    if !value.contains('\n') && !value.contains('\r') {
+        return format!("'{}'", value.replace('\'', "''"));
+    }
+
+    let mut delimiter = "LIBRAGENT_INPUT_EOF".to_string();
+    while value.contains(&delimiter) {
+        delimiter.push('_');
+    }
+
+    format!("@'{delimiter}'\n{value}\n{delimiter}")
 }
 
 impl Drop for PersistentShell {

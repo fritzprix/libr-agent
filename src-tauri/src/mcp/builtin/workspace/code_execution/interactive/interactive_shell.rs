@@ -77,6 +77,7 @@ impl WorkspaceServer {
         };
 
         let (prompt, input_type) = self.get_prompt_config(command, args);
+        let stdin_delivery = validation::resolve_stdin_delivery(command, args);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
         let pending = PendingShellExecution {
@@ -89,6 +90,7 @@ impl WorkspaceServer {
             created_at: chrono::Utc::now(),
             prompt: prompt.clone(),
             input_type,
+            stdin_delivery,
             response_tx: Some(response_tx),
         };
 

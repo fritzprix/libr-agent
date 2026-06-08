@@ -27,7 +27,8 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 
 - **NEVER** ask for 2FA password, verification codes, or other transient secrets in chat
 - **NEVER** display or repeat the contents of `~/.libragent/telegram_config.json`
-- Collect transient secrets (verification codes, 2FA passwords) exclusively through interactive hidden shell prompts (`requireUserInput=true`)
+- Collect transient secrets (verification codes, 2FA passwords) exclusively through `requireUserInput=true` shell prompts — never in chat
+- For verification codes and 2FA, prefer `requireUserInput=true` with `python setup.py --code-stdin` / `--password-stdin` (LibrAgent auto-pipes UI input to child stdin on Windows when these flags are present)
 - **ALWAYS** use `setup.py` to persist credentials and session
 - If the user accidentally pastes a password or code in chat, acknowledge receipt, do NOT echo it back, and immediately run setup to store it properly
 
@@ -63,8 +64,9 @@ python "<skill-base-dir>/scripts/check_config.py"
 ```
 
 - Exit code `0` with `"status": "ok"` → configured and authorized, proceed to Step 3
-- Exit code `1` → missing config/session or not authorized (`missing`, `missing_session`, `unauthorized`), go to Step 2
+- Exit code `1` → missing config/session or not authorized (`missing`, `missing_session`, `unauthorized`, `auth_restart_needed`), go to Step 2
 - Exit code `2` → config exists but is incomplete/corrupt, go to Step 2 to reconfigure/overwrite it
+- `"status": "auth_restart_needed"` → delete `~/.libragent/telegram_session.session` and restart from Step A (`send_code`)
 
 ---
 
@@ -86,8 +88,6 @@ If the user doesn't have API credentials, guide them to:
 
 ### 2.2: Two-Step Authentication Flow
 
-Use the stdin redirection pattern with workspace interactive prompts (no environment variables needed):
-
 #### 1. Collect API credentials in chat
 
 Ask the user for:
@@ -107,9 +107,9 @@ python "<skill-base-dir>/scripts/setup.py" `
   --action send_code
 ```
 
-This will output a confirmation JSON indicating that the SMS code was sent.
+This outputs a JSON confirmation that the code was sent. On `AuthRestartError`, the script clears the partial session and retries once. If it still fails, you get `"status": "auth_restart_needed"` — run `send_code` again.
 
-**Step B — Sign in with code (Interactive):**
+**Step B — Sign in with verification code:**
 
 Execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
 
@@ -122,11 +122,15 @@ Execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
   python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-stdin
   ```
 
-If this returns a successful auth JSON, the configuration is complete.
+LibrAgent auto-detects `--code-stdin` and pipes the UI input into Python stdin (`stdinDelivery=child`).
 
-**Step C — Handle 2FA (if prompted):**
+**Fallback** if piping is unavailable on an older build:
 
-If Step B returns a status of `"password_needed"`, execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
+```powershell
+$code = Read-Host; python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-value $code
+```
+
+**Step C — Handle 2FA (if Step B returns `"password_needed"`):**
 
 - `requireUserInput=true`
 - `inputType=password`
@@ -137,7 +141,7 @@ If Step B returns a status of `"password_needed"`, execute `runInPersistentShell
   python "<skill-base-dir>/scripts/setup.py" --action sign_in --password-stdin
   ```
 
-After successful setup, proceed to Step 3 with the original user request.
+After successful setup, re-run `check_config.py` to confirm `"status": "ok"`, then proceed to Step 3.
 
 ---
 
@@ -195,10 +199,10 @@ Use when: "텔레그램 채팅 목록", "텔레그램 채널 확인", "list tele
 
 ### Action: `search_messages` — Search messages
 
-```bash
-python "<skill-base-dir>/scripts/telegram_cli.py" --action search_messages \
-  --query "검색어" \
-  [--limit N] \
+```powershell
+python "<skill-base-dir>/scripts/telegram_cli.py" --action search_messages `
+  --query "검색어" `
+  [--limit N] `
   [--chat "<chat_id_or_username>"]
 ```
 
@@ -208,10 +212,10 @@ Use when: "텔레그램에서 ~ 검색", "search telegram"
 
 ### Action: `download_file` — Download a file from a message
 
-```bash
-python "<skill-base-dir>/scripts/telegram_cli.py" --action download_file \
-  --chat "<chat_id_or_username>" \
-  --message_id N \
+```powershell
+python "<skill-base-dir>/scripts/telegram_cli.py" --action download_file `
+  --chat "<chat_id_or_username>" `
+  --message_id N `
   [--dest "/path/to/destination"]
 ```
 
@@ -245,7 +249,10 @@ Use when: "텔레그램 채널 정보", "get telegram channel info"
 | Error                | Cause                         | Action                                            |
 | -------------------- | ----------------------------- | ------------------------------------------------- |
 | Auth required        | Session expired or invalid    | Re-run Step 2's authentication flow               |
+| `auth_restart_needed`| Telegram auth state corrupted | Delete session file, run `send_code` again        |
 | Unauthorized session | `send_code` only, no sign_in  | Complete Step B/C (`sign_in`)                       |
+| ambiguous `--code`   | Old docs used `--code`        | Use `--code-value`, `--code-env`, or `--code-stdin` |
+| stdin not received   | Old builds on Windows       | Upgrade LibrAgent or use Read-Host + `--code-value` fallback |
 | FloodWait            | Rate limited by Telegram      | Wait and retry after the specified seconds        |
 | Chat not found       | Invalid chat ID/username      | Confirm chat identifier with user                 |
 | File download failed | File size limit or permission | Check file size, try alternative download method  |

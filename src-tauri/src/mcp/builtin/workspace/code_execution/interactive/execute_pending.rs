@@ -135,6 +135,7 @@ impl WorkspaceServer {
                 workspace_path.clone(),
                 &normalized_command,
                 &user_input,
+                pending.stdin_delivery,
             ),
         )
         .await;
