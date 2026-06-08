@@ -141,19 +141,18 @@ pub async fn list_assistants(
             let has_more = (offset + limit) < total_count;
 
             // Format list for AI readability
-            let assistants_text = assistants
-                .iter()
-                .map(|a| {
-                    let description = extract_assistant_description(&a["config"]);
-                    format!(
-                        "• {} [ID: {}]\n  Description: {}",
-                        a["name"].as_str().unwrap_or("?"),
-                        a["id"].as_str().unwrap_or("?"),
-                        description
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n");
+            let mut assistants_text_lines = vec![
+                "| Name | ID | Description |".to_string(),
+                "|---|---|---|".to_string(),
+            ];
+
+            for a in &assistants {
+                let name = a["name"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
+                let id = a["id"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
+                let description = extract_assistant_description(&a["config"]).replace('|', "\\|").replace('\n', " ");
+                assistants_text_lines.push(format!("| {} | `{}` | {} |", name, id, description));
+            }
+            let assistants_text = assistants_text_lines.join("\n");
 
             let hint = SuccessHint::new(
                 if has_more {
@@ -264,17 +263,17 @@ pub async fn search_assistant(
                 .collect();
 
             // Format list for AI readability
-            let assistants_text = assistants
-                .iter()
-                .map(|a| {
-                    format!(
-                        "• {} [ID: {}]",
-                        a["name"].as_str().unwrap_or("?"),
-                        a["id"].as_str().unwrap_or("?")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
+            let mut assistants_text_lines = vec![
+                "| Name | ID |".to_string(),
+                "|---|---|".to_string(),
+            ];
+
+            for a in &assistants {
+                let name = a["name"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
+                let id = a["id"].as_str().unwrap_or("?").replace('|', "\\|").replace('\n', " ");
+                assistants_text_lines.push(format!("| {} | `{}` |", name, id));
+            }
+            let assistants_text = assistants_text_lines.join("\n");
 
             let hint = SuccessHint::new(
                 format!(
