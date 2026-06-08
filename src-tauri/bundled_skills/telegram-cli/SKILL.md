@@ -3,7 +3,7 @@ name: telegram-cli
 description: |
   Python CLI wrapper for Telegram interaction using Telethon (MTProto protocol).
   Use when the user wants to: (1) send messages, (2) read messages from chats/channels/groups,
-  (3) list chats, (4) download files, (5) search messages, or (6) manage Telegram account.
+  (3) list chats, (4) download files, or (5) search messages.
   On first use, guide the user through authentication (API ID/Hash → phone → code → 2FA password).
   Store session and config in ~/.libragent/telegram_config.json.
   Subsequent requests use the stored session without re-authentication.
@@ -19,8 +19,8 @@ Enables the agent to interact with Telegram on behalf of the user via Telethon (
 Paths in this skill are relative to the directory containing this `SKILL.md`, not to the workspace root or the shell's current `./`.
 
 - Scripts in this skill use paths like `scripts/...`
-- Reference material in this skill uses paths like `references/...`
 - When a command below says `python scripts/...`, resolve that script path against the skill's absolute Base Directory
+- On Linux/macOS, use `python3` if `python` is unavailable
 - In command examples below, replace `<skill-base-dir>` with the skill's actual absolute Base Directory
 
 ## ⚠️ Security Rules (Mandatory)
@@ -62,8 +62,8 @@ Always start by checking if the account is configured:
 python "<skill-base-dir>/scripts/check_config.py"
 ```
 
-- Exit code `0` → configured, proceed to Step 3
-- Exit code `1` → not configured, go to Step 2
+- Exit code `0` with `"status": "ok"` → configured and authorized, proceed to Step 3
+- Exit code `1` → missing config/session or not authorized (`missing`, `missing_session`, `unauthorized`), go to Step 2
 - Exit code `2` → config exists but is incomplete/corrupt, go to Step 2 to reconfigure/overwrite it
 
 ---
@@ -99,11 +99,11 @@ Ask the user for:
 
 **Step A — Send verification code:**
 
-```bash
-python "<skill-base-dir>/scripts/setup.py" \
-  --api-id 12345678 \
-  --api-hash "abcdef0123456789..." \
-  --phone "+821012345678" \
+```powershell
+python "<skill-base-dir>/scripts/setup.py" `
+  --api-id 12345678 `
+  --api-hash "abcdef0123456789..." `
+  --phone "+821012345678" `
   --action send_code
 ```
 
@@ -112,11 +112,13 @@ This will output a confirmation JSON indicating that the SMS code was sent.
 **Step B — Sign in with code (Interactive):**
 
 Execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
-* `requireUserInput=true`
-* `inputType=text`
-* `inputPrompt=텔레그램 인증 코드를 입력하세요:`
-* Command:
-  ```bash
+
+- `requireUserInput=true`
+- `inputType=text`
+- `inputPrompt=텔레그램 인증 코드를 입력하세요:`
+- Command:
+
+  ```powershell
   python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-stdin
   ```
 
@@ -125,11 +127,13 @@ If this returns a successful auth JSON, the configuration is complete.
 **Step C — Handle 2FA (if prompted):**
 
 If Step B returns a status of `"password_needed"`, execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
-* `requireUserInput=true`
-* `inputType=password`
-* `inputPrompt=텔레그램 2FA 비밀번호를 입력하세요:`
-* Command:
-  ```bash
+
+- `requireUserInput=true`
+- `inputType=password`
+- `inputPrompt=텔레그램 2FA 비밀번호를 입력하세요:`
+- Command:
+
+  ```powershell
   python "<skill-base-dir>/scripts/setup.py" --action sign_in --password-stdin
   ```
 
@@ -143,10 +147,10 @@ Classify the user's request into one of six actions and call `telegram_cli.py`:
 
 ### Action: `send_message` — Send a message
 
-```bash
-python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message \
-  --chat "<chat_id_or_username>" \
-  --message "메시지 내용" \
+```powershell
+python "<skill-base-dir>/scripts/telegram_cli.py" --action send_message `
+  --chat "<chat_id_or_username>" `
+  --message "메시지 내용" `
   [--file "/path/to/attachment"]
 ```
 
@@ -164,16 +168,18 @@ For media files, include `--file` with the absolute path.
 
 ### Action: `get_messages` — Read recent messages
 
-```bash
-python "<skill-base-dir>/scripts/telegram_cli.py" --action get_messages \
-  --chat "<chat_id_or_username>" \
-  [--limit N] \
-  [--offset_offset N]
+```powershell
+python "<skill-base-dir>/scripts/telegram_cli.py" --action get_messages `
+  --chat "<chat_id_or_username>" `
+  [--limit N] `
+  [--offset_id N]
 ```
 
 Use when: "텔레그램 확인", "텔레그램 메시지 보여줘", "read telegram"
 
-Default: `--limit 20 --offset_offset 0`
+Default: `--limit 20 --offset_id 0`
+
+`--offset_id` is the message ID to paginate from (older messages appear before that ID). `--offset_offset` remains supported as a deprecated alias.
 
 ---
 
@@ -239,6 +245,7 @@ Use when: "텔레그램 채널 정보", "get telegram channel info"
 | Error                | Cause                         | Action                                            |
 | -------------------- | ----------------------------- | ------------------------------------------------- |
 | Auth required        | Session expired or invalid    | Re-run Step 2's authentication flow               |
+| Unauthorized session | `send_code` only, no sign_in  | Complete Step B/C (`sign_in`)                       |
 | FloodWait            | Rate limited by Telegram      | Wait and retry after the specified seconds        |
 | Chat not found       | Invalid chat ID/username      | Confirm chat identifier with user                 |
 | File download failed | File size limit or permission | Check file size, try alternative download method  |
