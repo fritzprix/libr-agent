@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.8] - 2026-06-08
+
+### 🚀 Features
+
+- **MCP Stdio Channel Notifications**: Added a native stdio channel notification pipeline so external MCP servers can push channel events into agent sessions with tighter session-isolated transport handling.
+
+### 🐛 Fixes
+
+- **Telegram CLI Skill**: Fixed `check_config` reporting success before sign-in completed by verifying Telethon authorization, repaired broken message search (`iter_messages` instead of removed `client.search`), and hardened chat resolution plus required argument validation.
+
+### 🔧 Internal
+
+- **Telegram CLI Skill**: Consolidated on bundled `telegram-cli` only (removed duplicate `.agents/skills` copy), dropped obsolete `PLAN.md`, refreshed SKILL.md for PowerShell and unauthorized-session handling, and added `.force_update` to refresh managed system skill copies on app start.
+
 ## [0.8.7] - 2026-06-07
 
 ### 🚀 Features
