@@ -13,12 +13,21 @@ This skill provides a unified, deterministic workflow for converting various doc
 - **Media**: Images (EXIF metadata and OCR), Audio (Speech transcription)
 - **Archives**: ZIP files
 
-## Required Tools
+## Dependency Check
 
-Ensure the markitdown library is installed in your Python environment:
+Before converting, verify markitdown is available:
+
 ```bash
-pip install "markitdown[all]"
+python -c "import markitdown" 2>/dev/null || pip install "markitdown[all]"
 ```
+
+On Windows PowerShell:
+
+```powershell
+python -c "import markitdown" 2>$null; if ($LASTEXITCODE -ne 0) { pip install "markitdown[all]" }
+```
+
+If installation fails, report the error and stop—do not attempt manual binary parsing.
 
 ## Conversion Workflow
 

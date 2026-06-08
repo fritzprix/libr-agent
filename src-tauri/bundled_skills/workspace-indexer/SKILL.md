@@ -9,6 +9,8 @@ description: |
 
 # Workspace Indexer
 
+> **Not this skill**: Wiki linking, catalog.json, backlinks, and `[[slug]]` management → use **repo-wiki**.
+
 ## Overview
 
 This skill provides two core capabilities:
