@@ -92,7 +92,5 @@ pub fn spawn_session_channel_dispatch_task(
 /// Drains channel events without touching the global agent manager.
 /// Useful in tests that exercise stdio transport but not agent injection.
 pub fn spawn_channel_event_drain(mut event_rx: ChannelEventReceiver) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        while event_rx.recv().await.is_some() {}
-    })
+    tokio::spawn(async move { while event_rx.recv().await.is_some() {} })
 }
