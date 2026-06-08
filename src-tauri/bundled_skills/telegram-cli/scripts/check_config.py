@@ -31,6 +31,7 @@ def check_authorization(cfg: dict) -> tuple[bool, str | None]:
     """
     try:
         from telethon import TelegramClient
+        from telethon.errors import AuthRestartError
     except ImportError:
         return False, "telethon is not installed. Run: pip3 install telethon"
 
@@ -41,6 +42,8 @@ def check_authorization(cfg: dict) -> tuple[bool, str | None]:
         client.loop.run_until_complete(client.connect())
         authorized = client.loop.run_until_complete(client.is_user_authorized())
         return authorized, None
+    except AuthRestartError:
+        return False, "auth_restart_needed"
     except Exception as exc:
         return False, f"Failed to verify Telegram session: {exc}"
     finally:
@@ -122,6 +125,21 @@ def main() -> int:
 
     # --- Verify Telethon authorization ---
     authorized, auth_error = check_authorization(cfg)
+    if auth_error == "auth_restart_needed":
+        print(
+            json.dumps(
+                {
+                    "status": "auth_restart_needed",
+                    "message": (
+                        "Telegram requires restarting authentication. "
+                        "Delete ~/.libragent/telegram_session.session and run send_code again."
+                    ),
+                    "action": "reset",
+                }
+            )
+        )
+        return 1
+
     if auth_error:
         print(
             json.dumps(

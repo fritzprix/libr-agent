@@ -1,3 +1,6 @@
+use crate::mcp::builtin::workspace::StdinDelivery;
+use serde_json::Value;
+
 /// Detect commands that commonly require interactive input
 ///
 /// This function checks for patterns indicating a command will wait for user input,
@@ -205,6 +208,46 @@ pub fn detect_privilege_escalation(_command: &str) -> bool {
     false
 }
 
+/// Resolve how interactive user input should be delivered to a shell command.
+pub fn resolve_stdin_delivery(command: &str, args: &Value) -> StdinDelivery {
+    if let Some(explicit) = args
+        .get("stdinDelivery")
+        .or_else(|| args.get("stdin_delivery"))
+        .and_then(|value| value.as_str())
+    {
+        return match explicit.to_ascii_lowercase().as_str() {
+            "child" => StdinDelivery::Child,
+            _ => StdinDelivery::Host,
+        };
+    }
+
+    let cmd_lower = command.to_ascii_lowercase();
+
+    if cmd_lower.contains("read-host") || cmd_lower.contains("get-credential") {
+        return StdinDelivery::Host;
+    }
+
+    #[cfg(unix)]
+    if detect_privilege_escalation(command) {
+        return StdinDelivery::Host;
+    }
+
+    if command.contains("--code-stdin")
+        || command.contains("--password-stdin")
+        || cmd_lower.contains(" --stdin")
+        || cmd_lower.ends_with(" --stdin")
+    {
+        return StdinDelivery::Child;
+    }
+
+    #[cfg(unix)]
+    if command.trim() == "cat" {
+        return StdinDelivery::Child;
+    }
+
+    StdinDelivery::Host
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +306,36 @@ mod tests {
         assert!(!is_likely_interactive_command("python script.py"));
         assert!(!is_likely_interactive_command("node index.js"));
         assert!(!is_likely_interactive_command("cargo test"));
+    }
+
+    #[test]
+    fn test_resolve_stdin_delivery_auto_detects_child_stdin_flags() {
+        let args = Value::Object(Default::default());
+        assert_eq!(
+            resolve_stdin_delivery("python setup.py --action sign_in --code-stdin", &args),
+            StdinDelivery::Child
+        );
+        assert_eq!(
+            resolve_stdin_delivery("python setup.py --action sign_in --password-stdin", &args),
+            StdinDelivery::Child
+        );
+    }
+
+    #[test]
+    fn test_resolve_stdin_delivery_prefers_host_for_read_host() {
+        let args = Value::Object(Default::default());
+        assert_eq!(
+            resolve_stdin_delivery("$code = Read-Host; python setup.py --code-stdin", &args),
+            StdinDelivery::Host
+        );
+    }
+
+    #[test]
+    fn test_resolve_stdin_delivery_honors_explicit_override() {
+        let args = serde_json::json!({ "stdinDelivery": "child" });
+        assert_eq!(
+            resolve_stdin_delivery("$env:LIBRAGENT_TELEGRAM_CODE = Read-Host", &args),
+            StdinDelivery::Child
+        );
     }
 }
