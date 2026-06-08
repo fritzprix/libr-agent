@@ -1,0 +1,3 @@
+## 2025-02-12 - Missing Focus Indicators on Interactive Cards
+**Learning:** Found a pattern where interactive cards (`<button>` tags visually styled as cards, like `KnowledgeListItemCard`) relied exclusively on hover styles (`hover:bg-muted/30`) but lacked dedicated focus styles for keyboard users. This makes tabbing through lists of complex cards inaccessible since users cannot tell which card is active.
+**Action:** Always append explicit `focus-visible` ring utilities (`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`) to any `button` component acting as a clickable card to ensure keyboard navigation remains visibly tracked.

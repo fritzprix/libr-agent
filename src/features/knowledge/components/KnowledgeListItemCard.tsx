@@ -26,7 +26,7 @@ export const KnowledgeListItemCard = memo(function KnowledgeListItemCard({
     <button
       type="button"
       onClick={() => onSelect(item.id)}
-      className={`min-h-[220px] w-full rounded-2xl border p-4 text-left shadow-sm transition-all ${
+      className={`min-h-[220px] w-full rounded-2xl border p-4 text-left shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 ${
         isActive
           ? 'border-primary/70 bg-primary/5 shadow-primary/5'
           : 'border-border/60 bg-card/80 hover:border-border hover:bg-muted/30'
