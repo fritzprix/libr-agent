@@ -1,6 +1,4 @@
-#[cfg(unix)]
-use std::ffi::OsStr;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 #[cfg(unix)]
 use std::io::IsTerminal;
 use std::process::Command as StdCommand;
@@ -84,7 +82,6 @@ fn default_path() -> &'static str {
     }
 }
 
-#[cfg(unix)]
 fn merge_path_values(preferred: &OsStr, fallback: &OsStr) -> Option<OsString> {
     let mut merged = Vec::new();
 
@@ -104,6 +101,21 @@ fn merge_path_values(preferred: &OsStr, fallback: &OsStr) -> Option<OsString> {
     }
 }
 
+// Discovered/shell paths are prepended so user-local tool dirs (e.g. Python Scripts)
+// win over WindowsApps shims. Host PATH entries still follow and remain reachable.
+fn merge_with_current_path(preferred: OsString, current_path: Option<OsString>) -> OsString {
+    let merged = current_path
+        .as_ref()
+        .and_then(|current| merge_path_values(preferred.as_os_str(), current.as_os_str()))
+        .unwrap_or(preferred);
+
+    if merged.is_empty() {
+        OsString::from(default_path())
+    } else {
+        merged
+    }
+}
+
 pub fn get_effective_path_os() -> OsString {
     let current_path = std::env::var_os("PATH");
 
@@ -111,15 +123,16 @@ pub fn get_effective_path_os() -> OsString {
     {
         let shell_path = get_unix_shell_path();
         if !shell_path.is_empty() {
-            let preferred = OsString::from(shell_path);
-            let merged = current_path
-                .as_ref()
-                .and_then(|current| merge_path_values(preferred.as_os_str(), current.as_os_str()))
-                .unwrap_or(preferred);
+            return merge_with_current_path(OsString::from(shell_path), current_path);
+        }
+    }
 
-            if !merged.is_empty() {
-                return merged;
-            }
+    #[cfg(windows)]
+    {
+        if let Some(discovered) =
+            crate::utils::windows_path_discovery::get_windows_discovered_path_os()
+        {
+            return merge_with_current_path(discovered, current_path);
         }
     }
 
@@ -239,7 +252,6 @@ mod tests {
         assert!(isolated.iter().all(|(k, _)| k != "XDG_RUNTIME_DIR"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn test_merge_path_values_deduplicates_and_preserves_order() {
         let merged = merge_path_values(
