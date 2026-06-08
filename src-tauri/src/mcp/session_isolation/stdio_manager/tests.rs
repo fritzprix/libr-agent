@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-fn create_test_channel_event_tx() -> crate::mcp::session_isolation::channel_events::ChannelEventSender {
+fn create_test_channel_event_tx(
+) -> crate::mcp::session_isolation::channel_events::ChannelEventSender {
     crate::mcp::session_isolation::channel_events::create_detached_channel_event_sender()
 }
 
