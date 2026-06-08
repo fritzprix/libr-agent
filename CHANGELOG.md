@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🚀 Features
+
+- **Agent Init Bundled Skill**: Ship `agent-init` exclusively via `src-tauri/bundled_skills` so managed `system_skills` copies refresh on app start; generates tailored `agents.md` / `AGENTS.md` guidance from code, docs, or mixed workspaces.
+
+### 🔧 Internal
+
+- **Agent Init Skill**: Removed duplicate `.agents/skills/agent-init` copy and synced formatted SKILL.md into the bundled layer with `.force_update`.
+
 ## [0.8.8] - 2026-06-08
 
 ### 🚀 Features
