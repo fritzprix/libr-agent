@@ -145,6 +145,7 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn resolve_conda_sh_path_maps_exe_to_profile_script() {
         let conda_exe = PathBuf::from("/opt/miniconda3/bin/conda");

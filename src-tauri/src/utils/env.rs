@@ -1,4 +1,6 @@
 use std::ffi::{OsStr, OsString};
+#[cfg(unix)]
+use std::io::IsTerminal;
 use std::process::Command as StdCommand;
 #[cfg(unix)]
 use std::sync::OnceLock;
@@ -48,8 +50,10 @@ fn probe_unix_shell_path() -> String {
 
     let fallback_args: &[&[&str]] = if is_cargo_test {
         &[&["-l", "-c"]]
-    } else {
+    } else if std::io::stdin().is_terminal() {
         &[&["-l", "-i", "-c"], &["-l", "-c"]]
+    } else {
+        &[&["-l", "-c"]]
     };
 
     for args in fallback_args {
