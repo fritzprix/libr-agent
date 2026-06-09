@@ -102,24 +102,28 @@ export class OpenRouterService extends OpenAIService {
       logger.info('Fetching models from OpenRouter public metadata API');
       const models = await fetchOpenRouterModels();
 
-      const result: ModelInfo[] = Array.from(models.values()).map((m) => ({
-        id: m.id,
-        name: m.name,
-        contextWindow: m.context_length ?? 4096,
-        supportReasoning:
-          m.supported_parameters.includes('reasoning') ||
-          !!m.pricing.internal_reasoning,
-        supportTools: m.supported_parameters.includes('tools'),
-        supportStreaming:
-          m.supported_parameters.includes('stream') ||
-          m.supported_parameters.includes('streaming'),
-        cost: {
-          // OpenRouter pricing is per-token; convert to per-million for ModelInfo
-          input: parseFloat(m.pricing.prompt ?? '0') * 1_000_000,
-          output: parseFloat(m.pricing.completion ?? '0') * 1_000_000,
-        },
-        description: m.description || m.name,
-      }));
+      // ⚡ Bolt: Replace Array.from().map() with a single-pass loop over the iterator to avoid intermediate array allocations.
+      const result: ModelInfo[] = [];
+      for (const m of models.values()) {
+        result.push({
+          id: m.id,
+          name: m.name,
+          contextWindow: m.context_length ?? 4096,
+          supportReasoning:
+            m.supported_parameters.includes('reasoning') ||
+            !!m.pricing.internal_reasoning,
+          supportTools: m.supported_parameters.includes('tools'),
+          supportStreaming:
+            m.supported_parameters.includes('stream') ||
+            m.supported_parameters.includes('streaming'),
+          cost: {
+            // OpenRouter pricing is per-token; convert to per-million for ModelInfo
+            input: parseFloat(m.pricing.prompt ?? '0') * 1_000_000,
+            output: parseFloat(m.pricing.completion ?? '0') * 1_000_000,
+          },
+          description: m.description || m.name,
+        });
+      }
 
       logger.info(`OpenRouter: ${result.length} models available`);
       return result;
