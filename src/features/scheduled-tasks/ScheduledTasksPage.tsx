@@ -128,56 +128,70 @@ export function ScheduledTasksPage() {
 
   if (loading) {
     return (
-      <div
-        className="flex flex-col gap-6 p-6 max-w-3xl mx-auto"
-        role="status"
-        aria-busy="true"
-      >
-        <span className="sr-only">{t('common.loading')}</span>
-        <div className="flex items-center justify-between" aria-hidden="true">
-          <div>
-            <Skeleton className="h-7 w-48 mb-1" />
-            <Skeleton className="h-4 w-64" />
+      <div className="flex h-full flex-col bg-background p-6">
+        <div
+          className="mx-auto flex h-full w-full max-w-3xl flex-col"
+          role="status"
+          aria-busy="true"
+        >
+          <span className="sr-only">{t('common.loading')}</span>
+          <div
+            className="mb-6 flex items-center justify-between"
+            aria-hidden="true"
+          >
+            <div>
+              <Skeleton className="mb-1 h-7 w-48" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+            <Skeleton className="h-9 w-24" />
           </div>
-          <Skeleton className="h-9 w-24" />
-        </div>
-        <div className="flex flex-col gap-3" aria-hidden="true">
-          <Skeleton className="h-24 w-full rounded-lg" />
-          <Skeleton className="h-24 w-full rounded-lg" />
-          <Skeleton className="h-24 w-full rounded-lg" />
+          <div
+            className="min-h-0 flex-1 overflow-y-auto pr-2 pb-4"
+            aria-hidden="true"
+          >
+            <Skeleton className="h-24 w-full rounded-lg" />
+            <Skeleton className="mt-3 h-24 w-full rounded-lg" />
+            <Skeleton className="mt-3 h-24 w-full rounded-lg" />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">{t('scheduledTasks.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {t('scheduledTasks.subtitle')}
-          </p>
+    <div className="flex h-full flex-col bg-background p-6">
+      <div className="mx-auto flex h-full w-full max-w-3xl flex-col">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold">
+              {t('scheduledTasks.title')}
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {t('scheduledTasks.subtitle')}
+            </p>
+          </div>
+          <Button onClick={openCreate} size="sm">
+            <Plus className="mr-1 h-4 w-4" />
+            {t('scheduledTasks.newTask')}
+          </Button>
         </div>
-        <Button onClick={openCreate} size="sm">
-          <Plus className="w-4 h-4 mr-1" />
-          {t('scheduledTasks.newTask')}
-        </Button>
-      </div>
 
-      <ScheduledTasksContent
-        enabledTaskCount={enabledTaskCount}
-        formatNextRun={formatNextRun}
-        groupedSections={groupedSections}
-        onCreate={openCreate}
-        onDelete={handleDelete}
-        onEdit={openEdit}
-        onToggle={handleToggle}
-        personalTasks={personalTasks}
-        tasks={tasks}
-        deletingIds={deletingIds}
-        togglingIds={togglingIds}
-      />
+        <div className="min-h-0 flex-1 overflow-y-auto pr-2 pb-4">
+          <ScheduledTasksContent
+            enabledTaskCount={enabledTaskCount}
+            formatNextRun={formatNextRun}
+            groupedSections={groupedSections}
+            onCreate={openCreate}
+            onDelete={handleDelete}
+            onEdit={openEdit}
+            onToggle={handleToggle}
+            personalTasks={personalTasks}
+            tasks={tasks}
+            deletingIds={deletingIds}
+            togglingIds={togglingIds}
+          />
+        </div>
+      </div>
 
       <ScheduledTaskModal
         open={modalOpen}

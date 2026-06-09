@@ -1,3 +1,4 @@
+mod bootstrap;
 pub mod manager;
 pub mod session;
 

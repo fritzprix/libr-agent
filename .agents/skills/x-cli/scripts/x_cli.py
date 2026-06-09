@@ -193,11 +193,16 @@ async def run_cli(args) -> int:
                 media_id = await client.upload_media(str(media_path))
                 media_ids.append(media_id)
             
-            tweet = await client.create_tweet(text=args.message, media_ids=media_ids if media_ids else None)
+            tweet = await client.create_tweet(
+                text=args.message,
+                media_ids=media_ids if media_ids else None,
+                reply_to=args.reply_to,
+            )
             print(json.dumps({
                 "status": "ok",
                 "tweet_id": tweet.id,
-                "message": "Tweet posted successfully."
+                "reply_to": args.reply_to,
+                "message": "Reply posted successfully." if args.reply_to else "Tweet posted successfully.",
             }))
             return 0
 
@@ -293,6 +298,12 @@ def main() -> int:
         help="Search result type for search_tweets (default: Top)",
     )
     parser.add_argument("--tweet-id", help="Target tweet ID")
+    parser.add_argument(
+        "--reply-to",
+        "--reply_to",
+        dest="reply_to",
+        help="Tweet ID to reply to (creates a thread reply when posting)",
+    )
 
     args = parser.parse_args()
     return asyncio.run(run_cli(args))

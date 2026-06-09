@@ -19,14 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Zap,
-  FolderOpen,
-  Upload,
-  X,
-  Loader2,
-  ChevronDown,
-} from 'lucide-react';
+import { Zap, FolderOpen, Upload, X, Loader2, ChevronDown } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import {
   Collapsible,
@@ -74,7 +67,10 @@ function OptionalSection({
         <span className="min-w-0 truncate">
           {title}
           {!isOpen && summary ? (
-            <span className="font-normal text-muted-foreground"> · {summary}</span>
+            <span className="font-normal text-muted-foreground">
+              {' '}
+              · {summary}
+            </span>
           ) : null}
         </span>
         <ChevronDown
@@ -277,232 +273,238 @@ function ScheduledTaskForm({
   );
 
   const groupSummary = groupName.trim() || null;
+  const workspaceParts = workspaceOverride
+    ? workspaceOverride.split(/[/\\]/).filter(Boolean)
+    : [];
   const workspaceSummary = workspaceOverride
-    ? workspaceOverride.split(/[/\\]/).filter(Boolean).at(-1) ?? workspaceOverride
+    ? (workspaceParts[workspaceParts.length - 1] ?? workspaceOverride)
     : null;
   return (
     <>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <div className="grid gap-2 py-2">
-        {/* Task name */}
-        <div className="grid gap-1.5">
-          <Label htmlFor="task-name">
-            {t('scheduledTasks.modal.nameLabel')}
-          </Label>
-          <Input
-            id="task-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('scheduledTasks.modal.namePlaceholder')}
-          />
-        </div>
-
-        {/* Assistant */}
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.modal.assistantLabel')}</Label>
-          <Select
-            value={effectiveAssistantId}
-            onValueChange={setUserSelectedAssistantId}
-          >
-            <SelectTrigger>
-              <SelectValue
-                placeholder={t('scheduledTasks.modal.assistantPlaceholder')}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {assistants.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {assistants.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'scheduledTasks.modal.noAssistants',
-                'Create an assistant before scheduling a task.',
-              )}
-            </p>
-          )}
-        </div>
-
-        {/* Human-readable schedule builder */}
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.modal.scheduleLabel')}</Label>
-          {task?.scheduleTimezone === 'utc' && (
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'scheduledTasks.modal.utcLegacyNotice',
-                'This existing task uses UTC scheduling. Saving it will convert the schedule to local time.',
-              )}
-            </p>
-          )}
-          <ScheduleBuilder
-            value={cronExpression}
-            onChange={setCronExpression}
-          />
-        </div>
-
-        <OptionalSection
-          title={t('scheduledTasks.modal.groupNameLabel', 'Task Group')}
-          summary={groupSummary}
-          defaultOpen={Boolean(task?.groupName)}
-        >
+          {/* Task name */}
           <div className="grid gap-1.5">
-            <Label htmlFor="task-group-name">
-              {t('scheduledTasks.modal.groupNameLabel', 'Task Group')}
+            <Label htmlFor="task-name">
+              {t('scheduledTasks.modal.nameLabel')}
             </Label>
             <Input
-              id="task-group-name"
-              value={groupName}
-              onChange={(e) => setGroupName(e.target.value)}
-              placeholder={t(
-                'scheduledTasks.modal.groupNamePlaceholder',
-                'Optional: e.g. Research Team',
-              )}
+              id="task-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('scheduledTasks.modal.namePlaceholder')}
             />
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'scheduledTasks.modal.groupNameHint',
-                'Use a group name to bundle related recurring tasks into one teamwork automation cluster.',
-              )}
-            </p>
           </div>
-        </OptionalSection>
 
-        <OptionalSection
-          title={t('scheduledTasks.modal.workspaceLabel')}
-          summary={workspaceSummary}
-          open={workspaceSectionOpen}
-          onOpenChange={setWorkspaceSectionOpen}
-        >
+          {/* Assistant */}
           <div className="grid gap-1.5">
-            <div
-              ref={workspaceDropRef}
-              className={cn(
-                'rounded-lg border border-dashed p-3 transition-colors',
-                workspaceDragState === 'valid' && 'border-success bg-success/10',
-                workspaceDragState === 'invalid' &&
-                  'border-destructive bg-destructive/10',
-              )}
+            <Label>{t('scheduledTasks.modal.assistantLabel')}</Label>
+            <Select
+              value={effectiveAssistantId}
+              onValueChange={setUserSelectedAssistantId}
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 flex-1 items-start gap-3">
-                  <div className="mt-0.5 rounded-md bg-primary/10 p-2">
-                    <FolderOpen className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      {workspaceOverride
-                        ? t('scheduledTasks.modal.workspaceSelected')
-                        : t('scheduledTasks.modal.workspaceOptional')}
-                    </p>
-                    <p
-                      className={cn(
-                        'mt-1 text-xs text-muted-foreground',
-                        workspaceOverride &&
-                          'line-clamp-2 overflow-hidden break-all',
-                      )}
-                      title={workspaceOverride ?? undefined}
-                    >
-                      {workspaceOverride
-                        ? workspaceOverride
-                        : t('scheduledTasks.modal.workspaceHint')}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleBrowseWorkspace()}
-                    disabled={browsingWorkspace}
-                  >
-                    {browsingWorkspace ? (
-                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Upload className="mr-1 h-3.5 w-3.5" />
-                    )}
-                    {t('scheduledTasks.modal.workspaceBrowse')}
-                  </Button>
-                  {workspaceOverride && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setWorkspaceOverride(null)}
-                      aria-label={t('scheduledTasks.modal.workspaceClearAria')}
-                      className="h-8 w-8"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                {t('scheduledTasks.modal.workspaceDropHint')}
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={t('scheduledTasks.modal.assistantPlaceholder')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {assistants.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {assistants.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scheduledTasks.modal.noAssistants',
+                  'Create an assistant before scheduling a task.',
+                )}
+              </p>
+            )}
+          </div>
+
+          {/* Human-readable schedule builder */}
+          <div className="grid gap-1.5">
+            <Label>{t('scheduledTasks.modal.scheduleLabel')}</Label>
+            {task?.scheduleTimezone === 'utc' && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scheduledTasks.modal.utcLegacyNotice',
+                  'This existing task uses UTC scheduling. Saving it will convert the schedule to local time.',
+                )}
+              </p>
+            )}
+            <ScheduleBuilder
+              value={cronExpression}
+              onChange={setCronExpression}
+            />
+          </div>
+
+          <OptionalSection
+            title={t('scheduledTasks.modal.groupNameLabel', 'Task Group')}
+            summary={groupSummary}
+            defaultOpen={Boolean(task?.groupName)}
+          >
+            <div className="grid gap-1.5">
+              <Label htmlFor="task-group-name">
+                {t('scheduledTasks.modal.groupNameLabel', 'Task Group')}
+              </Label>
+              <Input
+                id="task-group-name"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder={t(
+                  'scheduledTasks.modal.groupNamePlaceholder',
+                  'Optional: e.g. Research Team',
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scheduledTasks.modal.groupNameHint',
+                  'Use a group name to bundle related recurring tasks into one teamwork automation cluster.',
+                )}
               </p>
             </div>
-          </div>
-        </OptionalSection>
+          </OptionalSection>
 
-        {/* Message with @mention support */}
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.modal.messageLabel')}</Label>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'scheduledTasks.modal.messageHint',
-              'Use @playbook:, @skill:, or @file: for autocomplete.',
-            )}
-          </p>
-          {workspaceOverride && (
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'scheduledTasks.modal.workspaceAutocompleteHint',
-                'Workspace override enables @skill: and @file: autocomplete.',
-              )}
-            </p>
-          )}
-          <MentionTextarea
-            value={message}
-            onChange={setMessage}
-            assistantId={effectiveAssistantId}
-            workspacePath={workspaceOverride}
-            rows={5}
-            className="field-sizing-fixed min-h-[120px] max-h-[300px] overflow-y-auto"
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 p-3">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <Zap
-                size={14}
-                className={
-                  yoloMode
-                    ? 'text-primary fill-primary'
-                    : 'text-muted-foreground'
-                }
-              />
-              <Label htmlFor="yolo-mode" className="text-sm font-medium">
-                {t('scheduledTasks.modal.yoloModeLabel', 'YOLO Mode')}
-              </Label>
+          <OptionalSection
+            title={t('scheduledTasks.modal.workspaceLabel')}
+            summary={workspaceSummary}
+            open={workspaceSectionOpen}
+            onOpenChange={setWorkspaceSectionOpen}
+          >
+            <div className="grid gap-1.5">
+              <div
+                ref={workspaceDropRef}
+                className={cn(
+                  'rounded-lg border border-dashed p-3 transition-colors',
+                  workspaceDragState === 'valid' &&
+                    'border-success bg-success/10',
+                  workspaceDragState === 'invalid' &&
+                    'border-destructive bg-destructive/10',
+                )}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className="mt-0.5 rounded-md bg-primary/10 p-2">
+                      <FolderOpen className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">
+                        {workspaceOverride
+                          ? t('scheduledTasks.modal.workspaceSelected')
+                          : t('scheduledTasks.modal.workspaceOptional')}
+                      </p>
+                      <p
+                        className={cn(
+                          'mt-1 text-xs text-muted-foreground',
+                          workspaceOverride &&
+                            'line-clamp-2 overflow-hidden break-all',
+                        )}
+                        title={workspaceOverride ?? undefined}
+                      >
+                        {workspaceOverride
+                          ? workspaceOverride
+                          : t('scheduledTasks.modal.workspaceHint')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleBrowseWorkspace()}
+                      disabled={browsingWorkspace}
+                    >
+                      {browsingWorkspace ? (
+                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="mr-1 h-3.5 w-3.5" />
+                      )}
+                      {t('scheduledTasks.modal.workspaceBrowse')}
+                    </Button>
+                    {workspaceOverride && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setWorkspaceOverride(null)}
+                        aria-label={t(
+                          'scheduledTasks.modal.workspaceClearAria',
+                        )}
+                        className="h-8 w-8"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {t('scheduledTasks.modal.workspaceDropHint')}
+                </p>
+              </div>
             </div>
+          </OptionalSection>
+
+          {/* Message with @mention support */}
+          <div className="grid gap-1.5">
+            <Label>{t('scheduledTasks.modal.messageLabel')}</Label>
             <p className="text-xs text-muted-foreground">
               {t(
-                'scheduledTasks.modal.yoloModeHint',
-                'Execute all tools without requiring manual approval',
+                'scheduledTasks.modal.messageHint',
+                'Use @playbook:, @skill:, or @file: for autocomplete.',
               )}
             </p>
+            {workspaceOverride && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scheduledTasks.modal.workspaceAutocompleteHint',
+                  'Workspace override enables @skill: and @file: autocomplete.',
+                )}
+              </p>
+            )}
+            <MentionTextarea
+              value={message}
+              onChange={setMessage}
+              assistantId={effectiveAssistantId}
+              workspacePath={workspaceOverride}
+              rows={5}
+              className="field-sizing-fixed min-h-[120px] max-h-[300px] overflow-y-auto"
+            />
           </div>
-          <Switch
-            id="yolo-mode"
-            checked={yoloMode}
-            onCheckedChange={setYoloMode}
-          />
-        </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 p-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Zap
+                  size={14}
+                  className={
+                    yoloMode
+                      ? 'text-primary fill-primary'
+                      : 'text-muted-foreground'
+                  }
+                />
+                <Label htmlFor="yolo-mode" className="text-sm font-medium">
+                  {t('scheduledTasks.modal.yoloModeLabel', 'YOLO Mode')}
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scheduledTasks.modal.yoloModeHint',
+                  'Execute all tools without requiring manual approval',
+                )}
+              </p>
+            </div>
+            <Switch
+              id="yolo-mode"
+              checked={yoloMode}
+              onCheckedChange={setYoloMode}
+            />
+          </div>
         </div>
       </div>
 

@@ -221,6 +221,10 @@ impl PersistentShell {
             let _ = shell.execute("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Encoding]::UTF8").await?;
         }
 
+        if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
+            shell.apply_runtime_bootstrap().await;
+        }
+
         Ok(shell)
     }
 
@@ -468,7 +472,7 @@ impl PersistentShell {
         &mut self,
         command: &str,
         user_input: &str,
-        stdin_delivery: StdinDelivery,
+        #[cfg_attr(unix, allow(unused_variables))] stdin_delivery: StdinDelivery,
     ) -> Result<(String, String, i32, String)> {
         #[cfg(windows)]
         if stdin_delivery == StdinDelivery::Child {

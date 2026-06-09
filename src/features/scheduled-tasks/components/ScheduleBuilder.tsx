@@ -219,7 +219,9 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
 
         {showsTimeField ? (
           <div className="flex items-center gap-2">
-            <Label className="shrink-0">{t('scheduledTasks.schedule.at')}</Label>
+            <Label className="shrink-0">
+              {t('scheduledTasks.schedule.at')}
+            </Label>
             <div className="flex items-center gap-1.5">
               <Input
                 type="number"

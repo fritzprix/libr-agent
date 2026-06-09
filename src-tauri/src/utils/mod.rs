@@ -1,13 +1,15 @@
 pub mod env;
-#[cfg(windows)]
-pub mod windows_path_discovery;
 pub mod fs;
 pub mod json;
 pub mod pagination;
 pub mod platform;
 pub mod security;
+#[cfg(any(unix, windows))]
+pub mod shell_runtime;
 pub mod sqlite;
 pub mod terminal;
+#[cfg(windows)]
+pub mod windows_path_discovery;
 
 /// Safely truncates a string to a maximum number of characters.
 /// If truncated, adds an ellipsis (...) to the end.

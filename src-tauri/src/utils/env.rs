@@ -1,6 +1,4 @@
 use std::ffi::{OsStr, OsString};
-#[cfg(unix)]
-use std::io::IsTerminal;
 use std::process::Command as StdCommand;
 #[cfg(unix)]
 use std::sync::OnceLock;
@@ -12,62 +10,74 @@ const PATH_CAPTURE_PREFIX: &str = "__LIBRAGENT_PATH_START__";
 const PATH_CAPTURE_SUFFIX: &str = "__LIBRAGENT_PATH_END__";
 
 /// GUI-launched Unix apps frequently inherit a stripped PATH that omits user tool managers
-/// like nvm, pnpm, uv, cargo, and pipx. Probe an interactive login shell once, cache the
-/// result, and merge it back into isolated child environments.
+/// like nvm, pnpm, uv, cargo, and pipx. Probe login shells once, cache the result, and merge
+/// it back into isolated child environments.
 #[cfg(unix)]
 fn get_unix_shell_path() -> &'static str {
     static SHELL_PATH: OnceLock<String> = OnceLock::new();
-    SHELL_PATH.get_or_init(|| {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-            #[cfg(target_os = "macos")]
-            {
-                "/bin/zsh".to_string()
-            }
+    SHELL_PATH.get_or_init(probe_unix_shell_path)
+}
 
-            #[cfg(not(target_os = "macos"))]
-            {
-                "/bin/bash".to_string()
-            }
-        });
-
-        // GUI-launched apps don't have a controlling TTY, but we only probe interactive shell
-        // if stdin is actually a terminal and we are NOT in a cargo test environment
-        // (avoiding SIGTTIN/SIGTTOU background suspension in tests/CI).
-        let is_cargo_test = std::env::var("CARGO_MANIFEST_DIR").is_ok();
-        let probe_args: &[&[&str]] = if std::io::stdin().is_terminal() && !is_cargo_test {
-            &[&["-l", "-i", "-c"], &["-l", "-c"]]
-        } else {
-            &[&["-l", "-c"]]
-        };
-
-        let probe_command =
-            format!("printf '{PATH_CAPTURE_PREFIX}%s{PATH_CAPTURE_SUFFIX}' \"$PATH\"");
-
-        for args in probe_args {
-            let mut cmd = StdCommand::new(&shell);
-            cmd.args(*args);
-            cmd.arg(&probe_command);
-
-            if let Ok(out) = cmd.output() {
-                if !out.status.success() {
-                    continue;
-                }
-
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                if let Some(start) = stdout.find(PATH_CAPTURE_PREFIX) {
-                    let value_start = start + PATH_CAPTURE_PREFIX.len();
-                    if let Some(end_offset) = stdout[value_start..].find(PATH_CAPTURE_SUFFIX) {
-                        let captured = stdout[value_start..value_start + end_offset].trim();
-                        if !captured.is_empty() {
-                            return captured.to_string();
-                        }
-                    }
-                }
-            }
+#[cfg(unix)]
+fn probe_unix_shell_path() -> String {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
+        #[cfg(target_os = "macos")]
+        {
+            "/bin/zsh".to_string()
         }
 
-        String::new()
-    })
+        #[cfg(not(target_os = "macos"))]
+        {
+            "/bin/bash".to_string()
+        }
+    });
+
+    let path_capture = format!("printf '{PATH_CAPTURE_PREFIX}%s{PATH_CAPTURE_SUFFIX}' \"$PATH\"");
+    let is_cargo_test = std::env::var("CARGO_MANIFEST_DIR").is_ok();
+
+    if !is_cargo_test {
+        if let Some(source_script) =
+            crate::utils::shell_runtime::build_unix_integration_source_script()
+        {
+            let targeted_probe = format!("{source_script}\n{path_capture}");
+            if let Some(path) = run_unix_shell_path_probe(&shell, &["-l", "-c"], &targeted_probe) {
+                return path;
+            }
+        }
+    }
+
+    let fallback_args: &[&[&str]] = if is_cargo_test {
+        &[&["-l", "-c"]]
+    } else {
+        &[&["-l", "-i", "-c"], &["-l", "-c"]]
+    };
+
+    for args in fallback_args {
+        if let Some(path) = run_unix_shell_path_probe(&shell, args, &path_capture) {
+            return path;
+        }
+    }
+
+    String::new()
+}
+
+#[cfg(unix)]
+fn run_unix_shell_path_probe(shell: &str, args: &[&str], probe_command: &str) -> Option<String> {
+    let mut cmd = StdCommand::new(shell);
+    cmd.args(args);
+    cmd.arg(probe_command);
+
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let start = stdout.find(PATH_CAPTURE_PREFIX)?;
+    let value_start = start + PATH_CAPTURE_PREFIX.len();
+    let end_offset = stdout[value_start..].find(PATH_CAPTURE_SUFFIX)?;
+    let captured = stdout[value_start..value_start + end_offset].trim();
+    (!captured.is_empty()).then(|| captured.to_string())
 }
 
 fn default_path() -> &'static str {

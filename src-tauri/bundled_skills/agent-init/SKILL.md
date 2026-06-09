@@ -1,6 +1,6 @@
 ---
 name: agent-init
-description: Analyze a workspace (code project, docs collection, or mixed) and generate a tailored agents.md (or AGENTS.md/CLAUDE.md/GEMINI.md) to onboard AI agents. Use when a user wants to initialize agent guidelines for a project, create agents.md, or refresh a generic template with project-specific content. Triggers: "agent init", "agents.md 생성", "워크스페이스 분석", "agent guideline 생성", "agent-init".
+description: "Analyze a workspace (code project, docs collection, or mixed) and generate a tailored agents.md (or AGENTS.md/CLAUDE.md/GEMINI.md) to onboard AI agents. Use when a user wants to initialize agent guidelines for a project, create agents.md, or refresh a generic template with project-specific content. Triggers: 'agent init', 'agents.md 생성', '워크스페이스 분석', 'agent guideline 생성', 'agent-init'."
 ---
 
 # Agent Init

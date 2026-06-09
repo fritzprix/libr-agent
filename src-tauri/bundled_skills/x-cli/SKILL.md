@@ -2,7 +2,7 @@
 name: x-cli
 description: |
   Python CLI wrapper for X (Twitter) interaction using Twikit.
-  Use when the user wants to: (1) post tweets (with text or media), (2) view home timeline,
+  Use when the user wants to: (1) post tweets (with text or media, including thread replies), (2) view home timeline,
   (3) view a user's tweets, (4) search tweets, (5) like/favorite a tweet, or (6) retweet a tweet.
   On first use, guide the user through credential setup (username, email, password, optional TOTP) or browser cookie setup.
   Store config in ~/.libragent/x_config.json and session cookies in ~/.libragent/x_cookies.json.
@@ -112,8 +112,23 @@ If credentials login returns `404` with `code 34`, stop retrying passwords and s
 ```bash
 python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
   --message "트윗 내용" \
-  [--file "/path/to/attachment"]
+  [--file "/path/to/attachment"] \
+  [--reply-to "1234567890"]
 ```
+
+Post the first tweet without `--reply-to`. For thread replies, pass the previous tweet's ID:
+
+```bash
+# Tweet 1
+python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet --message "Part 1"
+
+# Tweet 2 (reply to tweet 1)
+python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
+  --message "Part 2" \
+  --reply-to "<tweet_id_from_part_1>"
+```
+
+`--reply-to` and `--reply_to` are equivalent.
 
 ### Action: `get_timeline` — View home timeline
 ```bash
