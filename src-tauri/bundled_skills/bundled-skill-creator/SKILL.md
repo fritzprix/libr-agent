@@ -34,8 +34,8 @@ Create bundled skills for LibrAgent's repo-shipped `src-tauri/bundled_skills` la
    - Add `.force_update` when you want a changed bundled skill to force one managed-copy refresh on the next app start.
    - `.force_update` is just a hash bump. It is not a dedicated runtime flag.
 
-6. Validate narrowly.
-   - Run `python .github\skills\skill-creator\scripts\quick_validate.py src-tauri\bundled_skills\<skill-name>`
+6. Validate before merge.
+   - Run `python src-tauri/bundled_skills/skill-creator/scripts/validate_skill.py src-tauri/bundled_skills/<skill-name> --strict`
    - Run focused checks for any new scripts.
    - Inspect the actual diff for leftover template junk, stale path wording, or missing references.
 

@@ -1,174 +1,224 @@
 ---
 name: skill-deployer
-description: "Guide for deploying a newly created skill to the correct scope within LibrAgent. Use this skill after creating a skill with skill-creator, when you need to install it so it becomes available to an agent. Triggers: deploy skill, install skill, save skill to [scope], make skill available, publish skill."
+description: "Deploy a validated user or workspace skill to user_skills/ or .libragent/skills/. Use after skill-creator validation. NOT for system_skills or bundled skills — use bundled-skill-creator for app-shipped skills. Triggers: deploy skill, install skill, global skill, workspace skill, user_skills."
 ---
 
 # Skill Deployer
 
-This skill guides the process of installing a finished skill into the correct scope so it is actually loaded and used by agents.
+Install a **validated custom skill** into `user_skills/` (global) or `.libragent/skills/` (workspace) so agents load it on the next turn.
+
+> **Prerequisite**: Run `skill-creator` validation first:
+> `python <skill-creator-base-dir>/scripts/validate_skill.py <skill-folder> --strict`
+
+This skill covers **where** and **how** to install user/workspace skills. It does **not** cover authoring — use **skill-creator**. It does **not** ship skills with the app — use **bundled-skill-creator**.
+
+## What This Skill Is NOT
+
+| User intent | Correct skill | Target path |
+| --- | --- | --- |
+| Install my custom skill globally | **skill-deployer** (this skill) | `{dataDir}/user_skills/{name}/` |
+| Install for this session/project | **skill-deployer** (this skill) | `{workspace}/.libragent/skills/{name}/` |
+| Ship skill inside the LibrAgent app | **bundled-skill-creator** | `src-tauri/bundled_skills/{name}/` → synced to `system_skills/` |
+
+**Never deploy custom skills to `{dataDir}/system_skills/`.** That folder is a **managed mirror** of packaged bundled skills. Manual additions are **deleted on app startup**. Do not create or edit `.bundled_manifest.json` outside bundled sync — it does not register custom skills.
+
+If the user says "system skill" or points at `system_skills`, they usually mean **global availability**. Deploy to **`user_skills/`**, not `system_skills/`.
 
 ## Scope Decision
 
-Choose one scope based on intended reach:
-
 | Scope | When to use | Override priority |
 | --- | --- | --- |
-| **workspace** | Skill is specific to the current project or session | Highest (overrides assistant and global) |
-| **assistant** | Skill is for one specific assistant only | Middle (overrides global) |
-| **global** | Skill is general-purpose and should be available everywhere | Lowest |
+| **workspace** | Skill is specific to the current project or session | Highest |
+| **assistant** | Skill is for one assistant only | Middle |
+| **global** | Skill should be available in every session | Lowest |
 
-**Rule of thumb**: default to `workspace` when in doubt. It is the safest option — it cannot affect other sessions and is easy to clean up.
+Default to **workspace** when unsure — safest and easiest to remove.
 
-## Deployment Paths
+## Target Paths
 
-### Global scope
-
-```text
-{skillsDirectory}/
-└── {skill-name}/
-    └── SKILL.md
-```
-
-`skillsDirectory` is set in Settings → System → Skills Directory.
-Since the Tauri command `get_default_skills_directory` is not exposed to the agent as an MCP tool, do **NOT** attempt to call it directly. Instead:
-1. **Inspect `<available_skills>`**: Read the system prompt's `<available_skills>` block. Look at the `<location>` of any existing global skill (e.g. `/home/alice/.local/share/libr-agent/skills/mcp-builder/SKILL.md`) and extract the parent directory (`/home/alice/.local/share/libr-agent/skills`).
-2. **OS Standard Default Paths**: If no skills are listed, look for or check the existence of standard global skills directories:
-   * **Linux**: `~/.local/share/libr-agent/skills/`
-   * **macOS**: `~/Library/Application Support/libr-agent/skills/`
-   * **Windows**: `%APPDATA%\libr-agent\skills\`
-Example resolved path: `C:\Users\alice\AppData\Roaming\LibrAgent\skills\my-skill\SKILL.md`
-
-### Assistant scope
-
-```text
-{dataDir}/assistants/{assistant-id}/skills/
-└── {skill-name}/
-    └── SKILL.md
-```
-
-Example: `C:\Users\alice\AppData\Roaming\LibrAgent\assistants\asst_abc123\skills\my-skill\SKILL.md`
-
-### Workspace scope
-
-```text
-{workspace-root}/.libragent/skills/
-└── {skill-name}/
-    └── SKILL.md
-```
-
-Example: `/home/alice/project/.libragent/skills/my-skill/SKILL.md`
-The workspace root is the session's working directory. It is visible in the system prompt under:
-
-```text
-## Workspace
-**Workspace Root**: /home/alice/project
-```
-
-Read this value directly — no tool call needed.
-
-> [!NOTE]
-> The Rust backend automatically migrates legacy `{workspace-root}/skills` to `{workspace-root}/.libragent/skills` if it exists.
-
-### Agent scope (Auto-discovered)
-
-```text
-{workspace-root}/{agent-directory}/skills/
-└── {skill-name}/
-    └── SKILL.md
-```
-
-LibrAgent automatically scans specific agent tool directories under the workspace root. You can deploy skills into these paths for local agent development:
-*   `.agents/skills/` (LibrAgent local development directory)
-*   `.gemini/skills/`
-*   `.cursor/skills/`
-*   `.copilot/skills/`
-*   `.windsurf/skills/`
-*   `.claude/skills/`
-*   `.cline/skills/`
-*   `.continue/skills/`
-
-## Deployment Procedure
-
-### Step 1 — Determine the target path
-
-For **workspace** (most common):
+### Workspace scope (most common)
 
 ```text
 {workspace-root}/.libragent/skills/{skill-name}/SKILL.md
 ```
 
-Read the `Workspace Root` from the active Workspace service context. Alternatively, deploy to an **agent import path** (e.g. `{workspace-root}/.agents/skills/{skill-name}/SKILL.md`) for IDE-specific agent development.
+Read `Workspace Root` from the system prompt (`## Workspace` section).
 
-For **global**:
+Example: `C:/Users/alice/AppData/Roaming/com.fritzprix.libragent/workspaces/<session-id>/.libragent/skills/my-skill/SKILL.md`
 
-1. Retrieve the `skillsDirectory` path by analyzing `<available_skills>` location paths in the system prompt, or falling back to checking standard OS default paths.
-2. Append `/{skill-name}/SKILL.md`.
+> **NOT** `{workspace-root}/{skill-name}/` — skills at the session root are never scanned.
 
-For **assistant**:
-
-1. The user must provide the assistant's ID (visible in the Assistants settings panel).
-2. Construct: `{dataDir}/assistants/{assistant-id}/skills/{skill-name}/SKILL.md`
-
-### Step 2 — Write the SKILL.md
-
-Use `createFile` (workspace tool) with the full resolved path and the SKILL.md content. If the skill contains additional files (`scripts/`, `references/`), write each file in turn.
+### Global scope (user skills)
 
 ```text
-createFile(
-  path: "{target-path}/SKILL.md",
-  content: "---\nname: ...\n..."
-)
+{dataDir}/user_skills/{skill-name}/SKILL.md
 ```
 
-### Step 3 — Verify deployment
+Resolve `{dataDir}` from `<available_skills>`:
 
-After writing, confirm the skill is discoverable by checking the system prompt on the **next agent turn**. The skills server injects an `<available_skills>` XML block into the system prompt. Each entry looks like this:
+1. Find a skill with `source="global"` whose `<location>` contains **`user_skills`** (not `system_skills`).
+2. Take the parent of `user_skills/` as `{dataDir}`.
+3. If none exist, use OS defaults:
+
+| OS | `{dataDir}` |
+| --- | --- |
+| Windows | `%APPDATA%\com.fritzprix.libragent\` |
+| macOS | `~/Library/Application Support/com.fritzprix.libragent/` |
+| Linux | `~/.local/share/com.fritzprix.libragent/` |
+
+Example: `C:\Users\alice\AppData\Roaming\com.fritzprix.libragent\user_skills\my-skill\SKILL.md`
+
+> **NOT** `{dataDir}/system_skills/` (bundled mirror), `{dataDir}/skills/` (legacy), or `%APPDATA%\LibrAgent\skills\` (old app ID path).
+
+### Assistant scope
+
+```text
+{dataDir}/assistants/{assistant-id}/skills/{skill-name}/SKILL.md
+```
+
+The user must provide the assistant ID from the Assistants settings panel.
+
+### Agent import scope (IDE / local dev)
+
+Auto-discovered under the workspace root:
+
+- `.agents/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.copilot/skills/`
+- `.windsurf/skills/`, `.claude/skills/`, `.cline/skills/`, `.continue/skills/`
+
+```text
+{workspace-root}/.cursor/skills/{skill-name}/SKILL.md
+```
+
+### Bundled scope — do NOT use this skill
+
+Repo path only; managed by **bundled-skill-creator** and app startup sync:
+
+```text
+src-tauri/bundled_skills/{skill-name}/
+```
+
+Runtime mirror (read-only for agents; never write custom skills here):
+
+```text
+{dataDir}/system_skills/{skill-name}/
+```
+
+## Forbidden Locations
+
+| Path | Why |
+| --- | --- |
+| `{dataDir}/system_skills/` | Managed bundled mirror — extras deleted on startup |
+| `{dataDir}/system_skills/.bundled_manifest.json` | Bundled sync only — does not register custom skills |
+| `{workspace-root}/{skill-name}/` | Scanner only reads `.libragent/skills/` |
+| `{workspace-root}/.bundled_manifest.json` | Manifest ignored here — does not register skills |
+| Legacy `{dataDir}/skills/` | Use `user_skills/` instead |
+| Legacy `%APPDATA%\LibrAgent\skills\` | Wrong app data dir — use `com.fritzprix.libragent\user_skills\` |
+
+## Deployment Procedure
+
+Prefer **`deploy_skill.py`** over manual file writes. It always runs **strict validation** before and after copy, blocks forbidden targets, rolls back on post-deploy failure, and prints **error codes with fix instructions**.
+
+```bash
+python <skill-deployer-base-dir>/scripts/deploy_skill.py <skill-source-dir> --scope global
+python <skill-deployer-base-dir>/scripts/deploy_skill.py <skill-source-dir> --scope workspace --workspace "<workspace-root>"
+python <skill-deployer-base-dir>/scripts/deploy_skill.py <skill-source-dir> --scope assistant --assistant-id "<id>"
+```
+
+| Flag | Purpose |
+| --- | --- |
+| `--overwrite` | Replace existing target directory |
+| `--dry-run` | Strict validate source + print target without copying |
+| `--data-dir` | Override default `com.fritzprix.libragent` data directory |
+
+**Validation phases (all strict):**
+
+1. Pre-deploy (source) — frontmatter, folder name match, forbidden files, bad source path
+2. Post-deploy (target) — same checks on the copied skill; **rollback** if this fails
+
+Inspect failures manually:
+
+```bash
+python <skill-creator-base-dir>/scripts/validate_skill.py <skill-folder> --strict --detailed
+```
+
+Each issue prints `[CODE]`, message, and `Fix:` line (e.g. `SKILL-YAML-APOSTROPHE`, `SKILL-PATH-WORKSPACE-ROOT`).
+
+### Manual fallback (only if the script cannot run)
+
+### Step 1 — Validate (skill-creator)
+
+```bash
+python <skill-creator-base-dir>/scripts/validate_skill.py <skill-folder> --strict
+```
+
+Do not deploy if validation fails. Fix path/YAML issues before writing files.
+
+### Step 2 — Pick scope and target path
+
+Use the scope table above. Construct the full directory:
+
+```text
+{target-dir}/{skill-name}/SKILL.md
+{target-dir}/{skill-name}/scripts/...
+{target-dir}/{skill-name}/references/...
+```
+
+**Checklist before writing:**
+
+- [ ] Target is `user_skills/` or `.libragent/skills/` (or assistant/agent import path)
+- [ ] Target is **not** `system_skills/`
+- [ ] Folder name matches frontmatter `name:`
+
+### Step 3 — Write files
+
+Use workspace tools (`createFile`, etc.) with forward slashes even on Windows.
+
+Copy the entire skill directory tree — not just SKILL.md — when scripts or references exist.
+
+### Step 4 — Verify discovery
+
+On the **next agent turn**, check `<available_skills>` in the system prompt:
 
 ```xml
-<skill source="workspace">
+<skill source="global">
   <name>my-new-skill</name>
   <description>...</description>
-  <location>/absolute/path/to/skills/my-new-skill/SKILL.md</location>
+  <location>.../user_skills/my-new-skill/SKILL.md</location>
 </skill>
 ```
 
-Check that:
+Confirm:
 
-1. The skill name appears in `<available_skills>`.
-2. The `source` attribute matches the intended scope (`"workspace"`, `"assistant"`, or `"global"`).
-3. The `<location>` path points to the file you just wrote.
+1. Skill name appears
+2. `source` matches intended scope (`workspace`, `assistant`, or `global`)
+3. `<location>` matches the path you wrote (`user_skills` for global, not `system_skills`)
 
-Alternatively, inspect the target folder contents using `listDirectory` to verify the files are physically present on disk.
+Re-run `validate_skill.py --strict` on the deployed copy if discovery fails.
 
-### Step 4 — Announce the result
+### Step 5 — Report
 
-Report:
+Tell the user:
 
-- The full path written
-- The scope chosen
-- The skill name as it will appear in the system prompt
-
-## Bundled Resources
-
-If the skill includes scripts, references, or assets, write them relative to the SKILL.md:
-
-```text
-createFile("{target-path}/scripts/run.sh", ...)
-createFile("{target-path}/references/api-reference.md", ...)
-```
+- Full path written
+- Scope chosen
+- Skill name as it appears in `<available_skills>`
+- That it becomes active on the next agent message
 
 ## Coalesce Behavior
 
-Skills are merged across scopes with **first-wins by name (lowercase)**. Scope priority: workspace > assistant > global. A workspace skill named `my-tool` silently overrides an assistant or global skill with the same name.
+Skills merge with **first-wins by lowercase name**. Priority: workspace > assistant > agent import > global > system.
 
-Use this intentionally:
-
-- Deploy a workspace-scoped override to temporarily patch a global skill for one session.
-- Deploy an assistant-scoped copy (by copying the global skill directory files to the assistant skills directory) to customize a global skill for one assistant without affecting others.
+A workspace skill silently overrides a global skill with the same name.
 
 ## Common Mistakes
 
-- **Wrong path separator**: always use forward slashes in paths passed to workspace tools, even on Windows.
-- **Missing SKILL.md**: the scanner only recognises a skill directory if it contains `SKILL.md` at the top level.
-- **Incorrect frontmatter**: `name` and `description` are both required. A missing field causes the skill to be silently skipped.
-- **Skills directory not refreshed**: after writing files, the skills context is re-read at the start of the next agent turn. Inform the user that the new skill will be active from the next message onward.
+- **Deploying to `system_skills/`** — use `user_skills/` for global custom skills; use bundled-skill-creator to ship with the app
+- **Confusing `system_skills` with global** — global user skills live in `user_skills/`
+- **Creating `.bundled_manifest.json`** — only bundled sync uses this; it does not register custom skills elsewhere
+- **Hash-checking against bundled manifest** — irrelevant for custom skills; discovery uses directory scan + valid SKILL.md
+- **Skipping validation** — invalid YAML is silently ignored by the Rust scanner
+- **Workspace root deploy** — must be `.libragent/skills/{name}/`, not `{workspace}/{name}/`
+- **Wrong global path** — use `com.fritzprix.libragent\user_skills\`, not legacy `LibrAgent\skills\`
+- **Apostrophe in YAML** — fix in skill-creator (`"it's"` not `'it\'s'`)
+- **Name ≠ folder name** — breaks `@skill:name` lookup
+- **Expecting immediate UI refresh** — skills reload at the start of the next agent turn
