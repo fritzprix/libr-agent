@@ -149,7 +149,7 @@ export function MentionTextarea({
         onKeyDown={handleKeyDown}
         placeholder={finalPlaceholder}
         rows={rows}
-        className={cn('resize-none', className)}
+        className={cn('resize-none field-sizing-fixed', className)}
       />
     </div>
   );

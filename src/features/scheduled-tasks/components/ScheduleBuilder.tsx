@@ -178,95 +178,135 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
   const clamp = (v: number, min: number, max: number) =>
     Math.max(min, Math.min(max, v));
 
+  const showsTimeField =
+    state.mode === 'daily' ||
+    state.mode === 'weekly' ||
+    state.mode === 'monthly';
+
   return (
-    <div className="grid gap-3">
-      {/* Repeat mode */}
-      <div className="grid gap-1.5">
-        <Label>{t('scheduledTasks.schedule.repeat')}</Label>
-        <Select
-          value={state.mode}
-          onValueChange={(v) => update({ mode: v as RepeatMode })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="minutes">
-              {t('scheduledTasks.schedule.modes.minutes')}
-            </SelectItem>
-            <SelectItem value="hours">
-              {t('scheduledTasks.schedule.modes.hours')}
-            </SelectItem>
-            <SelectItem value="daily">
-              {t('scheduledTasks.schedule.modes.daily')}
-            </SelectItem>
-            <SelectItem value="weekly">
-              {t('scheduledTasks.schedule.modes.weekly')}
-            </SelectItem>
-            <SelectItem value="monthly">
-              {t('scheduledTasks.schedule.modes.monthly')}
-            </SelectItem>
-          </SelectContent>
-        </Select>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:min-w-[12rem]">
+          <Label className="shrink-0">
+            {t('scheduledTasks.schedule.repeat')}
+          </Label>
+          <Select
+            value={state.mode}
+            onValueChange={(v) => update({ mode: v as RepeatMode })}
+          >
+            <SelectTrigger className="min-w-0 flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="minutes">
+                {t('scheduledTasks.schedule.modes.minutes')}
+              </SelectItem>
+              <SelectItem value="hours">
+                {t('scheduledTasks.schedule.modes.hours')}
+              </SelectItem>
+              <SelectItem value="daily">
+                {t('scheduledTasks.schedule.modes.daily')}
+              </SelectItem>
+              <SelectItem value="weekly">
+                {t('scheduledTasks.schedule.modes.weekly')}
+              </SelectItem>
+              <SelectItem value="monthly">
+                {t('scheduledTasks.schedule.modes.monthly')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {showsTimeField ? (
+          <div className="flex items-center gap-2">
+            <Label className="shrink-0">{t('scheduledTasks.schedule.at')}</Label>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                min={0}
+                max={23}
+                value={state.hour}
+                onChange={(e) =>
+                  update({
+                    hour: clamp(parseInt(e.target.value) || 0, 0, 23),
+                  })
+                }
+                className="w-16 text-center"
+                aria-label={t('scheduledTasks.schedule.hour')}
+              />
+              <span className="font-semibold text-muted-foreground">:</span>
+              <Input
+                type="number"
+                min={0}
+                max={59}
+                value={String(state.minute).padStart(2, '0')}
+                onChange={(e) =>
+                  update({
+                    minute: clamp(parseInt(e.target.value) || 0, 0, 59),
+                  })
+                }
+                className="w-16 text-center"
+                aria-label={t('scheduledTasks.schedule.minute')}
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      {/* Every N minutes */}
       {state.mode === 'minutes' && (
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.schedule.every')}</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              type="number"
-              min={1}
-              max={59}
-              value={state.minuteInterval}
-              onChange={(e) =>
-                update({
-                  minuteInterval: clamp(parseInt(e.target.value) || 15, 1, 59),
-                })
-              }
-              className="w-20"
-            />
-            <span className="text-sm text-muted-foreground">
-              {t('scheduledTasks.schedule.units.minutes')}
-            </span>
-          </div>
+        <div className="flex items-center gap-2">
+          <Label className="shrink-0">
+            {t('scheduledTasks.schedule.every')}
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            max={59}
+            value={state.minuteInterval}
+            onChange={(e) =>
+              update({
+                minuteInterval: clamp(parseInt(e.target.value) || 15, 1, 59),
+              })
+            }
+            className="w-20"
+          />
+          <span className="text-sm text-muted-foreground">
+            {t('scheduledTasks.schedule.units.minutes')}
+          </span>
         </div>
       )}
 
-      {/* Every N hours */}
       {state.mode === 'hours' && (
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.schedule.every')}</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              type="number"
-              min={1}
-              max={23}
-              value={state.hourInterval}
-              onChange={(e) =>
-                update({
-                  hourInterval: clamp(parseInt(e.target.value) || 4, 1, 23),
-                })
-              }
-              className="w-20"
-            />
-            <span className="text-sm text-muted-foreground">
-              {t('scheduledTasks.schedule.units.hours')}
-            </span>
-          </div>
+        <div className="flex items-center gap-2">
+          <Label className="shrink-0">
+            {t('scheduledTasks.schedule.every')}
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            max={23}
+            value={state.hourInterval}
+            onChange={(e) =>
+              update({
+                hourInterval: clamp(parseInt(e.target.value) || 4, 1, 23),
+              })
+            }
+            className="w-20"
+          />
+          <span className="text-sm text-muted-foreground">
+            {t('scheduledTasks.schedule.units.hours')}
+          </span>
         </div>
       )}
 
-      {/* Day of week (weekly only) */}
       {state.mode === 'weekly' && (
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.schedule.on')}</Label>
+        <div className="flex min-w-0 items-center gap-2">
+          <Label className="shrink-0">{t('scheduledTasks.schedule.on')}</Label>
           <Select
             value={String(state.weekDay)}
             onValueChange={(v) => update({ weekDay: parseInt(v) })}
           >
-            <SelectTrigger>
+            <SelectTrigger className="min-w-0 flex-1">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -280,10 +320,11 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
         </div>
       )}
 
-      {/* Day of month (monthly only) */}
       {state.mode === 'monthly' && (
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.schedule.onDay')}</Label>
+        <div className="flex items-center gap-2">
+          <Label className="shrink-0">
+            {t('scheduledTasks.schedule.onDay')}
+          </Label>
           <Input
             type="number"
             min={1}
@@ -297,41 +338,6 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
         </div>
       )}
 
-      {/* Time (daily / weekly / monthly) */}
-      {(state.mode === 'daily' ||
-        state.mode === 'weekly' ||
-        state.mode === 'monthly') && (
-        <div className="grid gap-1.5">
-          <Label>{t('scheduledTasks.schedule.at')}</Label>
-          <div className="flex items-center gap-1.5">
-            <Input
-              type="number"
-              min={0}
-              max={23}
-              value={state.hour}
-              onChange={(e) =>
-                update({ hour: clamp(parseInt(e.target.value) || 0, 0, 23) })
-              }
-              className="w-16 text-center"
-              aria-label={t('scheduledTasks.schedule.hour')}
-            />
-            <span className="text-muted-foreground font-semibold">:</span>
-            <Input
-              type="number"
-              min={0}
-              max={59}
-              value={String(state.minute).padStart(2, '0')}
-              onChange={(e) =>
-                update({ minute: clamp(parseInt(e.target.value) || 0, 0, 59) })
-              }
-              className="w-16 text-center"
-              aria-label={t('scheduledTasks.schedule.minute')}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Live summary */}
       <p className="text-xs text-muted-foreground">
         {t('scheduledTasks.schedule.summary')}
         <span className="font-medium text-foreground">
