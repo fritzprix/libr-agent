@@ -1181,5 +1181,20 @@
       "relatedEntity": "Related entity"
     },
     "excerpt": "Excerpt"
+  },
+  "metrics": {
+    "tokens": {
+      "preflightEstimate": "Backend preflight context estimate: {{promptDisplayLabel}}{{inputLimitLabel}} tokens. Reserved output: {{measuredOutputTokensReserve}}. Total budget: {{totalBudgetTokens}}. Effective input budget: {{effectiveInputBudget}}. Provider prompt tokens: {{providerPromptLabel}}. System prompt: {{systemPromptTokens}}. Tools: {{toolsTokens}}. Selected messages: {{selectedMessageCount}}.{{prefillInfo}}",
+      "promptWithCache": "Prompt Tokens (Read from Cache: {{cachedTokens}}, Created: {{createdTokens}}){{prefillInfo}}",
+      "promptTokens": "Prompt Tokens{{prefillInfo}}",
+      "completionTokens": "Completion Tokens",
+      "cacheHit": "Cache Hit: {{cachedTokens}} tokens ({{cacheHitPercent}}%)",
+      "cache": "cache",
+      "tokensPerSecond": "Tokens per second",
+      "prefillTPS": " • Prefill: {{prefillTPS}} tok/s",
+      "prefillMS": " • Prefill: {{prefillMS}}ms",
+      "ttftMS": " • TTFT: {{ttftMS}}ms",
+      "loadDuration": "(Load: {{loadSeconds}}s)"
+    }
   }
 }

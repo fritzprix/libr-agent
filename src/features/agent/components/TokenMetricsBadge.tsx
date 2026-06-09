@@ -5,6 +5,7 @@ import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 import { calculateCacheHitPercent } from './token-metrics';
 import { formatNumber } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface TokenMetricsBadgeProps {
   usage: TokenUsage;
@@ -21,6 +22,7 @@ export function TokenMetricsBadge({
   className = '',
   compact: compactProp,
 }: TokenMetricsBadgeProps) {
+  const { t } = useTranslation('common');
   // Get display preferences from settings
   const { value: settings } = useSettings();
   const displaySettings = settings.display || {
@@ -71,7 +73,7 @@ export function TokenMetricsBadge({
   const cacheIndicatorText =
     cachedTokens > 0
       ? `${cacheHitPercent}% · ${formatNumber(cachedTokens)}`
-      : 'cache';
+      : t('metrics.tokens.cache');
 
   // Calculate prefill tokens per second if both TTFT and prompt tokens are available
   const prefillTPS =
@@ -87,11 +89,11 @@ export function TokenMetricsBadge({
     displaySettings.prefillDisplayFormat === 'tokensPerSecond' &&
     prefillTPS
   ) {
-    prefillInfo = ` • Prefill: ${prefillTPS} tok/s`;
+    prefillInfo = t('metrics.tokens.prefillTPS', { prefillTPS });
   } else if (usage.details?.promptEvalDuration) {
-    prefillInfo = ` • Prefill: ${usage.details.promptEvalDuration.toFixed(0)}ms`;
+    prefillInfo = t('metrics.tokens.prefillMS', { prefillMS: usage.details.promptEvalDuration.toFixed(0) });
   } else if (usage.details?.timeToFirstToken) {
-    prefillInfo = ` • TTFT: ${usage.details.timeToFirstToken.toFixed(0)}ms`;
+    prefillInfo = t('metrics.tokens.ttftMS', { ttftMS: usage.details.timeToFirstToken.toFixed(0) });
   }
 
   return (
@@ -109,10 +111,25 @@ export function TokenMetricsBadge({
           className="flex items-center gap-0.5 text-primary"
           title={
             preflight
-              ? `Backend preflight context estimate: ${promptDisplayLabel}${inputLimitLabel ? ` / ${inputLimitLabel}` : ''} tokens. Reserved output: ${formatNumber(preflight.measuredOutputTokensReserve)}. Total budget: ${formatNumber(preflight.totalBudgetTokens)}. Effective input budget: ${formatNumber(preflight.effectiveInputBudget)}. Provider prompt tokens: ${providerPromptLabel}. System prompt: ${formatNumber(preflight.systemPromptTokens)}. Tools: ${formatNumber(preflight.toolsTokens)}. Selected messages: ${formatNumber(preflight.selectedMessageCount)}.${prefillInfo}`
+              ? t('metrics.tokens.preflightEstimate', {
+                promptDisplayLabel,
+                inputLimitLabel: inputLimitLabel ? ` / ${inputLimitLabel}` : '',
+                measuredOutputTokensReserve: formatNumber(preflight.measuredOutputTokensReserve),
+                totalBudgetTokens: formatNumber(preflight.totalBudgetTokens),
+                effectiveInputBudget: formatNumber(preflight.effectiveInputBudget),
+                providerPromptLabel,
+                systemPromptTokens: formatNumber(preflight.systemPromptTokens),
+                toolsTokens: formatNumber(preflight.toolsTokens),
+                selectedMessageCount: formatNumber(preflight.selectedMessageCount),
+                prefillInfo
+              })
               : (hasCacheHit
-                  ? `Prompt Tokens (Read from Cache: ${formatNumber(cachedTokens)}, Created: ${formatNumber(usage.details?.cacheCreationInputTokens || 0)})`
-                  : 'Prompt Tokens') + prefillInfo
+                  ? t('metrics.tokens.promptWithCache', {
+                  cachedTokens: formatNumber(cachedTokens),
+                  createdTokens: formatNumber(usage.details?.cacheCreationInputTokens || 0),
+                  prefillInfo
+                })
+                  : t('metrics.tokens.promptTokens', { prefillInfo }))
           }
         >
           <ArrowUp size={10} className="stroke-[3]" />
@@ -127,7 +144,7 @@ export function TokenMetricsBadge({
         {/* Output Tokens */}
         <span
           className="flex items-center gap-0.5 text-success"
-          title="Completion Tokens"
+          title={t('metrics.tokens.completionTokens')}
         >
           <ArrowDown size={10} className="stroke-[3]" />
           {formatNumber(usage.completionTokens ?? 0)}
@@ -138,7 +155,7 @@ export function TokenMetricsBadge({
           <span
             data-testid="cache-hit-indicator"
             className="flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 bg-cyan-400/10 px-1 rounded border border-cyan-400/20 shrink-0"
-            title={`Cache Hit: ${formatNumber(cachedTokens)} tokens (${cacheHitPercent}%)`}
+            title={t('metrics.tokens.cacheHit', { cachedTokens: formatNumber(cachedTokens), cacheHitPercent })}
           >
             <Zap size={10} className="fill-current" />
             {cacheIndicatorText}
@@ -151,7 +168,7 @@ export function TokenMetricsBadge({
             <span className="text-muted-foreground mx-0.5">•</span>
             <span
               className="flex items-center gap-0.5 text-warning"
-              title="Tokens per second"
+              title={t('metrics.tokens.tokensPerSecond')}
             >
               <Gauge size={10} className="stroke-[3]" />
               {tpsFormatted}{' '}
@@ -165,7 +182,7 @@ export function TokenMetricsBadge({
         {/* Load Duration (Ollama only, for debug) - Optional, maybe hide in production UI */}
         {!compact && usage.details?.loadDuration && (
           <span className="hidden lg:flex items-center gap-0.5 text-muted-foreground text-xs ml-1">
-            (Load: {(usage.details.loadDuration / 1000).toFixed(1)}s)
+            {t('metrics.tokens.loadDuration', { loadSeconds: (usage.details.loadDuration / 1000).toFixed(1) })}
           </span>
         )}
       </div>
