@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 🚀 Features
+
+- **Opt-in Shell Runtime Bootstrap**: Add `shellRuntimeBootstrap` setting to source conda/nvm integration scripts in persistent shells without loading full shell rc files.
+- **Unix GUI PATH Probing**: Probe conda/nvm integration scripts for MCP subprocess PATH when the app is launched without a TTY.
+- **X CLI Thread Replies**: Support `--reply-to` / `--reply_to` for posting tweet replies in threads.
+
+### 🐛 Fixes
+
+- **Settings Page Layout**: Fix inner scroll overflow on Org and Scheduled Tasks pages.
+- **Scheduled Task Modal**: Compact layout for smaller viewports; replace `Array.at()` for TypeScript lib compatibility.
+
+### 🔧 Internal
+
+- **Shared Shell Runtime Discovery**: Extract `shell_runtime` module for conda/nvm path discovery shared by bootstrap and PATH probing.
+- **Release Merge Policy**: Disable squash merge on GitHub; document merge-commit-only releases and post-release dev sync.
+
 ## [0.8.9] - 2026-06-09
 
 ### 🚀 Features

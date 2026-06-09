@@ -1,4 +1,6 @@
 pub mod env;
+#[cfg(windows)]
+pub mod windows_path_discovery;
 pub mod fs;
 pub mod json;
 pub mod pagination;
