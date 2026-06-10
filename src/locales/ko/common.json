@@ -1022,7 +1022,18 @@
       "noScratchpad": "스크래치패드 메모 없음",
       "untitledNote": "제목 없는 메모",
       "moreTasks": "개 작업 더 있음",
-      "updated": "업데이트됨"
+      "updated": "업데이트됨",
+      "schedules": {
+        "title": "예약",
+        "empty": "세션 콜백 예약 없음",
+        "oneShot": "일회성",
+        "recurring": "반복",
+        "remaining": "{{time}} 남음",
+        "nextRun": "다음 실행: {{time}}",
+        "nextRunNone": "예약 없음",
+        "cancelFailed": "예약 콜백 취소에 실패했습니다",
+        "cancelAria": "{{name}} 취소"
+      }
     },
     "bubble": {
       "notification": "알림",

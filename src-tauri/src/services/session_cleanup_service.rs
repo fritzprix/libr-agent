@@ -1,6 +1,8 @@
 use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::delete_index;
+use crate::services::ScheduledTaskService;
+use crate::state::get_scheduled_task_repository;
 use log::{error, info};
 
 pub struct SessionCleanupService;
@@ -131,6 +133,24 @@ impl SessionCleanupService {
             );
         }
 
+        let mut session_ids = vec![session_id.to_string()];
+        // Descendants are removed by a single `delete_session(parent)` DB cascade, not via
+        // per-child cleanup. Include their IDs here so pinned SESSION callbacks are removed
+        // before those session rows disappear.
+        session_ids.extend(descendant_ids.iter().cloned());
+        if let Err(e) = ScheduledTaskService::delete_session_scheduled_tasks_for_sessions(
+            get_scheduled_task_repository(),
+            &session_ids,
+        )
+        .await
+        {
+            log::warn!(
+                "Failed to delete session scheduled callbacks for {}: {}",
+                session_id,
+                e
+            );
+        }
+
         let session_repo = crate::state::get_session_repository();
         session_repo
             .delete_session(session_id)
@@ -147,6 +167,19 @@ impl SessionCleanupService {
         if let Err(e) = delete_index(session_id) {
             log::warn!(
                 "Failed to delete search index for session {}: {}",
+                session_id,
+                e
+            );
+        }
+
+        if let Err(e) = ScheduledTaskService::delete_session_scheduled_tasks_for_sessions(
+            get_scheduled_task_repository(),
+            &[session_id.to_string()],
+        )
+        .await
+        {
+            log::warn!(
+                "Failed to delete session scheduled callbacks for {}: {}",
                 session_id,
                 e
             );

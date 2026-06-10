@@ -27,6 +27,15 @@ export interface ScheduledTask {
   updatedAt: number;
 }
 
+/** SESSION callback shown in the active session planning panel */
+export interface SessionScheduledTask {
+  id: string;
+  name: string;
+  message: string;
+  isOneShot: boolean;
+  nextRunAt: number | null;
+}
+
 export interface CreateScheduledTaskRequest {
   name: string;
   cronExpression: string;
@@ -90,4 +99,23 @@ export async function toggleScheduledTask(
 export async function deleteScheduledTask(id: string): Promise<void> {
   logger.info('Deleting scheduled task', { id });
   await safeInvoke<void>('delete_scheduled_task', { id });
+}
+
+export async function listSessionScheduledTasks(
+  sessionId: string,
+): Promise<SessionScheduledTask[]> {
+  return safeInvoke<SessionScheduledTask[]>('list_session_scheduled_tasks', {
+    sessionId,
+  });
+}
+
+export async function cancelSessionScheduledTask(
+  sessionId: string,
+  taskId: string,
+): Promise<void> {
+  logger.info('Cancelling session scheduled task', { sessionId, taskId });
+  await safeInvoke<void>('cancel_session_scheduled_task', {
+    sessionId,
+    taskId,
+  });
 }
