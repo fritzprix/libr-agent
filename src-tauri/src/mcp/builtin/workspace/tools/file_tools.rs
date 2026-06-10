@@ -64,7 +64,7 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("File content to write. Empty string creates an empty file."),
+            Some("File content to write. Empty string creates an empty file. In append mode, content is written verbatim—prefix with \\n when adding after an existing line."),
         ),
     );
     props.insert(
@@ -72,14 +72,14 @@ pub fn create_write_file_tool() -> MCPTool {
         enum_prop(
             vec!["create", "overwrite", "append"],
             "create",
-            Some("Write mode. 'create' fails if the file already exists, 'overwrite' replaces the entire file, and 'append' adds content to the end."),
+            Some("Write mode. 'create' fails if the file already exists, 'overwrite' replaces the entire file, and 'append' adds content verbatim to the end (no automatic newline)."),
         ),
     );
 
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Responses include current line anchors so follow-up editFiles calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
+        description: "Create, overwrite, or append content to a file. Missing parent directories are created automatically. Append writes content verbatim—include \\n in content when starting a new line. Responses include current line anchors so follow-up editFiles calls can usually reuse them directly. mode='overwrite' returns a diff of the changes."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,

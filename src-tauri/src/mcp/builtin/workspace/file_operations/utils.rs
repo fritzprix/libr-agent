@@ -127,6 +127,21 @@ pub fn is_not_found_io_error(error: &std::io::Error) -> bool {
         || error.to_string().contains("not found")
 }
 
+/// Stable English I/O error text for agent-facing tool responses.
+///
+/// Avoids leaking OS-locale messages (for example Korean `ENOENT` strings) into MCP output.
+pub fn user_facing_io_error_message(error: &std::io::Error) -> String {
+    match error.kind() {
+        ErrorKind::NotFound => "file or directory not found".to_string(),
+        ErrorKind::PermissionDenied => "permission denied".to_string(),
+        ErrorKind::AlreadyExists => "file already exists".to_string(),
+        ErrorKind::IsADirectory => "path is a directory, not a file".to_string(),
+        ErrorKind::NotADirectory => "path is not a directory".to_string(),
+        ErrorKind::InvalidInput => "invalid path or argument".to_string(),
+        other => format!("I/O error ({other})"),
+    }
+}
+
 /// Detect language/syntax highlighting identifier from file extension
 pub fn detect_language(path: &std::path::Path) -> &'static str {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -555,5 +570,14 @@ mod tests {
         assert_eq!(line_hash.len(), LINE_HASH_LEN);
         assert_eq!(prefix_hash.len(), PREFIX_HASH_LEN);
         assert_eq!(anchor, make_anchor(line_hash, prefix_hash));
+    }
+
+    #[test]
+    fn test_user_facing_io_error_message_uses_english_not_os_locale() {
+        let error = std::io::Error::new(ErrorKind::NotFound, "그런 파일이나 디렉터리가 없습니다");
+        assert_eq!(
+            user_facing_io_error_message(&error),
+            "file or directory not found"
+        );
     }
 }
