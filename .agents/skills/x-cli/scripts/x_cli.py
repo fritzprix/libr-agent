@@ -281,6 +281,18 @@ async def run_cli(args) -> int:
             }))
             return 0
 
+        elif args.action == "delete_tweet":
+            if not args.tweet_id:
+                print(json.dumps({"status": "error", "message": "Tweet ID is required."}), file=sys.stderr)
+                return 3
+            await client.delete_tweet(args.tweet_id)
+            print(json.dumps({
+                "status": "ok",
+                "tweet_id": args.tweet_id,
+                "message": "Tweet deleted successfully."
+            }))
+            return 0
+
     except Exception as e:
         print(json.dumps({"status": "error", "message": str(e)}), file=sys.stderr)
         return 2
@@ -288,7 +300,8 @@ async def run_cli(args) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="X CLI client")
     parser.add_argument("--action", required=True, choices=[
-        "post_tweet", "get_timeline", "get_user_tweets", "search_tweets", "like_tweet", "retweet"
+        "post_tweet", "get_timeline", "get_user_tweets", "search_tweets",
+        "like_tweet", "retweet", "delete_tweet",
     ])
     parser.add_argument("--message", help="Tweet message content")
     parser.add_argument("--file", help="Path to image/video attachment")
