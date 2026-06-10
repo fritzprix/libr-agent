@@ -100,6 +100,18 @@ Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerSh
     --password-stdin
   ```
 
+### Setup output contract
+
+`setup.py` prints a JSON object to stdout:
+
+- Exit code `0` — session cookies and config were saved.
+- Exit code `1` — authentication failed; partial files are removed.
+- Exit code `3` — missing required input (for example password).
+
+On success, `status` is always `"ok"`. An optional `warning` field means the session was saved but the post-save timeline probe failed (often a Twikit/X API parsing issue, not necessarily invalid cookies). Treat setup as successful, inform the user about the warning, and proceed to Step 3. If later `x_cli.py` calls fail, recommend re-copying browser cookies and re-running setup.
+
+`check_config.py` reads config and cookies with `utf-8-sig` so Windows BOM-prefixed JSON files still parse.
+
 ---
 
 ## Step 3: Dispatch Action
