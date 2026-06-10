@@ -3,11 +3,11 @@ name: x-cli
 description: |
   Python CLI wrapper for X (Twitter) interaction using Twikit.
   Use when the user wants to: (1) post tweets (with text or media, including thread replies), (2) view home timeline,
-  (3) view a user's tweets, (4) search tweets, (5) like/favorite a tweet, or (6) retweet a tweet.
+  (3) view a user's tweets, (4) search tweets, (5) like/favorite a tweet, (6) retweet a tweet, or (7) delete a tweet.
   On first use, guide the user through credential setup (username, email, password, optional TOTP) or browser cookie setup.
   Store config in ~/.libragent/x_config.json and session cookies in ~/.libragent/x_cookies.json.
   Subsequent requests use the stored session without re-authentication.
-  Triggers on requests like: "트윗 올려줘", "트위터 피드 보여줘", "post a tweet", "like tweet", "retweet".
+  Triggers on requests like: "트윗 올려줘", "트위터 피드 보여줘", "post a tweet", "like tweet", "retweet", "delete tweet".
 ---
 
 # X (Twitter) CLI Skill
@@ -180,5 +180,12 @@ python "<skill-base-dir>/scripts/x_cli.py" --action like_tweet \
 
 ```bash
 python "<skill-base-dir>/scripts/x_cli.py" --action retweet \
+  --tweet-id "1234567890"
+```
+
+### Action: `delete_tweet` — Delete your own tweet
+
+```bash
+python "<skill-base-dir>/scripts/x_cli.py" --action delete_tweet \
   --tweet-id "1234567890"
 ```
