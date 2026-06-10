@@ -2,9 +2,13 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 import re
 from pathlib import Path
+
+if os.name == "nt" and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # --- Twikit Monkey Patches ---
 try:

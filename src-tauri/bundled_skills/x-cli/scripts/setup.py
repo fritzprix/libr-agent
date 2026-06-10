@@ -165,47 +165,31 @@ async def run_setup(args, password, auth_token, ct0) -> int:
 
     try:
         if auth_token and ct0:
-            # Set and validate cookies directly
-            cookies = {
-                "auth_token": auth_token,
-                "ct0": ct0
-            }
-            client.set_cookies(cookies)
-            
-            # Validate cookies by attempting to fetch a timeline entry
-            await client.get_latest_timeline(count=1)
-            
-            # Save valid cookies
-            client.save_cookies(str(COOKIES_PATH))
+            client.set_cookies(
+                {
+                    "auth_token": auth_token,
+                    "ct0": ct0,
+                }
+            )
         else:
             if not password:
                 print(json.dumps({"status": "error", "message": "Password is required for credentials login."}), file=sys.stderr)
                 return 3
-            
-            # Perform login
+
             await client.login(
                 auth_info_1=args.username,
                 auth_info_2=args.email,
                 password=password,
-                totp_secret=args.totp_secret
+                totp_secret=args.totp_secret,
             )
-            
-            # Save cookies
-            client.save_cookies(str(COOKIES_PATH))
 
-        # Save config
+        client.save_cookies(str(COOKIES_PATH))
+
         config_data = {
             "username": args.username,
-            "email": args.email
+            "email": args.email,
         }
         CONFIG_PATH.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
-
-        print(json.dumps({
-            "status": "ok",
-            "username": args.username,
-            "message": "Authentication successful. Session cookies saved."
-        }))
-        return 0
 
     except Exception as e:
         # Clean up files on authentication failure to avoid partial state
@@ -235,6 +219,25 @@ async def run_setup(args, password, auth_token, ct0) -> int:
         else:
             print(json.dumps({"status": "error", "message": f"Authentication failed: {error_message}"}), file=sys.stderr)
         return 1
+
+    validation_warning: str | None = None
+    try:
+        await client.get_latest_timeline(count=1)
+    except Exception as e:
+        validation_warning = str(e)
+
+    result: dict[str, str] = {
+        "status": "ok",
+        "username": args.username,
+        "message": "Authentication successful. Session cookies saved.",
+    }
+    if validation_warning:
+        result["warning"] = (
+            "Session saved but timeline validation failed; cookies may still work for other actions."
+        )
+        result["validation_error"] = validation_warning
+    print(json.dumps(result))
+    return 0
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="X account setup script")
