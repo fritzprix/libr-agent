@@ -67,76 +67,84 @@ export default function Org() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <Skeleton className="mb-2 h-8 w-40" />
-            <Skeleton className="h-4 w-96" />
+      <div className="flex h-full flex-col bg-background p-6">
+        <div className="mx-auto flex h-full w-full max-w-6xl flex-col">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <Skeleton className="mb-2 h-8 w-40" />
+              <Skeleton className="h-4 w-96" />
+            </div>
+            <Skeleton className="h-9 w-24" />
           </div>
-          <Skeleton className="h-9 w-24" />
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <OrgCardSkeleton key={i} />
-          ))}
+          <div className="min-h-0 flex-1 overflow-y-auto pr-2 pb-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <OrgCardSkeleton key={i} />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            {t('orgHistory.heading', 'Org View')}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(
-              'orgHistory.description',
-              'Explicit org-created lineages only. One-off delegated sessions stay in ordinary history.',
-            )}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isValidating}
-        >
-          <RefreshCw
-            className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
-          />
-          {t('history.refresh', 'Refresh')}
-        </Button>
-      </div>
-
-      {orgs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-20 text-center text-muted-foreground">
-          <Building2 className="h-10 w-10 opacity-50" />
-          <p className="text-base font-medium">
-            {t('orgHistory.emptyState.title', 'No org lineages yet')}
-          </p>
-          <p className="max-w-xl text-sm">
-            {t(
-              'orgHistory.emptyState.subtitle',
-              'Create an org explicitly, then spawn org members through the org-aware tools. Plain sub-agent lineage does not belong here.',
-            )}
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {orgs.map((org) => (
-            <OrgCard
-              key={org.orgId}
-              org={org}
-              onDeleted={async () => {
-                await mutate();
-              }}
+    <div className="flex h-full flex-col bg-background p-6">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">
+              {t('orgHistory.heading', 'Org View')}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(
+                'orgHistory.description',
+                'Explicit org-created lineages only. One-off delegated sessions stay in ordinary history.',
+              )}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isValidating}
+          >
+            <RefreshCw
+              className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
             />
-          ))}
+            {t('history.refresh', 'Refresh')}
+          </Button>
         </div>
-      )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto pr-2 pb-4">
+          {orgs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-20 text-center text-muted-foreground">
+              <Building2 className="h-10 w-10 opacity-50" />
+              <p className="text-base font-medium">
+                {t('orgHistory.emptyState.title', 'No org lineages yet')}
+              </p>
+              <p className="max-w-xl text-sm">
+                {t(
+                  'orgHistory.emptyState.subtitle',
+                  'Create an org explicitly, then spawn org members through the org-aware tools. Plain sub-agent lineage does not belong here.',
+                )}
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {orgs.map((org) => (
+                <OrgCard
+                  key={org.orgId}
+                  org={org}
+                  onDeleted={async () => {
+                    await mutate();
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -492,6 +492,8 @@
         "high": "높음 - 샌드박스 (보안 높음)"
       },
       "shellIsolationDescription": "셸 명령에 대한 환경 격리를 제어합니다. '기본'은 사용자가 설치한 도구를 허용하고, '높음'은 최대 보안을 제공합니다.",
+      "shellRuntimeBootstrap": "셸 런타임 부트스트랩",
+      "shellRuntimeBootstrapDescription": "활성화하면 지속 셸이 전체 shell rc 대신 conda.sh와 nvm.sh만 불러옵니다. conda activate 없이 PATH만 확장합니다.",
       "performance": "성능 & 동시성",
       "performanceDescription": "이러한 런타임 제한은 한 번에 실행할 수 있는 에이전트 및 워크스페이스 프로세스 수를 제어합니다.",
       "title": "고급 런타임 제어",

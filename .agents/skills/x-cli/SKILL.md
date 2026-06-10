@@ -2,12 +2,12 @@
 name: x-cli
 description: |
   Python CLI wrapper for X (Twitter) interaction using Twikit.
-  Use when the user wants to: (1) post tweets (with text or media), (2) view home timeline,
-  (3) view a user's tweets, (4) search tweets, (5) like/favorite a tweet, or (6) retweet a tweet.
+  Use when the user wants to: (1) post tweets (with text or media, including thread replies), (2) view home timeline,
+  (3) view a user's tweets, (4) search tweets, (5) like/favorite a tweet, (6) retweet a tweet, or (7) delete a tweet.
   On first use, guide the user through credential setup (username, email, password, optional TOTP) or browser cookie setup.
   Store config in ~/.libragent/x_config.json and session cookies in ~/.libragent/x_cookies.json.
   Subsequent requests use the stored session without re-authentication.
-  Triggers on requests like: "트윗 올려줘", "트위터 피드 보여줘", "post a tweet", "like tweet", "retweet".
+  Triggers on requests like: "트윗 올려줘", "트위터 피드 보여줘", "post a tweet", "like tweet", "retweet", "delete tweet".
 ---
 
 # X (Twitter) CLI Skill
@@ -100,6 +100,18 @@ Execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
     --password-stdin
   ```
 
+### Setup output contract
+
+`setup.py` prints a JSON object to stdout:
+
+- Exit code `0` — session cookies and config were saved.
+- Exit code `1` — authentication failed; partial files are removed.
+- Exit code `3` — missing required input (for example password).
+
+On success, `status` is always `"ok"`. An optional `warning` field means the session was saved but the post-save timeline probe failed (often a Twikit/X API parsing issue, not necessarily invalid cookies). Treat setup as successful, inform the user about the warning, and proceed to Step 3. If later `x_cli.py` calls fail, recommend re-copying browser cookies and re-running setup.
+
+`check_config.py` reads config and cookies with `utf-8-sig` so Windows BOM-prefixed JSON files still parse.
+
 ---
 
 ## Step 3: Dispatch Action
@@ -113,8 +125,23 @@ If credentials login returns `404` with `code 34`, stop retrying passwords and s
 ```bash
 python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
   --message "트윗 내용" \
-  [--file "/path/to/attachment"]
+  [--file "/path/to/attachment"] \
+  [--reply-to "1234567890"]
 ```
+
+Post the first tweet without `--reply-to`. For thread replies, pass the previous tweet's ID:
+
+```bash
+# Tweet 1
+python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet --message "Part 1"
+
+# Tweet 2 (reply to tweet 1)
+python "<skill-base-dir>/scripts/x_cli.py" --action post_tweet \
+  --message "Part 2" \
+  --reply-to "<tweet_id_from_part_1>"
+```
+
+`--reply-to` and `--reply_to` are equivalent.
 
 ### Action: `get_timeline` — View home timeline
 
@@ -153,5 +180,12 @@ python "<skill-base-dir>/scripts/x_cli.py" --action like_tweet \
 
 ```bash
 python "<skill-base-dir>/scripts/x_cli.py" --action retweet \
+  --tweet-id "1234567890"
+```
+
+### Action: `delete_tweet` — Delete your own tweet
+
+```bash
+python "<skill-base-dir>/scripts/x_cli.py" --action delete_tweet \
   --tweet-id "1234567890"
 ```

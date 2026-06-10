@@ -109,6 +109,17 @@ vi.mock('lucide-react', () => ({
   FolderOpen: () => <span />,
   Upload: () => <span />,
   X: () => <span />,
+  ChevronDown: () => <span />,
+}));
+
+vi.mock('@/components/ui/collapsible', () => ({
+  Collapsible: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  CollapsibleTrigger: ({ children }: { children: ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
+  CollapsibleContent: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
 beforeEach(() => {

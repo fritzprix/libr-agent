@@ -42,6 +42,28 @@ pub async fn get_shell_isolation_level() -> IsolationLevel {
     }
 }
 
+/// Whether persistent shells should source conda/nvm integration scripts on startup.
+/// Defaults to false (opt-in).
+pub async fn get_shell_runtime_bootstrap_enabled() -> bool {
+    use crate::repositories::settings_repository::SettingsRepository;
+    use crate::state::try_get_settings_repository;
+
+    let Some(repo) = try_get_settings_repository() else {
+        return false;
+    };
+
+    match repo.get("systemSettings").await {
+        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
+            Ok(json) => json
+                .get("shellRuntimeBootstrap")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            Err(_) => false,
+        },
+        _ => false,
+    }
+}
+
 /// Get diff context lines from settings (defaults to 3)
 pub async fn get_diff_context_lines() -> usize {
     use crate::repositories::settings_repository::SettingsRepository;

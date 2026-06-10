@@ -14,6 +14,7 @@ skill-name/
 ## SKILL.md
 
 - **Frontmatter**: `name` and `description` only. The description is the primary trigger—put all "when to use" guidance here, not in the body.
+- **Validation**: run `scripts/validate_skill.py` after edits (see [validation.md](validation.md)).
 - **Body**: procedural instructions loaded after triggering.
 
 ## Scripts (`scripts/`)

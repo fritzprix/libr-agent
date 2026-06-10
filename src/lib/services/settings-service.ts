@@ -64,6 +64,7 @@ export interface SystemSettings {
   scheduledTaskMinimumIntervalMinutes: number;
   maxScheduledTaskGroups: number;
   shellIsolationLevel: IsolationLevel;
+  shellRuntimeBootstrap: boolean;
   skillsDirectory?: string;
 }
 
@@ -141,6 +142,7 @@ export const DEFAULT_SETTING: Settings = {
     scheduledTaskMinimumIntervalMinutes: 0,
     maxScheduledTaskGroups: 10,
     shellIsolationLevel: 'medium',
+    shellRuntimeBootstrap: false,
     skillsDirectory: '',
   },
   experimental: {

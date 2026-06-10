@@ -1,6 +1,6 @@
 # Skill Creation Process
 
-Follow these steps in order unless clearly inapplicable.
+Follow these steps in order unless clearly inapplicable. **Do not deploy until Step 5 passes.**
 
 ## Step 1: Understand with Concrete Examples
 
@@ -16,39 +16,47 @@ For each example, identify scripts, references, and assets that would help on re
 - Schemas/API docs → `references/`
 - Output templates → `assets/`
 
-## Step 3: Initialize the Skill
+## Step 3: Scaffold the Skill Directory
 
-For new skills, run:
+Create `{skill-name}/SKILL.md` with valid frontmatter. The folder name and frontmatter `name` must match.
 
-```bash
-scripts/init_skill.py <skill-name> --path <output-directory>
-```
-
-Creates directory structure with template SKILL.md and example resource folders. Skip if iterating an existing skill.
+Use hyphen-case names only (e.g. `my-new-skill`).
 
 ## Step 4: Edit the Skill
 
 1. Implement scripts/references/assets first (test scripts before finalizing).
-2. Delete unused example files from initialization.
+2. Delete unused template or example files.
 3. Write SKILL.md in imperative form.
 
-**Frontmatter**: `name` + comprehensive `description` (triggers + use cases). No other YAML fields.
+**Frontmatter**: `name` + comprehensive `description` (triggers + use cases). See [validation.md](validation.md) for YAML rules.
 
-**Body**: procedural instructions only.
+**Body**: procedural instructions only — no deployment paths (that belongs in skill-deployer).
 
-Consult `references/workflows.md` for multi-step patterns and `references/output-patterns.md` for output templates.
+Consult [workflows.md](workflows.md) for multi-step patterns and [output-patterns.md](output-patterns.md) for output templates.
 
-## Step 5: Package
+## Step 5: Validate
 
 ```bash
-scripts/package_skill.py <path/to/skill-folder> [./dist]
+python scripts/validate_skill.py <path/to/skill-folder>
 ```
 
-Validates frontmatter, naming, structure, then creates a `.skill` zip. Fix validation errors and retry.
+Fix all errors. Before deployment, run with `--strict` and fix warnings too:
 
-## Step 6: Iterate
+```bash
+python scripts/validate_skill.py <path/to/skill-folder> --strict
+```
+
+See [validation.md](validation.md) for the full checklist.
+
+## Step 6: Deploy
+
+Use **skill-deployer** to install the validated skill into the correct scope (`workspace`, `assistant`, or `global`).
+
+Do not skip validation — invalid frontmatter causes the Rust scanner to silently ignore the skill.
+
+## Step 7: Iterate
 
 1. Use on real tasks
 2. Note struggles or inefficiencies
 3. Update SKILL.md or bundled resources
-4. Re-test
+4. Re-run `validate_skill.py` after edits

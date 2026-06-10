@@ -102,3 +102,13 @@ Finally, use the provided scripts to handle mechanical steps: tests, build check
 4. Run release script with `patch`/`minor`/`major` or explicit `x.y.z`.
 5. Verify branch push + tag push completed successfully.
 6. Confirm GitHub Actions release workflow started.
+
+## Merge policy (required)
+
+When merging a release PR (`dev/0.8.x` → `main`):
+
+- **Always** use **Create a merge commit**.
+- **Never** use squash merge — it breaks history alignment with the long-lived dev branch and causes conflicts on every subsequent PR.
+- **After merge**, sync `main` back into `dev/0.8.x` (`git merge origin/main` + push).
+
+Squash merge is disabled at the GitHub repo level (`allow_squash_merge: false`).

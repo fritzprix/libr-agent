@@ -84,6 +84,7 @@ function getAdvancedComparableState(settings: SettingsFormState) {
     retryDelay: undefined,
     defaultMaxOutputTokens: undefined,
     shellIsolationLevel: settings.system.shellIsolationLevel,
+    shellRuntimeBootstrap: settings.system.shellRuntimeBootstrap,
   };
 }
 

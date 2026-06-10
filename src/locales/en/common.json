@@ -493,6 +493,8 @@
         "high": "High - Sandboxed (most secure)"
       },
       "shellIsolationDescription": "Controls environment isolation for shell commands. Basic allows user-installed tools, High provides maximum security.",
+      "shellRuntimeBootstrap": "Shell runtime bootstrap",
+      "shellRuntimeBootstrapDescription": "When enabled, persistent shells source conda.sh and nvm.sh only (not your full shell rc). PATH is extended without running conda activate.",
       "performance": "Performance & Concurrency",
       "performanceDescription": "These runtime limits control how many agents and workspace processes can run at once.",
       "title": "Advanced Runtime Controls",

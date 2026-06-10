@@ -4,21 +4,40 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 🚀 Features
+
+- **Opt-in Shell Runtime Bootstrap**: Add `shellRuntimeBootstrap` setting to source conda/nvm integration scripts in persistent shells without loading full shell rc files.
+- **Unix GUI PATH Probing**: Probe conda/nvm integration scripts for MCP subprocess PATH when the app is launched without a TTY.
+- **X CLI Thread Replies**: Support `--reply-to` / `--reply_to` for posting tweet replies in threads.
+
 ### 🐛 Fixes
 
-- **Windows Jupyter MCP Startup**: Fixed `@fre4x/jupyter` MCP server crashing on launch by centralizing Windows PATH discovery (Python, pip, pipx, jupyter binaries) into a shared `windows_path_discovery` module with `OnceLock` caching, replacing the previous per-call async subprocess detection that was slow and missed standard install locations.
+- **Settings Page Layout**: Fix inner scroll overflow on Org and Scheduled Tasks pages.
+- **Scheduled Task Modal**: Compact layout for smaller viewports; replace `Array.at()` for TypeScript lib compatibility.
 
 ### 🔧 Internal
 
-- **Windows PATH Discovery Consolidation**: Removed duplicate `windows_python.rs` and merged logic into `utils/windows_path_discovery.rs` with static caching, expanded detection to `ProgramFiles/Python`, `ProgramFiles(x86)/Python`, `APPDATA/Python/*/Scripts`, and `USERPROFILE/.local/bin`, and unified `env.rs` Unix/Windows path merge logic via shared `merge_with_current_path()` helper.
+- **Shared Shell Runtime Discovery**: Extract `shell_runtime` module for conda/nvm path discovery shared by bootstrap and PATH probing.
+- **Release Merge Policy**: Disable squash merge on GitHub; document merge-commit-only releases and post-release dev sync.
+
+## [0.8.9] - 2026-06-09
 
 ### 🚀 Features
 
 - **Agent Init Bundled Skill**: Ship `agent-init` exclusively via `src-tauri/bundled_skills` so managed `system_skills` copies refresh on app start; generates tailored `agents.md` / `AGENTS.md` guidance from code, docs, or mixed workspaces.
 
+### 🐛 Fixes
+
+- **Windows Jupyter MCP Startup**: Fixed `@fre4x/jupyter` MCP server crashing on launch by centralizing Windows PATH discovery (Python, pip, pipx, jupyter binaries) into a shared `windows_path_discovery` module with `OnceLock` caching, replacing the previous per-call async subprocess detection that was slow and missed standard install locations.
+- **Workspace Interactive Input (Windows)**: Fixed `requireUserInput` prompts by piping input to the child process stdin on Windows interactive shell sessions.
+- **Telegram CLI Skill**: Hardened CLI output formatting, message pagination, and agent-facing usage guidance.
+
 ### 🔧 Internal
 
+- **Windows PATH Discovery Consolidation**: Removed duplicate `windows_python.rs` and merged logic into `utils/windows_path_discovery.rs` with static caching, expanded detection to `ProgramFiles/Python`, `ProgramFiles(x86)/Python`, `APPDATA/Python/*/Scripts`, and `USERPROFILE/.local/bin`, and unified `env.rs` Unix/Windows path merge logic via shared `merge_with_current_path()` helper.
 - **Agent Init Skill**: Removed duplicate `.agents/skills/agent-init` copy and synced formatted SKILL.md into the bundled layer with `.force_update`.
+- **Bundled Skills Slimdown**: Reduced bundled skill context bloat by trimming reference docs and consolidating skill packaging.
+
 ## [0.8.8] - 2026-06-08
 
 ### 🚀 Features

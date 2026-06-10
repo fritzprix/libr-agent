@@ -17,11 +17,28 @@ Companion documents:
 1. **Update Version**: Update the version number in `package.json` and `Cargo.toml`.
 2. **Run Tests**: Ensure that all tests are passing.
 3. **Update Changelog**: Update the `CHANGELOG.md` file with the latest changes.
-4. **Create Release Branch**: Create a new release branch from `main`.
-5. **Build a Production Version**: Create a production build using `pnpm tauri build`.
-6. **Create Git Tag**: Create a new Git tag for the release.
-7. **Push to GitHub**: Push the release branch and tag to GitHub.
-8. **Create GitHub Release**: Create a new release on GitHub with the release notes and build artifacts.
+4. **Open PR**: Open `dev/0.8.x` → `main` (or your release integration branch → `main`).
+5. **Merge with merge commit**: Use **Create a merge commit** only. **Never squash** release PRs — squash diverges `dev/0.8.x` from `main` and causes repeat merge conflicts on the next PR.
+6. **Sync dev after merge**: Immediately merge `main` back into `dev/0.8.x` and push so both branches share history.
+7. **Build a Production Version**: Create a production build using `pnpm tauri build`.
+8. **Create Git Tag**: Create a new Git tag for the release.
+9. **Push to GitHub**: Push tags to GitHub.
+10. **Create GitHub Release**: Create a new release on GitHub with the release notes and build artifacts.
+
+### Merge policy (required)
+
+- **Allowed**: merge commit (`Create a merge commit`), rebase merge for short-lived feature branches if needed.
+- **Forbidden**: squash merge on `dev/*` → `main` release PRs.
+- **Repo setting**: `allow_squash_merge` is disabled on GitHub so squash is not offered in the UI.
+
+After every release merge into `main`:
+
+```bash
+git checkout dev/0.8.x
+git fetch origin
+git merge origin/main
+git push origin dev/0.8.x
+```
 
 ## 3. Automated Releases
 
