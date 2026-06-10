@@ -38,71 +38,6 @@ impl McpServerService {
             || existing_authentication != incoming_authentication
     }
 
-    fn spawn_verification_task(server_id: String) {
-        tauri::async_runtime::spawn(async move {
-            let repo = crate::state::get_mcp_server_repository();
-
-            let verification_result = Self::verify_server_by_id(repo, &server_id).await;
-            if let Err(error) = verification_result {
-                log::error!(
-                    "[verify-bg] Verification task failed for MCP server '{}': {}",
-                    server_id,
-                    error
-                );
-            }
-
-            crate::agent::tauri_events::emit_resource_updated(
-                "mcpServer",
-                "verify",
-                Some(server_id),
-            );
-        });
-    }
-
-    async fn verify_server_by_id(
-        repo: &dyn MCPServerRepository,
-        server_id: &str,
-    ) -> Result<(), String> {
-        let model = repo
-            .get(server_id)
-            .await
-            .map_err(|e| format!("DB error looking up server '{}': {}", server_id, e))?
-            .ok_or_else(|| format!("MCP server '{}' not found", server_id))?;
-
-        let mut config = serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
-            .map_err(|e| format!("Failed to parse config for '{}': {}", model.name, e))?;
-        config.name = Some(model.name.clone());
-
-        match Self::verify_config(config).await {
-            Ok(tools) => {
-                let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
-                repo.update_cached_tools(server_id, tools.len() as i32, tools_json_str)
-                    .await
-                    .map_err(|e| format!("Failed to persist verification result: {}", e))?;
-                log::info!(
-                    "[verify-bg] '{}' ({}) verified successfully with {} tool(s): [{}]",
-                    model.name,
-                    server_id,
-                    tools.len(),
-                    summarize_tool_names(&tools)
-                );
-                Ok(())
-            }
-            Err(error) => {
-                repo.set_verification_error(server_id, error.clone())
-                    .await
-                    .map_err(|e| format!("Failed to persist verification error: {}", e))?;
-                log::warn!(
-                    "[verify-bg] '{}' ({}) verification failed: {}",
-                    model.name,
-                    server_id,
-                    error
-                );
-                Ok(())
-            }
-        }
-    }
-
     /// Connects to the server defined by `config`, lists its tools, and disconnects.
     /// Returns the list of tools if successful.
     pub async fn verify_config(
@@ -192,6 +127,27 @@ impl McpServerService {
         Ok(tools)
     }
 
+    async fn persist_verified_tools(
+        repo: &dyn MCPServerRepository,
+        server_id: &str,
+        tools: &[MCPTool],
+    ) -> Result<(), String> {
+        let tools_json_str = crate::mcp::utils::serialize_mcp_tools(tools);
+        repo.update_cached_tools(server_id, tools.len() as i32, tools_json_str)
+            .await
+            .map_err(|e| format!("Failed to persist verification result: {}", e))
+    }
+
+    async fn reload_server(
+        repo: &dyn MCPServerRepository,
+        server_id: &str,
+    ) -> Result<crate::entity::mcp_server::Model, String> {
+        repo.get(server_id)
+            .await
+            .map_err(|e| format!("DB error: {}", e))?
+            .ok_or_else(|| format!("MCP server '{}' not found", server_id))
+    }
+
     pub async fn create_server_config(
         repo: &dyn MCPServerRepository,
         name: String,
@@ -213,7 +169,9 @@ impl McpServerService {
         mcp_config.name = Some(name.clone());
 
         // 2. Verify the configuration connects and provides tools before saving
-        let _ = mcp_config;
+        let tools = Self::verify_config(mcp_config)
+            .await
+            .map_err(|e| format!("Verification failed: {}", e))?;
 
         // 3. Save to database
         let model = repo
@@ -221,7 +179,17 @@ impl McpServerService {
             .await
             .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
 
-        Self::spawn_verification_task(model.id.clone());
+        Self::persist_verified_tools(repo, &model.id, &tools).await?;
+
+        let model = Self::reload_server(repo, &model.id).await?;
+
+        log::info!(
+            "'{}' ({}) saved after verification with {} tool(s): [{}]",
+            model.name,
+            model.id,
+            tools.len(),
+            summarize_tool_names(&tools)
+        );
 
         Ok(model)
     }
@@ -266,25 +234,37 @@ impl McpServerService {
 
         let requires_reverification =
             Self::requires_reverification(&existing_config_val, &final_config_val);
-        let _ = mcp_config;
 
-        // 4. Save to database
+        if requires_reverification {
+            let tools = Self::verify_config(mcp_config)
+                .await
+                .map_err(|e| format!("Verification failed: {}", e))?;
+
+            let updated = repo
+                .update(&id, name.as_deref(), config)
+                .await
+                .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
+
+            Self::persist_verified_tools(repo, &updated.id, &tools).await?;
+
+            let updated = Self::reload_server(repo, &updated.id).await?;
+
+            log::info!(
+                "'{}' ({}) updated after verification with {} tool(s): [{}]",
+                updated.name,
+                updated.id,
+                tools.len(),
+                summarize_tool_names(&tools)
+            );
+
+            return Ok(updated);
+        }
+
+        // Name-only or metadata-only updates do not require transport re-verification.
         let updated = repo
             .update(&id, name.as_deref(), config)
             .await
             .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
-
-        if requires_reverification {
-            repo.mark_verification_pending(&updated.id, true)
-                .await
-                .map_err(|e| format!("Failed to mark verification pending: {}", e))?;
-            Self::spawn_verification_task(updated.id.clone());
-            return repo
-                .get(&updated.id)
-                .await
-                .map_err(|e| format!("Failed to reload MCP server config after update: {}", e))?
-                .ok_or_else(|| format!("MCP server '{}' disappeared after update", updated.id));
-        }
 
         Ok(updated)
     }
