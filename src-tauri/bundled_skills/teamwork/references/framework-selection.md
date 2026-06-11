@@ -60,6 +60,7 @@ After choosing the coordination model, choose the execution substrate explicitly
 | One-off specialist delegation | `startSession(...)` | `delegate` | Lightweight child session without org coupling |
 | Org-visible lineage under a governing teamwork session | `prepareTeamworkWorkspace()`, then `createOrg(...)`, then `startSession(..., includeCurrentOrg=true)` | `org` | Preserves explicit org membership, Org view semantics, and parent-workspace inheritance while keeping teamwork artifacts in app-local storage |
 | Recurring, cron, heartbeat, or resumable automation | Scheduled task groups via `createScheduledTask(...)` and related `scheduled_task` tools | `schedule` | Keeps recurring collaboration separate from org lineage and under policy control |
+| Delay or recurrence inside the current conversation | `scheduleCallback(...)` | `session-schedule` | Session-bound follow-ups without teamwork scaffolding or global task groups |
 
 ## Hard separation rules
 
@@ -70,3 +71,4 @@ After choosing the coordination model, choose the execution substrate explicitly
 - Do not keep execution-specific org and scheduled-task operating rules mixed together once the substrate is chosen. Route to the specialist skill.
 - If the user wants an org chart, root-session resume, or explicit lineage visibility, choose explicit org lineage.
 - If the user wants periodic wake-ups, background recurrence, or governed automation cohorts, choose scheduled task groups.
+- If the user wants a reminder or delay inside the current conversation, choose `session-schedule` instead of global scheduled tasks.

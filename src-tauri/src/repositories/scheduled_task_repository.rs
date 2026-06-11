@@ -4,6 +4,7 @@
 //! `@skill:name`) which is expanded at execution time by `resolve_message_references`.
 
 use crate::entity::scheduled_task::{self, Entity as ScheduledTaskEntity};
+use crate::scheduled::TASK_CATEGORY_SESSION;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
     QueryFilter, QueryOrder, Set,
@@ -82,6 +83,18 @@ pub trait ScheduledTaskRepository: Send + Sync {
 
     /// Delete a scheduled task
     async fn delete_scheduled_task(&self, id: &str) -> Result<(), DbErr>;
+
+    /// List enabled SESSION callbacks pinned to a session.
+    ///
+    /// Disabled rows (completed one-shots, runner orphan handling, user cancel) are omitted
+    /// because the session panel only surfaces active pending callbacks.
+    async fn list_session_scheduled_tasks(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<scheduled_task::Model>, DbErr>;
+
+    /// Delete SESSION callbacks pinned to any of the given session IDs
+    async fn delete_session_scheduled_tasks(&self, session_ids: &[&str]) -> Result<u64, DbErr>;
 }
 
 // ─── SQLite implementation ───────────────────────────────────────────────────
@@ -238,5 +251,34 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
     async fn delete_scheduled_task(&self, id: &str) -> Result<(), DbErr> {
         ScheduledTaskEntity::delete_by_id(id).exec(&self.db).await?;
         Ok(())
+    }
+
+    async fn list_session_scheduled_tasks(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<scheduled_task::Model>, DbErr> {
+        ScheduledTaskEntity::find()
+            .filter(scheduled_task::Column::TaskCategory.eq(TASK_CATEGORY_SESSION))
+            .filter(scheduled_task::Column::SessionId.eq(session_id))
+            .filter(scheduled_task::Column::Enabled.eq(true))
+            .order_by_asc(scheduled_task::Column::NextRunAt)
+            .order_by_asc(scheduled_task::Column::CreatedAt)
+            .order_by_asc(scheduled_task::Column::Id)
+            .all(&self.db)
+            .await
+    }
+
+    async fn delete_session_scheduled_tasks(&self, session_ids: &[&str]) -> Result<u64, DbErr> {
+        if session_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let result = ScheduledTaskEntity::delete_many()
+            .filter(scheduled_task::Column::TaskCategory.eq(TASK_CATEGORY_SESSION))
+            .filter(scheduled_task::Column::SessionId.is_in(session_ids.iter().copied()))
+            .exec(&self.db)
+            .await?;
+
+        Ok(result.rows_affected)
     }
 }
