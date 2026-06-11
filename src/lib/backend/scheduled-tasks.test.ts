@@ -6,6 +6,8 @@ import {
   updateScheduledTask,
   toggleScheduledTask,
   deleteScheduledTask,
+  listSessionScheduledTasks,
+  cancelSessionScheduledTask,
 } from './scheduled-tasks';
 import { safeInvoke } from './core';
 
@@ -133,6 +135,33 @@ describe('scheduled-tasks backend wrapper', () => {
 
     expect(safeInvoke).toHaveBeenCalledWith('delete_scheduled_task', {
       id: 'task-1',
+    });
+  });
+});
+
+describe('session scheduled tasks backend wrapper', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('listSessionScheduledTasks calls safeInvoke with sessionId', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce([]);
+
+    await listSessionScheduledTasks('session-1');
+
+    expect(safeInvoke).toHaveBeenCalledWith('list_session_scheduled_tasks', {
+      sessionId: 'session-1',
+    });
+  });
+
+  it('cancelSessionScheduledTask calls safeInvoke with session and task ids', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
+
+    await cancelSessionScheduledTask('session-1', 'task-1');
+
+    expect(safeInvoke).toHaveBeenCalledWith('cancel_session_scheduled_task', {
+      sessionId: 'session-1',
+      taskId: 'task-1',
     });
   });
 });

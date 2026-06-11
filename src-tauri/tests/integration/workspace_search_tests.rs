@@ -859,6 +859,10 @@ async fn write_file_append_returns_updated_anchors_without_forcing_followup_read
         "append response should keep the append-specific success header: {text}"
     );
     assert!(
+        text.contains("Append is verbatim"),
+        "append response should explain newline behavior: {text}"
+    );
+    assert!(
         text.contains("1:") && text.contains("2:"),
         "append response should include current anchored lines for immediate follow-up edits: {text}"
     );

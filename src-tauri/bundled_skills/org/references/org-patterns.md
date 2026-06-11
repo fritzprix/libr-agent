@@ -6,22 +6,22 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 
 | Need | Tool / action |
 | --- | --- |
-| Create the org (once, from root session) | `createOrg(name="...")` |
-| Spawn an org-visible child session | `startSession(agentId, task)` |
-| Spawn a one-off child that stays out of Org view | `startSession(agentId, task, includeCurrentOrg=false)` |
+| Create the org (once, from root session) | `agent__createOrg(name="...")` |
+| Spawn an org-visible child session | `agent__startSession(agentId, task)` |
+| Spawn a one-off child that stays out of Org view | `agent__startSession(agentId, task, includeCurrentOrg=false)` |
 | Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
 | Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
-| Inspect org membership | `getOrg(orgId)` if available |
+| Inspect org membership | `agent__getOrg(orgId)` if available |
 
 ## Pattern: Create Org and First Member
 
 ```
 // Step 0 — from the governing root session
-prepareTeamworkWorkspace()
+agent__prepareTeamworkWorkspace()
 // -> returns "/absolute/path/to/teamwork-artifacts"
 
 // Step 1 — from the root session
-createOrg(
+agent__createOrg(
   name: "Research Strike Team"
 )
 // -> returns {
@@ -37,7 +37,7 @@ createOrg(
 // executionSubstrate.orgLineage.rootSessionId = <returned orgRootSessionId>
 
 // Step 3 — spawn an org-visible researcher
-startSession(
+agent__startSession(
   agentId: "<researcher-assistant-id>",
   task: "..."
 )
@@ -52,7 +52,7 @@ When a user clicks on the org or resumes teamwork, the entry point is always the
 rootSessionId = teamwork.json → executionSubstrate.orgLineage.rootSessionId
 
 // Resume the root, not whichever child was last active
-messageToSession(rootSessionId, "Continue with the next phase of the objective.")
+agent__messageToSession(rootSessionId, "Continue with the next phase of the objective.")
 ```
 
 Do not resume a child session directly and treat it as the org coordinator. Children may lack the full workspace constitution context.
@@ -62,14 +62,14 @@ Do not resume a child session directly and treat it as the org coordinator. Chil
 Org-visible children should inherit the parent effective workspace unless there is a concrete reason to diverge.
 
 ```
-startSession(agentId: "...", task: "...")
+agent__startSession(agentId: "...", task: "...")
 ```
 
 If a child starts outside the org inheritance path, it gets its own workspace and will not automatically see the same implementation context unless you explicitly pass `workspaceOverride`.
 
 ## Manifest Update After Org Creation
 
-After calling `createOrg`, update the scaffolded `.libragent/teamwork.json` instead of replacing it with a smaller hand-written object. Preserve the existing scaffold fields such as `workspacePolicy`, `specialistSkills`, and `refreshSemantics`, then fill in the org identity fields returned by `createOrg`.
+After calling `agent__createOrg`, update the scaffolded `.libragent/teamwork.json` instead of replacing it with a smaller hand-written object. Preserve the existing scaffold fields such as `workspacePolicy`, `specialistSkills`, and `refreshSemantics`, then fill in the org identity fields returned by `agent__createOrg`.
 
 ```json
 {
@@ -96,8 +96,8 @@ After calling `createOrg`, update the scaffolded `.libragent/teamwork.json` inst
       "orgId": "<returned-org-id>",
       "orgName": "<org-name>",
       "rootSessionId": "<returned-orgRootSessionId>",
-      "rootAction": "createOrg",
-      "childAction": "startSession",
+      "rootAction": "agent__createOrg",
+      "childAction": "agent__startSession",
       "childArgs": {
         "includeCurrentOrg": true
       },

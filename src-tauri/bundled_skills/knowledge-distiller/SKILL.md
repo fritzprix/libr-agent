@@ -7,6 +7,11 @@ description: Analyzes conversation sessions to extract key insights, decisions, 
 
 This skill provides a systematic workflow for retrieving conversation sessions, extracting valuable information (entities, relationships, and insights), and persisting them in the Knowledge Base. It transforms transient dialogue into structured, long-term memory.
 
+## Prerequisites
+
+- The agent session must have the optional `history` and `knowledge` builtin services enabled. If tool calls fail with a "not enabled" error, enable them via Assistants settings or `agent__update` before running this workflow.
+- Runtime tool names use the `server__tool` format shown below (for example `history__list`, `knowledge__record_knowledge`). Match names from the session tool list.
+
 ## Execution Triggers
 
 Use this skill when the user says:

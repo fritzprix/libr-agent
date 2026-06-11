@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
 import { parsePlanningState, parseScratchpadState } from '@/models/planning';
 import { cn } from '@/lib/utils';
+import { SessionSchedulesSection } from './SessionSchedulesSection';
 
 const logger = getLogger('AgentPlanningPanel');
 
@@ -241,6 +242,8 @@ export function AgentPlanningPanel({
             </ScrollArea>
           </div>
         </section>
+
+        <SessionSchedulesSection sessionId={session.id} isVisible={isVisible} />
       </CardContent>
     </Card>
   );

@@ -73,9 +73,9 @@ _Von einem einzelnen Agenten zu einem koordinierten Schwarm — rekursive Delega
 
 ### 4. Von einem Assistenten zu einem echten Team gehen
 
-- Erstelle Spezialisten mit `specialist-creator`
+- Scaffolde einen gemeinsamen Workspace mit `teamwork`
 - Teile Arbeit mit `delegate` auf
-- Mache wiederkehrende Zusammenarbeit zu einem gemeinsamen `teamwork`- oder `org`-Workspace
+- Formalisiere wiederkehrende Zusammenarbeit mit `org` oder `schedule`
 
 ---
 
@@ -140,9 +140,6 @@ Die wichtigsten Skills für den ersten Tag:
 | `system-setup`       | Erkennt und installiert fehlende Runtimes (Python, Node.js, uv) plattformübergreifend                 |
 | `mcp-installer`      | Registriert MCP-Server aus npm-Paketen, GitHub-URLs oder JSON-Config-Blöcken                          |
 | `mcp-importer`       | Importiert bestehende MCP-Configs aus Cursor, VS Code, Windsurf u.ä.                                  |
-| `specialist-creator` | Entwirft eine vollständige Agenten-Config (System-Prompt, Modell, Tools) aus einer Rollenbeschreibung |
-| `crew-constructor`   | Scannt verfügbare Tools und erstellt automatisch ein passendes Spezialistenteam                       |
-| `agent-tooling`      | Prüft Agenten, erkennt Fähigkeitsmismatch und balanciert Tool-Zuweisungen dynamisch neu               |
 | `delegate`           | Führt durch die Eltern→Kind-Sitzungsübergabe mit explizitem Kontexttransfer und Abstammungsverfolgung |
 | `teamwork`           | Baut die geteilte Arbeitsbereichsverfassung für koordinierte Multi-Agenten-Arbeit                     |
 | `org`                | Formalisiert dauerhafte Organisationsidentität und sichtbare Mitgliederhierarchie                     |
@@ -185,7 +182,7 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 
 ### Power-User — Multi-Agenten-Recherche-Pipeline
 
-1. Nutze `crew-constructor`, um automatisch zu generieren: Researcher×3, Analyst×1, Writer×1
+1. Nutze `teamwork`, um eine Recherche-Taskforce zu scaffolden (Rollen, MISSION.md, KANBAN.md)
 2. Der Orchestrator delegiert parallel über den `delegate`-Skill
 3. Ergebnisse werden zu einem einzigen strukturierten Bericht im Content Store zusammengeführt
 4. Plane den gesamten Workflow wöchentlich via `schedule`
@@ -205,10 +202,10 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.9_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_x64-setup.exe) · [`LibrAgent_0.8.9_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.9_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.9_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_amd64.AppImage) · [`LibrAgent_0.8.9_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_amd64.deb) · [`LibrAgent-0.8.9-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent-0.8.9-1.x86_64.rpm)
-- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.9)
+- **Windows:** [`LibrAgent_0.8.10_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64-setup.exe) · [`LibrAgent_0.8.10_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.10_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.10_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.AppImage) · [`LibrAgent_0.8.10_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.deb) · [`LibrAgent-0.8.10-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent-0.8.10-1.x86_64.rpm)
+- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.10)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Entwickler-Setup:**
@@ -235,9 +232,9 @@ pnpm tauri dev
 
 **Schritt 3 — Erstelle deinen ersten Agenten**
 
-- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz"_ → `specialist-creator` entwirft die vollständige Config
-- _"Baue ein Recherche-Team mit meinen aktuellen Tools"_ → `crew-constructor` erstellt Spezialisten im Batch
-- _"Optimiere Tool-Zuweisungen für alle meine Agenten"_ → `agent-tooling` prüft und balanciert automatisch neu
+- _"Erstelle einen Recherche-Agenten für Wettbewerbsintelligenz"_ → über Assistants-Einstellungen oder `agent__create` erstellen
+- _"Baue ein Recherche-Team mit meinen aktuellen Tools"_ → `teamwork` scaffoldet Rollen und gemeinsamen Workspace
+- _"Führe parallele Recherche-Subtasks aus"_ → `delegate` startet und überwacht Kind-Sitzungen
 
 **Schritt 4 — Parallelisiere mit `delegate`**
 

@@ -13,8 +13,9 @@ Use `teamwork` first when the workspace constitution is not ready.
 
 1. Confirm org is the right substrate.
    - Use org when the user wants org visibility, durable org identity, coordinator/specialist lineage, or root-session resume behavior.
-   - If the real need is recurring or cron-like automation, stop and use `schedule`.
-   - If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `prepareTeamworkWorkspace()` first.
+   - If the real need is app-wide recurring or cron-like automation, stop and use `schedule`.
+   - If the user only wants a delay or follow-up inside the current conversation, stop and use `session-schedule`.
+   - If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `agent__prepareTeamworkWorkspace()` first.
 2. Read `.libragent/teamwork.json` before acting.
    - Confirm `executionSubstrate.mode` is `"org"` and `orgLineage.intended` is `true`.
    - If the manifest says a different substrate, reconcile before proceeding.
@@ -22,11 +23,11 @@ Use `teamwork` first when the workspace constitution is not ready.
    - Treat the app-local teamwork artifact directory as the SSOT for orchestration files.
    - The governing root session and org-visible children should keep the normal parent/override workspace inheritance model.
 4. Create the org once from the root session.
-   - Use `createOrg(name="...")` from the governing root session.
+   - Use `agent__createOrg(name="...")` from the governing root session.
    - Record the returned `orgId` and `orgName` in `.libragent/teamwork.json` and `coordination/DECISIONS.md`.
-   - The session that calls `createOrg` becomes the org root. Do not call `createOrg` again.
+   - The session that calls `agent__createOrg` becomes the org root. Do not call `agent__createOrg` again.
 5. Spawn org-visible members explicitly.
-   - Use `startSession(agentId, task)` for org-visible children when you want the default parent-workspace inheritance. If the current session already belongs to the org, inheritance is automatic.
+   - Use `agent__startSession(agentId, task)` for org-visible children when you want the default parent-workspace inheritance. If the current session already belongs to the org, inheritance is automatic.
    - One-off delegated children that should stay out of Org view must set `includeCurrentOrg=false`.
 6. Resume through the org root.
    - The org root session is the canonical entry point. Org view should resume the root, not whichever child was last active.
@@ -41,7 +42,7 @@ Use `teamwork` first when the workspace constitution is not ready.
 - Do not use org identity for scheduled task groups or recurring automation.
 - Do not treat arbitrary child-session resume as org resume. The org root is the entry point.
 - Do not infer org membership from parent/child lineage alone — membership requires explicit org inheritance at session creation. Under an explicit org root that inheritance is automatic unless `includeCurrentOrg=false`.
-- After `createOrg`, update `.libragent/teamwork.json` with the actual `orgId` and `rootSessionId`.
+- After `agent__createOrg`, update `.libragent/teamwork.json` with the actual `orgId` and `rootSessionId`.
 
 ## References
 

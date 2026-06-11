@@ -288,7 +288,7 @@ impl WorkspaceServer {
 
                 if mode == "append" {
                     message.push_str(&format!(
-                        "**Appended:** {}, {} line(s)\n\n",
+                        "**Appended:** {}, {} line(s)\n**Note:** Append is verbatim; prefix content with `\\n` when adding after an existing line.\n\n",
                         appended_size_str, appended_lines
                     ));
                 }

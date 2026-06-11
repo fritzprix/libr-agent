@@ -304,6 +304,55 @@ impl ScheduledTaskService {
             .await
             .map_err(|e| e.to_string())
     }
+
+    pub async fn list_session_scheduled_tasks(
+        repo: &dyn ScheduledTaskRepository,
+        session_id: &str,
+    ) -> Result<Vec<ScheduledTaskModel>, String> {
+        repo.list_session_scheduled_tasks(session_id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn cancel_session_scheduled_task(
+        repo: &dyn ScheduledTaskRepository,
+        session_id: &str,
+        task_id: &str,
+    ) -> Result<(), String> {
+        let task = repo
+            .get_scheduled_task(task_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("ScheduledTask {task_id} not found"))?;
+
+        if !is_session_task(&task.task_category) {
+            return Err(
+                "Only session callbacks can be cancelled from the session panel".to_string(),
+            );
+        }
+
+        if task.session_id.as_deref() != Some(session_id) {
+            return Err("Session callback does not belong to this session".to_string());
+        }
+
+        repo.delete_scheduled_task(task_id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn delete_session_scheduled_tasks_for_sessions(
+        repo: &dyn ScheduledTaskRepository,
+        session_ids: &[String],
+    ) -> Result<u64, String> {
+        if session_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let ids: Vec<&str> = session_ids.iter().map(String::as_str).collect();
+        repo.delete_session_scheduled_tasks(&ids)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 fn normalize_schedule_timezone(schedule_timezone: &str) -> Result<&'static str, String> {

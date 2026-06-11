@@ -73,9 +73,9 @@ _단일 에이전트에서 조정된 군집까지 — 재귀적 위임, MCP 도�
 
 ### 4. 한 명의 도우미에서 진짜 팀으로 가기
 
-- `specialist-creator`로 전문 에이전트 생성
+- `teamwork`로 공유 워크스페이스 scaffold
 - `delegate`로 작업 분할
-- 반복 협업을 `teamwork` 또는 `org` 워크스페이스로 구조화
+- 반복 협업을 `org` 또는 `schedule`로 공식화
 
 ---
 
@@ -140,9 +140,6 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 | `system-setup`       | 모든 플랫폼에서 누락된 런타임(Python, Node.js, uv) 감지 및 설치       |
 | `mcp-installer`      | npm 패키지, GitHub URL, JSON 구성 블록에서 MCP 서버 등록              |
 | `mcp-importer`       | Cursor, VS Code, Windsurf 등에서 기존 MCP 구성 가져오기               |
-| `specialist-creator` | 역할 설명에서 풀 에이전트 구성(시스템 프롬프트, 모델, 도구) 설계      |
-| `crew-constructor`   | 사용 가능한 도구 스캔 및 일치하는 specialist 팀 배치 생성             |
-| `agent-tooling`      | 에이전트 감사, 능력 불일치 감지, 도구 할당 동적 재균형                |
 | `delegate`           | 명시적 컨텍스트 전달 및 계보 추적과 함께 부모→자식 세션 인수인도 안내 |
 | `teamwork`           | 조정된 멀티 에이전트 작업을 위한 공유 워크스페이스 헌법 scaffold      |
 | `org`                | 내구성 조직 정체성 및 org-visible 구성원 계보 공식화                  |
@@ -185,7 +182,7 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 
 ### 파워 유저 — 멀티 에이전트 연구 파이프라인
 
-1. `crew-constructor` 로 자동 생성: Researcher × 3, Analyst × 1, Writer × 1
+1. `teamwork`으로 리서치 태스크포스 scaffold (역할, MISSION.md, KANBAN.md)
 2. 오케스트레이터가 `delegate` 스킬로 병렬 위임
 3. 결과가 Content Store 의 단일 구조화된 보고서로 병합
 4. `schedule` 로 전체 워크플로우를 주간 예약
@@ -205,10 +202,10 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.9_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_x64-setup.exe) · [`LibrAgent_0.8.9_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.9_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.9_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_amd64.AppImage) · [`LibrAgent_0.8.9_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_amd64.deb) · [`LibrAgent-0.8.9-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent-0.8.9-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.9)
+- **Windows:** [`LibrAgent_0.8.10_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64-setup.exe) · [`LibrAgent_0.8.10_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.10_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.10_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.AppImage) · [`LibrAgent_0.8.10_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.deb) · [`LibrAgent-0.8.10-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent-0.8.10-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.10)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **개발자 설정:**
@@ -235,9 +232,9 @@ pnpm tauri dev
 
 **3 단계 — 첫 에이전트 생성**
 
-- _"경쟁 정보 수집을 위한 리서처 에이전트 생성"_ → `specialist-creator`가 완전한 구성 설계
-- _"현재 도구로 연구 팀 빌드"_ → `crew-constructor`가 팀 일괄 생성
-- _"모든 에이전트 간 도구 할당 최적화"_ → `agent-tooling`이 감사하고 재균형 조정
+- _"경쟁 정보 수집을 위한 리서처 에이전트 생성"_ → Assistants 설정 또는 `agent__create`로 생성
+- _"현재 도구로 연구 팀 빌드"_ → `teamwork`이 역할과 공유 워크스페이스 scaffold
+- _"병렬 리서치 서브태스크 실행"_ → `delegate`가 자식 세션 생성 및 모니터링
 
 **4 단계 — `delegate`로 병렬 작업**
 

@@ -87,7 +87,7 @@ If the user already has the cookie values ready and explicitly prefers a one-sho
 
 ### Option B: Credentials-based Setup (Fallback)
 
-Execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
+Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerShell`) with:
 
 - `requireUserInput=true`
 - `inputType=password`

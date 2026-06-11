@@ -73,9 +73,9 @@ _単一エージェントから協調クラスターまで——再帰的委任�
 
 ### 4. 一人のアシスタントから本物のチームへ進む
 
-- `specialist-creator` で専門エージェントを作成
+- `teamwork` で共有ワークスペースを scaffold
 - `delegate` で作業を分割
-- `teamwork` または `org` で継続的な協業を共有ワークスペース化
+- `org` または `schedule` で継続的な協業を正式化
 
 ---
 
@@ -140,9 +140,6 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 | `system-setup`       | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール |
 | `mcp-installer`      | npmパッケージ、GitHub URL、JSON設定ブロックからMCPサーバーを登録                          |
 | `mcp-importer`       | Cursor、VS Code、Windsurf等から既存MCP設定をインポート                                    |
-| `specialist-creator` | ロール説明から完全なエージェント設定(システムプロンプト、モデル、ツール)を設計            |
-| `crew-constructor`   | 利用可能なツールをスキャンし、マッチしたスペシャリストチームを自動バッチ作成              |
-| `agent-tooling`      | エージェントを監査し、能力の不一致を検出し、ツール割り当てを動的に再バランス              |
 | `delegate`           | 明示的なコンテキスト転送と系譜追跡付きで親→子セッションの引き継ぎを案内                   |
 | `teamwork`           | 調整されたマルチエージェント作業のための共有ワークスペース憲法をスキャフォールド          |
 | `org`                | 持続的な組織アイデンティティとorg-visibleメンバー階層を正式化                             |
@@ -185,7 +182,7 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 
 ### パワーユーザー——マルチエージェント研究パイプライン
 
-1. `crew-constructor`で自動生成：Researcher×3、Analyst×1、Writer×1
+1. `teamwork`でリサーチタスクフォースをスキャフォールド（役割、MISSION.md、KANBAN.md）
 2. オーケストレーターが`delegate`スキルで並列委任
 3. 結果がContent Storeの単一構造化レポートにマージ
 4. `schedule`でワークフロー全体を週次予約
@@ -205,10 +202,10 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.9_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_x64-setup.exe) · [`LibrAgent_0.8.9_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.9_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.9_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_amd64.AppImage) · [`LibrAgent_0.8.9_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent_0.8.9_amd64.deb) · [`LibrAgent-0.8.9-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.9/LibrAgent-0.8.9-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.9)
+- **Windows:** [`LibrAgent_0.8.10_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64-setup.exe) · [`LibrAgent_0.8.10_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.10_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.10_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.AppImage) · [`LibrAgent_0.8.10_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.deb) · [`LibrAgent-0.8.10-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent-0.8.10-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.10)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **開発者セットアップ：**
@@ -235,9 +232,9 @@ pnpm tauri dev
 
 **ステップ3——最初のエージェントを作成**
 
-- _「競合情報のためのresearcherエージェントを作成して」_ → `specialist-creator`が完全な設定を設計
-- _「現在のツールでresearchチームを構築して」_ → `crew-constructor`がバッチ作成
-- _「すべてのエージェントのツール割り当てを最適化して」_ → `agent-tooling`が監査・再バランス
+- _「競合情報のためのresearcherエージェントを作成して」_ → Assistants設定または`agent__create`で作成
+- _「現在のツールでresearchチームを構築して」_ → `teamwork`が役割と共有ワークスペースをスキャフォールド
+- _「並列リサーチサブタスクを実行して」_ → `delegate`が子セッションを生成・監視
 
 **ステップ4——`delegate`で並列作業**
 

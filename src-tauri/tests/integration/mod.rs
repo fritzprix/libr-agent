@@ -43,6 +43,7 @@ pub mod llm_context_tests;
 pub mod llm_error_outcome_tests;
 pub mod mcp_preset_category_tests;
 pub mod mcp_server_repository_tests;
+pub mod mcp_server_service_tests;
 pub mod mcp_tool_cache_refresh_tests;
 pub mod mcp_utils_tests;
 pub mod message_cursor_pagination_tests;

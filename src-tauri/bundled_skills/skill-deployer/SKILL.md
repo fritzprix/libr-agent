@@ -1,6 +1,6 @@
 ---
 name: skill-deployer
-description: "Deploy a validated user or workspace skill to user_skills/ or .libragent/skills/. Use after skill-creator validation. NOT for system_skills or bundled skills — use bundled-skill-creator for app-shipped skills. Triggers: deploy skill, install skill, global skill, workspace skill, user_skills."
+description: "Deploy a validated user or workspace skill to user_skills/ or .libragent/skills/. Use after skill-creator validation. NOT for system_skills or app-bundled skills. Triggers: deploy skill, install skill, global skill, workspace skill, user_skills."
 ---
 
 # Skill Deployer
@@ -10,7 +10,7 @@ Install a **validated custom skill** into `user_skills/` (global) or `.libragent
 > **Prerequisite**: Run `skill-creator` validation first:
 > `python <skill-creator-base-dir>/scripts/validate_skill.py <skill-folder> --strict`
 
-This skill covers **where** and **how** to install user/workspace skills. It does **not** cover authoring — use **skill-creator**. It does **not** ship skills with the app — use **bundled-skill-creator**.
+This skill covers **where** and **how** to install user/workspace skills. It does **not** cover authoring — use **skill-creator**. It does **not** ship skills with the app — that is a developer/repo workflow (see Bundled scope below).
 
 ## What This Skill Is NOT
 
@@ -18,7 +18,7 @@ This skill covers **where** and **how** to install user/workspace skills. It doe
 | --- | --- | --- |
 | Install my custom skill globally | **skill-deployer** (this skill) | `{dataDir}/user_skills/{name}/` |
 | Install for this session/project | **skill-deployer** (this skill) | `{workspace}/.libragent/skills/{name}/` |
-| Ship skill inside the LibrAgent app | **bundled-skill-creator** | `src-tauri/bundled_skills/{name}/` → synced to `system_skills/` |
+| Ship skill inside the LibrAgent app | **Developer workflow** (not this skill) | `src-tauri/bundled_skills/{name}/` → synced to `system_skills/` on build |
 
 **Never deploy custom skills to `{dataDir}/system_skills/`.** That folder is a **managed mirror** of packaged bundled skills. Manual additions are **deleted on app startup**. Do not create or edit `.bundled_manifest.json` outside bundled sync — it does not register custom skills.
 
@@ -91,7 +91,7 @@ Auto-discovered under the workspace root:
 
 ### Bundled scope — do NOT use this skill
 
-Repo path only; managed by **bundled-skill-creator** and app startup sync:
+Repo path only; managed by app build mirror and startup sync (not user-deployable):
 
 ```text
 src-tauri/bundled_skills/{skill-name}/
@@ -212,7 +212,7 @@ A workspace skill silently overrides a global skill with the same name.
 
 ## Common Mistakes
 
-- **Deploying to `system_skills/`** — use `user_skills/` for global custom skills; use bundled-skill-creator to ship with the app
+- **Deploying to `system_skills/`** — use `user_skills/` for global custom skills; ship app-bundled skills via `src-tauri/bundled_skills/` in the repo
 - **Confusing `system_skills` with global** — global user skills live in `user_skills/`
 - **Creating `.bundled_manifest.json`** — only bundled sync uses this; it does not register custom skills elsewhere
 - **Hash-checking against bundled manifest** — irrelevant for custom skills; discovery uses directory scan + valid SKILL.md

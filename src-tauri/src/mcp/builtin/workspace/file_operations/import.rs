@@ -1,4 +1,5 @@
 use super::super::WorkspaceServer;
+use super::utils::user_facing_io_error_message;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
@@ -81,7 +82,7 @@ impl WorkspaceServer {
                         "Failed to create directory '{}' for file '{}': {}",
                         parent.display(),
                         src_path_str,
-                        e
+                        user_facing_io_error_message(&e)
                     ));
                     continue;
                 }
@@ -99,7 +100,11 @@ impl WorkspaceServer {
                         .push(format!("Imported: {} -> {}", src_path_str, dest_rel_path));
                 }
                 Err(e) => {
-                    error_messages.push(format!("Failed to import '{}': {}", src_path_str, e));
+                    error_messages.push(format!(
+                        "Failed to import '{}': {}",
+                        src_path_str,
+                        user_facing_io_error_message(&e)
+                    ));
                 }
             }
         }
