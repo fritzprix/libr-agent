@@ -1,8 +1,8 @@
 use crate::common;
 
 use tauri_mcp_agent_lib::repositories::{
-    SessionMetadata, SessionRepository, SessionStatus, SqliteScheduledTaskRepository,
-    SqliteSessionRepository,
+    ScheduledTaskRepository, SessionMetadata, SessionRepository, SessionStatus,
+    SqliteScheduledTaskRepository, SqliteSessionRepository,
 };
 use tauri_mcp_agent_lib::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use tauri_mcp_agent_lib::services::scheduled_task_service::{
@@ -150,4 +150,204 @@ async fn global_tasks_still_require_cron_expression() {
     .expect_err("GLOBAL tasks without cron should fail");
 
     assert!(error.contains("cron_expression"));
+}
+
+#[tokio::test]
+async fn delete_session_scheduled_tasks_removes_only_session_callbacks() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db);
+
+    let session_id = "session-delete-callbacks";
+    session_repo
+        .upsert_session(&make_session(session_id, "assistant-1"))
+        .await
+        .expect("session should be persisted");
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let governance = ScheduledTaskGovernanceSettings::default();
+
+    let session_task = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Session callback".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            group_id: None,
+            group_name: None,
+            message: "Follow up".to_string(),
+            yolo_mode: false,
+            created_by_session_id: Some(session_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            workspace_override: None,
+            next_run_at: Some(now_ms + 60_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("session callback should be created");
+
+    let global_task = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Global recurring".to_string(),
+            task_category: TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some("0 9 * * *".to_string()),
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            group_id: None,
+            group_name: None,
+            message: "Daily check".to_string(),
+            yolo_mode: false,
+            created_by_session_id: None,
+            session_id: Some(session_id.to_string()),
+            workspace_override: None,
+            next_run_at: None,
+        },
+        &governance,
+    )
+    .await
+    .expect("global task should be created");
+
+    let deleted = ScheduledTaskService::delete_session_scheduled_tasks_for_sessions(
+        &scheduled_repo,
+        &[session_id.to_string()],
+    )
+    .await
+    .expect("session callback cleanup should succeed");
+
+    assert_eq!(deleted, 1);
+    assert!(scheduled_repo
+        .get_scheduled_task(&session_task.id)
+        .await
+        .expect("lookup should succeed")
+        .is_none());
+    assert!(scheduled_repo
+        .get_scheduled_task(&global_task.id)
+        .await
+        .expect("lookup should succeed")
+        .is_some());
+}
+
+#[tokio::test]
+async fn list_session_scheduled_tasks_returns_enabled_session_callbacks_only() {
+    let db = common::setup_test_db_with_migrations().await;
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db);
+
+    let session_id = "session-list-callbacks";
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let governance = ScheduledTaskGovernanceSettings::default();
+
+    ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Active callback".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            group_id: None,
+            group_name: None,
+            message: "Ping".to_string(),
+            yolo_mode: false,
+            created_by_session_id: Some(session_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            workspace_override: None,
+            next_run_at: Some(now_ms + 30_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("active callback should be created");
+
+    ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Other session callback".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            group_id: None,
+            group_name: None,
+            message: "Other".to_string(),
+            yolo_mode: false,
+            created_by_session_id: Some("other-session".to_string()),
+            session_id: Some("other-session".to_string()),
+            workspace_override: None,
+            next_run_at: Some(now_ms + 30_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("other callback should be created");
+
+    let listed = ScheduledTaskService::list_session_scheduled_tasks(&scheduled_repo, session_id)
+        .await
+        .expect("list should succeed");
+
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].name, "Active callback");
+}
+
+#[tokio::test]
+async fn cascade_cleanup_deletes_callbacks_pinned_to_descendant_sessions() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db);
+
+    let parent_id = "parent-session";
+    let child_id = "child-session";
+    session_repo
+        .upsert_session(&make_session(parent_id, "assistant-1"))
+        .await
+        .expect("parent session should be persisted");
+
+    let mut child = make_session(child_id, "assistant-1");
+    child.parent_session_id = Some(parent_id.to_string());
+    session_repo
+        .upsert_session(&child)
+        .await
+        .expect("child session should be persisted");
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let governance = ScheduledTaskGovernanceSettings::default();
+
+    let child_callback = ScheduledTaskService::create_scheduled_task_with_governance(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Child callback".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-1".to_string(),
+            group_id: None,
+            group_name: None,
+            message: "Child follow up".to_string(),
+            yolo_mode: false,
+            created_by_session_id: Some(child_id.to_string()),
+            session_id: Some(child_id.to_string()),
+            workspace_override: None,
+            next_run_at: Some(now_ms + 60_000),
+        },
+        &governance,
+    )
+    .await
+    .expect("child callback should be created");
+
+    let deleted = ScheduledTaskService::delete_session_scheduled_tasks_for_sessions(
+        &scheduled_repo,
+        &[parent_id.to_string(), child_id.to_string()],
+    )
+    .await
+    .expect("cascade cleanup should succeed");
+
+    assert_eq!(deleted, 1);
+    assert!(scheduled_repo
+        .get_scheduled_task(&child_callback.id)
+        .await
+        .expect("lookup should succeed")
+        .is_none());
 }

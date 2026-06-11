@@ -3,7 +3,7 @@
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
 use crate::repositories::UpdateScheduledTaskParams;
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
-use crate::scheduled::TASK_CATEGORY_GLOBAL;
+use crate::scheduled::{is_one_shot_task, TASK_CATEGORY_GLOBAL};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::get_scheduled_task_repository;
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,29 @@ pub struct ScheduledTaskDto {
     pub next_run_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// Session callback shown in the active session planning panel
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionScheduledTaskDto {
+    pub id: String,
+    pub name: String,
+    pub message: String,
+    pub is_one_shot: bool,
+    pub next_run_at: Option<i64>,
+}
+
+impl From<ScheduledTaskModel> for SessionScheduledTaskDto {
+    fn from(m: ScheduledTaskModel) -> Self {
+        Self {
+            id: m.id,
+            name: m.name,
+            message: m.message,
+            is_one_shot: is_one_shot_task(&m.cron_expression),
+            next_run_at: m.next_run_at,
+        }
+    }
 }
 
 impl From<ScheduledTaskModel> for ScheduledTaskDto {
@@ -211,4 +234,33 @@ pub async fn toggle_scheduled_task(id: String, enabled: bool) -> Result<Schedule
 #[command]
 pub async fn delete_scheduled_task(id: String) -> Result<(), String> {
     ScheduledTaskService::delete_scheduled_task(get_scheduled_task_repository(), &id).await
+}
+
+/// List SESSION callbacks pinned to an active session
+#[command]
+pub async fn list_session_scheduled_tasks(
+    session_id: String,
+) -> Result<Vec<SessionScheduledTaskDto>, String> {
+    ScheduledTaskService::list_session_scheduled_tasks(get_scheduled_task_repository(), &session_id)
+        .await
+        .map(|tasks| {
+            tasks
+                .into_iter()
+                .map(SessionScheduledTaskDto::from)
+                .collect()
+        })
+}
+
+/// Cancel a SESSION callback from the active session panel
+#[command]
+pub async fn cancel_session_scheduled_task(
+    session_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    ScheduledTaskService::cancel_session_scheduled_task(
+        get_scheduled_task_repository(),
+        &session_id,
+        &task_id,
+    )
+    .await
 }

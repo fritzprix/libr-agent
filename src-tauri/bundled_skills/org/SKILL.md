@@ -13,7 +13,8 @@ Use `teamwork` first when the workspace constitution is not ready.
 
 1. Confirm org is the right substrate.
    - Use org when the user wants org visibility, durable org identity, coordinator/specialist lineage, or root-session resume behavior.
-   - If the real need is recurring or cron-like automation, stop and use `schedule`.
+   - If the real need is app-wide recurring or cron-like automation, stop and use `schedule`.
+   - If the user only wants a delay or follow-up inside the current conversation, stop and use `session-schedule`.
    - If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `agent__prepareTeamworkWorkspace()` first.
 2. Read `.libragent/teamwork.json` before acting.
    - Confirm `executionSubstrate.mode` is `"org"` and `orgLineage.intended` is `true`.

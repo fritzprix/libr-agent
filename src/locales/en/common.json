@@ -1022,7 +1022,18 @@
       "noScratchpad": "No scratchpad notes",
       "untitledNote": "Untitled note",
       "moreTasks": "more tasks",
-      "updated": "updated"
+      "updated": "updated",
+      "schedules": {
+        "title": "Schedules",
+        "empty": "No session callbacks scheduled",
+        "oneShot": "One-shot",
+        "recurring": "Recurring",
+        "remaining": "{{time}} remaining",
+        "nextRun": "Next run: {{time}}",
+        "nextRunNone": "Not scheduled",
+        "cancelFailed": "Failed to cancel scheduled callback",
+        "cancelAria": "Cancel {{name}}"
+      }
     },
     "bubble": {
       "notification": "Notification",

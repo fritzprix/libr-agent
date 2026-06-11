@@ -83,8 +83,9 @@ use commands::playbook_commands::{
     update_playbook,
 };
 use commands::scheduled_task_commands::{
-    create_scheduled_task, delete_scheduled_task, get_scheduled_task, list_scheduled_tasks,
-    toggle_scheduled_task, update_scheduled_task,
+    cancel_session_scheduled_task, create_scheduled_task, delete_scheduled_task,
+    get_scheduled_task, list_scheduled_tasks, list_session_scheduled_tasks, toggle_scheduled_task,
+    update_scheduled_task,
 };
 use commands::session_commands::remove_session;
 use commands::settings_commands::{
@@ -308,6 +309,8 @@ pub fn run() {
                 update_scheduled_task,
                 toggle_scheduled_task,
                 delete_scheduled_task,
+                list_session_scheduled_tasks,
+                cancel_session_scheduled_task,
                 set_setting,
                 update_settings,
                 get_setting,
