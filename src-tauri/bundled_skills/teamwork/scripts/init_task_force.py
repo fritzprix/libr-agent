@@ -15,17 +15,17 @@ SUBSTRATE_CHOICES = [SUBSTRATE_PLAIN, SUBSTRATE_ORG, SUBSTRATE_SCHEDULED]
 
 SUBSTRATE_DISPLAY = {
     SUBSTRATE_PLAIN: (
-        "Plain child sessions via startSession(...). "
+        "Plain child sessions via agent__startSession(...). "
         "Use delegate for delegation mechanics when needed."
     ),
     SUBSTRATE_ORG: (
-        "Explicit org lineage via createOrg(...) once from the root session, "
-        "then startSession(...) for org-visible children. "
+        "Explicit org lineage via agent__createOrg(...) once from the root session, "
+        "then agent__startSession(...) for org-visible children. "
         "Org-visible children inherit the governing session's effective workspace by default. "
         "Follow org for org-specific operating rules."
     ),
     SUBSTRATE_SCHEDULED: (
-        "Scheduled task groups via createScheduledTask(...) and related scheduled_task tools. "
+        "Scheduled task groups via scheduled_task__createScheduledTask(...) and related scheduled_task tools. "
         "Use a stable groupName for the first task and groupId for subsequent tasks in the same group. "
         "Follow schedule for scheduled-group operating rules."
     ),
@@ -234,8 +234,8 @@ def build_teamwork_manifest(
             },
             "orgLineage": {
                 "intended": is_org,
-                "rootAction": "createOrg",
-                "childAction": "startSession",
+                "rootAction": "agent__createOrg",
+                "childAction": "agent__startSession",
                 "childArgs": {"includeCurrentOrg": True},
                 "compatibilityAlias": "spawnOrgAgent",
                 "workspaceSharing": "inherit-parent-workspace-by-default",
@@ -263,7 +263,7 @@ def main() -> None:
         "--output",
         required=True,
         help=(
-            "App-local teamwork artifact directory to scaffold into. Prefer the absolute path returned by prepareTeamworkWorkspace()."
+            "App-local teamwork artifact directory to scaffold into. Prefer the absolute path returned by agent__prepareTeamworkWorkspace()."
         ),
     )
     parser.add_argument(
@@ -314,7 +314,7 @@ def main() -> None:
     if is_inside_git_worktree(workspace) and not args.allow_git_worktree:
         raise SystemExit(
             "Refusing to scaffold inside a Git worktree. "
-            "Use prepareTeamworkWorkspace() and pass its artifactPath to --output, "
+            "Use agent__prepareTeamworkWorkspace() and pass its artifactPath to --output, "
             "or add --allow-git-worktree if repo scaffolding is truly intentional."
         )
     workspace.mkdir(parents=True, exist_ok=True)
@@ -348,9 +348,9 @@ def main() -> None:
 Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
 
 ## Execution Notes
-- Plain child sessions: `startSession(...)`, use `delegate` for delegation mechanics
-- Explicit org lineage: `createOrg(...)` once from root, then `startSession(..., includeCurrentOrg=true)`, follow `org`
-- Recurring automation: `createScheduledTask(...)` and related scheduled-task tools, follow `schedule`
+- Plain child sessions: `agent__startSession(...)`, use `delegate` for delegation mechanics
+- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__startSession(..., includeCurrentOrg=true)`, follow `org`
+- Recurring automation: `scheduled_task__createScheduledTask(...)` and related scheduled-task tools, follow `schedule`
 
 ## Definition of Done
 - Replace this list with concrete success criteria.

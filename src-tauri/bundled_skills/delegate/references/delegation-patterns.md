@@ -4,7 +4,7 @@ Use this file when you need concrete task wording or when a delegated child sess
 
 ## Quick Matrix
 
-| Need | Safe with normal `startSession`? | What to do |
+| Need | Safe with normal `agent__startSession`? | What to do |
 | --- | --- | --- |
 | Child runs a bounded task with its own workspace | Yes | Delegate normally |
 | Child sees parent workspace files automatically | No | Put required content in the task, or keep the work in the parent |

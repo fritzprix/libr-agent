@@ -40,7 +40,7 @@ Your task:
 - If unchanged, explain why the opposing view is wrong or out of scope
 ```
 
-Send tailored messages to each involved child. If a child already has a long history from round 1, call `compactSessionContext(sessionId)` before sending a large follow-up. Then `checkSession(sessionId, wait=true)` for each.
+Send tailored messages to each involved child. If a child already has a long history from round 1, call `agent__compactSessionContext(sessionId)` before sending a large follow-up. Then `agent__checkSession(sessionId, wait=true)` for each.
 
 ## Round Limits
 
@@ -56,7 +56,7 @@ Escalate to the user when:
 - evidence is missing from both sides
 - scope was insufficient to decide
 
-Do not loop indefinitely. `messageToSession` has no round cap, but cost, timeouts, and context grow quickly.
+Do not loop indefinitely. `agent__messageToSession` has no round cap, but cost, timeouts, and context grow quickly.
 
 ## Operational Constraints
 
@@ -65,21 +65,21 @@ Keep in mind during multi-child workflows:
 - **Fanout:** `maxFanout` on the parent lineage can cap how many direct children you may spawn
 - **Depth:** nested delegation consumes `maxDepth`; prefer flat panels under one parent
 - **Concurrency:** global active-session slots are capped (default 4, configurable via `maxConcurrentActiveSessions`); async spawn + selective waits is safer than blocking on every child up front
-- **Timeouts:** `checkSession(wait=true)` and `messageToSession` waits honor a timeout (default up to 3600 seconds)
-- **Truncation:** terminal `checkSession` summarizes recent assistant output; ask for full detail via `messageToSession` when results are long
-- **Context growth:** deep reconciliation rounds accumulate history; use `compactSessionContext(sessionId)` before large follow-ups to keep token costs reasonable
+- **Timeouts:** `agent__checkSession(wait=true)` and `agent__messageToSession` waits honor a timeout (default up to 3600 seconds)
+- **Truncation:** terminal `agent__checkSession` summarizes recent assistant output; ask for full detail via `agent__messageToSession` when results are long
+- **Context growth:** deep reconciliation rounds accumulate history; use `agent__compactSessionContext(sessionId)` before large follow-ups to keep token costs reasonable
 
 ## Paused, Error, or Terminated Children
 
-If `checkSession` reports paused, error, or terminated state:
+If `agent__checkSession` reports paused, error, or terminated state:
 
 - do not treat the panel as complete
-- use `messageToSession` with a recovery instruction referencing the last stable step
+- use `agent__messageToSession` with a recovery instruction referencing the last stable step
 - re-check after the child reaches a terminal state
 
 If a child is stuck or no longer needed:
 
-- `stopSession(sessionId)` to free resources
+- `agent__stopSession(sessionId)` to free resources
 - either replace that perspective or proceed with fewer reviewers and note the gap in the final synthesis
 
 ## Final Synthesis Checklist

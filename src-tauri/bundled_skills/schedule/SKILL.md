@@ -14,7 +14,7 @@ Use `teamwork` first when the workspace constitution is not ready.
 1. Confirm scheduled collaboration is the right substrate.
    - Use it for periodic wake-ups, background recurrence, heartbeat loops, or resumable async automation.
    - If the user wants org-visible lineage or org-root resume behavior, stop and use `org`.
-   - If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `prepareTeamworkWorkspace()` first.
+   - If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `agent__prepareTeamworkWorkspace()` first.
 2. Read `.libragent/teamwork.json` before acting.
    - Confirm `executionSubstrate.mode` is `"scheduled"` and `scheduledTaskGroups.intended` is `true`.
    - If no manifest exists yet, run `teamwork` first to scaffold the workspace constitution.
@@ -25,15 +25,15 @@ Use `teamwork` first when the workspace constitution is not ready.
    - Treat the app-local teamwork artifact scaffold as the SSOT.
    - Scheduled runs should keep the session's intended effective workspace unless a task explicitly targets a different implementation workspace.
 5. Create the task group explicitly.
-   - Use `createScheduledTask(message, cronExpression, groupName, agentId)` for the first loop in a new group.
+   - Use `scheduled_task__createScheduledTask(message, cronExpression, groupName, agentId)` for the first loop in a new group.
    - The `groupName` must be stable, readable, and unique within the team. Record it in `coordination/DECISIONS.md`.
-   - Use `createScheduledTask(message, cronExpression, groupName, agentId, groupId)` to add subsequent tasks to the same group.
+   - Use `scheduled_task__createScheduledTask(message, cronExpression, groupName, agentId, groupId)` to add subsequent tasks to the same group.
    - Record the returned `groupId` in `.libragent/teamwork.json` under `scheduledTaskGroups.groupId` so it is available across sessions.
 6. Operate the group deliberately.
-   - Use `listScheduledTasks()` or `getScheduledTask(taskId)` to inspect the current group.
-   - Use `updateScheduledTask(taskId, ...)` to retune cadence, message, or grouping.
-   - Use `toggleScheduledTask(taskId)` to pause or resume.
-   - Use `deleteScheduledTask(taskId)` to remove stale automation.
+   - Use `scheduled_task__listScheduledTasks()` or `scheduled_task__getScheduledTask(taskId)` to inspect the current group.
+   - Use `scheduled_task__updateScheduledTask(taskId, ...)` to retune cadence, message, or grouping.
+   - Use `scheduled_task__toggleScheduledTask(taskId)` to pause or resume.
+   - Use `scheduled_task__deleteScheduledTask(taskId)` to remove stale automation.
 7. Respect governance limits.
    - Backend policy enforces a maximum number of scheduled task groups and a minimum interval between runs.
    - Do not assume unlimited groups or unlimited frequency. Check the current policy before creating new groups.
