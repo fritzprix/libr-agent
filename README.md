@@ -76,9 +76,9 @@ _From a single agent to a coordinated swarm — recursive delegation, MCP toolin
 
 ### 4. Go from one assistant to a real team
 
-- Create specialists with `specialist-creator`
+- Scaffold a shared workspace with `teamwork`
 - Split work with `delegate`
-- Turn recurring collaboration into a shared `teamwork` or `org` workspace
+- Formalize recurring collaboration with `org` or `schedule`
 
 ---
 
@@ -143,9 +143,6 @@ The most important day-one skills are:
 | `system-setup`       | Detects and installs missing runtimes (Python, Node.js, uv) across all platforms          |
 | `mcp-installer`      | Registers MCP servers from npm packages, GitHub URLs, or JSON config blocks               |
 | `mcp-importer`       | Imports existing MCP configs from Cursor, VS Code, Windsurf, and similar setups           |
-| `specialist-creator` | Designs a full agent config (system prompt, model, tools) from a role description         |
-| `crew-constructor`   | Scans available tools and batch-creates a matched specialist team automatically           |
-| `agent-tooling`      | Audits agents, detects capability mismatches, and rebalances tool assignments dynamically |
 | `delegate`           | Guides parent→child session handoff with explicit context transfer and lineage tracking   |
 | `teamwork`           | Scaffolds the shared workspace constitution for coordinated multi-agent work              |
 | `org`                | Formalizes durable org identity and org-visible member hierarchy                          |
@@ -189,7 +186,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 
 ### Power User — Multi-Agent Research Pipeline
 
-1. Use `crew-constructor` to auto-generate: Researcher × 3, Analyst × 1, Writer × 1
+1. Use `teamwork` to scaffold a research task force (roles, MISSION.md, KANBAN.md)
 2. Orchestrator delegates in parallel via `delegate` skill
 3. Results merge into a single structured report in Content Store
 4. Schedule the entire workflow weekly via `schedule`
@@ -239,9 +236,9 @@ pnpm tauri dev
 
 **Step 3 — Create your first agent**
 
-- _"Create a researcher agent for competitive intelligence"_ → `specialist-creator` designs the full config
-- _"Build a research team from my current tools"_ → `crew-constructor` batch-creates matched specialists
-- _"Optimize tool assignments across all my agents"_ → `agent-tooling` audits and rebalances automatically
+- _"Create a researcher agent for competitive intelligence"_ → create via Assistants settings or `agent__create`
+- _"Build a research team from my current tools"_ → `teamwork` scaffolds roles and a shared workspace
+- _"Run parallel research subtasks"_ → `delegate` spawns and monitors child sessions
 
 **Step 4 — Go parallel with `delegate`**
 

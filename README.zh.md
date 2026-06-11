@@ -73,9 +73,9 @@ _从单个代理到协调群集——递归委派、MCP 工具和持久工作空
 
 ### 4. 从一个助手扩展成一个真正的团队
 
-- 用 `specialist-creator` 创建专职代理
+- 用 `teamwork` 搭建共享工作空间
 - 用 `delegate` 拆分工作
-- 用 `teamwork` 或 `org` 把重复协作沉淀成共享工作空间
+- 用 `org` 或 `schedule` 将重复协作正式化
 
 ---
 
@@ -140,9 +140,6 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 | `system-setup`       | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv) |
 | `mcp-installer`      | 从 npm 包、GitHub URL 或 JSON 配置块注册 MCP 服务器   |
 | `mcp-importer`       | 从 Cursor、VS Code、Windsurf 等导入现有 MCP 配置      |
-| `specialist-creator` | 从角色描述设计完整的代理配置(系统提示、模型、工具)    |
-| `crew-constructor`   | 扫描可用工具并自动批量创建匹配的专家团队              |
-| `agent-tooling`      | 审计代理、检测能力不匹配、动态重新平衡工具分配        |
 | `delegate`           | 引导父→子会话移交，带显式上下文传递和谱系跟踪         |
 | `teamwork`           | 为协调多代理工作构建共享工作空间宪法                  |
 | `org`                | 正式化持久组织身份和 org-visible 成员层次结构         |
@@ -185,7 +182,7 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 
 ### 高级用户——多代理研究管道
 
-1. 使用 `crew-constructor` 自动生成：Researcher × 3、Analyst × 1、Writer × 1
+1. 使用 `teamwork` 搭建研究任务组（角色、MISSION.md、KANBAN.md）
 2. 协调者通过 `delegate` 技能并行委派
 3. 结果合并到 Content Store 中的单个结构化报告中
 4. 通过 `schedule` 每周计划整个工作流程
@@ -235,9 +232,9 @@ pnpm tauri dev
 
 **第 3 步——创建你的第一个代理**
 
-- *"为竞争情报创建研究者代理"*→ `specialist-creator` 设计完整配置
-- *"用我的当前工具构建研究团队"*→ `crew-constructor` 批量创建匹配专家
-- *"优化所有代理间的工具分配"*→ `agent-tooling` 自动审计和重新平衡
+- *"为竞争情报创建研究者代理"*→ 通过 Assistants 设置或 `agent__create` 创建
+- *"用我的当前工具构建研究团队"*→ `teamwork` 搭建角色和共享工作空间
+- *"运行并行研究子任务"*→ `delegate` 生成并监控子会话
 
 **第 4 步——使用 `delegate` 并行工作**
 
