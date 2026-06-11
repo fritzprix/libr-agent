@@ -73,9 +73,9 @@ _De un solo agente a un enjambre coordinado — delegación recursiva, herramien
 
 ### 4. Pasar de un asistente a un equipo de verdad
 
-- Crea especialistas con `specialist-creator`
+- Scaffoldea un workspace compartido con `teamwork`
 - Divide el trabajo con `delegate`
-- Convierte la colaboración recurrente en un workspace compartido `teamwork` u `org`
+- Formaliza la colaboración recurrente con `org` o `schedule`
 
 ---
 
@@ -140,9 +140,6 @@ Las habilidades más importantes para el primer día:
 | `system-setup`       | Detecta e instala runtimes faltantes (Python, Node.js, uv) en todas las plataformas                                |
 | `mcp-installer`      | Registra servidores MCP desde paquetes npm, URLs de GitHub o bloques de config JSON                                |
 | `mcp-importer`       | Importa configs MCP existentes desde Cursor, VS Code, Windsurf y similares                                         |
-| `specialist-creator` | Diseña una config de agente completa (prompt del sistema, modelo, herramientas) desde una descripción de rol       |
-| `crew-constructor`   | Escanea herramientas disponibles y crea automáticamente un equipo de especialistas adaptado                        |
-| `agent-tooling`      | Audita agentes, detecta inadecuaciones de capacidades y reequilibra dinámicamente las asignaciones de herramientas |
 | `delegate`           | Guía el traspaso de sesión padre→hijo con transferencia de contexto explícita y seguimiento de linaje              |
 | `teamwork`           | Construye la constitución de espacio de trabajo compartido para el trabajo multi-agente coordinado                 |
 | `org`                | Formaliza la identidad de organización duradera y la jerarquía de miembros visible                                 |
@@ -185,7 +182,7 @@ _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente ju
 
 ### Usuario avanzado — Pipeline de investigación multi-agente
 
-1. Usa `crew-constructor` para generar automáticamente: Researcher×3, Analyst×1, Writer×1
+1. Usa `teamwork` para scaffoldear un task force de investigación (roles, MISSION.md, KANBAN.md)
 2. El orquestador delega en paralelo mediante la habilidad `delegate`
 3. Los resultados se fusionan en un único informe estructurado en Content Store
 4. Programa todo el workflow semanalmente mediante `schedule`
@@ -235,9 +232,9 @@ pnpm tauri dev
 
 **Paso 3 — Crea tu primer agente**
 
-- _"Crea un agente investigador para inteligencia competitiva"_ → `specialist-creator` diseña la config completa
-- _"Construye un equipo de investigación con mis herramientas actuales"_ → `crew-constructor` crea los especialistas en lote
-- _"Optimiza las asignaciones de herramientas para todos mis agentes"_ → `agent-tooling` audita y reequilibra automáticamente
+- _"Crea un agente investigador para inteligencia competitiva"_ → créalo vía Assistants o `agent__create`
+- _"Construye un equipo de investigación con mis herramientas actuales"_ → `teamwork` scaffold roles y workspace compartido
+- _"Ejecuta subtareas de investigación en paralelo"_ → `delegate` inicia y monitoriza sesiones hijas
 
 **Paso 4 — Ve en paralelo con `delegate`**
 

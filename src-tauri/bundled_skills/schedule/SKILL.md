@@ -29,8 +29,8 @@ Stop and use `teamwork` first only when you are setting up a multi-agent workspa
 
 ```text
 Should the run stay bound to the current session?
-  Yes -> session-schedule (scheduleCallback)
-  No  -> schedule (createScheduledTask)
+  Yes -> session-schedule (scheduled_task__scheduleCallback)
+  No  -> schedule (scheduled_task__createScheduledTask)
 ```
 
 Recurring vs one-shot is **not** the primary split. Global tasks require cron. Session-bound one-shots use `session-schedule`.
@@ -42,30 +42,31 @@ Recurring vs one-shot is **not** the primary split. Global tasks require cron. S
 - Use global tasks for cron-based wake-ups, background recurrence, heartbeat loops, or assistant-level automation.
 - Single tasks are normal. Groups are optional.
 - Do not require teamwork scaffolding for a standalone global task.
+- If the user wants org-visible lineage or org-root resume behavior, stop and use `org`.
 
 ### 2. Create the task
 
 **Single global task (default path):**
 
-- Use `createScheduledTask(name, cronExpression, assistantId, message)`.
+- Use `scheduled_task__createScheduledTask(name, cronExpression, assistantId, message)`.
 - Optional: `scheduleTimezone`, `yoloMode`, `workspaceOverride`.
 - The tool returns a task ID. Keep it for follow-up calls.
 
 **Grouped automation (teamwork / scheduled substrate only):**
 
 - Use when multiple related loops should be managed together under backend group policy.
-- First task in a group: `createScheduledTask(..., groupName="...")`.
+- First task in a group: `scheduled_task__createScheduledTask(..., groupName="...")`.
 - Additional tasks in the same group: pass the returned `groupId`.
 - If `.libragent/teamwork.json` exists with `executionSubstrate.mode = "scheduled"`, record `groupId` there for cross-session visibility.
 - If no teamwork manifest exists, groups still work; manifest recording is optional convenience, not a prerequisite.
 
 ### 3. Operate tasks deliberately
 
-- `listScheduledTasks()` — discover task IDs and enabled state
-- `getScheduledTask(taskId)` — read message, cron, group, and pinned session state
-- `updateScheduledTask(taskId, ...)` — retune cadence, message, grouping, or workspace
-- `toggleScheduledTask(taskId, enabled=...)` — pause or resume
-- `deleteScheduledTask(taskId)` — remove stale automation
+- `scheduled_task__listScheduledTasks()` — discover task IDs and enabled state
+- `scheduled_task__getScheduledTask(taskId)` — read message, cron, group, and pinned session state
+- `scheduled_task__updateScheduledTask(taskId, ...)` — retune cadence, message, grouping, or workspace
+- `scheduled_task__toggleScheduledTask(taskId, enabled=...)` — pause or resume
+- `scheduled_task__deleteScheduledTask(taskId)` — remove stale automation
 
 ### 4. Respect governance limits
 
@@ -82,10 +83,11 @@ Recurring vs one-shot is **not** the primary split. Global tasks require cron. S
 
 When the workspace already uses the scheduled teamwork substrate:
 
-1. Read `.libragent/teamwork.json` if present.
-2. Confirm `executionSubstrate.mode` is `"scheduled"` when the user expects grouped collaboration automation.
-3. Ensure teamwork scaffold files (`agents.md`, `MISSION.md`, coordination files) are current before a scheduled coordinator wakes up.
-4. Treat the app-local teamwork artifact directory as orchestration SSOT; use `workspaceOverride` only when a run must target a different implementation workspace.
+1. If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `agent__prepareTeamworkWorkspace()` first.
+2. Read `.libragent/teamwork.json` if present.
+3. Confirm `executionSubstrate.mode` is `"scheduled"` when the user expects grouped collaboration automation.
+4. Ensure teamwork scaffold files (`agents.md`, `MISSION.md`, coordination files) are current before a scheduled coordinator wakes up.
+5. Treat the app-local teamwork artifact directory as orchestration SSOT; use `workspaceOverride` only when a run must target a different implementation workspace.
 
 If the user only wants one global cron job with no multi-agent constitution, skip teamwork entirely.
 

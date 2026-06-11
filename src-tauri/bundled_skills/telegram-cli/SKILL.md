@@ -111,7 +111,7 @@ This outputs a JSON confirmation that the code was sent. On `AuthRestartError`, 
 
 **Step B — Sign in with verification code:**
 
-Execute `runInPersistentShell` (or `runInPersistentPowerShell`) with:
+Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerShell`) with:
 
 - `requireUserInput=true`
 - `inputType=text`

@@ -105,7 +105,7 @@ Lens-specific focus (example — compliance):
 
 If reviewers must read the same repository:
 
-- pass the same `workspaceOverride` to every `startSession`, or
+- pass the same `workspaceOverride` to every `agent__startSession`, or
 - paste the minimum excerpts each reviewer needs when sharing a workspace is impossible
 
 Never assume children inherit the parent workspace or workspace `agents.md` without explicit action. See `delegate` for the full isolation matrix.

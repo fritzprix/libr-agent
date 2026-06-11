@@ -113,12 +113,11 @@ The introduction becomes convincing when it answers a simple question: **What do
 - `system-setup`
 - `mcp-installer`
 - `mcp-importer`
-- `specialist-creator`
 
 ### 4. Turn tools into agent capability
 
-- `crew-constructor` can create specialist teams
-- `agent-tooling` can improve tool selection for existing agents
+- create assistants via Assistants settings or `agent__create`
+- assign MCP servers and builtin capabilities per assistant
 
 ### 5. Grow from one agent to coordination
 

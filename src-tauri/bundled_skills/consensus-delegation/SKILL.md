@@ -31,7 +31,7 @@ Avoid this skill when:
 
 1. **Same question, same scope.** Every child must receive the same objective, boundaries, and output shape. Change only the perspective or assistant specialization.
 2. **Shared evidence when code matters.** If reviewers must inspect the same repo, use `workspaceOverride` with the parent's effective workspace path—or paste critical excerpts into every handoff. Children do not inherit parent workspace or `agents.md` automatically.
-3. **Parent is the hub.** Only the parent can `checkSession` or `messageToSession` its descendants. Sibling sessions cannot see or message each other.
+3. **Parent is the hub.** Only the parent can `agent__checkSession` or `agent__messageToSession` its descendants. Sibling sessions cannot see or message each other.
 4. **Structured handoffs, human synthesis.** Ask each child for a fixed section layout (verdict, findings, risks, confidence). The parent compares text results; there is no built-in vote or merge algorithm.
 5. **Do not blindly trust children.** Verify file paths, claims, and scope before presenting a final answer.
 
@@ -48,9 +48,9 @@ Define before spawning anything:
 
 ### 2. Pick specialists
 
-- `list(type="configs")` to discover assistants; use returned IDs in `startSession`
+- `agent__list(type="configs")` to discover assistants; use returned IDs in `agent__startSession`
 - Prefer assistants whose system prompts or assistant-scoped skills match each perspective
-- If no suitable assistant exists, `create` a config first, then spawn with the new ID
+- If no suitable assistant exists, `agent__create` a config first, then spawn with the new ID
 - Keep the panel small (usually 2-4). More reviewers add noise and hit fanout/concurrency limits
 
 ### 3. Prepare identical handoffs
@@ -70,15 +70,15 @@ When all reviewers need the same codebase, start each child with the same `works
 
 Default pattern:
 
-1. `startSession(agentId="...", task="...", waitForResult=false, workspaceOverride="...")` for each specialist
-2. `list(type="sessions")` if you need to confirm child IDs and status—this does not return review results
-3. Collect with `checkSession(sessionId)` or `checkSession(sessionId, wait=true)` for actual conclusions
+1. `agent__startSession(agentId="...", task="...", waitForResult=false, workspaceOverride="...")` for each specialist
+2. `agent__list(type="sessions")` if you need to confirm child IDs and status—this does not return review results
+3. Collect with `agent__checkSession(sessionId)` or `agent__checkSession(sessionId, wait=true)` for actual conclusions
 
 Notes:
 
 - Prefer `waitForResult=false` on spawn so multiple children can run while the parent plans the synthesis
 - Tool calls in one turn execute sequentially; children still run in parallel once started, subject to the global active-session slot limit (default 4, configurable via `maxConcurrentActiveSessions`)
-- While `checkSession(wait=true)` blocks, the parent releases its active slot so children can finish—use waits deliberately
+- While `agent__checkSession(wait=true)` blocks, the parent releases its active slot so children can finish—use waits deliberately
 
 ### 5. Compare results
 
@@ -95,9 +95,9 @@ Flag **material disagreement** when verdicts conflict or findings contradict on 
 When perspectives conflict:
 
 1. State the specific conflict (fact, tradeoff, or recommendation)
-2. `compactSessionContext(sessionId)` on children with long histories before large follow-ups
-3. `messageToSession` each relevant child with the opposing finding and ask for a focused re-check
-4. `checkSession(..., wait=true)` again after follow-ups
+2. `agent__compactSessionContext(sessionId)` on children with long histories before large follow-ups
+3. `agent__messageToSession` each relevant child with the opposing finding and ask for a focused re-check
+4. `agent__checkSession(..., wait=true)` again after follow-ups
 5. Stop after 1-2 reconciliation rounds unless new blocking facts appear
 
 Read `references/reconciliation.md` for round templates and stop conditions.
@@ -117,14 +117,14 @@ Do not present a single child's output as the final answer without comparison.
 
 | Step | Tool |
 | --- | --- |
-| Discover assistants | `list(type="configs")` |
-| Create missing specialist | `create(...)` |
-| Spawn reviewer | `startSession(..., waitForResult=false)` |
-| Inspect children | `list(type="sessions")` — IDs and status only |
-| Poll or wait | `checkSession(sessionId)` / `checkSession(sessionId, wait=true)` — results |
-| Reconcile | `messageToSession(sessionId, message)` |
-| Stop stuck work | `stopSession(sessionId)` |
-| Long histories | `compactSessionContext(sessionId)` |
+| Discover assistants | `agent__list(type="configs")` |
+| Create missing specialist | `agent__create(...)` |
+| Spawn reviewer | `agent__startSession(..., waitForResult=false)` |
+| Inspect children | `agent__list(type="sessions")` — IDs and status only |
+| Poll or wait | `agent__checkSession(sessionId)` / `agent__checkSession(sessionId, wait=true)` — results |
+| Reconcile | `agent__messageToSession(sessionId, message)` |
+| Stop stuck work | `agent__stopSession(sessionId)` |
+| Long histories | `agent__compactSessionContext(sessionId)` |
 
 ## Common Mistakes
 
@@ -134,7 +134,7 @@ Do not present a single child's output as the final answer without comparison.
 - **Skipping output format** — parent cannot compare unstructured prose reliably
 - **Trusting verdicts without evidence** — re-open files or traces before deciding
 - **Blocking the parent on every spawn** — use async spawn + targeted waits
-- **Ignoring paused/error sessions** — recover with `messageToSession`, not another blind `checkSession`
+- **Ignoring paused/error sessions** — recover with `agent__messageToSession`, not another blind `agent__checkSession`
 
 ## References
 

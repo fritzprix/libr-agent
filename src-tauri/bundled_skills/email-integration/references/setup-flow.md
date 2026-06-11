@@ -11,7 +11,7 @@ Do **not** run `setup_account.py` bare inside LibrAgent. The old terminal wizard
 
 ## PowerShell Pattern (LibrAgent)
 
-Run `runInPersistentPowerShell` with:
+Run `workspace__runInPersistentPowerShell` with:
 
 - `requireUserInput=true`
 - `inputType=password`

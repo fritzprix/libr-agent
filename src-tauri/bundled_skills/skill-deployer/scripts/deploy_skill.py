@@ -138,8 +138,8 @@ def assert_target_allowed(target_dir: Path) -> None:
     if "system_skills" in parts:
         print(
             "[DEPLOY-TARGET-001] ERROR: Refusing to deploy to system_skills/.\n"
-            "  Fix: Use --scope global (user_skills/) for custom skills, or bundled-skill-creator "
-            "to ship with the app.",
+            "  Fix: Use --scope global (user_skills/) for custom skills. "
+            "App-bundled skills belong in src-tauri/bundled_skills/ (repo workflow).",
             file=sys.stderr,
         )
         sys.exit(1)

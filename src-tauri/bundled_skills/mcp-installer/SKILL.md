@@ -52,7 +52,7 @@ If the user specifically asks to install it in Claude Desktop:
 ## 🛠 Guidelines
 
 - **Naming**: Use lowercase slugs (e.g., `github`, `brave-search`).
-- **Safety**: Verify the source before execution. If it requires sensitive environment variables, ask the user to provide them or use the `runInPersistentPowerShell` tool if input is needed.
+- **Safety**: Verify the source before execution. If it requires sensitive environment variables, ask the user to provide them or use the `workspace__runInPersistentPowerShell` tool if input is needed.
 - **Dependencies**: Use [system-setup](../system-setup/SKILL.md) if `node`, `npm`, or `uv` are missing.
 
 ## Reference
