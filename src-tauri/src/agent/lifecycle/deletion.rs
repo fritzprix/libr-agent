@@ -77,8 +77,10 @@ pub async fn delete_session(
         descendant_ids.len()
     );
 
-    let mut deleted_ids = vec![session_id];
+    let mut deleted_ids = vec![session_id.clone()];
     deleted_ids.extend(descendant_ids);
+
+    crate::agent::tauri_events::emit_resource_updated("session", "delete", Some(session_id));
 
     Ok(deleted_ids)
 }
@@ -116,5 +118,12 @@ pub async fn delete_session_only(
         "✅ Deleted session only (children orphaned): {}",
         session_id
     );
+
+    crate::agent::tauri_events::emit_resource_updated(
+        "session",
+        "delete",
+        Some(session_id.clone()),
+    );
+
     Ok((session_id, orphaned_ids))
 }
