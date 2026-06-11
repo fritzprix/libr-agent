@@ -11,6 +11,11 @@
         "workspace__runInPersistentCmd",
         "workspace__stopProcess",
         "workspace__exportFile",
-        "workspace__exportZip"
+        "workspace__exportZip",
+        "scheduled_task__createScheduledTask",
+        "scheduled_task__scheduleCallback",
+        "scheduled_task__updateScheduledTask",
+        "scheduled_task__toggleScheduledTask",
+        "scheduled_task__deleteScheduledTask"
     ]
 }

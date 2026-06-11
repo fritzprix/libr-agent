@@ -58,6 +58,7 @@ export const CORE_BUILTIN_SERVICE_ALIASES = [
   'playbook',
   'attachments',
   'ui',
+  'scheduled_task',
   'tool',
 ] as const;
 
@@ -66,7 +67,6 @@ export const OPTIONAL_BUILTIN_SERVICE_ALIASES = [
   'knowledge',
   'history',
   'browser',
-  'scheduled_task',
   'bootstrap',
   'media',
 ] as const;
