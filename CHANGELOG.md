@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.12] - 2026-06-12
+
+### 🚀 Features
+
+- **Scheduled Task CORE Promotion**: Promote scheduled-task to a CORE builtin service with tool-approval gating for sensitive operations.
+- **Session–Assistant SSOT**: Bind agent sessions to the assistants table as the single source of truth, with schema migrations and updated session lifecycle handling.
+
+### 🐛 Fixes
+
+- **Workspace Export Path Traversal**: Block path-traversal attempts during workspace export so files outside the session workspace cannot be read or packaged.
+- **Session List After MCP Delete**: Refresh the session list in the UI after `deleteSession` completes via MCP.
+
+### 🔧 Internal
+
+- **Document Extraction Skills**: Rename `to-md` to `document-to-markdown` and unify binary document conversion through MarkItDown across bundled skills.
+- **Startup Metrics**: Summarize startup performance metrics in a GC-friendlier way to reduce allocation pressure on launch.
+- **CI Toolchain**: Pin pnpm 9.15.9 and add lockfile parity guards for reproducible frozen installs.
+
 ## [0.8.11] - 2026-06-11
 
 ### 🚀 Features
