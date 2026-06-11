@@ -202,11 +202,10 @@ _Importante: `bootstrap` é uma capacidade integrada frequentemente usada com es
 Descarrega o instalador mais recente para a tua plataforma na **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-
-- **Windows:** [`LibrAgent_0.8.11_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64-setup.exe) · [`LibrAgent_0.8.11_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.11_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.11_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.AppImage) · [`LibrAgent_0.8.11_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.deb) · [`LibrAgent-0.8.11-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent-0.8.11-1.x86_64.rpm)
-- **Todos os artefatos da release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.11)
+- **Windows:** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
+- **Todos os artefatos da release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.12)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Configuração para programadores:**
