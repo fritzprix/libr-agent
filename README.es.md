@@ -149,7 +149,7 @@ Las habilidades más importantes para el primer día:
 Y eso es solo la capa de operador. LibrAgent también incluye habilidades de dominio para:
 
 - **Conocimiento e investigación**: `deep-research-report`, `knowledge-distiller`
-- **Flujos de trabajo documentales**: `document-to-markdown`, `docx`, `pptx`
+- **Flujos de trabajo documentales**: `to-md`, `docx`, `pptx`
 - **Creación de habilidades y workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **Operaciones especializadas**: `computer-diagnosis` y otros asistentes especializados
 

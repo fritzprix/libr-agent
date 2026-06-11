@@ -149,7 +149,7 @@ Die wichtigsten Skills für den ersten Tag:
 Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
 
 - **Wissen & Recherche**: `deep-research-report`, `knowledge-distiller`
-- **Dokumenten-Workflows**: `document-to-markdown`, `docx`, `pptx`
+- **Dokumenten-Workflows**: `to-md`, `docx`, `pptx`
 - **Skill- und Workflow-Erstellung**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **Spezialisierte Operationen**: `computer-diagnosis` und andere spezialisierte Assistenten
 

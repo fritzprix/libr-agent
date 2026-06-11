@@ -149,7 +149,7 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 这只是运营层。LibrAgent 还提供领域技能：
 
 - **知识和研究**：`deep-research-report`、`knowledge-distiller`
-- **文档工作流**：`document-to-markdown`、`docx`、`pptx`
+- **文档工作流**：`to-md`、`docx`、`pptx`
 - **技能和流程作者**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
 - **特殊操作**：`computer-diagnosis` 和其他专注辅助工具
 

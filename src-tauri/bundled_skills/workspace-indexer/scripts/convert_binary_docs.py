@@ -15,7 +15,7 @@ Options:
     --dry-run   Print target files without converting anything
 
 Dependencies:
-    pip install pymupdf python-docx python-pptx openpyxl
+    pip install "markitdown[all]"  (see to-md skill)
 
 Examples:
     # Convert the full workspace
@@ -57,116 +57,25 @@ def find_binary_files(root: Path, formats: list[str]) -> list[Path]:
     return sorted(result)
 
 
-def convert_pdf(src: Path) -> str:
-    """Convert PDF content to Markdown text."""
+def convert_with_markitdown(src: Path) -> str:
+    """Convert file content to Markdown via MarkItDown (to-md skill policy)."""
     try:
-        import fitz  # pymupdf
+        from markitdown import MarkItDown
     except ImportError:
-        return f"[ERROR] pymupdf not installed. Run: pip install pymupdf\nSource: {src}"
+        return (
+            '[ERROR] markitdown not installed. Run: pip install "markitdown[all]"\n'
+            f"Source: {src}"
+        )
 
-    doc = fitz.open(str(src))
-    pages = []
-    for i, page in enumerate(doc, 1):
-        text = page.get_text("text").strip()
-        if text:
-            pages.append(f"## Page {i}\n\n{text}")
-    doc.close()
-    return "\n\n---\n\n".join(pages) if pages else "(no text content)"
-
-
-def convert_docx(src: Path) -> str:
-    """Convert DOCX content to Markdown text."""
-    try:
-        from docx import Document
-    except ImportError:
-        return f"[ERROR] python-docx not installed. Run: pip install python-docx\nSource: {src}"
-
-    doc = Document(str(src))
-    lines = []
-    for para in doc.paragraphs:
-        style = para.style.name.lower()
-        text = para.text.strip()
-        if not text:
-            lines.append("")
-            continue
-        if style.startswith("heading 1"):
-            lines.append(f"# {text}")
-        elif style.startswith("heading 2"):
-            lines.append(f"## {text}")
-        elif style.startswith("heading 3"):
-            lines.append(f"### {text}")
-        else:
-            lines.append(text)
-
-    # Tables
-    for table in doc.tables:
-        if not table.rows:
-            continue
-        header = [cell.text.strip() for cell in table.rows[0].cells]
-        lines.append("\n| " + " | ".join(header) + " |")
-        lines.append("| " + " | ".join(["---"] * len(header)) + " |")
-        for row in table.rows[1:]:
-            cells = [cell.text.strip() for cell in row.cells]
-            lines.append("| " + " | ".join(cells) + " |")
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-def convert_pptx(src: Path) -> str:
-    """Convert PPTX content to Markdown text."""
-    try:
-        from pptx import Presentation
-    except ImportError:
-        return f"[ERROR] python-pptx not installed. Run: pip install python-pptx\nSource: {src}"
-
-    prs = Presentation(str(src))
-    slides = []
-    for i, slide in enumerate(prs.slides, 1):
-        texts = []
-        for shape in slide.shapes:
-            if shape.has_text_frame:
-                for para in shape.text_frame.paragraphs:
-                    line = para.text.strip()
-                    if line:
-                        texts.append(line)
-        if texts:
-            slides.append(f"## Slide {i}\n\n" + "\n\n".join(texts))
-    return "\n\n---\n\n".join(slides) if slides else "(no text content)"
-
-
-def convert_xlsx(src: Path) -> str:
-    """Convert XLSX sheets into Markdown tables."""
-    try:
-        import openpyxl
-    except ImportError:
-        return f"[ERROR] openpyxl not installed. Run: pip install openpyxl\nSource: {src}"
-
-    wb = openpyxl.load_workbook(str(src), read_only=True, data_only=True)
-    sections = []
-    for sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-        rows = list(ws.iter_rows(values_only=True))
-        # Skip empty sheets
-        non_empty = [r for r in rows if any(c is not None for c in r)]
-        if not non_empty:
-            continue
-        lines = [f"## Sheet: {sheet_name}\n"]
-        for idx, row in enumerate(non_empty):
-            cells = [str(c) if c is not None else "" for c in row]
-            lines.append("| " + " | ".join(cells) + " |")
-            if idx == 0:
-                lines.append("| " + " | ".join(["---"] * len(cells)) + " |")
-        sections.append("\n".join(lines))
-    wb.close()
-    return "\n\n---\n\n".join(sections) if sections else "(no content)"
+    result = MarkItDown().convert(str(src))
+    return result.text_content if result.text_content else "(no text content)"
 
 
 CONVERTERS = {
-    ".pdf": convert_pdf,
-    ".docx": convert_docx,
-    ".pptx": convert_pptx,
-    ".xlsx": convert_xlsx,
+    ".pdf": convert_with_markitdown,
+    ".docx": convert_with_markitdown,
+    ".pptx": convert_with_markitdown,
+    ".xlsx": convert_with_markitdown,
 }
 
 

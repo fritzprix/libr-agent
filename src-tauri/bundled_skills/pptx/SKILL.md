@@ -25,11 +25,10 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 
 ### Text extraction
 
-If you just need to read the text contents of a presentation, you should convert the document to markdown:
+For plain text reading, follow the **to-md** skill (MarkItDown). Do not use python-pptx or pandoc for read-only extraction.
 
 ```bash
-# Convert document to markdown
-python -m markitdown path-to-file.pptx
+python -m markitdown path-to-file.pptx -o output.md
 ```
 
 ### Raw XML access
@@ -520,7 +519,7 @@ pdftoppm -jpeg -r 150 -f 2 -l 5 template.pdf slide  # Converts only pages 2-5
 
 Required dependencies (should already be installed):
 
-- **markitdown**: `pip install "markitdown[pptx]"` (for text extraction from presentations)
+- **markitdown**: `pip install "markitdown[all]"` (plain text extraction — see **to-md** skill)
 - **pptxgenjs**: `npm install -g pptxgenjs` (for creating presentations via html2pptx)
 - **playwright**: `npm install -g playwright` (for HTML rendering in html2pptx)
 - **react-icons**: `npm install -g react-icons react react-dom` (for icons)

@@ -152,7 +152,7 @@ The most important day-one skills are:
 And that's just the operator layer. LibrAgent also ships domain skills for:
 
 - **knowledge and research**: `deep-research-report`, `knowledge-distiller`
-- **document workflows**: `document-to-markdown`, `docx`, `pptx`
+- **document workflows**: `to-md`, `docx`, `pptx`
 - **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **specialized operations**: `computer-diagnosis` and other focused helpers
 

@@ -149,7 +149,7 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 これはオペレーターレイヤーだけです。LibrAgentはドメインスキルも提供します：
 
 - **知識と研究**：`deep-research-report`、`knowledge-distiller`
-- **ドキュメントワークフロー**：`document-to-markdown`、`docx`、`pptx`
+- **ドキュメントワークフロー**：`to-md`、`docx`、`pptx`
 - **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
 - **特殊操作**：`computer-diagnosis`および他の専門ヘルパー
 

@@ -149,7 +149,7 @@ Les compétences les plus importantes pour le premier jour :
 Et ce n'est que la couche opérateur. LibrAgent fournit également des compétences de domaine pour :
 
 - **Connaissance et recherche** : `deep-research-report`, `knowledge-distiller`
-- **Flux de travail documentaire** : `document-to-markdown`, `docx`, `pptx`
+- **Flux de travail documentaire** : `to-md`, `docx`, `pptx`
 - **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **Opérations spécialisées** : `computer-diagnosis` et autres assistants spécialisés
 

@@ -149,7 +149,7 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 이것은 운영자 레이어에 불과합니다. LibrAgent는 도메인 스킬도 제공합니다:
 
 - **지식 및 연구**: `deep-research-report`, `knowledge-distiller`
-- **작업 흐름**: `document-to-markdown`, `docx`, `pptx`
+- **작업 흐름**: `to-md`, `docx`, `pptx`
 - **스킬 및 워크플로우 저자**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **특수 작업**: `computer-diagnosis` 및 기타 집중 헬퍼
 

@@ -149,7 +149,7 @@ As competências mais importantes para o primeiro dia:
 E isso é apenas a camada de operador. O LibrAgent também fornece competências de domínio para:
 
 - **Conhecimento e investigação**: `deep-research-report`, `knowledge-distiller`
-- **Fluxos de trabalho documentais**: `document-to-markdown`, `docx`, `pptx`
+- **Fluxos de trabalho documentais**: `to-md`, `docx`, `pptx`
 - **Criação de competências e workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **Operações especializadas**: `computer-diagnosis` e outros assistentes especializados
 

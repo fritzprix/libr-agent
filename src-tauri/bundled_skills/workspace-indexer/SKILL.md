@@ -10,12 +10,13 @@ description: |
 # Workspace Indexer
 
 > **Not this skill**: Wiki linking, catalog.json, backlinks, and `[[slug]]` management → use **repo-wiki**.
+> **Not this skill**: Single-file text extraction → use **to-md**.
 
 ## Overview
 
 This skill provides two core capabilities:
 
-1. **Binary → Text conversion** — Convert PDF, PPTX, DOCX, and XLSX files into Markdown (`.md`)
+1. **Binary → Markdown conversion** — Batch-convert PDF, PPTX, DOCX, and XLSX via **MarkItDown** (see **to-md** skill policy)
 2. **Index generation** — Build a workspace file inventory and keyword map in `index.md`
 
 ## Path conventions
@@ -40,12 +41,14 @@ All internal paths mentioned in this skill are **relative to the directory conta
 
 ## Prerequisites
 
+Conversion follows the **to-md** skill policy. Install MarkItDown only — do not use pymupdf, python-docx, python-pptx, or openpyxl.
+
 ```bash
 # Automatic install
 python <skill-base-dir>/scripts/install_deps.py
 
 # Manual install
-pip install pymupdf python-docx python-pptx openpyxl
+pip install "markitdown[all]"
 ```
 
 ## Workflow
@@ -71,14 +74,7 @@ python <skill-base-dir>/scripts/convert_binary_docs.py --root . --out ./converte
 python <skill-base-dir>/scripts/convert_binary_docs.py --root . --overwrite
 ```
 
-**Per-format conversion behavior:**
-
-| Format | Library | Output structure |
-| --- | --- | --- |
-| PDF | pymupdf (fitz) | `## Page N` sections |
-| DOCX | python-docx | Headings → `#`/`##`/`###`, tables → Markdown tables |
-| PPTX | python-pptx | `## Slide N` sections |
-| XLSX | openpyxl | `## Sheet: <name>` plus Markdown tables |
+**Conversion engine:** All formats use **MarkItDown** (`convert_with_markitdown` in `convert_binary_docs.py`). Output structure (headings, tables, slides) is determined by MarkItDown — see the **to-md** skill for details.
 
 ---
 
@@ -163,5 +159,5 @@ python <skill-base-dir>/scripts/check_status.py --root . --export conversion_sta
 
 - `.git`, `__pycache__`, `node_modules`, `.github`, and `venv` directories are ignored by default
 - Existing converted files are not regenerated unless `--overwrite` is set
-- Scanned PDFs (image-only) cannot be extracted as text without a separate OCR step
+- Scanned PDFs (image-only) require `markitdown[all]` for OCR support (see **to-md** skill)
 - For very large workspaces, use `--max-keyword-files` to cap oversized keyword maps
