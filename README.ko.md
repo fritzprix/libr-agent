@@ -153,7 +153,7 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 - **워크스페이스 온보딩**: `agent-init`
 - **조율 및 어시스턴트**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **외부 연동**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **스킬 및 워크플로우 저작**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
+- **스킬 및 워크플로우 저작**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
 - **특수 작업**: `computer-diagnosis`
 
 _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 기능입니다. 번들 스킬은 재사용 가능한 운영 절차이며, 내장 기능과 MCP 도구는 그 하위 실행 기반입니다._

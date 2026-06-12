@@ -153,7 +153,7 @@ Et ce n'est que la couche opérateur. LibrAgent fournit également des compéten
 - **Onboarding workspace** : `agent-init`
 - **Coordination et assistants** : `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **Intégrations externes** : `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
+- **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
 - **Opérations spécialisées** : `computer-diagnosis`
 
 _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces compétences. Les Compétences groupées sont les procédures réutilisables ; les intégrés et les outils MCP sont le substrat d'exécution sous-jacent._

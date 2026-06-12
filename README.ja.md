@@ -153,7 +153,7 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 - **ワークスペースオンボーディング**：`agent-init`
 - **調整とアシスタント**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
 - **外部連携**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
-- **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
+- **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`、`fine-tune`
 - **特殊操作**：`computer-diagnosis`
 
 _重要：`bootstrap`はこれらのスキルと並行して使用される内蔵機能です。バンドルスキルは再利用可能な手順であり、内蔵機能とMCPツールはその下の実行基盤です。_

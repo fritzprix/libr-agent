@@ -153,7 +153,7 @@ Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
 - **Workspace-Onboarding**: `agent-init`
 - **Koordination & Assistenten**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **Externe Integrationen**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **Skill- und Workflow-Erstellung**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
+- **Skill- und Workflow-Erstellung**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
 - **Spezialisierte Operationen**: `computer-diagnosis`
 
 _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit diesen Skills verwendet wird. Gebündelte Skills sind die wiederverwendbaren Verfahren; die eingebauten und MCP-Tools sind das zugrundeliegende Ausführungssubstrat._

@@ -88,6 +88,7 @@ use commands::scheduled_task_commands::{
     update_scheduled_task,
 };
 use commands::session_commands::remove_session;
+use commands::dataset_commands::export_dataset;
 use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };
@@ -185,6 +186,7 @@ pub fn run() {
                 export_and_download_zip,
                 // Session management commands (still needed for workspace isolation)
                 remove_session,
+                export_dataset,
                 delete_attachments,
                 get_app_data_dir,
                 get_app_logs_dir,

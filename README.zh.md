@@ -153,7 +153,7 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 - **工作区入门**：`agent-init`
 - **协调与助手**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
 - **外部集成**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
-- **技能与流程编写**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
+- **技能与流程编写**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`、`fine-tune`
 - **特殊操作**：`computer-diagnosis`
 
 _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆绑技能是可重用的程序；内置功能和 MCP 工具是其下的执行底层架构。_

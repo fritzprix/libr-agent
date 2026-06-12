@@ -17,3 +17,4 @@ pub mod skill_commands;
 pub mod skill_management;
 pub mod url_commands;
 pub mod workspace_commands;
+pub mod dataset_commands;

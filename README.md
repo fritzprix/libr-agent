@@ -156,7 +156,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 - **workspace onboarding**: `agent-init`
 - **coordination and assistants**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **external integrations**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
+- **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
 - **specialized operations**: `computer-diagnosis`
 
 > [!IMPORTANT]

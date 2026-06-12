@@ -153,7 +153,7 @@ Y eso es solo la capa de operador. LibrAgent también incluye habilidades de dom
 - **Onboarding del workspace**: `agent-init`
 - **Coordinación y asistentes**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **Integraciones externas**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **Creación de habilidades y workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
+- **Creación de habilidades y workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
 - **Operaciones especializadas**: `computer-diagnosis`
 
 _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente junto con estas habilidades. Las Habilidades agrupadas son los procedimientos reutilizables; los integrados y las herramientas MCP son el substrato de ejecución subyacente._
