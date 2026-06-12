@@ -135,16 +135,16 @@ LibrAgent viene con una biblioteca creciente de **Habilidades agrupadas**. No so
 
 Las habilidades más importantes para el primer día:
 
-| Habilidad            | Qué hace                                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `system-setup`       | Detecta e instala runtimes faltantes (Python, Node.js, uv) en todas las plataformas                                |
-| `mcp-installer`      | Registra servidores MCP desde paquetes npm, URLs de GitHub o bloques de config JSON                                |
-| `mcp-importer`       | Importa configs MCP existentes desde Cursor, VS Code, Windsurf y similares                                         |
-| `delegate`           | Guía el traspaso de sesión padre→hijo con transferencia de contexto explícita y seguimiento de linaje              |
-| `teamwork`           | Construye la constitución de espacio de trabajo compartido para el trabajo multi-agente coordinado                 |
-| `org`                | Formaliza la identidad de organización duradera y la jerarquía de miembros visible                                 |
-| `schedule`           | Crea y gestiona grupos de tareas programadas recurrentes para automatización sin supervisión                       |
-| `soul-awakening`     | Ancla un agente a un persona `SOUL.md` — tono, postura, identidad                                                  |
+| Habilidad        | Qué hace                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `system-setup`   | Detecta e instala runtimes faltantes (Python, Node.js, uv) en todas las plataformas                   |
+| `mcp-installer`  | Registra servidores MCP desde paquetes npm, URLs de GitHub o bloques de config JSON                   |
+| `mcp-importer`   | Importa configs MCP existentes desde Cursor, VS Code, Windsurf y similares                            |
+| `delegate`       | Guía el traspaso de sesión padre→hijo con transferencia de contexto explícita y seguimiento de linaje |
+| `teamwork`       | Construye la constitución de espacio de trabajo compartido para el trabajo multi-agente coordinado    |
+| `org`            | Formaliza la identidad de organización duradera y la jerarquía de miembros visible                    |
+| `schedule`       | Crea y gestiona grupos de tareas programadas recurrentes para automatización sin supervisión          |
+| `soul-awakening` | Ancla un agente a un persona `SOUL.md` — tono, postura, identidad                                     |
 
 Y eso es solo la capa de operador. LibrAgent también incluye habilidades de dominio para:
 
@@ -202,6 +202,7 @@ _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente ju
 Descarga el último instalador para tu plataforma desde la **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.11_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64-setup.exe) · [`LibrAgent_0.8.11_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.11_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.11_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.AppImage) · [`LibrAgent_0.8.11_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.deb) · [`LibrAgent-0.8.11-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent-0.8.11-1.x86_64.rpm)
