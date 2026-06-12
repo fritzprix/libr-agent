@@ -10,7 +10,7 @@ fn build_parent_session(model: &str, provider: &str) -> SessionMetadata {
         status: SessionStatus::Idle,
         model: model.to_string(),
         provider: provider.to_string(),
-        agent_config: Some(r#"{"name":"Parent"}"#.to_string()),
+        assistant_id: None,
         parent_session_id: None,
         lineage_id: Some("parent-session".to_string()),
         depth: Some(0),

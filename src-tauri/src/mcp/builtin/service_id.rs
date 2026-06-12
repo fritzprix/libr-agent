@@ -135,7 +135,7 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::ScheduledTask,
         canonical: "scheduled_task",
-        optional: true,
+        optional: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Bootstrap,
@@ -164,6 +164,7 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
     "attachments",
     "ui",
     "tool",
+    "scheduled_task",
 ];
 
 impl fmt::Display for BuiltinServiceId {

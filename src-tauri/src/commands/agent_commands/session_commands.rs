@@ -116,7 +116,7 @@ pub async fn agent_create_session_with_initial_message(
     AgentService::create_session_with_initial_message(&manager, request).await
 }
 
-/// Update agent configuration for a session
+/// Update session model/provider/assistant binding for a session
 #[command]
 pub async fn agent_update_session_config(
     manager: State<'_, AgentSessionManager>,
@@ -127,7 +127,7 @@ pub async fn agent_update_session_config(
             request.session_id.clone(),
             request.model,
             request.provider,
-            request.agent_config,
+            request.assistant_id,
         )
         .await?;
 

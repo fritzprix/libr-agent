@@ -274,6 +274,66 @@ mod tests {
         assert!(config
             .requires_approval
             .contains(&"workspace__writeFile".to_string()));
+        assert!(config
+            .requires_approval
+            .contains(&"scheduled_task__createScheduledTask".to_string()));
+        assert!(config
+            .requires_approval
+            .contains(&"scheduled_task__scheduleCallback".to_string()));
+        assert!(config
+            .requires_approval
+            .contains(&"scheduled_task__updateScheduledTask".to_string()));
+        assert!(config
+            .requires_approval
+            .contains(&"scheduled_task__toggleScheduledTask".to_string()));
+        assert!(config
+            .requires_approval
+            .contains(&"scheduled_task__deleteScheduledTask".to_string()));
+    }
+
+    #[tokio::test]
+    async fn scheduled_task_mutating_tools_require_approval() {
+        for tool_name in [
+            "scheduled_task__createScheduledTask",
+            "scheduled_task__scheduleCallback",
+            "scheduled_task__updateScheduledTask",
+            "scheduled_task__toggleScheduledTask",
+            "scheduled_task__deleteScheduledTask",
+        ] {
+            assert!(
+                is_approval_required(tool_name).await,
+                "{tool_name} should require approval"
+            );
+        }
+
+        for tool_name in [
+            "scheduled_task__listScheduledTasks",
+            "scheduled_task__getScheduledTask",
+        ] {
+            assert!(
+                !is_approval_required(tool_name).await,
+                "{tool_name} should not require approval"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn scheduled_task_create_policy_returns_require_approval() {
+        let decision = evaluate_tool_execution_policy(
+            "scheduled_task__createScheduledTask",
+            &serde_json::json!({
+                "name": "Daily sync",
+                "cronExpression": "0 9 * * *",
+                "assistantId": "assistant-1",
+                "message": "Run daily sync"
+            }),
+        )
+        .await;
+
+        assert!(matches!(
+            decision,
+            ToolExecutionPolicyDecision::RequireApproval(_)
+        ));
     }
 
     #[test]

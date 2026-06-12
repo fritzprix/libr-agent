@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.12] - 2026-06-12
+
+### 🚀 Features
+
+- **Scheduled Task CORE Promotion**: Promote scheduled-task to a CORE builtin service with tool-approval gating for sensitive operations.
+- **Session–Assistant SSOT**: Bind agent sessions to the assistants table as the single source of truth, with schema migrations and updated session lifecycle handling.
+
+### 🐛 Fixes
+
+- **Workspace Export Path Traversal**: Block path-traversal attempts during workspace export so files outside the session workspace cannot be read or packaged.
+- **Session List After MCP Delete**: Refresh the session list in the UI after `deleteSession` completes via MCP.
+
+### 🔧 Internal
+
+- **Document Extraction Skills**: Rename `to-md` to `document-to-markdown` and unify binary document conversion through MarkItDown across bundled skills.
+- **Startup Metrics**: Summarize startup performance metrics in a GC-friendlier way to reduce allocation pressure on launch.
+- **CI Toolchain**: Pin pnpm 9.15.9 and add lockfile parity guards for reproducible frozen installs.
+
+## [0.8.11] - 2026-06-11
+
+### 🚀 Features
+
+- **Consensus Delegation Skill**: Replace `bundled-skill-creator` with a new `consensus-delegation` bundled skill for multi-agent reconciliation workflows.
+- **Session Schedule Skill**: Add `session-schedule` bundled skill and decouple scheduling guidance from the teamwork skill.
+- **Scheduler Session Callbacks UI**: Add session callback configuration in the UI with cascade cleanup when linked sessions are removed.
+- **X CLI Delete Tweet**: Add `delete_tweet` action for removing posts via the X CLI skill.
+
+### 🐛 Fixes
+
+- **Bundled Skill Tool Routing**: Use `agent__` tool name prefixes in bundled skills so runtime routing resolves correctly.
+- **X CLI Cross-Platform Setup**: Improve setup flow and session handling across Windows and Unix environments.
+- **Workspace File Operations**: Clarify append behavior and normalize import I/O error messages.
+
+### 🔧 Internal
+
+- **Bundled Skills Slimdown**: Remove redundant skills (`agent-tooling`, `crew-constructor`, `specialist-creator`, `review-bundled-skill`) and update all references across docs and READMEs.
+
 ## [0.8.10] - 2026-06-10
 
 ### 🚀 Features

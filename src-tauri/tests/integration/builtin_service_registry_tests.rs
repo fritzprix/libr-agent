@@ -327,7 +327,7 @@ fn agent_public_surface_uses_single_session_start_tool() {
 }
 
 #[test]
-fn scheduled_task_service_is_registered_as_optional_builtin() {
+fn scheduled_task_service_is_registered_as_core_builtin() {
     assert_eq!(
         BuiltinServiceId::from_alias("scheduled_task"),
         Some(BuiltinServiceId::ScheduledTask)
@@ -343,10 +343,13 @@ fn scheduled_task_service_is_registered_as_optional_builtin() {
         .expect("scheduled_task must be registered");
 
     assert_eq!(entry.canonical, "scheduled_task");
-    assert!(entry.optional, "scheduled_task should remain opt-in");
     assert!(
-        !CORE_BUILTIN_SERVICE_ALIASES.contains(&"scheduled_task"),
-        "scheduled_task must not be treated as core"
+        !entry.optional,
+        "scheduled_task should be a core builtin service"
+    );
+    assert!(
+        CORE_BUILTIN_SERVICE_ALIASES.contains(&"scheduled_task"),
+        "scheduled_task must be treated as core"
     );
 }
 

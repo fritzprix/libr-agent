@@ -135,21 +135,21 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 
 最重要的 day-one 技能：
 
-| 技能                 | 功能                                                  |
-| -------------------- | ----------------------------------------------------- |
-| `system-setup`       | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv) |
-| `mcp-installer`      | 从 npm 包、GitHub URL 或 JSON 配置块注册 MCP 服务器   |
-| `mcp-importer`       | 从 Cursor、VS Code、Windsurf 等导入现有 MCP 配置      |
-| `delegate`           | 引导父→子会话移交，带显式上下文传递和谱系跟踪         |
-| `teamwork`           | 为协调多代理工作构建共享工作空间宪法                  |
-| `org`                | 正式化持久组织身份和 org-visible 成员层次结构         |
-| `schedule`           | 创建和管理无人值守自动化的定期计划任务组              |
-| `soul-awakening`     | 将代理锚定到 `SOUL.md` 人格——语气、立场、身份         |
+| 技能             | 功能                                                  |
+| ---------------- | ----------------------------------------------------- |
+| `system-setup`   | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv) |
+| `mcp-installer`  | 从 npm 包、GitHub URL 或 JSON 配置块注册 MCP 服务器   |
+| `mcp-importer`   | 从 Cursor、VS Code、Windsurf 等导入现有 MCP 配置      |
+| `delegate`       | 引导父→子会话移交，带显式上下文传递和谱系跟踪         |
+| `teamwork`       | 为协调多代理工作构建共享工作空间宪法                  |
+| `org`            | 正式化持久组织身份和 org-visible 成员层次结构         |
+| `schedule`       | 创建和管理无人值守自动化的定期计划任务组              |
+| `soul-awakening` | 将代理锚定到 `SOUL.md` 人格——语气、立场、身份         |
 
 这只是运营层。LibrAgent 还提供领域技能：
 
 - **知识和研究**：`deep-research-report`、`knowledge-distiller`
-- **文档工作流**：`document-to-markdown`、`docx`、`pptx`
+- **文档工作流**：`to-md`、`docx`、`pptx`
 - **技能和流程作者**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
 - **特殊操作**：`computer-diagnosis` 和其他专注辅助工具
 
@@ -202,10 +202,10 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows：** [`LibrAgent_0.8.10_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64-setup.exe) · [`LibrAgent_0.8.10_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.8.10_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.8.10_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.AppImage) · [`LibrAgent_0.8.10_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.deb) · [`LibrAgent-0.8.10-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent-0.8.10-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.10)
+- **Windows：** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.12)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **开发者设置：**

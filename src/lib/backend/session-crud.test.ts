@@ -53,7 +53,7 @@ describe('session-crud', () => {
 
     await createSession(mockSession);
 
-    // The new implementation passes the first assistant as agentConfig
+    // Create path sends first assistant as create-time agentConfig payload
     expect(safeInvoke).toHaveBeenCalledWith('agent_create_session', {
       request: {
         sessionId: mockSession.id,
@@ -97,18 +97,11 @@ describe('session-crud', () => {
 
     await upsertSession(mockSession);
 
-    // The new implementation passes the first assistant as agentConfig
+    // Update path sends assistantId only (no config blob)
     expect(safeInvoke).toHaveBeenLastCalledWith('agent_update_session_config', {
       request: {
         sessionId: mockSession.id,
-        agentConfig: expect.objectContaining({
-          // agentConfig is the first assistant from the session
-          id: mockAssistant1.id,
-          name: mockAssistant1.name,
-          systemPrompt: mockAssistant1.systemPrompt,
-          mcpServerIds: expect.arrayContaining(['server-1', 'server-2']),
-          deletionProtected: mockAssistant1.deletionProtected,
-        }),
+        assistantId: mockAssistant1.id,
       },
     });
   });

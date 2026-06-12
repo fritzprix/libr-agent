@@ -20,7 +20,7 @@ fn build_session(
         status: SessionStatus::Idle,
         model: "gpt-5.4".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: parent_session_id.map(str::to_string),
         lineage_id: Some("lineage-1".to_string()),
         depth,

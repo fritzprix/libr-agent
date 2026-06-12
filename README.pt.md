@@ -135,21 +135,21 @@ O LibrAgent vem com uma biblioteca crescente de **Competências agrupadas**. Nã
 
 As competências mais importantes para o primeiro dia:
 
-| Competência          | O que faz                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `system-setup`       | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas                                  |
-| `mcp-installer`      | Regista servidores MCP a partir de pacotes npm, URLs do GitHub ou blocos de config JSON                           |
-| `mcp-importer`       | Importa configs MCP existentes do Cursor, VS Code, Windsurf e similares                                           |
-| `delegate`           | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem       |
-| `teamwork`           | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado                    |
-| `org`                | Formaliza identidade de organização duradoura e hierarquia de membros visível                                     |
-| `schedule`           | Cria e gere grupos de tarefas agendadas recorrentes para automatização sem supervisão                             |
-| `soul-awakening`     | Ancora um agente a uma persona `SOUL.md` — tom, postura, identidade                                               |
+| Competência      | O que faz                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| `system-setup`   | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas                            |
+| `mcp-installer`  | Regista servidores MCP a partir de pacotes npm, URLs do GitHub ou blocos de config JSON                     |
+| `mcp-importer`   | Importa configs MCP existentes do Cursor, VS Code, Windsurf e similares                                     |
+| `delegate`       | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem |
+| `teamwork`       | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado              |
+| `org`            | Formaliza identidade de organização duradoura e hierarquia de membros visível                               |
+| `schedule`       | Cria e gere grupos de tarefas agendadas recorrentes para automatização sem supervisão                       |
+| `soul-awakening` | Ancora um agente a uma persona `SOUL.md` — tom, postura, identidade                                         |
 
 E isso é apenas a camada de operador. O LibrAgent também fornece competências de domínio para:
 
 - **Conhecimento e investigação**: `deep-research-report`, `knowledge-distiller`
-- **Fluxos de trabalho documentais**: `document-to-markdown`, `docx`, `pptx`
+- **Fluxos de trabalho documentais**: `to-md`, `docx`, `pptx`
 - **Criação de competências e workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
 - **Operações especializadas**: `computer-diagnosis` e outros assistentes especializados
 
@@ -202,10 +202,10 @@ _Importante: `bootstrap` é uma capacidade integrada frequentemente usada com es
 Descarrega o instalador mais recente para a tua plataforma na **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.10_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64-setup.exe) · [`LibrAgent_0.8.10_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.10_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.10_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.AppImage) · [`LibrAgent_0.8.10_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.deb) · [`LibrAgent-0.8.10-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent-0.8.10-1.x86_64.rpm)
-- **Todos os artefatos da release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.10)
+- **Windows:** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
+- **Todos os artefatos da release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.12)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Configuração para programadores:**

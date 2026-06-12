@@ -15,7 +15,7 @@ async fn session_repository_persists_explicit_org_identity() {
         status: SessionStatus::Idle,
         model: "gpt-5.4".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: None,
         lineage_id: Some("org-root-session".to_string()),
         depth: Some(0),

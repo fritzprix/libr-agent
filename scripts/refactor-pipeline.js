@@ -36,6 +36,11 @@ const PREPARE_STAGES = [
 const VALIDATE_STAGES = [
   ...PREPARE_STAGES,
   {
+    name: 'lockfile:check',
+    command: pnpmCommand,
+    args: ['lockfile:check'],
+  },
+  {
     name: 'lint',
     command: pnpmCommand,
     args: ['lint'],

@@ -35,10 +35,15 @@ Use "Creating a new Word document" workflow
 
 ### Text extraction
 
-If you just need to read the text contents of a document, you should convert the document to markdown using pandoc. Pandoc provides excellent support for preserving document structure and can show tracked changes:
+**Default (plain reading):** Use the **to-md** skill (MarkItDown). Do not use pandoc for simple text extraction.
 
 ```bash
-# Convert document to markdown with tracked changes
+python -m markitdown path-to-file.docx -o output.md
+```
+
+**Tracked changes review only:** MarkItDown does not support tracked changes. Use pandoc when you need insertions/deletions visible in the output (legal, academic, redlining workflows):
+
+```bash
 pandoc --track-changes=all path-to-file.docx -o output.md
 # Options: --track-changes=accept/reject/all
 ```
@@ -206,7 +211,8 @@ pdftoppm -jpeg -r 150 -f 2 -l 5 document.pdf page  # Converts only pages 2-5
 
 Required dependencies (install if not available):
 
-- **pandoc**: `sudo apt-get install pandoc` (for text extraction)
+- **markitdown**: `pip install "markitdown[all]"` (plain text extraction — see **to-md** skill)
+- **pandoc**: `sudo apt-get install pandoc` (tracked-changes extraction only)
 - **docx**: `npm install -g docx` (for creating new documents)
 - **LibreOffice**: `sudo apt-get install libreoffice` (for PDF conversion)
 - **Poppler**: `sudo apt-get install poppler-utils` (for pdftoppm to convert PDF to images)

@@ -135,21 +135,21 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 
 最重要のday-oneスキル：
 
-| スキル               | 機能                                                                                      |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| `system-setup`       | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール |
-| `mcp-installer`      | npmパッケージ、GitHub URL、JSON設定ブロックからMCPサーバーを登録                          |
-| `mcp-importer`       | Cursor、VS Code、Windsurf等から既存MCP設定をインポート                                    |
-| `delegate`           | 明示的なコンテキスト転送と系譜追跡付きで親→子セッションの引き継ぎを案内                   |
-| `teamwork`           | 調整されたマルチエージェント作業のための共有ワークスペース憲法をスキャフォールド          |
-| `org`                | 持続的な組織アイデンティティとorg-visibleメンバー階層を正式化                             |
-| `schedule`           | 無人自動化のための定期スケジュールタスクグループを作成・管理                              |
-| `soul-awakening`     | エージェントを`SOUL.md`ペルソナに固定——トーン、スタンス、アイデンティティ                 |
+| スキル           | 機能                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| `system-setup`   | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール |
+| `mcp-installer`  | npmパッケージ、GitHub URL、JSON設定ブロックからMCPサーバーを登録                          |
+| `mcp-importer`   | Cursor、VS Code、Windsurf等から既存MCP設定をインポート                                    |
+| `delegate`       | 明示的なコンテキスト転送と系譜追跡付きで親→子セッションの引き継ぎを案内                   |
+| `teamwork`       | 調整されたマルチエージェント作業のための共有ワークスペース憲法をスキャフォールド          |
+| `org`            | 持続的な組織アイデンティティとorg-visibleメンバー階層を正式化                             |
+| `schedule`       | 無人自動化のための定期スケジュールタスクグループを作成・管理                              |
+| `soul-awakening` | エージェントを`SOUL.md`ペルソナに固定——トーン、スタンス、アイデンティティ                 |
 
 これはオペレーターレイヤーだけです。LibrAgentはドメインスキルも提供します：
 
 - **知識と研究**：`deep-research-report`、`knowledge-distiller`
-- **ドキュメントワークフロー**：`document-to-markdown`、`docx`、`pptx`
+- **ドキュメントワークフロー**：`to-md`、`docx`、`pptx`
 - **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
 - **特殊操作**：`computer-diagnosis`および他の専門ヘルパー
 
@@ -202,10 +202,10 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.10_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64-setup.exe) · [`LibrAgent_0.8.10_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.10_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.10_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.AppImage) · [`LibrAgent_0.8.10_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent_0.8.10_amd64.deb) · [`LibrAgent-0.8.10-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.10/LibrAgent-0.8.10-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.10)
+- **Windows:** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.12)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **開発者セットアップ：**

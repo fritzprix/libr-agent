@@ -2,7 +2,7 @@
 //!
 //! ## What this does
 //!
-//! It reads the JSON configs from `assistants` and `sessions` tables, and if
+//! It reads the JSON configs from `assistants`, and if
 //! `allowedBuiltInServiceAliases` or `localServices` contain legacy names
 //! (like "assistant", "content_store", "mcp_manager"), it converts them to
 //! their canonical counterparts ("agent", "attachments", "tool"), then saves the row.
@@ -11,7 +11,7 @@ use log::{info, warn};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Set};
 use serde_json::Value;
 
-use crate::entity::{assistant, session};
+use crate::entity::assistant;
 
 pub async fn run_alias_migrations(db: &DatabaseConnection) {
     info!("🔄 Running builtin service alias migration...");
@@ -19,13 +19,6 @@ pub async fn run_alias_migrations(db: &DatabaseConnection) {
     if let Err(e) = migrate_assistants(db).await {
         warn!(
             "alias_migration: failed to migrate assistants (non-fatal): {}",
-            e
-        );
-    }
-
-    if let Err(e) = migrate_sessions(db).await {
-        warn!(
-            "alias_migration: failed to migrate sessions (non-fatal): {}",
             e
         );
     }
@@ -100,39 +93,6 @@ async fn migrate_assistants(db: &DatabaseConnection) -> Result<(), String> {
     if update_count > 0 {
         info!(
             "Migrated {} assistant(s) to new canonical service aliases.",
-            update_count
-        );
-    }
-
-    Ok(())
-}
-
-async fn migrate_sessions(db: &DatabaseConnection) -> Result<(), String> {
-    let sessions = session::Entity::find()
-        .all(db)
-        .await
-        .map_err(|e| format!("DB error: {}", e))?;
-
-    let mut update_count = 0;
-
-    for model in sessions {
-        if let Some(agent_config_str) = &model.agent_config {
-            if let Some(new_config_str) = migrate_json_config(agent_config_str) {
-                let id = model.id.clone();
-                let mut active_model = model.into_active_model();
-                active_model.agent_config = Set(Some(new_config_str));
-                if let Err(e) = active_model.update(db).await {
-                    warn!("Failed to update session {}: {}", id, e);
-                } else {
-                    update_count += 1;
-                }
-            }
-        }
-    }
-
-    if update_count > 0 {
-        info!(
-            "Migrated {} session(s) to new canonical service aliases.",
             update_count
         );
     }

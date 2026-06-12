@@ -63,7 +63,7 @@ fn make_session(session_id: &str, workspace_override: Option<String>) -> Session
         status: SessionStatus::Idle,
         model: "gpt-4.1".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: None,
         lineage_id: None,
         depth: None,

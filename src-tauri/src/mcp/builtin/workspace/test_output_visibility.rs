@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use super::super::WorkspaceServer;
-    use crate::mcp::builtin::BuiltinMCPServer;
     use crate::session::SessionManager;
     use serde_json::json;
     use std::sync::Arc;

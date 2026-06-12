@@ -33,12 +33,13 @@ Behavior:
 - Child session creation validates parent existence
 - Depth limit is enforced when `maxDepth` is set (`next depth > maxDepth` => `400`)
 - If child request omits `maxDepth`, parent lineage limit is inherited
-- Lineage metadata is tracked in-memory (`OnceLock + RwLock<HashMap<...>>`)
+- Lineage metadata is tracked in-memory (`OnceLock + RwLock<HashMap<...>>`) for HTTP orchestration helpers
 - Parent/child relation is removed from the in-memory lineage map on session termination
+- Tauri/desktop sessions also persist lineage on `sessions` table columns (canonical for UI and `resolve_agent_config`)
 
 Notes:
 
-- This is intentionally MVP-level lineage tracking (in-memory, not persistent)
+- HTTP path still uses in-memory map for some validation; DB columns are the durable source for desktop sessions and list/tree UI
 
 ---
 
@@ -103,7 +104,7 @@ Updated files:
 
 UI capabilities now:
 
-- Parse lineage fields from `agentConfig` (`parentSessionId`, `lineageId`, `depth`)
+- Read lineage fields from session metadata (`parentSessionId`, `lineageId`, `depth`, `maxDepth`)
 - Render sessions as nested tree (parent -> child)
 - Per-node expand/collapse
 - Global `Expand all` / `Collapse all`
@@ -114,40 +115,32 @@ UI capabilities now:
 
 ## Contract currently used for hierarchy
 
-At session creation time (HTTP path), lineage metadata is embedded into `agent_config`:
+Session lineage and org metadata are persisted on the `sessions` table:
 
-- `parentSessionId?: string`
-- `lineageId?: string`
-- `depth?: number`
+- `assistant_id` — FK to `assistants.id` (assistant settings SSOT)
+- `parent_session_id`, `lineage_id`, `depth`, `max_depth`, `max_fanout`
+- `org_id`, `org_name`, `org_root_session_id`
 
-This lets existing session list APIs surface hierarchy context without DB schema migration in MVP.
+At session creation (Tauri and HTTP paths), create-time `AgentConfig` / request fields populate these columns. The runtime resolves effective config via `resolve_agent_config(session)` → load assistant row + overlay session lineage columns.
 
-Current lineage contract also carries:
-
-- `maxDepth?: number` (optional limit, omitted/`null` means unlimited)
-
-The frontend now applies a user-configurable default via Settings:
+Branching limit from Settings:
 
 - `Settings > Advanced > Session Branching Limit (Advanced)`
 - value `0` means unlimited (default)
-- value `1+` is injected into new session `agent_config.maxDepth`
+- value `1+` is stored on new sessions as `max_depth`
 
 ---
 
 ## Known Limitations (intentional for MVP)
 
-1. Lineage store is in-memory on backend
+1. In-memory lineage map still supplements HTTP API for some orchestration paths
 
-- Lost on app restart
-- Not queryable historically
+- Lost on app restart for map-only data
+- DB columns are canonical for list/tree UI
 
-2. Hierarchy metadata piggybacks on `agent_config`
+2. No orchestration guardrails yet
 
-- Works now, but not ideal as final canonical source
-
-3. No orchestration guardrails yet
-
-- No `maxFanout`
+- No enforced `maxFanout` at scale
 - No token/time budget enforcement by lineage
 - No per-lineage SLA/policy controls (beyond depth)
 
@@ -155,20 +148,9 @@ The frontend now applies a user-configurable default via Settings:
 
 ## Next Recommended Steps (priority order)
 
-### P1. Persist lineage in DB
+### P1. Consolidate lineage source-of-truth
 
-Introduce session lineage columns/table (canonical source):
-
-- `parent_session_id`
-- `lineage_id`
-- `depth`
-- optional `owner_session_id`, `ttl`, `budget`
-
-Then update:
-
-- repository model
-- session query DTO
-- frontend mapping (use top-level fields first, fallback to `agent_config` for compatibility)
+HTTP API in-memory lineage map should read/write the same DB columns the Tauri path uses. Frontend already maps top-level `SessionMetadata` fields only.
 
 ### P2. Add orchestration tools
 
@@ -188,10 +170,9 @@ Before scaling recursive orchestration:
 - global kill switch
 - token/time budget per lineage
 
-### P3.5. Canonicalize maxDepth source
+### P3.5. Canonicalize orchestration limits
 
-Today `maxDepth` works via `agent_config` + in-memory lineage metadata.
-When DB lineage persistence lands, move depth limit source-of-truth to lineage table/columns and keep `agent_config` as compatibility fallback only.
+`max_depth` and `max_fanout` are stored on session rows; enforce consistently across HTTP and Tauri creation paths.
 
 ### P4. Persist tree UI expand/collapse state
 

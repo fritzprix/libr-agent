@@ -130,17 +130,28 @@ libr-agent/
 
 ## Quick Start
 
-1. Install Rust ([rustup.rs](https://rustup.rs/)), Node.js (v18+), and pnpm (`npm install -g pnpm`).
-2. Run `pnpm install` to install dependencies.
-3. Start development: `pnpm tauri dev` (runs the full desktop app with backend)
+1. Install Rust ([rustup.rs](https://rustup.rs/)) and Node.js 20+.
+2. Enable the pinned package manager (matches CI):
+   ```bash
+   corepack enable
+   corepack prepare pnpm@9.15.9 --activate
+   ```
+3. Install dependencies with a frozen lockfile check:
+   ```bash
+   pnpm install --frozen-lockfile
+   ```
+4. Start development: `pnpm tauri dev` (runs the full desktop app with backend)
    - Or run `pnpm dev` for frontend-only development (Vite).
-4. Build for production: `pnpm tauri build`
-5. API keys are managed in-app via the settings modal (not in .env files).
+5. Build for production: `pnpm tauri build`
+6. API keys are managed in-app via the settings modal (not in .env files).
+
+> **Note:** `package.json` pins `pnpm@9.15.9`. Using a different pnpm version (for example pnpm 11) can rewrite `pnpm-lock.yaml` and break CI. The `preinstall` script blocks mismatched versions.
 
 ## CI / Release
 
 - GitHub Actions are used for CI and releases. See `.github/workflows/ci.yml` for tests, linting and Rust checks, and `.github/workflows/release.yml` for multi-platform packaging.
-- Node.js version in CI is pinned to 18; use a compatible Node LTS for local development.
+- Node.js in CI is pinned to 20; pnpm is pinned via `packageManager` in `package.json` (`pnpm@9.15.9`).
+- CI and `pnpm refactor:validate` run `pnpm install --frozen-lockfile` to catch lockfile/config drift early.
 
 ## Coding Style
 

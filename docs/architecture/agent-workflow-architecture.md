@@ -425,9 +425,17 @@ CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
     name TEXT,
     status TEXT NOT NULL,      -- "Idle" | "Busy" | "Paused"
-    agent_config TEXT,          -- JSON: AgentConfig
+    assistant_id TEXT,         -- FK to assistants.id (authoritative assistant binding)
+    parent_session_id TEXT,
+    lineage_id TEXT,
+    depth INTEGER,
+    max_depth INTEGER,
+    max_fanout INTEGER,
+    model TEXT,
+    provider TEXT,
     created_at INTEGER,
     updated_at INTEGER
+    -- agent_config TEXT removed (m20260612_000036); assistant settings live in assistants table
 )
 ```
 

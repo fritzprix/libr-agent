@@ -322,12 +322,8 @@ async fn snapshot_session(
         .with_code("SESSION_NOT_FOUND")
     })?;
 
-    let agent_config = session
-        .metadata
-        .agent_config
-        .as_ref()
-        .ok_or_else(|| "Agent configuration is required but not found".to_string())
-        .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))
+    let agent_config = crate::agent::resolve_agent_config(&session.metadata)
+        .await
         .map_err(|e| {
             AgentRuntimeError::new(
                 AgentRuntimeErrorType::AiServiceError,

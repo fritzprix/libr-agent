@@ -15,7 +15,7 @@ const SESSION_UPSERT_COLUMNS: [session::Column; 21] = [
     session::Column::Status,
     session::Column::Model,
     session::Column::Provider,
-    session::Column::AgentConfig,
+    session::Column::AssistantId,
     session::Column::ParentSessionId,
     session::Column::LineageId,
     session::Column::Depth,
@@ -123,7 +123,7 @@ pub struct SessionMetadata {
     pub status: SessionStatus,
     pub model: String,
     pub provider: String,
-    pub agent_config: Option<String>, // JSON string of agent configuration
+    pub assistant_id: Option<String>,
     pub parent_session_id: Option<String>,
     pub lineage_id: Option<String>,
     pub depth: Option<u32>,
@@ -169,7 +169,7 @@ impl TryFrom<session::Model> for SessionMetadata {
             status: SessionStatus::from_str(&model.status)?,
             model: model.model,
             provider: model.provider,
-            agent_config: model.agent_config,
+            assistant_id: model.assistant_id,
             parent_session_id: model.parent_session_id,
             lineage_id: model.lineage_id,
             depth: model.depth.and_then(|v| u32::try_from(v).ok()),
@@ -208,13 +208,19 @@ pub trait SessionRepository: Send + Sync {
     /// Update session status
     async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError>;
 
-    /// Update session configuration (model, provider, and/or agent_config)
+    /// Update session configuration (model and/or provider)
     async fn update_session_config(
         &self,
         session_id: &str,
         model: Option<String>,
         provider: Option<String>,
-        agent_config: Option<String>,
+    ) -> Result<(), DbError>;
+
+    /// Update the assistant binding for a session.
+    async fn update_assistant_id(
+        &self,
+        session_id: &str,
+        assistant_id: Option<String>,
     ) -> Result<(), DbError>;
 
     /// Update the user-visible session title without affecting activity ordering.
@@ -318,7 +324,7 @@ impl SqliteSessionRepository {
             status: Set(session.status.as_str().to_string()),
             model: Set(session.model.clone()),
             provider: Set(session.provider.clone()),
-            agent_config: Set(session.agent_config.clone()),
+            assistant_id: Set(session.assistant_id.clone()),
             parent_session_id: Set(session.parent_session_id.clone()),
             lineage_id: Set(session.lineage_id.clone()),
             depth: Set(session.depth.and_then(|value| i32::try_from(value).ok())),
@@ -404,7 +410,6 @@ impl SessionRepository for SqliteSessionRepository {
         session_id: &str,
         model: Option<String>,
         provider: Option<String>,
-        agent_config: Option<String>,
     ) -> Result<(), DbError> {
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -420,11 +425,27 @@ impl SessionRepository for SqliteSessionRepository {
         if let Some(p) = provider {
             active_model.provider = Set(p);
         }
-        if let Some(ac) = agent_config {
-            active_model.agent_config = Set(Some(ac));
-        }
 
         active_model.update(&self.db).await?;
+
+        Ok(())
+    }
+
+    async fn update_assistant_id(
+        &self,
+        session_id: &str,
+        assistant_id: Option<String>,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            assistant_id: Set(assistant_id),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
 
         Ok(())
     }
