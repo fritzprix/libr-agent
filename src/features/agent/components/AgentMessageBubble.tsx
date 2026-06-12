@@ -7,6 +7,7 @@ import type { MCPContent } from '@/lib/mcp';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 import { computeDisplayContent } from '@/features/agent/lib/chat-utils';
+import { formatMessageTime } from '@/lib/date-utils';
 
 interface AgentMessageBubbleProps {
   message: Message;
@@ -200,6 +201,18 @@ function AgentMessageBubbleImpl({
               </span>
             )}
           </div>
+          {msg.createdAt && (
+            <div
+              className={cn(
+                'text-[10px] mt-1 select-none align-bottom self-end opacity-70',
+                isStandardUserMessage
+                  ? 'text-primary-foreground/80'
+                  : 'text-muted-foreground/80',
+              )}
+            >
+              {formatMessageTime(msg.createdAt)}
+            </div>
+          )}
         </div>
       </div>
     </div>

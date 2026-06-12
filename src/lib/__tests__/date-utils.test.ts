@@ -3,6 +3,7 @@ import {
   formatRelativeTime,
   formatSessionTimestamp,
   getDateFormatter,
+  formatMessageTime,
 } from '../date-utils';
 
 // Lock Intl to 'en' so assertions are locale-independent
@@ -205,6 +206,22 @@ describe('date-utils', () => {
       } finally {
         spy.mockRestore();
       }
+    });
+  });
+
+  describe('formatMessageTime', () => {
+    it('should handle undefined date', () => {
+      expect(formatMessageTime(undefined)).toBe('');
+    });
+
+    it('should handle invalid date string', () => {
+      expect(formatMessageTime('invalid-date')).toBe('');
+    });
+
+    it('should format valid date correctly', () => {
+      const date = new Date(2023, 0, 1, 3, 42, 0);
+      const formatted = formatMessageTime(date);
+      expect(formatted).toMatch(/3:42/);
     });
   });
 });

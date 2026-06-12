@@ -7,6 +7,7 @@
 const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+const timeFormatters = new Map<string, Intl.DateTimeFormat>();
 
 function getCacheKey(
   locale?: string | string[],
@@ -84,6 +85,26 @@ export function getDateTimeFormatter(
   return formatter;
 }
 
+export function getTimeFormatter(
+  locale?: string | string[],
+  options?: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const defaultOptions: Intl.DateTimeFormatOptions = {
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true,
+  };
+  const finalOptions = options || defaultOptions;
+  const key = getCacheKey(locale, finalOptions);
+
+  let formatter = timeFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, finalOptions);
+    timeFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 /**
  * Formats a date relative to a reference date using Intl.RelativeTimeFormat
  * @param target The target date to format
@@ -157,4 +178,22 @@ export function formatSessionTimestamp(dateInput: Date | string | undefined): {
     tooltip: getDateTimeFormatter().format(date),
     relative,
   };
+}
+
+/**
+ * Formats a message time (hour and minute, e.g., "3:42 AM" or "오전 3:42")
+ * @param dateInput Date object, ISO string, or undefined
+ * @returns Formatted time string, or empty string if invalid/undefined
+ */
+export function formatMessageTime(dateInput: Date | string | undefined): string {
+  if (!dateInput) {
+    return '';
+  }
+
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return getTimeFormatter().format(date);
 }

@@ -92,4 +92,18 @@ test_results_*.txt
 
 # LibrAgent workspace-generated artifacts
 /.libragent/
+# LibrAgent internal marketing & research docs (not for public repo)
+docs/marketing/
+docs/research/
+docs/strategy/
+docs/analysis/
+
+# Generated reports and presentations
+docs/reports/
+docs/presentations/
+docs/proposals/
+
+# Local AI agent caches (per-user)
+.ai-cache/
+.analysis-cache/
 /tmp/
