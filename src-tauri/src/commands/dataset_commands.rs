@@ -112,7 +112,7 @@ pub async fn export_dataset(
 
     for s in &sessions_to_export {
         let messages = message_repo
-            .get_messages_by_session(&s.id, 1000)
+            .get_messages_by_session(&s.id, 100000)
             .await
             .map_err(|e| format!("Failed to get messages for session {}: {}", s.id, e))?;
 
@@ -174,8 +174,8 @@ pub async fn export_dataset(
                         user_text = text;
                     } else if m.role == "assistant" && !user_text.is_empty() {
                         final_alpaca.push(AlpacaItem {
-                            instruction: "Respond to the user prompt below.".to_string(),
-                            input: user_text.clone(),
+                            instruction: user_text.clone(),
+                            input: "".to_string(),
                             output: text,
                         });
                         user_text.clear();
@@ -237,7 +237,12 @@ fn extract_message_text(content: &crate::mcp::types::MCPContent) -> String {
         crate::mcp::types::MCPContent::Text { text, .. } => text.clone(),
         crate::mcp::types::MCPContent::Thinking { thinking, .. } => format!("<thinking>\n{}\n</thinking>", thinking),
         crate::mcp::types::MCPContent::ToolCall { name, arguments, .. } => {
-            format!("<tool_call name=\"{}\" arguments=\"{}\"/>", name, arguments)
+            let args_str = if let Ok(json) = serde_json::from_str::<serde_json::Value>(arguments) {
+                serde_json::to_string(&json).unwrap_or_else(|_| arguments.to_string())
+            } else {
+                arguments.to_string()
+            };
+            format!("<tool_call name=\"{}\">{}</tool_call>", name, args_str)
         }
         _ => String::new(),
     }
