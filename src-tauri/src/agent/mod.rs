@@ -3,6 +3,7 @@ pub mod compact_recovery;
 pub mod compaction_text;
 pub mod concurrency;
 pub mod config;
+pub mod config_resolve;
 pub mod context;
 pub mod events;
 pub mod lifecycle;
@@ -19,4 +20,7 @@ pub mod types;
 pub mod workflow;
 
 pub use config::AgentConfig;
+pub use config_resolve::{
+    extract_assistant_id_from_session, resolve_agent_config, stable_prompt_source_key,
+};
 pub use session_manager::{AgentSessionManager, ExecutionMode};

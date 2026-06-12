@@ -10,7 +10,7 @@ fn session(id: &str, parent_session_id: Option<&str>) -> SessionMetadata {
         status: SessionStatus::Idle,
         model: "gpt-5.4".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: parent_session_id.map(str::to_string),
         lineage_id: Some("root".to_string()),
         depth: Some(match parent_session_id {

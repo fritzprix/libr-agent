@@ -17,7 +17,7 @@ pub struct ToolCallFunction {
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionRequest {
     pub name: Option<String>,
-    pub assistant_id: String, // Replaces agent_config
+    pub assistant_id: String,
     pub model: Option<String>,
     pub provider: Option<String>,
     pub workspace_path: Option<String>,

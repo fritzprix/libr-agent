@@ -126,7 +126,6 @@ impl SessionRepository for InMemorySessionRepository {
         session_id: &str,
         model: Option<String>,
         provider: Option<String>,
-        agent_config: Option<String>,
     ) -> Result<(), DbError> {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(session_id) {
@@ -136,9 +135,6 @@ impl SessionRepository for InMemorySessionRepository {
             if let Some(p) = provider {
                 session.provider = p;
             }
-            if let Some(ac) = agent_config {
-                session.agent_config = Some(ac);
-            }
             session.updated_at = chrono::Utc::now().timestamp_millis();
             log::debug!("InMemory: Updated session config for {}", session_id);
         } else {
@@ -146,6 +142,20 @@ impl SessionRepository for InMemorySessionRepository {
                 "InMemory: Config update for non-existent session {} (idempotent skip)",
                 session_id
             );
+        }
+        Ok(())
+    }
+
+    async fn update_assistant_id(
+        &self,
+        session_id: &str,
+        assistant_id: Option<String>,
+    ) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.assistant_id = assistant_id;
+            session.updated_at = chrono::Utc::now().timestamp_millis();
+            log::debug!("InMemory: Updated assistant_id for {}", session_id);
         }
         Ok(())
     }
@@ -423,8 +433,8 @@ mod tests {
             status: SessionStatus::Idle,
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
+            assistant_id: None,
             is_bookmarked: false,
-            agent_config: Some("{}".to_string()),
             parent_session_id: None,
             lineage_id: None,
             depth: None,
@@ -463,8 +473,8 @@ mod tests {
             status: SessionStatus::Idle,
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
+            assistant_id: None,
             is_bookmarked: false,
-            agent_config: None,
             parent_session_id: None,
             lineage_id: None,
             depth: None,
@@ -515,8 +525,8 @@ mod tests {
             status: SessionStatus::Idle,
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
+            assistant_id: None,
             is_bookmarked: false,
-            agent_config: None,
             parent_session_id: None,
             lineage_id: None,
             depth: None,
@@ -561,7 +571,7 @@ mod tests {
                 model: "gpt-4".to_string(),
                 provider: "openai".to_string(),
                 is_bookmarked: false,
-                agent_config: None,
+                assistant_id: None,
                 parent_session_id: None,
                 lineage_id: None,
                 depth: None,
@@ -601,7 +611,7 @@ mod tests {
                 model: "gpt-4".to_string(),
                 provider: "openai".to_string(),
                 is_bookmarked: false,
-                agent_config: None,
+                assistant_id: None,
                 parent_session_id: None,
                 lineage_id: None,
                 depth: None,
@@ -649,13 +659,13 @@ mod tests {
                     model: "gpt-4".to_string(),
                     provider: "openai".to_string(),
                     is_bookmarked: false,
-                    agent_config: None,
                     created_at: 100,
                     updated_at: 100,
                     last_viewed_at: None,
                     last_message_at: None,
                     last_attention_at: None,
                     last_attention_reason: None,
+                    assistant_id: None,
                     parent_session_id: None,
                     lineage_id: None,
                     depth: None,

@@ -14,7 +14,7 @@ impl AgentService {
             session_id.to_string(),
             content,
             source,
-            extract_assistant_id_from_config(session_id, session.agent_config.as_ref()),
+            crate::agent::extract_assistant_id_from_session(&session),
         );
         let message_id = message.id.clone();
 
@@ -54,48 +54,5 @@ async fn load_or_resume_session(
         let resumed_session = manager.resume_session(session_id).await?;
         manager.init_session_with_messages(session_id).await?;
         Ok(resumed_session)
-    }
-}
-
-fn extract_assistant_id_from_config(
-    session_id: &str,
-    agent_config: Option<&String>,
-) -> Option<String> {
-    let config_str = agent_config?;
-    let config: serde_json::Value = match serde_json::from_str(config_str) {
-        Ok(value) => value,
-        Err(error) => {
-            log::warn!(
-                "Invalid session.agent_config JSON for session {} (assistant_id will be None): {}",
-                session_id,
-                error
-            );
-            return None;
-        }
-    };
-
-    let assistant_id_value = config
-        .get("assistant_id")
-        .or_else(|| config.get("assistantId"))
-        .or_else(|| config.get("id"));
-
-    match assistant_id_value {
-        Some(value) => match value.as_str() {
-            Some(assistant_id) => Some(assistant_id.to_string()),
-            None => {
-                log::warn!(
-                    "session.agent_config assistant id field is not a string for session {} (assistant_id will be None)",
-                    session_id
-                );
-                None
-            }
-        },
-        None => {
-            log::warn!(
-                "No assistant id field found in session.agent_config for session {} (expected one of: assistant_id, assistantId, id)",
-                session_id
-            );
-            None
-        }
     }
 }

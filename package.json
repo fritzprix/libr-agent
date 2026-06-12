@@ -21,6 +21,11 @@
     "shareable-config"
   ],
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20",
+    "pnpm": "9.15.9"
+  },
   "scripts": {
     "dev": "node scripts/sync-builtin-services.cjs && vite",
     "build": "node scripts/sync-builtin-services.cjs && pnpm build:nosync",
@@ -57,7 +62,9 @@
     "verify-planning:file": "node scripts/manage-logs.js --pattern=\"PLANNING\" -n=5000",
     "log": "node scripts/manage-logs.js",
     "error": "node scripts/manage-logs.js --error",
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "preinstall": "node scripts/enforce-pnpm-version.cjs",
+    "lockfile:check": "pnpm install --frozen-lockfile"
   },
   "pnpm": {
     "overrides": {

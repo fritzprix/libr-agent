@@ -285,19 +285,12 @@ pub fn build_agent_session_tool_data(
 }
 
 pub fn extract_assistant_id_from_session_value(session: &Value) -> Option<String> {
-    if let Some(assistant_id) = session.get("assistantId").and_then(|v| v.as_str()) {
-        return Some(assistant_id.to_string());
-    }
-
-    let config_str = session.get("agentConfig").and_then(|v| v.as_str())?;
-    let config: Value = serde_json::from_str(config_str).ok()?;
-
-    config
-        .get("assistant_id")
-        .or_else(|| config.get("assistantId"))
-        .or_else(|| config.get("id"))
+    session
+        .get("assistantId")
         .and_then(|v| v.as_str())
-        .map(|assistant_id| assistant_id.to_string())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 pub fn session_metadata_to_value(

@@ -16,14 +16,7 @@ fn make_session(session_id: &str, assistant_id: &str) -> SessionMetadata {
         status: SessionStatus::Idle,
         model: "gpt-4.1".to_string(),
         provider: "openai".to_string(),
-        agent_config: Some(
-            serde_json::json!({
-                "assistantId": assistant_id,
-                "name": "Test Assistant",
-                "systemPrompt": "test"
-            })
-            .to_string(),
-        ),
+        assistant_id: Some(assistant_id.to_string()),
         parent_session_id: None,
         lineage_id: None,
         depth: None,

@@ -2,13 +2,8 @@ import { Assistant } from './chat';
 import type { SessionAttentionReason } from './agent-ipc';
 
 /**
- * Runtime agent configuration (includes session-specific settings)
- * This is what's stored in agent_sessions.agent_config and includes
- * model/provider/temperature that are NOT part of the persistent Assistant entity.
- */
-
-/**
- * Agent session metadata from Rust backend
+ * Runtime agent session metadata from Rust backend.
+ * Assistant settings are loaded live from the assistants table via `assistantId`.
  */
 export interface AgentSession {
   id: string;

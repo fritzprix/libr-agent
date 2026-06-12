@@ -534,20 +534,11 @@ async fn get_caller_assistant_id(session_id: &str) -> Result<String, String> {
         .map_err(|e| format!("DB error: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-    let config_str = session
-        .agent_config
-        .ok_or_else(|| "Session has no agent_config".to_string())?;
+    if let Some(assistant_id) = crate::agent::extract_assistant_id_from_session(&session) {
+        return Ok(assistant_id);
+    }
 
-    let config: serde_json::Value =
-        serde_json::from_str(&config_str).map_err(|e| format!("Invalid config JSON: {}", e))?;
-
-    config
-        .get("assistant_id")
-        .or_else(|| config.get("assistantId"))
-        .or_else(|| config.get("id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "No assistant_id in session config".to_string())
+    Err("No assistant_id in session config".to_string())
 }
 /// Delete an assistant
 pub async fn delete_assistant(

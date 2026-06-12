@@ -17,13 +17,13 @@ This document provides a comprehensive reference for the primary Tauri commands 
   - `name: Option<String>` - Optional descriptive name.
   - `model: Option<String>` - LLM model ID.
   - `provider: Option<String>` - LLM provider name.
-  - `agentConfig: AgentConfig` - System prompt and tool settings.
+  - `agentConfig: AgentConfig` - Create-time payload: sets `assistantId` and lineage columns; not stored as a session JSON blob. Assistant settings live in the `assistants` table.
   - `isEphemeral: bool` - If true, data is not persisted (defaults to false).
   - `workspacePath: Option<String>` - Custom path for session files.
 
 **Returns**:
 
-- `Result<SessionMetadata, String>` - Returns the created session metadata on success.
+- `Result<SessionMetadata, String>` - Returns the created session metadata on success. Includes `assistantId` (FK to `assistants`).
 
 **Usage**:
 
@@ -45,6 +45,43 @@ try {
   console.error('Failed to create session:', error);
 }
 ```
+
+---
+
+### agent_update_session_config
+
+**Purpose**: Updates runtime session bindings (model, provider, assistant) without rewriting assistant configuration blobs.
+
+**Source**: `src-tauri/src/commands/agent_commands/session_commands.rs`
+
+**Parameters**:
+
+- `request: UpdateAgentConfigRequest`
+  - `sessionId: String` - Target session ID.
+  - `model?: string` - Optional LLM model override.
+  - `provider?: string` - Optional LLM provider override.
+  - `assistantId?: string` - Optional FK to switch the session's assistant binding.
+
+**Returns**:
+
+- `Result<AgentResponse, String>` - Success wrapper on update.
+
+**Usage**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+await invoke('agent_update_session_config', {
+  request: {
+    sessionId: 'session-123',
+    model: 'claude-sonnet-4-20250514',
+    provider: 'anthropic',
+    assistantId: 'assistant-uuid',
+  },
+});
+```
+
+**Note**: To change system prompt, tools, or MCP servers, update the assistant in `/assistants` (or via MCP `assistant` tools). Existing sessions pick up assistant changes on the next `resolve_agent_config` call.
 
 ---
 

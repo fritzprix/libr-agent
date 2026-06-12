@@ -380,7 +380,7 @@ mod tests {
             id: Set("playbook-ui-test".to_string()),
             name: Set(Some("Test".to_string())),
             status: Set("idle".to_string()),
-            agent_config: Set(Some(json!({ "assistantId": "asst-s1" }).to_string())),
+            assistant_id: Set(Some("asst-s1".to_string())),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()
@@ -509,7 +509,7 @@ mod tests {
             id: Set("session-ui-1".to_string()),
             name: Set(Some("S1".to_string())),
             status: Set("idle".to_string()),
-            agent_config: Set(Some(json!({ "assistantId": "asst-ui-test" }).to_string())),
+            assistant_id: Set(Some("asst-ui-test".to_string())),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()
@@ -527,7 +527,7 @@ mod tests {
             id: Set("session-ui-2".to_string()),
             name: Set(Some("S2".to_string())),
             status: Set("idle".to_string()),
-            agent_config: Set(Some(json!({ "assistantId": "asst-s1" }).to_string())),
+            assistant_id: Set(Some("asst-s1".to_string())),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()

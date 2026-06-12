@@ -19,7 +19,7 @@ fn build_session(id: &str, updated_at: i64) -> SessionMetadata {
         status: SessionStatus::Idle,
         model: "gpt-4".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: None,
         lineage_id: None,
         depth: None,
@@ -46,7 +46,6 @@ async fn create_and_get_session() {
     let repo = setup_repo().await;
     let mut session = build_session("test-session-1", 1_000);
     session.name = Some("Test Session".to_string());
-    session.agent_config = Some(r#"{"model":"gpt-4"}"#.to_string());
 
     repo.upsert_session(&session)
         .await
@@ -153,7 +152,7 @@ async fn upsert_session_updates_existing_rows() {
     let mut updated = build_session("test-session-update", 2_000);
     updated.name = Some("Updated Name".to_string());
     updated.status = SessionStatus::Busy;
-    updated.agent_config = Some(r#"{"updated":true}"#.to_string());
+    updated.assistant_id = Some("assistant-updated".to_string());
 
     repo.upsert_session(&updated)
         .await
@@ -167,10 +166,7 @@ async fn upsert_session_updates_existing_rows() {
 
     assert_eq!(retrieved.name.as_deref(), Some("Updated Name"));
     assert_eq!(retrieved.status, SessionStatus::Busy);
-    assert_eq!(
-        retrieved.agent_config,
-        Some(r#"{"updated":true}"#.to_string())
-    );
+    assert_eq!(retrieved.assistant_id.as_deref(), Some("assistant-updated"));
 }
 
 #[tokio::test]
@@ -265,7 +261,7 @@ async fn get_session_coalesces_legacy_execution_flags() {
         status: Set("idle".to_string()),
         model: Set("gpt-4".to_string()),
         provider: Set("openai".to_string()),
-        agent_config: Set(None),
+        assistant_id: Set(None),
         parent_session_id: Set(None),
         lineage_id: Set(None),
         depth: Set(None),
