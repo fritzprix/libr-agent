@@ -1,9 +1,9 @@
 ---
-name: deep-research-report
+name: deep-research
 description: Advanced multi-source research and comprehensive report generation. Use when the user requests in-depth analysis on a specific topic. This skill guides you through (1) adaptive planning, (2) information gathering via tools or delegation, (3) iterative synthesis, and (4) high-quality Markdown report production.
 ---
 
-# Deep Research Report
+# Deep Research
 
 This skill provides a systematic workflow for conducting comprehensive research and synthesizing findings into professional, adaptive Markdown reports.
 

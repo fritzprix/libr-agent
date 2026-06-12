@@ -138,8 +138,7 @@ As competências mais importantes para o primeiro dia:
 | Competência      | O que faz                                                                                                   |
 | ---------------- | ----------------------------------------------------------------------------------------------------------- |
 | `system-setup`   | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas                            |
-| `mcp-installer`  | Regista servidores MCP a partir de pacotes npm, URLs do GitHub ou blocos de config JSON                     |
-| `mcp-importer`   | Importa configs MCP existentes do Cursor, VS Code, Windsurf e similares                                     |
+| `mcp-installer`  | Regista ou importa servidores MCP a partir de npm/GitHub/JSON, ou sincroniza configs do Cursor, VS Code, Windsurf e similares |
 | `delegate`       | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem |
 | `teamwork`       | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado              |
 | `org`            | Formaliza identidade de organização duradoura e hierarquia de membros visível                               |
@@ -148,10 +147,14 @@ As competências mais importantes para o primeiro dia:
 
 E isso é apenas a camada de operador. O LibrAgent também fornece competências de domínio para:
 
-- **Conhecimento e investigação**: `deep-research-report`, `knowledge-distiller`
-- **Fluxos de trabalho documentais**: `to-md`, `docx`, `pptx`
+- **Conhecimento e investigação**: `deep-research`, `knowledge-distiller`
+- **Documentos e conteúdo do workspace**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Fluxo de trabalho do desenvolvedor**: `git-workflow`
+- **Onboarding do workspace**: `agent-init`
+- **Coordenação e assistentes**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **Integrações externas**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
 - **Criação de competências e workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
-- **Operações especializadas**: `computer-diagnosis` e outros assistentes especializados
+- **Operações especializadas**: `computer-diagnosis`
 
 _Importante: `bootstrap` é uma capacidade integrada frequentemente usada com estas competências. As Competências agrupadas são os procedimentos reutilizáveis; os integrados e as ferramentas MCP são o substrato de execução subjacente._
 
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - Nuvem: cola uma chave de API OpenAI / Anthropic / Gemini / Groq
 - Local: `ollama pull qwen3:14b` e depois seleciona Ollama nas Settings
-- Já usas Cursor ou VS Code? Diz a qualquer agente: _"Importa os meus servidores MCP do Cursor"_ → `mcp-importer` trata disso
-
 **Passo 2 — Adiciona ferramentas MCP** (barra lateral Extensions)
 
 - Navega no catálogo de presets e clica em Instalar, ou
 - Diz a um agente: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` regista-o automaticamente
+- Já usas Cursor ou VS Code? Diz a qualquer agente: _"Importa os meus servidores MCP do Cursor"_ → `mcp-installer` trata disso
 
 **Passo 3 — Cria o teu primeiro agente**
 

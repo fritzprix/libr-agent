@@ -45,9 +45,9 @@ describe('SkillsListModal', () => {
         onClose={vi.fn()}
         systemSkills={[
           {
-            name: 'deep-research-report',
+            name: 'deep-research',
             description: 'Bundled skill',
-            path: '\\\\?\\C:\\Users\\SKTelecom\\my_works\\libr-agent\\src-tauri\\target\\debug\\bundled_skills\\deep-research-report\\SKILL.md',
+            path: '\\\\?\\C:\\Users\\SKTelecom\\my_works\\libr-agent\\src-tauri\\target\\debug\\bundled_skills\\deep-research\\SKILL.md',
             source: 'global',
             origin: 'system',
           },
@@ -59,12 +59,12 @@ describe('SkillsListModal', () => {
 
     expect(
       screen.getByText(
-        'C:\\Users\\SKTelecom\\my_works\\libr-agent\\src-tauri\\target\\debug\\bundled_skills\\deep-research-report\\SKILL.md',
+        'C:\\Users\\SKTelecom\\my_works\\libr-agent\\src-tauri\\target\\debug\\bundled_skills\\deep-research\\SKILL.md',
       ),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(
-        '\\\\?\\C:\\Users\\SKTelecom\\my_works\\libr-agent\\src-tauri\\target\\debug\\bundled_skills\\deep-research-report\\SKILL.md',
+        '\\\\?\\C:\\Users\\SKTelecom\\my_works\\libr-agent\\src-tauri\\target\\debug\\bundled_skills\\deep-research\\SKILL.md',
       ),
     ).not.toBeInTheDocument();
   });

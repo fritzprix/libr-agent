@@ -141,8 +141,7 @@ The most important day-one skills are:
 | Skill            | What it does                                                                            |
 | ---------------- | --------------------------------------------------------------------------------------- |
 | `system-setup`   | Detects and installs missing runtimes (Python, Node.js, uv) across all platforms        |
-| `mcp-installer`  | Registers MCP servers from npm packages, GitHub URLs, or JSON config blocks             |
-| `mcp-importer`   | Imports existing MCP configs from Cursor, VS Code, Windsurf, and similar setups         |
+| `mcp-installer`  | Registers or imports MCP servers from npm/GitHub/JSON, or syncs configs from Cursor, VS Code, Windsurf, and similar editors |
 | `delegate`       | Guides parent→child session handoff with explicit context transfer and lineage tracking |
 | `teamwork`       | Scaffolds the shared workspace constitution for coordinated multi-agent work            |
 | `org`            | Formalizes durable org identity and org-visible member hierarchy                        |
@@ -151,10 +150,14 @@ The most important day-one skills are:
 
 And that's just the operator layer. LibrAgent also ships domain skills for:
 
-- **knowledge and research**: `deep-research-report`, `knowledge-distiller`
-- **document workflows**: `to-md`, `docx`, `pptx`
+- **knowledge and research**: `deep-research`, `knowledge-distiller`
+- **document and workspace content**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **developer workflow**: `git-workflow`
+- **workspace onboarding**: `agent-init`
+- **coordination and assistants**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **external integrations**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
 - **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
-- **specialized operations**: `computer-diagnosis` and other focused helpers
+- **specialized operations**: `computer-diagnosis`
 
 > [!IMPORTANT]
 > **`bootstrap` is a builtin capability** often used alongside these skills. Bundled Skills are the reusable procedures, while builtins and MCP tools provide the execution substrate underneath.
@@ -227,12 +230,11 @@ pnpm tauri dev
 
 - Cloud: paste an OpenAI / Anthropic / Gemini / Groq API key
 - Local: `ollama pull qwen3:14b` then select Ollama in Settings
-- Already use Cursor or VS Code? Tell any agent: _"Import my MCP servers from Cursor"_ → `mcp-importer` handles it
-
 **Step 2 — Add MCP tools** (Extensions sidebar)
 
 - Browse the preset catalog and click Install, or
 - Tell an agent: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` registers it automatically
+- Already use Cursor or VS Code? Tell any agent: _"Import my MCP servers from Cursor"_ → `mcp-installer` handles that too
 
 **Step 3 — Create your first agent**
 

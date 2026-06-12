@@ -138,8 +138,7 @@ Las habilidades más importantes para el primer día:
 | Habilidad        | Qué hace                                                                                              |
 | ---------------- | ----------------------------------------------------------------------------------------------------- |
 | `system-setup`   | Detecta e instala runtimes faltantes (Python, Node.js, uv) en todas las plataformas                   |
-| `mcp-installer`  | Registra servidores MCP desde paquetes npm, URLs de GitHub o bloques de config JSON                   |
-| `mcp-importer`   | Importa configs MCP existentes desde Cursor, VS Code, Windsurf y similares                            |
+| `mcp-installer`  | Registra o importa servidores MCP desde npm/GitHub/JSON, o sincroniza configs desde Cursor, VS Code, Windsurf y similares |
 | `delegate`       | Guía el traspaso de sesión padre→hijo con transferencia de contexto explícita y seguimiento de linaje |
 | `teamwork`       | Construye la constitución de espacio de trabajo compartido para el trabajo multi-agente coordinado    |
 | `org`            | Formaliza la identidad de organización duradera y la jerarquía de miembros visible                    |
@@ -148,10 +147,14 @@ Las habilidades más importantes para el primer día:
 
 Y eso es solo la capa de operador. LibrAgent también incluye habilidades de dominio para:
 
-- **Conocimiento e investigación**: `deep-research-report`, `knowledge-distiller`
-- **Flujos de trabajo documentales**: `to-md`, `docx`, `pptx`
+- **Conocimiento e investigación**: `deep-research`, `knowledge-distiller`
+- **Documentos y contenido del workspace**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Flujo de trabajo para desarrolladores**: `git-workflow`
+- **Onboarding del workspace**: `agent-init`
+- **Coordinación y asistentes**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **Integraciones externas**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
 - **Creación de habilidades y workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
-- **Operaciones especializadas**: `computer-diagnosis` y otros asistentes especializados
+- **Operaciones especializadas**: `computer-diagnosis`
 
 _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente junto con estas habilidades. Las Habilidades agrupadas son los procedimientos reutilizables; los integrados y las herramientas MCP son el substrato de ejecución subyacente._
 
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - Nube: pega una clave API de OpenAI / Anthropic / Gemini / Groq
 - Local: `ollama pull qwen3:14b` y luego selecciona Ollama en Settings
-- ¿Ya usas Cursor o VS Code? Dile a cualquier agente: _"Importa mis servidores MCP desde Cursor"_ → `mcp-importer` lo maneja
-
 **Paso 2 — Añade herramientas MCP** (barra lateral Extensions)
 
 - Explora el catálogo de presets y haz clic en Instalar, o
 - Dile a un agente: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` lo registra automáticamente
+- ¿Ya usas Cursor o VS Code? Dile a cualquier agente: _"Importa mis servidores MCP desde Cursor"_ → `mcp-installer` lo maneja
 
 **Paso 3 — Crea tu primer agente**
 

@@ -138,8 +138,7 @@ Die wichtigsten Skills für den ersten Tag:
 | Skill            | Was er tut                                                                                            |
 | ---------------- | ----------------------------------------------------------------------------------------------------- |
 | `system-setup`   | Erkennt und installiert fehlende Runtimes (Python, Node.js, uv) plattformübergreifend                 |
-| `mcp-installer`  | Registriert MCP-Server aus npm-Paketen, GitHub-URLs oder JSON-Config-Blöcken                          |
-| `mcp-importer`   | Importiert bestehende MCP-Configs aus Cursor, VS Code, Windsurf u.ä.                                  |
+| `mcp-installer`  | Registriert oder importiert MCP-Server aus npm/GitHub/JSON oder synchronisiert Configs aus Cursor, VS Code, Windsurf u.ä. |
 | `delegate`       | Führt durch die Eltern→Kind-Sitzungsübergabe mit explizitem Kontexttransfer und Abstammungsverfolgung |
 | `teamwork`       | Baut die geteilte Arbeitsbereichsverfassung für koordinierte Multi-Agenten-Arbeit                     |
 | `org`            | Formalisiert dauerhafte Organisationsidentität und sichtbare Mitgliederhierarchie                     |
@@ -148,10 +147,14 @@ Die wichtigsten Skills für den ersten Tag:
 
 Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
 
-- **Wissen & Recherche**: `deep-research-report`, `knowledge-distiller`
-- **Dokumenten-Workflows**: `to-md`, `docx`, `pptx`
+- **Wissen & Recherche**: `deep-research`, `knowledge-distiller`
+- **Dokumente & Workspace-Inhalte**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Entwickler-Workflow**: `git-workflow`
+- **Workspace-Onboarding**: `agent-init`
+- **Koordination & Assistenten**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **Externe Integrationen**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
 - **Skill- und Workflow-Erstellung**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
-- **Spezialisierte Operationen**: `computer-diagnosis` und andere spezialisierte Assistenten
+- **Spezialisierte Operationen**: `computer-diagnosis`
 
 _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit diesen Skills verwendet wird. Gebündelte Skills sind die wiederverwendbaren Verfahren; die eingebauten und MCP-Tools sind das zugrundeliegende Ausführungssubstrat._
 
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - Cloud: Füge einen OpenAI / Anthropic / Gemini / Groq API-Schlüssel ein
 - Lokal: `ollama pull qwen3:14b` und dann Ollama in den Settings auswählen
-- Nutzt du bereits Cursor oder VS Code? Sage einem beliebigen Agenten: _"Importiere meine MCP-Server aus Cursor"_ → `mcp-importer` kümmert sich darum
-
 **Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
 
 - Durchsuche den Preset-Katalog und klicke auf Installieren, oder
 - Sage einem Agenten: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` registriert es automatisch
+- Nutzt du bereits Cursor oder VS Code? Sage einem beliebigen Agenten: _"Importiere meine MCP-Server aus Cursor"_ → `mcp-installer` kümmert sich darum
 
 **Schritt 3 — Erstelle deinen ersten Agenten**
 

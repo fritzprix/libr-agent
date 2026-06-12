@@ -2,6 +2,8 @@
 
 This reference provides standard procedures for installing and registering MCP servers from various sources (GitHub, npm) into different environments (LibrAgent, Claude Desktop).
 
+For importing configs from other editors (Cursor, VS Code, Windsurf, etc.), see [app_paths.md](app_paths.md) for config file locations and schema differences.
+
 ## 1. Registration Methods
 
 ### 1.1 LibrAgent (Current Environment)
