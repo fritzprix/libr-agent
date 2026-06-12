@@ -149,7 +149,7 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 
 - **지식 및 연구**: `deep-research`, `knowledge-distiller`
 - **문서 및 워크스페이스 콘텐츠**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
-- **개발자 워크플로**: `git-workflow`
+- **개발자 워크플로**: `git-workflow`, `bench`
 - **워크스페이스 온보딩**: `agent-init`
 - **조율 및 어시스턴트**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **외부 연동**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`

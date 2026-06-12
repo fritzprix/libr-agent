@@ -149,7 +149,7 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 
 - **知识和研究**：`deep-research`、`knowledge-distiller`
 - **文档与工作区内容**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
-- **开发者工作流**：`git-workflow`
+- **开发者工作流**：`git-workflow`, `bench`
 - **工作区入门**：`agent-init`
 - **协调与助手**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
 - **外部集成**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`

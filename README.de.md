@@ -149,7 +149,7 @@ Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
 
 - **Wissen & Recherche**: `deep-research`, `knowledge-distiller`
 - **Dokumente & Workspace-Inhalte**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
-- **Entwickler-Workflow**: `git-workflow`
+- **Entwickler-Workflow**: `git-workflow`, `bench`
 - **Workspace-Onboarding**: `agent-init`
 - **Koordination & Assistenten**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **Externe Integrationen**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`

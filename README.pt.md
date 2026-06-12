@@ -149,7 +149,7 @@ E isso é apenas a camada de operador. O LibrAgent também fornece competências
 
 - **Conhecimento e investigação**: `deep-research`, `knowledge-distiller`
 - **Documentos e conteúdo do workspace**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
-- **Fluxo de trabalho do desenvolvedor**: `git-workflow`
+- **Fluxo de trabalho do desenvolvedor**: `git-workflow`, `bench`
 - **Onboarding do workspace**: `agent-init`
 - **Coordenação e assistentes**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **Integrações externas**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
