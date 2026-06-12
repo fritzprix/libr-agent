@@ -20,6 +20,7 @@ pub enum BuiltinServiceId {
     Bootstrap,
     Tool, // Unified Tool Domain
     Media,
+    Dataset,
 }
 
 /// Metadata for a builtin service used to generate registry and helper functions.
@@ -49,6 +50,7 @@ impl BuiltinServiceId {
             "bootstrap" => Some(Self::Bootstrap),
             "tool" => Some(Self::Tool),
             "media" => Some(Self::Media),
+            "dataset" => Some(Self::Dataset),
             _ => None,
         }
     }
@@ -71,6 +73,7 @@ impl BuiltinServiceId {
             Self::Bootstrap => "bootstrap",
             Self::Tool => "tool",
             Self::Media => "media",
+            Self::Dataset => "dataset",
         }
     }
 }
@@ -150,6 +153,11 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Media,
         canonical: "media",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        variant: BuiltinServiceId::Dataset,
+        canonical: "dataset",
         optional: true,
     },
 ];

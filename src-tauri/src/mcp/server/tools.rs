@@ -443,6 +443,11 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
                 BuiltinServiceId::Ui => ui::UiServer::new().metadata(),
                 BuiltinServiceId::Tool => tool::ToolServer::new().metadata(),
                 BuiltinServiceId::Media => media::MediaServer::metadata_static(),
+                BuiltinServiceId::Dataset => BuiltinServerMetadata {
+                    display_name: "Dataset".to_string(),
+                    description: "Dataset export and fine-tuning utilities".to_string(),
+                    icon: None,
+                },
                 BuiltinServiceId::Skills => BuiltinServerMetadata {
                     display_name: "Skills".to_string(),
                     description: "Dynamic agent skills".to_string(),
@@ -610,5 +615,6 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         // Skills tools are session-bound; no static definition available.
         BuiltinServiceId::Skills => Vec::new(),
         BuiltinServiceId::Media => crate::mcp::builtin::media::MediaServer::tools_static(),
+        BuiltinServiceId::Dataset => crate::mcp::builtin::dataset::tools::all_tools(),
     }
 }
