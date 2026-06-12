@@ -35,8 +35,6 @@ jobs:
 
       - name: 📦 Install pnpm
         uses: pnpm/action-setup@v5
-        with:
-          version: 9
 
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v5
@@ -45,7 +43,7 @@ jobs:
           cache: 'pnpm'
 
       - name: 📦 Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: � Lint check
         run: pnpm lint
@@ -132,8 +130,6 @@ jobs:
 
       - name: 📦 Install pnpm
         uses: pnpm/action-setup@v5
-        with:
-          version: 9
 
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v5
@@ -142,7 +138,7 @@ jobs:
           cache: 'pnpm'
 
       - name: 📦 Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: 🔧 Install Tauri dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
