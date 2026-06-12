@@ -6,6 +6,9 @@ use std::fs::File;
 use std::io::Write;
 use tauri::command;
 
+const MAX_MESSAGES_PER_SESSION: u64 = 100_000;
+
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetFilter {
@@ -112,7 +115,7 @@ pub async fn export_dataset(
 
     for s in &sessions_to_export {
         let messages = message_repo
-            .get_messages_by_session(&s.id, 100000)
+            .get_messages_by_session(&s.id, MAX_MESSAGES_PER_SESSION)
             .await
             .map_err(|e| format!("Failed to get messages for session {}: {}", s.id, e))?;
 
