@@ -15,6 +15,18 @@ const WORKSPACE_INSTRUCTION_FILES: &[&str] = &["agents.md", "AGENTS.md", "CLAUDE
 const SOUL_INSTRUCTION_FILES: &[&str] =
     &[".github/SOUL.md", "SOUL.md", ".github/soul.md", "soul.md"];
 
+const STABLE_PROMPT_KEY_PREFIX: &str = "<!-- stable-key:";
+
+fn encode_cached_stable_prompt(source_key: &str, prompt: &str) -> String {
+    format!("{STABLE_PROMPT_KEY_PREFIX}{source_key} -->\n{prompt}")
+}
+
+fn decode_cached_stable_prompt(cached: &str) -> Option<(&str, &str)> {
+    let rest = cached.strip_prefix(STABLE_PROMPT_KEY_PREFIX)?;
+    let (source_key, prompt) = rest.split_once(" -->\n")?;
+    Some((source_key, prompt))
+}
+
 fn get_session_workspace_dir(session_id: &str) -> Option<std::path::PathBuf> {
     match get_session_manager() {
         Ok(mgr) => Some(mgr.get_session_workspace_dir_by_id(session_id)),
@@ -74,60 +86,62 @@ pub(crate) async fn build_session_system_prompt_split(
     session_id: &str,
 ) -> Result<(String, Option<String>), String> {
     // --- Read session state under a short-lived read lock ---
-    let (agent_config, session_name, context_registry, cached_stable_prompt_arc) = {
+    let (session_metadata, context_registry, cached_stable_prompt_arc) = {
         let active = active_sessions.read().await;
         let session = active
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        let agent_config = session
-            .metadata
-            .agent_config
-            .as_ref()
-            .ok_or_else(|| "Agent configuration is required but not found".to_string())
-            .and_then(|json| {
-                crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string())
-            })?;
-
         (
-            agent_config,
-            session.metadata.name.clone(),
+            session.metadata.clone(),
             session.context_registry.clone(),
             session.cached_stable_prompt.clone(),
         )
     };
 
+    let agent_config = crate::agent::resolve_agent_config(&session_metadata).await?;
+    let session_name = session_metadata.name.clone();
+    let source_key = crate::agent::stable_prompt_source_key(&agent_config);
+
     // --- Build (or reuse) stable prefix ---
     let stable_prefix = {
         let cached = cached_stable_prompt_arc.read().await;
         if let Some(ref existing) = *cached {
-            existing.clone()
+            if let Some((cached_key, cached_prompt)) = decode_cached_stable_prompt(existing) {
+                if cached_key == source_key {
+                    cached_prompt.to_string()
+                } else {
+                    drop(cached);
+                    build_and_cache_stable_prefix(
+                        &cached_stable_prompt_arc,
+                        &agent_config,
+                        session_name.clone(),
+                        session_id,
+                        &source_key,
+                    )
+                    .await
+                }
+            } else {
+                drop(cached);
+                build_and_cache_stable_prefix(
+                    &cached_stable_prompt_arc,
+                    &agent_config,
+                    session_name.clone(),
+                    session_id,
+                    &source_key,
+                )
+                .await
+            }
         } else {
             drop(cached);
-            // Acquire write lock and re-check: a concurrent caller may have built
-            // and cached the stable prompt while we were waiting for the write lock.
-            let mut write_guard = cached_stable_prompt_arc.write().await;
-            if let Some(ref existing) = *write_guard {
-                existing.clone()
-            } else {
-                // Build sections 1–4 once and cache them for the session lifetime.
-                // These sections are immutable within a session: agent identity, the
-                // session name, persona template (SOUL.md), and workspace instruction
-                // files (agents.md / CLAUDE.md). NOTE: edits to these files mid-session
-                // are NOT reflected until the next config update or session resume, both
-                // of which clear this cache via AgentSession::invalidate_stable_prompt_cache().
-                // This is an intentional tradeoff for prefix-cache efficiency.
-                let soul_instruction = load_soul_instruction(session_id).await;
-                let workspace_instructions = load_workspace_agent_instructions(session_id).await;
-                let stable = build_stable_prefix(
-                    &agent_config,
-                    session_name,
-                    soul_instruction,
-                    workspace_instructions,
-                );
-                *write_guard = Some(stable.clone());
-                stable
-            }
+            build_and_cache_stable_prefix(
+                &cached_stable_prompt_arc,
+                &agent_config,
+                session_name,
+                session_id,
+                &source_key,
+            )
+            .await
         }
     };
 
@@ -150,6 +164,34 @@ pub(crate) async fn build_session_system_prompt_split(
     };
 
     Ok((stable_prompt, session_context))
+}
+
+async fn build_and_cache_stable_prefix(
+    cached_stable_prompt_arc: &Arc<RwLock<Option<String>>>,
+    agent_config: &crate::agent::AgentConfig,
+    session_name: Option<String>,
+    session_id: &str,
+    source_key: &str,
+) -> String {
+    let mut write_guard = cached_stable_prompt_arc.write().await;
+    if let Some(ref existing) = *write_guard {
+        if let Some((cached_key, cached_prompt)) = decode_cached_stable_prompt(existing) {
+            if cached_key == source_key {
+                return cached_prompt.to_string();
+            }
+        }
+    }
+
+    let soul_instruction = load_soul_instruction(session_id).await;
+    let workspace_instructions = load_workspace_agent_instructions(session_id).await;
+    let stable = build_stable_prefix(
+        agent_config,
+        session_name,
+        soul_instruction,
+        workspace_instructions,
+    );
+    *write_guard = Some(encode_cached_stable_prompt(source_key, &stable));
+    stable
 }
 
 /// Build complete system prompt for session (wrapper)

@@ -40,6 +40,8 @@ export interface AgentConfig {
 
 /**
  * Request payload for creating a new agent session.
+ * `agentConfig` is a create-time payload only: backend persists `assistantId` and lineage
+ * columns, not a session-level config blob. Assistant settings live in the assistants table.
  * Mirrors `CreateAgentSessionRequest` in `src-tauri/src/commands/agent_commands.rs`.
  */
 export interface CreateAgentSessionRequest {
@@ -98,14 +100,14 @@ export interface ExecuteUiTauriActionRequest {
 }
 
 /**
- * Request payload for updating agent configuration.
+ * Request payload for updating session model/provider binding.
  * Mirrors `UpdateAgentConfigRequest` in `src-tauri/src/commands/agent_commands.rs`.
  */
 export interface UpdateAgentConfigRequest {
   sessionId: string;
   model?: string;
   provider?: string;
-  agentConfig: AgentConfig;
+  assistantId?: string;
 }
 
 /**
@@ -235,8 +237,8 @@ export interface AgentSessionMetadata {
   status: 'idle' | 'busy' | 'paused' | 'error';
   model: string;
   provider: string;
-  /** Serialized JSON string of AgentConfig */
-  agentConfig?: string;
+  /** FK to assistants table; authoritative assistant binding for the session */
+  assistantId?: string;
   parentSessionId?: string;
   lineageId?: string;
   depth?: number;

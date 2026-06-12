@@ -45,6 +45,7 @@ interface MockSession {
   model: string;
   provider: string;
   assistant: {
+    id: string;
     name: string;
     systemPrompt: string;
     allowedBuiltInServiceAliases: string[];
@@ -66,6 +67,7 @@ const mockSession: MockSession = {
   model: 'gpt-4.1',
   provider: 'openai',
   assistant: {
+    id: 'assistant-123',
     name: 'Assistant',
     systemPrompt: 'You are helpful.',
     allowedBuiltInServiceAliases: [],
@@ -328,10 +330,7 @@ describe('AgentChatStatusBar', () => {
           sessionId: 'session-123',
           model: 'claude-3-7-sonnet',
           provider: 'anthropic',
-          agentConfig: {
-            ...mockSession.assistant,
-            allowedBuiltInServiceAliases: [],
-          },
+          assistantId: mockSession.assistant?.id,
         },
       });
     });

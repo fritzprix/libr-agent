@@ -135,16 +135,16 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 
 가장 중요한 day-one 스킬:
 
-| 스킬                 | 기능                                                                  |
-| -------------------- | --------------------------------------------------------------------- |
-| `system-setup`       | 모든 플랫폼에서 누락된 런타임(Python, Node.js, uv) 감지 및 설치       |
-| `mcp-installer`      | npm 패키지, GitHub URL, JSON 구성 블록에서 MCP 서버 등록              |
-| `mcp-importer`       | Cursor, VS Code, Windsurf 등에서 기존 MCP 구성 가져오기               |
-| `delegate`           | 명시적 컨텍스트 전달 및 계보 추적과 함께 부모→자식 세션 인수인도 안내 |
-| `teamwork`           | 조정된 멀티 에이전트 작업을 위한 공유 워크스페이스 헌법 scaffold      |
-| `org`                | 내구성 조직 정체성 및 org-visible 구성원 계보 공식화                  |
-| `schedule`           | 미감정 자동화를 위한 반복 예약 작업 그룹 생성 및 관리                 |
-| `soul-awakening`     | 에이전트를 `SOUL.md` 페르소나에 고정 — 톤, 태도, 정체성               |
+| 스킬             | 기능                                                                  |
+| ---------------- | --------------------------------------------------------------------- |
+| `system-setup`   | 모든 플랫폼에서 누락된 런타임(Python, Node.js, uv) 감지 및 설치       |
+| `mcp-installer`  | npm 패키지, GitHub URL, JSON 구성 블록에서 MCP 서버 등록              |
+| `mcp-importer`   | Cursor, VS Code, Windsurf 등에서 기존 MCP 구성 가져오기               |
+| `delegate`       | 명시적 컨텍스트 전달 및 계보 추적과 함께 부모→자식 세션 인수인도 안내 |
+| `teamwork`       | 조정된 멀티 에이전트 작업을 위한 공유 워크스페이스 헌법 scaffold      |
+| `org`            | 내구성 조직 정체성 및 org-visible 구성원 계보 공식화                  |
+| `schedule`       | 미감정 자동화를 위한 반복 예약 작업 그룹 생성 및 관리                 |
+| `soul-awakening` | 에이전트를 `SOUL.md` 페르소나에 고정 — 톤, 태도, 정체성               |
 
 이것은 운영자 레이어에 불과합니다. LibrAgent는 도메인 스킬도 제공합니다:
 
@@ -202,6 +202,7 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.11_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64-setup.exe) · [`LibrAgent_0.8.11_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.11_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.11_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.AppImage) · [`LibrAgent_0.8.11_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.deb) · [`LibrAgent-0.8.11-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent-0.8.11-1.x86_64.rpm)

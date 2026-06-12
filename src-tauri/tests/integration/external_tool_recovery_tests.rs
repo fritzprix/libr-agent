@@ -48,6 +48,7 @@ async fn test_context() -> &'static TestContext {
                 .expect("migrations should run");
             set_mcp_server_repository(SqliteMCPServerRepository::new((*db).clone()));
             set_session_repository(SqliteSessionRepository::new((*db).clone()));
+            common::register_assistant_repository(&db);
             TestContext {
                 db,
                 _temp_dir: temp_dir,
@@ -74,6 +75,36 @@ fn extract_text(response: &tauri_mcp_agent_lib::mcp::types::MCPResponse) -> Stri
         .join("\n")
 }
 
+async fn seed_assistant(
+    db: &Arc<DatabaseConnection>,
+    assistant_id: &str,
+    name: &str,
+    mcp_server_ids: Vec<String>,
+) {
+    common::seed_test_assistant(
+        db,
+        assistant_id,
+        name,
+        json!({
+            "name": name,
+            "systemPrompt": "You recover intelligently.",
+            "allowedBuiltInServiceAliases": [
+                "planning",
+                "workspace",
+                "agent",
+                "tool",
+                "attachments",
+                "ui",
+                "skills",
+                "playbook",
+                "scratchpad"
+            ],
+            "mcpServerIds": mcp_server_ids
+        }),
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn detached_external_server_returns_delegate_or_attach_guidance() {
     let context = test_context().await;
@@ -83,6 +114,7 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
     let server_repo = SqliteMCPServerRepository::new((*db).clone());
 
     let session_id = "external-recovery-session";
+    seed_assistant(&db, "agent-recovery", "Recovery Agent", vec![]).await;
     session_repo
         .upsert_session(&SessionMetadata {
             id: session_id.to_string(),
@@ -90,16 +122,7 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
             status: SessionStatus::Idle,
             model: "gpt-4.1".to_string(),
             provider: "openai".to_string(),
-            agent_config: Some(
-                json!({
-                    "assistantId": "agent-recovery",
-                    "name": "Recovery Agent",
-                    "systemPrompt": "You recover intelligently.",
-                    "allowedBuiltInServiceAliases": ["planning", "workspace", "agent", "tool", "attachments", "ui", "skills", "playbook", "scratchpad"],
-                    "mcpServerIds": []
-                })
-                .to_string(),
-            ),
+            assistant_id: Some("agent-recovery".to_string()),
             parent_session_id: None,
             lineage_id: None,
             depth: Some(0),
@@ -206,6 +229,13 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
         .expect("server should insert");
 
     let session_id = "external-recovery-configured-session";
+    seed_assistant(
+        &db,
+        "agent-recovery-configured",
+        "Recovery Agent Configured",
+        vec![created.id.clone()],
+    )
+    .await;
     session_repo
         .upsert_session(&SessionMetadata {
             id: session_id.to_string(),
@@ -213,16 +243,7 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
             status: SessionStatus::Idle,
             model: "gpt-4.1".to_string(),
             provider: "openai".to_string(),
-            agent_config: Some(
-                json!({
-                    "assistantId": "agent-recovery-configured",
-                    "name": "Recovery Agent Configured",
-                    "systemPrompt": "You recover intelligently.",
-                    "allowedBuiltInServiceAliases": ["planning", "workspace", "agent", "tool", "attachments", "ui", "skills", "playbook", "scratchpad"],
-                    "mcpServerIds": [created.id.clone()]
-                })
-                .to_string(),
-            ),
+            assistant_id: Some("agent-recovery-configured".to_string()),
             parent_session_id: None,
             lineage_id: None,
             depth: Some(0),

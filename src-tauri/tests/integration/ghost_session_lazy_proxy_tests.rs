@@ -11,8 +11,8 @@
 ///
 /// `call_tool()` in `management.rs` detects builtin tools and, when no proxy exists,
 /// calls `ensure_builtin_proxy()` in `creation.rs` to lazily create a builtin-only proxy
-/// before forwarding the call.  `ensure_builtin_proxy` reads the session's `agent_config`
-/// from the DB to determine which builtins to enable, falling back to
+/// before forwarding the call.  `ensure_builtin_proxy` resolves assistant-backed config
+/// via `resolve_agent_config` to determine which builtins to enable, falling back to
 /// `CORE_BUILTIN_SERVICE_ALIASES` on any error.
 ///
 /// ## What these tests cover

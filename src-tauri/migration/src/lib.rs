@@ -36,6 +36,8 @@ mod m20260524_000031_add_messages_created_at_index;
 mod m20260528_000032_refine_compact_context_contract;
 mod m20260528_000033_add_prompt_tokens_to_messages;
 mod m20260607_000034_add_session_scheduling_to_scheduled_tasks;
+mod m20260611_000035_add_assistant_id_to_sessions;
+mod m20260612_000036_drop_agent_config_from_sessions;
 
 pub struct Migrator;
 
@@ -77,6 +79,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260528_000032_refine_compact_context_contract::Migration),
             Box::new(m20260528_000033_add_prompt_tokens_to_messages::Migration),
             Box::new(m20260607_000034_add_session_scheduling_to_scheduled_tasks::Migration),
+            Box::new(m20260611_000035_add_assistant_id_to_sessions::Migration),
+            Box::new(m20260612_000036_drop_agent_config_from_sessions::Migration),
         ]
     }
 }

@@ -328,22 +328,6 @@ export function AgentChatStatusBar() {
       logger.info(`Updating session config to ${provider}/${model}`);
 
       try {
-        const { enforceRuntimeBuiltinAliases } = await import(
-          '@/lib/assistant/runtime-builtins'
-        );
-
-        const updatedConfig = {
-          ...session.assistant,
-          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
-            session.assistant.allowedBuiltInServiceAliases,
-          ),
-          // Note: We keep these for completeness but the backend will prioritize top-level model/provider
-          name: session.assistant.name || 'Assistant',
-          systemPrompt:
-            session.assistant.systemPrompt || 'You are a helpful assistant.',
-        };
-
-        // Dynamically import safeInvoke to avoid circular dependencies if any (though it ultimately wraps Tauri invoke)
         const { safeInvoke } = await import('@/lib/backend/core');
 
         await safeInvoke<AgentResponse>('agent_update_session_config', {
@@ -351,7 +335,7 @@ export function AgentChatStatusBar() {
             sessionId: session.id,
             model,
             provider,
-            agentConfig: updatedConfig,
+            assistantId: session.assistant.id,
           },
         });
 

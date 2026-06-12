@@ -28,18 +28,13 @@ use tokio_util::sync::CancellationToken;
 
 fn build_session_metadata(session_id: &str) -> SessionMetadata {
     let now = chrono::Utc::now().timestamp_millis();
-    let agent_config = tauri_mcp_agent_lib::agent::AgentConfig {
-        max_tokens: Some(1024),
-        ..Default::default()
-    };
-
     SessionMetadata {
         id: session_id.to_string(),
         name: Some("tool-loop-fence".to_string()),
         status: SessionStatus::Idle,
         model: "gemini-2.5-pro".to_string(),
         provider: "google".to_string(),
-        agent_config: Some(agent_config.to_json().expect("agent config json")),
+        assistant_id: None,
         parent_session_id: None,
         lineage_id: None,
         depth: None,

@@ -177,13 +177,13 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Update agent configuration for an existing session
+    /// Update session configuration (model, provider, and/or assistant binding)
     pub async fn update_session_config(
         &self,
         session_id: String,
         model: Option<String>,
         provider: Option<String>,
-        agent_config: crate::agent::AgentConfig,
+        assistant_id: Option<String>,
     ) -> Result<(), String> {
         crate::agent::lifecycle::update_session_config(
             &self.session_repo,
@@ -192,7 +192,7 @@ impl AgentSessionManager {
             &session_id,
             model,
             provider,
-            agent_config,
+            assistant_id,
         )
         .await
     }

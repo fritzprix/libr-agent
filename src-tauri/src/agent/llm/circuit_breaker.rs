@@ -1,4 +1,5 @@
 use crate::agent::types::ToolCall;
+use crate::agent::AgentConfig;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
 #[derive(Debug, PartialEq)]
@@ -20,16 +21,8 @@ pub enum CircuitBreakerAction {
     },
 }
 
-pub(crate) fn is_builtin_alias_enabled(agent_config: Option<&str>, alias: &str) -> bool {
-    let Some(config_str) = agent_config else {
-        return true;
-    };
-
-    let Ok(parsed_config) = crate::agent::AgentConfig::from_json(config_str) else {
-        return true;
-    };
-
-    crate::agent::tools::is_builtin_service_alias_enabled(&parsed_config, alias)
+pub(crate) fn is_builtin_alias_enabled(agent_config: &AgentConfig, alias: &str) -> bool {
+    crate::agent::tools::is_builtin_service_alias_enabled(agent_config, alias)
 }
 
 fn is_tool_error_message(message: &Message) -> bool {

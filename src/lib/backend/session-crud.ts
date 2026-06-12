@@ -189,12 +189,7 @@ export async function upsertSession(session: Session): Promise<void> {
     await safeInvoke<AgentResponse>('agent_update_session_config', {
       request: {
         sessionId: session.id,
-        agentConfig: {
-          ...assistant,
-          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
-            assistant.allowedBuiltInServiceAliases,
-          ),
-        },
+        assistantId: assistant.id,
       },
     });
   }

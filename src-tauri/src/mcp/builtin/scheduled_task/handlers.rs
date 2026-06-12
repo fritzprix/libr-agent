@@ -674,29 +674,10 @@ async fn resolve_assistant_id_for_session(
             )
         })?;
 
-    let config_str = session.agent_config.ok_or_else(|| {
-        invalid_input_error(
-            &format!("Session '{session_id}' has no assistant configuration"),
-            ToolGroup::ScheduledTask,
-        )
-    })?;
-
-    let config: serde_json::Value = serde_json::from_str(&config_str).map_err(|error| {
-        invalid_input_error(
-            &format!("Invalid agent_config for session '{session_id}': {error}"),
-            ToolGroup::ScheduledTask,
-        )
-    })?;
-
-    let assistant_id = config
-        .get("assistant_id")
-        .or_else(|| config.get("assistantId"))
-        .or_else(|| config.get("id"))
-        .and_then(|value| value.as_str())
-        .map(str::to_string)
-        .ok_or_else(|| {
+    let assistant_id =
+        crate::agent::extract_assistant_id_from_session(&session).ok_or_else(|| {
             invalid_input_error(
-                &format!("Session '{session_id}' agent_config is missing assistant id"),
+                &format!("Session '{session_id}' has no assistant configuration"),
                 ToolGroup::ScheduledTask,
             )
         })?;

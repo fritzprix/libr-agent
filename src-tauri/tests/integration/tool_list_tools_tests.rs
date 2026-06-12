@@ -79,7 +79,7 @@ async fn upsert_inventory_session(db: &DatabaseConnection, session_id: &str) {
             status: SessionStatus::Idle,
             model: "gpt-4.1".to_string(),
             provider: "openai".to_string(),
-            agent_config: None,
+            assistant_id: None,
             parent_session_id: None,
             lineage_id: None,
             depth: Some(0),

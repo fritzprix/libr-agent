@@ -50,3 +50,41 @@ pub async fn setup_test_db_with_migrations() -> DatabaseConnection {
         .expect("Migrations should run");
     db
 }
+
+/// Register the assistant repository against global state for resolve_agent_config().
+#[allow(dead_code)]
+pub fn register_assistant_repository(db: &DatabaseConnection) {
+    use tauri_mcp_agent_lib::repositories::SqliteAssistantRepository;
+    use tauri_mcp_agent_lib::set_assistant_repository;
+
+    set_assistant_repository(SqliteAssistantRepository::new(db.clone()));
+}
+
+/// Insert an assistant row used by session SSOT resolution in integration tests.
+#[allow(dead_code)]
+pub async fn seed_test_assistant(
+    db: &DatabaseConnection,
+    assistant_id: &str,
+    name: &str,
+    config: serde_json::Value,
+) {
+    use tauri_mcp_agent_lib::repositories::{AssistantRepository, SqliteAssistantRepository};
+
+    let repo = SqliteAssistantRepository::new(db.clone());
+    if repo
+        .get_assistant(assistant_id)
+        .await
+        .expect("assistant lookup should succeed")
+        .is_some()
+    {
+        return;
+    }
+
+    repo.create_assistant(
+        assistant_id.to_string(),
+        name.to_string(),
+        config.to_string(),
+    )
+    .await
+    .expect("assistant should seed");
+}

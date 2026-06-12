@@ -26,8 +26,14 @@ impl PlaybookServer {
     pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
         let db_conn = (*db).clone();
 
-        // Get assistant_id from session
-        let assistant_id = get_assistant_id_from_session(&session_id).await?;
+        // Get assistant_id from session (column first, blob fallback)
+        let session = crate::get_session_repository()
+            .get_session(&session_id)
+            .await
+            .map_err(|e| format!("Database error fetching session: {}", e))?
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        let assistant_id = crate::agent::extract_assistant_id_from_session(&session)
+            .ok_or_else(|| "Session has no assistant configuration".to_string())?;
 
         let server = Self {
             assistant_id,
@@ -191,30 +197,4 @@ impl BuiltinMCPServer for PlaybookServer {
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
-}
-
-// Helper functions for tool definitions
-
-async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
-    let session = crate::get_session_repository()
-        .get_session(session_id)
-        .await
-        .map_err(|e| format!("Database error fetching session: {}", e))?
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-    let config_str = session
-        .agent_config
-        .clone()
-        .ok_or_else(|| "Session has no config".to_string())?;
-
-    let config: serde_json::Value = serde_json::from_str(&config_str)
-        .map_err(|e| format!("Invalid session config JSON: {}", e))?;
-
-    config
-        .get("assistant_id")
-        .or_else(|| config.get("assistantId"))
-        .or_else(|| config.get("id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "No assistant ID in session config".to_string())
 }

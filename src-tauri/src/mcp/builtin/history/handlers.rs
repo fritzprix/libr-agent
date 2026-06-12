@@ -442,7 +442,7 @@ fn session_matches_filters(
     status_filter: Option<&SessionStatus>,
 ) -> bool {
     if let Some(expected_agent_id) = agent_id {
-        if extract_agent_id(session.agent_config.as_deref()).as_deref()
+        if crate::agent::extract_assistant_id_from_session(session).as_deref()
             != Some(expected_agent_id.as_str())
         {
             return false;
@@ -473,16 +473,6 @@ fn timestamp_in_range(timestamp: i64, from: Option<i64>, to: Option<i64>) -> boo
     true
 }
 
-fn extract_agent_id(agent_config: Option<&str>) -> Option<String> {
-    let parsed: Value = serde_json::from_str(agent_config?).ok()?;
-    parsed
-        .get("assistantId")
-        .and_then(Value::as_str)
-        .or_else(|| parsed.get("assistant_id").and_then(Value::as_str))
-        .or_else(|| parsed.get("id").and_then(Value::as_str))
-        .map(str::to_string)
-}
-
 fn to_history_session_item(
     session: SessionMetadata,
     message_counts: &HashMap<String, u64>,
@@ -495,11 +485,12 @@ fn to_history_session_item_with_count(
     session: SessionMetadata,
     message_count: u64,
 ) -> HistorySessionItem {
+    let agent_id = crate::agent::extract_assistant_id_from_session(&session);
     HistorySessionItem {
         session_id: session.id.clone(),
         name: session.name,
         status: session.status.as_str().to_string(),
-        agent_id: extract_agent_id(session.agent_config.as_deref()),
+        agent_id,
         parent_session_id: session.parent_session_id,
         lineage_id: session.lineage_id,
         created_at: session.created_at,
@@ -643,7 +634,8 @@ async fn resolve_allowed_session_ids(
 
         let agent_matches = agent_id
             .map(|expected| {
-                extract_agent_id(session.agent_config.as_deref()).as_deref() == Some(expected)
+                crate::agent::extract_assistant_id_from_session(&session).as_deref()
+                    == Some(expected)
             })
             .unwrap_or(true);
         let reference_timestamp = session.last_message_at.unwrap_or(session.updated_at);
@@ -665,7 +657,8 @@ async fn resolve_allowed_session_ids(
         .filter(|session| {
             let agent_matches = agent_id
                 .map(|expected| {
-                    extract_agent_id(session.agent_config.as_deref()).as_deref() == Some(expected)
+                    crate::agent::extract_assistant_id_from_session(session).as_deref()
+                        == Some(expected)
                 })
                 .unwrap_or(true);
             let reference_timestamp = session.last_message_at.unwrap_or(session.updated_at);
