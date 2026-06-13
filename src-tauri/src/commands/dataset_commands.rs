@@ -115,7 +115,7 @@ pub async fn export_dataset(
     let mut exported_messages = 0;
 
     for s in &sessions_to_export {
-        let messages = load_session_messages(&message_repo, &s.id).await?;
+        let messages = load_session_messages(message_repo, &s.id).await?;
 
         if messages.is_empty() {
             continue;
@@ -147,7 +147,7 @@ pub async fn export_dataset(
             .map(|m| {
                 m.content
                     .iter()
-                    .map(|c| extract_message_text(c))
+                    .map(extract_message_text)
                     .collect::<Vec<String>>()
                     .join(" ")
                     .len()
@@ -176,7 +176,7 @@ pub async fn export_dataset(
                     let text = m
                         .content
                         .iter()
-                        .map(|c| extract_message_text(c))
+                        .map(extract_message_text)
                         .collect::<Vec<String>>()
                         .join("\n");
                     conv.push(ShareGPTMessage { from, value: text });
@@ -191,7 +191,7 @@ pub async fn export_dataset(
                     let text = m
                         .content
                         .iter()
-                        .map(|c| extract_message_text(c))
+                        .map(extract_message_text)
                         .collect::<Vec<String>>()
                         .join("\n");
                     if m.role == "user" {
@@ -217,7 +217,7 @@ pub async fn export_dataset(
                     let content = m
                         .content
                         .iter()
-                        .map(|c| extract_message_text(c))
+                        .map(extract_message_text)
                         .collect::<Vec<String>>()
                         .join("\n");
                     conv.push(OpenAIJSONLMessage { role, content });
