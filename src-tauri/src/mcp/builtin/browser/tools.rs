@@ -340,6 +340,46 @@ NEXT STEPS:
     }
 }
 
+/// Capture a screenshot of the current page
+pub fn take_screenshot_tool() -> MCPTool {
+    MCPTool {
+        name: "takeScreenshot".to_string(),
+        title: None,
+        description: "Capture a screenshot of the current page in the active browser session.
+Returns image metadata and saves the image file to the workspace.
+
+Behavior:
+- Requires an active session created by `createSession`
+- Saves the file directly to the workspace to avoid IPC overhead
+- Returns the saved file URI and metadata"
+            .to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "format".to_string(),
+                    string_prop(None, None, Some("Image format: 'jpeg' (default) or 'png'")),
+                ),
+                (
+                    "quality".to_string(),
+                    integer_prop(
+                        Some(1),
+                        Some(100),
+                        Some("Image quality (1-100, jpeg only, default 80)"),
+                    ),
+                ),
+                (
+                    "fullPage".to_string(),
+                    boolean_prop(Some("Capture the entire scrollable page (default false)")),
+                ),
+            ],
+            vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
 /// Returns all browser tools (canonical LibrAgent names, no Playwright/short aliases)
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
@@ -360,5 +400,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         fetch_tool(),
         // Discovery
         list_interactable_tool(),
+        // Screenshot
+        take_screenshot_tool(),
     ]
 }

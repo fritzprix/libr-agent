@@ -664,6 +664,114 @@ pub(crate) async fn save_downloaded_file(
     }
 }
 
+pub async fn take_screenshot(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
+    let service = server.get_browser_service()?;
+
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
+    };
+
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before taking screenshot"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
+
+    let format = args
+        .get("format")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let quality = args.get("quality").and_then(|v| v.as_u64());
+
+    let full_page = args.get("fullPage").and_then(|v| v.as_bool());
+
+    let ext = match format.as_deref() {
+        Some("png") => "png",
+        _ => "jpg",
+    };
+    let mime_type = match format.as_deref() {
+        Some("png") => "image/png",
+        _ => "image/jpeg",
+    };
+
+    // Generate output path in the workspace
+    let relative_path = format!("media/screenshot_{}.{}", Uuid::new_v4(), ext);
+    let session_manager = crate::session::get_session_manager()?;
+    let absolute_path = session_manager
+        .get_session_workspace_dir_by_id(&server.agent_session_id)
+        .join(&relative_path);
+
+    // Ensure parent directory exists
+    if let Some(parent) = absolute_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create parent directory for screenshot: {e}"))?;
+    }
+
+    // Call service screenshot
+    let res = match service
+        .screenshot(
+            &browser_session_id,
+            absolute_path.to_str().ok_or("Invalid path encoding")?,
+            format,
+            quality,
+            full_page,
+        )
+        .await
+    {
+        Ok(res) => res,
+        Err(e) => {
+            return Ok(handle_browser_op_error(
+                "Take screenshot",
+                e,
+                vec![
+                    "Verify the browser session is active",
+                    "Ensure the page layout is stable and scrollable if using fullPage",
+                ],
+            ));
+        }
+    };
+
+    let file_url = url::Url::from_file_path(&absolute_path)
+        .map(|u| u.to_string())
+        .map_err(|_| "Failed to convert screenshot path to file URL".to_string())?;
+
+    let size_kb = res.size_bytes / 1024;
+    Ok(MCPResult {
+        content: Some(vec![
+            crate::mcp::types::MCPContent::Text {
+                text: format!(
+                    "✓ Screenshot saved to workspace ({} KB, {})",
+                    size_kb, mime_type
+                ),
+                is_error: Some(false),
+            },
+            crate::mcp::types::MCPContent::Image {
+                data: None,
+                uri: Some(file_url),
+                mime_type: mime_type.to_string(),
+            },
+        ]),
+        structured_content: None,
+        is_error: Some(false),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -67,3 +67,20 @@ pub(crate) struct EvaluateParams {
     pub(crate) session_id: String,
     pub(crate) script: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotParams {
+    pub(crate) session_id: String,
+    pub(crate) output_path: String,
+    pub(crate) format: Option<String>,
+    pub(crate) quality: Option<u64>,
+    pub(crate) full_page: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotResult {
+    pub(crate) format: String,
+    pub(crate) size_bytes: usize,
+}

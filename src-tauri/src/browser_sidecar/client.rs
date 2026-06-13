@@ -13,8 +13,8 @@ use tokio::sync::{oneshot, Mutex};
 use uuid::Uuid;
 
 use super::contracts::{
-    CreateSessionParams, EvaluateParams, NavigateParams, PageState, SessionIdParams,
-    SidecarRequest, SidecarResponse,
+    CreateSessionParams, EvaluateParams, NavigateParams, PageState, ScreenshotParams,
+    ScreenshotResult, SessionIdParams, SidecarRequest, SidecarResponse,
 };
 use super::BROWSER_SIDECAR_FLAG;
 
@@ -124,6 +124,27 @@ impl BrowserAutomationClient {
             EvaluateParams {
                 session_id: session_id.to_string(),
                 script: script.to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn screenshot(
+        &self,
+        session_id: &str,
+        output_path: &str,
+        format: Option<String>,
+        quality: Option<u64>,
+        full_page: Option<bool>,
+    ) -> Result<ScreenshotResult, String> {
+        self.request(
+            "screenshot",
+            ScreenshotParams {
+                session_id: session_id.to_string(),
+                output_path: output_path.to_string(),
+                format,
+                quality,
+                full_page,
             },
         )
         .await

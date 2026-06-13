@@ -11,8 +11,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinSet;
 
 use super::contracts::{
-    CreateSessionParams, EvaluateParams, NavigateParams, SessionIdParams, SidecarRequest,
-    SidecarResponse,
+    CreateSessionParams, EvaluateParams, NavigateParams, ScreenshotParams, ScreenshotResult,
+    SessionIdParams, SidecarRequest, SidecarResponse,
 };
 use super::page::{
     navigate_back, navigate_forward, serialize_evaluation_result, snapshot_page_state,
@@ -120,6 +120,7 @@ impl BrowserSidecarServer {
             "goForward" => self.go_forward(request.params).await,
             "evaluate" => self.evaluate(request.params).await,
             "getState" => self.get_state(request.params).await,
+            "screenshot" => self.screenshot(request.params).await,
             _ => Err(format!(
                 "Unknown browser sidecar method: {}",
                 request.method
@@ -274,6 +275,43 @@ impl BrowserSidecarServer {
             .ok_or_else(|| "Browser runtime is not running".to_string())?;
 
         cleanup_session_resources(runtime.browser.clone(), session, session_id).await
+    }
+
+    async fn screenshot(&self, params: Value) -> Result<Value, String> {
+        let params: ScreenshotParams = serde_json::from_value(params)
+            .map_err(|e| format!("Invalid screenshot params: {e}"))?;
+
+        let page = self.get_session_page(&params.session_id).await?;
+
+        let format = match params.format.as_deref() {
+            Some("png") => chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Png,
+            _ => chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Jpeg,
+        };
+
+        let mut builder = chromiumoxide::page::ScreenshotParams::builder().format(format);
+
+        if let Some(quality) = params.quality {
+            builder = builder.quality(quality as i64);
+        }
+
+        if let Some(full_page) = params.full_page {
+            builder = builder.full_page(full_page);
+        }
+
+        let screenshot_params = builder.build();
+
+        page.save_screenshot(screenshot_params, &params.output_path)
+            .await
+            .map_err(|e| format!("Failed to save browser screenshot: {e}"))?;
+
+        let file_meta = std::fs::metadata(&params.output_path)
+            .map_err(|e| format!("Failed to read screenshot file metadata: {e}"))?;
+
+        serde_json::to_value(ScreenshotResult {
+            format: params.format.unwrap_or_else(|| "jpeg".to_string()),
+            size_bytes: file_meta.len() as usize,
+        })
+        .map_err(|e| format!("Failed to serialize screenshot result: {e}"))
     }
 
     async fn get_session_page(&self, session_id: &str) -> Result<Arc<chromiumoxide::Page>, String> {

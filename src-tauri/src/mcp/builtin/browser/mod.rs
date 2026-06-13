@@ -298,6 +298,7 @@ impl BuiltinMCPServer for BrowserServer {
             "scrollPage" => interaction::scroll_page(self, args).await,
             "listInteractable" => interaction::list_interactable(self, args).await,
             "fetch" => content::fetch_url(self, args, session_id).await,
+            "takeScreenshot" => content::take_screenshot(self, args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
         .or_else(|e| {

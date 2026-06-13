@@ -128,6 +128,37 @@ impl InteractiveBrowserServer {
         self.client.evaluate(session_id, script).await
     }
 
+    pub async fn screenshot(
+        &self,
+        session_id: &str,
+        output_path: &str,
+        format: Option<String>,
+        quality: Option<u64>,
+        full_page: Option<bool>,
+    ) -> Result<crate::browser_sidecar::ScreenshotResult, String> {
+        debug!("Taking browser screenshot in session {session_id} to {output_path}");
+        let session = self.get_session(session_id)?;
+        match &session.status {
+            SessionStatus::Active => {}
+            SessionStatus::Error(message) => {
+                return Err(format!(
+                    "Browser session {} is in an error state: {}. Close the session or create a new one.",
+                    session_id, message
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "Browser session {} is not ready for screenshot execution",
+                    session_id
+                ));
+            }
+        }
+
+        self.client
+            .screenshot(session_id, output_path, format, quality, full_page)
+            .await
+    }
+
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
         match self.sessions.read() {
             Ok(sessions) => sessions
