@@ -54,7 +54,7 @@ function AgentMessageBubbleImpl({
   isPending = false,
   toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
@@ -210,7 +210,7 @@ function AgentMessageBubbleImpl({
                   : 'text-muted-foreground/80',
               )}
             >
-              {formatMessageTime(msg.createdAt)}
+              {formatMessageTime(msg.createdAt, new Date(), i18n.language)}
             </div>
           )}
         </div>
