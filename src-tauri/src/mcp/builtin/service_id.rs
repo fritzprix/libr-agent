@@ -9,6 +9,7 @@ pub enum BuiltinServiceId {
     Scratchpad,
     Workspace,
     Knowledge,
+    #[serde(alias = "dataset")]
     History,
     Agent,
     Skills,
@@ -20,7 +21,6 @@ pub enum BuiltinServiceId {
     Bootstrap,
     Tool, // Unified Tool Domain
     Media,
-    Dataset,
 }
 
 /// Metadata for a builtin service used to generate registry and helper functions.
@@ -39,7 +39,7 @@ impl BuiltinServiceId {
             "scratchpad" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
-            "history" => Some(Self::History),
+            "history" | "dataset" => Some(Self::History),
             "agent" => Some(Self::Agent),
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
@@ -50,7 +50,6 @@ impl BuiltinServiceId {
             "bootstrap" => Some(Self::Bootstrap),
             "tool" => Some(Self::Tool),
             "media" => Some(Self::Media),
-            "dataset" => Some(Self::Dataset),
             _ => None,
         }
     }
@@ -73,7 +72,6 @@ impl BuiltinServiceId {
             Self::Bootstrap => "bootstrap",
             Self::Tool => "tool",
             Self::Media => "media",
-            Self::Dataset => "dataset",
         }
     }
 }
@@ -155,11 +153,6 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         canonical: "media",
         optional: true,
     },
-    BuiltinServiceEntry {
-        variant: BuiltinServiceId::Dataset,
-        canonical: "dataset",
-        optional: true,
-    },
 ];
 
 pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
@@ -184,6 +177,14 @@ impl fmt::Display for BuiltinServiceId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dataset_alias_resolves_to_history() {
+        assert_eq!(
+            BuiltinServiceId::from_alias("dataset"),
+            Some(BuiltinServiceId::History)
+        );
+    }
 
     #[test]
     fn name_round_trips() {

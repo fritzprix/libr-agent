@@ -27,7 +27,6 @@ pub mod tool;
 pub mod ui;
 pub mod utils;
 pub mod workspace;
-pub mod dataset;
 
 #[cfg(test)]
 mod tests;
@@ -371,7 +370,6 @@ impl BuiltinServerRegistry {
 
         // Register stateless builtin servers
         registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
-        registry.register_server(Box::new(dataset::DatasetServer::new()));
 
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
             "default".to_string(),
@@ -410,7 +408,6 @@ impl BuiltinServerRegistry {
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
         registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
-        registry.register_server(Box::new(dataset::DatasetServer::new()));
         // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 
@@ -453,7 +450,6 @@ impl BuiltinServerRegistry {
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
         registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
-        registry.register_server(Box::new(dataset::DatasetServer::new()));
         // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 

@@ -51,6 +51,7 @@ use commands::assistant_crud_commands::{
 };
 use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
+use commands::dataset_commands::export_dataset;
 use commands::download_commands::{
     download_media_file, download_workspace_file, export_and_download_zip,
 };
@@ -88,7 +89,6 @@ use commands::scheduled_task_commands::{
     update_scheduled_task,
 };
 use commands::session_commands::remove_session;
-use commands::dataset_commands::export_dataset;
 use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };

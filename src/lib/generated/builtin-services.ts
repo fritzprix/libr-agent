@@ -32,6 +32,7 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'workspace',
   'knowledge',
   'history',
+  'dataset',
   'agent',
   'skills',
   'playbook',
