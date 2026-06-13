@@ -7,16 +7,6 @@ description: Registers or imports MCP (Model Context Protocol) servers in LibrAg
 
 This skill registers MCP servers into the current LibrAgent session or the user's Claude Desktop configuration. It covers both **direct installation** (from packages or URLs) and **import/sync** (from other AI editors).
 
-## Triggering
-
-Trigger this skill when a user:
-
-- Provides an npm package name (e.g., `@org/package`)
-- Shares a GitHub repository URL (e.g., `https://github.com/user/repo`)
-- Pastes a JSON configuration block for an MCP server
-- Asks to import, sync, or bring MCP settings from Cursor, VS Code, Windsurf, Cline, Roo Code, Zed, etc.
-- Wants to see what MCP servers are installed in other apps
-
 ## 🚀 Workflow
 
 ### Step 0: Determine Input Path

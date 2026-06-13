@@ -11,22 +11,6 @@ This is parent-mediated orchestration: child sessions do not talk to each other.
 
 For general spawn/monitor mechanics and workspace isolation rules, follow `delegate` first. Read this skill when you need the **multi-reviewer workflow**, not a single child task.
 
-## When to Use
-
-Good fits:
-
-- 2-4 specialists reviewing the **same** change, design, or proposal
-- architecture evaluation with distinct lenses (structure, security, performance)
-- risk analysis where tradeoffs must be explicit
-- bounded questions with a clear deliverable the parent can compare
-
-Avoid this skill when:
-
-- one capable agent can finish cleanly alone → stay in the parent session
-- you need a persistent multi-agent workspace → use `teamwork` or `org`
-- children must debate each other directly → not supported; parent must mediate
-- the work is open-ended implementation with no comparison step → use `delegate` once
-
 ## Core Rules
 
 1. **Same question, same scope.** Every child must receive the same objective, boundaries, and output shape. Change only the perspective or assistant specialization.

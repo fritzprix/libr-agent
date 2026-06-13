@@ -9,23 +9,6 @@ Session schedules inject a message into **the current session** at a future time
 
 The MCP tool is `scheduleCallback`. The skill name is `session-schedule`.
 
-## When to use this skill
-
-Use `session-schedule` when:
-
-- the user wants to continue **this conversation** later ("check in 5 minutes", "resume tomorrow morning here")
-- a reminder or follow-up must reuse the current session context and history
-- the user schedules multiple callbacks in the same thread (N:1 on one session)
-- recurrence should stay inside the current session (hourly summary of **this** thread)
-
-Stop and use `schedule` when:
-
-- automation should outlive the session or target a different assistant explicitly
-- the user wants app-wide cron jobs visible in Scheduled Tasks settings
-- teamwork needs grouped global automation loops with `groupName` / `groupId`
-
-Teamwork scaffolding is **not** required.
-
 ## Routing decision
 
 ```text
