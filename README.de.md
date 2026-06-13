@@ -135,15 +135,15 @@ LibrAgent wird mit einer wachsenden Bibliothek **gebündelter Skills** geliefert
 
 Die wichtigsten Skills für den ersten Tag:
 
-| Skill            | Was er tut                                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `system-setup`   | Erkennt und installiert fehlende Runtimes (Python, Node.js, uv) plattformübergreifend                 |
+| Skill            | Was er tut                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `system-setup`   | Erkennt und installiert fehlende Runtimes (Python, Node.js, uv) plattformübergreifend                                     |
 | `mcp-installer`  | Registriert oder importiert MCP-Server aus npm/GitHub/JSON oder synchronisiert Configs aus Cursor, VS Code, Windsurf u.ä. |
-| `delegate`       | Führt durch die Eltern→Kind-Sitzungsübergabe mit explizitem Kontexttransfer und Abstammungsverfolgung |
-| `teamwork`       | Baut die geteilte Arbeitsbereichsverfassung für koordinierte Multi-Agenten-Arbeit                     |
-| `org`            | Formalisiert dauerhafte Organisationsidentität und sichtbare Mitgliederhierarchie                     |
-| `schedule`       | Erstellt und verwaltet wiederkehrende geplante Task-Gruppen für unbeaufsichtigte Automatisierung      |
-| `soul-awakening` | Verankert einen Agenten an eine `SOUL.md`-Persona — Ton, Haltung, Identität                           |
+| `delegate`       | Führt durch die Eltern→Kind-Sitzungsübergabe mit explizitem Kontexttransfer und Abstammungsverfolgung                     |
+| `teamwork`       | Baut die geteilte Arbeitsbereichsverfassung für koordinierte Multi-Agenten-Arbeit                                         |
+| `org`            | Formalisiert dauerhafte Organisationsidentität und sichtbare Mitgliederhierarchie                                         |
+| `schedule`       | Erstellt und verwaltet wiederkehrende geplante Task-Gruppen für unbeaufsichtigte Automatisierung                          |
+| `soul-awakening` | Verankert einen Agenten an eine `SOUL.md`-Persona — Ton, Haltung, Identität                                               |
 
 Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
 
@@ -205,6 +205,7 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
@@ -226,7 +227,7 @@ pnpm tauri dev
 
 - Cloud: Füge einen OpenAI / Anthropic / Gemini / Groq API-Schlüssel ein
 - Lokal: `ollama pull qwen3:14b` und dann Ollama in den Settings auswählen
-**Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
+  **Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
 
 - Durchsuche den Preset-Katalog und klicke auf Installieren, oder
 - Sage einem Agenten: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` registriert es automatisch

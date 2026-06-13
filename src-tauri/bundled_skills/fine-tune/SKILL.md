@@ -15,7 +15,7 @@ This skill automates the data extraction, hardware pre-flight checks, and traini
 
 ## Quick Process
 
-1. **Export Dataset** — Run `export_dataset` Tauri command to extract chats in ShareGPT or Alpaca format.
+1. **Export Dataset** — Call `history__exportDataset` to extract chats in ShareGPT or Alpaca format.
 2. **Pre-flight Check** — Validate local CPU/GPU, VRAM, and CUDA environments.
 3. **Orchestrate Training** — Execute `train.py` to initiate Llama-Factory CLI.
 4. **Deploy Model** — Update assistant configurations to point to the newly fine-tuned local model.
@@ -23,19 +23,21 @@ This skill automates the data extraction, hardware pre-flight checks, and traini
 ## Workflow
 
 ### 1. Export Dataset
-Call the Tauri backend command `export_dataset` to extract data:
+Use the history builtin to export data (requires the `history` optional capability):
 
-```typescript
-export_dataset({
-  format: "LlamaFactory", // or "Alpaca", "OpenAIJSONL"
-  outputPath: "workspace/datasets/finetune_data.json",
-  filters: {
-    minTurns: 2,
-    excludeErrors: true,
-    excludeShort: true
+```json
+history__exportDataset({
+  "format": "llamaFactory",
+  "outputPath": "workspace/datasets/finetune_data.json",
+  "filters": {
+    "minTurns": 2,
+    "excludeErrors": true,
+    "excludeShort": true
   }
 })
 ```
+
+To export a subset, call `history__list` or `history__search` first and pass `sessionIds`.
 
 ### 2. Run Pre-flight Check & Train
 Execute the helper script to verify resources and launch training:

@@ -135,15 +135,15 @@ O LibrAgent vem com uma biblioteca crescente de **Competências agrupadas**. Nã
 
 As competências mais importantes para o primeiro dia:
 
-| Competência      | O que faz                                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| `system-setup`   | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas                            |
+| Competência      | O que faz                                                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `system-setup`   | Deteta e instala runtimes em falta (Python, Node.js, uv) em todas as plataformas                                              |
 | `mcp-installer`  | Regista ou importa servidores MCP a partir de npm/GitHub/JSON, ou sincroniza configs do Cursor, VS Code, Windsurf e similares |
-| `delegate`       | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem |
-| `teamwork`       | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado              |
-| `org`            | Formaliza identidade de organização duradoura e hierarquia de membros visível                               |
-| `schedule`       | Cria e gere grupos de tarefas agendadas recorrentes para automatização sem supervisão                       |
-| `soul-awakening` | Ancora um agente a uma persona `SOUL.md` — tom, postura, identidade                                         |
+| `delegate`       | Guia a transferência de sessão pai→filho com transferência de contexto explícita e rastreamento de linhagem                   |
+| `teamwork`       | Constrói a constituição do espaço de trabalho partilhado para trabalho multi-agente coordenado                                |
+| `org`            | Formaliza identidade de organização duradoura e hierarquia de membros visível                                                 |
+| `schedule`       | Cria e gere grupos de tarefas agendadas recorrentes para automatização sem supervisão                                         |
+| `soul-awakening` | Ancora um agente a uma persona `SOUL.md` — tom, postura, identidade                                                           |
 
 E isso é apenas a camada de operador. O LibrAgent também fornece competências de domínio para:
 
@@ -205,6 +205,7 @@ _Importante: `bootstrap` é uma capacidade integrada frequentemente usada com es
 Descarrega o instalador mais recente para a tua plataforma na **[página de Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
@@ -226,7 +227,7 @@ pnpm tauri dev
 
 - Nuvem: cola uma chave de API OpenAI / Anthropic / Gemini / Groq
 - Local: `ollama pull qwen3:14b` e depois seleciona Ollama nas Settings
-**Passo 2 — Adiciona ferramentas MCP** (barra lateral Extensions)
+  **Passo 2 — Adiciona ferramentas MCP** (barra lateral Extensions)
 
 - Navega no catálogo de presets e clica em Instalar, ou
 - Diz a um agente: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` regista-o automaticamente

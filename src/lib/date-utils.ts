@@ -185,7 +185,9 @@ export function formatSessionTimestamp(dateInput: Date | string | undefined): {
  * @param dateInput Date object, ISO string, or undefined
  * @returns Formatted time string, or empty string if invalid/undefined
  */
-export function formatMessageTime(dateInput: Date | string | undefined): string {
+export function formatMessageTime(
+  dateInput: Date | string | undefined,
+): string {
   if (!dateInput) {
     return '';
   }

@@ -1,13 +1,14 @@
-use crate::state::{get_message_repository, get_session_repository};
+use crate::models::chat::Message;
+use crate::repositories::message_repository::{MessageRepository, SqliteMessageRepository};
 use crate::repositories::session_repository::{SessionRepository, SessionStatus};
-use crate::repositories::message_repository::MessageRepository;
+use crate::state::{get_message_repository, get_session_repository};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
 use tauri::command;
 
-const MAX_MESSAGES_PER_SESSION: u64 = 100_000;
-
+const EXPORT_MESSAGE_PAGE_SIZE: u64 = 500;
+const ALPACA_DEFAULT_INSTRUCTION: &str = "Respond to the following user message.";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,16 +115,16 @@ pub async fn export_dataset(
     let mut exported_messages = 0;
 
     for s in &sessions_to_export {
-        let messages = message_repo
-            .get_messages_by_session(&s.id, MAX_MESSAGES_PER_SESSION)
-            .await
-            .map_err(|e| format!("Failed to get messages for session {}: {}", s.id, e))?;
+        let messages = load_session_messages(&message_repo, &s.id).await?;
 
         if messages.is_empty() {
             continue;
         }
 
-        let turns = messages.iter().filter(|m| m.role == "user" || m.role == "assistant").count() as u32;
+        let turns = messages
+            .iter()
+            .filter(|m| m.role == "user" || m.role == "assistant")
+            .count() as u32;
 
         if let Some(min) = filter.min_turns {
             if turns < min {
@@ -141,9 +142,17 @@ pub async fn export_dataset(
             }
         }
 
-        let total_chars: usize = messages.iter().map(|m| {
-            m.content.iter().map(|c| extract_message_text(c)).collect::<Vec<String>>().join(" ").len()
-        }).sum();
+        let total_chars: usize = messages
+            .iter()
+            .map(|m| {
+                m.content
+                    .iter()
+                    .map(|c| extract_message_text(c))
+                    .collect::<Vec<String>>()
+                    .join(" ")
+                    .len()
+            })
+            .sum();
 
         let est_tokens = (total_chars / 4) as u32;
         if let Some(min) = filter.min_tokens {
@@ -164,21 +173,33 @@ pub async fn export_dataset(
                         "assistant" => "gpt".to_string(),
                         _ => "system".to_string(),
                     };
-                    let text = m.content.iter().map(|c| extract_message_text(c)).collect::<Vec<String>>().join("\n");
+                    let text = m
+                        .content
+                        .iter()
+                        .map(|c| extract_message_text(c))
+                        .collect::<Vec<String>>()
+                        .join("\n");
                     conv.push(ShareGPTMessage { from, value: text });
                 }
-                final_conversations.push(ShareGPTConversation { conversations: conv });
+                final_conversations.push(ShareGPTConversation {
+                    conversations: conv,
+                });
             }
             ExportFormat::Alpaca => {
                 let mut user_text = String::new();
                 for m in &messages {
-                    let text = m.content.iter().map(|c| extract_message_text(c)).collect::<Vec<String>>().join("\n");
+                    let text = m
+                        .content
+                        .iter()
+                        .map(|c| extract_message_text(c))
+                        .collect::<Vec<String>>()
+                        .join("\n");
                     if m.role == "user" {
                         user_text = text;
                     } else if m.role == "assistant" && !user_text.is_empty() {
                         final_alpaca.push(AlpacaItem {
-                            instruction: user_text.clone(),
-                            input: "".to_string(),
+                            instruction: ALPACA_DEFAULT_INSTRUCTION.to_string(),
+                            input: user_text.clone(),
                             output: text,
                         });
                         user_text.clear();
@@ -193,7 +214,12 @@ pub async fn export_dataset(
                         "assistant" => "assistant".to_string(),
                         _ => "system".to_string(),
                     };
-                    let content = m.content.iter().map(|c| extract_message_text(c)).collect::<Vec<String>>().join("\n");
+                    let content = m
+                        .content
+                        .iter()
+                        .map(|c| extract_message_text(c))
+                        .collect::<Vec<String>>()
+                        .join("\n");
                     conv.push(OpenAIJSONLMessage { role, content });
                 }
                 final_openai_jsonl.push(OpenAIJSONLItem { messages: conv });
@@ -201,8 +227,8 @@ pub async fn export_dataset(
         }
     }
 
-    let mut file = File::create(&output_path)
-        .map_err(|e| format!("Failed to create output file: {}", e))?;
+    let mut file =
+        File::create(&output_path).map_err(|e| format!("Failed to create output file: {}", e))?;
 
     match format {
         ExportFormat::LlamaFactory | ExportFormat::ShareGPT => {
@@ -235,11 +261,44 @@ pub async fn export_dataset(
     })
 }
 
+async fn load_session_messages(
+    message_repo: &SqliteMessageRepository,
+    session_id: &str,
+) -> Result<Vec<Message>, String> {
+    let mut page = 1u64;
+    let mut messages = Vec::new();
+
+    loop {
+        let batch = message_repo
+            .get_page(session_id, page, EXPORT_MESSAGE_PAGE_SIZE)
+            .await
+            .map_err(|e| format!("Failed to get messages for session {session_id}: {e}"))?;
+
+        if batch.items.is_empty() {
+            break;
+        }
+
+        messages.extend(batch.items);
+
+        if !batch.has_next_page {
+            break;
+        }
+
+        page += 1;
+    }
+
+    Ok(messages)
+}
+
 fn extract_message_text(content: &crate::mcp::types::MCPContent) -> String {
     match content {
         crate::mcp::types::MCPContent::Text { text, .. } => text.clone(),
-        crate::mcp::types::MCPContent::Thinking { thinking, .. } => format!("<thinking>\n{}\n</thinking>", thinking),
-        crate::mcp::types::MCPContent::ToolCall { name, arguments, .. } => {
+        crate::mcp::types::MCPContent::Thinking { thinking, .. } => {
+            format!("<thinking>\n{}\n</thinking>", thinking)
+        }
+        crate::mcp::types::MCPContent::ToolCall {
+            name, arguments, ..
+        } => {
             let args_str = if let Ok(json) = serde_json::from_str::<serde_json::Value>(arguments) {
                 serde_json::to_string(&json).unwrap_or_else(|_| arguments.to_string())
             } else {
