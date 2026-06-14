@@ -1,12 +1,10 @@
 use super::ReferenceResolver;
-use crate::services::skill_service;
+use crate::services::skill_service::{self, SkillMetadata};
 use async_trait::async_trait;
 use std::path::PathBuf;
 
-/// Max size for inlining skill content into context (100 KB)
-const MAX_SKILL_INLINE_BYTES: u64 = 100 * 1024;
-
-/// Resolves `@skill:name` references by reading the corresponding SKILL.md file.
+/// Resolves `@skill:name` references with skill metadata and read guidance.
+/// Full SKILL.md content is not inlined; the agent is directed to read the file.
 pub struct SkillReferenceResolver {
     session_id: String,
     assistant_id: Option<String>,
@@ -21,13 +19,44 @@ impl SkillReferenceResolver {
     }
 }
 
+pub(crate) fn format_skill_reference_block(skill: &SkillMetadata) -> String {
+    let path = PathBuf::from(&skill.path);
+    let base_dir = path.parent().unwrap_or(&path);
+    let instructions_path = path.display().to_string();
+
+    format!(
+        "**Name:** {}\n\
+         **Description:** {}\n\
+         **Instructions file:** `{}`\n\
+         **Base directory:** `{}`\n\n\
+         **Required — read before any other action:** The user message above is the primary \
+         task. This block only identifies which skill applies. You MUST NOT call other tools, \
+         delegate, or answer from the description alone.\n\n\
+         1. First, call `workspace__readFile(path: \"{}\")`.\n\
+         2. Follow the workflow in that file exactly.\n\
+         3. Apply it to the task stated in the user message above.\n\n\
+         Do not infer the skill workflow from its name or description. Skipping the read step \
+         is not allowed. Interpret any relative paths mentioned in the skill relative to the \
+         base directory.",
+        skill.name,
+        skill.description,
+        instructions_path,
+        base_dir.display(),
+        instructions_path
+    )
+}
+
 #[async_trait]
 impl ReferenceResolver for SkillReferenceResolver {
     fn type_name(&self) -> &'static str {
         "skill"
     }
 
-    /// Looks up the skill named `arg` in the configured skills directory and returns its content.
+    fn append_after_user_text(&self) -> bool {
+        true
+    }
+
+    /// Looks up the skill named `arg` and returns metadata plus read guidance.
     async fn resolve(&self, arg: &str) -> Option<String> {
         let system_dir = skill_service::get_system_skills_directory().ok()?;
         let user_dir = skill_service::get_user_skills_directory().ok()?;
@@ -37,57 +66,46 @@ impl ReferenceResolver for SkillReferenceResolver {
         let workspace_dir =
             skill_service::get_workspace_skills_directory_for_session(&self.session_id).ok();
 
-        let skills = skill_service::resolve_skills(
-            system_dir.clone(),
-            user_dir.clone(),
-            assistant_dir.clone(),
-            workspace_dir.clone(),
-        )
-        .await
-        .ok()?;
+        let skills =
+            skill_service::resolve_skills(system_dir, user_dir, assistant_dir, workspace_dir)
+                .await
+                .ok()?;
 
-        // Find skill by case-insensitive name match
         let skill = skills
             .into_iter()
             .find(|s| s.name.eq_ignore_ascii_case(arg))?;
 
-        let path = PathBuf::from(&skill.path);
-
-        // Guard: check file size before reading
-        let file_size = tokio::fs::metadata(&path).await.ok()?.len();
-        if file_size > MAX_SKILL_INLINE_BYTES {
-            return Some(format!(
-                "# Follow Instruction `{}`\n\n⚠️ Skill file is too large to inline ({} KB).",
-                skill.path,
-                file_size / 1024
-            ));
+        if !PathBuf::from(&skill.path).is_file() {
+            return None;
         }
 
-        let allowed_roots = skill_service::collect_allowed_skill_roots(
-            system_dir,
-            user_dir,
-            assistant_dir,
-            workspace_dir,
-        );
-        let content =
-            skill_service::get_skill_content_from_roots(skill.path.clone(), &allowed_roots)
-                .await
-                .ok()?;
-        let base_dir = path.parent().unwrap_or(&path);
+        Some(format_skill_reference_block(&skill))
+    }
+}
 
-        // Pre-inject content with explicit Base Directory metadata.
-        // This gives the AI immediate access to instructions while clarifying the
-        // absolute path context for any relative resources or templates mentioned in the skill.
-        Some(format!(
-            "# Follow Instruction `{}`\n\
-            **Base Directory for this skill is**: `{}`\n\n\
-            --- Content Start ---\n\n\
-            {}\n\n\
-            --- Content End ---\n\n\
-            **Note**: All relative paths mentioned in the instructions above must be interpreted relative to the **Base Directory** provided.",
-            path.display(),
-            base_dir.display(),
-            content
-        ))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_skill_reference_block_includes_metadata_and_read_guidance() {
+        let skill = SkillMetadata {
+            name: "delegate".to_string(),
+            description: "Delegate work between sessions.".to_string(),
+            path: "/tmp/skills/delegate/SKILL.md".to_string(),
+            source: None,
+            origin: None,
+        };
+
+        let output = format_skill_reference_block(&skill);
+
+        assert!(output.contains("**Name:** delegate"));
+        assert!(output.contains("**Description:** Delegate work between sessions."));
+        assert!(output.contains("**Instructions file:** `/tmp/skills/delegate/SKILL.md`"));
+        assert!(output.contains("**Base directory:** `/tmp/skills/delegate`"));
+        assert!(output.contains("workspace__readFile(path: \"/tmp/skills/delegate/SKILL.md\")"));
+        assert!(output.contains("Required — read before any other action"));
+        assert!(output.contains("Skipping the read step is not allowed"));
+        assert!(!output.contains("--- Content Start ---"));
     }
 }
