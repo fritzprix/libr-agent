@@ -1,4 +1,4 @@
-use super::{format_session_label, DbError, SessionRepository};
+use super::{format_session_label, DbError, SessionMetadata, SessionRepository, SessionStatus};
 
 /// Build service context for direct child sessions of the current session.
 ///
@@ -9,9 +9,13 @@ pub async fn build_child_sessions_context(
     session_id: &str,
 ) -> Result<Option<String>, DbError> {
     let children = repo.get_child_sessions(session_id).await?;
+    Ok(format_child_sessions_context(&children))
+}
 
+/// Formats a list of child sessions into a markdown list.
+pub fn format_child_sessions_context(children: &[SessionMetadata]) -> Option<String> {
     if children.is_empty() {
-        return Ok(None);
+        return None;
     }
 
     let mut parts = vec!["## Child Sessions".to_string(), String::new()];
@@ -31,5 +35,99 @@ pub async fn build_child_sessions_context(
         ));
     }
 
-    Ok(Some(parts.join("\n")))
+    Some(parts.join("\n"))
+}
+
+/// Formats a notice listing active sessions available for reuse via messageToSession.
+pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<String> {
+    if children.is_empty() {
+        return None;
+    }
+
+    let mut idle_sessions = Vec::new();
+    let mut paused_sessions = Vec::new();
+    let mut error_sessions = Vec::new();
+    let mut busy_sessions = Vec::new();
+
+    for child in children {
+        match child.status {
+            SessionStatus::Idle => idle_sessions.push(child),
+            SessionStatus::Paused => paused_sessions.push(child),
+            SessionStatus::Error => error_sessions.push(child),
+            SessionStatus::Busy => busy_sessions.push(child),
+        }
+    }
+
+    let mut parts = vec![
+        "### Sub-Agent Sessions (Reuse via messageToSession)".to_string(),
+        String::new(),
+        "⚠️ **Reuse Existing Sessions First**: Avoid `startSession` — reuse idle/paused/failed sessions via `messageToSession(sessionId)` to preserve context.".to_string(),
+        String::new(),
+    ];
+
+    let limit_per_group = 5;
+
+    // Ready to Reuse (Idle)
+    format_group_notice(
+        &mut parts,
+        "Ready to Reuse (Idle):",
+        "These sessions are idle and ready for new instructions. Send a message to assign a new task.",
+        &idle_sessions,
+        limit_per_group,
+    );
+
+    // Suspended (Paused)
+    format_group_notice(
+        &mut parts,
+        "Suspended (Paused):",
+        "These sessions were suspended (e.g. waiting for input or approval). Send a message to resume them.",
+        &paused_sessions,
+        limit_per_group,
+    );
+
+    // Failed (Error)
+    format_group_notice(
+        &mut parts,
+        "Failed (Error):",
+        "These sessions encountered an error. Send a message to retry or recover them.",
+        &error_sessions,
+        limit_per_group,
+    );
+
+    // Running (Busy)
+    format_group_notice(
+        &mut parts,
+        "Running (Busy):",
+        "These sessions are currently executing a task. Do NOT send messages to them unless necessary; wait for them to finish.",
+        &busy_sessions,
+        limit_per_group,
+    );
+
+    Some(parts.join("\n"))
+}
+
+/// Helper function to format a single session status group in the reuse notice.
+fn format_group_notice(
+    parts: &mut Vec<String>,
+    title: &str,
+    description: &str,
+    sessions: &[&SessionMetadata],
+    limit: usize,
+) {
+    if sessions.is_empty() {
+        return;
+    }
+
+    parts.push(format!("- **{}**", title));
+    parts.push(format!("  {}", description));
+    for child in sessions.iter().take(limit) {
+        let name_str = child.name.as_deref().unwrap_or("");
+        parts.push(format!("  - `{}` (name: \"{}\")", child.id, name_str));
+    }
+    if sessions.len() > limit {
+        parts.push(format!(
+            "  - ... and {} more sessions",
+            sessions.len() - limit,
+        ));
+    }
 }
