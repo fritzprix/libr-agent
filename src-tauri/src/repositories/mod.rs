@@ -38,7 +38,9 @@ pub use scheduled_task_repository::{
     CreateScheduledTaskParams, ScheduledTaskRepository, SqliteScheduledTaskRepository,
     UpdateScheduledTaskParams,
 };
-pub use session_child_context::build_child_sessions_context;
+pub use session_child_context::{
+    build_child_sessions_context, format_active_sessions_notice, format_child_sessions_context,
+};
 pub use session_org_context::build_explicit_org_layer_context;
 pub use session_repository::{
     SessionListCursor, SessionListPage, SessionMetadata, SessionRepository, SessionStatus,

@@ -1,18 +1,11 @@
 ---
 name: system-setup
 description: Guides installation and verification of MCP runtime dependencies (Python, Node.js, uv) across Windows, Linux, and macOS. Use when users need to set up their environment for running MCP servers or troubleshoot missing dependencies.
-license: Complete terms in LICENSE.txt
 ---
 
 # System Setup for MCP Servers
 
 Diagnose missing runtimes and guide installation—do not dump full OS install guides into the conversation.
-
-## When to Use
-
-- MCP server failures due to missing runtimes
-- New machine setup for LibrAgent
-- "command not found" for python, node, or uv
 
 ## Workflow
 

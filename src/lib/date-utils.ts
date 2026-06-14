@@ -8,6 +8,7 @@ const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
 const timeFormatters = new Map<string, Intl.DateTimeFormat>();
+const dayNameFormatters = new Map<string, Intl.DateTimeFormat>();
 
 function getCacheKey(
   locale?: string | string[],
@@ -186,16 +187,88 @@ export function formatSessionTimestamp(dateInput: Date | string | undefined): {
  * @returns Formatted time string, or empty string if invalid/undefined
  */
 export function formatMessageTime(
-  dateInput: Date | string | undefined,
+  dateInput: Date | string | number | undefined,
+  referenceDate: Date = new Date(),
+  locale?: string | string[],
 ): string {
   if (!dateInput) {
     return '';
   }
 
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  const date =
+    typeof dateInput === 'string'
+      ? new Date(dateInput)
+      : typeof dateInput === 'number'
+        ? new Date(dateInput)
+        : dateInput;
+
   if (Number.isNaN(date.getTime())) {
     return '';
   }
 
-  return getTimeFormatter().format(date);
+  // Compute relative day difference based on local midnight boundaries
+  const refMidnight = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate(),
+  );
+  const dateMidnight = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+  const diffMs = refMidnight.getTime() - dateMidnight.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  const timeStr = getTimeFormatter(locale, {
+    hour: 'numeric',
+    minute: 'numeric',
+  }).format(date);
+
+  if (diffDays === 0) {
+    return timeStr;
+  }
+  if (diffDays === 1) {
+    const isKorean =
+      locale && (Array.isArray(locale) ? locale[0] : locale).startsWith('ko');
+    return isKorean ? `어제 ${timeStr}` : `Yesterday ${timeStr}`;
+  }
+  if (diffDays < 7) {
+    const dayName = getDayNameFormatter(locale).format(date);
+    return `${dayName} ${timeStr}`;
+  }
+  return `${formatDate(date, locale)} ${timeStr}`;
+}
+
+export function getDayNameFormatter(
+  locale?: string | string[],
+): Intl.DateTimeFormat {
+  const options: Intl.DateTimeFormatOptions = { weekday: 'long' };
+  const key = getCacheKey(locale, options);
+  let formatter = dayNameFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    dayNameFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
+export function formatDate(date: Date, locale?: string | string[]): string {
+  const options: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  };
+  const formatter = getDateFormatter(locale, options);
+  let formatted = formatter.format(date);
+
+  // Clean up Korean locale formatting (e.g. "2024. 01. 15." -> "2024.01.15")
+  const primaryLocale = Array.isArray(locale) ? locale[0] : locale;
+  if (primaryLocale && primaryLocale.startsWith('ko')) {
+    formatted = formatted.replace(/\s/g, '');
+    if (formatted.endsWith('.')) {
+      formatted = formatted.slice(0, -1);
+    }
+  }
+  return formatted;
 }

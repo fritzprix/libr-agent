@@ -69,7 +69,9 @@ Define problems as a JSON array or Markdown list. Each problem has:
       "id": "django__django-11890",
       "task": "Fix the validation error in django/forms/fields.py when...",
       "repository": "/path/to/django",
-      "expected_output": "The field should accept null values",
+      "setup": "cd /path/to/django && pip install -e .[test]",
+      "test_command": "python -m pytest tests/forms/tests.py::TestFields::test_null_field",
+      "expected_output": "PASSED",
       "difficulty": "medium"
     }
   ]
@@ -91,15 +93,22 @@ Problems:
 
 ### 1. Load benchmark definition
 
-Parse the benchmark from user input, a file, or a URL.
+Perform **Benchmark Discovery** upon receiving a request (e.g., "run swe-bench-lite" or a specific benchmark name):
 
-```
-// If user provides a file path
-workspace__readFile(path="benchmarks/swe-bench.json")
+1. **Check built-in benchmark map** for matching keys:
+   - `"swe-bench-lite"`, `"tool-capability"`, `"python-coding"`, etc.
+2. **Scan `benchmarks/` directory** if not found:
+   - Search the **current session's workspace root** (via `workspace__listDirectory(path="benchmarks")` to search for relative `.json` or `.md` files under the active workspace directory, e.g. `benchmarks/swe-bench-lite.json`).
+3. **Ask user** for the definition if still not found.
+4. **Unified Loader (JSON + Markdown)**:
+   - Parse JSON content as a structured JSON object if JSON format is detected.
+   - Parse Markdown content using key headings (Benchmark/Assistant) and list items for problems if Markdown format is detected.
 
-// Or parse from chat message
-// Extract name, assistant, problems array
-```
+Example Unified Loader logic:
+- Check for JSON content or parse file:
+  `workspace__readFile(path="benchmarks/swe-bench-lite.json")`
+- Or read markdown file:
+  `workspace__readFile(path="benchmarks/tool-capability.md")`
 
 Record: `benchmark.name`, `benchmark.assistant`, `benchmark.problems[]`.
 
@@ -111,20 +120,63 @@ agent__list(type="configs", query="Coding Expert")
 
 Record the `id` for `agent__startSession`. If the user names a custom assistant, use that ID.
 
-### 3. Spawn child sessions
+### 3. Spawn child sessions & Execution Protocol
 
-For each problem, spawn a child session:
+For each problem, spawn a child session. Construct the child's `task` prompt dynamically based on the available fields in the problem definition. Do not include static setup or verification headers if those fields are empty, as this will confuse the child worker.
 
+#### Task Formulation Guidelines:
+- Include the `Problem ID`, `Task` description, `Repository` path, and `Expected output` (if they exist in the problem definition).
+- Conditionally add sequential steps to the instructions:
+  - **If `setup` is present:** Include `1. Run setup command: <setup_command>`.
+  - **Always include:** `2. Apply the fix for the task: <task_description>`.
+  - **If `test_command` is present:** Include `3. Run verification command: <test_command>`.
+  - **Always include at the end:** `Return your final result as a JSON block containing "exit_code", "stdout", "stderr", and "diff".`
+
+#### Example of a Dynamically Formed Task:
 ```
-agent__startSession({
-  agentId: "<assistant-id>",
-  task: `<benchmark-task>\n\nProblem ID: ${problem.id}\nTask: ${problem.task}\nRepository: ${problem.repository}\nExpected output: ${problem.expected_output}`,
-  waitForResult: false,
-  includeCurrentOrg: false   // Children don't need to appear in org view
-})
+Problem ID: django__django-11890
+Task: Fix the validation error in django/forms/fields.py when the field value is None.
+Repository: /path/to/django
+Expected output: PASSED
+
+Execution Instructions:
+1. Run setup command: cd /path/to/django && pip install -e .[test]
+2. Apply the fix for the task: Fix the validation error in django/forms/fields.py when the field value is None.
+3. Run verification command: python -m pytest tests/forms/tests.py::TestFields::test_null_field
+4. Return your final result as a JSON block:
+{
+  "exit_code": <number>,
+  "stdout": "<string>",
+  "stderr": "<string>",
+  "diff": "<string>"
+}
 ```
 
-**Important:** Each child gets its own isolated workspace by default. If the problem requires a shared repository, use `workspaceOverride`.
+Spawn the session using `agent__startSession` with `waitForResult: false` and `includeCurrentOrg: false`.
+
+#### Parent Judgment Rule with Fallback Strategy:
+1. **Try JSON parsing:** Attempt to extract and parse the JSON block from the child's final response (using regex like `/\{[\s\S]*?\}/`).
+2. **Evaluate code:** If JSON is successfully parsed, check `exit_code`. If `exit_code === 0`, mark the problem as `"passed"`. Otherwise, mark it as `"failed"`.
+3. **Fallback check:** If JSON parsing fails (e.g. LLM format errors):
+   - Scan stdout/stderr or the raw response for successful test keywords (e.g., `"PASSED"`, `"OK"`, `"tests passed"`).
+   - If error indicators are found (e.g., `"AssertionError"`, `"FAILED"`, `"Error"`, or exit code > 0 in logs), mark it as `"failed"`.
+   - If ambiguous, default to spawning a "judge" session or marking it as `"failed"` with the error "JSON parsing failed".
+
+### Workspace Strategy
+
+By default, child sessions run in isolated workspaces. However, SWE-bench style benchmarks require sharing a repository. Follow these strategy guidelines:
+
+| Benchmark Type | `workspaceOverride` | Rationale |
+|----------------|-------------------|-----------|
+| **SWE-bench / repo fix** | `problem.repository` | Shared codebase — clone/build once, run tests in same env. Map path from problem definition. |
+| **Multi-file refactor** | `problem.repository` | All changes evaluated against same codebase. Map path from problem definition. |
+| **Tool capability test** | Omitted (isolated) | No shared state, failure isolation |
+| **Code challenge** | Omitted (isolated) | Independent problems, no cross-contamination |
+| **Cross-session dependency** | N/A | Not supported — use sequential mode |
+
+#### Concurrency and Conflict Avoidance in Shared Workspaces:
+- When child sessions share a codebase via `workspaceOverride`, they must modify different files or use isolated directories to avoid write-write conflicts.
+- If multiple child sessions must modify the same files, you must switch from **Parallel** to **Sequential** execution mode.
 
 Record all returned `sessionId` values in a map: `sessions[problem.id] = sessionId`.
 
@@ -152,7 +204,7 @@ const result = await agent__checkSession(sessionId, wait=true, timeout=300);
 
 ### 5. Collect results
 
-For each problem, the result is the child's final response. Parse it:
+Parse the child's final response for each problem as the result:
 
 ```typescript
 interface BenchmarkResult {
@@ -168,7 +220,13 @@ interface BenchmarkResult {
 
 ### 6. Generate report
 
-Produce a Markdown report:
+Aggregate the results and generate a standardized Markdown report after all child sessions complete (either successfully, with error, or by timing out):
+
+#### Step-by-Step Report Generation:
+1. **Calculate Metrics:** Calculate the overall pass rate, average latency (ms), error rate, and total tokens used.
+2. **Group Results:** Classify problems into `passed`, `failed`, `error`, or `timeout`.
+3. **Analyze Common Failure Patterns:** For all failed, error, and timeout problems, identify common issues (e.g., installation errors, syntax errors, incorrect API calls, logic bugs) and suggest recommendations.
+4. **Output standard Markdown:** Save or return the report using the following structure:
 
 ```markdown
 # Benchmark Report: {name}
@@ -177,29 +235,37 @@ Produce a Markdown report:
 - **Total:** N problems
 - **Passed:** X ({X/N}%)
 - **Failed:** Y
-- **Errors:** Z
+- **Errors/Timeouts:** Z
 - **Avg Latency:** T ms
 
 ## Results
 
-| # | Problem | Status | Score | Latency |
-|---|---------|--------|-------|---------|
-| 1 | django-11890 | ✅ passed | 1.0 | 45s |
-| 2 | flask-2048 | ❌ failed | 0.0 | 120s |
-| 3 | ... | ⚠️ error | - | timeout |
+| # | Problem ID | Status | Score | Latency | Key Output / Error |
+|---|------------|--------|-------|---------|---------------------|
+| 1 | django-11890 | ✅ passed | 1.0 | 45s | Exit code 0, 3 tests passed |
+| 2 | flask-2048 | ❌ failed | 0.0 | 120s | AssertionError: NaN handling |
+| 3 | ... | ⚠️ error | 0.0 | - | Timeout after 300s |
 
-## Failed Problems
+## Failure & Error Analysis
 
-### django-11890
-**Expected:** The field should accept null values
-**Got:** {child's answer snippet}
-**Analysis:** The agent failed to handle the edge case because...
+### Common Failure Patterns
+- **Pattern A (e.g., Dependencies Setup Failed):** 2 problems failed during `setup` due to missing virtual environments.
+- **Pattern B (e.g., Assertion Failure):** 3 problems failed because the agent did not handle edge cases correctly.
 
-## Errors
+### Problem Details
 
-### flask-2048
-**Error:** {error message}
-**Session:** {sessionId}
+#### django-11890 (Passed)
+- **Latency:** 45s
+- **Diff:**
+```diff
+...
+```
+
+#### flask-2048 (Failed)
+- **Expected:** The field should accept null values
+- **Got:** {child's answer snippet or stderr}
+- **Analysis:** The agent introduced a syntax error when handling JSON serialization of NaN values.
+- **Recommendation:** Verify environment setup has `simplejson` installed or ensure the agent uses native json module properly.
 ```
 
 ## Advanced Patterns
@@ -236,15 +302,15 @@ agent__startSession({
 
 ### Result Verification
 
-If the benchmark has an expected answer (e.g. unit test output), compare:
+When verifying results, use the most lightweight and accurate verification method. Simple text or exit-code checks should be handled directly by the Parent agent. Spawn a separate judge session only for complex semantic comparisons.
 
-```
-// Use a separate child session as "judge"
-agent__startSession({
-  agentId: "Master Mind",  // or a dedicated judge agent
-  task: `Evaluate this answer against the expected output.\n\nProblem: ${problem.task}\nExpected: ${problem.expected_output}\nGot: ${workerAnswer}\n\nReturn a score 0-1 and brief analysis.`
-})
-```
+| Verification Type | Who | How |
+|-------------------|-----|-----|
+| **Exit code check** | Parent | `exit_code == 0 → passed`, else `failed` |
+| **Exact string match** | Parent | `child.answer.trim() === expected.trim()` |
+| **Partial match** | Parent | `child.answer.includes(expected_keyphrase)` |
+| **Test output parsing** | Parent | Use RegExp on stdout/stderr (e.g., `/(\d+) passed/` or `/OK/`) |
+| **Semantic correctness** | Judge session | Spawn a critic agent (e.g., "Master Mind") to evaluate the output against expected reference and return JSON |
 
 ## Script Reference
 
@@ -260,15 +326,16 @@ agent__startSession({
 
 ## Guidelines
 
-- **Isolate workspaces** — children should not share the parent's workspace unless explicitly needed (`workspaceOverride`).
+- **Isolate workspaces by default** — children should not share the parent's workspace unless explicitly needed (`workspaceOverride`). When sharing, write to separate files or use sequential mode to avoid conflicts.
 - **Set timeouts** — always specify `timeout` on `checkSession(wait=true)` to prevent infinite waits.
 - **Limit fanout** — be mindful of `maxFanout` limits; spawn in batches if needed.
-- **Verify results** — don't trust child answers blindly; use a judge session for quality checks.
+- **Verify results** — don't trust child answers blindly; use automated exit-code and stdout/stderr verification when available, and only delegate to a judge session for semantic verification.
 - **Clean up** — stop any remaining children after the benchmark completes.
 - **Report format** — use consistent Markdown tables for readability.
 - **English output** — benchmark reports in English unless the user specifies otherwise.
 
 ## References
 
-- [benchmark-templates.md](references/benchmark-templates.md) — example benchmark definitions
-- [result-aggregation.md](references/result-aggregation.md) — patterns for scoring and analysis
+These reference markdown files are located in the skill directory's `references/` subdirectory:
+- [benchmark-templates.md](file:///home/fritzprix/my_works/libr-agent/src-tauri/bundled_skills/bench/references/benchmark-templates.md) — example benchmark definitions
+- [result-aggregation.md](file:///home/fritzprix/my_works/libr-agent/src-tauri/bundled_skills/bench/references/result-aggregation.md) — patterns for scoring and analysis

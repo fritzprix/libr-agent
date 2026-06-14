@@ -79,6 +79,11 @@ const VALIDATE_STAGES = [
     args: ['dead-code'],
     env: { nodeHeapMb: 512 },
   },
+  {
+    name: 'skills:audit',
+    command: pnpmCommand,
+    args: ['skills:audit'],
+  },
 ];
 
 export function sanitizeStageName(stageName) {
