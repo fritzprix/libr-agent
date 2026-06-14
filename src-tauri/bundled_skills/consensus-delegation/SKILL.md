@@ -1,6 +1,6 @@
 ---
 name: consensus-delegation
-description: Orchestrate multiple specialized child sessions to evaluate the same question from different perspectives, collect their independent conclusions, and reconcile disagreements through parent-mediated follow-ups. Use for code review triangulation, architecture or risk assessment, security vs performance tradeoff analysis, or any bounded decision that benefits from 2-4 distinct expert viewpoints—not for persistent teams (teamwork/org) or single one-off delegation (delegate).
+description: Use when the user needs to evaluate the same question from different perspectives by orchestrating multiple specialized child sessions, collecting their independent conclusions, and reconciling disagreements through parent-mediated follow-ups. Suitable for code review triangulation, architecture or risk assessment, security vs performance tradeoff analysis, or any bounded decision that benefits from 2-4 distinct expert viewpoints—not for persistent teams (teamwork/org) or single one-off delegation (delegate).
 ---
 
 # Consensus via Delegation

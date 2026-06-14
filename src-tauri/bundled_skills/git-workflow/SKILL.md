@@ -22,7 +22,7 @@ This is an **end-user daily developer** skill. It does not manage the LibrAgent 
 | **release-manager** (dev skill) | LibrAgent maintainers shipping the product |
 | **review-pr-comments** (dev skill) | Triage bot comments on LibrAgent PRs |
 | **jules** / **Coding Expert** | Code changes inside the repo |
-| **mcp-installer** | Register GitHub MCP (optional extra) |
+| **tool-installer** | Register GitHub MCP (optional extra) |
 
 ## Prerequisites
 

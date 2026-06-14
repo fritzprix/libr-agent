@@ -137,8 +137,8 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 
 | 技能             | 功能                                                                          |
 | ---------------- | ----------------------------------------------------------------------------- |
-| `system-setup`   | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv)                         |
-| `mcp-installer`  | 从 npm/GitHub/JSON 注册 MCP 服务器，或从 Cursor、VS Code、Windsurf 等同步配置 |
+| `setup-wizard`   | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv)                         |
+| `tool-installer` | 从 npm/GitHub/JSON 注册 MCP 服务器，或从 Cursor、VS Code、Windsurf 等同步配置 |
 | `delegate`       | 引导父→子会话移交，带显式上下文传递和谱系跟踪                                 |
 | `teamwork`       | 为协调多代理工作构建共享工作空间宪法                                          |
 | `org`            | 正式化持久组织身份和 org-visible 成员层次结构                                 |
@@ -153,7 +153,7 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 - **工作区入门**：`agent-init`
 - **协调与助手**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
 - **外部集成**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
-- **技能与流程编写**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`、`fine-tune`
+- **技能与流程编写**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
 - **特殊操作**：`computer-diagnosis`
 
 _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆绑技能是可重用的程序；内置功能和 MCP 工具是其下的执行底层架构。_
@@ -230,8 +230,8 @@ pnpm tauri dev
   **第 2 步——添加 MCP 工具**（Extensions 侧边栏）
 
 - 浏览预设目录并点击 Install，或
-- 告诉代理：*"Install @modelcontextprotocol/server-everything"*→ `mcp-installer` 自动注册
-- 正在使用 Cursor 或 VS Code？告诉任何代理：*"从 Cursor 导入我的 MCP 服务器"*→ `mcp-installer` 处理
+- 告诉代理：*"Install @modelcontextprotocol/server-everything"*→ `tool-installer` 自动注册
+- 正在使用 Cursor 或 VS Code？告诉任何代理：*"从 Cursor 导入我的 MCP 服务器"*→ `tool-installer` 处理
 
 **第 3 步——创建你的第一个代理**
 

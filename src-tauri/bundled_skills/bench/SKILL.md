@@ -19,8 +19,8 @@ This skill turns LibrAgent's parent-child delegation primitives into a structure
 
 | Skill | Use for |
 | --- | --- |
-| **mcp-builder** | Build a new MCP server (not testing one) |
-| **system-setup** | Install runtime dependencies |
+| **tool-creator** | Build a new MCP server (not testing one) |
+| **setup-wizard** | Install runtime dependencies |
 | **deep-research** | Multi-source research with web search |
 | **consensus-delegation** | Multi-expert opinion triangulation on a single question |
 

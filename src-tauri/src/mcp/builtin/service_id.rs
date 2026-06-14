@@ -18,7 +18,8 @@ pub enum BuiltinServiceId {
     Ui,
     Browser,
     ScheduledTask,
-    Bootstrap,
+    #[serde(rename = "setup-wizard", alias = "setup_wizard")]
+    SetupWizard,
     Tool, // Unified Tool Domain
     Media,
 }
@@ -47,7 +48,7 @@ impl BuiltinServiceId {
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
             "scheduled_task" | "scheduled-task" => Some(Self::ScheduledTask),
-            "bootstrap" => Some(Self::Bootstrap),
+            "setup-wizard" | "setup_wizard" | "bootstrap" => Some(Self::SetupWizard),
             "tool" => Some(Self::Tool),
             "media" => Some(Self::Media),
             _ => None,
@@ -69,7 +70,7 @@ impl BuiltinServiceId {
             Self::Ui => "ui",
             Self::Browser => "browser",
             Self::ScheduledTask => "scheduled_task",
-            Self::Bootstrap => "bootstrap",
+            Self::SetupWizard => "setup-wizard",
             Self::Tool => "tool",
             Self::Media => "media",
         }
@@ -139,8 +140,8 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         optional: false,
     },
     BuiltinServiceEntry {
-        variant: BuiltinServiceId::Bootstrap,
-        canonical: "bootstrap",
+        variant: BuiltinServiceId::SetupWizard,
+        canonical: "setup-wizard",
         optional: true,
     },
     BuiltinServiceEntry {

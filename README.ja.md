@@ -137,8 +137,8 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 
 | スキル           | 機能                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------- |
-| `system-setup`   | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール   |
-| `mcp-installer`  | npm/GitHub/JSONからMCPサーバーを登録、またはCursor・VS Code・Windsurf等から設定をインポート |
+| `setup-wizard`   | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール   |
+| `tool-installer` | npm/GitHub/JSONからMCPサーバーを登録、またはCursor・VS Code・Windsurf等から設定をインポート |
 | `delegate`       | 明示的なコンテキスト転送と系譜追跡付きで親→子セッションの引き継ぎを案内                     |
 | `teamwork`       | 調整されたマルチエージェント作業のための共有ワークスペース憲法をスキャフォールド            |
 | `org`            | 持続的な組織アイデンティティとorg-visibleメンバー階層を正式化                               |
@@ -153,7 +153,7 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 - **ワークスペースオンボーディング**：`agent-init`
 - **調整とアシスタント**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
 - **外部連携**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
-- **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`、`fine-tune`
+- **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
 - **特殊操作**：`computer-diagnosis`
 
 _重要：`bootstrap`はこれらのスキルと並行して使用される内蔵機能です。バンドルスキルは再利用可能な手順であり、内蔵機能とMCPツールはその下の実行基盤です。_
@@ -230,8 +230,8 @@ pnpm tauri dev
   **ステップ2——MCPツールを追加** (Extensionsサイドバー)
 
 - プリセットカタログを閲覧してInstallをクリック、または
-- エージェントに：_「Install @modelcontextprotocol/server-everything」_ → `mcp-installer`が自動登録
-- CursorやVS Codeを使用中？任意のエージェントに：_「CursorからMCPサーバーをインポートして」_ → `mcp-installer`が対応
+- エージェントに：_「Install @modelcontextprotocol/server-everything」_ → `tool-installer`が自動登録
+- CursorやVS Codeを使用中？任意のエージェントに：_「CursorからMCPサーバーをインポートして」_ → `tool-installer`が対応
 
 **ステップ3——最初のエージェントを作成**
 

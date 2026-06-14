@@ -137,8 +137,8 @@ Les compétences les plus importantes pour le premier jour :
 
 | Compétence       | Ce qu'elle fait                                                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `system-setup`   | Détecte et installe les runtimes manquants (Python, Node.js, uv) sur toutes les plateformes                                          |
-| `mcp-installer`  | Enregistre ou importe des serveurs MCP depuis npm/GitHub/JSON, ou synchronise les configs depuis Cursor, VS Code, Windsurf et autres |
+| `setup-wizard`   | Détecte et installe les runtimes manquants (Python, Node.js, uv) sur toutes les plateformes                                          |
+| `tool-installer` | Enregistre ou importe des serveurs MCP depuis npm/GitHub/JSON, ou synchronise les configs depuis Cursor, VS Code, Windsurf et autres |
 | `delegate`       | Guide le transfert de session parent→enfant avec transfert de contexte explicite et suivi de lignée                                  |
 | `teamwork`       | Construit la constitution d'espace de travail partagé pour le travail multi-agent coordonné                                          |
 | `org`            | Formalise l'identité d'organisation durable et la hiérarchie de membres visible                                                      |
@@ -153,7 +153,7 @@ Et ce n'est que la couche opérateur. LibrAgent fournit également des compéten
 - **Onboarding workspace** : `agent-init`
 - **Coordination et assistants** : `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **Intégrations externes** : `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
+- **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **Opérations spécialisées** : `computer-diagnosis`
 
 _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces compétences. Les Compétences groupées sont les procédures réutilisables ; les intégrés et les outils MCP sont le substrat d'exécution sous-jacent._
@@ -230,8 +230,8 @@ pnpm tauri dev
   **Étape 2 — Ajoutez des outils MCP** (barre latérale Extensions)
 
 - Parcourez le catalogue de préréglages et cliquez sur Installer, ou
-- Dites à un agent : _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` l'enregistre automatiquement
-- Vous utilisez déjà Cursor ou VS Code ? Dites à n'importe quel agent : _"Importe mes serveurs MCP depuis Cursor"_ → `mcp-installer` s'en charge
+- Dites à un agent : _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` l'enregistre automatiquement
+- Vous utilisez déjà Cursor ou VS Code ? Dites à n'importe quel agent : _"Importe mes serveurs MCP depuis Cursor"_ → `tool-installer` s'en charge
 
 **Étape 3 — Créez votre premier agent**
 

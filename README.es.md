@@ -137,8 +137,8 @@ Las habilidades más importantes para el primer día:
 
 | Habilidad        | Qué hace                                                                                                                  |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `system-setup`   | Detecta e instala runtimes faltantes (Python, Node.js, uv) en todas las plataformas                                       |
-| `mcp-installer`  | Registra o importa servidores MCP desde npm/GitHub/JSON, o sincroniza configs desde Cursor, VS Code, Windsurf y similares |
+| `setup-wizard`   | Detecta e instala runtimes faltantes (Python, Node.js, uv) en todas las plataformas                                       |
+| `tool-installer` | Registra o importa servidores MCP desde npm/GitHub/JSON, o sincroniza configs desde Cursor, VS Code, Windsurf y similares |
 | `delegate`       | Guía el traspaso de sesión padre→hijo con transferencia de contexto explícita y seguimiento de linaje                     |
 | `teamwork`       | Construye la constitución de espacio de trabajo compartido para el trabajo multi-agente coordinado                        |
 | `org`            | Formaliza la identidad de organización duradera y la jerarquía de miembros visible                                        |
@@ -153,7 +153,7 @@ Y eso es solo la capa de operador. LibrAgent también incluye habilidades de dom
 - **Onboarding del workspace**: `agent-init`
 - **Coordinación y asistentes**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **Integraciones externas**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **Creación de habilidades y workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
+- **Creación de habilidades y workflows**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **Operaciones especializadas**: `computer-diagnosis`
 
 _Importante: `bootstrap` es una capacidad integrada que se usa frecuentemente junto con estas habilidades. Las Habilidades agrupadas son los procedimientos reutilizables; los integrados y las herramientas MCP son el substrato de ejecución subyacente._
@@ -230,8 +230,8 @@ pnpm tauri dev
   **Paso 2 — Añade herramientas MCP** (barra lateral Extensions)
 
 - Explora el catálogo de presets y haz clic en Instalar, o
-- Dile a un agente: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` lo registra automáticamente
-- ¿Ya usas Cursor o VS Code? Dile a cualquier agente: _"Importa mis servidores MCP desde Cursor"_ → `mcp-installer` lo maneja
+- Dile a un agente: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` lo registra automáticamente
+- ¿Ya usas Cursor o VS Code? Dile a cualquier agente: _"Importa mis servidores MCP desde Cursor"_ → `tool-installer` lo maneja
 
 **Paso 3 — Crea tu primer agente**
 

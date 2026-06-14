@@ -230,8 +230,8 @@ impl ErrorGuidance {
                 "Check step structure includes required fields".to_string(),
             ],
 
-            // Bootstrap tool errors
-            (ErrorCategory::InvalidInput, ToolGroup::Bootstrap) => vec![
+            // Setup Wizard tool errors
+            (ErrorCategory::InvalidInput, ToolGroup::SetupWizard) => vec![
                 "Verify tool parameter is provided".to_string(),
                 "Tool must be one of: node, python, uv, docker, git".to_string(),
                 "Platform must be: windows, linux, darwin, or auto".to_string(),
@@ -505,11 +505,11 @@ impl SuccessHint {
                 vec!["Server tools are now available for use".to_string()]
             }
 
-            // Bootstrap tools
-            ("detectPlatform", ToolGroup::Bootstrap) => {
-                vec!["Use getBootstrapGuide with detected platform".to_string()]
+            // Setup Wizard tools
+            ("detectPlatform", ToolGroup::SetupWizard) => {
+                vec!["Use getSetupGuide with detected platform".to_string()]
             }
-            ("getBootstrapGuide", ToolGroup::Bootstrap) => {
+            ("getSetupGuide", ToolGroup::SetupWizard) => {
                 vec!["Follow installation steps for the tool".to_string()]
             }
 

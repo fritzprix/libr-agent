@@ -420,7 +420,7 @@ fn builtin_service_id_serializes_to_canonical_name() {
         (BuiltinServiceId::Ui, "ui"),
         (BuiltinServiceId::Browser, "browser"),
         (BuiltinServiceId::ScheduledTask, "scheduled_task"),
-        (BuiltinServiceId::Bootstrap, "bootstrap"),
+        (BuiltinServiceId::SetupWizard, "setup-wizard"),
         (BuiltinServiceId::Tool, "tool"),
     ];
     for (id, expected) in cases {
@@ -457,7 +457,7 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::scheduled_task::NAME,
-        builtin::bootstrap::NAME,
+        builtin::setup_wizard::NAME,
         builtin::media::NAME,
         builtin::tool::NAME,
     ];
@@ -492,7 +492,7 @@ fn builtin_server_names_are_unique() {
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::scheduled_task::NAME,
-        builtin::bootstrap::NAME,
+        builtin::setup_wizard::NAME,
         builtin::media::NAME,
         builtin::tool::NAME,
     ];
@@ -539,7 +539,7 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Ui => builtin::ui::NAME,
             BuiltinServiceId::Browser => builtin::browser::NAME,
             BuiltinServiceId::ScheduledTask => builtin::scheduled_task::NAME,
-            BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,
+            BuiltinServiceId::SetupWizard => builtin::setup_wizard::NAME,
             BuiltinServiceId::Tool => builtin::tool::NAME,
             BuiltinServiceId::Media => builtin::media::NAME,
         };
