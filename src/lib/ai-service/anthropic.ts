@@ -18,6 +18,7 @@ import {
   getAnthropicPromptTokens,
 } from './anthropic/cache';
 import { convertToAnthropicMessages } from './anthropic/message-converter';
+import { isCompactSummaryMessage } from './base-service-context';
 import {
   ANTHROPIC_MODEL_CACHE_TTL,
   cacheAnthropicModels,
@@ -258,9 +259,21 @@ export class AnthropicService extends BaseAIService<
     );
 
     try {
+      const compactSummaries = sanitizedMessages
+        .filter(isCompactSummaryMessage)
+        .map((m) => this.processMessageContent(m.content))
+        .filter(Boolean);
+
+      const compactSummaryText = compactSummaries.join('\n\n');
+      const finalSystemPrompt = options.systemPrompt
+        ? compactSummaryText
+          ? `${options.systemPrompt}\n\n${compactSummaryText}`
+          : options.systemPrompt
+        : compactSummaryText;
+
       const anthropicMessages = this.convertMessages(
         sanitizedMessages,
-        options.systemPrompt,
+        finalSystemPrompt,
       );
 
       // Check if model supports extended thinking via dynamic capability detection
@@ -276,7 +289,7 @@ export class AnthropicService extends BaseAIService<
         }
       }
 
-      const systemBlocks = buildAnthropicSystemBlocks(options.systemPrompt);
+      const systemBlocks = buildAnthropicSystemBlocks(finalSystemPrompt);
       const requestTools = tools;
       const toolChoice = options.disableToolUse
         ? { type: 'none' as const }
