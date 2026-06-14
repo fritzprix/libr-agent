@@ -7,6 +7,7 @@ import type { Message, AttachmentReference } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
+import { safeInvoke } from '@/lib/backend/core';
 
 const logger = getLogger('useChatSubmit');
 const OBVIOUS_OVERSIZE_CHAR_MULTIPLIER = 2;
@@ -55,6 +56,39 @@ export function useChatSubmit({
       }
       if (!session?.id) {
         logger.info('Submit ignored: no session');
+        return;
+      }
+
+      // Intercept CLI command execution
+      if (messageText.startsWith('/')) {
+        setIsSubmitting(true);
+        const currentInput = input;
+        setInput(''); // Clear input immediately for better UX
+        clearPendingFiles();
+
+        try {
+          const result = await safeInvoke<{
+            success: boolean;
+            message: string;
+          }>('agent_execute_command', {
+            sessionId: session.id,
+            commandText: messageText,
+          });
+          if (result.success) {
+            toast.success(result.message);
+          } else {
+            toast.error(result.message || 'Command failed');
+            setInput(currentInput); // Restore input on error
+          }
+        } catch (err) {
+          logger.error('Failed to execute command:', err);
+          toast.error(
+            typeof err === 'string' ? err : 'Command execution failed',
+          );
+          setInput(currentInput); // Restore input on error
+        } finally {
+          setIsSubmitting(false);
+        }
         return;
       }
 

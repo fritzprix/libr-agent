@@ -476,6 +476,17 @@ pub struct AgentSession {
     pub last_submitted_input_message_id: Arc<RwLock<Option<String>>>,
 }
 
+impl AgentSession {
+    /// Clears the in-memory message cache, invalidates the cached system prompt,
+    /// and resets transient tool approval/execution states.
+    pub async fn clear(&mut self) {
+        self.messages.write().await.clear();
+        *self.cached_stable_prompt.write().await = None;
+        self.pending_approvals.write().await.clear();
+        self.pending_execution = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

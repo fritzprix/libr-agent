@@ -393,3 +393,79 @@ pub async fn agent_factory_reset(
         data: None,
     })
 }
+
+#[derive(serde::Serialize)]
+pub struct CommandResult {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Execute a CLI command like /clear or /permission yolo for a session
+#[command]
+pub async fn agent_execute_command(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    command_text: String,
+) -> Result<CommandResult, String> {
+    use crate::agent::command_parser::Command;
+
+    let command = Command::parse(&command_text)
+        .ok_or_else(|| format!("Invalid or unrecognized command: {}", command_text))?;
+
+    match command {
+        Command::Clear => {
+            let active_sessions = manager.active_sessions_arc();
+
+            // 0. 먼저 워크플로우 강제 취소
+            {
+                let sessions = active_sessions.read().await;
+                if let Some(session) = sessions.get(&session_id) {
+                    session.cancellation_token.cancel();
+                }
+            }
+
+            // 1. DB 메시지 삭제
+            let repo = crate::state::get_message_repository();
+            repo.delete_by_session(&session_id)
+                .await
+                .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
+
+            // 2. active session의 메모리 캐시 및 잔여 상태 비우기 (get_mut 사용)
+            {
+                let mut sessions = active_sessions.write().await;
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.clear().await;
+                }
+            }
+
+            // 3. 리소스 변경 이벤트 emit
+            crate::agent::tauri_events::emit_resource_updated(
+                "session",
+                "update",
+                Some(session_id.clone()),
+            );
+
+            Ok(CommandResult {
+                success: true,
+                message: "Session history cleared successfully.".to_string(),
+            })
+        }
+        Command::Permission { mode } => {
+            manager
+                .set_execution_mode(&session_id, mode)
+                .await
+                .map_err(|e| format!("Failed to set permission mode: {}", e))?;
+
+            let mode_str = match mode {
+                ExecutionMode::Yolo => "YOLO",
+                ExecutionMode::Unsafe => "Unsafe",
+                ExecutionMode::Normal => "Normal",
+            };
+
+            Ok(CommandResult {
+                success: true,
+                message: format!("Permission mode updated to {}.", mode_str),
+            })
+        }
+    }
+}

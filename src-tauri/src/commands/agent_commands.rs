@@ -22,7 +22,7 @@ pub use contracts::{
 pub use session_commands::{
     agent_add_attachment, agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session,
     agent_create_session_with_initial_message, agent_delete_attachment, agent_delete_session,
-    agent_delete_session_only, agent_factory_reset, agent_get_all_sessions,
+    agent_delete_session_only, agent_execute_command, agent_factory_reset, agent_get_all_sessions,
     agent_get_available_tools, agent_get_service_contexts, agent_get_session, agent_get_tools,
     agent_init_session_with_messages, agent_list_attention_sessions, agent_list_sessions,
     agent_mark_session_viewed, agent_open_session, agent_resume_session, agent_set_execution_mode,
