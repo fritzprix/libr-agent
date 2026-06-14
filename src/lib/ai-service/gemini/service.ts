@@ -273,7 +273,20 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
         const model =
           currentOptions.modelName || config.defaultModel || getDefaultModel();
-        const stablePrefix = currentOptions.systemPrompt ?? '';
+
+        const compactSummaries = sanitizedMessages
+          .filter(isCompactSummaryMessage)
+          .map((m) => this.processMessageContent(m.content))
+          .filter(Boolean);
+
+        const compactSummaryText = compactSummaries.join('\n\n');
+        const finalSystemInstruction = currentOptions.systemPrompt
+          ? compactSummaryText
+            ? `${currentOptions.systemPrompt}\n\n${compactSummaryText}`
+            : currentOptions.systemPrompt
+          : compactSummaryText;
+
+        const stablePrefix = finalSystemInstruction;
         const encoder = new TextEncoder();
         const toolDeclarationCount =
           geminiTools?.[0]?.functionDeclarations.length ?? 0;
