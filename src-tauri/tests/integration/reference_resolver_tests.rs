@@ -34,7 +34,10 @@ async fn test_preprocess_unresolved_mention_appends_notice() {
         result.contains("not found"),
         "Expected unresolved notice, got: {result}"
     );
-    assert!(result.starts_with(text), "Original user text must come first");
+    assert!(
+        result.starts_with(text),
+        "Original user text must come first"
+    );
     assert!(result.contains(text), "Original text must be preserved");
 }
 

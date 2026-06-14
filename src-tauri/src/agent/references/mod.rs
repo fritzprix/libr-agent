@@ -135,19 +135,11 @@ impl ReferenceRegistry {
         let mut result = text.to_string();
 
         if !prefix_parts.is_empty() {
-            result = format!(
-                "{}\n\n---\n\n{}",
-                prefix_parts.join("\n\n---\n\n"),
-                result
-            );
+            result = format!("{}\n\n---\n\n{}", prefix_parts.join("\n\n---\n\n"), result);
         }
 
         if !suffix_parts.is_empty() {
-            result = format!(
-                "{}\n\n---\n\n{}",
-                result,
-                suffix_parts.join("\n\n---\n\n")
-            );
+            result = format!("{}\n\n---\n\n{}", result, suffix_parts.join("\n\n---\n\n"));
         }
 
         result
