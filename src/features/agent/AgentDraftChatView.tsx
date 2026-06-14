@@ -229,7 +229,8 @@ function DraftChatInner() {
                       mode={
                         stage.kind === 'typing-type'
                           ? { kind: 'types', items: typeResults }
-                          : stage.typeName === 'file'
+                          : stage.kind === 'typing-arg' &&
+                              stage.typeName === 'file'
                             ? { kind: 'files', items: workspaceFileResults }
                             : { kind: 'skills', items: skillResults }
                       }

@@ -34,8 +34,8 @@ pub(crate) async fn create_builtin_server(
     };
 
     match service_id {
-        BuiltinServiceId::Bootstrap => Ok(Some(Box::new(
-            crate::mcp::builtin::bootstrap::BootstrapServer::new(),
+        BuiltinServiceId::SetupWizard => Ok(Some(Box::new(
+            crate::mcp::builtin::setup_wizard::SetupWizardServer::new(),
         ))),
         BuiltinServiceId::Knowledge => {
             let session = crate::get_session_repository()

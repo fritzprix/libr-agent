@@ -439,7 +439,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
                 BuiltinServiceId::Attachments => attachments::AttachmentsServer::metadata_static(),
                 BuiltinServiceId::Agent => agent::AgentServer::metadata_static(),
                 BuiltinServiceId::Playbook => playbook::PlaybookServer::metadata_static(),
-                BuiltinServiceId::Bootstrap => bootstrap::BootstrapServer::new().metadata(),
+                BuiltinServiceId::SetupWizard => setup_wizard::SetupWizardServer::new().metadata(),
                 BuiltinServiceId::Ui => ui::UiServer::new().metadata(),
                 BuiltinServiceId::Tool => tool::ToolServer::new().metadata(),
                 BuiltinServiceId::Media => media::MediaServer::metadata_static(),
@@ -604,7 +604,7 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         }
         BuiltinServiceId::Agent => crate::mcp::builtin::agent::AgentServer::tools_static(),
         BuiltinServiceId::Playbook => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
-        BuiltinServiceId::Bootstrap => crate::mcp::builtin::bootstrap::tools::all_tools(),
+        BuiltinServiceId::SetupWizard => crate::mcp::builtin::setup_wizard::tools::all_tools(),
         BuiltinServiceId::Ui => crate::mcp::builtin::ui::tools::all_tools(),
         BuiltinServiceId::Tool => crate::mcp::builtin::tool::tools::all_tools(),
         // Skills tools are session-bound; no static definition available.

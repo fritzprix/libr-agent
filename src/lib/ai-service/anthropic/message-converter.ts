@@ -5,6 +5,7 @@ import type {
 import type { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import { getLogger } from '../../logger';
+import { isCompactSummaryMessage } from '../base-service-context';
 import { processMessageContent } from '../utils';
 import {
   buildAnthropicToolResultBlocks,
@@ -159,7 +160,7 @@ export function convertToAnthropicMessages(
   for (const message of messages) {
     const effectiveRole = message.source === 'ui' ? 'user' : message.role;
 
-    if (effectiveRole === 'system') {
+    if (effectiveRole === 'system' || isCompactSummaryMessage(message)) {
       continue;
     }
 

@@ -1,0 +1,19 @@
+{
+  "team_name": "LibrAgent 사업화 추진팀",
+  "mission": "LibrAgent를 수익성 있는 사업으로 성장시키기 위한 전략 수립 및 실행 계획 수립",
+  "coordination_model": "hub-and-spoke",
+  "executionSubstrate": {
+    "mode": "org",
+    "orgLineage": {
+      "intended": true
+    }
+  },
+  "roles": [
+    "Coordinator (Master Mind)",
+    "Marketing Expert (Libr Assistant)",
+    "Product Strategist (Technical Expert)",
+    "Financial Analyst (Financial Analyst)"
+  ],
+  "created_at": "2026-06-12T15:00:00Z",
+  "status": "active"
+}

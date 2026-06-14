@@ -80,5 +80,11 @@ pub async fn set_execution_mode(
         }
     }
 
+    crate::agent::tauri_events::emit_resource_updated(
+        "session",
+        "update",
+        Some(session_id.to_string()),
+    );
+
     Ok(())
 }

@@ -43,7 +43,8 @@ interface AgentChatInputProps {
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
-  const { session, messages } = useAgentSessionState();
+  const { session, messages, yoloModeEnabled, unsafeModeEnabled } =
+    useAgentSessionState();
   const { submit, isSessionLoading, workflowStatus, cancel, resume } =
     useAgentChat();
   const { isCompacting } = useLLMService();
@@ -66,6 +67,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     typeResults,
     skillResults,
     toolResults,
+    commandResults,
     onInputChange: onTokenInputChange,
     onTypeSelect,
     onArgSelect,
@@ -232,7 +234,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           skillResults.length > 0 ||
           toolResults.length > 0 ||
           fileResults.length > 0 ||
-          playbookResults.length > 0)
+          playbookResults.length > 0 ||
+          commandResults.length > 0)
       ) {
         if (
           ['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)
@@ -394,23 +397,36 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
 
   return (
     <div className="relative">
+      {yoloModeEnabled && (
+        <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 select-none animate-pulse z-10">
+          ⚡ YOLO Mode Active
+        </div>
+      )}
+      {unsafeModeEnabled && (
+        <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full bg-destructive/10 border border-destructive/20 px-2.5 py-0.5 text-[10px] font-medium text-destructive select-none animate-pulse z-10">
+          ⚠️ Unsafe Mode Active
+        </div>
+      )}
       {stage.kind !== 'idle' &&
         (typeResults.length > 0 ||
           skillResults.length > 0 ||
           toolResults.length > 0 ||
           fileResults.length > 0 ||
-          playbookResults.length > 0) && (
+          playbookResults.length > 0 ||
+          commandResults.length > 0) && (
           <InputTokenDropdown
             mode={
               stage.kind === 'typing-type'
                 ? { kind: 'types', items: typeResults }
-                : stage.typeName === 'tool'
-                  ? { kind: 'tools', items: toolResults }
-                  : stage.typeName === 'file'
-                    ? { kind: 'files', items: fileResults }
-                    : stage.typeName === 'playbook'
-                      ? { kind: 'playbooks', items: playbookResults }
-                      : { kind: 'skills', items: skillResults }
+                : stage.kind === 'typing-command'
+                  ? { kind: 'commands', items: commandResults }
+                  : stage.typeName === 'tool'
+                    ? { kind: 'tools', items: toolResults }
+                    : stage.typeName === 'file'
+                      ? { kind: 'files', items: fileResults }
+                      : stage.typeName === 'playbook'
+                        ? { kind: 'playbooks', items: playbookResults }
+                        : { kind: 'skills', items: skillResults }
             }
             onSelectType={(typeName) => {
               const cursorPos =

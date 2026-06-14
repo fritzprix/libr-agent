@@ -135,23 +135,26 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 
 가장 중요한 day-one 스킬:
 
-| 스킬             | 기능                                                                  |
-| ---------------- | --------------------------------------------------------------------- |
-| `system-setup`   | 모든 플랫폼에서 누락된 런타임(Python, Node.js, uv) 감지 및 설치       |
-| `mcp-installer`  | npm 패키지, GitHub URL, JSON 구성 블록에서 MCP 서버 등록              |
-| `mcp-importer`   | Cursor, VS Code, Windsurf 등에서 기존 MCP 구성 가져오기               |
-| `delegate`       | 명시적 컨텍스트 전달 및 계보 추적과 함께 부모→자식 세션 인수인도 안내 |
-| `teamwork`       | 조정된 멀티 에이전트 작업을 위한 공유 워크스페이스 헌법 scaffold      |
-| `org`            | 내구성 조직 정체성 및 org-visible 구성원 계보 공식화                  |
-| `schedule`       | 미감정 자동화를 위한 반복 예약 작업 그룹 생성 및 관리                 |
-| `soul-awakening` | 에이전트를 `SOUL.md` 페르소나에 고정 — 톤, 태도, 정체성               |
+| 스킬             | 기능                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `setup-wizard`   | 모든 플랫폼에서 누락된 런타임(Python, Node.js, uv) 감지 및 설치                      |
+| `tool-installer` | npm/GitHub/JSON에서 MCP 서버 등록, 또는 Cursor·VS Code·Windsurf 등에서 구성 가져오기 |
+| `delegate`       | 명시적 컨텍스트 전달 및 계보 추적과 함께 부모→자식 세션 인수인도 안내                |
+| `teamwork`       | 조정된 멀티 에이전트 작업을 위한 공유 워크스페이스 헌법 scaffold                     |
+| `org`            | 내구성 조직 정체성 및 org-visible 구성원 계보 공식화                                 |
+| `schedule`       | 미감정 자동화를 위한 반복 예약 작업 그룹 생성 및 관리                                |
+| `soul-awakening` | 에이전트를 `SOUL.md` 페르소나에 고정 — 톤, 태도, 정체성                              |
 
 이것은 운영자 레이어에 불과합니다. LibrAgent는 도메인 스킬도 제공합니다:
 
-- **지식 및 연구**: `deep-research-report`, `knowledge-distiller`
-- **작업 흐름**: `to-md`, `docx`, `pptx`
-- **스킬 및 워크플로우 저자**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
-- **특수 작업**: `computer-diagnosis` 및 기타 집중 헬퍼
+- **지식 및 연구**: `deep-research`, `knowledge-distiller`
+- **문서 및 워크스페이스 콘텐츠**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **개발자 워크플로**: `git-workflow`, `bench`
+- **워크스페이스 온보딩**: `agent-init`
+- **조율 및 어시스턴트**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **외부 연동**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
+- **스킬 및 워크플로우 저작**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
+- **특수 작업**: `computer-diagnosis`
 
 _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 기능입니다. 번들 스킬은 재사용 가능한 운영 절차이며, 내장 기능과 MCP 도구는 그 하위 실행 기반입니다._
 
@@ -202,10 +205,10 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/latest)에서 플랫폼별 최신 설치 프로그램을 다운로드하세요.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.12)
+- **Windows:** [`LibrAgent_0.8.13_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64-setup.exe) · [`LibrAgent_0.8.13_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.13_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.13_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.AppImage) · [`LibrAgent_0.8.13_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.deb) · [`LibrAgent-0.8.13-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent-0.8.13-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.13)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **개발자 설정:**
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - 클라우드: OpenAI / Anthropic / Gemini / Groq API 키 붙여넣기
 - 로컬: `ollama pull qwen3:14b` 후 Settings 에서 Ollama 선택
-- Cursor 나 VS Code 사용 중? 에이전트에게 알려주기: _"Cursor 에서 MCP 서버 가져와"_ → `mcp-importer` 가 처리
-
-**2 단계 — MCP 도구 추가** (Extensions 사이드바)
+  **2 단계 — MCP 도구 추가** (Extensions 사이드바)
 
 - 프리셋 카탈로그 탐색 및 Install 클릭, 또는
-- 에이전트에게 알려주기: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` 가 자동 등록
+- 에이전트에게 알려주기: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` 가 자동 등록
+- Cursor 나 VS Code 사용 중? 에이전트에게 알려주기: _"Cursor 에서 MCP 서버 가져와"_ → `tool-installer` 가 처리
 
 **3 단계 — 첫 에이전트 생성**
 

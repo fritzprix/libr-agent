@@ -1,6 +1,6 @@
 ---
 name: consensus-delegation
-description: Orchestrate multiple specialized child sessions to evaluate the same question from different perspectives, collect their independent conclusions, and reconcile disagreements through parent-mediated follow-ups. Use for code review triangulation, architecture or risk assessment, security vs performance tradeoff analysis, or any bounded decision that benefits from 2-4 distinct expert viewpoints—not for persistent teams (teamwork/org) or single one-off delegation (delegate).
+description: Use when the user needs to evaluate the same question from different perspectives by orchestrating multiple specialized child sessions, collecting their independent conclusions, and reconciling disagreements through parent-mediated follow-ups. Suitable for code review triangulation, architecture or risk assessment, security vs performance tradeoff analysis, or any bounded decision that benefits from 2-4 distinct expert viewpoints—not for persistent teams (teamwork/org) or single one-off delegation (delegate).
 ---
 
 # Consensus via Delegation
@@ -10,22 +10,6 @@ Use this skill when one parent session should **compare independent expert opini
 This is parent-mediated orchestration: child sessions do not talk to each other. The parent spawns specialists, collects results, detects disagreement, and sends targeted follow-ups.
 
 For general spawn/monitor mechanics and workspace isolation rules, follow `delegate` first. Read this skill when you need the **multi-reviewer workflow**, not a single child task.
-
-## When to Use
-
-Good fits:
-
-- 2-4 specialists reviewing the **same** change, design, or proposal
-- architecture evaluation with distinct lenses (structure, security, performance)
-- risk analysis where tradeoffs must be explicit
-- bounded questions with a clear deliverable the parent can compare
-
-Avoid this skill when:
-
-- one capable agent can finish cleanly alone → stay in the parent session
-- you need a persistent multi-agent workspace → use `teamwork` or `org`
-- children must debate each other directly → not supported; parent must mediate
-- the work is open-ended implementation with no comparison step → use `delegate` once
 
 ## Core Rules
 

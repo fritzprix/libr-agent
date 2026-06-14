@@ -106,13 +106,17 @@ The introduction becomes convincing when it answers a simple question: **What do
 ### 2. Add MCP servers
 
 - install from presets,
-- or let an agent help with setup through bundled skills such as `mcp-installer` and `mcp-importer`
+- or let an agent help with setup through bundled skills such as `mcp-installer`
 
 ### 3. Accelerate setup with bundled skills
 
 - `system-setup`
 - `mcp-installer`
-- `mcp-importer`
+- `recruit`
+- `boost`
+- `calendar-mgmt`
+- `git-workflow`
+- `data-viz`
 
 ### 4. Turn tools into agent capability
 

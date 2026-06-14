@@ -135,23 +135,26 @@ LibrAgent 附带不断增长数量的**捆绑技能**库。它们不是随机拼
 
 最重要的 day-one 技能：
 
-| 技能             | 功能                                                  |
-| ---------------- | ----------------------------------------------------- |
-| `system-setup`   | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv) |
-| `mcp-installer`  | 从 npm 包、GitHub URL 或 JSON 配置块注册 MCP 服务器   |
-| `mcp-importer`   | 从 Cursor、VS Code、Windsurf 等导入现有 MCP 配置      |
-| `delegate`       | 引导父→子会话移交，带显式上下文传递和谱系跟踪         |
-| `teamwork`       | 为协调多代理工作构建共享工作空间宪法                  |
-| `org`            | 正式化持久组织身份和 org-visible 成员层次结构         |
-| `schedule`       | 创建和管理无人值守自动化的定期计划任务组              |
-| `soul-awakening` | 将代理锚定到 `SOUL.md` 人格——语气、立场、身份         |
+| 技能             | 功能                                                                          |
+| ---------------- | ----------------------------------------------------------------------------- |
+| `setup-wizard`   | 检测并安装所有平台上缺少的运行时(Python、Node.js、uv)                         |
+| `tool-installer` | 从 npm/GitHub/JSON 注册 MCP 服务器，或从 Cursor、VS Code、Windsurf 等同步配置 |
+| `delegate`       | 引导父→子会话移交，带显式上下文传递和谱系跟踪                                 |
+| `teamwork`       | 为协调多代理工作构建共享工作空间宪法                                          |
+| `org`            | 正式化持久组织身份和 org-visible 成员层次结构                                 |
+| `schedule`       | 创建和管理无人值守自动化的定期计划任务组                                      |
+| `soul-awakening` | 将代理锚定到 `SOUL.md` 人格——语气、立场、身份                                 |
 
 这只是运营层。LibrAgent 还提供领域技能：
 
-- **知识和研究**：`deep-research-report`、`knowledge-distiller`
-- **文档工作流**：`to-md`、`docx`、`pptx`
-- **技能和流程作者**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
-- **特殊操作**：`computer-diagnosis` 和其他专注辅助工具
+- **知识和研究**：`deep-research`、`knowledge-distiller`
+- **文档与工作区内容**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
+- **开发者工作流**：`git-workflow`, `bench`
+- **工作区入门**：`agent-init`
+- **协调与助手**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
+- **外部集成**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
+- **技能与流程编写**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
+- **特殊操作**：`computer-diagnosis`
 
 _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆绑技能是可重用的程序；内置功能和 MCP 工具是其下的执行底层架构。_
 
@@ -202,10 +205,10 @@ _重要：`bootstrap` 是经常与这些技能一起使用的内置功能。捆�
 从[发布页面](https://github.com/fritzprix/libr-agent/releases/latest)下载你平台的最新安装程序。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows：** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.12)
+- **Windows：** [`LibrAgent_0.8.13_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64-setup.exe) · [`LibrAgent_0.8.13_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.8.13_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.8.13_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.AppImage) · [`LibrAgent_0.8.13_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.deb) · [`LibrAgent-0.8.13-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent-0.8.13-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.13)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **开发者设置：**
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - 云端：粘贴 OpenAI / Anthropic / Gemini / Groq API 密钥
 - 本地：`ollama pull qwen3:14b` 然后在 Settings 中选择 Ollama
-- 正在使用 Cursor 或 VS Code？告诉任何代理：*"从 Cursor 导入我的 MCP 服务器"*→ `mcp-importer` 处理
-
-**第 2 步——添加 MCP 工具**（Extensions 侧边栏）
+  **第 2 步——添加 MCP 工具**（Extensions 侧边栏）
 
 - 浏览预设目录并点击 Install，或
-- 告诉代理：*"Install @modelcontextprotocol/server-everything"*→ `mcp-installer` 自动注册
+- 告诉代理：*"Install @modelcontextprotocol/server-everything"*→ `tool-installer` 自动注册
+- 正在使用 Cursor 或 VS Code？告诉任何代理：*"从 Cursor 导入我的 MCP 服务器"*→ `tool-installer` 处理
 
 **第 3 步——创建你的第一个代理**
 

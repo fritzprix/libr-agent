@@ -25,6 +25,7 @@ pub struct ScheduledTaskDto {
     pub yolo_mode: bool,
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
+    pub task_category: String,
     pub workspace_override: Option<String>,
     pub enabled: bool,
     pub last_run_at: Option<i64>,
@@ -40,6 +41,7 @@ pub struct SessionScheduledTaskDto {
     pub id: String,
     pub name: String,
     pub message: String,
+    pub session_id: Option<String>,
     pub is_one_shot: bool,
     pub next_run_at: Option<i64>,
 }
@@ -50,6 +52,7 @@ impl From<ScheduledTaskModel> for SessionScheduledTaskDto {
             id: m.id,
             name: m.name,
             message: m.message,
+            session_id: m.session_id,
             is_one_shot: is_one_shot_task(&m.cron_expression),
             next_run_at: m.next_run_at,
         }
@@ -86,6 +89,7 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             yolo_mode: m.yolo_mode,
             created_by_session_id: m.created_by_session_id,
             session_id: m.session_id,
+            task_category: m.task_category,
             workspace_override: m.workspace_override,
             enabled: m.enabled,
             last_run_at: m.last_run_at,

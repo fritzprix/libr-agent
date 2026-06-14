@@ -135,23 +135,26 @@ LibrAgent wird mit einer wachsenden Bibliothek **gebündelter Skills** geliefert
 
 Die wichtigsten Skills für den ersten Tag:
 
-| Skill            | Was er tut                                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `system-setup`   | Erkennt und installiert fehlende Runtimes (Python, Node.js, uv) plattformübergreifend                 |
-| `mcp-installer`  | Registriert MCP-Server aus npm-Paketen, GitHub-URLs oder JSON-Config-Blöcken                          |
-| `mcp-importer`   | Importiert bestehende MCP-Configs aus Cursor, VS Code, Windsurf u.ä.                                  |
-| `delegate`       | Führt durch die Eltern→Kind-Sitzungsübergabe mit explizitem Kontexttransfer und Abstammungsverfolgung |
-| `teamwork`       | Baut die geteilte Arbeitsbereichsverfassung für koordinierte Multi-Agenten-Arbeit                     |
-| `org`            | Formalisiert dauerhafte Organisationsidentität und sichtbare Mitgliederhierarchie                     |
-| `schedule`       | Erstellt und verwaltet wiederkehrende geplante Task-Gruppen für unbeaufsichtigte Automatisierung      |
-| `soul-awakening` | Verankert einen Agenten an eine `SOUL.md`-Persona — Ton, Haltung, Identität                           |
+| Skill            | Was er tut                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `setup-wizard`   | Erkennt und installiert fehlende Runtimes (Python, Node.js, uv) plattformübergreifend                                     |
+| `tool-installer` | Registriert oder importiert MCP-Server aus npm/GitHub/JSON oder synchronisiert Configs aus Cursor, VS Code, Windsurf u.ä. |
+| `delegate`       | Führt durch die Eltern→Kind-Sitzungsübergabe mit explizitem Kontexttransfer und Abstammungsverfolgung                     |
+| `teamwork`       | Baut die geteilte Arbeitsbereichsverfassung für koordinierte Multi-Agenten-Arbeit                                         |
+| `org`            | Formalisiert dauerhafte Organisationsidentität und sichtbare Mitgliederhierarchie                                         |
+| `schedule`       | Erstellt und verwaltet wiederkehrende geplante Task-Gruppen für unbeaufsichtigte Automatisierung                          |
+| `soul-awakening` | Verankert einen Agenten an eine `SOUL.md`-Persona — Ton, Haltung, Identität                                               |
 
 Das ist nur die Operatorschicht. LibrAgent bietet auch Domain-Skills für:
 
-- **Wissen & Recherche**: `deep-research-report`, `knowledge-distiller`
-- **Dokumenten-Workflows**: `to-md`, `docx`, `pptx`
-- **Skill- und Workflow-Erstellung**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
-- **Spezialisierte Operationen**: `computer-diagnosis` und andere spezialisierte Assistenten
+- **Wissen & Recherche**: `deep-research`, `knowledge-distiller`
+- **Dokumente & Workspace-Inhalte**: `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Entwickler-Workflow**: `git-workflow`, `bench`
+- **Workspace-Onboarding**: `agent-init`
+- **Koordination & Assistenten**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **Externe Integrationen**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
+- **Skill- und Workflow-Erstellung**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
+- **Spezialisierte Operationen**: `computer-diagnosis`
 
 _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit diesen Skills verwendet wird. Gebündelte Skills sind die wiederverwendbaren Verfahren; die eingebauten und MCP-Tools sind das zugrundeliegende Ausführungssubstrat._
 
@@ -202,10 +205,10 @@ _Wichtig: `bootstrap` ist eine eingebaute Fähigkeit, die häufig zusammen mit d
 Lade das neueste Installationsprogramm für deine Plattform von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.12_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64-setup.exe) · [`LibrAgent_0.8.12_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.12_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.12_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.AppImage) · [`LibrAgent_0.8.12_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent_0.8.12_amd64.deb) · [`LibrAgent-0.8.12-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.12/LibrAgent-0.8.12-1.x86_64.rpm)
-- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.12)
+- **Windows:** [`LibrAgent_0.8.13_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64-setup.exe) · [`LibrAgent_0.8.13_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.13_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.13_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.AppImage) · [`LibrAgent_0.8.13_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.deb) · [`LibrAgent-0.8.13-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent-0.8.13-1.x86_64.rpm)
+- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.13)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Entwickler-Setup:**
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - Cloud: Füge einen OpenAI / Anthropic / Gemini / Groq API-Schlüssel ein
 - Lokal: `ollama pull qwen3:14b` und dann Ollama in den Settings auswählen
-- Nutzt du bereits Cursor oder VS Code? Sage einem beliebigen Agenten: _"Importiere meine MCP-Server aus Cursor"_ → `mcp-importer` kümmert sich darum
-
-**Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
+  **Schritt 2 — MCP-Tools hinzufügen** (Extensions-Seitenleiste)
 
 - Durchsuche den Preset-Katalog und klicke auf Installieren, oder
-- Sage einem Agenten: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` registriert es automatisch
+- Sage einem Agenten: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` registriert es automatisch
+- Nutzt du bereits Cursor oder VS Code? Sage einem beliebigen Agenten: _"Importiere meine MCP-Server aus Cursor"_ → `tool-installer` kümmert sich darum
 
 **Schritt 3 — Erstelle deinen ersten Agenten**
 

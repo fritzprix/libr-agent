@@ -67,9 +67,30 @@ agent__startSession(agentId: "...", task: "...")
 
 If a child starts outside the org inheritance path, it gets its own workspace and will not automatically see the same implementation context unless you explicitly pass `workspaceOverride`.
 
+## Pattern: Per-Session agents.md and SOUL.md in Org
+
+When org members need different operating rules (e.g., frontend specialist vs. backend specialist) or custom personas, use `workspaceOverride` to give each child its own workspace directory containing a custom `agents.md` or `SOUL.md`.
+
+```
+// Each specialist gets its own workspace directory containing a custom agents.md / SOUL.md
+agent__startSession(
+  agentId: "frontend-expert",
+  task: "Implement the React login component",
+  workspaceOverride: "/shared-workspace/frontend/"
+)
+// -> /shared-workspace/frontend/agents.md becomes this child's workspace instructions.
+```
+
+> [!WARNING]
+> `workspaceOverride` is dual-purpose: it controls both the code output location AND the instruction sources (`agents.md`, `SOUL.md`). If you want different instructions but want to share the codebase:
+> 1. Set the child's `workspaceOverride` to a specific subdirectory (e.g. `/shared-workspace/frontend/`) to isolate the instruction scope.
+> 2. Direct the agent in its task description to perform operations or read files from the parent's shared codebase directory (e.g., `../src/`).
+>
+> If the override directory does not contain `agents.md` or `SOUL.md`, the backend will fall back to loading **no rules or persona** for those parts. Do not forget to scaffold or copy these files if custom rules are expected.
+
 ## Manifest Update After Org Creation
 
-After calling `agent__createOrg`, update the scaffolded `.libragent/teamwork.json` instead of replacing it with a smaller hand-written object. Preserve the existing scaffold fields such as `workspacePolicy`, `specialistSkills`, and `refreshSemantics`, then fill in the org identity fields returned by `agent__createOrg`.
+The backend automatically updates the scaffolded `.libragent/teamwork.json` file with the org identity fields returned by `agent__createOrg`. You do not need to edit it manually. The final manifest will look like this:
 
 ```json
 {

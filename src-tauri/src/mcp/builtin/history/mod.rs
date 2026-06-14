@@ -31,7 +31,7 @@ impl HistoryServer {
     pub fn metadata_static() -> BuiltinServerMetadata {
         BuiltinServerMetadata {
             display_name: "History".to_string(),
-            description: "Read session history with paginated session, message, and search access"
+            description: "Read session history and export conversational datasets for fine-tuning"
                 .to_string(),
             icon: None,
         }
@@ -45,7 +45,7 @@ impl BuiltinMCPServer for HistoryServer {
     }
 
     fn description(&self) -> &str {
-        "Read session history with paginated access to sessions, messages, and search results"
+        "Read session history and export conversational datasets for fine-tuning"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
@@ -65,6 +65,7 @@ impl BuiltinMCPServer for HistoryServer {
             "readSession" => handlers::read_session(self, args).await,
             "readMessage" => handlers::read_message(self, args).await,
             "search" => handlers::search_history(self, args, &caller_session_id).await,
+            "exportDataset" | "export_dataset" => handlers::export_dataset(args).await,
             _ => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
@@ -72,7 +73,7 @@ impl BuiltinMCPServer for HistoryServer {
                     ToolGroup::Agent,
                 )
                 .with_guidance(vec![
-                    "Use one of the available history tools: list, readSession, readMessage, or search."
+                    "Use one of the available history tools: list, readSession, readMessage, search, or exportDataset."
                         .to_string(),
                 ])
                 .to_mcp_result());

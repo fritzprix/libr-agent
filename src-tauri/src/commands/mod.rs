@@ -2,6 +2,7 @@ pub mod agent_commands;
 pub mod assistant_crud_commands;
 pub mod attachments_commands;
 pub mod browser_commands;
+pub mod dataset_commands;
 pub mod download_commands;
 pub mod file_commands;
 pub mod knowledge_commands;

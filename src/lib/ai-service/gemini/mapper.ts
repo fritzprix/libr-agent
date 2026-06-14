@@ -8,6 +8,7 @@ import {
 import { Message } from '@/models/chat';
 import { MCPContent, JSONSchema } from '@/lib/mcp';
 import { getLogger } from '../../logger';
+import { isCompactSummaryMessage } from '../base-service-context';
 import {
   processMessageContent,
   processMultiModalContent,
@@ -102,7 +103,7 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
       signaturePreview: m.thinkingSignature?.substring(0, 20),
     });
 
-    if (m.role === 'system') continue;
+    if (m.role === 'system' || isCompactSummaryMessage(m)) continue;
 
     // Helper to identify a tool response message
     const isToolResponse = (msg: Message) =>

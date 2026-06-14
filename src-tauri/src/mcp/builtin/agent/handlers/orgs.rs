@@ -343,6 +343,43 @@ pub async fn create_org(
         .await
         .map_err(|error| format!("Failed to persist org identity: {}", error))?;
 
+    // Automate updating .libragent/teamwork.json with org identity
+    let manifest_path = Path::new(&scaffold.artifact_path)
+        .join(".libragent")
+        .join("teamwork.json");
+    if manifest_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+            if let Ok(mut manifest) = serde_json::from_str::<Value>(&content) {
+                if let Some(execution_substrate) = manifest.get_mut("executionSubstrate") {
+                    if let Some(org_lineage) = execution_substrate.get_mut("orgLineage") {
+                        if let Some(org_obj) = org_lineage.as_object_mut() {
+                            org_obj.insert("orgId".to_string(), Value::String(org_id.clone()));
+                            org_obj.insert("orgName".to_string(), Value::String(org_name.clone()));
+                            org_obj.insert(
+                                "rootSessionId".to_string(),
+                                Value::String(org_root_session_id.clone()),
+                            );
+                            org_obj.insert(
+                                "rootAction".to_string(),
+                                Value::String("agent__createOrg".to_string()),
+                            );
+                        }
+                    }
+                }
+                if let Ok(pretty) = serde_json::to_string_pretty(&manifest) {
+                    if let Err(e) = std::fs::write(&manifest_path, pretty) {
+                        log::error!("Failed to write updated teamwork manifest: {}", e);
+                    } else {
+                        log::info!(
+                            "Successfully updated teamwork manifest at {}",
+                            manifest_path.display()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     let message = format!(
         "Explicit org created.\n\nOrg: {} (ID: {})\nRoot session: {}\n\nChild sessions started from this org root now join Org view automatically. Use includeCurrentOrg=false only when you intentionally want a one-off child to stay out of Org view.",
         org_name, org_id, org_root_session_id

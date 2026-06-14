@@ -2,25 +2,16 @@
 ///
 /// Covers:
 ///   - `ReferenceRegistry::preprocess_message_text` output format
-///   - `SkillReferenceResolver`: path in header, content wrapped in markdown fence, size guard
+///   - `SkillReferenceResolver`: metadata + read guidance appended after user text
 ///   - `FileReferenceResolver`: compact workspace-file references with targeted read guidance
 ///     and path traversal protection
 use std::fs;
-use std::path::Path;
 use tauri_mcp_agent_lib::agent::references::{ReferenceRegistry, ReferenceResolver};
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Write a minimal valid SKILL.md into `dir/<subdir>/SKILL.md`.
-fn write_skill(dir: &Path, subdir: &str, name: &str, body: &str) {
-    let skill_dir = dir.join(subdir);
-    fs::create_dir_all(&skill_dir).unwrap();
-    let content = format!("---\nname: {}\ndescription: test\n---\n{}", name, body);
-    fs::write(skill_dir.join("SKILL.md"), content).unwrap();
-}
 
 // ---------------------------------------------------------------------------
 // ReferenceRegistry::preprocess_message_text
@@ -43,8 +34,109 @@ async fn test_preprocess_unresolved_mention_appends_notice() {
         result.contains("not found"),
         "Expected unresolved notice, got: {result}"
     );
-    // Original text still present after the separator
+    assert!(
+        result.starts_with(text),
+        "Original user text must come first"
+    );
     assert!(result.contains(text), "Original text must be preserved");
+}
+
+#[tokio::test]
+async fn test_preprocess_skill_like_resolver_appends_after_original_text() {
+    use async_trait::async_trait;
+
+    struct SkillLikeResolver;
+    #[async_trait]
+    impl ReferenceResolver for SkillLikeResolver {
+        fn type_name(&self) -> &'static str {
+            "skill"
+        }
+
+        fn append_after_user_text(&self) -> bool {
+            true
+        }
+
+        async fn resolve(&self, _arg: &str) -> Option<String> {
+            Some("SKILL META".to_string())
+        }
+    }
+
+    let mut registry = ReferenceRegistry::new();
+    registry.register(Box::new(SkillLikeResolver));
+
+    let text = "@skill:delegate 로컬 변경 사항을 리뷰";
+    let result = registry.preprocess_message_text(text).await;
+
+    assert!(result.starts_with(text), "User text must stay at the top");
+    let meta_pos = result.find("SKILL META").unwrap();
+    let original_pos = result.find(text).unwrap();
+    assert!(
+        original_pos < meta_pos,
+        "Skill reference must be appended after original text"
+    );
+    assert!(result.contains("## Reference: @skill:delegate"));
+}
+
+#[tokio::test]
+async fn test_preprocess_duplicate_skill_reference_injects_once() {
+    use async_trait::async_trait;
+
+    struct SkillLikeResolver;
+    #[async_trait]
+    impl ReferenceResolver for SkillLikeResolver {
+        fn type_name(&self) -> &'static str {
+            "skill"
+        }
+
+        fn append_after_user_text(&self) -> bool {
+            true
+        }
+
+        async fn resolve(&self, arg: &str) -> Option<String> {
+            Some(format!("SKILL META for {arg}").to_string())
+        }
+    }
+
+    let mut registry = ReferenceRegistry::new();
+    registry.register(Box::new(SkillLikeResolver));
+
+    let text = "@skill:delegate review @skill:delegate again @skill:Delegate";
+    let result = registry.preprocess_message_text(text).await;
+
+    assert_eq!(result.matches("## Reference: @skill:").count(), 1);
+    assert!(!result.contains("Multiple skills referenced"));
+}
+
+#[tokio::test]
+async fn test_preprocess_multiple_distinct_skill_references_each_injected_once() {
+    use async_trait::async_trait;
+
+    struct SkillLikeResolver;
+    #[async_trait]
+    impl ReferenceResolver for SkillLikeResolver {
+        fn type_name(&self) -> &'static str {
+            "skill"
+        }
+
+        fn append_after_user_text(&self) -> bool {
+            true
+        }
+
+        async fn resolve(&self, arg: &str) -> Option<String> {
+            Some(format!("SKILL META for {arg}").to_string())
+        }
+    }
+
+    let mut registry = ReferenceRegistry::new();
+    registry.register(Box::new(SkillLikeResolver));
+
+    let text = "@skill:delegate review @skill:code-audit-expert audit @skill:delegate";
+    let result = registry.preprocess_message_text(text).await;
+
+    assert!(result.contains("Multiple skills referenced"));
+    assert!(result.contains("## Reference: @skill:delegate"));
+    assert!(result.contains("## Reference: @skill:code-audit-expert"));
+    assert_eq!(result.matches("## Reference: @skill:").count(), 2);
 }
 
 #[tokio::test]
@@ -77,88 +169,6 @@ async fn test_preprocess_resolved_content_prepended_before_original_text() {
     );
     // Section header format
     assert!(result.contains("## Reference: @stub:anything"));
-}
-
-// ---------------------------------------------------------------------------
-// SkillReferenceResolver
-// ---------------------------------------------------------------------------
-
-/// Directly invoke SkillReferenceResolver using a temp skills directory.
-/// We bypass the global config by using `scan_skills_directory` + `get_skill_content`
-/// indirectly through a custom registry wired to a temp path.
-///
-/// Since SkillReferenceResolver reads from the configured global skills directory
-/// (not injectable), we test its output *format* via the service layer directly.
-/// Note: get_skill_content requires the settings repository singleton; we bypass it
-/// by reading the file directly to validate the formatter output shape.
-#[tokio::test]
-async fn test_skill_resolve_output_format_includes_path_and_fence() {
-    use tauri_mcp_agent_lib::services::skill_service;
-
-    let tmp = TempDir::new().unwrap();
-    write_skill(
-        tmp.path(),
-        "my-skill",
-        "My Skill",
-        "## Instructions\nDo things.",
-    );
-
-    let skills = skill_service::scan_skills_directory(tmp.path())
-        .await
-        .unwrap();
-    assert_eq!(skills.len(), 1);
-
-    let skill = &skills[0];
-    // Read directly to avoid settings-repo dependency in get_skill_content
-    let content = fs::read_to_string(&skill.path).unwrap();
-
-    // Replicate what SkillReferenceResolver produces
-    let output = format!(
-        "# Follow Instruction `{}`\n\n```markdown\n{}\n```",
-        skill.path, content
-    );
-
-    assert!(
-        output.starts_with("# Follow Instruction `"),
-        "Must start with path header"
-    );
-    assert!(
-        output.contains(&skill.path),
-        "Absolute path must appear in header"
-    );
-    assert!(
-        output.contains("```markdown"),
-        "Must wrap content in markdown fence"
-    );
-    assert!(
-        output.contains("## Instructions"),
-        "Skill body must be present"
-    );
-}
-
-#[tokio::test]
-async fn test_skill_size_guard_triggers_at_limit() {
-    use tauri_mcp_agent_lib::services::skill_service;
-
-    let tmp = TempDir::new().unwrap();
-    // Write a skill whose SKILL.md content is just over 100 KB
-    let large_body = "x".repeat(101 * 1024);
-    write_skill(tmp.path(), "big-skill", "Big Skill", &large_body);
-
-    let skills = skill_service::scan_skills_directory(tmp.path())
-        .await
-        .unwrap();
-    assert_eq!(skills.len(), 1);
-
-    let path = std::path::PathBuf::from(&skills[0].path);
-    let file_size = tokio::fs::metadata(&path).await.unwrap().len();
-
-    // Guard threshold
-    const MAX: u64 = 100 * 1024;
-    assert!(
-        file_size > MAX,
-        "Test setup: skill file must exceed 100 KB, got {file_size} bytes"
-    );
 }
 
 // ---------------------------------------------------------------------------
