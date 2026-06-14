@@ -137,8 +137,8 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 
 | 스킬             | 기능                                                                                 |
 | ---------------- | ------------------------------------------------------------------------------------ |
-| `system-setup`   | 모든 플랫폼에서 누락된 런타임(Python, Node.js, uv) 감지 및 설치                      |
-| `mcp-installer`  | npm/GitHub/JSON에서 MCP 서버 등록, 또는 Cursor·VS Code·Windsurf 등에서 구성 가져오기 |
+| `setup-wizard`   | 모든 플랫폼에서 누락된 런타임(Python, Node.js, uv) 감지 및 설치                      |
+| `tool-installer` | npm/GitHub/JSON에서 MCP 서버 등록, 또는 Cursor·VS Code·Windsurf 등에서 구성 가져오기 |
 | `delegate`       | 명시적 컨텍스트 전달 및 계보 추적과 함께 부모→자식 세션 인수인도 안내                |
 | `teamwork`       | 조정된 멀티 에이전트 작업을 위한 공유 워크스페이스 헌법 scaffold                     |
 | `org`            | 내구성 조직 정체성 및 org-visible 구성원 계보 공식화                                 |
@@ -153,7 +153,7 @@ LibrAgent는 성장하는 **번들 스킬** 라이브러리와 함께 제공됩�
 - **워크스페이스 온보딩**: `agent-init`
 - **조율 및 어시스턴트**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **외부 연동**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **스킬 및 워크플로우 저작**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
+- **스킬 및 워크플로우 저작**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **특수 작업**: `computer-diagnosis`
 
 _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 기능입니다. 번들 스킬은 재사용 가능한 운영 절차이며, 내장 기능과 MCP 도구는 그 하위 실행 기반입니다._
@@ -230,8 +230,8 @@ pnpm tauri dev
   **2 단계 — MCP 도구 추가** (Extensions 사이드바)
 
 - 프리셋 카탈로그 탐색 및 Install 클릭, 또는
-- 에이전트에게 알려주기: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` 가 자동 등록
-- Cursor 나 VS Code 사용 중? 에이전트에게 알려주기: _"Cursor 에서 MCP 서버 가져와"_ → `mcp-installer` 가 처리
+- 에이전트에게 알려주기: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` 가 자동 등록
+- Cursor 나 VS Code 사용 중? 에이전트에게 알려주기: _"Cursor 에서 MCP 서버 가져와"_ → `tool-installer` 가 처리
 
 **3 단계 — 첫 에이전트 생성**
 

@@ -1,6 +1,6 @@
 ---
 name: to-md
-description: "Convert files (PDF, DOCX, PPTX, XLSX, HTML, images, audio, ZIP) to structured Markdown via MarkItDown. Use for text extraction, RAG ingestion, or format normalization. NOT for document editing — use docx or pptx skills instead."
+description: "Use when the user needs to convert files (PDF, DOCX, PPTX, XLSX, HTML, images, audio, ZIP) to structured Markdown via MarkItDown. Suitable for text extraction, RAG ingestion, or format normalization. NOT for document editing — use docx or pptx skills instead."
 ---
 
 # To Markdown

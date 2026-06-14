@@ -18,7 +18,7 @@ export const BUILTIN_SERVICE_CANONICAL_NAMES = [
   'ui',
   'browser',
   'scheduled_task',
-  'bootstrap',
+  'setup-wizard',
   'tool',
   'media',
 ] as const;
@@ -42,6 +42,8 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'browser',
   'scheduled_task',
   'scheduled-task',
+  'setup-wizard',
+  'setup_wizard',
   'bootstrap',
   'tool',
   'media',
@@ -68,6 +70,6 @@ export const OPTIONAL_BUILTIN_SERVICE_ALIASES = [
   'knowledge',
   'history',
   'browser',
-  'bootstrap',
+  'setup-wizard',
   'media',
 ] as const;

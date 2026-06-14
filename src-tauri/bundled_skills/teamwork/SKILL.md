@@ -19,7 +19,7 @@ Paths in this skill are relative to the directory containing this `SKILL.md` unl
 
 ## Non-Negotiable Rules
 
-1. **One team, one effective workspace.** The governing coordinator and org-visible children keep the normal parent/override workspace inheritance model.
+1. **One team, one effective workspace.** The governing coordinator and org-visible children keep the normal parent/override workspace inheritance model. Consequently, `agents.md` and `SOUL.md` are resolved from this shared effective workspace by default.
 2. **Prepare artifact storage first.** From the governing root session, call `agent__prepareTeamworkWorkspace()` to get an app-local artifact directory before scaffolding teamwork files.
 3. **Scaffold only in that artifact directory.** Do not write `agents.md`, `MISSION.md`, `ROLES.md`, `coordination/`, or role `skills/` into a repo root unless you intentionally want repo pollution.
 4. **Use deterministic scaffolding first.** `scripts/init_task_force.py` is the default path.
@@ -158,6 +158,22 @@ Refresh behavior:
 - `agents.md` changes do **not** instantly rewrite the current session prompt
 - new workspace skills apply in a later execution step, not retroactively in the same turn
 After scaffolding or constitution edits, state when the updated rules become effective.
+
+## Workspace Instructions (agents.md) & Persona (SOUL.md) Behavior
+
+`agents.md` (operating constraints) and `SOUL.md` (persona/tone) are **workspace-scoped**. Each session resolves these instruction files from its effective workspace directory.
+
+| Session Type | Effective Workspace | Instruction Source |
+|-------------|---------------------|--------------------|
+| Root session | Its own workspace | root workspace/`agents.md` & `SOUL.md` |
+| Non-org child | Isolated (auto) | child's isolated workspace/`agents.md` & `SOUL.md` |
+| Org child (default) | Shares org root workspace | org root workspace/`agents.md` & `SOUL.md` |
+| Org child (with `workspaceOverride`) | Custom workspace | custom workspace/`agents.md` & `SOUL.md` |
+
+> [!IMPORTANT]
+> - **Shared Rules:** By default, org children share the exact same `agents.md` and `SOUL.md` as the org root. If you modify these files in the org root, they will apply to all child sessions in later steps.
+> - **Rule Isolation:** If a specialist child session needs custom operating guidelines (e.g. frontend code conventions) or a unique persona, you must provide a `workspaceOverride` pointing to a directory that contains its own `agents.md` or `SOUL.md`.
+> - **Fallback on Missing Files:** If a workspace directory (including override locations) does not contain `agents.md` or `SOUL.md`, the backend will load **no instructions** for that section without throwing errors. Ensure all required rules are scaffolded or copied to override directories.
 
 ## Tool Hygiene Rules
 

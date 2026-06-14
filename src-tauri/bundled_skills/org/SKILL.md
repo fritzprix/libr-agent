@@ -24,7 +24,7 @@ Use `teamwork` first when the workspace constitution is not ready.
    - The governing root session and org-visible children should keep the normal parent/override workspace inheritance model.
 4. Create the org once from the root session.
    - Use `agent__createOrg(name="...")` from the governing root session.
-   - Record the returned `orgId` and `orgName` in `.libragent/teamwork.json` and `coordination/DECISIONS.md`.
+   - Record the returned `orgId` and `orgName` in `coordination/DECISIONS.md` (the backend automatically updates `.libragent/teamwork.json` with these details).
    - The session that calls `agent__createOrg` becomes the org root. Do not call `agent__createOrg` again.
 5. Spawn org-visible members explicitly.
    - Use `agent__startSession(agentId, task)` for org-visible children when you want the default parent-workspace inheritance. If the current session already belongs to the org, inheritance is automatic.
@@ -42,7 +42,7 @@ Use `teamwork` first when the workspace constitution is not ready.
 - Do not use org identity for scheduled task groups or recurring automation.
 - Do not treat arbitrary child-session resume as org resume. The org root is the entry point.
 - Do not infer org membership from parent/child lineage alone — membership requires explicit org inheritance at session creation. Under an explicit org root that inheritance is automatic unless `includeCurrentOrg=false`.
-- After `agent__createOrg`, update `.libragent/teamwork.json` with the actual `orgId` and `rootSessionId`.
+- After `agent__createOrg`, verify `.libragent/teamwork.json` contains the updated `orgId` and `rootSessionId` (written automatically by the backend).
 
 ## References
 

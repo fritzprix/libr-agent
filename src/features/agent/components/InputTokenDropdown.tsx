@@ -15,6 +15,10 @@ type DropdownMode =
   | {
       kind: 'playbooks';
       items: (Playbook & { id: string; createdAt: Date; updatedAt: Date })[];
+    }
+  | {
+      kind: 'commands';
+      items: { id: string; label: string; description: string }[];
     };
 
 interface InputTokenDropdownProps {
@@ -49,6 +53,9 @@ export function InputTokenDropdown({
       } else if (kind === 'playbooks') {
         const item = items[index];
         if (item) onSelectArg(item.goal);
+      } else if (kind === 'commands') {
+        const item = items[index];
+        if (item) onSelectArg(item.id);
       } else {
         const item = items[index];
         if (item) onSelectArg(item.name);
@@ -103,10 +110,10 @@ export function InputTokenDropdown({
       aria-label="Input token suggestions"
       className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-60 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md text-sm"
     >
-      {mode.kind === 'types'
-        ? mode.items.map((type, i) => (
+      {mode.kind === 'commands'
+        ? mode.items.map((cmd, i) => (
             <li
-              key={type.name}
+              key={cmd.id}
               ref={(element) => {
                 itemRefs.current[i] = element;
               }}
@@ -121,19 +128,21 @@ export function InputTokenDropdown({
               onMouseEnter={() => setActiveIndex(i)}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onSelectType(type.name);
+                onSelectArg(cmd.id);
               }}
             >
-              <span className="font-medium font-mono">{type.label}</span>
-              <span className="text-xs text-muted-foreground">
-                {type.description}
+              <span className="font-semibold font-mono text-primary text-xs">
+                {cmd.label}
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                {cmd.description}
               </span>
             </li>
           ))
-        : mode.kind === 'tools'
-          ? mode.items.map((tool, i) => (
+        : mode.kind === 'types'
+          ? mode.items.map((type, i) => (
               <li
-                key={tool.name}
+                key={type.name}
                 ref={(element) => {
                   itemRefs.current[i] = element;
                 }}
@@ -148,21 +157,19 @@ export function InputTokenDropdown({
                 onMouseEnter={() => setActiveIndex(i)}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onSelectArg(tool.name);
+                  onSelectType(type.name);
                 }}
               >
-                <span className="font-medium font-mono">@tool:{tool.name}</span>
-                {tool.description && (
-                  <span className="text-xs text-muted-foreground line-clamp-1">
-                    {tool.description}
-                  </span>
-                )}
+                <span className="font-medium font-mono">{type.label}</span>
+                <span className="text-xs text-muted-foreground">
+                  {type.description}
+                </span>
               </li>
             ))
-          : mode.kind === 'files'
-            ? mode.items.map((filePath, i) => (
+          : mode.kind === 'tools'
+            ? mode.items.map((tool, i) => (
                 <li
-                  key={filePath}
+                  key={tool.name}
                   ref={(element) => {
                     itemRefs.current[i] = element;
                   }}
@@ -177,18 +184,23 @@ export function InputTokenDropdown({
                   onMouseEnter={() => setActiveIndex(i)}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    onSelectArg(filePath);
+                    onSelectArg(tool.name);
                   }}
                 >
-                  <span className="font-medium font-mono text-xs truncate">
-                    @file:{filePath}
+                  <span className="font-medium font-mono">
+                    @tool:{tool.name}
                   </span>
+                  {tool.description && (
+                    <span className="text-xs text-muted-foreground line-clamp-1">
+                      {tool.description}
+                    </span>
+                  )}
                 </li>
               ))
-            : mode.kind === 'playbooks'
-              ? mode.items.map((playbook, i) => (
+            : mode.kind === 'files'
+              ? mode.items.map((filePath, i) => (
                   <li
-                    key={playbook.id}
+                    key={filePath}
                     ref={(element) => {
                       itemRefs.current[i] = element;
                     }}
@@ -203,26 +215,18 @@ export function InputTokenDropdown({
                     onMouseEnter={() => setActiveIndex(i)}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      onSelectArg(playbook.goal);
+                      onSelectArg(filePath);
                     }}
                   >
                     <span className="font-medium font-mono text-xs truncate">
-                      @playbook:{playbook.goal}
+                      @file:{filePath}
                     </span>
-                    {playbook.workflow.length > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        {playbook.workflow.length} step
-                        {playbook.workflow.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
                   </li>
                 ))
-              : mode.items.map((skill, i) => {
-                  const sourceLabel = getSkillSourceLabel(skill);
-
-                  return (
+              : mode.kind === 'playbooks'
+                ? mode.items.map((playbook, i) => (
                     <li
-                      key={skill.name}
+                      key={playbook.id}
                       ref={(element) => {
                         itemRefs.current[i] = element;
                       }}
@@ -237,27 +241,61 @@ export function InputTokenDropdown({
                       onMouseEnter={() => setActiveIndex(i)}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        onSelectArg(skill.name);
+                        onSelectArg(playbook.goal);
                       }}
                     >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate font-medium">
-                          @skill:{skill.name}
-                        </span>
-                        {sourceLabel && (
-                          <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {sourceLabel}
-                          </span>
-                        )}
+                      <span className="font-medium font-mono text-xs truncate">
+                        @playbook:{playbook.goal}
                       </span>
-                      {skill.description && (
-                        <span className="text-xs text-muted-foreground line-clamp-1">
-                          {skill.description}
+                      {playbook.workflow.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {playbook.workflow.length} step
+                          {playbook.workflow.length !== 1 ? 's' : ''}
                         </span>
                       )}
                     </li>
-                  );
-                })}
+                  ))
+                : mode.items.map((skill, i) => {
+                    const sourceLabel = getSkillSourceLabel(skill);
+
+                    return (
+                      <li
+                        key={skill.name}
+                        ref={(element) => {
+                          itemRefs.current[i] = element;
+                        }}
+                        role="option"
+                        aria-selected={i === activeIndex}
+                        className={cn(
+                          'flex flex-col gap-0.5 px-3 py-2 cursor-pointer select-none',
+                          i === activeIndex
+                            ? 'bg-accent text-accent-foreground'
+                            : 'hover:bg-accent/50',
+                        )}
+                        onMouseEnter={() => setActiveIndex(i)}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          onSelectArg(skill.name);
+                        }}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-medium">
+                            @skill:{skill.name}
+                          </span>
+                          {sourceLabel && (
+                            <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {sourceLabel}
+                            </span>
+                          )}
+                        </span>
+                        {skill.description && (
+                          <span className="text-xs text-muted-foreground line-clamp-1">
+                            {skill.description}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
     </ul>
   );
 }

@@ -1,188 +1,136 @@
 ---
 name: boost
-description: Strengthen existing LibrAgent assistant configurations by adding role-appropriate MCP servers and optional builtins from live inventory. Use when the user wants to boost, augment, tune, or strengthen agents, fix missing tools on specialists (e.g. finance agents with empty MCP lists), or align role-tool gaps. Not for creating new assistants (recruit), registering MCP servers (mcp-installer), or workspace agents.md (agent-init).
+description: Audit and optimize existing LibrAgent assistant configurations by adding role-appropriate tools and pruning unrelated, bloated, or redundant ones. Use when the user wants to boost, audit, tune, clean up, or optimize existing specialists (e.g. removing github from a finance agent, or adding search to a researcher). Not for creating new assistants.
 ---
 
-# Boost
+# Boost (The Optimizer)
 
-Add **missing tools** to **existing** assistant configurations by comparing each agent's role to what is actually installed in this environment.
+Audit and refine existing assistant configurations by comparing each agent's role (system prompt and description) to its attached tools. 
 
-Boost updates assistants via `agent__update`. It does not create new configs, register MCP servers, or install bundled skills.
+Instead of just blindly adding missing tools, **boost** operates as an **Optimizer** that prevents **Tool Bloat** by recommending both additions (**Add**) of missing essential tools and removals (**Remove**) of unnecessary or conflicting tools.
 
 ## Not This Skill
 
 | Skill | Use for |
 | --- | --- |
 | **recruit** | Create a **new** specialist when none exists |
-| **mcp-installer** | Register or import MCP servers that are not in inventory yet |
-| **skill-deployer** / **skill-creator** | Install or author bundled skills (`docx`, `deep-research`, etc.) |
+| **tool-installer** | Register or import MCP servers that are not in inventory yet |
+| **skill-deployer** | Install or manage bundled skills (`docx`, `deep-research`, etc.) |
 | **agent-init** | Generate workspace `agents.md` |
-| **delegate** | Run work with an existing assistant in a child session |
-
-Default seeded assistants (**Coding Expert**, **App Wizard**, **Libr Assistant**, **Master Mind**) are common boost targets. Prefer strengthening them over duplicating roles with **recruit**.
 
 ## Critical API Rules
 
 ### `externalMcpServers` replaces the full list
 
-`agent__update` **replaces** `externalMcpServers` when provided — it does not merge.
+`agent__update` **replaces** the `externalMcpServers` array entirely — it does not merge it.
 
-Always compute:
+When proposing updates:
+* **Add:** Add the new tool IDs to the existing list.
+* **Remove:** Filter out the bloated tool IDs from the existing list.
 
+Compute the final list precisely:
 ```
-next_external = union(current_externalMcpServers, recommended_server_ids)
+next_external = (current_externalMcpServers + recommended_add_ids) - recommended_remove_ids
 ```
-
-Never pass only the missing IDs, or existing servers will be removed.
+Never send only the added tools, or you will accidentally delete all pre-existing tools.
 
 ### Server IDs, not display names
 
-Resolve names like `fred`, `exa`, or `github` to **cuid2 server IDs** via:
+Resolve names like `github` or `search` to **cuid2 server IDs** via `tool__list` before making updates.
 
+---
+
+## Workflow (Audit & Optimize)
+
+### 1. Agent Audit
+
+Scan the current state of assistants and tools:
+
+1. **Retrieve Configurations:**
+   ```json
+   agent__list({ "type": "configs", "verbose": true })
+   ```
+   For each assistant, record its `id`, `name`, `description`, `systemPrompt`, `externalMcpServers`, and `builtinCapabilities`.
+
+2. **Retrieve Tool Inventory:**
+   ```json
+   tool__list({ "availability": "inventory" })
+   ```
+   Get all available tool servers in the environment.
+
+### 2. Optimization Logic (Add & Remove)
+
+For each assistant, perform a semantic check of its role against its current toolset:
+
+* **Add (Augmentation):** If the assistant has a clear functional need (e.g., Finance Specialist) and a highly relevant tool is available in the inventory (e.g., Market Search API) but not attached, propose adding it.
+* **Remove (Pruning / Tool Bloat Prevention):** If a tool is attached to the assistant but is completely unrelated to its domain (e.g., `github` attached to a Finance Agent, or `finance-api` attached to `Coding Expert`), propose removing it. 
+  * *Reasoning:* Too many tools increase cognitive load, waste token context, and lead to tool selection errors. Propose removals under the banner of minimizing cognitive load.
+* **Keep (Retention):** Retain core tools that are aligned with the assistant's primary focus.
+
+**Explicit Calculation Step:**
+Calculate the final tool list precisely using a mathematical union and difference to prevent accidental tool deletion:
 ```
-tool__list({ "availability": "inventory", "query": "<name>" })
+final_list = (current_list + add_list) - remove_list
 ```
+Double-check that all tools intended to be retained (`Keep`) are explicitly present in the resulting `final_list` payload for `agent__update`.
 
-### Skills are not MCP servers
+### 3. Draft Diagnostic Report
 
-`docx`, `deep-research`, `email-integration`, etc. are **bundled skills**. Suggest `@skill:<name>` or **skill-deployer** — never put skill names in `externalMcpServers`.
-
-### Self-modification blocked
-
-An agent cannot `agent__update` the configuration it is currently running as. Run boost from a root/parent session or a different assistant (e.g. **App Wizard**).
-
-## Modes
-
-| Mode | When | Behavior |
-| --- | --- | --- |
-| **Review** (default) | User says "boost", "check gaps", "what's missing" | Produce gap report only; ask before `agent__update` |
-| **Apply** | User says "apply", "fix it", "boost them all" | Update after report, or skip report if scope is explicit |
-| **Single** | User names one assistant | Only analyze/update that config |
-
-If the user does not specify Apply, stay in **Review**.
-
-## Workflow
-
-### 1. Scope targets
-
-Determine which assistants to analyze:
-
-- **All configs** — no name given ("boost my agents")
-- **Single** — user names one assistant ("boost Coding Expert")
-- **Filtered** — domain keyword ("boost finance agents")
-
-```
-agent__list({ "type": "configs", "verbose": true })
-```
-
-Optional filter with `query`. Record for each target: `id`, `name`, `externalMcpServers`, `externalMcpServerLabels`, `builtinCapabilities`.
-
-### 2. Inventory installed tools
-
-```
-tool__list({ "availability": "inventory" })
-```
-
-Build a lookup: **server display name / slug → server ID**. Only recommend servers that appear in this inventory.
-
-If a heuristic names a server that is missing, mark it **not installed** and suggest **mcp-installer** — do not fail the whole run.
-
-### 3. Recommend additions
-
-Use [strengthen-heuristics.md](references/strengthen-heuristics.md) as **hints**, not hard rules.
-
-For each assistant:
-
-1. Match **exact name** to a known profile row when possible (seeded assistants, common finance/research titles).
-2. Else infer from `name` + `description` + `systemPrompt` keywords conservatively — avoid broad tokens like `expert` or `analyst` alone.
-3. Collect **recommended MCP server IDs** (inventory-resolved).
-4. Optionally collect **recommended `builtinCapabilities`** additions if the role clearly needs them and they are not already effective.
-5. Collect **related bundled skills** as user-facing suggestions only (not via `agent__update`).
-
-**Additive-only rule:** Recommend servers/builtins the role needs but lacks. Do not remove tools the user already attached unless they explicitly ask to strip access.
-
-```
-missing_mcp = recommended_ids \ current_externalMcpServers
-```
-
-If `missing_mcp` is empty and no builtin gaps → report **already aligned**.
-
-### 4. Produce gap report (Review)
-
-Use this structure per assistant:
+Before applying any changes, present a structured **Audit & Optimization Report** to the user:
 
 ```markdown
-### {name} (`{id}`)
-- **Current MCP:** {labels or "(none)"}
-- **Recommend add:** {resolved names} ✓ | {unresolved names} ✗ (not installed)
-- **Current builtins:** {effective list}
-- **Recommend builtins:** {if any}
-- **Skills to mention:** {e.g. @skill:deep-research} — not via agent__update
-- **Action:** agent__update with externalMcpServers=[full merged ID list]
+### [Assistant Name] (`[Assistant ID]`)
+* **Role Summary:** [1-sentence summary of description/systemPrompt focus]
+* **Proposed Optimization:**
+  * **Keep:** `[tool-label-1]`, `[tool-label-2]`
+  * **Add (Recommended):** `[tool-label-3]` (Reason: [brief explanation of domain relevance])
+  * **Remove (Prune):** `[tool-label-4]` (Reason: High cognitive load / Irrelevant to core role)
+* **Action:** Update `externalMcpServers` to `[final merged & pruned ID list]`
 ```
 
-End with a summary: how many agents need changes, how many servers are missing from inventory, and whether **Apply** is needed.
+Provide a high-level summary of the overall status (e.g., "3 assistants audited, 1 needs additions, 2 need pruning").
 
-### 5. Apply updates (Apply mode only)
+### 4. Apply Updates
 
-For each assistant with non-empty `missing_mcp` (or builtin gaps the user approved):
+Once the user approves the optimization proposal:
 
-```
+For each assistant requiring changes:
+```json
 agent__update({
   "id": "<assistant-id>",
-  "externalMcpServers": ["<id-1>", "<id-2>", "..."]
+  "externalMcpServers": ["<final-resolved-id-1>", "<final-resolved-id-2>"],
+  "builtinCapabilities": ["<final-resolved-builtins>"]
 })
 ```
 
-Rules:
+*Note: You cannot update the configuration of the assistant you are currently running as. Use a root/parent session or another agent (e.g., App Wizard) to run the update.*
 
-- Pass the **full merged** `externalMcpServers` array (current ∪ recommended).
-- Omit `externalMcpServers` entirely if only suggesting skills or mcp-installer — do not send an empty array unless intentionally clearing access (never do this in boost by default).
-- Only include `builtinCapabilities` when intentionally changing optional builtins; merging semantics also **replace** the list — merge with current configured builtins before sending.
+### 5. Verification & Handoff
 
-Skip assistants where every recommended server is not installed unless the user wants partial apply.
+Verify that the changes were correctly applied:
 
-### 6. Verify
+1. Check the updated configurations:
+   ```json
+   agent__list({ "type": "configs", "verbose": true })
+   ```
+2. Report the successful optimization to the user, highlighting the added and pruned tools. Tell them that existing sessions will pick up these changes upon restart or next configuration resolution.
 
-```
-agent__list({ "type": "configs", "query": "<name>" })
-```
-
-Confirm `externalMcpServerLabels` reflect the intended servers.
-
-### 7. Hand off
-
-Tell the user:
-
-- which assistants were updated (name + ID)
-- which MCP servers were added (human-readable names)
-- which servers were skipped (not installed) → **mcp-installer**
-- which bundled skills fit the role → `@skill:` or **skill-deployer**
-- existing sessions pick up assistant changes on the next `resolve_agent_config` call; start a **new session** if they need the new tools immediately
-
-Do **not** auto-spawn test sessions unless asked.
+---
 
 ## Guidelines
 
-- **Review by default** — confirm before mutating configs.
-- **Inventory-first** — never attach servers that are not registered.
-- **Merge before update** — union current + recommended MCP IDs; never replace-with-subset by mistake.
-- **Partial success** — apply what is installed; report the rest.
-- **No permission sprawl** — do not attach all inventory servers to any agent (including test configs) unless the user explicitly requests it.
-- **Prefer seeds** — strengthen **Coding Expert**, **App Wizard**, **Libr Assistant**, **Master Mind** before creating overlapping specialists via **recruit**.
-- **English prompts unchanged** — boost adjusts tools, not `systemPrompt`, unless the user separately asks to rewrite instructions.
+- **Prevent Tool Bloat Proactively:** Treat tool removal with equal importance to tool addition. Do not let assistants become "jack of all trades" with bloated tool lists.
+- **Role-Tool Alignment:** Every tool attached to an assistant must be explicitly justified by its `description` or `systemPrompt`.
+- **Atomic updates:** Ensure you calculate the union and difference correctly before calling `agent__update`. Never send an incomplete list that deletes required tools.
+- **English Prompt Preservation:** Boost only modifies tool configurations (`externalMcpServers` and `builtinCapabilities`). Do not modify the `systemPrompt` text unless separately requested.
 
 ## Builtin Tools
 
 | Step | Tool |
 | --- | --- |
-| List assistants | `agent__list({ type: "configs", verbose: true })` |
-| Inventory MCP | `tool__list({ availability: "inventory" })` |
-| Resolve server ID | `tool__list({ availability: "inventory", query: "..." })` |
+| List assistants | `agent__list({ "type": "configs", "verbose": true })` |
+| Inventory MCP | `tool__list({ "availability": "inventory" })` |
 | Apply changes | `agent__update({ id, externalMcpServers, builtinCapabilities? })` |
-| Register missing MCP | **mcp-installer** (separate workflow) |
-| Create new specialist | **recruit** |
+| Create new specialist | **recruit** (separate workflow) |
 
-## References
 
-- [strengthen-heuristics.md](references/strengthen-heuristics.md) — known assistant profiles and MCP name hints

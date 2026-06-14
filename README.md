@@ -140,8 +140,8 @@ The most important day-one skills are:
 
 | Skill            | What it does                                                                                                                |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `system-setup`   | Detects and installs missing runtimes (Python, Node.js, uv) across all platforms                                            |
-| `mcp-installer`  | Registers or imports MCP servers from npm/GitHub/JSON, or syncs configs from Cursor, VS Code, Windsurf, and similar editors |
+| `setup-wizard`   | Detects and installs missing runtimes (Python, Node.js, uv) across all platforms                                            |
+| `tool-installer` | Registers or imports MCP servers from npm/GitHub/JSON, or syncs configs from Cursor, VS Code, Windsurf, and similar editors |
 | `delegate`       | Guides parent→child session handoff with explicit context transfer and lineage tracking                                     |
 | `teamwork`       | Scaffolds the shared workspace constitution for coordinated multi-agent work                                                |
 | `org`            | Formalizes durable org identity and org-visible member hierarchy                                                            |
@@ -156,7 +156,7 @@ And that's just the operator layer. LibrAgent also ships domain skills for:
 - **workspace onboarding**: `agent-init`
 - **coordination and assistants**: `consensus-delegation`, `session-schedule`, `recruit`, `boost`
 - **external integrations**: `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
-- **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`, `fine-tune`
+- **skill and workflow authoring**: `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
 - **specialized operations**: `computer-diagnosis`
 
 > [!IMPORTANT]
@@ -234,8 +234,8 @@ pnpm tauri dev
   **Step 2 — Add MCP tools** (Extensions sidebar)
 
 - Browse the preset catalog and click Install, or
-- Tell an agent: _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` registers it automatically
-- Already use Cursor or VS Code? Tell any agent: _"Import my MCP servers from Cursor"_ → `mcp-installer` handles that too
+- Tell an agent: _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` registers it automatically
+- Already use Cursor or VS Code? Tell any agent: _"Import my MCP servers from Cursor"_ → `tool-installer` handles that too
 
 **Step 3 — Create your first agent**
 
