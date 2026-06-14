@@ -4,7 +4,7 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::{
-    build_child_sessions_context, build_explicit_org_layer_context, SessionRepository,
+    build_explicit_org_layer_context, format_active_sessions_notice, SessionRepository,
     SqliteSessionRepository,
 };
 use async_trait::async_trait;
@@ -180,17 +180,16 @@ impl BuiltinMCPServer for AgentServer {
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         let mut context_prompt = AGENT_DELEGATION_HEADER.to_string();
 
-        let mut volatility = ContextVolatility::Stable;
+        let volatility = ContextVolatility::Volatile;
 
         let repo = SqliteSessionRepository::new(self.get_db().clone());
         if let Ok(Some(session)) = repo.get_session(&self.session_id).await {
-            // Build child sessions context (always exposed if children exist)
-            if let Ok(Some(child_context)) =
-                build_child_sessions_context(&repo, &self.session_id).await
-            {
-                context_prompt.push('\n');
-                context_prompt.push_str(&child_context);
-                volatility = ContextVolatility::Medium;
+            // Fetch child sessions once
+            if let Ok(children) = repo.get_child_sessions(&self.session_id).await {
+                if let Some(active_notice) = format_active_sessions_notice(&children) {
+                    context_prompt.push('\n');
+                    context_prompt.push_str(&active_notice);
+                }
             }
 
             // Build org layer context (only if organization metadata exists on the session)
@@ -200,7 +199,6 @@ impl BuiltinMCPServer for AgentServer {
                 {
                     context_prompt.push('\n');
                     context_prompt.push_str(&org_layer_context);
-                    volatility = ContextVolatility::Medium;
                 }
             }
         }

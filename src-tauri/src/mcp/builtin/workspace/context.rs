@@ -36,7 +36,7 @@ pub async fn build_context_prompt(
     };
 
     // ✅ ENHANCED: Get running processes with IDs and commands for AI visibility
-    let (running_count, total_count, running_processes_text) = {
+    let (total_count, running_processes_text) = {
         match process_registry.try_read() {
             Ok(reg) => {
                 let mut running_processes: Vec<(String, String)> = reg
@@ -69,14 +69,14 @@ pub async fn build_context_prompt(
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
-                    format!("\n{}", process_list)
+                    format!("{}\n{}", running_count, process_list)
                 };
 
-                (running_count, total_count, running_text)
+                (total_count, running_text)
             }
             Err(_) => {
                 // Lock is held by another task, return defaults to avoid blocking
-                (0, 0, "None".to_string())
+                (0, "None".to_string())
             }
         }
     };
@@ -87,7 +87,7 @@ pub async fn build_context_prompt(
 ### Live State
 - Workspace Root: {workspace_dir}
 - Persistent Shell CWD: {shell_cwd}
-- Running Processes: {running_count}{running_processes_text}
+- Running Processes: {running_processes_text}
 - Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.
 - Total Processes: {total_count}"
     );

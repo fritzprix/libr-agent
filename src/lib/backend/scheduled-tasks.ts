@@ -19,6 +19,7 @@ export interface ScheduledTask {
   yoloMode: boolean;
   createdBySessionId: string | null;
   sessionId: string | null;
+  taskCategory: string;
   workspaceOverride: string | null;
   enabled: boolean;
   lastRunAt: number | null;
@@ -32,6 +33,7 @@ export interface SessionScheduledTask {
   id: string;
   name: string;
   message: string;
+  sessionId: string | null;
   isOneShot: boolean;
   nextRunAt: number | null;
 }
