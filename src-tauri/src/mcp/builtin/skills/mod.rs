@@ -153,7 +153,8 @@ impl BuiltinMCPServer for SkillsServer {
         let prompt = format!(
             "## Available Skills\n\n\
             You have access to the following skills. The <location> tag specifies the main documentation file for each skill.\n\
-            To use a skill, you MUST first read its <location> file using the `readFile` tool. This file contains all necessary instructions and commands.\n\n\
+            To use a skill, you MUST first read its <location> file using `workspace__readFile`. \
+            Do not act from the description alone; read the file before any other tool call.\n\n\
             <available_skills>\n{}\n</available_skills>",
             skills_xml
         );
