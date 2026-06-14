@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.13] - 2026-06-14
+
+### 🚀 Features
+
+- **Slash Command System**: Implement a new `/` command system with autocomplete, badges, and validation.
+- **Dataset Export Capability**: Register the dataset tool as an optional built-in MCP server, exposing the `export_dataset` tool for agent access and adding the `exportDataset` Tauri command.
+- **UI Message Timestamps**: Display message timestamps in chat bubbles for better message visibility.
+- **Bundled Skills Expansion**: Add new `runtime` and `harness` bundled skills, consolidate MCP imports, and optimize `recruit` and `boost` skills.
+- **Metadata-driven Skill Guidance**: Append `@skill` references as metadata to agent prompt requests with mandatory read instructions.
+
+### 🐛 Fixes
+
+- **LLM Prompt Payload**: Merge `compact_summary` into `systemPrompt` to ensure it is not dropped in LLM requests.
+- **Dataset Pagination**: Paginate `export_dataset` to prevent message loss in long sessions.
+- **Cross-platform Date Testing**: Resolve Windows CI timezone formatting assertions and localization issues.
+
+### 🔧 Internal
+
+- **Dataset Server Merging**: Merge `DatasetServer` into `HistoryServer` to streamline storage and history management.
+- **Scheduled Tasks DTOs**: Add missing fields to scheduled task DTOs and optimize active session notifications.
+- **Skills Alignment**: Audit and align bundled skills with `/skill-creator` guidelines, and document bench skill results aggregation.
+
 ## [0.8.12] - 2026-06-12
 
 ### 🚀 Features
