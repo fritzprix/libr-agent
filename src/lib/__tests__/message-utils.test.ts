@@ -238,10 +238,11 @@ describe('toRustMessage', () => {
 
   it('falls back to numeric timestamps and now when dates are missing', () => {
     const createdAt = 1_700_000_000_000;
-    const message = createMessage({
-      createdAt,
+    const message = {
+      ...createMessage(),
+      createdAt: createdAt as unknown,
       updatedAt: undefined,
-    });
+    } as Message;
 
     const rustMessage = toRustMessage(message);
 
