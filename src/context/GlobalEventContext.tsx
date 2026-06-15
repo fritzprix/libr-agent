@@ -16,7 +16,7 @@ export type ResourceType = 'assistant' | 'mcpServer' | 'playbook' | 'session';
 export interface ResourceUpdatedPayload {
   type: 'resourceUpdated';
   resourceType: ResourceType;
-  action: 'create' | 'update' | 'delete' | 'verify';
+  action: 'create' | 'update' | 'delete' | 'verify' | 'clear';
   resourceId?: string;
 }
 

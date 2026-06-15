@@ -6,7 +6,7 @@ import { getLogger } from '@/lib/logger';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
 import { rustMessageToMessage } from '@/models/chat';
 import type { AgentEventPayload } from './types';
-import { buildMessageError } from './utils';
+import { buildMessageError, syncSessionMetadataFromBackend } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type { SessionRuntimeState } from '@/models/agent-ipc';
 
@@ -258,6 +258,28 @@ export function useAgentSessionEvents(
                   },
                 ];
               });
+              break;
+            }
+
+            case 'resourceUpdated': {
+              if (
+                payload.resourceType !== 'session' ||
+                payload.resourceId !== sessionId
+              ) {
+                break;
+              }
+
+              if (payload.action === 'clear') {
+                setters.clearSessionHistory();
+                logger.info(
+                  'Session history cleared via resourceUpdated event',
+                );
+                break;
+              }
+
+              if (payload.action === 'update') {
+                void syncSessionMetadataFromBackend(sessionId, setters);
+              }
               break;
             }
 

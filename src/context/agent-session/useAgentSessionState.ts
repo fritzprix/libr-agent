@@ -84,6 +84,34 @@ export function useAgentSessionState() {
     });
   }, []);
 
+  const clearSessionHistory = useCallback(() => {
+    setMessages([]);
+    setHasOlderMessages(false);
+    setOldestMessageCursor(null);
+    setPendingApprovals([]);
+    setPendingInteractiveShellPrompt(null);
+    setErrorState(null);
+    setLlmError(null);
+    setWorkflowStatus('idle');
+    setWorkflowPhase('idle');
+    setPreflightTokenMetrics(null);
+    setSession((prev) => (prev ? { ...prev, status: 'idle' } : prev));
+  }, []);
+
+  const applyExecutionMode = useCallback((mode: ExecutionMode) => {
+    setYoloModeEnabled(mode === 'yolo');
+    setUnsafeModeEnabled(mode === 'unsafe');
+    setSession((previous) =>
+      previous
+        ? {
+            ...previous,
+            yoloMode: mode === 'yolo',
+            unsafeMode: mode === 'unsafe',
+          }
+        : previous,
+    );
+  }, []);
+
   const prependMessages = useCallback((olderMessages: Message[]) => {
     if (olderMessages.length === 0) {
       return;
@@ -123,6 +151,8 @@ export function useAgentSessionState() {
       applyLocalViewedAt,
       addMessage,
       prependMessages,
+      clearSessionHistory,
+      applyExecutionMode,
     }),
     [
       setSession,
@@ -143,6 +173,8 @@ export function useAgentSessionState() {
       applyLocalViewedAt,
       addMessage,
       prependMessages,
+      clearSessionHistory,
+      applyExecutionMode,
     ],
   );
 
