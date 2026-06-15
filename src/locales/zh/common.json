@@ -855,9 +855,11 @@
     },
     "header": {
       "copySuccess": "对话已复制到剪贴板",
+      "copySuccessPartial": "对话已复制（因大小限制省略了部分消息）",
+      "copyDenied": "剪贴板访问被拒绝。请检查浏览器权限。",
       "copyError": "复制对话失败",
-      "copyAria": "将对话复制为 JSON",
-      "copyTooltip": "将对话复制为 JSON",
+      "copyAria": "将对话复制为 Markdown",
+      "copyTooltip": "将对话复制为 Markdown",
       "toggleWorkspaceAria": "切换工作区文件面板",
       "toggleWorkspaceTooltip": "切换工作区文件面板",
       "togglePlanningAria": "切换 AI 计划面板",

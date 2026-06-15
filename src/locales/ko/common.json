@@ -866,9 +866,11 @@
     },
     "header": {
       "copySuccess": "대화 내용이 클립보드에 복사되었습니다",
+      "copySuccessPartial": "대화 내용이 복사되었습니다 (크기 제한으로 일부 메시지가 제외됨)",
+      "copyDenied": "클립보드 접근이 거부되었습니다. 브라우저 권한을 확인하세요.",
       "copyError": "클립보드 복사에 실패했습니다",
-      "copyAria": "대화 내용을 JSON으로 복사",
-      "copyTooltip": "대화 내용을 JSON으로 복사",
+      "copyAria": "대화 내용을 마크다운으로 복사",
+      "copyTooltip": "대화 내용을 마크다운으로 복사",
       "toggleWorkspaceAria": "워크스페이스 파일 패널 전환",
       "toggleWorkspaceTooltip": "워크스페이스 파일 패널 전환",
       "togglePlanningAria": "AI 계획 패널 전환",

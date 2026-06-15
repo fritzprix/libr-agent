@@ -855,9 +855,11 @@
     },
     "header": {
       "copySuccess": "Conversación copiada al portapapeles",
+      "copySuccessPartial": "Conversación copiada (se omitieron algunos mensajes por límites de tamaño)",
+      "copyDenied": "Acceso al portapapeles denegado. Comprueba los permisos del navegador.",
       "copyError": "Error al copiar la conversación",
-      "copyAria": "Copiar conversación como JSON",
-      "copyTooltip": "Copiar conversación como JSON",
+      "copyAria": "Copiar conversación como Markdown",
+      "copyTooltip": "Copiar conversación como Markdown",
       "toggleWorkspaceAria": "Alternar panel de archivos del espacio de trabajo",
       "toggleWorkspaceTooltip": "Alternar panel de archivos del espacio de trabajo",
       "togglePlanningAria": "Alternar panel de planificación de IA",

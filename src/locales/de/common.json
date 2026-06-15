@@ -855,9 +855,11 @@
     },
     "header": {
       "copySuccess": "Konversation in die Zwischenablage kopiert",
+      "copySuccessPartial": "Konversation kopiert (einige Nachrichten aufgrund von Größenbeschränkungen ausgelassen)",
+      "copyDenied": "Zugriff auf die Zwischenablage verweigert. Überprüfen Sie die Browserberechtigungen.",
       "copyError": "Konversation konnte nicht kopiert werden",
-      "copyAria": "Konversation als JSON kopieren",
-      "copyTooltip": "Konversation als JSON kopieren",
+      "copyAria": "Konversation als Markdown kopieren",
+      "copyTooltip": "Konversation als Markdown kopieren",
       "toggleWorkspaceAria": "Arbeitsbereich-Dateipanel umschalten",
       "toggleWorkspaceTooltip": "Arbeitsbereich-Dateipanel umschalten",
       "togglePlanningAria": "KI-Planungspanel umschalten",

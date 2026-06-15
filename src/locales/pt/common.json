@@ -855,9 +855,11 @@
     },
     "header": {
       "copySuccess": "Conversa copiada para a área de transferência",
+      "copySuccessPartial": "Conversa copiada (algumas mensagens foram omitidas devido a limites de tamanho)",
+      "copyDenied": "Acesso à área de transferência negado. Verifique as permissões do navegador.",
       "copyError": "Falha ao copiar conversa",
-      "copyAria": "Copiar conversa como JSON",
-      "copyTooltip": "Copiar conversa como JSON",
+      "copyAria": "Copiar conversa como Markdown",
+      "copyTooltip": "Copiar conversa como Markdown",
       "toggleWorkspaceAria": "Alternar Painel de Arquivos do Espaço de Trabalho",
       "toggleWorkspaceTooltip": "Alternar Painel de Arquivos do Espaço de Trabalho",
       "togglePlanningAria": "Alternar Painel de Planejamento de IA",

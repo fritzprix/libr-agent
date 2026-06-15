@@ -22,6 +22,7 @@ import { PanelRight, FolderOpen, Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useClipboard } from '@/hooks/useClipboard';
+import { messagesToMarkdown } from '@/lib/message-utils';
 
 interface AgentChatHeaderProps {
   children?: React.ReactNode;
@@ -68,11 +69,19 @@ export function AgentChatHeader({
     if (isCopying) return;
     setIsCopying(true);
     try {
-      const json = JSON.stringify(messages, null, 2);
-      await copyToClipboard(json);
-      toast.success(t('agent.header.copySuccess'));
-    } catch {
-      toast.error(t('agent.header.copyError'));
+      const { content, truncated } = messagesToMarkdown(messages);
+      await copyToClipboard(content);
+      toast.success(
+        truncated
+          ? t('agent.header.copySuccessPartial')
+          : t('agent.header.copySuccess'),
+      );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        toast.error(t('agent.header.copyDenied'));
+      } else {
+        toast.error(t('agent.header.copyError'));
+      }
     } finally {
       setIsCopying(false);
     }
