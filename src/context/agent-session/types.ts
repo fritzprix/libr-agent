@@ -133,6 +133,8 @@ export interface AgentSessionStateContextValue {
 export interface AgentSessionActionsContextValue {
   sendMessage: (content: string) => Promise<void>;
   stopSession: () => Promise<void>;
+  clearSessionHistory: () => void;
+  applyExecutionMode: (mode: ExecutionMode) => void;
   setError: (error: string | AgentRuntimeError | null) => void;
   addMessage: (message: Message) => void;
   loadOlderMessages: () => Promise<void>;
