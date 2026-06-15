@@ -124,6 +124,7 @@ fn disabled_legacy_utc_tasks_expose_a_future_display_run() {
         yolo_mode: false,
         unsafe_mode: false,
         created_by_session_id: None,
+        session_id: None,
         workspace_override: None,
         enabled: false,
         last_run_at: None,
