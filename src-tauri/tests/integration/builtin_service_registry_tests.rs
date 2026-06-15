@@ -327,7 +327,7 @@ fn agent_public_surface_uses_single_session_start_tool() {
 }
 
 #[test]
-fn scheduled_task_service_is_registered_as_optional_builtin() {
+fn scheduled_task_service_is_registered_as_core_builtin() {
     assert_eq!(
         BuiltinServiceId::from_alias("scheduled_task"),
         Some(BuiltinServiceId::ScheduledTask)
@@ -343,10 +343,13 @@ fn scheduled_task_service_is_registered_as_optional_builtin() {
         .expect("scheduled_task must be registered");
 
     assert_eq!(entry.canonical, "scheduled_task");
-    assert!(entry.optional, "scheduled_task should remain opt-in");
     assert!(
-        !CORE_BUILTIN_SERVICE_ALIASES.contains(&"scheduled_task"),
-        "scheduled_task must not be treated as core"
+        !entry.optional,
+        "scheduled_task should be a core builtin service"
+    );
+    assert!(
+        CORE_BUILTIN_SERVICE_ALIASES.contains(&"scheduled_task"),
+        "scheduled_task must be treated as core"
     );
 }
 
@@ -417,7 +420,7 @@ fn builtin_service_id_serializes_to_canonical_name() {
         (BuiltinServiceId::Ui, "ui"),
         (BuiltinServiceId::Browser, "browser"),
         (BuiltinServiceId::ScheduledTask, "scheduled_task"),
-        (BuiltinServiceId::Bootstrap, "bootstrap"),
+        (BuiltinServiceId::SetupWizard, "setup-wizard"),
         (BuiltinServiceId::Tool, "tool"),
     ];
     for (id, expected) in cases {
@@ -454,7 +457,7 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::scheduled_task::NAME,
-        builtin::bootstrap::NAME,
+        builtin::setup_wizard::NAME,
         builtin::media::NAME,
         builtin::tool::NAME,
     ];
@@ -489,7 +492,7 @@ fn builtin_server_names_are_unique() {
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::scheduled_task::NAME,
-        builtin::bootstrap::NAME,
+        builtin::setup_wizard::NAME,
         builtin::media::NAME,
         builtin::tool::NAME,
     ];
@@ -536,7 +539,7 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Ui => builtin::ui::NAME,
             BuiltinServiceId::Browser => builtin::browser::NAME,
             BuiltinServiceId::ScheduledTask => builtin::scheduled_task::NAME,
-            BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,
+            BuiltinServiceId::SetupWizard => builtin::setup_wizard::NAME,
             BuiltinServiceId::Tool => builtin::tool::NAME,
             BuiltinServiceId::Media => builtin::media::NAME,
         };

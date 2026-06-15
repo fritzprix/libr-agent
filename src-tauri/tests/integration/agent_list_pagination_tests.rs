@@ -91,7 +91,7 @@ fn build_session(
         status,
         model: "gpt-4.1".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: parent_session_id.map(ToOwned::to_owned),
         lineage_id: Some(format!("lineage-{id}")),
         depth: Some(if parent_session_id.is_some() { 1 } else { 0 }),

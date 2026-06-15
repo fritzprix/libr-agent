@@ -135,23 +135,26 @@ LibrAgent est livré avec une bibliothèque croissante de **Compétences groupé
 
 Les compétences les plus importantes pour le premier jour :
 
-| Compétence           | Ce qu'elle fait                                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `system-setup`       | Détecte et installe les runtimes manquants (Python, Node.js, uv) sur toutes les plateformes                      |
-| `mcp-installer`      | Enregistre des serveurs MCP depuis des packages npm, des URLs GitHub ou des blocs de config JSON                 |
-| `mcp-importer`       | Importe les configs MCP existantes depuis Cursor, VS Code, Windsurf et autres                                    |
-| `delegate`           | Guide le transfert de session parent→enfant avec transfert de contexte explicite et suivi de lignée              |
-| `teamwork`           | Construit la constitution d'espace de travail partagé pour le travail multi-agent coordonné                      |
-| `org`                | Formalise l'identité d'organisation durable et la hiérarchie de membres visible                                  |
-| `schedule`           | Crée et gère des groupes de tâches planifiées récurrentes pour l'automatisation sans surveillance                |
-| `soul-awakening`     | Ancre un agent à un persona `SOUL.md` — ton, posture, identité                                                   |
+| Compétence       | Ce qu'elle fait                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `setup-wizard`   | Détecte et installe les runtimes manquants (Python, Node.js, uv) sur toutes les plateformes                                          |
+| `tool-installer` | Enregistre ou importe des serveurs MCP depuis npm/GitHub/JSON, ou synchronise les configs depuis Cursor, VS Code, Windsurf et autres |
+| `delegate`       | Guide le transfert de session parent→enfant avec transfert de contexte explicite et suivi de lignée                                  |
+| `teamwork`       | Construit la constitution d'espace de travail partagé pour le travail multi-agent coordonné                                          |
+| `org`            | Formalise l'identité d'organisation durable et la hiérarchie de membres visible                                                      |
+| `schedule`       | Crée et gère des groupes de tâches planifiées récurrentes pour l'automatisation sans surveillance                                    |
+| `soul-awakening` | Ancre un agent à un persona `SOUL.md` — ton, posture, identité                                                                       |
 
 Et ce n'est que la couche opérateur. LibrAgent fournit également des compétences de domaine pour :
 
-- **Connaissance et recherche** : `deep-research-report`, `knowledge-distiller`
-- **Flux de travail documentaire** : `to-md`, `docx`, `pptx`
-- **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `mcp-builder`
-- **Opérations spécialisées** : `computer-diagnosis` et autres assistants spécialisés
+- **Connaissance et recherche** : `deep-research`, `knowledge-distiller`
+- **Documents et contenu workspace** : `to-md`, `docx`, `pptx`, `workspace-indexer`, `repo-wiki`, `data-viz`
+- **Workflow développeur** : `git-workflow`, `bench`
+- **Onboarding workspace** : `agent-init`
+- **Coordination et assistants** : `consensus-delegation`, `session-schedule`, `recruit`, `boost`
+- **Intégrations externes** : `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`
+- **Création de compétences et workflows** : `skill-creator`, `skill-deployer`, `playbook-creator`, `tool-creator`, `fine-tune`
+- **Opérations spécialisées** : `computer-diagnosis`
 
 _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces compétences. Les Compétences groupées sont les procédures réutilisables ; les intégrés et les outils MCP sont le substrat d'exécution sous-jacent._
 
@@ -202,10 +205,10 @@ _Important : `bootstrap` est une capacité intégrée souvent utilisée avec ces
 Téléchargez le dernier installateur pour votre plateforme depuis la **[page des Releases](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows :** [`LibrAgent_0.8.11_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64-setup.exe) · [`LibrAgent_0.8.11_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64_en-US.msi)
-- **macOS (Apple Silicon) :** [`LibrAgent_0.8.11_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_aarch64.dmg)
-- **Linux :** [`LibrAgent_0.8.11_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.AppImage) · [`LibrAgent_0.8.11_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.deb) · [`LibrAgent-0.8.11-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent-0.8.11-1.x86_64.rpm)
-- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.11)
+- **Windows :** [`LibrAgent_0.8.13_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64-setup.exe) · [`LibrAgent_0.8.13_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64_en-US.msi)
+- **macOS (Apple Silicon) :** [`LibrAgent_0.8.13_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_aarch64.dmg)
+- **Linux :** [`LibrAgent_0.8.13_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.AppImage) · [`LibrAgent_0.8.13_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.deb) · [`LibrAgent-0.8.13-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent-0.8.13-1.x86_64.rpm)
+- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.13)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **Configuration développeur :**
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - Cloud : collez une clé API OpenAI / Anthropic / Gemini / Groq
 - Local : `ollama pull qwen3:14b` puis sélectionnez Ollama dans Settings
-- Vous utilisez déjà Cursor ou VS Code ? Dites à n'importe quel agent : _"Importe mes serveurs MCP depuis Cursor"_ → `mcp-importer` s'en charge
-
-**Étape 2 — Ajoutez des outils MCP** (barre latérale Extensions)
+  **Étape 2 — Ajoutez des outils MCP** (barre latérale Extensions)
 
 - Parcourez le catalogue de préréglages et cliquez sur Installer, ou
-- Dites à un agent : _"Install @modelcontextprotocol/server-everything"_ → `mcp-installer` l'enregistre automatiquement
+- Dites à un agent : _"Install @modelcontextprotocol/server-everything"_ → `tool-installer` l'enregistre automatiquement
+- Vous utilisez déjà Cursor ou VS Code ? Dites à n'importe quel agent : _"Importe mes serveurs MCP depuis Cursor"_ → `tool-installer` s'en charge
 
 **Étape 3 — Créez votre premier agent**
 

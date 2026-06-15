@@ -18,6 +18,20 @@ pnpm refactor:validate
 
 This runs all checks in sequence and ensures code quality across the entire stack.
 
+It also runs `pnpm lockfile:check` (`pnpm install --frozen-lockfile`) to match CI dependency installation.
+
+## Package Manager Pin
+
+- `package.json` declares `"packageManager": "pnpm@9.15.9"` and `"engines.pnpm": "9.15.9"`.
+- Before every install, `scripts/enforce-pnpm-version.cjs` rejects other pnpm versions (for example pnpm 11 regenerating the lockfile without `overrides`).
+- Local setup:
+
+```bash
+corepack enable
+corepack prepare pnpm@9.15.9 --activate
+pnpm install --frozen-lockfile
+```
+
 ## Individual Validation Commands
 
 ### Frontend (TypeScript/React)
@@ -28,6 +42,9 @@ pnpm lint
 
 # Format checking
 pnpm format:check
+
+# Lockfile / CI parity check
+pnpm lockfile:check
 
 # Auto-fix formatting issues
 pnpm format
@@ -73,13 +90,14 @@ The `refactor:validate` command executes:
 
 1. **ESLint** - JavaScript/TypeScript code quality
 2. **Prettier** - Code formatting consistency
-3. **Vitest** - Test suite execution
-4. **Rust fmt** - Rust code formatting
-5. **Rust clippy** - Rust linting
-6. **Rust check** - Rust compilation check with all features
-7. **Rust test** - Rust test suite
-8. **Vite build** - Production build verification
-9. **Unimported** - Unused code detection
+3. **Lockfile check** - `pnpm install --frozen-lockfile` (CI parity)
+4. **Vitest** - Test suite execution
+5. **Rust fmt** - Rust code formatting
+6. **Rust clippy** - Rust linting
+7. **Rust check** - Rust compilation check with all features
+8. **Rust test** - Rust test suite
+9. **Vite build** - Production build verification
+10. **Unimported** - Unused code detection
 
 ## Common Validation Scenarios
 

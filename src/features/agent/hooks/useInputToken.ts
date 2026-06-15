@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import type { SkillMetadata } from '@/types/skills';
 import type { MCPTool } from '@/lib/mcp';
 import type { Playbook } from '@/types/playbook';
@@ -12,7 +12,8 @@ type TokenStage =
       typeName: string;
       query: string;
       anchorIndex: number;
-    }; // `@type:query`
+    } // `@type:query`
+  | { kind: 'typing-command'; query: string; anchorIndex: number }; // `/query`
 
 /** A reference type shown in the first-level dropdown (e.g. "skill:"). */
 export interface TokenType {
@@ -48,6 +49,8 @@ export const BUILTIN_TOKEN_TYPES: TokenType[] = [
 const TYPE_RE = /@([\w]*)$/;
 /** Regex: matches `@word:rest` (typing arg for a type). */
 const ARG_RE = /@([\w]+):([\S]*)$/;
+/** Regex: matches `/command` with potential spaces. */
+const COMMAND_RE = /\/([\w\s-]*)$/;
 
 export interface UseInputTokenResult {
   /** Current UX stage. */
@@ -66,6 +69,8 @@ export interface UseInputTokenResult {
     createdAt: Date;
     updatedAt: Date;
   })[];
+  /** Command candidates to show when stage is `typing-command`. */
+  commandResults: { id: string; label: string; description: string }[];
   /** Call on every textarea value+cursor change. */
   onInputChange: (value: string, cursorPos: number) => void;
   /** Select a token type — inserts `@type:` and switches to arg stage. */
@@ -96,6 +101,17 @@ export function useInputToken(
   const onInputChange = useCallback(
     (value: string, cursorPos: number) => {
       const textBeforeCursor = value.slice(0, cursorPos);
+
+      // Handle slash commands first
+      const commandMatch = COMMAND_RE.exec(textBeforeCursor);
+      if (commandMatch) {
+        setState({
+          kind: 'typing-command',
+          query: commandMatch[1],
+          anchorIndex: commandMatch.index,
+        });
+        return;
+      }
 
       const argMatch = ARG_RE.exec(textBeforeCursor);
       if (argMatch) {
@@ -147,6 +163,13 @@ export function useInputToken(
   const onArgSelect = useCallback(
     (arg: string, currentValue: string, cursorPos: number): string => {
       const s = stageRef.current;
+      if (s.kind === 'typing-command') {
+        const before = currentValue.slice(0, s.anchorIndex);
+        const after = currentValue.slice(cursorPos);
+        const insertion = `${arg} `;
+        setState({ kind: 'idle' });
+        return before + insertion + after;
+      }
       if (s.kind !== 'typing-arg') return currentValue;
       const before = currentValue.slice(0, s.anchorIndex);
       const after = currentValue.slice(cursorPos);
@@ -197,6 +220,39 @@ export function useInputToken(
     updatedAt: Date;
   })[] = [];
 
+  // Filter slash command results
+  const commandResults = useMemo(() => {
+    const commands = [
+      {
+        id: '/clear',
+        label: '/clear',
+        description:
+          'Reset session (clear messages cache and database history)',
+      },
+      {
+        id: '/permission yolo',
+        label: '/permission yolo',
+        description: 'Execute tools automatically without requiring approval',
+      },
+      {
+        id: '/permission unsafe',
+        label: '/permission unsafe',
+        description: 'Bypass standard approval and policy verification',
+      },
+      {
+        id: '/permission normal',
+        label: '/permission normal',
+        description: 'Require standard approval for tool executions',
+      },
+    ];
+    if (stage.kind === 'typing-command') {
+      return commands.filter((c) =>
+        c.label.toLowerCase().includes(stage.query.toLowerCase()),
+      );
+    }
+    return [];
+  }, [stage]);
+
   return {
     stage,
     typeResults,
@@ -204,6 +260,7 @@ export function useInputToken(
     toolResults,
     fileResults,
     playbookResults,
+    commandResults,
     onInputChange,
     onTypeSelect,
     onArgSelect,

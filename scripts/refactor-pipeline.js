@@ -36,6 +36,11 @@ const PREPARE_STAGES = [
 const VALIDATE_STAGES = [
   ...PREPARE_STAGES,
   {
+    name: 'lockfile:check',
+    command: pnpmCommand,
+    args: ['lockfile:check'],
+  },
+  {
     name: 'lint',
     command: pnpmCommand,
     args: ['lint'],
@@ -73,6 +78,11 @@ const VALIDATE_STAGES = [
     command: pnpmCommand,
     args: ['dead-code'],
     env: { nodeHeapMb: 512 },
+  },
+  {
+    name: 'skills:audit',
+    command: pnpmCommand,
+    args: ['skills:audit'],
   },
 ];
 

@@ -98,14 +98,7 @@ fn make_session(session_id: &str, assistant_id: &str) -> SessionMetadata {
         status: SessionStatus::Idle,
         model: "gpt-5.4".to_string(),
         provider: "openai".to_string(),
-        agent_config: Some(
-            json!({
-                "id": assistant_id,
-                "name": "Regression Assistant",
-                "systemPrompt": "Protect skill access regression coverage."
-            })
-            .to_string(),
-        ),
+        assistant_id: Some(assistant_id.to_string()),
         parent_session_id: None,
         lineage_id: None,
         depth: None,

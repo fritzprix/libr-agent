@@ -7,24 +7,6 @@ description: Create and manage global scheduled tasks in LibrAgent (single or gr
 
 Global scheduled tasks wake an assistant later without requiring the current session to stay open. They are not org identity and they are not session-bound follow-ups.
 
-## When to use this skill
-
-Use `schedule` when:
-
-- the work should continue after the current session ends or is closed
-- the user wants app-wide recurring automation (daily digest, weekly report, heartbeat)
-- a specific assistant must run on a cron, with or without a task group
-- teamwork chose the `scheduled` execution substrate and needs grouped automation loops
-
-Stop and use `session-schedule` when:
-
-- the user wants a delay or reminder inside **this conversation** ("check back in 5 minutes", "continue tomorrow morning in this thread")
-- the injected message must resume the **current** session context
-
-Stop and use `org` when the real need is org-visible lineage, not cron automation.
-
-Stop and use `teamwork` first only when you are setting up a multi-agent workspace constitution and have not scaffolded it yet.
-
 ## Routing decision
 
 ```text

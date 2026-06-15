@@ -60,12 +60,16 @@ export function normalizeAttentionSessions(
 export function mapSessionMetadataList(
   sessionMetadataList: AgentSessionMetadata[],
   pendingApprovalCounts: Map<string, number>,
+  assistantsById: Map<string, Assistant> = new Map(),
 ): AgentSession[] {
   return sortSessionsByLatestActivity(
     sessionMetadataList.map((sessionMetadata) =>
       mapSessionMetadataToAgentSession(
         sessionMetadata,
         pendingApprovalCounts.get(sessionMetadata.id) ?? 0,
+        sessionMetadata.assistantId
+          ? assistantsById.get(sessionMetadata.assistantId)
+          : undefined,
       ),
     ),
   );

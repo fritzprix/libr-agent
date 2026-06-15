@@ -10,6 +10,11 @@ import { safeInvoke } from '@/lib/backend/core';
 import { listen } from '@tauri-apps/api/event';
 import { MemoryRouter } from 'react-router-dom';
 
+vi.mock('@/lib/backend/assistants', () => ({
+    getAssistant: vi.fn(),
+    listAssistants: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock Tauri APIs
 vi.mock('@/lib/backend/core', () => ({
     safeInvoke: vi.fn(),

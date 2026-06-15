@@ -46,6 +46,7 @@ async fn test_db() -> DatabaseConnection {
                 .expect("migrations should run");
             set_mcp_server_repository(SqliteMCPServerRepository::new(db.clone()));
             set_session_repository(SqliteSessionRepository::new(db.clone()));
+            common::register_assistant_repository(&db);
             TestContext {
                 _temp_dir: temp_dir,
                 db,
@@ -68,6 +69,31 @@ fn extract_text(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+async fn seed_assistant(db: &DatabaseConnection, assistant_id: &str, name: &str) {
+    common::seed_test_assistant(
+        db,
+        assistant_id,
+        name,
+        json!({
+            "name": name,
+            "systemPrompt": "You are helpful",
+            "allowedBuiltInServiceAliases": [
+                "planning",
+                "workspace",
+                "agent",
+                "tool",
+                "attachments",
+                "ui",
+                "skills",
+                "playbook",
+                "scratchpad"
+            ],
+            "mcpServerIds": []
+        }),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -95,6 +121,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
         .expect("cached tools should update");
 
     let session_repo = SqliteSessionRepository::new(db.clone());
+    seed_assistant(&db, "agent-alpha", "Agent Alpha").await;
     session_repo
         .upsert_session(&SessionMetadata {
             id: "session-tool-list".to_string(),
@@ -102,16 +129,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
             status: SessionStatus::Idle,
             model: "gpt-4.1".to_string(),
             provider: "openai".to_string(),
-            agent_config: Some(
-                json!({
-                    "assistantId": "agent-alpha",
-                    "name": "Agent Alpha",
-                    "systemPrompt": "You are helpful",
-                    "allowedBuiltInServiceAliases": ["planning", "workspace", "agent", "tool", "attachments", "ui", "skills", "playbook", "scratchpad"],
-                    "mcpServerIds": []
-                })
-                .to_string(),
-            ),
+            assistant_id: Some("agent-alpha".to_string()),
             parent_session_id: None,
             lineage_id: None,
             depth: Some(0),
@@ -191,6 +209,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
         .expect("cached tools should update");
 
     let session_repo = SqliteSessionRepository::new(db.clone());
+    seed_assistant(&db, "agent-beta", "Agent Beta").await;
     session_repo
         .upsert_session(&SessionMetadata {
             id: "session-tool-status".to_string(),
@@ -198,16 +217,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
             status: SessionStatus::Idle,
             model: "gpt-4.1".to_string(),
             provider: "openai".to_string(),
-            agent_config: Some(
-                json!({
-                    "assistantId": "agent-beta",
-                    "name": "Agent Beta",
-                    "systemPrompt": "You are helpful",
-                    "allowedBuiltInServiceAliases": ["planning", "workspace", "agent", "tool", "attachments", "ui", "skills", "playbook", "scratchpad"],
-                    "mcpServerIds": []
-                })
-                .to_string(),
-            ),
+            assistant_id: Some("agent-beta".to_string()),
             parent_session_id: None,
             lineage_id: None,
             depth: Some(0),
@@ -263,6 +273,7 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
     let db = test_db().await;
 
     let session_repo = SqliteSessionRepository::new(db.clone());
+    seed_assistant(&db, "agent-gamma", "Agent Gamma").await;
     session_repo
         .upsert_session(&SessionMetadata {
             id: "session-builtin-status".to_string(),
@@ -270,16 +281,7 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
             status: SessionStatus::Idle,
             model: "gpt-4.1".to_string(),
             provider: "openai".to_string(),
-            agent_config: Some(
-                json!({
-                    "assistantId": "agent-gamma",
-                    "name": "Agent Gamma",
-                    "systemPrompt": "You are helpful",
-                    "allowedBuiltInServiceAliases": ["planning", "workspace", "agent", "tool", "attachments", "ui", "skills", "playbook", "scratchpad"],
-                    "mcpServerIds": []
-                })
-                .to_string(),
-            ),
+            assistant_id: Some("agent-gamma".to_string()),
             parent_session_id: None,
             lineage_id: None,
             depth: Some(0),

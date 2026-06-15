@@ -30,9 +30,19 @@ const mockAssistant: Assistant = {
     updatedAt: new Date(),
 };
 
+const assistantBackendMocks = vi.hoisted(() => ({
+    getAssistant: vi.fn(),
+    listAssistants: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock Tauri APIs
 vi.mock('@/lib/backend/core', () => ({
     safeInvoke: vi.fn(),
+}));
+
+vi.mock('@/lib/backend/assistants', () => ({
+    getAssistant: assistantBackendMocks.getAssistant,
+    listAssistants: assistantBackendMocks.listAssistants,
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -113,6 +123,8 @@ describe('AgentSessionListContext', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         __resetAgentSessionListStartupCacheForTests();
+        assistantBackendMocks.listAssistants.mockResolvedValue([]);
+        assistantBackendMocks.getAssistant.mockResolvedValue(undefined);
         // Default: listen resolves to an unlisten function
         (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
     });
@@ -316,24 +328,14 @@ describe('AgentSessionListContext', () => {
     });
 
     it('should create a new session', async () => {
+        assistantBackendMocks.getAssistant.mockResolvedValue(mockAssistant);
+
         // Mock create response
         (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
             if (cmd === 'agent_list_sessions') {
                 return Promise.resolve({ items: [], nextCursor: undefined });
             }
             if (cmd === 'agent_list_attention_sessions') return Promise.resolve([]);
-            if (cmd === 'get_assistant') {
-                return Promise.resolve({
-                    id: args.id,
-                    name: 'Test Assistant',
-                    config: JSON.stringify({
-                        systemPrompt: 'You are a test assistant.',
-                        allowedBuiltInServiceAliases: ['planning', 'knowledge']
-                    }),
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                });
-            }
             if (cmd === 'agent_create_session') {
                 return Promise.resolve({
                     id: args.request.sessionId,

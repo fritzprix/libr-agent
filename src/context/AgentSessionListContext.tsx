@@ -15,7 +15,7 @@ import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
 import { useBackendResource } from './GlobalEventContext';
 import type { AgentSession, CreateSessionParams } from '@/models/agent';
-import { getAssistant } from '@/lib/backend/assistants';
+import { getAssistant, listAssistants } from '@/lib/backend/assistants';
 import { createId } from '@paralleldrive/cuid2';
 import { useSettings } from '@/context/SettingsContext';
 import { useLLMService } from '@/context/LLMServiceContext';
@@ -250,14 +250,20 @@ export function AgentSessionListProvider({
         },
       );
 
+      const assistantsById = new Map(
+        (await listAssistants()).map((assistant) => [assistant.id, assistant]),
+      );
+
       const recentSessions = mapSessionMetadataList(
         initialData.page.items,
         pendingApprovalCounts,
+        assistantsById,
       );
       const unreadAttentionSessions = pruneNotificationSessions(
         mapSessionMetadataList(
           initialData.attentionSessions,
           pendingApprovalCounts,
+          assistantsById,
         ),
       );
 
@@ -321,6 +327,10 @@ export function AgentSessionListProvider({
 
       const normalizedResponse = normalizeSessionListResponse(response);
 
+      const assistantsById = new Map(
+        (await listAssistants()).map((assistant) => [assistant.id, assistant]),
+      );
+
       setSessions((previousSessions) => {
         const pendingApprovalCounts = new Map(
           previousSessions.map((session) => [
@@ -331,6 +341,7 @@ export function AgentSessionListProvider({
         const incomingSessions = mapSessionMetadataList(
           normalizedResponse.items,
           pendingApprovalCounts,
+          assistantsById,
         );
 
         const nextSessions = sortSessionsByLatestActivity(

@@ -3,6 +3,7 @@ import {
   formatRelativeTime,
   formatSessionTimestamp,
   getDateFormatter,
+  formatMessageTime,
 } from '../date-utils';
 
 // Lock Intl to 'en' so assertions are locale-independent
@@ -27,10 +28,10 @@ describe('date-utils', () => {
     Object.defineProperty(Intl, 'DateTimeFormat', {
       value: class extends OriginalDateTimeFormat {
         constructor(
-          _locale?: string | string[],
+          locale?: string | string[],
           options?: Intl.DateTimeFormatOptions,
         ) {
-          super('en-US', options);
+          super(locale || 'en-US', options);
         }
       },
       writable: true,
@@ -205,6 +206,57 @@ describe('date-utils', () => {
       } finally {
         spy.mockRestore();
       }
+    });
+  });
+
+  describe('formatMessageTime', () => {
+    it('should handle undefined date', () => {
+      expect(formatMessageTime(undefined)).toBe('');
+    });
+
+    it('should handle invalid date string', () => {
+      expect(formatMessageTime('invalid-date')).toBe('');
+    });
+
+    it('should format valid date correctly (today)', () => {
+      const reference = new Date(2024, 0, 15, 15, 42, 0);
+      const date = new Date(2024, 0, 15, 15, 42, 0);
+      expect(formatMessageTime(date, reference, 'ko-KR')).toMatch(/15:42|(오후|오전|PM|AM) 3:42/);
+      expect(formatMessageTime(date, reference, 'en-US')).toMatch(/3:42 PM/);
+    });
+
+    it('should format yesterday date correctly', () => {
+      const reference = new Date(2024, 0, 15, 15, 42, 0);
+      const date = new Date(2024, 0, 14, 15, 42, 0);
+      expect(formatMessageTime(date, reference, 'ko-KR')).toMatch(/어제 (15:42|(오후|오전|PM|AM) 3:42)/);
+      expect(formatMessageTime(date, reference, 'en-US')).toMatch(/Yesterday 3:42 PM/);
+    });
+
+    it('should format this week date correctly (under 7 days)', () => {
+      const reference = new Date(2024, 0, 15, 15, 42, 0);
+      const date = new Date(2024, 0, 12, 15, 42, 0);
+      expect(formatMessageTime(date, reference, 'ko-KR')).toMatch(/(금요일|금) (15:42|(오후|오전|PM|AM) 3:42)/);
+      expect(formatMessageTime(date, reference, 'en-US')).toMatch(/Friday 3:42 PM/);
+    });
+
+    it('should format past date correctly (above 7 days)', () => {
+      const reference = new Date(2024, 0, 15, 15, 42, 0);
+      const date = new Date(2024, 0, 1, 15, 42, 0);
+      expect(formatMessageTime(date, reference, 'ko-KR')).toMatch(/2024\.01\.01 (15:42|(오후|오전|PM|AM) 3:42)/);
+      expect(formatMessageTime(date, reference, 'en-US')).toMatch(/01\/01\/2024 3:42 PM/);
+    });
+
+    it('should format past date correctly (different year)', () => {
+      const reference = new Date(2024, 0, 15, 15, 42, 0);
+      const date = new Date(2023, 11, 1, 15, 42, 0);
+      expect(formatMessageTime(date, reference, 'ko-KR')).toMatch(/2023\.12\.01 (15:42|(오후|오전|PM|AM) 3:42)/);
+      expect(formatMessageTime(date, reference, 'en-US')).toMatch(/12\/01\/2023 3:42 PM/);
+    });
+
+    it('should support number timestamp', () => {
+      const reference = new Date(2024, 0, 15, 15, 42, 0);
+      const dateVal = new Date(2024, 0, 15, 15, 42, 0).getTime();
+      expect(formatMessageTime(dateVal, reference, 'en-US')).toMatch(/3:42 PM/);
     });
   });
 });

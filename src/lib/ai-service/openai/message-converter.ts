@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 
 import type { MCPContent } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
+import { isCompactSummaryMessage } from '../base-service-context';
 
 import { formatToolResultForLlm } from '../utils';
 import type { OpenAILoggerLike } from './types';
@@ -54,11 +55,26 @@ export function convertToOpenAIMessages(args: {
   const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
     [];
 
-  if (args.systemPrompt) {
-    openaiMessages.push({ role: 'system', content: args.systemPrompt });
+  let mergedSystemPrompt = args.systemPrompt ?? '';
+  const compactSummaries = args.messages
+    .filter(isCompactSummaryMessage)
+    .map((m) => args.processMessageContent(m.content))
+    .filter(Boolean);
+
+  if (compactSummaries.length > 0) {
+    mergedSystemPrompt = mergedSystemPrompt
+      ? `${mergedSystemPrompt}\n\n${compactSummaries.join('\n\n')}`
+      : compactSummaries.join('\n\n');
+  }
+
+  if (mergedSystemPrompt) {
+    openaiMessages.push({ role: 'system', content: mergedSystemPrompt });
   }
 
   for (const message of args.messages) {
+    if (isCompactSummaryMessage(message)) {
+      continue;
+    }
     const effectiveRole = message.source === 'ui' ? 'user' : message.role;
 
     if (effectiveRole === 'user') {

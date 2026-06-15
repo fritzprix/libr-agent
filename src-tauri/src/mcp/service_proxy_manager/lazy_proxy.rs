@@ -10,8 +10,8 @@ use tokio::sync::Mutex;
 impl MCPServiceProxyManager {
     /// Ensure a session has a proxy that matches its persisted agent configuration.
     ///
-    /// Unlike `ensure_builtin_proxy`, this path is config-aware: it loads the session's
-    /// stored `agent_config`, derives both builtin and external MCP requirements, and then
+    /// Unlike `ensure_builtin_proxy`, this path is config-aware: it resolves the session's
+    /// assistant-backed `AgentConfig`, derives both builtin and external MCP requirements, and then
     /// delegates to `create_proxy()`. That means an existing builtin-only lazy proxy will
     /// be recreated when the session configuration requires stdio/HTTP MCP servers.
     pub async fn ensure_configured_proxy(
@@ -28,10 +28,7 @@ impl MCPServiceProxyManager {
             .await
             .map_err(|e| format!("Failed to load session {}: {}", session_id, e))?
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        let config_json = session
-            .agent_config
-            .ok_or_else(|| "Session has no config".to_string())?;
-        let agent_config = crate::agent::AgentConfig::from_json(&config_json)?;
+        let agent_config = crate::agent::resolve_agent_config(&session).await?;
         let tool_ids = extract_builtin_tool_ids(&agent_config);
 
         self.create_proxy(
@@ -135,9 +132,9 @@ impl MCPServiceProxyManager {
         Ok(proxy_arc)
     }
 
-    /// Resolve the builtin tool IDs for a session by reading its `agent_config` from the DB.
+    /// Resolve the builtin tool IDs for a session via `resolve_agent_config`.
     ///
-    /// Falls back to [`CORE_BUILTIN_SERVICE_ALIASES`] if the session or its config cannot
+    /// Falls back to [`CORE_BUILTIN_SERVICE_ALIASES`] if the session or assistant row cannot
     /// be loaded.
     async fn resolve_tool_ids_for_session(&self, session_id: &str) -> Vec<String> {
         use crate::agent::tools::extract_builtin_tool_ids;
@@ -147,10 +144,8 @@ impl MCPServiceProxyManager {
         let repo = crate::state::get_session_repository();
         match repo.get_session(session_id).await {
             Ok(Some(session)) => {
-                if let Some(config_str) = &session.agent_config {
-                    if let Ok(agent_config) = crate::agent::AgentConfig::from_json(config_str) {
-                        return extract_builtin_tool_ids(&agent_config);
-                    }
+                if let Ok(agent_config) = crate::agent::resolve_agent_config(&session).await {
+                    return extract_builtin_tool_ids(&agent_config);
                 }
             }
             Ok(None) => {

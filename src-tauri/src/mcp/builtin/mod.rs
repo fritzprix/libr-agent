@@ -9,7 +9,6 @@ use tracing::info;
 pub mod agent;
 pub mod assistant;
 pub mod attachments;
-pub mod bootstrap;
 pub mod browser;
 pub mod browser_content_store;
 pub mod error_guidance;
@@ -22,6 +21,7 @@ pub mod scheduled_task;
 pub mod scratchpad;
 pub mod service_id;
 pub mod session_api;
+pub mod setup_wizard;
 pub mod skills;
 pub mod tool;
 pub mod ui;
@@ -369,7 +369,7 @@ impl BuiltinServerRegistry {
         };
 
         // Register stateless builtin servers
-        registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
+        registry.register_server(Box::new(setup_wizard::SetupWizardServer::new()));
 
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
             "default".to_string(),
@@ -407,7 +407,7 @@ impl BuiltinServerRegistry {
 
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
-        registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
+        registry.register_server(Box::new(setup_wizard::SetupWizardServer::new()));
         // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 
@@ -449,7 +449,7 @@ impl BuiltinServerRegistry {
 
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
-        registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
+        registry.register_server(Box::new(setup_wizard::SetupWizardServer::new()));
         // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 

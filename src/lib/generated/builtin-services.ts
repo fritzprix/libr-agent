@@ -18,7 +18,7 @@ export const BUILTIN_SERVICE_CANONICAL_NAMES = [
   'ui',
   'browser',
   'scheduled_task',
-  'bootstrap',
+  'setup-wizard',
   'tool',
   'media',
 ] as const;
@@ -33,6 +33,7 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'workspace',
   'knowledge',
   'history',
+  'dataset',
   'agent',
   'skills',
   'playbook',
@@ -41,6 +42,8 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'browser',
   'scheduled_task',
   'scheduled-task',
+  'setup-wizard',
+  'setup_wizard',
   'bootstrap',
   'tool',
   'media',
@@ -58,6 +61,7 @@ export const CORE_BUILTIN_SERVICE_ALIASES = [
   'playbook',
   'attachments',
   'ui',
+  'scheduled_task',
   'tool',
 ] as const;
 
@@ -66,7 +70,6 @@ export const OPTIONAL_BUILTIN_SERVICE_ALIASES = [
   'knowledge',
   'history',
   'browser',
-  'scheduled_task',
-  'bootstrap',
+  'setup-wizard',
   'media',
 ] as const;

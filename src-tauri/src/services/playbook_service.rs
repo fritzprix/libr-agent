@@ -111,32 +111,14 @@ impl PlaybookService {
         session_repo: &dyn SessionRepository,
         session_id: &str,
     ) -> Result<String, String> {
-        let session_model = session_repo
+        let session = session_repo
             .get_session(session_id)
             .await
             .map_err(|e| format!("Failed to query session: {}", e))?
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        let agent_config_str = session_model
-            .agent_config
-            .ok_or_else(|| format!("Session {} has no agent config", session_id))?;
-
-        let agent_config: Value = serde_json::from_str(&agent_config_str)
-            .map_err(|e| format!("Failed to parse agent config: {}", e))?;
-
-        // Try "assistantId" first (test data), fallback to "id" (production AgentConfig serialization)
-        let assistant_id = agent_config
-            .get("assistantId")
-            .or_else(|| agent_config.get("id"))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                format!(
-                    "No id/assistantId in agent config for session {}",
-                    session_id
-                )
-            })?;
-
-        Ok(assistant_id.to_string())
+        crate::agent::extract_assistant_id_from_session(&session)
+            .ok_or_else(|| format!("Session {} has no assistant configuration", session_id))
     }
 
     pub async fn list_playbooks(

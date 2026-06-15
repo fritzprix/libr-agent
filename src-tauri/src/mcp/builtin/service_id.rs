@@ -9,6 +9,7 @@ pub enum BuiltinServiceId {
     Scratchpad,
     Workspace,
     Knowledge,
+    #[serde(alias = "dataset")]
     History,
     Agent,
     Skills,
@@ -17,7 +18,8 @@ pub enum BuiltinServiceId {
     Ui,
     Browser,
     ScheduledTask,
-    Bootstrap,
+    #[serde(rename = "setup-wizard", alias = "setup_wizard")]
+    SetupWizard,
     Tool, // Unified Tool Domain
     Media,
 }
@@ -38,7 +40,7 @@ impl BuiltinServiceId {
             "scratchpad" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
-            "history" => Some(Self::History),
+            "history" | "dataset" => Some(Self::History),
             "agent" => Some(Self::Agent),
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
@@ -46,7 +48,7 @@ impl BuiltinServiceId {
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
             "scheduled_task" | "scheduled-task" => Some(Self::ScheduledTask),
-            "bootstrap" => Some(Self::Bootstrap),
+            "setup-wizard" | "setup_wizard" | "bootstrap" => Some(Self::SetupWizard),
             "tool" => Some(Self::Tool),
             "media" => Some(Self::Media),
             _ => None,
@@ -68,7 +70,7 @@ impl BuiltinServiceId {
             Self::Ui => "ui",
             Self::Browser => "browser",
             Self::ScheduledTask => "scheduled_task",
-            Self::Bootstrap => "bootstrap",
+            Self::SetupWizard => "setup-wizard",
             Self::Tool => "tool",
             Self::Media => "media",
         }
@@ -135,11 +137,11 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::ScheduledTask,
         canonical: "scheduled_task",
-        optional: true,
+        optional: false,
     },
     BuiltinServiceEntry {
-        variant: BuiltinServiceId::Bootstrap,
-        canonical: "bootstrap",
+        variant: BuiltinServiceId::SetupWizard,
+        canonical: "setup-wizard",
         optional: true,
     },
     BuiltinServiceEntry {
@@ -164,6 +166,7 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
     "attachments",
     "ui",
     "tool",
+    "scheduled_task",
 ];
 
 impl fmt::Display for BuiltinServiceId {
@@ -175,6 +178,14 @@ impl fmt::Display for BuiltinServiceId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dataset_alias_resolves_to_history() {
+        assert_eq!(
+            BuiltinServiceId::from_alias("dataset"),
+            Some(BuiltinServiceId::History)
+        );
+    }
 
     #[test]
     fn name_round_trips() {

@@ -234,15 +234,7 @@ impl WorkspaceServer {
             repo.get_session(session_id)
                 .await
                 .map_err(|e| format!("Failed to load session metadata: {e}"))?
-                .and_then(|session| {
-                    let config_str = session.agent_config?;
-                    let config = serde_json::from_str::<Value>(&config_str).ok()?;
-                    config
-                        .get("assistantId")
-                        .or_else(|| config.get("id"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
+                .and_then(|session| crate::agent::extract_assistant_id_from_session(&session))
         } else {
             None
         };

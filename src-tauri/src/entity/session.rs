@@ -9,7 +9,7 @@ pub struct Model {
     pub status: String,
     pub model: String,
     pub provider: String,
-    pub agent_config: Option<String>,
+    pub assistant_id: Option<String>,
     pub parent_session_id: Option<String>,
     pub lineage_id: Option<String>,
     pub depth: Option<i32>,

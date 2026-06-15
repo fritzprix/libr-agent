@@ -34,11 +34,17 @@ pub(crate) async fn create_builtin_server(
     };
 
     match service_id {
-        BuiltinServiceId::Bootstrap => Ok(Some(Box::new(
-            crate::mcp::builtin::bootstrap::BootstrapServer::new(),
+        BuiltinServiceId::SetupWizard => Ok(Some(Box::new(
+            crate::mcp::builtin::setup_wizard::SetupWizardServer::new(),
         ))),
         BuiltinServiceId::Knowledge => {
-            let assistant_id = get_assistant_id_from_session(&_session_id).await?;
+            let session = crate::get_session_repository()
+                .get_session(&_session_id)
+                .await
+                .map_err(|e| format!("Database error fetching session: {}", e))?
+                .ok_or_else(|| format!("Session not found: {}", _session_id))?;
+            let assistant_id = crate::agent::extract_assistant_id_from_session(&session)
+                .ok_or_else(|| "Session has no assistant configuration".to_string())?;
             Ok(Some(Box::new(
                 crate::mcp::builtin::knowledge::KnowledgeServer::new(assistant_id, _db).await?,
             )))
@@ -99,28 +105,4 @@ pub(crate) async fn create_builtin_server(
             crate::mcp::builtin::media::MediaServer::new(_session_id, _session_manager),
         ))),
     }
-}
-
-async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
-    let session = crate::get_session_repository()
-        .get_session(session_id)
-        .await
-        .map_err(|e| format!("Database error fetching session: {}", e))?
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-    let config_str = session
-        .agent_config
-        .clone()
-        .ok_or_else(|| "Session has no config".to_string())?;
-
-    let config: serde_json::Value = serde_json::from_str(&config_str)
-        .map_err(|e| format!("Invalid session config JSON: {}", e))?;
-
-    config
-        .get("assistant_id")
-        .or_else(|| config.get("assistantId"))
-        .or_else(|| config.get("id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "No assistant ID in session config".to_string())
 }

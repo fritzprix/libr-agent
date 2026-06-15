@@ -135,23 +135,26 @@ LibrAgentは成長し続ける**バンドルスキル**ライブラリを同梱�
 
 最重要のday-oneスキル：
 
-| スキル               | 機能                                                                                      |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| `system-setup`       | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール |
-| `mcp-installer`      | npmパッケージ、GitHub URL、JSON設定ブロックからMCPサーバーを登録                          |
-| `mcp-importer`       | Cursor、VS Code、Windsurf等から既存MCP設定をインポート                                    |
-| `delegate`           | 明示的なコンテキスト転送と系譜追跡付きで親→子セッションの引き継ぎを案内                   |
-| `teamwork`           | 調整されたマルチエージェント作業のための共有ワークスペース憲法をスキャフォールド          |
-| `org`                | 持続的な組織アイデンティティとorg-visibleメンバー階層を正式化                             |
-| `schedule`           | 無人自動化のための定期スケジュールタスクグループを作成・管理                              |
-| `soul-awakening`     | エージェントを`SOUL.md`ペルソナに固定——トーン、スタンス、アイデンティティ                 |
+| スキル           | 機能                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| `setup-wizard`   | すべてのプラットフォームで不足しているランタイム(Python、Node.js、uv)を検出・インストール   |
+| `tool-installer` | npm/GitHub/JSONからMCPサーバーを登録、またはCursor・VS Code・Windsurf等から設定をインポート |
+| `delegate`       | 明示的なコンテキスト転送と系譜追跡付きで親→子セッションの引き継ぎを案内                     |
+| `teamwork`       | 調整されたマルチエージェント作業のための共有ワークスペース憲法をスキャフォールド            |
+| `org`            | 持続的な組織アイデンティティとorg-visibleメンバー階層を正式化                               |
+| `schedule`       | 無人自動化のための定期スケジュールタスクグループを作成・管理                                |
+| `soul-awakening` | エージェントを`SOUL.md`ペルソナに固定——トーン、スタンス、アイデンティティ                   |
 
 これはオペレーターレイヤーだけです。LibrAgentはドメインスキルも提供します：
 
-- **知識と研究**：`deep-research-report`、`knowledge-distiller`
-- **ドキュメントワークフロー**：`to-md`、`docx`、`pptx`
-- **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`mcp-builder`
-- **特殊操作**：`computer-diagnosis`および他の専門ヘルパー
+- **知識と研究**：`deep-research`、`knowledge-distiller`
+- **ドキュメントとワークスペースコンテンツ**：`to-md`、`docx`、`pptx`、`workspace-indexer`、`repo-wiki`、`data-viz`
+- **開発者ワークフロー**：`git-workflow`, `bench`
+- **ワークスペースオンボーディング**：`agent-init`
+- **調整とアシスタント**：`consensus-delegation`、`session-schedule`、`recruit`、`boost`
+- **外部連携**：`email-integration`、`calendar-mgmt`、`telegram-cli`、`x-cli`
+- **スキルとワークフロー作成**：`skill-creator`、`skill-deployer`、`playbook-creator`、`tool-creator`、`fine-tune`
+- **特殊操作**：`computer-diagnosis`
 
 _重要：`bootstrap`はこれらのスキルと並行して使用される内蔵機能です。バンドルスキルは再利用可能な手順であり、内蔵機能とMCPツールはその下の実行基盤です。_
 
@@ -202,10 +205,10 @@ _重要：`bootstrap`はこれらのスキルと並行して使用される内�
 **[リリースページ](https://github.com/fritzprix/libr-agent/releases/latest)**からプラットフォーム別の最新インストーラーをダウンロード。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.8.11_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64-setup.exe) · [`LibrAgent_0.8.11_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.11_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.11_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.AppImage) · [`LibrAgent_0.8.11_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent_0.8.11_amd64.deb) · [`LibrAgent-0.8.11-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.11/LibrAgent-0.8.11-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.11)
+- **Windows:** [`LibrAgent_0.8.13_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64-setup.exe) · [`LibrAgent_0.8.13_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.13_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.13_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.AppImage) · [`LibrAgent_0.8.13_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.deb) · [`LibrAgent-0.8.13-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent-0.8.13-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.13)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **開発者セットアップ：**
@@ -223,12 +226,11 @@ pnpm tauri dev
 
 - クラウド：OpenAI / Anthropic / Gemini / Groq APIキーを貼り付け
 - ローカル：`ollama pull qwen3:14b`後にSettingsでOllamaを選択
-- CursorやVS Codeを使用中？任意のエージェントに：_「CursorからMCPサーバーをインポートして」_ → `mcp-importer`が対応
-
-**ステップ2——MCPツールを追加** (Extensionsサイドバー)
+  **ステップ2——MCPツールを追加** (Extensionsサイドバー)
 
 - プリセットカタログを閲覧してInstallをクリック、または
-- エージェントに：_「Install @modelcontextprotocol/server-everything」_ → `mcp-installer`が自動登録
+- エージェントに：_「Install @modelcontextprotocol/server-everything」_ → `tool-installer`が自動登録
+- CursorやVS Codeを使用中？任意のエージェントに：_「CursorからMCPサーバーをインポートして」_ → `tool-installer`が対応
 
 **ステップ3——最初のエージェントを作成**
 

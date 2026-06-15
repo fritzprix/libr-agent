@@ -60,12 +60,8 @@ pub async fn resume_session(
         }
     }
 
-    // Deserialize agent config
-    let agent_config = if let Some(config_json) = &session.agent_config {
-        crate::agent::AgentConfig::from_json(config_json)?
-    } else {
-        return Err(format!("Session {} has no agent config", session_id));
-    };
+    // Deserialize agent config (live assistant settings + session lineage)
+    let agent_config = crate::agent::resolve_agent_config(&session).await?;
 
     // Extract builtin tool IDs from agent config
     let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
@@ -98,7 +94,7 @@ pub async fn resume_session(
             session_id
         );
         existing_session.metadata = session.clone();
-        // Invalidate cached stable prompt — metadata (agent_config, name) may have
+        // Invalidate cached stable prompt — metadata (assistant binding, name) may have
         // changed between sessions, so it must be rebuilt on the next LLM call.
         *existing_session.cached_stable_prompt.write().await = None;
         // Update compact context if it was loaded
@@ -150,7 +146,7 @@ pub async fn resume_session(
     Ok(session)
 }
 
-/// Update agent configuration for an existing session
+/// Update model/provider (and optionally assistant binding) for an existing session
 pub async fn update_session_config(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -158,26 +154,20 @@ pub async fn update_session_config(
     session_id: &str,
     model: Option<String>,
     provider: Option<String>,
-    agent_config: crate::agent::AgentConfig,
+    assistant_id: Option<String>,
 ) -> Result<(), String> {
-    // 1. Validate new config
-    agent_config.validate()?;
-
-    // 2. Serialize config
-    let config_json = agent_config.to_json()?;
-
-    // 3. Update in database using injected repository
     session_repo
-        .update_session_config(
-            session_id,
-            model.clone(),
-            provider.clone(),
-            Some(config_json.clone()),
-        )
+        .update_session_config(session_id, model.clone(), provider.clone())
         .await
         .map_err(|e| format!("Failed to update session config: {}", e))?;
 
-    // 4. Update active session in memory
+    if let Some(assistant_id) = assistant_id.clone() {
+        session_repo
+            .update_assistant_id(session_id, Some(assistant_id))
+            .await
+            .map_err(|e| format!("Failed to update session assistant_id: {}", e))?;
+    }
+
     let mut active = active_sessions.write().await;
     if let Some(session) = active.get_mut(session_id) {
         if let Some(m) = model {
@@ -186,24 +176,14 @@ pub async fn update_session_config(
         if let Some(p) = provider {
             session.metadata.provider = p;
         }
-        session.metadata.agent_config = Some(config_json);
+        if let Some(id) = assistant_id {
+            session.metadata.assistant_id = Some(id);
+        }
         session.metadata.updated_at = chrono::Utc::now().timestamp_millis();
-        // Invalidate the stable prompt cache — the agent_config (system_prompt, etc.)
-        // has changed so it must be rebuilt on the next LLM call.
         *session.cached_stable_prompt.write().await = None;
     }
 
     log::info!("Updated agent config for session: {}", session_id);
-
-    // 5. Emit event to notify frontend of config change
-    // We reuse StatusChanged or create a new event.
-    // Ideally we should have a `ConfigChanged` event, but `StatusChanged` might force a refresh if the frontend re-fetches.
-    // However, to be explicit, let's just log for now. The frontend will update its local state optimistically or re-fetch.
-    // Or we can emit `AgentEvent::StatusChanged` if we want to force some side-effects, but that's hacky.
-
-    // Let's rely on the command response for the immediate update,
-    // and if we need broadcast, we'd add `ConfigChanged` to `AgentEvent`.
-    // For now, simple DB update is enough as the frontend driving this change will know it happened.
 
     Ok(())
 }

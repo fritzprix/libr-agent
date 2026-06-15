@@ -20,7 +20,7 @@ fn build_session(
         status: SessionStatus::Idle,
         model: "gpt-5.4".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: parent_session_id.map(str::to_string),
         lineage_id: Some("lineage-1".to_string()),
         depth,
@@ -285,8 +285,9 @@ async fn agent_server_get_service_context_composes_child_and_org_context() {
     let prompt = context.context_prompt;
 
     // 5. Assert it contains both child and org details
-    assert!(prompt.contains("## Child Sessions"));
-    assert!(prompt.contains("- child-org-session — Child Analyst (status: idle)"));
+    assert!(prompt.contains("### Sub-Agent Sessions (Reuse via messageToSession)"));
+    assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
+    assert!(prompt.contains("  - `child-org-session` (name: \"Child Analyst\")"));
     assert!(prompt.contains("## Explicit Org Layer"));
     assert!(prompt.contains("- Org: Beta Org"));
 }
@@ -341,4 +342,111 @@ async fn org_service_context_truncates_child_sessions_exceeding_max_limit() {
         context.contains("- ... and 5 more omitted"),
         "should contain the truncation note indicating 5 more omitted"
     );
+}
+
+#[tokio::test]
+async fn agent_server_get_service_context_includes_active_sessions_notice() {
+    use std::sync::Arc;
+    use tauri_mcp_agent_lib::mcp::builtin::agent::AgentServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+
+    // 1. Create a parent session
+    repo.upsert_session(&build_session(
+        "parent-active-test",
+        "Parent Coordinator",
+        None,
+        Some(0),
+        None,
+        None,
+        None,
+    ))
+    .await
+    .expect("parent session should persist");
+
+    // 2. Create active child sessions
+    let mut child1 = build_session(
+        "child-idle",
+        "Active Child 1",
+        Some("parent-active-test"),
+        Some(1),
+        None,
+        None,
+        None,
+    );
+    child1.status = SessionStatus::Idle;
+    repo.upsert_session(&child1)
+        .await
+        .expect("child-idle should persist");
+
+    let mut child2 = build_session(
+        "child-paused",
+        "Active Child 2",
+        Some("parent-active-test"),
+        Some(1),
+        None,
+        None,
+        None,
+    );
+    child2.status = SessionStatus::Paused;
+    repo.upsert_session(&child2)
+        .await
+        .expect("child-paused should persist");
+
+    let mut child3 = build_session(
+        "child-error",
+        "Error Child",
+        Some("parent-active-test"),
+        Some(1),
+        None,
+        None,
+        None,
+    );
+    child3.status = SessionStatus::Error;
+    repo.upsert_session(&child3)
+        .await
+        .expect("child-error should persist");
+
+    // 3. Initialize AgentServer
+    let server = AgentServer::new("parent-active-test".to_string(), Arc::new(db), None)
+        .await
+        .expect("AgentServer should initialize");
+
+    // 4. Retrieve service context
+    let context = server.get_service_context(None).await;
+    let prompt = context.context_prompt;
+
+    // Assert volatility is Volatile to prevent dynamic sorting shuffles
+    assert_eq!(
+        context.volatility,
+        tauri_mcp_agent_lib::mcp::types::ContextVolatility::Volatile
+    );
+
+    // 5. Assert child sessions lists are omitted when active sessions exist
+    assert!(!prompt.contains("## Child Sessions"));
+
+    // 6. Assert active sessions notice is correctly built with status groupings
+    assert!(prompt.contains("### Sub-Agent Sessions (Reuse via messageToSession)"));
+    assert!(prompt.contains("⚠️ **Reuse Existing Sessions First**:"));
+
+    // Group: Ready to Reuse (Idle)
+    assert!(prompt.contains("- **Ready to Reuse (Idle):**"));
+    assert!(prompt.contains("  These sessions are idle and ready for new instructions."));
+    assert!(prompt.contains("  - `child-idle` (name: \"Active Child 1\")"));
+
+    // Group: Suspended (Paused)
+    assert!(prompt.contains("- **Suspended (Paused):**"));
+    assert!(
+        prompt.contains("  These sessions were suspended (e.g. waiting for input or approval).")
+    );
+    assert!(prompt.contains("  - `child-paused` (name: \"Active Child 2\")"));
+
+    // Group: Failed (Error)
+    assert!(prompt.contains("- **Failed (Error):**"));
+    assert!(prompt.contains(
+        "  These sessions encountered an error. Send a message to retry or recover them."
+    ));
+    assert!(prompt.contains("  - `child-error` (name: \"Error Child\")"));
 }

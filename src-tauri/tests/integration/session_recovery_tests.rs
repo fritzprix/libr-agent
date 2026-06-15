@@ -123,7 +123,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         status,
         model: "gpt-5.4".to_string(),
         provider: "openai".to_string(),
-        agent_config: Some(r#"{"name":"Recovery regression"}"#.to_string()),
+        assistant_id: None,
         parent_session_id: None,
         lineage_id: None,
         depth: None,

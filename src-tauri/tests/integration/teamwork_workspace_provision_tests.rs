@@ -14,7 +14,7 @@ fn make_session(session_id: &str) -> SessionMetadata {
         status: SessionStatus::Idle,
         model: "gpt-5.4".to_string(),
         provider: "openai".to_string(),
-        agent_config: None,
+        assistant_id: None,
         parent_session_id: None,
         lineage_id: Some(session_id.to_string()),
         depth: Some(0),

@@ -548,7 +548,6 @@ fn join_normal_component_slice(components: &[Component<'_>]) -> String {
 use crate::mcp::types::{MCPContent, MCPResult, ServiceInfo};
 use crate::repositories::session_repository::SessionRepository;
 use serde_json::json;
-use serde_json::Value;
 use std::collections::HashSet;
 
 /// Creates a standardized UI resource response with service information.
@@ -663,16 +662,7 @@ pub async fn load_session_tool_access(session_id: Option<&str>) -> SessionToolAc
         }
     };
 
-    let Some(config_str) = session.agent_config else {
-        return SessionToolAccess {
-            session_id: Some(session_id.to_string()),
-            allowed_builtin_aliases: None,
-            allowed_external_server_ids: None,
-            agent_id: None,
-        };
-    };
-
-    let agent_config = match crate::agent::AgentConfig::from_json(&config_str) {
+    let agent_config = match crate::agent::resolve_agent_config(&session).await {
         Ok(config) => config,
         Err(_) => {
             return SessionToolAccess {
@@ -684,16 +674,7 @@ pub async fn load_session_tool_access(session_id: Option<&str>) -> SessionToolAc
         }
     };
 
-    let agent_id = agent_config.id.clone().or_else(|| {
-        serde_json::from_str::<Value>(&config_str)
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("assistantId")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-    });
+    let agent_id = agent_config.id.clone().or(session.assistant_id.clone());
 
     let allowed_builtin_aliases = Some(
         crate::agent::tools::runtime_allowed_builtin_service_aliases(&agent_config)

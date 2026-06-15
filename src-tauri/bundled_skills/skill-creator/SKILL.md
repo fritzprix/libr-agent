@@ -1,7 +1,6 @@
 ---
 name: skill-creator
 description: Guide for creating and validating agent skills. Use when authoring or updating a SKILL.md, writing frontmatter, structuring scripts/references/assets, or checking a skill before deployment. Triggers on create skill, write skill, skill frontmatter, validate skill, fix skill YAML. For installing a finished skill, use skill-deployer instead.
-license: Complete terms in LICENSE.txt
 ---
 
 # Skill Creator

@@ -94,14 +94,14 @@ pub struct RespondChannelPermissionRequest {
     pub behavior: String,
 }
 
-/// Request to update agent configuration for a session
+/// Request to update session model/provider binding for a session
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAgentConfigRequest {
     pub session_id: String,
     pub model: Option<String>,
     pub provider: Option<String>,
-    pub agent_config: crate::agent::AgentConfig,
+    pub assistant_id: Option<String>,
 }
 
 /// Response for agent operations

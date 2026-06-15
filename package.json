@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.8.11",
+  "version": "0.8.13",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -21,6 +21,11 @@
     "shareable-config"
   ],
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20",
+    "pnpm": "9.15.9"
+  },
   "scripts": {
     "dev": "node scripts/sync-builtin-services.cjs && vite",
     "build": "node scripts/sync-builtin-services.cjs && pnpm build:nosync",
@@ -50,6 +55,9 @@
     "rust:test": "node scripts/run-rust-command.cjs test --tests --profile ci-test",
     "rust:clean": "cd src-tauri && cargo clean",
     "rust:validate": "pnpm rust:fmt && pnpm rust:clippy:all",
+    "skills:audit": "node scripts/audit-bundled-skills.cjs",
+    "skill:validate": "python .agents/skills/skill-creator/scripts/validate_skill.py",
+    "skill:package": "python .agents/skills/skill-creator/scripts/package_skill.py",
     "refactor:prepare": "node scripts/refactor-pipeline.js prepare",
     "refactor:validate": "node scripts/refactor-pipeline.js validate",
     "refactor:validate:legacy": "pnpm refactor:prepare && pnpm lint && pnpm test:run:validate && pnpm rust:clippy && pnpm rust:check:all && pnpm rust:test && pnpm build && pnpm perf:bundle && pnpm dead-code",
@@ -57,7 +65,10 @@
     "verify-planning:file": "node scripts/manage-logs.js --pattern=\"PLANNING\" -n=5000",
     "log": "node scripts/manage-logs.js",
     "error": "node scripts/manage-logs.js --error",
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "preinstall": "node scripts/enforce-pnpm-version.cjs",
+    "prepare": "node scripts/setup-git-hooks.cjs",
+    "lockfile:check": "pnpm install --frozen-lockfile"
   },
   "pnpm": {
     "overrides": {

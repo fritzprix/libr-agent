@@ -63,9 +63,6 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         });
     }
 
-    // Serialize config for storage
-    let config_json = agent_config.to_json()?;
-
     // Resolve mandatory model/provider
     let (resolved_model, resolved_provider) = if let (Some(m), Some(p)) = (model, provider) {
         (m, p)
@@ -89,10 +86,10 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     // Resolve workspace override: check DB first so the pool is correct before any lazy loading.
     // For existing sessions, the override may already be in the DB (set via set_override which
     // now persists to DB). For new sessions, DB returns None and WorkspaceService returns None.
-    let workspace_override = if let Ok(Some(existing_session)) =
-        session_repo.get_session(&session_id).await
-    {
-        if let Some(db_override) = existing_session.workspace_override {
+    let existing_session = session_repo.get_session(&session_id).await.ok().flatten();
+
+    let workspace_override = if let Some(existing_session) = existing_session.as_ref() {
+        if let Some(db_override) = existing_session.workspace_override.clone() {
             let path = std::path::PathBuf::from(&db_override);
             // Validate that the persisted path still exists and is accessible.
             // If the user has since deleted or moved the directory, fall back to the
@@ -142,7 +139,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         status: SessionStatus::Idle,
         model: resolved_model,
         provider: resolved_provider,
-        agent_config: Some(config_json),
+        assistant_id: agent_config.id.clone(),
         parent_session_id: agent_config.parent_session_id.clone(),
         lineage_id: agent_config.lineage_id.clone(),
         depth: agent_config.depth,

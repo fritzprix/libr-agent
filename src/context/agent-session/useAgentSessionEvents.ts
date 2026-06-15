@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { openAgentSession } from '@/lib/backend/agent-commands';
+import { getAssistant } from '@/lib/backend/assistants';
 import { getLogger } from '@/lib/logger';
-import { coalesceExecutionModeFlags } from '@/lib/session-metadata';
+import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
 import { rustMessageToMessage } from '@/models/chat';
-import type { AgentSession } from '@/models/agent';
 import type { AgentEventPayload } from './types';
 import { buildMessageError } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
@@ -285,45 +285,15 @@ export function useAgentSessionEvents(
 
         if (!isMounted) return;
 
-        let assistant: import('@/models/chat').Assistant | undefined;
-        if (sessionMetadata.agentConfig) {
-          try {
-            assistant = JSON.parse(sessionMetadata.agentConfig);
-          } catch (e) {
-            logger.error('Failed to parse agent config', e);
-          }
-        }
+        const assistant = sessionMetadata.assistantId
+          ? await getAssistant(sessionMetadata.assistantId)
+          : undefined;
 
-        const executionMode = coalesceExecutionModeFlags(
-          sessionMetadata.yoloMode,
-          sessionMetadata.unsafeMode,
-        );
-
-        const sessionData: AgentSession = {
-          id: sessionMetadata.id,
-          name: sessionMetadata.name,
-          status: sessionMetadata.status,
-          model: sessionMetadata.model,
-          provider: sessionMetadata.provider,
-          isBookmarked: sessionMetadata.isBookmarked,
+        const sessionData = mapSessionMetadataToAgentSession(
+          sessionMetadata,
+          response.pendingApprovals?.length ?? 0,
           assistant,
-          createdAt: new Date(sessionMetadata.createdAt),
-          updatedAt: sessionMetadata.updatedAt
-            ? new Date(sessionMetadata.updatedAt)
-            : undefined,
-          lastViewedAt: sessionMetadata.lastViewedAt
-            ? new Date(sessionMetadata.lastViewedAt)
-            : undefined,
-          lastMessageAt: sessionMetadata.lastMessageAt
-            ? new Date(sessionMetadata.lastMessageAt)
-            : undefined,
-          lastAttentionAt: sessionMetadata.lastAttentionAt
-            ? new Date(sessionMetadata.lastAttentionAt)
-            : undefined,
-          lastAttentionReason: sessionMetadata.lastAttentionReason,
-          yoloMode: executionMode.yoloMode,
-          unsafeMode: executionMode.unsafeMode,
-        };
+        );
 
         setters.setSession(sessionData);
         setters.setWorkflowStatus(sessionData.status);

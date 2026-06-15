@@ -27,34 +27,36 @@ pub(crate) async fn preprocess_assistant_tool_calls(
     let mut forced_circuit_break_message = None;
 
     if let Some(tool_calls) = &mut assistant_message.tool_calls {
-        let mut break_index = None;
-        let mut break_action = None;
-        let mut ui_alias_enabled = true;
         let loop_threshold = circuit_breaker::load_loop_prevention_threshold().await;
 
-        let sessions = active_sessions.read().await;
-        if let Some(session) = sessions.get(session_id) {
-            ui_alias_enabled = circuit_breaker::is_builtin_alias_enabled(
-                session.metadata.agent_config.as_deref(),
-                "ui",
-            );
-            let messages = session.messages.read().await;
-            let call_signature_by_id = circuit_breaker::build_tool_call_indices(&messages);
+        let (session_metadata, break_index, break_action) = {
+            let sessions = active_sessions.read().await;
+            match sessions.get(session_id) {
+                None => (None, None, None),
+                Some(session) => {
+                    let metadata = session.metadata.clone();
+                    let messages = session.messages.read().await;
+                    let call_signature_by_id = circuit_breaker::build_tool_call_indices(&messages);
 
-            for (index, tool_call) in tool_calls.iter().enumerate() {
-                if let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
-                    &messages,
-                    tool_call,
-                    &call_signature_by_id,
-                    loop_threshold,
-                ) {
-                    break_index = Some(index);
-                    break_action = Some(action);
-                    break;
+                    let mut break_index = None;
+                    let mut break_action = None;
+                    for (index, tool_call) in tool_calls.iter().enumerate() {
+                        if let Some(action) = circuit_breaker::evaluate_circuit_breaker_action(
+                            &messages,
+                            tool_call,
+                            &call_signature_by_id,
+                            loop_threshold,
+                        ) {
+                            break_index = Some(index);
+                            break_action = Some(action);
+                            break;
+                        }
+                    }
+
+                    (Some(metadata), break_index, break_action)
                 }
             }
-        }
-        drop(sessions);
+        };
 
         if let Some(index) = break_index {
             if let Some(action) = break_action {
@@ -70,6 +72,25 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                             tool_name,
                             count
                         );
+
+                        let ui_alias_enabled = match session_metadata.as_ref() {
+                            Some(metadata) => {
+                                match crate::agent::resolve_agent_config(metadata).await {
+                                    Ok(config) => {
+                                        circuit_breaker::is_builtin_alias_enabled(&config, "ui")
+                                    }
+                                    Err(error) => {
+                                        log::warn!(
+                                            "Failed to resolve agent config for circuit breaker in session {}: {}",
+                                            session_id,
+                                            error
+                                        );
+                                        true
+                                    }
+                                }
+                            }
+                            None => true,
+                        };
 
                         if ui_alias_enabled {
                             let circuit_break_call = ToolCall {
@@ -245,7 +266,7 @@ async fn apply_tool_loop_token_fence(
     // Clone Arc handles while holding the sessions read-lock (no async ops, fast).
     // The guard is dropped at the end of this block so writers are not stalled
     // during the subsequent inner async reads.
-    let (messages_lock, last_request_lock, agent_config_str) = {
+    let (messages_lock, last_request_lock, session_metadata) = {
         let sessions = active_sessions.read().await;
         let Some(session) = sessions.get(session_id) else {
             return;
@@ -253,16 +274,16 @@ async fn apply_tool_loop_token_fence(
         (
             Arc::clone(&session.messages),
             Arc::clone(&session.last_completion_request),
-            session.metadata.agent_config.clone(),
+            session.metadata.clone(),
         )
     };
     // sessions guard is dropped here — writers can now acquire active_sessions
 
     let history_messages = messages_lock.read().await.clone();
     let last_completion_request = last_request_lock.read().await.clone();
-    let configured_max_output_tokens = agent_config_str
-        .as_deref()
-        .and_then(|config| crate::agent::AgentConfig::from_json(config).ok())
+    let configured_max_output_tokens = crate::agent::resolve_agent_config(&session_metadata)
+        .await
+        .ok()
         .and_then(|config| config.max_tokens);
     let (system_prompt_tokens, tools_tokens) =
         estimate_parent_request_prefix_tokens(last_completion_request.as_ref());
