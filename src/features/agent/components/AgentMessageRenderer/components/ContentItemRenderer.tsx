@@ -13,6 +13,7 @@ import {
   VideoContentRenderer,
 } from './MediaContentRenderer';
 import { MarkdownText } from './MarkdownText';
+import { isSafeExternalUrl } from '../utils/url';
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -205,15 +206,21 @@ export function ContentItemRenderer({
     }
     case 'resource_link': {
       const linkItem = contentItem as ResourceLinkContentItem;
+      const isSafe = isSafeExternalUrl(linkItem.uri);
+
       return (
         <div className="rounded-lg border bg-muted p-2">
-          <a
-            href={linkItem.uri}
-            onClick={(event) => onLinkClick(event, linkItem.uri)}
-            className="text-primary underline hover:text-primary/90"
-          >
-            {linkItem.name}
-          </a>
+          {isSafe ? (
+            <a
+              href={linkItem.uri}
+              onClick={(event) => onLinkClick(event, linkItem.uri)}
+              className="text-primary underline hover:text-primary/90"
+            >
+              {linkItem.name}
+            </a>
+          ) : (
+            <span className="text-muted-foreground">{linkItem.name}</span>
+          )}
           {linkItem.description ? (
             <div className="mt-1 text-sm text-muted-foreground">
               {linkItem.description}
