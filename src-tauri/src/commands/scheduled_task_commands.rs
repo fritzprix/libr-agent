@@ -23,6 +23,7 @@ pub struct ScheduledTaskDto {
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
     pub yolo_mode: bool,
+    pub unsafe_mode: bool,
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub task_category: String,
@@ -87,6 +88,7 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             group_name: m.group_name,
             message: m.message,
             yolo_mode: m.yolo_mode,
+            unsafe_mode: m.unsafe_mode,
             created_by_session_id: m.created_by_session_id,
             session_id: m.session_id,
             task_category: m.task_category,
@@ -113,6 +115,7 @@ pub struct CreateScheduledTaskRequest {
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
     pub yolo_mode: bool,
+    pub unsafe_mode: bool,
     pub workspace_override: Option<String>,
 }
 
@@ -128,6 +131,7 @@ pub struct UpdateScheduledTaskRequest {
     pub group_name: Option<String>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
+    pub unsafe_mode: Option<bool>,
     pub workspace_override: Option<Option<String>>,
     pub clear_group: Option<bool>,
     pub enabled: Option<bool>,
@@ -152,6 +156,7 @@ pub async fn create_scheduled_task(
             group_name: request.group_name,
             message: request.message,
             yolo_mode: request.yolo_mode,
+            unsafe_mode: request.unsafe_mode,
             created_by_session_id: None,
             session_id: None,
             workspace_override: request.workspace_override,
@@ -217,6 +222,7 @@ pub async fn update_scheduled_task(
             },
             message: request.message,
             yolo_mode: request.yolo_mode,
+            unsafe_mode: request.unsafe_mode,
             workspace_override: request.workspace_override,
             enabled: request.enabled,
             next_run_at: None,

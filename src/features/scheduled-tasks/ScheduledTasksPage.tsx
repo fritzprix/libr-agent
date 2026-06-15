@@ -27,6 +27,7 @@ interface ScheduledTaskFormData {
   groupName: string | null;
   message: string;
   yoloMode: boolean;
+  unsafeMode: boolean;
   workspaceOverride: string | null;
   clearGroup?: boolean;
 }

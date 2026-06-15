@@ -69,6 +69,7 @@ async fn sync_task_workspace_override_clears_stale_scheduled_override() {
             group_name: None,
             message: "Generate report".to_string(),
             yolo_mode: false,
+            unsafe_mode: false,
             created_by_session_id: Some(session_id.to_string()),
             session_id: None,
             workspace_override: Some(missing_workspace_str.clone()),

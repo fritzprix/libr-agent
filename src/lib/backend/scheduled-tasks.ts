@@ -17,6 +17,7 @@ export interface ScheduledTask {
   /** Supports @playbook:name and @skill:name mention syntax */
   message: string;
   yoloMode: boolean;
+  unsafeMode: boolean;
   createdBySessionId: string | null;
   sessionId: string | null;
   taskCategory: string;
@@ -47,6 +48,7 @@ export interface CreateScheduledTaskRequest {
   groupName?: string | null;
   message: string;
   yoloMode: boolean;
+  unsafeMode: boolean;
   workspaceOverride?: string | null;
 }
 
@@ -59,6 +61,7 @@ export interface UpdateScheduledTaskRequest {
   groupName?: string | null;
   message?: string;
   yoloMode?: boolean;
+  unsafeMode?: boolean;
   workspaceOverride?: string | null;
   clearGroup?: boolean;
   enabled?: boolean;
