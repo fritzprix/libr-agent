@@ -100,6 +100,7 @@ interface ScheduledTaskModalProps {
     groupName: string | null;
     message: string;
     yoloMode: boolean;
+    unsafeMode: boolean;
     workspaceOverride: string | null;
     clearGroup?: boolean;
   }) => Promise<void>;
@@ -151,6 +152,7 @@ interface ScheduledTaskFormProps {
     groupName: string | null;
     message: string;
     yoloMode: boolean;
+    unsafeMode: boolean;
     workspaceOverride: string | null;
     clearGroup?: boolean;
   }) => Promise<void>;
@@ -193,6 +195,7 @@ function ScheduledTaskForm({
   const [groupName, setGroupName] = useState(task?.groupName ?? '');
   const [message, setMessage] = useState(task?.message ?? '');
   const [yoloMode, setYoloMode] = useState(task?.yoloMode ?? false);
+  const [unsafeMode, setUnsafeMode] = useState(task?.unsafeMode ?? false);
   const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
     task?.workspaceOverride ?? null,
   );
@@ -254,6 +257,7 @@ function ScheduledTaskForm({
         groupName: groupName.trim() || null,
         message: message.trim(),
         yoloMode,
+        unsafeMode,
         workspaceOverride,
         clearGroup: Boolean(task?.groupName) && !groupName.trim(),
       });
@@ -503,6 +507,35 @@ function ScheduledTaskForm({
               id="yolo-mode"
               checked={yoloMode}
               onCheckedChange={setYoloMode}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 p-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Zap
+                  size={14}
+                  className={
+                    unsafeMode
+                      ? 'text-primary fill-primary'
+                      : 'text-muted-foreground'
+                  }
+                />
+                <Label htmlFor="unsafe-mode" className="text-sm font-medium">
+                  {t('scheduledTasks.modal.unsafeModeLabel', 'Unsafe Mode')}
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scheduledTasks.modal.unsafeModeHint',
+                  'Execute tools with unsafe permissions. Overrides YOLO mode.',
+                )}
+              </p>
+            </div>
+            <Switch
+              id="unsafe-mode"
+              checked={unsafeMode}
+              onCheckedChange={setUnsafeMode}
             />
           </div>
         </div>

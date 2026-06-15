@@ -53,6 +53,10 @@ fn schedule_callback_tool() -> MCPTool {
                         Some("Cron expression for recurring session callbacks. Mutually exclusive with delaySeconds."),
                     ),
                 ),
+                (
+                    "unsafeMode".to_string(),
+                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
+                ),
             ],
             vec!["message".to_string()],
             None,
@@ -120,6 +124,10 @@ fn create_scheduled_task_tool() -> MCPTool {
                 (
                     "yoloMode".to_string(),
                     boolean_prop(Some("Whether the run should execute in YOLO mode.")),
+                ),
+                (
+                    "unsafeMode".to_string(),
+                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
                 ),
                 (
                     "workspaceOverride".to_string(),
@@ -257,6 +265,10 @@ fn update_scheduled_task_tool() -> MCPTool {
                 (
                     "yoloMode".to_string(),
                     boolean_prop(Some("Updated YOLO mode flag.")),
+                ),
+                (
+                    "unsafeMode".to_string(),
+                    boolean_prop(Some("Execute tools with unsafe permissions (higher privilege than yolo).")),
                 ),
                 (
                     "workspaceOverride".to_string(),

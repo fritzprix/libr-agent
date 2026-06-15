@@ -40,6 +40,7 @@ describe('scheduled-tasks backend wrapper', () => {
     groupName: null,
     message: 'Hello',
     yoloMode: false,
+    unsafeMode: false,
     createdBySessionId: null,
     sessionId: null,
     workspaceOverride: null,
@@ -59,6 +60,7 @@ describe('scheduled-tasks backend wrapper', () => {
       assistantId: 'assistant-1',
       message: 'Hello',
       yoloMode: false,
+      unsafeMode: false,
       workspaceOverride: '/tmp/project',
     };
 

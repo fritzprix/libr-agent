@@ -22,6 +22,7 @@ fn create_input(
         group_name: group_name.map(ToString::to_string),
         message: format!("Run task {}", name),
         yolo_mode: false,
+        unsafe_mode: false,
         created_by_session_id: Some("session-origin".to_string()),
         session_id: None,
         workspace_override: None,
