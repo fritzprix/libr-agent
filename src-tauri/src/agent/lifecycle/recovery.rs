@@ -164,15 +164,21 @@ pub async fn recover_sessions_with_dispatcher(
     let mut recovered_count = 0;
 
     for session in all_sessions {
-        // Only recover sessions that were BUSY (actively running)
-        if matches!(session.status, SessionStatus::Busy) {
+        // Only recover sessions that were BUSY (actively running) or QUEUED (waiting for concurrency slot)
+        if matches!(session.status, SessionStatus::Busy | SessionStatus::Queued) {
+            let target_status = match session.status {
+                SessionStatus::Busy => SessionStatus::Paused,
+                _ => SessionStatus::Idle,
+            };
+
             log::warn!(
-                "Recovering session '{}' from BUSY state (possible crash)",
-                session.id
+                "Recovering session '{}' from {:?} state (possible crash)",
+                session.id,
+                session.status
             );
 
             let mut recovered_metadata = session.clone();
-            recovered_metadata.status = SessionStatus::Paused;
+            recovered_metadata.status = target_status.clone();
 
             // Ensure the session exists in memory before persisting the pause transition.
             // Recovery used to call update_session_status first, which failed because the
@@ -202,17 +208,19 @@ pub async fn recover_sessions_with_dispatcher(
                 active_sessions,
                 dispatcher,
                 &session.id,
-                SessionStatus::Paused,
+                target_status.clone(),
             )
             .await?;
 
-            // Close any orphaned tool calls that never got a result (crash tombstones)
-            if let Err(e) = close_orphaned_tool_calls(&session.id).await {
-                log::warn!(
-                    "Failed to close orphaned tool calls for session '{}': {}",
-                    session.id,
-                    e
-                );
+            if matches!(session.status, SessionStatus::Busy) {
+                // Close any orphaned tool calls that never got a result (crash tombstones)
+                if let Err(e) = close_orphaned_tool_calls(&session.id).await {
+                    log::warn!(
+                        "Failed to close orphaned tool calls for session '{}': {}",
+                        session.id,
+                        e
+                    );
+                }
             }
 
             recovered_count += 1;

@@ -40,7 +40,7 @@ export function useAgentSessionState() {
   const [error, setErrorState] = useState<MessageError | null>(null);
   const [llmError, setLlmError] = useState<MessageError | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<
-    'idle' | 'busy' | 'paused' | 'error'
+    'idle' | 'busy' | 'paused' | 'error' | 'queued'
   >('idle');
   const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('idle');
   const [runtimeState, setRuntimeState] = useState<SessionRuntimeState>(

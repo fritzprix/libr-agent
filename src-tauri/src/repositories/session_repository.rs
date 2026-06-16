@@ -52,6 +52,7 @@ pub enum SessionStatus {
     Busy,
     Paused,
     Error,
+    Queued,
 }
 
 impl SessionStatus {
@@ -61,6 +62,7 @@ impl SessionStatus {
             SessionStatus::Busy => "busy",
             SessionStatus::Paused => "paused",
             SessionStatus::Error => "error",
+            SessionStatus::Queued => "queued",
         }
     }
 }
@@ -74,6 +76,7 @@ impl FromStr for SessionStatus {
             "busy" => Ok(SessionStatus::Busy),
             "paused" => Ok(SessionStatus::Paused),
             "error" => Ok(SessionStatus::Error),
+            "queued" => Ok(SessionStatus::Queued),
             _ => Err(DbError::InvalidInput(format!(
                 "Invalid session status: {}",
                 s

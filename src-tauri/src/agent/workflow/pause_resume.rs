@@ -44,29 +44,120 @@ pub async fn resume_workflow(
     // Ensure cache is initialized before resuming (lazy load if needed, preserve if exists)
     crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
 
+    // Transition status to Queued immediately
     crate::agent::lifecycle::update_session_status(
         session_repo,
         active_sessions,
         app_handle,
         &session_id,
-        SessionStatus::Busy,
+        SessionStatus::Queued,
     )
     .await?;
 
-    log::info!("Resumed workflow status for session: {}", session_id);
+    log::info!("Queued workflow resume for session: {}", session_id);
 
-    crate::agent::workflow::start::ensure_proxy_ready(proxy_manager, app_handle, &session_id, 60)
-        .await?;
+    let session_repo = Arc::clone(session_repo);
+    let active_sessions = Arc::clone(active_sessions);
+    let proxy_manager = Arc::clone(proxy_manager);
+    let app_handle = app_handle.clone();
+    let session_id_clone = session_id.clone();
 
-    // Trigger LLM to pick up where it left off
-    crate::agent::llm::request_llm_completion_with_recovery(
-        session_repo,
-        active_sessions,
-        proxy_manager,
-        app_handle,
-        session_id,
-    )
-    .await?;
+    tokio::spawn(async move {
+        // Transition status to Busy (blocks on ConcurrencyGate)
+        if let Err(e) = crate::agent::lifecycle::update_session_status(
+            &session_repo,
+            &active_sessions,
+            &app_handle,
+            &session_id_clone,
+            SessionStatus::Busy,
+        )
+        .await
+        {
+            log::error!(
+                "Failed to transition resumed session {} to Busy: {}",
+                session_id_clone,
+                e
+            );
+            let error_event = crate::agent::events::AgentEvent::WorkflowError {
+                session_id: session_id_clone.clone(),
+                error: crate::agent::llm::types::AgentRuntimeError::new(
+                    crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+                    e.to_string(),
+                )
+                .with_code("BACKGROUND_RESUME_FAILED"),
+            };
+            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            return;
+        }
+
+        // Ensure proxy is ready
+        if let Err(e) = crate::agent::workflow::start::ensure_proxy_ready(
+            &proxy_manager,
+            &app_handle,
+            &session_id_clone,
+            60,
+        )
+        .await
+        {
+            log::error!(
+                "Proxy check failed during background resume for session {}: {}",
+                session_id_clone,
+                e
+            );
+            let _ = crate::agent::lifecycle::update_session_status(
+                &session_repo,
+                &active_sessions,
+                &app_handle,
+                &session_id_clone,
+                SessionStatus::Error,
+            )
+            .await;
+            let error_event = crate::agent::events::AgentEvent::WorkflowError {
+                session_id: session_id_clone.clone(),
+                error: crate::agent::llm::types::AgentRuntimeError::new(
+                    crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+                    e.to_string(),
+                )
+                .with_code("BACKGROUND_RESUME_FAILED"),
+            };
+            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            return;
+        }
+
+        // Trigger LLM to pick up where it left off
+        if let Err(e) = crate::agent::llm::request_llm_completion_with_recovery(
+            &session_repo,
+            &active_sessions,
+            &proxy_manager,
+            &app_handle,
+            session_id_clone.clone(),
+        )
+        .await
+        {
+            log::error!(
+                "LLM completion failed in background resume for session {}: {:?}",
+                session_id_clone,
+                e
+            );
+            let _ = crate::agent::lifecycle::update_session_status(
+                &session_repo,
+                &active_sessions,
+                &app_handle,
+                &session_id_clone,
+                SessionStatus::Error,
+            )
+            .await;
+            let error_event = crate::agent::events::AgentEvent::WorkflowError {
+                session_id: session_id_clone.clone(),
+                error: crate::agent::llm::types::AgentRuntimeError::new(
+                    crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+                    e.to_string(),
+                )
+                .with_code("BACKGROUND_RESUME_FAILED"),
+            };
+            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+        }
+    });
 
     Ok(())
 }

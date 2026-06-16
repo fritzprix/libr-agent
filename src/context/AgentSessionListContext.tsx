@@ -13,6 +13,7 @@ import { listen } from '@tauri-apps/api/event';
 import { matchPath, useLocation } from 'react-router-dom';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
+import { toast } from 'sonner';
 import { useBackendResource } from './GlobalEventContext';
 import type { AgentSession, CreateSessionParams } from '@/models/agent';
 import { getAssistant, listAssistants } from '@/lib/backend/assistants';
@@ -410,6 +411,10 @@ export function AgentSessionListProvider({
 
         // Add to list
         mutateSessions((prev) => [session, ...prev]);
+
+        toast.success(
+          `Session "${session.name || session.id.slice(0, 8)}" created successfully`,
+        );
 
         logger.info('Agent session created successfully', {
           sessionId: session.id,
