@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import {
+  useAgentSessionActions,
+  useAgentSessionState,
+} from '@/context/AgentSessionContext';
 import { useLLMService } from '@/context/LLMServiceContext';
 import {
   Button,
@@ -45,6 +48,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
   const { session, messages, yoloModeEnabled, unsafeModeEnabled } =
     useAgentSessionState();
+  const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
   const { submit, isSessionLoading, workflowStatus, cancel, resume } =
     useAgentChat();
   const { isCompacting } = useLLMService();
@@ -116,6 +120,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     refetchSessionFiles,
     hasPersistedMessages: messages.length > 0,
     onSubmitted: refreshScopedSkills,
+    onClearSession: clearSessionHistory,
+    onExecutionModeChange: applyExecutionMode,
   });
 
   const attachedFiles = pendingFiles;

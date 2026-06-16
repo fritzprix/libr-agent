@@ -3,6 +3,7 @@ import { isWorkflowCancelledError } from '@/context/llm/types';
 import type {
   AgentResponse,
   AgentRuntimeError,
+  AgentSessionMetadata,
   CompletionCancelRequest,
   ExecuteUiTauriActionRequest,
   AgentOpenSessionResponse,
@@ -148,6 +149,14 @@ export async function openAgentSession(
   return safeInvoke<AgentOpenSessionResponse>('agent_open_session', {
     sessionId,
     initialMessageLimit,
+  });
+}
+
+export async function getAgentSessionMetadata(
+  sessionId: string,
+): Promise<AgentSessionMetadata | null> {
+  return safeInvoke<AgentSessionMetadata | null>('agent_get_session', {
+    sessionId,
   });
 }
 

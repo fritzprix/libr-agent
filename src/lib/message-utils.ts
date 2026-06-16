@@ -1,12 +1,10 @@
 import type { Message, RustMessage } from '@/models/chat';
 
-function toTimestamp(
-  value: Message['createdAt'] | Message['updatedAt'] | undefined,
-): number | null {
-  if (!value) return null;
-  if (value instanceof Date) return value.getTime();
-  return typeof value === 'number' ? value : null;
-}
+export {
+  messagesToMarkdown,
+  type MessagesToMarkdownOptions,
+  type MessagesToMarkdownResult,
+} from '@/lib/message-markdown';
 
 export function extractTextContent(
   message: Pick<Message, 'content'> | Partial<Message>,
@@ -64,101 +62,4 @@ export function summarizeMessageForLog(
       argumentsLength: toolCall.function.arguments.length,
     })),
   };
-}
-
-function persistedToolCallsCoverStreamingState(
-  streamingMessage: Message,
-  persistedMessage: Message,
-): boolean {
-  const streamingToolCalls = streamingMessage.tool_calls ?? [];
-  if (streamingToolCalls.length === 0) {
-    return true;
-  }
-
-  const persistedToolCalls = persistedMessage.tool_calls ?? [];
-  if (persistedToolCalls.length < streamingToolCalls.length) {
-    return false;
-  }
-
-  return streamingToolCalls.every((streamingToolCall, index) => {
-    const persistedToolCall = persistedToolCalls[index];
-    if (!persistedToolCall) {
-      return false;
-    }
-
-    if (
-      streamingToolCall.id &&
-      persistedToolCall.id &&
-      streamingToolCall.id !== persistedToolCall.id
-    ) {
-      return false;
-    }
-
-    if (
-      streamingToolCall.function.name &&
-      persistedToolCall.function.name !== streamingToolCall.function.name
-    ) {
-      return false;
-    }
-
-    const streamingArguments = streamingToolCall.function.arguments || '';
-    const persistedArguments = persistedToolCall.function.arguments || '';
-
-    return (
-      persistedArguments.length >= streamingArguments.length &&
-      persistedArguments.startsWith(streamingArguments)
-    );
-  });
-}
-
-export function isAssistantStreamingMessageSuperseded(
-  streamingMessage: Message,
-  persistedMessage: Message,
-): boolean {
-  if (
-    streamingMessage.role !== 'assistant' ||
-    persistedMessage.role !== 'assistant'
-  ) {
-    return false;
-  }
-
-  const streamingTimestamp =
-    toTimestamp(streamingMessage.updatedAt) ??
-    toTimestamp(streamingMessage.createdAt);
-  const persistedTimestamp =
-    toTimestamp(persistedMessage.updatedAt) ??
-    toTimestamp(persistedMessage.createdAt);
-
-  if (
-    streamingTimestamp === null ||
-    persistedTimestamp === null ||
-    persistedTimestamp < streamingTimestamp
-  ) {
-    return false;
-  }
-
-  const streamingThinking = streamingMessage.thinking || '';
-  const persistedThinking = persistedMessage.thinking || '';
-  if (
-    streamingThinking &&
-    (persistedThinking.length < streamingThinking.length ||
-      !persistedThinking.startsWith(streamingThinking))
-  ) {
-    return false;
-  }
-
-  const streamingText = extractTextContent(streamingMessage);
-  const persistedText = extractTextContent(persistedMessage);
-  if (
-    streamingText &&
-    (persistedText.length < streamingText.length ||
-      !persistedText.startsWith(streamingText))
-  ) {
-    return false;
-  }
-
-  return persistedToolCallsCoverStreamingState(
-    streamingMessage,
-    persistedMessage,
-  );
 }

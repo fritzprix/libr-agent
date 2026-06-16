@@ -829,9 +829,11 @@
     },
     "header": {
       "copySuccess": "会話をクリップボードにコピーしました",
+      "copySuccessPartial": "会話をコピーしました（サイズ制限により一部のメッセージは省略されました）",
+      "copyDenied": "クリップボードへのアクセスが拒否されました。ブラウザの権限を確認してください。",
       "copyError": "会話のコピーに失敗しました",
-      "copyAria": "会話をJSONとしてコピー",
-      "copyTooltip": "会話をJSONとしてコピー",
+      "copyAria": "会話をMarkdownとしてコピー",
+      "copyTooltip": "会話をMarkdownとしてコピー",
       "toggleWorkspaceAria": "ワークスペースファイルパネルを切り替え",
       "toggleWorkspaceTooltip": "ワークスペースファイルパネルを切り替え",
       "togglePlanningAria": "AIプランニングパネルを切り替え",

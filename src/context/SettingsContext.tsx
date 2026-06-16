@@ -20,6 +20,7 @@ import {
   DEFAULT_SETTING,
 } from '@/lib/services/settings-service';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
+import i18n from '@/lib/i18n';
 
 const logger = getLogger('SettingsContext');
 
@@ -83,6 +84,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
     markStartupMilestone('settings-settled', error ? 'error' : 'ready');
   }, [loading, error]);
+
+  useEffect(() => {
+    if (loading || !value) {
+      return;
+    }
+
+    const savedLanguage = value.uiLanguage || DEFAULT_SETTING.uiLanguage;
+    if (savedLanguage !== i18n.language) {
+      i18n.changeLanguage(savedLanguage).catch((err: unknown) => {
+        logger.error('Failed to sync i18n language from settings', err);
+      });
+    }
+  }, [loading, value, i18n]);
 
   // Update method
   const update = useCallback(

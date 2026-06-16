@@ -4,27 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.8.13] - 2026-06-14
+## [0.8.14] - 2026-06-16
 
 ### 🚀 Features
 
-- **Slash Command System**: Implement a new `/` command system with autocomplete, badges, and validation.
-- **Dataset Export Capability**: Register the dataset tool as an optional built-in MCP server, exposing the `export_dataset` tool for agent access and adding the `exportDataset` Tauri command.
-- **UI Message Timestamps**: Display message timestamps in chat bubbles for better message visibility.
-- **Bundled Skills Expansion**: Add new `runtime` and `harness` bundled skills, consolidate MCP imports, and optimize `recruit` and `boost` skills.
-- **Metadata-driven Skill Guidance**: Append `@skill` references as metadata to agent prompt requests with mandatory read instructions.
+- **Markdown Copy Export**: Add dedicated `message-markdown.ts` module for converting agent messages to Markdown format, copyable from chat bubbles.
+- **Streaming Supersession Fix**: Fix race condition where same tool-call-id with different arguments was silently superseded — now preserves last-argument result.
+- **unsafe_mode for Scheduled Tasks**: Add `unsafe_mode` flag to scheduled tasks with DB migration, runner enforcement, and skip override logic. New column in `scheduled_tasks` table.
+- **i18n Sync on Startup**: Sync UI language from persisted Settings on fresh app launch, preventing mismatch between browser-detected language and user-preferred language. Fixes #1455.
 
 ### 🐛 Fixes
 
-- **LLM Prompt Payload**: Merge `compact_summary` into `systemPrompt` to ensure it is not dropped in LLM requests.
-- **Dataset Pagination**: Paginate `export_dataset` to prevent message loss in long sessions.
-- **Cross-platform Date Testing**: Resolve Windows CI timezone formatting assertions and localization issues.
+- **[HIGH] XSS in Resource Links**: Sanitize resource link rendering in agent chat to prevent stored XSS via crafted link content (Sentinel).
+- **Windows Terminal UNC Path**: Strip `\\?\\` prefix from Windows paths before passing to `cmd.exe /D` which doesn't support UNC long paths — prevents terminal startup failures.
+- **Slash Command UI Sync**: Handle `resourceUpdated` clear/update events so `/clear` resets messages and `/permission` refreshes execution mode badges; defer attachment clearing until slash commands succeed.
+- **Test Alignment**: Align numeric timestamp test with Message type; add missing `session_id` to timezone test Model literal.
+
+### ⚡ Performance
+
+- **OpenRouter listModels**: Remove intermediate array allocation in `fetchModels()` reducing GC pressure during model list fetches.
 
 ### 🔧 Internal
 
-- **Dataset Server Merging**: Merge `DatasetServer` into `HistoryServer` to streamline storage and history management.
-- **Scheduled Tasks DTOs**: Add missing fields to scheduled task DTOs and optimize active session notifications.
-- **Skills Alignment**: Audit and align bundled skills with `/skill-creator` guidelines, and document bench skill results aggregation.
+- **Dependency Updates**: Bump `uuid` 1.23.2→1.23.3, `fastembed` 5.15.0→5.16.2, `regex` 1.12.3→1.12.4 (cargo).
+- **Type Refactor**: Simplify `typeof` tuple indexing syntax (reverted then re-applied after CI feedback).
+- **Cleanup**: Remove internal planning artifacts (`coordination/`, `docs/demo/`) not intended for public repo.
+
+## [0.8.13] - 2026-06-15
+
+### 🚀 Features
+
+- **Slash Command Input**: Add `/` command autocomplete with badges and validation for faster chat input workflows.
+- **Dataset Export Tool**: Expose `export_dataset` as an optional builtin MCP tool and Tauri command so agents can export session history for fine-tuning.
+- **Chat Message Timestamps**: Display message timestamps in chat bubbles with improved locale-aware formatting.
+- **@skill References**: Append `@skill` references as metadata with mandatory read guidance so agents reliably load referenced skills.
+- **Bundled Skills Expansion**: Add runtime/harness skills (including `bench`), consolidate MCP import guidance, and audit bundled skills against skill-creator standards.
+
+### 🐛 Fixes
+
+- **System Prompt Merge**: Merge `compact_summary` with `systemPrompt` so compact summaries are not dropped from LLM requests.
+- **Dataset Export Pagination**: Paginate `export_dataset` to prevent message loss in long sessions.
+- **Windows CI Date Tests**: Make date/time formatting tests locale- and timezone-robust on Windows CI.
+
+### 🔧 Internal
+
+- **History/Dataset Merge**: Merge `DatasetServer` into `HistoryServer` and register dataset export as an optional builtin service.
+- **Recruit/Boost Skills**: Refactor recruit and boost skills as advisor-style guidance and prune static heuristics.
+- **Scheduled Task DTOs**: Add missing fields to scheduled task DTOs and optimize active session notices.
+- **Setup Wizard & Tool Creator**: Sync setup-wizard and tool-creator skill assets across bundled and repo skill directories.
 
 ## [0.8.12] - 2026-06-12
 

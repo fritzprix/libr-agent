@@ -438,10 +438,10 @@ pub async fn agent_execute_command(
                 }
             }
 
-            // 3. 리소스 변경 이벤트 emit
+            // 3. Notify frontend that session messages were cleared (distinct from rename/mode updates)
             crate::agent::tauri_events::emit_resource_updated(
                 "session",
-                "update",
+                "clear",
                 Some(session_id.clone()),
             );
 

@@ -855,9 +855,11 @@
     },
     "header": {
       "copySuccess": "Conversation copiée dans le presse-papiers",
+      "copySuccessPartial": "Conversation copiée (certains messages ont été omis en raison des limites de taille)",
+      "copyDenied": "Accès au presse-papiers refusé. Vérifiez les autorisations de votre navigateur.",
       "copyError": "Échec de la copie de la conversation",
-      "copyAria": "Copier la conversation au format JSON",
-      "copyTooltip": "Copier la conversation au format JSON",
+      "copyAria": "Copier la conversation en Markdown",
+      "copyTooltip": "Copier la conversation en Markdown",
       "toggleWorkspaceAria": "Basculer le panneau des fichiers de l'espace de travail",
       "toggleWorkspaceTooltip": "Basculer le panneau des fichiers de l'espace de travail",
       "togglePlanningAria": "Basculer le panneau de planification IA",

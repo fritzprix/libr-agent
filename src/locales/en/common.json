@@ -866,9 +866,11 @@
     },
     "header": {
       "copySuccess": "Conversation copied to clipboard",
+      "copySuccessPartial": "Conversation copied (some messages omitted due to size limits)",
+      "copyDenied": "Clipboard access denied. Check your browser permissions.",
       "copyError": "Failed to copy conversation",
-      "copyAria": "Copy conversation as JSON",
-      "copyTooltip": "Copy conversation as JSON",
+      "copyAria": "Copy conversation as Markdown",
+      "copyTooltip": "Copy conversation as Markdown",
       "toggleWorkspaceAria": "Toggle Workspace Files Panel",
       "toggleWorkspaceTooltip": "Toggle Workspace Files Panel",
       "togglePlanningAria": "Toggle AI Planning Panel",
