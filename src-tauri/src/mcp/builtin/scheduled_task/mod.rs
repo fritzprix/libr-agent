@@ -77,7 +77,7 @@ impl BuiltinMCPServer for ScheduledTaskServer {
         use crate::repositories::ScheduledTaskRepository;
 
         let repo = crate::state::get_scheduled_task_repository();
-        let tasks = match repo.list_scheduled_tasks(None).await {
+        let mut tasks = match repo.list_scheduled_tasks(None).await {
             Ok(tasks) => tasks,
             Err(error) => {
                 log::warn!("Failed to load scheduled task context: {}", error);
@@ -87,6 +87,15 @@ impl BuiltinMCPServer for ScheduledTaskServer {
                 .with_volatility(ContextVolatility::Volatile);
             }
         };
+
+        // Filter out session tasks belonging to other sessions
+        tasks.retain(|task| {
+            if task.task_category == crate::scheduled::TASK_CATEGORY_SESSION {
+                task.session_id.as_deref() == Some(self.session_id.as_str())
+            } else {
+                true
+            }
+        });
 
         if tasks.is_empty() {
             return ServiceContext::new("## Scheduled Tasks\n\nNo scheduled tasks configured")
