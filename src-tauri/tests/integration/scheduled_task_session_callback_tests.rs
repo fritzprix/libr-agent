@@ -374,9 +374,11 @@ async fn scheduled_task_server_session_isolation_checks() {
     use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
     use tauri_mcp_agent_lib::repositories::{
         SqliteAssistantRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
+        SqliteSettingsRepository,
     };
     use tauri_mcp_agent_lib::{
         set_assistant_repository, set_scheduled_task_repository, set_session_repository,
+        set_settings_repository,
     };
 
     let db = common::setup_test_db_with_migrations().await;
@@ -385,10 +387,12 @@ async fn scheduled_task_server_session_isolation_checks() {
     let session_repo = SqliteSessionRepository::new(db.clone());
     let scheduled_repo = SqliteScheduledTaskRepository::new(db.clone());
     let assistant_repo = SqliteAssistantRepository::new(db.clone());
+    let settings_repo = SqliteSettingsRepository::new(db.clone());
 
     set_session_repository(session_repo.clone());
     set_scheduled_task_repository(SqliteScheduledTaskRepository::new(db.clone()));
     set_assistant_repository(assistant_repo.clone());
+    set_settings_repository(settings_repo);
 
     // Create Session A and Session B
     let session_a_id = "session-a";
@@ -420,6 +424,7 @@ async fn scheduled_task_server_session_isolation_checks() {
             group_name: None,
             message: "Session A message".to_string(),
             yolo_mode: false,
+            unsafe_mode: false,
             created_by_session_id: Some(session_a_id.to_string()),
             session_id: Some(session_a_id.to_string()),
             workspace_override: None,
