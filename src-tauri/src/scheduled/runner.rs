@@ -103,6 +103,7 @@ pub async fn sync_task_workspace_override(
                     group_name: None,
                     message: None,
                     yolo_mode: None,
+                    unsafe_mode: None,
                     workspace_override: Some(None),
                     enabled: None,
                     next_run_at: None,
@@ -164,6 +165,46 @@ async fn execute_task(
     }
 }
 
+/// Sync execution mode from task config to session, preserving user overrides.
+///
+/// Priority: unsafe > yolo > normal
+/// - If task wants unsafe → always set (highest privilege)
+/// - If task wants yolo → skip if session already unsafe, otherwise apply yolo
+/// - If task wants normal → skip entirely, preserve whatever user set
+async fn sync_execution_mode(
+    manager: &AgentSessionManager,
+    session_id: &str,
+    task_unsafe: bool,
+    task_yolo: bool,
+) -> Result<(), String> {
+    if task_unsafe {
+        let current = manager.get_unsafe_mode(session_id).await;
+        if !current {
+            manager.set_unsafe_mode(session_id, true).await?;
+        }
+    } else if task_yolo {
+        let current_unsafe = manager.get_unsafe_mode(session_id).await;
+        if current_unsafe {
+            log::info!(
+                "⏰ Session {} unsafe_mode=true overrides task yolo_config={}, skipping",
+                session_id,
+                task_yolo
+            );
+        } else {
+            let current_yolo = manager.get_yolo_mode(session_id).await;
+            if !current_yolo {
+                manager.set_yolo_mode(session_id, true).await?;
+            }
+        }
+    } else {
+        log::info!(
+            "⏰ Task config=normal for session {}, preserving current mode",
+            session_id
+        );
+    }
+    Ok(())
+}
+
 async fn execute_global_task(
     manager: &AgentSessionManager,
     task: &crate::entity::scheduled_task::Model,
@@ -208,9 +249,11 @@ async fn execute_global_task(
 
     let (session_id, is_new_session) = match resolution {
         TaskSessionResolution::ReuseActive(sid) => {
-            if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
+            if let Err(e) =
+                sync_execution_mode(manager, &sid, task.unsafe_mode, task.yolo_mode).await
+            {
                 log::warn!(
-                    "⏰ Failed to sync YOLO mode for existing session {}: {}",
+                    "⏰ Failed to sync execution mode for existing session {}: {}",
                     sid,
                     e
                 );
@@ -219,9 +262,11 @@ async fn execute_global_task(
         }
         TaskSessionResolution::ResumePersisted(sid) => {
             manager.resume_session(&sid).await?;
-            if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
+            if let Err(e) =
+                sync_execution_mode(manager, &sid, task.unsafe_mode, task.yolo_mode).await
+            {
                 log::warn!(
-                    "⏰ Failed to sync YOLO mode for resumed session {}: {}",
+                    "⏰ Failed to sync execution mode for resumed session {}: {}",
                     sid,
                     e
                 );
@@ -240,10 +285,14 @@ async fn execute_global_task(
                 )
                 .await?;
 
-            if task.yolo_mode {
-                if let Err(e) = manager.set_yolo_mode(&sid, true).await {
-                    log::warn!("⏰ Failed to set YOLO mode for new session {}: {}", sid, e);
-                }
+            if let Err(e) =
+                sync_execution_mode(manager, &sid, task.unsafe_mode, task.yolo_mode).await
+            {
+                log::warn!(
+                    "⏰ Failed to set execution mode for new session {}: {}",
+                    sid,
+                    e
+                );
             }
             (sid, true)
         }
@@ -335,9 +384,10 @@ async fn execute_session_callback(
         manager.resume_session(session_id).await?;
     }
 
-    if let Err(e) = manager.set_yolo_mode(session_id, task.yolo_mode).await {
+    if let Err(e) = sync_execution_mode(manager, session_id, task.unsafe_mode, task.yolo_mode).await
+    {
         log::warn!(
-            "⏰ Failed to sync YOLO mode for session callback {}: {}",
+            "⏰ Failed to sync execution mode for session callback {}: {}",
             session_id,
             e
         );

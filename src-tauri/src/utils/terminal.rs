@@ -3,6 +3,15 @@ use std::process::Command;
 
 use super::platform::command_exists;
 
+#[cfg(target_os = "windows")]
+fn normalize_windows_cmd_path(path: &Path) -> String {
+    let raw_path = path.to_string_lossy();
+    raw_path
+        .strip_prefix("\\\\?\\")
+        .unwrap_or(&raw_path)
+        .replace('/', std::path::MAIN_SEPARATOR_STR)
+}
+
 /// Construct the terminal launch command for the current platform
 fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
     #[cfg(target_os = "windows")]
@@ -11,9 +20,9 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
             return Err("Required system command 'cmd' not found.".to_string());
         }
 
-        // Normalize path separators for cmd.exe (/D expects Windows-style backslashes)
-        let raw_path = path.to_string_lossy();
-        let path_str = raw_path.replace('/', std::path::MAIN_SEPARATOR_STR);
+        // Normalize path separators for cmd.exe (/D expects Windows-style backslashes).
+        // Strip the extended-length path prefix — cmd.exe /D does not accept \\?\ paths.
+        let path_str = normalize_windows_cmd_path(path);
 
         Ok((
             "cmd".to_string(),
@@ -133,6 +142,32 @@ mod tests {
         assert_eq!(prog, "cmd");
         // Verify path in args has backslashes
         assert!(args.contains(&"C:\\Users\\test\\workspace".to_string()));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_windows_strips_extended_length_path_prefix() {
+        let path = PathBuf::from(r"\\?\C:\Users\test\workspace");
+        let (_, args) = get_terminal_command(&path).unwrap();
+
+        assert!(args.contains(&"C:\\Users\\test\\workspace".to_string()));
+        assert!(
+            !args.iter().any(|arg| arg.starts_with(r"\\?\")),
+            "cmd /D path must not retain the extended-length prefix"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_normalize_windows_cmd_path() {
+        assert_eq!(
+            normalize_windows_cmd_path(Path::new(r"\\?\C:/Users/test/workspace")),
+            r"C:\Users\test\workspace"
+        );
+        assert_eq!(
+            normalize_windows_cmd_path(Path::new("C:/Users/test/workspace")),
+            r"C:\Users\test\workspace"
+        );
     }
 
     #[test]

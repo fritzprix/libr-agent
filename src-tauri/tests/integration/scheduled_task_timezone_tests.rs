@@ -122,6 +122,7 @@ fn disabled_legacy_utc_tasks_expose_a_future_display_run() {
         group_name: None,
         message: "hello".to_string(),
         yolo_mode: false,
+        unsafe_mode: false,
         created_by_session_id: None,
         session_id: None,
         workspace_override: None,

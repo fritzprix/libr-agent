@@ -107,10 +107,18 @@ export function AgentSessionProvider({
   const actionsValue: AgentSessionActionsContextValue = useMemo(
     () => ({
       ...customActions,
+      clearSessionHistory: stateProps.setters.clearSessionHistory,
+      applyExecutionMode: stateProps.setters.applyExecutionMode,
       addMessage: stateProps.setters.addMessage,
       setError: stateProps.setters.setError,
     }),
-    [customActions, stateProps.setters.addMessage, stateProps.setters.setError],
+    [
+      customActions,
+      stateProps.setters.clearSessionHistory,
+      stateProps.setters.applyExecutionMode,
+      stateProps.setters.addMessage,
+      stateProps.setters.setError,
+    ],
   );
 
   return (

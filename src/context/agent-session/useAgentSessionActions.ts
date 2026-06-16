@@ -27,17 +27,7 @@ export function useAgentSessionActionsLogic(
 
   const applyExecutionModeLocally = useCallback(
     (mode: ExecutionMode) => {
-      setters.setYoloModeEnabled(mode === 'yolo');
-      setters.setUnsafeModeEnabled(mode === 'unsafe');
-      setters.setSession((previous) =>
-        previous
-          ? {
-              ...previous,
-              yoloMode: mode === 'yolo',
-              unsafeMode: mode === 'unsafe',
-            }
-          : previous,
-      );
+      setters.applyExecutionMode(mode);
     },
     [setters],
   );

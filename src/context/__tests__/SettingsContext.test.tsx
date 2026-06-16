@@ -4,6 +4,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { safeInvoke } from '@/lib/backend/core';
 import {
+  DEFAULT_SETTING,
   SettingsProvider,
   useSettings,
 } from '../SettingsContext';
@@ -26,9 +27,19 @@ vi.mock('@/lib/performance/startup-metrics', () => ({
   markStartupMilestone: vi.fn(),
 }));
 
+const i18nMock = vi.hoisted(() => ({
+  language: 'ko',
+  changeLanguage: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/lib/i18n', () => ({
+  default: i18nMock,
+}));
+
 describe('SettingsContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    i18nMock.language = 'ko';
     __resetRustSettingsServiceCacheForTests();
   });
 
@@ -134,5 +145,66 @@ describe('SettingsContext', () => {
     });
 
     expect(vi.mocked(safeInvoke)).toHaveBeenCalledTimes(3);
+  });
+
+  it('syncs i18n language from persisted settings after initial load', async () => {
+    expect(i18nMock.language).toBe('ko');
+
+    vi.mocked(safeInvoke).mockResolvedValue([
+      { key: 'uiLanguage', value: 'en', createdAt: 0, updatedAt: 0 },
+    ]);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <SettingsProvider>{children}</SettingsProvider>
+    );
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(i18nMock.changeLanguage).toHaveBeenCalledWith('en');
+  });
+
+  it('does not call changeLanguage when persisted language matches i18n', async () => {
+    i18nMock.language = 'en';
+
+    vi.mocked(safeInvoke).mockResolvedValue([
+      { key: 'uiLanguage', value: 'en', createdAt: 0, updatedAt: 0 },
+    ]);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <SettingsProvider>{children}</SettingsProvider>
+    );
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(i18nMock.changeLanguage).not.toHaveBeenCalled();
+  });
+
+  it('falls back to DEFAULT_SETTING.uiLanguage when uiLanguage is missing', async () => {
+    expect(i18nMock.language).toBe('ko');
+
+    vi.mocked(safeInvoke).mockResolvedValue([]);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <SettingsProvider>{children}</SettingsProvider>
+    );
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.value.uiLanguage).toBe(DEFAULT_SETTING.uiLanguage);
+    expect(i18nMock.changeLanguage).toHaveBeenCalledWith(
+      DEFAULT_SETTING.uiLanguage,
+    );
   });
 });

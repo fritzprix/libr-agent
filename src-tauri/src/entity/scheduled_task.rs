@@ -30,6 +30,9 @@ pub struct Model {
     pub message: String,
     /// Whether tools should execute without approval
     pub yolo_mode: bool,
+    /// Whether tools should execute with unsafe permissions (higher privilege than yolo)
+    pub unsafe_mode: bool,
+
     /// Session that created this task through agent tooling, if any
     pub created_by_session_id: Option<String>,
     /// Reused session ID — populated after first run, None for fresh tasks
