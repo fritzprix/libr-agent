@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.14] - 2026-06-16
+
+### 🚀 Features
+
+- **Markdown Copy Export**: Add dedicated `message-markdown.ts` module for converting agent messages to Markdown format, copyable from chat bubbles.
+- **Streaming Supersession Fix**: Fix race condition where same tool-call-id with different arguments was silently superseded — now preserves last-argument result.
+- **unsafe_mode for Scheduled Tasks**: Add `unsafe_mode` flag to scheduled tasks with DB migration, runner enforcement, and skip override logic. New column in `scheduled_tasks` table.
+- **i18n Sync on Startup**: Sync UI language from persisted Settings on fresh app launch, preventing mismatch between browser-detected language and user-preferred language. Fixes #1455.
+
+### 🐛 Fixes
+
+- **[HIGH] XSS in Resource Links**: Sanitize resource link rendering in agent chat to prevent stored XSS via crafted link content (Sentinel).
+- **Windows Terminal UNC Path**: Strip `\\?\\` prefix from Windows paths before passing to `cmd.exe /D` which doesn't support UNC long paths — prevents terminal startup failures.
+- **Slash Command UI Sync**: Handle `resourceUpdated` clear/update events so `/clear` resets messages and `/permission` refreshes execution mode badges; defer attachment clearing until slash commands succeed.
+- **Test Alignment**: Align numeric timestamp test with Message type; add missing `session_id` to timezone test Model literal.
+
+### ⚡ Performance
+
+- **OpenRouter listModels**: Remove intermediate array allocation in `fetchModels()` reducing GC pressure during model list fetches.
+
+### 🔧 Internal
+
+- **Dependency Updates**: Bump `uuid` 1.23.2→1.23.3, `fastembed` 5.15.0→5.16.2, `regex` 1.12.3→1.12.4 (cargo).
+- **Type Refactor**: Simplify `typeof` tuple indexing syntax (reverted then re-applied after CI feedback).
+- **Cleanup**: Remove internal planning artifacts (`coordination/`, `docs/demo/`) not intended for public repo.
+
 ## [0.8.13] - 2026-06-15
 
 ### 🚀 Features

@@ -206,10 +206,10 @@ _참고: `bootstrap`은 이러한 스킬과 함께 자주 사용되는 내장 �
 
 <!-- RELEASE_DOWNLOADS_START -->
 
-- **Windows:** [`LibrAgent_0.8.13_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64-setup.exe) · [`LibrAgent_0.8.13_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.13_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.13_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.AppImage) · [`LibrAgent_0.8.13_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent_0.8.13_amd64.deb) · [`LibrAgent-0.8.13-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.13/LibrAgent-0.8.13-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.13)
+- **Windows:** [`LibrAgent_0.8.14_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.14/LibrAgent_0.8.14_x64-setup.exe) · [`LibrAgent_0.8.14_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.14/LibrAgent_0.8.14_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.14_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.14/LibrAgent_0.8.14_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.14_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.14/LibrAgent_0.8.14_amd64.AppImage) · [`LibrAgent_0.8.14_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.14/LibrAgent_0.8.14_amd64.deb) · [`LibrAgent-0.8.14-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.14/LibrAgent-0.8.14-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.14)
 <!-- RELEASE_DOWNLOADS_END -->
 
 **개발자 설정:**

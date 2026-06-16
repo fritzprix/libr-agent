@@ -17,11 +17,8 @@ import type { AgentResponse, InjectMessagesRequest } from '@/models/agent-ipc';
 import type { Message, MessageError, RustMessage } from '@/models/chat';
 import type { ServiceContext } from '@/models/service-context';
 import { isValidMessage } from '@/models/validation';
-import {
-  isAssistantStreamingMessageSuperseded,
-  summarizeMessageForLog,
-  toRustMessage,
-} from '@/lib/message-utils';
+import { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-supersession';
+import { summarizeMessageForLog, toRustMessage } from '@/lib/message-utils';
 import { useDebounce } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { useLLMService, useStreamingMessage } from './LLMServiceContext';
@@ -42,7 +39,7 @@ const findLastPersistedAssistantMessage = (
   return undefined;
 };
 
-export { isAssistantStreamingMessageSuperseded } from '@/lib/message-utils';
+export { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-supersession';
 
 /**
  * Agent event from Rust backend (currently using Record<string, unknown> in listeners)

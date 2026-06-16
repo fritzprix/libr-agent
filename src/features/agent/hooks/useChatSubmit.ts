@@ -8,9 +8,21 @@ import type { MCPContent } from '@/lib/mcp';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { safeInvoke } from '@/lib/backend/core';
+import type { ExecutionMode } from '@/context/agent-session/types';
 
 const logger = getLogger('useChatSubmit');
 const OBVIOUS_OVERSIZE_CHAR_MULTIPLIER = 2;
+
+function parsePermissionCommand(commandText: string): ExecutionMode | null {
+  const match = /^\/permission\s+(yolo|unsafe|normal)$/i.exec(
+    commandText.trim(),
+  );
+  if (!match) {
+    return null;
+  }
+
+  return match[1].toLowerCase() as ExecutionMode;
+}
 
 interface UseChatSubmitProps {
   session: { id: string; threadId?: string } | null;
@@ -27,6 +39,8 @@ interface UseChatSubmitProps {
   >['refetchSessionFiles'];
   hasPersistedMessages: boolean;
   onSubmitted?: () => void | Promise<void>;
+  onClearSession?: () => void;
+  onExecutionModeChange?: (mode: ExecutionMode) => void;
 }
 
 export function useChatSubmit({
@@ -38,6 +52,8 @@ export function useChatSubmit({
   refetchSessionFiles,
   hasPersistedMessages,
   onSubmitted,
+  onClearSession,
+  onExecutionModeChange,
 }: UseChatSubmitProps) {
   const { value: settings } = useSettings();
   const [input, setInput] = useState('');
@@ -64,7 +80,6 @@ export function useChatSubmit({
         setIsSubmitting(true);
         const currentInput = input;
         setInput(''); // Clear input immediately for better UX
-        clearPendingFiles();
 
         try {
           const result = await safeInvoke<{
@@ -75,6 +90,15 @@ export function useChatSubmit({
             commandText: messageText,
           });
           if (result.success) {
+            clearPendingFiles();
+            if (messageText === '/clear') {
+              onClearSession?.();
+            } else {
+              const permissionMode = parsePermissionCommand(messageText);
+              if (permissionMode) {
+                onExecutionModeChange?.(permissionMode);
+              }
+            }
             toast.success(result.message);
           } else {
             toast.error(result.message || 'Command failed');
@@ -212,6 +236,8 @@ export function useChatSubmit({
       refetchSessionFiles,
       hasPersistedMessages,
       onSubmitted,
+      onClearSession,
+      onExecutionModeChange,
       settings.maxInputContext,
     ],
   );

@@ -24,6 +24,7 @@ pub struct CreateScheduledTaskArgs {
     group_name: Option<String>,
     message: String,
     yolo_mode: Option<bool>,
+    unsafe_mode: Option<bool>,
     workspace_override: Option<String>,
 }
 
@@ -52,6 +53,7 @@ pub struct UpdateScheduledTaskArgs {
     group_name: Option<String>,
     message: Option<String>,
     yolo_mode: Option<bool>,
+    unsafe_mode: Option<bool>,
     workspace_override: Option<String>,
     clear_workspace_override: Option<bool>,
     clear_group: Option<bool>,
@@ -72,6 +74,7 @@ pub struct ScheduleCallbackArgs {
     name: Option<String>,
     delay_seconds: Option<u64>,
     cron_expression: Option<String>,
+    unsafe_mode: Option<bool>,
 }
 
 pub async fn handle_create_scheduled_task(
@@ -107,6 +110,7 @@ pub async fn handle_create_scheduled_task(
             group_name: args.group_name,
             message: args.message,
             yolo_mode: args.yolo_mode.unwrap_or(false),
+            unsafe_mode: args.unsafe_mode.unwrap_or(false),
             created_by_session_id: session_id,
             session_id: None,
             workspace_override: args.workspace_override,
@@ -341,6 +345,11 @@ pub async fn handle_update_scheduled_task(
     collect_changed_field(&mut changed_fields, "yoloMode", args.yolo_mode.is_some());
     collect_changed_field(
         &mut changed_fields,
+        "unsafeMode",
+        args.unsafe_mode.is_some(),
+    );
+    collect_changed_field(
+        &mut changed_fields,
         "workspaceOverride",
         workspace_override.is_some(),
     );
@@ -374,6 +383,7 @@ pub async fn handle_update_scheduled_task(
             },
             message: args.message,
             yolo_mode: args.yolo_mode,
+            unsafe_mode: args.unsafe_mode,
             workspace_override,
             enabled: args.enabled,
             next_run_at: None,
@@ -525,6 +535,7 @@ pub async fn handle_schedule_callback(
             group_name: None,
             message: args.message,
             yolo_mode: false,
+            unsafe_mode: args.unsafe_mode.unwrap_or(false),
             created_by_session_id: Some(session_id.clone()),
             session_id: Some(session_id),
             workspace_override: None,

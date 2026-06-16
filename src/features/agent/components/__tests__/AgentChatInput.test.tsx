@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   resume: vi.fn(),
   submit: vi.fn(),
   refreshSkills: vi.fn(),
+  clearSessionHistory: vi.fn(),
+  applyExecutionMode: vi.fn(),
   setInput: vi.fn(),
   onTokenInputChange: vi.fn(),
   handleSubmit: vi.fn((e?: Event) => e?.preventDefault?.()),
@@ -45,6 +47,10 @@ vi.mock('@/context/AgentSessionContext', () => ({
       },
     },
     messages: [],
+  }),
+  useAgentSessionActions: () => ({
+    clearSessionHistory: mocks.clearSessionHistory,
+    applyExecutionMode: mocks.applyExecutionMode,
   }),
 }));
 

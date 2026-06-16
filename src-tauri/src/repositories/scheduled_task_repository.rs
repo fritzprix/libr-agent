@@ -22,6 +22,7 @@ pub struct CreateScheduledTaskParams {
     pub group_name: Option<String>,
     pub message: String,
     pub yolo_mode: bool,
+    pub unsafe_mode: bool,
     pub created_by_session_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace_override: Option<String>,
@@ -39,6 +40,7 @@ pub struct UpdateScheduledTaskParams {
     pub group_name: Option<Option<String>>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
+    pub unsafe_mode: Option<bool>,
     pub workspace_override: Option<Option<String>>,
     pub enabled: Option<bool>,
     pub next_run_at: Option<Option<i64>>,
@@ -136,6 +138,7 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             group_name: Set(params.group_name),
             message: Set(params.message),
             yolo_mode: Set(params.yolo_mode),
+            unsafe_mode: Set(params.unsafe_mode),
             created_by_session_id: Set(params.created_by_session_id),
             session_id: Set(params.session_id),
             workspace_override: Set(params.workspace_override),
@@ -212,6 +215,9 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         }
         if let Some(v) = params.yolo_mode {
             active.yolo_mode = Set(v);
+        }
+        if let Some(v) = params.unsafe_mode {
+            active.unsafe_mode = Set(v);
         }
         if let Some(v) = params.workspace_override {
             active.workspace_override = Set(v);
