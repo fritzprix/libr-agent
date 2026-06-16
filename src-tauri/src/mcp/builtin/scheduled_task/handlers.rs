@@ -5,7 +5,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
-use crate::scheduled::TASK_CATEGORY_SESSION;
+use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::{
     get_assistant_repository, get_scheduled_task_repository, get_session_repository,
@@ -236,7 +236,7 @@ pub async fn handle_get_scheduled_task(
         };
 
     let (guidance, success_hints) = match task.task_category.as_str() {
-        "GLOBAL" => {
+        TASK_CATEGORY_GLOBAL => {
             let guidance = format!(
                 "💡 Use updateScheduledTask(\"{}\", ...) to modify, or toggleScheduledTask(\"{}\", enabled=false) to pause.",
                 task.id, task.id
@@ -247,7 +247,7 @@ pub async fn handle_get_scheduled_task(
             )];
             (guidance, hints)
         }
-        "SESSION" => {
+        TASK_CATEGORY_SESSION => {
             let guidance = format!(
                 "💡 Use toggleScheduledTask(\"{}\", enabled=false) to pause, or deleteScheduledTask(\"{}\") to cancel.",
                 task.id, task.id

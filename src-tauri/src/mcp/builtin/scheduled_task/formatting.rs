@@ -1,10 +1,11 @@
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
+use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use serde_json::{json, Value};
 
 pub fn render_task_line(task: &ScheduledTaskModel) -> String {
     let category = match task.task_category.as_str() {
-        "GLOBAL" => "GLOBAL",
-        "SESSION" => "SESSION",
+        TASK_CATEGORY_GLOBAL => "GLOBAL",
+        TASK_CATEGORY_SESSION => "SESSION",
         _ => "?",
     };
     format!(
@@ -20,7 +21,6 @@ pub fn render_task_line(task: &ScheduledTaskModel) -> String {
             .map(|group| format!(" | group: {}", group))
             .unwrap_or_default()
     )
-}
 }
 
 pub fn render_task_detail(task: &ScheduledTaskModel) -> String {
@@ -39,8 +39,8 @@ pub fn render_task_detail(task: &ScheduledTaskModel) -> String {
         .to_string();
 
     let category = match task.task_category.as_str() {
-        "GLOBAL" => "GLOBAL",
-        "SESSION" => "SESSION",
+        TASK_CATEGORY_GLOBAL => "GLOBAL",
+        TASK_CATEGORY_SESSION => "SESSION",
         _ => "UNKNOWN",
     };
 
