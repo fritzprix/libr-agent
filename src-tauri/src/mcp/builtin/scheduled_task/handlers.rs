@@ -5,7 +5,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
-use crate::scheduled::TASK_CATEGORY_SESSION;
+use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::{
     get_assistant_repository, get_scheduled_task_repository, get_session_repository,
@@ -239,17 +239,41 @@ pub async fn handle_get_scheduled_task(
             Err(error) => return Ok(service_error_result("Get Scheduled Task", &error)),
         };
 
+    let (guidance, success_hints) = match task.task_category.as_str() {
+        TASK_CATEGORY_GLOBAL => {
+            let guidance = format!(
+                "💡 Use updateScheduledTask(\"{}\", ...) to modify, or toggleScheduledTask(\"{}\", enabled=false) to pause.",
+                task.id, task.id
+            );
+            let hints = vec![format!(
+                "Use updateScheduledTask(\"{}\", ...) to change schedule or message",
+                task.id
+            )];
+            (guidance, hints)
+        }
+        TASK_CATEGORY_SESSION => {
+            let guidance = format!(
+                "💡 Use toggleScheduledTask(\"{}\", enabled=false) to pause, or deleteScheduledTask(\"{}\") to cancel.",
+                task.id, task.id
+            );
+            let hints = vec![format!(
+                "Use toggleScheduledTask(\"{}\", enabled=false) to pause the session callback, or deleteScheduledTask(\"{}\") to cancel it",
+                task.id, task.id
+            )];
+            (guidance, hints)
+        }
+        _ => {
+            let guidance =
+                "💡 Use getScheduledTask(\"...\") to inspect the task details.".to_string();
+            let hints =
+                vec!["Use getScheduledTask(\"...\") to inspect the task details".to_string()];
+            (guidance, hints)
+        }
+    };
+
     Ok(SuccessHint::new(
-        format!(
-            "{}\n\n💡 Use updateScheduledTask(\"{}\", ...) to modify or toggleScheduledTask(\"{}\", enabled=false) to pause.",
-            render_task_detail(&task),
-            task.id,
-            task.id
-        ),
-        vec![format!(
-            "Use updateScheduledTask(\"{}\", ...) to change schedule or message",
-            task.id
-        )],
+        format!("{}\n\n{}", render_task_detail(&task), guidance),
+        success_hints,
     )
     .to_mcp_result_with_data(Some(json!({
         "task": task_to_json(&task)

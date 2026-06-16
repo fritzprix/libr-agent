@@ -1,9 +1,16 @@
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
+use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use serde_json::{json, Value};
 
 pub fn render_task_line(task: &ScheduledTaskModel) -> String {
+    let category = match task.task_category.as_str() {
+        TASK_CATEGORY_GLOBAL => "GLOBAL",
+        TASK_CATEGORY_SESSION => "SESSION",
+        _ => "?",
+    };
     format!(
-        "- {} | {} | {} | next: {} | assistant: {}{}",
+        "- {} | {} | {} | {} | next: {} | assistant: {}{}",
+        category,
         task.id,
         task.name,
         if task.enabled { "enabled" } else { "disabled" },
@@ -31,8 +38,15 @@ pub fn render_task_detail(task: &ScheduledTaskModel) -> String {
         .unwrap_or("none")
         .to_string();
 
+    let category = match task.task_category.as_str() {
+        TASK_CATEGORY_GLOBAL => "GLOBAL",
+        TASK_CATEGORY_SESSION => "SESSION",
+        _ => "UNKNOWN",
+    };
+
     format!(
         "Scheduled task {}\n\n\
+Category: {}\n\
 Name: {}\n\
 Assistant: {}\n\
 Group: {} ({})\n\
@@ -47,6 +61,7 @@ Pinned session: {}\n\
 Workspace override: {}\n\n\
 Message:\n{}",
         task.id,
+        category,
         task.name,
         task.assistant_id,
         group,
