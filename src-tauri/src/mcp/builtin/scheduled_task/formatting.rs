@@ -2,8 +2,14 @@ use crate::entity::scheduled_task::Model as ScheduledTaskModel;
 use serde_json::{json, Value};
 
 pub fn render_task_line(task: &ScheduledTaskModel) -> String {
+    let category = match task.task_category.as_str() {
+        "GLOBAL" => "GLOBAL",
+        "SESSION" => "SESSION",
+        _ => "?",
+    };
     format!(
-        "- {} | {} | {} | next: {} | assistant: {}{}",
+        "- {} | {} | {} | {} | next: {} | assistant: {}{}",
+        category,
         task.id,
         task.name,
         if task.enabled { "enabled" } else { "disabled" },
@@ -14,6 +20,7 @@ pub fn render_task_line(task: &ScheduledTaskModel) -> String {
             .map(|group| format!(" | group: {}", group))
             .unwrap_or_default()
     )
+}
 }
 
 pub fn render_task_detail(task: &ScheduledTaskModel) -> String {
@@ -31,8 +38,15 @@ pub fn render_task_detail(task: &ScheduledTaskModel) -> String {
         .unwrap_or("none")
         .to_string();
 
+    let category = match task.task_category.as_str() {
+        "GLOBAL" => "GLOBAL",
+        "SESSION" => "SESSION",
+        _ => "UNKNOWN",
+    };
+
     format!(
         "Scheduled task {}\n\n\
+Category: {}\n\
 Name: {}\n\
 Assistant: {}\n\
 Group: {} ({})\n\
@@ -47,6 +61,7 @@ Pinned session: {}\n\
 Workspace override: {}\n\n\
 Message:\n{}",
         task.id,
+        category,
         task.name,
         task.assistant_id,
         group,
