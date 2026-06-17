@@ -193,7 +193,8 @@
       "busy": "Beschäftigt",
       "idle": "Leerlauf",
       "paused": "Pausiert",
-      "error": "Fehler"
+      "error": "Fehler",
+      "queued": "In Warteschlange"
     },
     "statusFilter": {
       "label": "Status",
@@ -221,7 +222,8 @@
       "idle": "Leerlauf",
       "paused": "Pausiert",
       "error": "Fehler",
-      "unknown": "Unbekannt"
+      "unknown": "Unbekannt",
+      "queued": "In Warteschlange"
     },
     "card": {
       "fallbackName": "Sitzung {{id}}",
@@ -938,7 +940,8 @@
       "agentMode": "Agent-Modus",
       "chatMode": "Chat-Modus",
       "toolsLabel": "Werkzeuge:",
-      "viewToolsTitle": "Klicken, um verfügbare Werkzeuge anzuzeigen"
+      "viewToolsTitle": "Klicken, um verfügbare Werkzeuge anzuzeigen",
+      "statusQueued": "In der Warteschlange (warten auf verfügbaren Agenten-Slot...)"
     },
     "attachment": {
       "sessionError": "Datei kann nicht angehängt werden: Sitzung nicht verfügbar.",

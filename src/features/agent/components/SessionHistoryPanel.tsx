@@ -308,6 +308,7 @@ export function SessionHistoryPanel({
     idle: `${t('sessionHistory.tabs.idle', 'Idle')} (${statusCounts.idle})`,
     paused: `${t('sessionHistory.tabs.paused', 'Paused')} (${statusCounts.paused})`,
     error: `${t('sessionHistory.tabs.error', 'Error')} (${statusCounts.error})`,
+    queued: `${t('sessionHistory.tabs.queued', 'Queued')} (${statusCounts.queued})`,
   };
   const sortLabelByValue: Record<SessionSortKey, string> = {
     updatedAt: t('sessionHistory.sort.updatedAt', 'Recent activity'),

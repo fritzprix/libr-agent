@@ -193,7 +193,8 @@
       "busy": "忙碌",
       "idle": "空闲",
       "paused": "已暂停",
-      "error": "错误"
+      "error": "错误",
+      "queued": "排队中"
     },
     "statusFilter": {
       "label": "状态",
@@ -221,7 +222,8 @@
       "idle": "空闲",
       "paused": "已暂停",
       "error": "错误",
-      "unknown": "未知"
+      "unknown": "未知",
+      "queued": "排队中"
     },
     "card": {
       "fallbackName": "会话 {{id}}",
@@ -938,7 +940,8 @@
       "agentMode": "代理模式",
       "chatMode": "聊天模式",
       "toolsLabel": "工具:",
-      "viewToolsTitle": "点击查看可用工具"
+      "viewToolsTitle": "点击查看可用工具",
+      "statusQueued": "排队中 (等待可用的智能体槽位...)"
     },
     "attachment": {
       "sessionError": "无法附加文件：会话不可用。",

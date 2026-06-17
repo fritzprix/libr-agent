@@ -193,7 +193,8 @@
       "busy": "진행 중",
       "idle": "대기 중",
       "paused": "일시 중지",
-      "error": "오류"
+      "error": "오류",
+      "queued": "대기 중"
     },
     "statusFilter": {
       "label": "상태",
@@ -221,7 +222,8 @@
       "idle": "대기",
       "paused": "일시 중지됨",
       "error": "오류",
-      "unknown": "알 수 없음"
+      "unknown": "알 수 없음",
+      "queued": "대기 중"
     },
     "card": {
       "fallbackName": "세션 {{id}}",
@@ -949,7 +951,8 @@
       "agentMode": "에이전트 모드",
       "chatMode": "채팅 모드",
       "toolsLabel": "도구:",
-      "viewToolsTitle": "클릭하여 사용 가능한 도구 보기"
+      "viewToolsTitle": "클릭하여 사용 가능한 도구 보기",
+      "statusQueued": "대기 중 (사용 가능한 에이전트 슬롯 대기 중...)"
     },
     "attachment": {
       "sessionError": "파일을 첨부할 수 없습니다: 세션을 사용할 수 없습니다.",

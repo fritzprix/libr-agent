@@ -89,6 +89,17 @@ export function SessionCard({
               'border-warning/30 bg-warning/5 shadow-sm shadow-warning/10 hover:bg-warning/10',
             accentClassName: 'bg-warning/70',
           };
+        case 'queued':
+          return {
+            icon: 'queued',
+            badge: t('sessionHistory.status.queued', 'Queued'),
+            variant: 'outline' as const,
+            className:
+              'bg-warning/10 text-warning-foreground border-warning/20 animate-pulse',
+            cardClassName:
+              'border-warning/30 bg-warning/5 shadow-sm shadow-warning/10 hover:bg-warning/10',
+            accentClassName: 'bg-warning/70',
+          };
         case 'idle':
           return {
             icon: 'idle',
@@ -174,7 +185,10 @@ export function SessionCard({
   }, []);
 
   const statusConfig = getStatusConfig(session.status);
-  const isActive = session.status === 'busy' || session.status === 'idle';
+  const isActive =
+    session.status === 'busy' ||
+    session.status === 'idle' ||
+    session.status === 'queued';
   const isViewOnly = session.status === 'error';
   const isPaused = session.status === 'paused';
   const shortLineageId = session.lineageId?.slice(0, 8);
@@ -301,7 +315,8 @@ export function SessionCard({
                 { status: statusConfig.badge },
               )}
             >
-              {statusConfig.icon === 'active' && (
+              {(statusConfig.icon === 'active' ||
+                statusConfig.icon === 'queued') && (
                 <Circle className="h-3 w-3 fill-current" />
               )}
               {statusConfig.icon === 'idle' && (

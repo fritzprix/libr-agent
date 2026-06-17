@@ -8,7 +8,7 @@ import type { SessionAttentionReason } from './agent-ipc';
 export interface AgentSession {
   id: string;
   name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error';
+  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
   model: string;
   provider: string;
   createdAt: Date;

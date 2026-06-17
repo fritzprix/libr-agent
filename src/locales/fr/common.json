@@ -193,7 +193,8 @@
       "busy": "Occupé",
       "idle": "Inactif",
       "paused": "En pause",
-      "error": "Erreur"
+      "error": "Erreur",
+      "queued": "En file d'attente"
     },
     "statusFilter": {
       "label": "Statut",
@@ -221,7 +222,8 @@
       "idle": "Inactif",
       "paused": "En pause",
       "error": "Erreur",
-      "unknown": "Inconnu"
+      "unknown": "Inconnu",
+      "queued": "En file d'attente"
     },
     "card": {
       "fallbackName": "Session {{id}}",
@@ -938,7 +940,8 @@
       "agentMode": "Mode Agent",
       "chatMode": "Mode Chat",
       "toolsLabel": "Outils :",
-      "viewToolsTitle": "Cliquez pour voir les outils disponibles"
+      "viewToolsTitle": "Cliquez pour voir les outils disponibles",
+      "statusQueued": "En file d'attente (en attente d'un emplacement d'agent disponible...)"
     },
     "attachment": {
       "sessionError": "Impossible de joindre le fichier : session non disponible.",

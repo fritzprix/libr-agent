@@ -40,12 +40,13 @@ interface ComputeSessionTreeParams {
 /**
  * Calculates the counts of sessions in each status.
  */
-function calculateStatusCounts(sessions: AgentSession[]): {
+function getStatusCounts(sessions: AgentSession[]): {
   all: number;
   busy: number;
   idle: number;
   paused: number;
   error: number;
+  queued: number;
 } {
   const counts = {
     all: sessions.length,
@@ -53,6 +54,7 @@ function calculateStatusCounts(sessions: AgentSession[]): {
     idle: 0,
     paused: 0,
     error: 0,
+    queued: 0,
   };
   sessions.forEach((session) => {
     if (Object.prototype.hasOwnProperty.call(counts, session.status)) {
@@ -291,7 +293,7 @@ export function computeSessionTree({
     : lineageSessions;
 
   // 3. Count statuses in scope
-  const statusCounts = calculateStatusCounts(bookmarkedScopeSessions);
+  const statusCounts = getStatusCounts(bookmarkedScopeSessions);
 
   // 4. Determine derived filtersActive flag
   const filtersActive =

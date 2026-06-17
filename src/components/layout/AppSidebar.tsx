@@ -45,6 +45,14 @@ function StatusDot({ status }: { status: string }) {
       />
     );
   }
+  if (status === 'queued') {
+    return (
+      <Circle
+        size={8}
+        className="fill-warning text-warning flex-shrink-0 animate-pulse"
+      />
+    );
+  }
   if (status === 'error') {
     return (
       <Circle

@@ -192,7 +192,8 @@
       "idle": "待機中",
       "paused": "一時停止中",
       "error": "エラー",
-      "bookmarked": "ブックマーク"
+      "bookmarked": "ブックマーク",
+      "queued": "待機中"
     },
     "lineageHint": {
       "child": "↳ {{parentName}} の子",
@@ -203,7 +204,8 @@
       "idle": "待機中",
       "paused": "一時停止中",
       "error": "エラー",
-      "unknown": "不明"
+      "unknown": "不明",
+      "queued": "待機中"
     },
     "card": {
       "fallbackName": "セッション {{id}}",
@@ -912,7 +914,8 @@
       "agentMode": "エージェントモード",
       "chatMode": "チャットモード",
       "toolsLabel": "ツール:",
-      "viewToolsTitle": "クリックして利用可能なツールを表示"
+      "viewToolsTitle": "クリックして利用可能なツールを表示",
+      "statusQueued": "待機中 (利用可能なエージェントスロットを待っています...)"
     },
     "attachment": {
       "sessionError": "ファイルを添付できません：セッションが利用不可です。",
