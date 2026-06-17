@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.15] - 2026-06-18
+
+### 🚀 Features
+
+- **Queued Status & Concurrency Slots**: Background tasks now wait for available concurrency slots instead of failing immediately. A new `Queued` session status is visible in the UI with proper status badges and session card updates.
+- **Scheduled Task Categories**: MCP scheduled tasks now show category labels in the UI and include category-aware guidance in system prompts for callbacks.
+- **Session Callback Permission Checks**: Permission validation enforced for scheduled task callbacks per-session.
+
+### 🐛 Fixes
+
+- **[HIGH] Concurrency Gate Deadlock**: Resolved deadlock in the Queued status concurrency gate, frontend status override, and missing icons.
+- **Busy → Idle Race Condition**: `continue_workflow_if_pending_events()` now re-checks pending events after async DB persist and before Idle transition, catching the TOCTOU gap where a message arrives between check and status change.
+- **Parent Wait Hang on Cancelled Child**: `checkSession(wait=true)` now exits when a child session is `paused` (cancelled/interrupted children settle here) instead of polling forever.
+- **Tool Loop Pending Message Loss**: After UI interaction detection, the tool loop now re-checks pending events before falling through to Idle.
+- **Scheduled Task Syntax Error**: Fixed category constants in scheduled task guidance.
+- **Message Injection Robustness**: Improved pending message processing at workflow start.
+
+### ⚡ Performance
+
+- **Concurrency Pool**: Bounded concurrency pool with slot-based queuing eliminates unnecessary task failures and reduces retry thrashing.
+
+### 🔧 Internal
+
+- **Finish Module**: Extracted `session_has_pending_events()` and `continue_workflow_if_pending_events()` into `agent/workflow/finish.rs`.
+- **Session Recovery**: Refined session state restoration logic in `lifecycle/recovery.rs`.
+- **New Integration Tests**: `wait_session_complete_status_tests.rs`, `workflow_finish_pending_tests.rs`, `scheduled_task_session_callback_tests.rs`.
+- **Isolation Test Fix**: Added missing `unsafe_mode` field, initialized settings repository.
+
+## [0.8.14] - 2026-06-16
+
 ## [0.8.14] - 2026-06-16
 
 ### 🚀 Features
