@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
 use super::formatting::{
-    extract_session_status, is_terminal_status, latest_session_output, session_output_is_missing,
-    truncate_text,
+    extract_session_status, is_wait_complete_status, latest_session_output,
+    session_output_is_missing, truncate_text,
 };
 use super::types::MessageSummaryOptions;
 use crate::agent::AgentSessionManager;
@@ -482,7 +482,7 @@ pub async fn wait_until_session_terminal(
             .ok_or_else(|| format!("Agent session '{}' not found", session_id))?;
 
         wake_count = wake_count.saturating_add(1);
-        if is_terminal_status(&extract_session_status(&session)) {
+        if is_wait_complete_status(&extract_session_status(&session)) {
             return Ok((session, wake_count));
         }
 

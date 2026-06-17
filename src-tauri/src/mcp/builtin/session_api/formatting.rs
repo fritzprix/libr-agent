@@ -55,6 +55,14 @@ pub fn is_terminal_status(status: &str) -> bool {
     )
 }
 
+/// Returns true when a blocking parent wait should stop polling.
+///
+/// `paused` is not a terminal lifecycle status, but cancelled or interrupted
+/// child sessions settle there and must unblock `checkSession(wait=true)`.
+pub fn is_wait_complete_status(status: &str) -> bool {
+    is_terminal_status(status) || status.eq_ignore_ascii_case("paused")
+}
+
 /// Returns true if the last tool-role message in `messages` contains a
 /// content item with `"type": "resource"` — indicating an intentional pause
 /// waiting for user interaction (e.g. a UI resource prompt).
@@ -425,6 +433,15 @@ mod tests {
     #[test]
     fn terminal_status_paused_is_not_terminal() {
         assert!(!is_terminal_status("paused"));
+    }
+
+    #[test]
+    fn wait_complete_status_includes_terminal_and_paused() {
+        assert!(is_wait_complete_status("idle"));
+        assert!(is_wait_complete_status("error"));
+        assert!(is_wait_complete_status("paused"));
+        assert!(is_wait_complete_status("Paused"));
+        assert!(!is_wait_complete_status("busy"));
     }
 
     #[test]
