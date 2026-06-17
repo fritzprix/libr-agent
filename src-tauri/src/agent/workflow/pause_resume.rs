@@ -63,7 +63,55 @@ pub async fn resume_workflow(
     let session_id_clone = session_id.clone();
 
     tokio::spawn(async move {
-        // Transition status to Busy (blocks on ConcurrencyGate)
+        // 1. Acquire active agent permit first (blocks safely outside transition lock)
+        let gate = crate::state::get_concurrency_gate();
+        let permit = match gate.acquire_active_agent().await {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!(
+                    "Failed to acquire active agent permit for session {}: {}",
+                    session_id_clone,
+                    e
+                );
+                let error_event = crate::agent::events::AgentEvent::WorkflowError {
+                    session_id: session_id_clone.clone(),
+                    error: crate::agent::llm::types::AgentRuntimeError::new(
+                        crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+                        e.to_string(),
+                    )
+                    .with_code("BACKGROUND_RESUME_FAILED"),
+                };
+                let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                return;
+            }
+        };
+
+        // 2. Put permit into memory and verify not cancelled/changed
+        {
+            let mut active = active_sessions.write().await;
+            if let Some(session) = active.get_mut(&session_id_clone) {
+                if session.cancellation_token.is_cancelled()
+                    || session.metadata.status != SessionStatus::Queued
+                {
+                    log::info!(
+                        "Session {} cancelled or status changed while queued. Aborting background resume.",
+                        session_id_clone
+                    );
+                    drop(permit);
+                    return;
+                }
+                session.active_permit = Some(permit);
+            } else {
+                log::warn!(
+                    "Session {} not found in active sessions during background resume. Aborting.",
+                    session_id_clone
+                );
+                drop(permit);
+                return;
+            }
+        }
+
+        // Transition status to Busy (bypasses concurrency gate block since permit is held)
         if let Err(e) = crate::agent::lifecycle::update_session_status(
             &session_repo,
             &active_sessions,
@@ -78,6 +126,12 @@ pub async fn resume_workflow(
                 session_id_clone,
                 e
             );
+            {
+                let mut active = active_sessions.write().await;
+                if let Some(session) = active.get_mut(&session_id_clone) {
+                    session.active_permit.take();
+                }
+            }
             let error_event = crate::agent::events::AgentEvent::WorkflowError {
                 session_id: session_id_clone.clone(),
                 error: crate::agent::llm::types::AgentRuntimeError::new(

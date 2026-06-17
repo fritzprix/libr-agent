@@ -194,7 +194,8 @@
       "busy": "Busy",
       "idle": "Idle",
       "paused": "Paused",
-      "error": "Error"
+      "error": "Error",
+      "queued": "Queued"
     },
     "statusFilter": {
       "label": "Status",
@@ -222,7 +223,8 @@
       "idle": "Idle",
       "paused": "Paused",
       "error": "Error",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "queued": "Queued"
     },
     "card": {
       "fallbackName": "Session {{id}}",
@@ -949,7 +951,8 @@
       "agentMode": "Agent Mode",
       "chatMode": "Chat Mode",
       "toolsLabel": "Tools:",
-      "viewToolsTitle": "Click to view available tools"
+      "viewToolsTitle": "Click to view available tools",
+      "statusQueued": "Queued (Waiting for available agent slot...)"
     },
     "attachment": {
       "sessionError": "Cannot attach file: session not available.",

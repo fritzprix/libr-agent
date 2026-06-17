@@ -193,7 +193,8 @@
       "busy": "Ocupado",
       "idle": "Inactivo",
       "paused": "En pausa",
-      "error": "Error"
+      "error": "Error",
+      "queued": "En cola"
     },
     "statusFilter": {
       "label": "Estado",
@@ -221,7 +222,8 @@
       "idle": "Inactivo",
       "paused": "En pausa",
       "error": "Error",
-      "unknown": "Desconocido"
+      "unknown": "Desconocido",
+      "queued": "En cola"
     },
     "card": {
       "fallbackName": "Sesión {{id}}",
@@ -938,7 +940,8 @@
       "agentMode": "Modo Agente",
       "chatMode": "Modo Chat",
       "toolsLabel": "Herramientas:",
-      "viewToolsTitle": "Haga clic para ver las herramientas disponibles"
+      "viewToolsTitle": "Haga clic para ver las herramientas disponibles",
+      "statusQueued": "En cola (esperando ranura de agente disponible...)"
     },
     "attachment": {
       "sessionError": "No se puede adjuntar el archivo: sesión no disponible.",

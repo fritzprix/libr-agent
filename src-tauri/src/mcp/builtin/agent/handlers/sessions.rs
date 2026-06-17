@@ -452,7 +452,7 @@ pub async fn compact_session_context(
         return Ok(guided_error(
             ErrorCategory::InvalidState,
             format!(
-                "Session {} is busy. compactSessionContext only supports idle, paused, or error sessions.",
+                "Session {} is busy or queued. compactSessionContext only supports idle, paused, or error sessions.",
                 session_id
             ),
             ToolGroup::Agent,

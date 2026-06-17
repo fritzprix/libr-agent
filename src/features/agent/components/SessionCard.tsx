@@ -315,7 +315,8 @@ export function SessionCard({
                 { status: statusConfig.badge },
               )}
             >
-              {statusConfig.icon === 'active' && (
+              {(statusConfig.icon === 'active' ||
+                statusConfig.icon === 'queued') && (
                 <Circle className="h-3 w-3 fill-current" />
               )}
               {statusConfig.icon === 'idle' && (

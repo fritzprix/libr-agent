@@ -101,11 +101,9 @@ export function useAgentSessionEvents(
             }
 
             case 'workflowStarted': {
-              setters.setWorkflowStatus('busy');
-              setters.setWorkflowPhase('thinking');
               setters.setError(null);
               setters.setLlmError(null);
-              logger.info('Workflow phase: thinking');
+              logger.info('Workflow started');
               break;
             }
 
@@ -116,10 +114,12 @@ export function useAgentSessionEvents(
                 prev ? { ...prev, status: newStatus } : null,
               );
 
-              if (newStatus === 'busy') {
+              if (newStatus === 'busy' || newStatus === 'queued') {
                 setters.setError(null);
                 setters.setLlmError(null);
-                setters.setWorkflowPhase('thinking');
+                setters.setWorkflowPhase(
+                  newStatus === 'busy' ? 'thinking' : 'idle',
+                );
               } else if (newStatus === 'idle') {
                 setters.setWorkflowPhase('idle');
               } else if (newStatus === 'error') {
