@@ -128,6 +128,17 @@ pub async fn continue_workflow_after_tool(
                     "UI interaction detected for session {}. Stopping loop.",
                     session_id
                 );
+                if crate::agent::workflow::continue_workflow_if_pending_events(
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                    &session_id,
+                )
+                .await?
+                {
+                    return Ok(());
+                }
                 if let Err(error) = crate::agent::lifecycle::update_session_status(
                     session_repo,
                     active_sessions,
