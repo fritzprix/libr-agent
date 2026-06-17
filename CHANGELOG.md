@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - **Parent Wait Hang on Cancelled Child**: `checkSession(wait=true)` now exits when a child session is `paused` (cancelled/interrupted children settle here) instead of polling forever.
 - **Tool Loop Pending Message Loss**: After UI interaction detection, the tool loop now re-checks pending events before falling through to Idle.
 - **Scheduled Task Syntax Error**: Fixed category constants in scheduled task guidance.
+- **Skill Workspace Root Discovery**: `find_workspace_root()` no longer walks up to arbitrary `.git` roots, preventing temp workspace tests (and workspaces under the LibrAgent repo tree) from inheriting this repository's bundled `.agents/skills`.
 - **Message Injection Robustness**: Improved pending message processing at workflow start.
 
 ### ⚡ Performance

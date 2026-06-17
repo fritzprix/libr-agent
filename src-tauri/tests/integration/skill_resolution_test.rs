@@ -241,6 +241,8 @@ async fn test_resolve_skills_same_name_collision_prefers_workspace() {
     let user = TempDir::new().unwrap();
     let assistant = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
+    let workspace_dir = workspace.path().join(".libragent").join("skills");
+    fs::create_dir_all(&workspace_dir).unwrap();
 
     create_skill(
         system.path(),
@@ -255,7 +257,7 @@ async fn test_resolve_skills_same_name_collision_prefers_workspace() {
         "Assistant version",
     );
     create_skill(
-        workspace.path(),
+        &workspace_dir,
         "shared-skill",
         "Shared Skill",
         "Workspace version",
@@ -265,7 +267,7 @@ async fn test_resolve_skills_same_name_collision_prefers_workspace() {
         system.path().to_owned(),
         user.path().to_owned(),
         Some(assistant.path().to_owned()),
-        Some(workspace.path().to_owned()),
+        Some(workspace_dir),
     )
     .await
     .unwrap();

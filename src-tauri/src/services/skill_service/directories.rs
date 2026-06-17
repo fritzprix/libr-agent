@@ -66,7 +66,10 @@ const AGENT_SKILL_PATTERNS: &[&str] = &[
 ];
 
 fn find_workspace_root(workspace_dir: &Path) -> Option<PathBuf> {
-    // 1. If it ends with .libragent/skills, parent of parent is the root
+    // Agent skill auto-discovery only applies to the canonical workspace layout:
+    // `<project>/.libragent/skills`. Do not walk up to arbitrary `.git` roots —
+    // integration tests (and temp workspaces under the LibrAgent repo tree) would
+    // otherwise inherit this repository's `.agents/skills` directory.
     if workspace_dir.ends_with(".libragent/skills") {
         return workspace_dir
             .parent()
@@ -74,19 +77,7 @@ fn find_workspace_root(workspace_dir: &Path) -> Option<PathBuf> {
             .map(|p| p.to_path_buf());
     }
 
-    // 2. Otherwise traverse upwards (max 20 levels deep) to find directory containing .libragent or .git
-    let mut current = workspace_dir.to_path_buf();
-    for _ in 0..20 {
-        if current.join(".libragent").exists() || current.join(".git").exists() {
-            return Some(current);
-        }
-        if !current.pop() {
-            break;
-        }
-    }
-
-    // 3. Fallback: parent directory
-    workspace_dir.parent().map(|p| p.to_path_buf())
+    None
 }
 
 fn discover_agent_skill_dirs(workspace_root: &Path) -> Vec<PathBuf> {
@@ -308,4 +299,38 @@ pub async fn resolve_skill_directories(
     };
 
     Ok((system_dir, user_dir, assistant_dir, workspace_dir))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn find_workspace_root_returns_none_for_noncanonical_workspace_dirs() {
+        let temp = TempDir::new().expect("temp dir");
+        let nested = temp.path().join("dir1").join("dir2");
+        fs::create_dir_all(&nested).expect("nested dir");
+
+        assert!(find_workspace_root(&nested).is_none());
+    }
+
+    #[test]
+    fn find_workspace_root_does_not_walk_to_git_root_from_temp_workspace() {
+        let temp = TempDir::new().expect("temp dir");
+        let workspace_dir = temp.path().join("workspace-skills");
+        fs::create_dir_all(&workspace_dir).expect("workspace dir");
+
+        assert!(find_workspace_root(&workspace_dir).is_none());
+    }
+
+    #[test]
+    fn find_workspace_root_resolves_parent_for_libragent_skills_layout() {
+        let temp = TempDir::new().expect("temp dir");
+        let workspace_dir = temp.path().join(".libragent").join("skills");
+        fs::create_dir_all(&workspace_dir).expect("workspace skills dir");
+
+        assert_eq!(find_workspace_root(&workspace_dir), Some(temp.path().to_path_buf()));
+    }
 }
