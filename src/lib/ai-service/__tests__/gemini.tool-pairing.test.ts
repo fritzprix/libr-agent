@@ -270,4 +270,218 @@ describe('GeminiService Tool Result Handling', () => {
             'skip_thought_signature_validator',
         );
     });
+
+    it('should inject descriptive text part preceding media group for tool result containing media', () => {
+        const toolCallId = 'call_media';
+        const toolName = 'capture_screenshot';
+
+        const messages: Message[] = [
+            {
+                id: '1',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'user',
+                content: [{ type: 'text', text: 'Take a screenshot' }],
+            },
+            {
+                id: '2',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'assistant',
+                content: [],
+                tool_calls: [
+                    {
+                        id: toolCallId,
+                        type: 'function',
+                        function: {
+                            name: toolName,
+                            arguments: '{}',
+                        },
+                    },
+                ],
+            },
+            {
+                id: '3',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'tool',
+                tool_call_id: toolCallId,
+                content: [
+                    { type: 'text', text: 'Captured successfully' },
+                    { type: 'image', data: 'screenshot_data', mimeType: 'image/png' },
+                ],
+            },
+        ];
+
+        const result = convertToGeminiMessages(messages);
+
+        expect(result.length).toBe(3);
+        const toolResponseMsg = result[2];
+        expect(toolResponseMsg.role).toBe('user');
+        expect(toolResponseMsg.parts).toBeDefined();
+
+        const parts = toolResponseMsg.parts!;
+        expect(parts.length).toBe(3);
+        expect(parts[0]).toEqual({
+            functionResponse: {
+                id: toolCallId,
+                name: toolName,
+                response: { result: 'Captured successfully' },
+            },
+        });
+        expect(parts[1]).toEqual({
+            text: `[Image/Audio output from tool "${toolName}" (ID: ${toolCallId})]`,
+        });
+        expect(parts[2]).toEqual({
+            inlineData: {
+                mimeType: 'image/png',
+                data: 'screenshot_data',
+            },
+        });
+    });
+
+    it('should inject descriptive text part preceding media group for tool result containing audio', () => {
+        const toolCallId = 'call_audio';
+        const toolName = 'record_audio';
+
+        const messages: Message[] = [
+            {
+                id: '1',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'user',
+                content: [{ type: 'text', text: 'Record audio' }],
+            },
+            {
+                id: '2',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'assistant',
+                content: [],
+                tool_calls: [
+                    {
+                        id: toolCallId,
+                        type: 'function',
+                        function: {
+                            name: toolName,
+                            arguments: '{}',
+                        },
+                    },
+                ],
+            },
+            {
+                id: '3',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'tool',
+                tool_call_id: toolCallId,
+                content: [
+                    { type: 'text', text: 'Recorded successfully' },
+                    { type: 'audio', data: 'audio_data', mimeType: 'audio/mp3' },
+                ],
+            },
+        ];
+
+        const result = convertToGeminiMessages(messages);
+
+        expect(result.length).toBe(3);
+        const toolResponseMsg = result[2];
+        expect(toolResponseMsg.role).toBe('user');
+        expect(toolResponseMsg.parts).toBeDefined();
+
+        const parts = toolResponseMsg.parts!;
+        expect(parts.length).toBe(3);
+        expect(parts[0]).toEqual({
+            functionResponse: {
+                id: toolCallId,
+                name: toolName,
+                response: { result: 'Recorded successfully' },
+            },
+        });
+        expect(parts[1]).toEqual({
+            text: `[Image/Audio output from tool "${toolName}" (ID: ${toolCallId})]`,
+        });
+        expect(parts[2]).toEqual({
+            inlineData: {
+                mimeType: 'audio/mp3',
+                data: 'audio_data',
+            },
+        });
+    });
+
+    it('should inject descriptive text part preceding media group for tool result containing multiple media (image and audio)', () => {
+        const toolCallId = 'call_multi_media';
+        const toolName = 'capture_both';
+
+        const messages: Message[] = [
+            {
+                id: '1',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'user',
+                content: [{ type: 'text', text: 'Capture both' }],
+            },
+            {
+                id: '2',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'assistant',
+                content: [],
+                tool_calls: [
+                    {
+                        id: toolCallId,
+                        type: 'function',
+                        function: {
+                            name: toolName,
+                            arguments: '{}',
+                        },
+                    },
+                ],
+            },
+            {
+                id: '3',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'tool',
+                tool_call_id: toolCallId,
+                content: [
+                    { type: 'text', text: 'Captured both' },
+                    { type: 'image', data: 'screenshot_data', mimeType: 'image/png' },
+                    { type: 'audio', data: 'audio_data', mimeType: 'audio/mp3' },
+                ],
+            },
+        ];
+
+        const result = convertToGeminiMessages(messages);
+
+        expect(result.length).toBe(3);
+        const toolResponseMsg = result[2];
+        expect(toolResponseMsg.role).toBe('user');
+        expect(toolResponseMsg.parts).toBeDefined();
+
+        const parts = toolResponseMsg.parts!;
+        expect(parts.length).toBe(4);
+        expect(parts[0]).toEqual({
+            functionResponse: {
+                id: toolCallId,
+                name: toolName,
+                response: { result: 'Captured both' },
+            },
+        });
+        expect(parts[1]).toEqual({
+            text: `[Image/Audio output from tool "${toolName}" (ID: ${toolCallId})]`,
+        });
+        expect(parts[2]).toEqual({
+            inlineData: {
+                mimeType: 'image/png',
+                data: 'screenshot_data',
+            },
+        });
+        expect(parts[3]).toEqual({
+            inlineData: {
+                mimeType: 'audio/mp3',
+                data: 'audio_data',
+            },
+        });
+    });
 });

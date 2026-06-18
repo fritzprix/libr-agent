@@ -394,7 +394,9 @@ export function useExecuteCompletion({
               }
             }
           } else if (chunk.content) {
-            const rawContent = chunk.content as unknown as MCPContent | MCPContent[];
+            const rawContent = chunk.content as unknown as
+              | MCPContent
+              | MCPContent[];
             if (Array.isArray(rawContent)) {
               content.push(...rawContent);
             } else {
@@ -745,11 +747,10 @@ export function useExecuteCompletion({
             : undefined,
         });
         // Check for thinking-only message (anti-pattern: has thinking but no renderable content or tool calls)
-        const hasRenderableContent = finalMessage.content.some(
-          (item) =>
-            item.type === 'text'
-              ? !!(item as MCPTextContent).text?.trim()
-              : item.type !== 'thinking',
+        const hasRenderableContent = finalMessage.content.some((item) =>
+          item.type === 'text'
+            ? !!(item as MCPTextContent).text?.trim()
+            : item.type !== 'thinking',
         );
         const hasToolCalls = !!finalMessage.tool_calls?.length;
         const hasThinking = !!finalMessage.thinking;
