@@ -31,6 +31,9 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
                 ))
             }
         }
+
+        service.unregister_browser_session(&server.agent_session_id);
+
         {
             let mut lock = server
                 .browser_session_id
@@ -111,6 +114,8 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             ))
         }
     };
+
+    service.register_browser_session(&server.agent_session_id, &id);
 
     {
         let mut id_lock = server
