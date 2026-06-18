@@ -393,6 +393,13 @@ export function useExecuteCompletion({
                 });
               }
             }
+          } else if (chunk.content) {
+            const rawContent = chunk.content as unknown as MCPContent | MCPContent[];
+            if (Array.isArray(rawContent)) {
+              content.push(...rawContent);
+            } else {
+              content.push(rawContent);
+            }
           }
 
           // 2. Accumulate Thinking
@@ -737,15 +744,17 @@ export function useExecuteCompletion({
               }
             : undefined,
         });
-        // Check for thinking-only message (anti-pattern: has thinking but no renderable text/tool calls)
-        const hasRenderableText = finalMessage.content.some(
+        // Check for thinking-only message (anti-pattern: has thinking but no renderable content or tool calls)
+        const hasRenderableContent = finalMessage.content.some(
           (item) =>
-            item.type === 'text' && !!(item as MCPTextContent).text?.trim(),
+            item.type === 'text'
+              ? !!(item as MCPTextContent).text?.trim()
+              : item.type !== 'thinking',
         );
         const hasToolCalls = !!finalMessage.tool_calls?.length;
         const hasThinking = !!finalMessage.thinking;
 
-        if (hasThinking && !hasRenderableText && !hasToolCalls) {
+        if (hasThinking && !hasRenderableContent && !hasToolCalls) {
           logger.error('❌ Thinking-only response detected', {
             sessionId,
             thinkingLength: finalMessage.thinking?.length,
