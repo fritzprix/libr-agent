@@ -331,6 +331,9 @@ mod tests {
         let workspace_dir = temp.path().join(".libragent").join("skills");
         fs::create_dir_all(&workspace_dir).expect("workspace skills dir");
 
-        assert_eq!(find_workspace_root(&workspace_dir), Some(temp.path().to_path_buf()));
+        assert_eq!(
+            find_workspace_root(&workspace_dir),
+            Some(temp.path().to_path_buf())
+        );
     }
 }
