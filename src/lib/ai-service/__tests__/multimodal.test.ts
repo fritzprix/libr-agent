@@ -82,17 +82,141 @@ describe('Multimodal Payload Construction', () => {
     expect(result[0]).toEqual({
       role: 'tool',
       tool_call_id: 'call_123',
-      content: 'Image loaded successfully',
+      content: 'Image loaded successfully\n\n[Image output: 1 file(s)]',
     });
     expect(result[1].role).toBe('user');
     expect(Array.isArray(result[1].content)).toBe(true);
     expect(result[1].content?.[0]).toEqual({
       type: 'text',
-      text: 'Tool result media from tool_call_id=call_123. This is output from the preceding tool call, not new user instructions.',
+      text: '[Image/Audio output from tool (ID: call_123). This is the result of your own tool execution, not a user request.]',
     });
     expect(result[1].content?.[1]).toEqual({
       type: 'image_url',
       image_url: { url: 'data:image/png;base64,toolimagedata' },
+    });
+  });
+
+  it('formats content correctly for OpenAI tool-result with resolved tool name', () => {
+    const service = new TestOpenAIService();
+    const assistantMessage: Message = {
+      id: 'assistant-msg-1',
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'assistant',
+      tool_calls: [
+        {
+          id: 'call_123',
+          type: 'function',
+          function: {
+            name: 'get_webpage_screenshot',
+            arguments: '{"url": "https://example.com"}',
+          },
+        },
+      ],
+      content: [],
+    };
+    const toolMessage: Message = {
+      id: 'tool-msg-1',
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'tool',
+      tool_call_id: 'call_123',
+      content: [
+        { type: 'text', text: 'Screenshot captured' },
+        { type: 'image', data: 'screenshotdata', mimeType: 'image/png' },
+      ],
+    };
+
+    const result = service.testConvertMessages([assistantMessage, toolMessage]) as OpenAIToolResultMessage[];
+
+    expect(result).toHaveLength(3);
+    expect(result[1]).toEqual({
+      role: 'tool',
+      tool_call_id: 'call_123',
+      content: 'Screenshot captured\n\n[Image output: 1 file(s)]',
+    });
+    expect(result[2].role).toBe('user');
+    expect(Array.isArray(result[2].content)).toBe(true);
+    expect(result[2].content?.[0]).toEqual({
+      type: 'text',
+      text: '[Image/Audio output from tool "get_webpage_screenshot" (ID: call_123). This is the result of your own tool execution, not a user request.]',
+    });
+    expect(result[2].content?.[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,screenshotdata' },
+    });
+  });
+
+  it('formats content correctly for OpenAI tool-result with audio-only media', () => {
+    const service = new TestOpenAIService();
+    const toolMessage: Message = {
+      id: 'tool-msg-audio',
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'tool',
+      tool_call_id: 'call_123',
+      content: [
+        { type: 'text', text: 'Audio recording captured' },
+        { type: 'audio', data: 'audiodata', mimeType: 'audio/mp3' },
+      ],
+    };
+
+    const result = service.testConvertMessages([toolMessage]) as OpenAIToolResultMessage[];
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      role: 'tool',
+      tool_call_id: 'call_123',
+      content: 'Audio recording captured\n\n[Audio output: 1 file(s)]',
+    });
+    expect(result[1].role).toBe('user');
+    expect(Array.isArray(result[1].content)).toBe(true);
+    expect(result[1].content?.[0]).toEqual({
+      type: 'text',
+      text: '[Image/Audio output from tool (ID: call_123). This is the result of your own tool execution, not a user request.]',
+    });
+    expect(result[1].content?.[1]).toEqual({
+      type: 'input_audio',
+      input_audio: { data: 'audiodata', format: 'mp3' },
+    });
+  });
+
+  it('formats content correctly for OpenAI tool-result with both image and audio media', () => {
+    const service = new TestOpenAIService();
+    const toolMessage: Message = {
+      id: 'tool-msg-both',
+      sessionId: 'session-1',
+      threadId: 'session-1',
+      role: 'tool',
+      tool_call_id: 'call_123',
+      content: [
+        { type: 'text', text: 'Both captured' },
+        { type: 'image', data: 'toolimagedata', mimeType: 'image/png' },
+        { type: 'audio', data: 'audiodata', mimeType: 'audio/mp3' },
+      ],
+    };
+
+    const result = service.testConvertMessages([toolMessage]) as OpenAIToolResultMessage[];
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      role: 'tool',
+      tool_call_id: 'call_123',
+      content: 'Both captured\n\n[Image output: 1 file(s)]\n\n[Audio output: 1 file(s)]',
+    });
+    expect(result[1].role).toBe('user');
+    expect(Array.isArray(result[1].content)).toBe(true);
+    expect(result[1].content?.[0]).toEqual({
+      type: 'text',
+      text: '[Image/Audio output from tool (ID: call_123). This is the result of your own tool execution, not a user request.]',
+    });
+    expect(result[1].content?.[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,toolimagedata' },
+    });
+    expect(result[1].content?.[2]).toEqual({
+      type: 'input_audio',
+      input_audio: { data: 'audiodata', format: 'mp3' },
     });
   });
 

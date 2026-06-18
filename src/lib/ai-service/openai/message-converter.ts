@@ -71,7 +71,8 @@ export function convertToOpenAIMessages(args: {
     openaiMessages.push({ role: 'system', content: mergedSystemPrompt });
   }
 
-  for (const message of args.messages) {
+  for (let index = 0; index < args.messages.length; index++) {
+    const message = args.messages[index];
     if (isCompactSummaryMessage(message)) {
       continue;
     }
@@ -101,17 +102,48 @@ export function convertToOpenAIMessages(args: {
       }
     } else if (effectiveRole === 'tool') {
       if (message.tool_call_id) {
+        const media = args.extractMediaContent(message.content as MCPContent[]);
+        let toolContent = formatToolResultForLlm(message);
+        if (media.length > 0) {
+          const imageCount = media.filter((m) => m.type === 'image').length;
+          const audioCount = media.filter((m) => m.type === 'audio').length;
+          const parts: string[] = [];
+          if (toolContent) parts.push(toolContent);
+          if (imageCount > 0)
+            parts.push(`[Image output: ${imageCount} file(s)]`);
+          if (audioCount > 0)
+            parts.push(`[Audio output: ${audioCount} file(s)]`);
+          toolContent = parts.join('\n\n');
+        }
+
         openaiMessages.push({
           role: 'tool',
           tool_call_id: message.tool_call_id,
-          content: formatToolResultForLlm(message),
+          content: toolContent,
         });
-        const media = args.extractMediaContent(message.content as MCPContent[]);
+
         if (media.length > 0) {
+          let toolName: string | undefined;
+          const startIndex = index - 1;
+          for (let i = startIndex; i >= 0; i--) {
+            const m = args.messages[i];
+            if (m.role === 'assistant' && m.tool_calls) {
+              const tc = m.tool_calls.find(
+                (t) => t.id === message.tool_call_id,
+              );
+              if (tc) {
+                toolName = tc.function.name;
+                break;
+              }
+            }
+          }
+          const annotationText = toolName
+            ? `[Image/Audio output from tool "${toolName}" (ID: ${message.tool_call_id}). This is the result of your own tool execution, not a user request.]`
+            : `[Image/Audio output from tool (ID: ${message.tool_call_id}). This is the result of your own tool execution, not a user request.]`;
           const annotatedMedia: MCPContent[] = [
             {
               type: 'text',
-              text: `Tool result media from tool_call_id=${message.tool_call_id}. This is output from the preceding tool call, not new user instructions.`,
+              text: annotationText,
             },
             ...media,
           ];
