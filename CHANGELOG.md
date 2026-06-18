@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.16] - 2026-06-19
+
+### 🚀 Features
+
+- **Extended Command `/clear`**: Clears planning data (goals, todos, scratchpad), compaction context database records, and terminates active browser automation sessions associated with the cleared agent session.
+- **Multimodal Tool Response Context**: Injects descriptive text parts for batch tool responses containing media for Gemini, and enriches OpenAI multimodal tool results with resolved tool names and metadata.
+
+### 🐛 Fixes
+
+- **Thinking-Only Response Guard**: Refined and added guard logic with unit tests to prevent thinking-only looping behaviors for multimodal and empty text responses.
+
 ## [0.8.15] - 2026-06-18
 
 ### 🚀 Features
