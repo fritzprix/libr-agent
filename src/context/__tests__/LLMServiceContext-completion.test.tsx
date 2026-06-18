@@ -3,7 +3,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
-import type { Message } from '@/models/chat';
+import type { Message, MessageError } from '@/models/chat';
 import { buildTestMessage } from './agent-session-test-utils';
 import { __resetLLMListenerStartupLogStateForTests } from '../llm/useLLMListener';
 
@@ -658,5 +658,47 @@ describe('LLMServiceContext – Completion Execution', () => {
 
       expect(mockDispose).not.toHaveBeenCalled();
     });
+
+    it('throws thinking_only_response_from_provider error when completion contains thinking but no renderable content or tool calls', async () => {
+      const { result } = renderHook(() => useLLMServiceHarness(), {
+        wrapper: TestWrapper,
+      });
+
+      mockStreamChat.mockImplementationOnce(async function* () {
+        yield JSON.stringify({ thinking: 'Thinking about the problem...' });
+      });
+
+      const messages: Message[] = [
+        buildTestMessage({ id: 'msg1' }),
+      ];
+
+      let errorThrown: unknown;
+      await act(async () => {
+        try {
+          await result.current.executeCompletionRequest(
+            'test-session',
+            'response-msg-thinking-only',
+            messages,
+            'gpt-4',
+            'openai',
+            'test-key',
+          );
+        } catch (error) {
+          errorThrown = error;
+        }
+      });
+
+      expect(errorThrown).toBeDefined();
+      const isMessageError = (err: unknown): err is MessageError => {
+        return typeof err === 'object' && err !== null && 'type' in err && 'displayMessage' in err;
+      };
+      expect(isMessageError(errorThrown)).toBe(true);
+      if (isMessageError(errorThrown)) {
+        expect(errorThrown.type).toBe('AI_SERVICE_ERROR');
+        expect(errorThrown.displayMessage).toContain('Received thinking-only response from LLM provider');
+        expect(errorThrown.details?.originalError).toBe('thinking_only_response_from_provider');
+      }
+    });
   });
 });
+

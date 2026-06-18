@@ -737,6 +737,26 @@ export function useExecuteCompletion({
               }
             : undefined,
         });
+        // Check for thinking-only message (anti-pattern: has thinking but no renderable text/tool calls)
+        const hasRenderableText = finalMessage.content.some(
+          (item) =>
+            item.type === 'text' && !!(item as MCPTextContent).text?.trim(),
+        );
+        const hasToolCalls = !!finalMessage.tool_calls?.length;
+        const hasThinking = !!finalMessage.thinking;
+
+        if (hasThinking && !hasRenderableText && !hasToolCalls) {
+          logger.error('❌ Thinking-only response detected', {
+            sessionId,
+            thinkingLength: finalMessage.thinking?.length,
+          });
+          throw createExecutionError(
+            'AI_SERVICE_ERROR',
+            'Received thinking-only response from LLM provider (no text output or tool calls)',
+            'thinking_only_response_from_provider',
+            { sessionId },
+          );
+        }
 
         const hasContent = hasRenderableAssistantOutput(finalMessage);
 
