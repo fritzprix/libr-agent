@@ -268,9 +268,8 @@ for await (const messageStreamEvent of stream) {
 To run these integration examples, you need the desktop application running locally. Download the latest installer for your platform:
 
 <!-- RELEASE_DOWNLOADS_START -->
-
-- **Windows:** [`LibrAgent_0.8.15_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.15/LibrAgent_0.8.15_x64-setup.exe) · [`LibrAgent_0.8.15_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.15/LibrAgent_0.8.15_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.8.15_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.15/LibrAgent_0.8.15_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.8.15_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.15/LibrAgent_0.8.15_amd64.AppImage) · [`LibrAgent_0.8.15_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.15/LibrAgent_0.8.15_amd64.deb) · [`LibrAgent-0.8.15-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.15/LibrAgent-0.8.15-1.x86_64.rpm)
-- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.15)
+- **Windows:** [`LibrAgent_0.8.16_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.16/LibrAgent_0.8.16_x64-setup.exe) · [`LibrAgent_0.8.16_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.16/LibrAgent_0.8.16_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.8.16_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.16/LibrAgent_0.8.16_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.8.16_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.16/LibrAgent_0.8.16_amd64.AppImage) · [`LibrAgent_0.8.16_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.16/LibrAgent_0.8.16_amd64.deb) · [`LibrAgent-0.8.16-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.8.16/LibrAgent-0.8.16-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.8.16)
 <!-- RELEASE_DOWNLOADS_END -->
