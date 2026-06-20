@@ -383,6 +383,48 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       }
 
       if (imageFiles.length === 0) {
+        // Fallback: Try reading from Async Clipboard API if types/items/files were empty
+        if (
+          navigator.clipboard &&
+          typeof navigator.clipboard.read === 'function'
+        ) {
+          logger.info('Attempting Async Clipboard API fallback');
+          navigator.clipboard
+            .read()
+            .then(async (clipboardItems) => {
+              const extractedFiles: File[] = [];
+              for (const item of clipboardItems) {
+                const imageTypes = item.types.filter((t) =>
+                  t.startsWith('image/'),
+                );
+                for (const type of imageTypes) {
+                  try {
+                    const blob = await item.getType(type);
+                    const file = new File([blob], '', { type });
+                    extractedFiles.push(file);
+                  } catch (err) {
+                    logger.error(
+                      'Failed to get blob from clipboard item:',
+                      err,
+                    );
+                  }
+                }
+              }
+              if (extractedFiles.length > 0) {
+                logger.info(
+                  'Successfully extracted images via Async Clipboard API:',
+                  extractedFiles.length,
+                );
+                void attachFiles(extractedFiles);
+              } else {
+                logger.info('No images found via Async Clipboard API.');
+              }
+            })
+            .catch((err) => {
+              logger.warn('Failed to read from Async Clipboard API:', err);
+            });
+        }
+
         logger.info('No image files found in paste event.');
         return;
       }
