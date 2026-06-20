@@ -346,19 +346,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       const clipboardData = e.clipboardData;
       if (!clipboardData) return;
 
-      const types = clipboardData.types ? Array.from(clipboardData.types) : [];
       const items = clipboardData.items ? Array.from(clipboardData.items) : [];
       const files = clipboardData.files ? Array.from(clipboardData.files) : [];
-
-      logger.info('handlePaste called. Types:', types);
-      items.forEach((item, index) => {
-        logger.info(`Item ${index}: kind=${item.kind}, type=${item.type}`);
-      });
-      files.forEach((file, index) => {
-        logger.info(
-          `File ${index}: name=${file.name}, type=${file.type}, size=${file.size}`,
-        );
-      });
 
       const imageFilesFromItems = items
         .filter(
@@ -375,10 +364,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
 
       if (imageFiles.length === 0) {
         const htmlText = clipboardData.getData('text/html');
-        logger.info('HTML Text length:', htmlText ? htmlText.length : 0);
         if (htmlText) {
           imageFiles = extractImagesFromHTML(htmlText);
-          logger.info('Extracted images from HTML count:', imageFiles.length);
         }
       }
 
@@ -388,7 +375,6 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           navigator.clipboard &&
           typeof navigator.clipboard.read === 'function'
         ) {
-          logger.info('Attempting Async Clipboard API fallback');
           navigator.clipboard
             .read()
             .then(async (clipboardItems) => {
@@ -411,21 +397,13 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                 }
               }
               if (extractedFiles.length > 0) {
-                logger.info(
-                  'Successfully extracted images via Async Clipboard API:',
-                  extractedFiles.length,
-                );
                 void attachFiles(extractedFiles);
-              } else {
-                logger.info('No images found via Async Clipboard API.');
               }
             })
             .catch((err) => {
               logger.warn('Failed to read from Async Clipboard API:', err);
             });
         }
-
-        logger.info('No image files found in paste event.');
         return;
       }
 
@@ -436,10 +414,6 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         insertTextAtSelection(pastedText);
       }
 
-      logger.info(
-        'Attaching clipboard files:',
-        imageFiles.map((f) => f.name || 'unnamed'),
-      );
       void attachFiles(imageFiles);
     },
     [attachFiles, insertTextAtSelection],
