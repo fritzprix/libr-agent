@@ -2,7 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.8.17] - 2026-06-20
+
+### 🚀 Features
+
+- **WebKitGTK Clipboard Image Paste**: Support pasting images from clipboard on WebKitGTK platforms via async `navigator.clipboard` fallback.
+- **Browser Console Access Tools**: Add `evaluateJS` and `getConsoleLogs` tools for reading and debugging browser console output.
+- **Browser Cascade Shutdown**: Automatically shut down browser runtime when the last agent session is closed.
+- **OpenAI-Compatible Reasoning Content**: Support reasoning content (thinking blocks) from OpenAI-compatible APIs with proper message handling.
+
+### 🐛 Fixes
+
+- **AI Service Double Stringify**: Prevent double JSON stringification/escaping on the `thinking` field for reasoning models.
+- **Qwen Reasoning PR Review**: Address review comments for Qwen reasoning model support.
+
+### 🎨 Polish
+
+- **Workspace Clear Tooltip**: Add tooltip to the clear workspace button in the palette for better discoverability.
+
 
 ## [0.8.16] - 2026-06-19
 

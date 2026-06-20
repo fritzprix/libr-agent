@@ -13,8 +13,8 @@ use tokio::sync::{oneshot, Mutex};
 use uuid::Uuid;
 
 use super::contracts::{
-    CreateSessionParams, EvaluateParams, NavigateParams, PageState, SessionIdParams,
-    SidecarRequest, SidecarResponse,
+    ConsoleEntry, CreateSessionParams, EvaluateParams, GetConsoleLogsParams, NavigateParams,
+    PageState, SessionIdParams, SidecarRequest, SidecarResponse,
 };
 use super::BROWSER_SIDECAR_FLAG;
 
@@ -85,6 +85,21 @@ impl BrowserAutomationClient {
         )
         .await
         .map(|_| ())
+    }
+
+    pub async fn get_console_logs(
+        &self,
+        session_id: &str,
+        max_entries: Option<u32>,
+    ) -> Result<Vec<ConsoleEntry>, String> {
+        self.request(
+            "getConsoleLogs",
+            GetConsoleLogsParams {
+                session_id: session_id.to_string(),
+                max_entries,
+            },
+        )
+        .await
     }
 
     pub async fn navigate(&self, session_id: &str, url: &str) -> Result<PageState, String> {

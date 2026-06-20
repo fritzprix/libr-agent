@@ -10,6 +10,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -432,18 +437,25 @@ function ScheduledTaskForm({
                       {t('scheduledTasks.modal.workspaceBrowse')}
                     </Button>
                     {workspaceOverride && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setWorkspaceOverride(null)}
-                        aria-label={t(
-                          'scheduledTasks.modal.workspaceClearAria',
-                        )}
-                        className="h-8 w-8"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setWorkspaceOverride(null)}
+                            aria-label={t(
+                              'scheduledTasks.modal.workspaceClearAria',
+                            )}
+                            className="h-8 w-8"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t('scheduledTasks.modal.workspaceClearAria')}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
