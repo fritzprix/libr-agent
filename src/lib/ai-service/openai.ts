@@ -423,6 +423,9 @@ export class OpenAIService extends BaseAIService<
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
+    // Note: we no longer strip thinking/thinkingSignature fields. Unknown fields
+    // are silently dropped by the API, so this is safe for all providers.
+
     // Convert tool_use to tool_calls for OpenAI family
     if (message.tool_use && !message.tool_calls) {
       message.tool_calls = [

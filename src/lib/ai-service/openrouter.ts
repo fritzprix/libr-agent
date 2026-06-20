@@ -47,6 +47,8 @@ export class OpenRouterService extends OpenAIService {
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
+    // Note: we no longer strip thinking/thinkingSignature fields. Unknown fields
+    // are silently dropped by the API, so this is safe for all providers.
     return message;
   }
 

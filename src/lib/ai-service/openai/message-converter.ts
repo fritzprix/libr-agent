@@ -93,9 +93,12 @@ export function convertToOpenAIMessages(args: {
           reasoning_content?: string;
         };
 
+      const content = args.processMessageContent(message.content);
       const assistantMessage: ReasoningAssistantMessage = {
         role: 'assistant',
-        content: args.processMessageContent(message.content) || null,
+        content:
+          content ||
+          (message.tool_calls && message.tool_calls.length > 0 ? null : ''),
       };
       if (message.tool_calls && message.tool_calls.length > 0) {
         assistantMessage.tool_calls = message.tool_calls;
