@@ -344,7 +344,23 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const clipboardData = e.clipboardData;
-      const imageFilesFromItems = Array.from(clipboardData.items)
+      if (!clipboardData) return;
+
+      const types = clipboardData.types ? Array.from(clipboardData.types) : [];
+      const items = clipboardData.items ? Array.from(clipboardData.items) : [];
+      const files = clipboardData.files ? Array.from(clipboardData.files) : [];
+
+      logger.info('handlePaste called. Types:', types);
+      items.forEach((item, index) => {
+        logger.info(`Item ${index}: kind=${item.kind}, type=${item.type}`);
+      });
+      files.forEach((file, index) => {
+        logger.info(
+          `File ${index}: name=${file.name}, type=${file.type}, size=${file.size}`,
+        );
+      });
+
+      const imageFilesFromItems = items
         .filter(
           (item) => item.kind === 'file' && item.type.startsWith('image/'),
         )
@@ -355,18 +371,19 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       let imageFiles =
         imageFilesFromItems.length > 0
           ? imageFilesFromItems
-          : Array.from(clipboardData.files).filter((file) =>
-              file.type.startsWith('image/'),
-            );
+          : files.filter((file) => file.type.startsWith('image/'));
 
       if (imageFiles.length === 0) {
         const htmlText = clipboardData.getData('text/html');
+        logger.info('HTML Text length:', htmlText ? htmlText.length : 0);
         if (htmlText) {
           imageFiles = extractImagesFromHTML(htmlText);
+          logger.info('Extracted images from HTML count:', imageFiles.length);
         }
       }
 
       if (imageFiles.length === 0) {
+        logger.info('No image files found in paste event.');
         return;
       }
 
@@ -377,6 +394,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         insertTextAtSelection(pastedText);
       }
 
+      logger.info(
+        'Attaching clipboard files:',
+        imageFiles.map((f) => f.name || 'unnamed'),
+      );
       void attachFiles(imageFiles);
     },
     [attachFiles, insertTextAtSelection],
