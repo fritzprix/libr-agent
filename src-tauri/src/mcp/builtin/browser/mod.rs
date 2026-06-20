@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager};
 use super::BuiltinMCPServer;
 
 mod content;
+mod evaluate;
 mod interaction;
 mod navigation;
 mod session;
@@ -107,6 +108,13 @@ impl BrowserServer {
         if let Ok(mut cache_guard) = self.state_cache.write() {
             *cache_guard = None;
         }
+    }
+
+    pub(crate) fn get_active_session_id(&self) -> Result<String, String> {
+        let guard = self.browser_session_id.read().map_err(|e| e.to_string())?;
+        guard.clone().ok_or_else(|| {
+            "No active browser session found. Please call 'createSession' first.".to_string()
+        })
     }
 
     /// Get metadata statically
@@ -298,6 +306,8 @@ impl BuiltinMCPServer for BrowserServer {
             "scrollPage" => interaction::scroll_page(self, args).await,
             "listInteractable" => interaction::list_interactable(self, args).await,
             "fetch" => content::fetch_url(self, args, session_id).await,
+            "evaluateJS" => evaluate::evaluate_js(self, args).await,
+            "getConsoleLogs" => evaluate::get_console_logs(self, args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
         .or_else(|e| {

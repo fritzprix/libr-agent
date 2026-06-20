@@ -67,3 +67,18 @@ pub(crate) struct EvaluateParams {
     pub(crate) session_id: String,
     pub(crate) script: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetConsoleLogsParams {
+    pub session_id: String,
+    pub max_entries: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleEntry {
+    pub level: String,
+    pub text: String,
+    pub timestamp: f64,
+}

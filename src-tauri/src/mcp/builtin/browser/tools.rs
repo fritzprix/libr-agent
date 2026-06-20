@@ -360,5 +360,62 @@ pub fn all_tools() -> Vec<MCPTool> {
         fetch_tool(),
         // Discovery
         list_interactable_tool(),
+        evaluate_js_tool(),
+        get_console_logs_tool(),
     ]
+}
+
+/// Execute JavaScript code in the active browser session
+pub fn evaluate_js_tool() -> MCPTool {
+    MCPTool {
+        name: "evaluateJS".to_string(),
+        title: None,
+        description: "Execute JavaScript code in the active browser session.\n\n\
+            Use this to:\n\
+            - Read page state (e.g., 'document.querySelector(...)')\n\
+            - Debug errors (e.g., 'window.onerror.toString()')\n\
+            - Check network state (e.g., 'performance.getEntries()')\n\
+            - Manipulate DOM for debugging\n\
+            \n\
+            ⚠️ Returns the serialized result as a string.\n\
+            For complex objects, use 'JSON.stringify(result)' in your script."
+            .to_string(),
+        input_schema: object_prop(
+            vec![(
+                "script".to_string(),
+                string_prop_required("JavaScript code to execute"),
+            )],
+            vec!["script".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Get browser console logs
+pub fn get_console_logs_tool() -> MCPTool {
+    MCPTool {
+        name: "getConsoleLogs".to_string(),
+        title: None,
+        description: "Get browser console logs (console.log, console.error, etc.) from the active session.\n\n\
+            Returns recent console entries with level (log/error/warn/info), message text, and timestamp.\n\
+            \n\
+            Use this to debug JavaScript errors, check API responses logged by the page, or trace execution."
+            .to_string(),
+        input_schema: object_prop(
+            vec![(
+                "maxEntries".to_string(),
+                integer_prop(
+                    Some(100),
+                    Some(1000),
+                    Some("Maximum number of log entries to return (default 100, max 1000)"),
+                ),
+            )],
+            vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
 }

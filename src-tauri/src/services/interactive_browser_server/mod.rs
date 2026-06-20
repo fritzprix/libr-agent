@@ -173,6 +173,14 @@ impl InteractiveBrowserServer {
         self.client.evaluate(session_id, script).await
     }
 
+    pub async fn get_console_logs(
+        &self,
+        session_id: &str,
+        max_entries: Option<u32>,
+    ) -> Result<Vec<crate::browser_sidecar::ConsoleEntry>, String> {
+        self.client.get_console_logs(session_id, max_entries).await
+    }
+
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
         match self.sessions.read() {
             Ok(sessions) => sessions

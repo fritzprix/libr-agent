@@ -24,6 +24,9 @@ pub(crate) struct SharedBrowserRuntime {
     pub(crate) handler_abort: tokio::task::AbortHandle,
     pub(crate) headed: bool,
     pub(crate) user_data_dir: PathBuf,
+    pub(crate) console_logs: Arc<
+        tokio::sync::RwLock<std::collections::HashMap<String, Vec<super::contracts::ConsoleEntry>>>,
+    >,
 }
 
 #[derive(Clone)]
@@ -194,6 +197,7 @@ async fn launch_runtime(visible: bool) -> Result<SharedBrowserRuntime, String> {
         handler_abort: handler_task.abort_handle(),
         headed: visible,
         user_data_dir,
+        console_logs: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
     })
 }
 
