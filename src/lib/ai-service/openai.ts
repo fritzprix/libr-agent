@@ -222,7 +222,7 @@ export class OpenAIService extends BaseAIService<
 
     try {
       // Use the sanitized messages prepared for the provider to ensure
-      // provider-specific fixes (tool call conversions, thinking-field removals, etc.)
+      // provider-specific fixes (tool call conversions, etc.)
       const openaiMessages = this.convertMessages(
         sanitizedMessages,
         options.systemPrompt,
@@ -366,10 +366,16 @@ export class OpenAIService extends BaseAIService<
             const delta = chunk.choices[0]
               ?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
               reasoning_content?: string;
+              reasoning?: string;
             };
             if (delta?.reasoning_content) {
               yield JSON.stringify({
                 thinking: delta.reasoning_content || '',
+              });
+            } else if (delta?.reasoning) {
+              // vLLM-compatible Qwen models may emit reasoning via `reasoning` instead
+              yield JSON.stringify({
+                thinking: delta.reasoning || '',
               });
             }
 
@@ -417,16 +423,8 @@ export class OpenAIService extends BaseAIService<
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
-    // Remove thinking-related fields that OpenAI family doesn't support
-    if (message.thinking) {
-      logger.debug('Removing thinking field for OpenAI family', {
-        messageId: message.id,
-      });
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
+    // Note: we no longer strip thinking/thinkingSignature fields. Unknown fields
+    // are silently dropped by the API, so this is safe for all providers.
 
     // Convert tool_use to tool_calls for OpenAI family
     if (message.tool_use && !message.tool_calls) {

@@ -112,6 +112,7 @@ export type OpenAIStreamingRequest =
     cache_prompt?: boolean;
     prompt_cache_key?: string;
     prompt_cache_retention?: 'in_memory' | '24h';
+    extra_body?: Record<string, unknown>;
   };
 
 export type OpenAINonStreamingRequest =
@@ -119,6 +120,7 @@ export type OpenAINonStreamingRequest =
     cache_prompt?: boolean;
     prompt_cache_key?: string;
     prompt_cache_retention?: 'in_memory' | '24h';
+    extra_body?: Record<string, unknown>;
   };
 
 export interface OpenAILoggerLike {

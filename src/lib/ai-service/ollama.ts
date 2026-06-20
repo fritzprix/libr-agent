@@ -211,14 +211,8 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
-    // Ollama doesn't support thinking fields in the same way Anthropic does
-    if (message.thinking) {
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
-
+    // Note: we no longer strip thinking/thinkingSignature fields. Unknown fields
+    // are silently dropped by the API, so this is safe for all providers.
     return message;
   }
 

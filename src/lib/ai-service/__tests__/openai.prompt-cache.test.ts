@@ -660,4 +660,49 @@ describe('OpenAIService prompt cache extensions', () => {
       },
     });
   });
+
+  it('correctly yields thinking chunks from delta.reasoning_content or delta.reasoning', async () => {
+    // Override the mock to yield reasoning fields
+    createMock.mockImplementationOnce(() => {
+      async function* customFakeStream() {
+        yield {
+          choices: [
+            {
+              delta: {
+                content: 'Hello',
+                reasoning_content: 'Let me think...',
+              },
+            },
+          ],
+        };
+        yield {
+          choices: [
+            {
+              delta: {
+                content: ' world',
+                reasoning: 'Continuing to think...',
+              },
+            },
+          ],
+        };
+      }
+      return customFakeStream();
+    });
+
+    const { OpenAIService } = await import('../openai');
+    const service = new OpenAIService('sk-test');
+
+    const observedChunks: Array<Record<string, unknown>> = [];
+    for await (const chunk of service.streamChat([message], {
+      modelName: 'gpt-4o',
+    })) {
+      observedChunks.push(JSON.parse(chunk) as Record<string, unknown>);
+    }
+
+    // Verify reasoning chunks are yielded as thinking event data
+    const thinkingChunks = observedChunks.filter((chunk) => 'thinking' in chunk);
+    expect(thinkingChunks).toHaveLength(2);
+    expect(thinkingChunks[0]).toEqual({ thinking: 'Let me think...' });
+    expect(thinkingChunks[1]).toEqual({ thinking: 'Continuing to think...' });
+  });
 });

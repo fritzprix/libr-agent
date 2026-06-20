@@ -115,13 +115,8 @@ export class CerebrasService extends BaseAIService<
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
-    // Cerebras doesn't support special thinking fields yet
-    if (message.thinking) {
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
+    // Note: we no longer strip thinking/thinkingSignature fields. Unknown fields
+    // are silently dropped by the API, so this is safe for all providers.
     return message;
   }
 

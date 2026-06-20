@@ -30,10 +30,5 @@ export const sanitizeMessage = (message: Message): Message => {
     sanitized.tool_calls = sanitized.tool_calls.map(sanitizeToolCall);
   }
 
-  // Process thinking content
-  if (sanitized.thinking) {
-    sanitized.thinking = sanitizeJsonField(sanitized.thinking);
-  }
-
   return sanitized;
 };
