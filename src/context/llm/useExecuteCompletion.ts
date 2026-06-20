@@ -393,6 +393,15 @@ export function useExecuteCompletion({
                 });
               }
             }
+          } else if (chunk.content) {
+            const rawContent = chunk.content as unknown as
+              | MCPContent
+              | MCPContent[];
+            if (Array.isArray(rawContent)) {
+              content.push(...rawContent);
+            } else {
+              content.push(rawContent);
+            }
           }
 
           // 2. Accumulate Thinking
@@ -737,6 +746,27 @@ export function useExecuteCompletion({
               }
             : undefined,
         });
+        // Check for thinking-only message (anti-pattern: has thinking but no renderable content or tool calls)
+        const hasRenderableContent = finalMessage.content.some((item) =>
+          item.type === 'text'
+            ? !!(item as MCPTextContent).text?.trim()
+            : item.type !== 'thinking',
+        );
+        const hasToolCalls = !!finalMessage.tool_calls?.length;
+        const hasThinking = !!finalMessage.thinking;
+
+        if (hasThinking && !hasRenderableContent && !hasToolCalls) {
+          logger.error('❌ Thinking-only response detected', {
+            sessionId,
+            thinkingLength: finalMessage.thinking?.length,
+          });
+          throw createExecutionError(
+            'AI_SERVICE_ERROR',
+            'Received thinking-only response from LLM provider (no text output or tool calls)',
+            'thinking_only_response_from_provider',
+            { sessionId },
+          );
+        }
 
         const hasContent = hasRenderableAssistantOutput(finalMessage);
 

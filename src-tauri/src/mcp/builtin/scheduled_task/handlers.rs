@@ -1,11 +1,12 @@
 use super::formatting::{format_timestamp, render_task_detail, render_task_line, task_to_json};
 use super::ScheduledTaskServer;
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
+    invalid_input_error, not_found_error, operation_failed_error, permission_denied_error,
+    SuccessHint, ToolGroup,
 };
 use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
-use crate::scheduled::TASK_CATEGORY_SESSION;
+use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::{
     get_assistant_repository, get_scheduled_task_repository, get_session_repository,
@@ -145,7 +146,7 @@ pub async fn handle_create_scheduled_task(
 }
 
 pub async fn handle_list_scheduled_tasks(
-    _server: &ScheduledTaskServer,
+    server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
     let args: ListScheduledTasksArgs = match parse_args(args, "listScheduledTasks") {
@@ -168,6 +169,15 @@ pub async fn handle_list_scheduled_tasks(
         Ok(tasks) => tasks,
         Err(error) => return Ok(service_error_result("List Scheduled Tasks", &error)),
     };
+
+    // Filter out session tasks belonging to other sessions
+    tasks.retain(|task| {
+        if task.task_category == TASK_CATEGORY_SESSION {
+            task.session_id.as_deref() == Some(server.session_id.as_str())
+        } else {
+            true
+        }
+    });
 
     if let Some(enabled) = args.enabled {
         tasks.retain(|task| task.enabled == enabled);
@@ -216,7 +226,7 @@ pub async fn handle_list_scheduled_tasks(
 }
 
 pub async fn handle_get_scheduled_task(
-    _server: &ScheduledTaskServer,
+    server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
     let args: ScheduledTaskIdArgs = match parse_args(args, "getScheduledTask") {
@@ -239,17 +249,49 @@ pub async fn handle_get_scheduled_task(
             Err(error) => return Ok(service_error_result("Get Scheduled Task", &error)),
         };
 
+    if let Err(result) = check_session_ownership(
+        &task.task_category,
+        task.session_id.as_deref(),
+        server.session_id.as_str(),
+    ) {
+        return Ok(result);
+    }
+
+    let (guidance, success_hints) = match task.task_category.as_str() {
+        TASK_CATEGORY_GLOBAL => {
+            let guidance = format!(
+                "💡 Use updateScheduledTask(\"{}\", ...) to modify, or toggleScheduledTask(\"{}\", enabled=false) to pause.",
+                task.id, task.id
+            );
+            let hints = vec![format!(
+                "Use updateScheduledTask(\"{}\", ...) to change schedule or message",
+                task.id
+            )];
+            (guidance, hints)
+        }
+        TASK_CATEGORY_SESSION => {
+            let guidance = format!(
+                "💡 Use toggleScheduledTask(\"{}\", enabled=false) to pause, or deleteScheduledTask(\"{}\") to cancel.",
+                task.id, task.id
+            );
+            let hints = vec![format!(
+                "Use toggleScheduledTask(\"{}\", enabled=false) to pause the session callback, or deleteScheduledTask(\"{}\") to cancel it",
+                task.id, task.id
+            )];
+            (guidance, hints)
+        }
+        _ => {
+            let guidance =
+                "💡 Use getScheduledTask(\"...\") to inspect the task details.".to_string();
+            let hints =
+                vec!["Use getScheduledTask(\"...\") to inspect the task details".to_string()];
+            (guidance, hints)
+        }
+    };
+
     Ok(SuccessHint::new(
-        format!(
-            "{}\n\n💡 Use updateScheduledTask(\"{}\", ...) to modify or toggleScheduledTask(\"{}\", enabled=false) to pause.",
-            render_task_detail(&task),
-            task.id,
-            task.id
-        ),
-        vec![format!(
-            "Use updateScheduledTask(\"{}\", ...) to change schedule or message",
-            task.id
-        )],
+        format!("{}\n\n{}", render_task_detail(&task), guidance),
+        success_hints,
     )
     .to_mcp_result_with_data(Some(json!({
         "task": task_to_json(&task)
@@ -257,13 +299,37 @@ pub async fn handle_get_scheduled_task(
 }
 
 pub async fn handle_update_scheduled_task(
-    _server: &ScheduledTaskServer,
+    server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
     let args: UpdateScheduledTaskArgs = match parse_args(args, "updateScheduledTask") {
         Ok(value) => value,
         Err(result) => return Ok(result),
     };
+
+    let task_id = args.id.clone();
+    let existing =
+        match ScheduledTaskService::get_scheduled_task(get_scheduled_task_repository(), &task_id)
+            .await
+        {
+            Ok(Some(task)) => task,
+            Ok(None) => {
+                return Ok(not_found_error(
+                    "Scheduled task",
+                    &task_id,
+                    ToolGroup::ScheduledTask,
+                ))
+            }
+            Err(error) => return Ok(service_error_result("Update Scheduled Task", &error)),
+        };
+
+    if let Err(result) = check_session_ownership(
+        &existing.task_category,
+        existing.session_id.as_deref(),
+        server.session_id.as_str(),
+    ) {
+        return Ok(result);
+    }
 
     if args.clear_workspace_override.unwrap_or(false) && args.workspace_override.is_some() {
         return Ok(invalid_input_error(
@@ -338,7 +404,6 @@ pub async fn handle_update_scheduled_task(
         ));
     }
 
-    let task_id = args.id.clone();
     let updated = match ScheduledTaskService::update_scheduled_task(
         get_scheduled_task_repository(),
         &task_id,
@@ -400,7 +465,7 @@ pub async fn handle_update_scheduled_task(
 }
 
 pub async fn handle_toggle_scheduled_task(
-    _server: &ScheduledTaskServer,
+    server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
     let args: ToggleScheduledTaskArgs = match parse_args(args, "toggleScheduledTask") {
@@ -409,6 +474,29 @@ pub async fn handle_toggle_scheduled_task(
     };
 
     let task_id = args.id.clone();
+    let existing =
+        match ScheduledTaskService::get_scheduled_task(get_scheduled_task_repository(), &task_id)
+            .await
+        {
+            Ok(Some(task)) => task,
+            Ok(None) => {
+                return Ok(not_found_error(
+                    "Scheduled task",
+                    &task_id,
+                    ToolGroup::ScheduledTask,
+                ))
+            }
+            Err(error) => return Ok(service_error_result("Toggle Scheduled Task", &error)),
+        };
+
+    if let Err(result) = check_session_ownership(
+        &existing.task_category,
+        existing.session_id.as_deref(),
+        server.session_id.as_str(),
+    ) {
+        return Ok(result);
+    }
+
     let updated = match ScheduledTaskService::toggle_scheduled_task(
         get_scheduled_task_repository(),
         &task_id,
@@ -543,7 +631,7 @@ pub async fn handle_schedule_callback(
 }
 
 pub async fn handle_delete_scheduled_task(
-    _server: &ScheduledTaskServer,
+    server: &ScheduledTaskServer,
     args: Value,
 ) -> Result<crate::mcp::types::MCPResult, String> {
     let args: ScheduledTaskIdArgs = match parse_args(args, "deleteScheduledTask") {
@@ -566,6 +654,14 @@ pub async fn handle_delete_scheduled_task(
             Err(error) => return Ok(service_error_result("Delete Scheduled Task", &error)),
         };
 
+    if let Err(result) = check_session_ownership(
+        &existing.task_category,
+        existing.session_id.as_deref(),
+        server.session_id.as_str(),
+    ) {
+        return Ok(result);
+    }
+
     if let Err(error) =
         ScheduledTaskService::delete_scheduled_task(get_scheduled_task_repository(), &args.id).await
     {
@@ -583,6 +679,21 @@ pub async fn handle_delete_scheduled_task(
     .to_mcp_result_with_data(Some(json!({
         "deletedTask": task_to_json(&existing)
     }))))
+}
+
+fn check_session_ownership(
+    task_category: &str,
+    task_session_id: Option<&str>,
+    server_session_id: &str,
+) -> Result<(), crate::mcp::types::MCPResult> {
+    if task_category == TASK_CATEGORY_SESSION && task_session_id != Some(server_session_id) {
+        Err(permission_denied_error(
+            "You can only manage session callbacks for your own session. Use scheduleCallback or cancel_session_scheduled_task from the owning session.",
+            ToolGroup::ScheduledTask,
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn collect_changed_field(changed_fields: &mut Vec<String>, field: &str, changed: bool) {

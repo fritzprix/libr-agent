@@ -54,7 +54,7 @@ pub fn format_active_sessions_notice(children: &[SessionMetadata]) -> Option<Str
             SessionStatus::Idle => idle_sessions.push(child),
             SessionStatus::Paused => paused_sessions.push(child),
             SessionStatus::Error => error_sessions.push(child),
-            SessionStatus::Busy => busy_sessions.push(child),
+            SessionStatus::Busy | SessionStatus::Queued => busy_sessions.push(child),
         }
     }
 

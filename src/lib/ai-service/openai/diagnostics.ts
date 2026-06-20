@@ -46,10 +46,7 @@ function classifyMessageContentTag(
     return 'session_context';
   }
 
-  if (
-    role === 'user' &&
-    content.startsWith('Tool result media from tool_call_id=')
-  ) {
+  if (role === 'user' && content.startsWith('[Image/Audio output from tool')) {
     return 'tool_result_media';
   }
 

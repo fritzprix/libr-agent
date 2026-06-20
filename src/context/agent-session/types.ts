@@ -20,7 +20,7 @@ export type AgentEventPayload =
   | {
       type: 'statusChanged';
       sessionId: string;
-      status: 'idle' | 'busy' | 'paused' | 'error';
+      status: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
     }
   | { type: 'messageAdded'; sessionId: string; message: RustMessage }
   | { type: 'toolExecutionStarted'; sessionId: string; toolName: string }
@@ -115,7 +115,7 @@ export interface AgentSessionStateContextValue {
   hasOlderMessages: boolean;
   error: MessageError | null;
   llmError: MessageError | null;
-  workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
+  workflowStatus: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
   workflowPhase: WorkflowPhase;
   runtimeState: SessionRuntimeState;
   preflightTokenMetrics: PreflightTokenMetrics | null;

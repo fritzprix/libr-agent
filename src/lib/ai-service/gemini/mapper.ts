@@ -140,9 +140,14 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
             // Append any image/audio from tool result as inlineData parts in the same batch
             const media = extractMediaContent(toolMsg.content as MCPContent[]);
             if (media.length > 0) {
+              const nameStr = name ? ` "${name}"` : '';
+              responseParts.push({
+                text: `[Image/Audio output from tool${nameStr} (ID: ${toolMsg.tool_call_id})]`,
+              });
+
               const mediaParts = formatGeminiContent(media);
               responseParts.push(...mediaParts);
-              logger.info('  - Added media parts to batch', {
+              logger.info('  - Added media parts to batch with metadata', {
                 index: j,
                 toolCallId: toolMsg.tool_call_id,
                 mediaCount: mediaParts.length,

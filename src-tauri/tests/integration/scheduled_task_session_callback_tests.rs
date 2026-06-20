@@ -1,9 +1,24 @@
 use crate::common;
 
+use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::repositories::{
     ScheduledTaskRepository, SessionMetadata, SessionRepository, SessionStatus,
     SqliteScheduledTaskRepository, SqliteSessionRepository,
 };
+
+fn extract_text_content(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
+    result
+        .content
+        .as_ref()
+        .expect("text content expected")
+        .iter()
+        .filter_map(|content| match content {
+            MCPContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 use tauri_mcp_agent_lib::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use tauri_mcp_agent_lib::services::scheduled_task_service::{
     CreateScheduledTaskInput, ScheduledTaskGovernanceSettings, ScheduledTaskService,
@@ -351,4 +366,158 @@ async fn cascade_cleanup_deletes_callbacks_pinned_to_descendant_sessions() {
         .await
         .expect("lookup should succeed")
         .is_none());
+}
+
+#[tokio::test]
+async fn scheduled_task_server_session_isolation_checks() {
+    use tauri_mcp_agent_lib::mcp::builtin::scheduled_task::ScheduledTaskServer;
+    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
+    use tauri_mcp_agent_lib::repositories::{
+        SqliteAssistantRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
+        SqliteSettingsRepository,
+    };
+    use tauri_mcp_agent_lib::{
+        set_assistant_repository, set_scheduled_task_repository, set_session_repository,
+        set_settings_repository,
+    };
+
+    let db = common::setup_test_db_with_migrations().await;
+
+    // Register global repositories so the MCP handlers can retrieve them
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let scheduled_repo = SqliteScheduledTaskRepository::new(db.clone());
+    let assistant_repo = SqliteAssistantRepository::new(db.clone());
+    let settings_repo = SqliteSettingsRepository::new(db.clone());
+
+    set_session_repository(session_repo.clone());
+    set_scheduled_task_repository(SqliteScheduledTaskRepository::new(db.clone()));
+    set_assistant_repository(assistant_repo.clone());
+    set_settings_repository(settings_repo);
+
+    // Create Session A and Session B
+    let session_a_id = "session-a";
+    let session_b_id = "session-b";
+
+    session_repo
+        .upsert_session(&make_session(session_a_id, "assistant-a"))
+        .await
+        .expect("session-a should be persisted");
+    session_repo
+        .upsert_session(&make_session(session_b_id, "assistant-b"))
+        .await
+        .expect("session-b should be persisted");
+
+    common::seed_test_assistant(&db, "assistant-a", "Assistant A", serde_json::json!({})).await;
+    common::seed_test_assistant(&db, "assistant-b", "Assistant B", serde_json::json!({})).await;
+
+    // Create a SESSION task belonging to Session A
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let callback_task = ScheduledTaskService::create_scheduled_task(
+        &scheduled_repo,
+        CreateScheduledTaskInput {
+            name: "Session A callback".to_string(),
+            task_category: TASK_CATEGORY_SESSION.to_string(),
+            cron_expression: None,
+            schedule_timezone: "local".to_string(),
+            assistant_id: "assistant-a".to_string(),
+            group_id: None,
+            group_name: None,
+            message: "Session A message".to_string(),
+            yolo_mode: false,
+            unsafe_mode: false,
+            created_by_session_id: Some(session_a_id.to_string()),
+            session_id: Some(session_a_id.to_string()),
+            workspace_override: None,
+            next_run_at: Some(now_ms + 60_000),
+        },
+    )
+    .await
+    .expect("callback task for Session A should be created");
+
+    // Initialize the ScheduledTaskServer as Session B
+    let server_b =
+        ScheduledTaskServer::new(session_b_id.to_string(), std::sync::Arc::new(db.clone()))
+            .await
+            .expect("server-b should initialize");
+
+    // Test 1: getScheduledTask for Session A's callback by Session B should return permission denied
+    let result = server_b
+        .call_tool(
+            "getScheduledTask",
+            serde_json::json!({ "id": callback_task.id }),
+            Some(session_b_id.to_string()),
+        )
+        .await
+        .expect("call_tool should succeed");
+    assert_eq!(result.is_error, Some(true));
+    let error_text = extract_text_content(&result);
+    assert!(error_text.contains("Permission denied"));
+    assert!(error_text.contains("only manage session callbacks for your own session"));
+
+    // Test 2: updateScheduledTask for Session A's callback by Session B should return permission denied
+    let result = server_b
+        .call_tool(
+            "updateScheduledTask",
+            serde_json::json!({ "id": callback_task.id, "name": "Hack" }),
+            Some(session_b_id.to_string()),
+        )
+        .await
+        .expect("call_tool should succeed");
+    assert_eq!(result.is_error, Some(true));
+    let error_text = extract_text_content(&result);
+    assert!(error_text.contains("Permission denied"));
+
+    // Test 3: toggleScheduledTask for Session A's callback by Session B should return permission denied
+    let result = server_b
+        .call_tool(
+            "toggleScheduledTask",
+            serde_json::json!({ "id": callback_task.id, "enabled": false }),
+            Some(session_b_id.to_string()),
+        )
+        .await
+        .expect("call_tool should succeed");
+    assert_eq!(result.is_error, Some(true));
+    let error_text = extract_text_content(&result);
+    assert!(error_text.contains("Permission denied"));
+
+    // Test 4: deleteScheduledTask for Session A's callback by Session B should return permission denied
+    let result = server_b
+        .call_tool(
+            "deleteScheduledTask",
+            serde_json::json!({ "id": callback_task.id }),
+            Some(session_b_id.to_string()),
+        )
+        .await
+        .expect("call_tool should succeed");
+    assert_eq!(result.is_error, Some(true));
+    let error_text = extract_text_content(&result);
+    assert!(error_text.contains("Permission denied"));
+
+    // Test 5: listScheduledTasks by Session B should NOT return Session A's callback
+    let result = server_b
+        .call_tool(
+            "listScheduledTasks",
+            serde_json::json!({}),
+            Some(session_b_id.to_string()),
+        )
+        .await
+        .expect("call_tool should succeed");
+    assert_ne!(result.is_error, Some(true));
+    let tasks_json = result
+        .structured_content
+        .as_ref()
+        .unwrap()
+        .get("tasks")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    let has_session_a_callback = tasks_json
+        .iter()
+        .any(|t| t.get("id").unwrap().as_str().unwrap() == callback_task.id);
+    assert!(!has_session_a_callback);
+
+    // Test 6: get_service_context() on Session B's server should NOT contain Session A's callback
+    let context = server_b.get_service_context(None).await;
+    assert!(!context.context_prompt.contains(&callback_task.id));
+    assert!(!context.context_prompt.contains("Session A callback"));
 }

@@ -20,6 +20,8 @@ pub use utils::validate_and_normalize_url;
 #[derive(Clone)]
 pub struct InteractiveBrowserServer {
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
+    // Maps agent_session_id -> browser_session_id
+    agent_browser_mapping: Arc<RwLock<HashMap<String, String>>>,
     client: BrowserAutomationClient,
 }
 
@@ -32,7 +34,50 @@ impl InteractiveBrowserServer {
 
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            agent_browser_mapping: Arc::new(RwLock::new(HashMap::new())),
             client: BrowserAutomationClient::new(action_timeout),
+        }
+    }
+
+    /// Register the mapping between an agent session and its browser session
+    pub fn register_browser_session(&self, agent_session_id: &str, browser_session_id: &str) {
+        if let Ok(mut map) = self.agent_browser_mapping.write() {
+            map.insert(agent_session_id.to_string(), browser_session_id.to_string());
+        }
+    }
+
+    /// Unregister the mapping (called when browser session is closed normally)
+    pub fn unregister_browser_session(&self, agent_session_id: &str) {
+        if let Ok(mut map) = self.agent_browser_mapping.write() {
+            map.remove(agent_session_id);
+        }
+    }
+
+    /// Close all browser sessions associated with a given agent session.
+    /// Returns the list of closed session IDs.
+    pub async fn close_agent_browser_sessions(
+        &self,
+        agent_session_id: &str,
+    ) -> Result<Vec<String>, String> {
+        let browser_session_id = {
+            let map = self.agent_browser_mapping.read().map_err(|e| {
+                format!(
+                    "Failed to acquire read lock on agent_browser_mapping: {}",
+                    e
+                )
+            })?;
+            map.get(agent_session_id).cloned()
+        };
+
+        if let Some(bid) = browser_session_id {
+            // Close the actual browser automation session
+            self.close_session(&bid).await?;
+
+            // Clean up mapping
+            self.unregister_browser_session(agent_session_id);
+            Ok(vec![bid])
+        } else {
+            Ok(vec![])
         }
     }
 

@@ -10,7 +10,6 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-use super::completion::request_llm_completion;
 use super::response_admission;
 use super::response_circuit_breaker;
 use super::tool_execution;
@@ -203,18 +202,6 @@ async fn reset_streaming_recovery_retry_counts(
     }
 }
 
-async fn session_has_pending_events(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-) -> bool {
-    let active = active_sessions.read().await;
-    if let Some(session) = active.get(session_id) {
-        return session.pending_events.read().await.count() > 0;
-    }
-
-    false
-}
-
 async fn initialize_pending_execution(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -395,30 +382,33 @@ pub async fn handle_llm_response(
     if tool_calls.is_empty() {
         reset_streaming_recovery_retry_counts(active_sessions, &session_id).await;
 
-        // Check for pending messages before finishing
-        let has_pending = session_has_pending_events(active_sessions, &session_id).await;
-
-        if has_pending {
+        if crate::agent::workflow::session_has_pending_events(active_sessions, &session_id).await {
             spawn_persist_assistant_message_to_db(msg_for_db);
-            log::info!(
-                "🔄 Pending messages detected for session {}. Continuing workflow.",
-                session_id
-            );
-            // Recursively trigger next turn
-            return request_llm_completion(
+            crate::agent::workflow::continue_workflow_if_pending_events(
                 session_repo,
                 active_sessions,
                 proxy_manager,
                 app_handle,
-                session_id,
+                &session_id,
             )
-            .await
-            .map(|_| ())
-            .map_err(String::from);
+            .await?;
+            return Ok(());
         }
 
         // Ensure the final assistant row is visible before waking terminal waiters.
         persist_assistant_message_to_db(&msg_for_db).await;
+
+        if crate::agent::workflow::continue_workflow_if_pending_events(
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+            &session_id,
+        )
+        .await?
+        {
+            return Ok(());
+        }
 
         // No pending messages remain, so finish the workflow now.
         crate::agent::lifecycle::update_session_status(

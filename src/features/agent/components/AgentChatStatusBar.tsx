@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Zap,
   DatabaseZap,
+  Clock,
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
@@ -439,6 +440,17 @@ export function AgentChatStatusBar() {
         return {
           icon: <Loader2 className="w-4 h-4 animate-spin" />,
           text: t('agent.statusBar.statusBusy'),
+          className: 'bg-warning/10 border-warning/20 text-warning-foreground',
+          showRetry: false,
+          showResume: false,
+        };
+      case 'queued':
+        return {
+          icon: <Clock className="w-4 h-4 text-warning animate-pulse" />,
+          text: t(
+            'agent.statusBar.statusQueued',
+            'Queued (Waiting for available agent slot...)',
+          ),
           className: 'bg-warning/10 border-warning/20 text-warning-foreground',
           showRetry: false,
           showResume: false,

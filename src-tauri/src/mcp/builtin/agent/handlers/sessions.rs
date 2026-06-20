@@ -353,7 +353,9 @@ pub async fn stop_session(
         Err(result) => return Ok(result),
     };
 
-    if target_session.status != SessionStatus::Busy {
+    if target_session.status != SessionStatus::Busy
+        && target_session.status != SessionStatus::Queued
+    {
         let current_status = target_session.status.as_str().to_string();
         let message = format!(
             "Session {} was already {}. No action taken.",
@@ -444,11 +446,13 @@ pub async fn compact_session_context(
         Err(result) => return Ok(result),
     };
 
-    if target_session.status == SessionStatus::Busy {
+    if target_session.status == SessionStatus::Busy
+        || target_session.status == SessionStatus::Queued
+    {
         return Ok(guided_error(
             ErrorCategory::InvalidState,
             format!(
-                "Session {} is busy. compactSessionContext only supports idle, paused, or error sessions.",
+                "Session {} is busy or queued. compactSessionContext only supports idle, paused, or error sessions.",
                 session_id
             ),
             ToolGroup::Agent,

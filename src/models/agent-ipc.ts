@@ -234,7 +234,7 @@ export interface ToolExecutionResult {
 export interface AgentSessionMetadata {
   id: string;
   name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error';
+  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued';
   model: string;
   provider: string;
   /** FK to assistants table; authoritative assistant binding for the session */

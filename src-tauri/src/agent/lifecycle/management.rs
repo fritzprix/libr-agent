@@ -249,7 +249,14 @@ pub async fn update_session_status_with_dispatcher(
         let gate = crate::state::get_concurrency_gate();
         match (is_prev_busy, is_next_busy) {
             (false, true) => {
-                acquired_permit = Some(gate.acquire_active_agent().await?);
+                let active = active_sessions.read().await;
+                let has_permit = active
+                    .get(session_id)
+                    .and_then(|s| s.active_permit.as_ref())
+                    .is_some();
+                if !has_permit {
+                    acquired_permit = Some(gate.acquire_active_agent().await?);
+                }
             }
             (true, false) => {
                 let mut active = active_sessions.write().await;
