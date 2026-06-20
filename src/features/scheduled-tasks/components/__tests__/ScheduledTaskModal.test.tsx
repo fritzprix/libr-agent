@@ -1,5 +1,5 @@
+import React, { type ReactNode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type {
   DragAndDropEvent,
@@ -81,7 +81,9 @@ vi.mock('@/components/ui/dialog', () => ({
 }));
 
 vi.mock('@/components/ui/button', () => ({
-  Button: ({ children }: { children: ReactNode }) => <button>{children}</button>,
+  Button: React.forwardRef<HTMLButtonElement, { children: ReactNode }>(({ children, ...props }, ref) => (
+    <button ref={ref} {...props}>{children}</button>
+  )),
 }));
 
 vi.mock('@/components/ui/input', () => ({
