@@ -77,19 +77,19 @@ describe('AI Service Sanitizer', () => {
       );
     });
 
-    it('should sanitize thinking content', () => {
+    it('should preserve thinking content without raw JSON serialization', () => {
       const message: Message = {
         id: 'msg_1',
         role: 'assistant',
         content: [],
-        thinking: '{invalid thinking}',
+        thinking: 'I am thinking about double quotes "hello".',
         sessionId: 'session_1',
         threadId: 'session_1',
         createdAt: new Date(),
       };
 
       const sanitized = sanitizeMessage(message);
-      expect(sanitized.thinking).toBe(JSON.stringify('{invalid thinking}'));
+      expect(sanitized.thinking).toBe('I am thinking about double quotes "hello".');
     });
 
     it('should handle message without tool_calls or thinking', () => {
