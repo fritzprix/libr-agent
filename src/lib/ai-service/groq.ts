@@ -217,14 +217,6 @@ export class GroqService extends BaseAIService<
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
-    // Groq doesn't support thinking fields in the same way Anthropic does
-    if (message.thinking) {
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
-
     // Convert tool_use to tool_calls for Groq
     if (message.tool_use && !message.tool_calls) {
       message.tool_calls = [

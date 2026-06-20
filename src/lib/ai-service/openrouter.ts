@@ -47,14 +47,6 @@ export class OpenRouterService extends OpenAIService {
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
-    // OpenRouter is a proxy, but we should strip thinking fields unless it's a known provider that supports it.
-    // However, the proxy might handle it. For now, we strip to be safe as per base service pattern.
-    if (message.thinking) {
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
     return message;
   }
 

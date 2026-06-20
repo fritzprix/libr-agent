@@ -36,13 +36,6 @@ export class FireworksService extends OpenAIService {
    * @inheritdoc
    */
   sanitizeSingleMessage(message: Message): Message | null {
-    // Fireworks models generally don't support Anthropic's thinking fields
-    if (message.thinking) {
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
     return message;
   }
 

@@ -88,18 +88,25 @@ export function convertToOpenAIMessages(args: {
         }),
       });
     } else if (effectiveRole === 'assistant') {
+      type ReasoningAssistantMessage =
+        OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam & {
+          reasoning_content?: string;
+        };
+
+      const assistantMessage: ReasoningAssistantMessage = {
+        role: 'assistant',
+        content: args.processMessageContent(message.content) || null,
+      };
       if (message.tool_calls && message.tool_calls.length > 0) {
-        openaiMessages.push({
-          role: 'assistant',
-          content: args.processMessageContent(message.content) || null,
-          tool_calls: message.tool_calls,
-        });
-      } else {
-        openaiMessages.push({
-          role: 'assistant',
-          content: args.processMessageContent(message.content),
-        });
+        assistantMessage.tool_calls = message.tool_calls;
       }
+      if (message.thinking) {
+        // Pass-through the thinking content as reasoning_content for OpenAI compatible reasoning models
+        assistantMessage.reasoning_content = message.thinking;
+      }
+      openaiMessages.push(
+        assistantMessage as OpenAI.Chat.Completions.ChatCompletionMessageParam,
+      );
     } else if (effectiveRole === 'tool') {
       if (message.tool_call_id) {
         const media = args.extractMediaContent(message.content as MCPContent[]);
