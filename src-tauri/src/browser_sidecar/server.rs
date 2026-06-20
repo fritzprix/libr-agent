@@ -293,7 +293,29 @@ impl BrowserSidecarServer {
             }
         }
 
-        cleanup_session_resources(runtime.browser.clone(), session, &params.session_id).await
+        let cleanup_res =
+            cleanup_session_resources(runtime.browser.clone(), session, &params.session_id).await;
+
+        // Cascade shutdown: if no other sessions exist, shutdown the browser runtime
+        let is_empty = {
+            let sessions = self.sessions.lock().await;
+            sessions.is_empty()
+        };
+        if is_empty {
+            if let Some(runtime) = self.runtime.take_runtime().await {
+                // Abort all active console listener tasks
+                {
+                    let mut listeners = self.console_listeners.lock().await;
+                    for handle in listeners.values() {
+                        handle.abort();
+                    }
+                    listeners.clear();
+                }
+                shutdown_runtime(runtime).await;
+            }
+        }
+
+        cleanup_res
     }
 
     async fn navigate(&self, params: Value) -> Result<Value, String> {
