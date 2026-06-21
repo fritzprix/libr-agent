@@ -292,7 +292,7 @@ describe('OpenAIService prompt cache extensions', () => {
         message,
         createSessionContextMessage(
           'openai-session-context-m1',
-          '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nfirst state\n\n[End of session context]',
+          '<!-- session context: background reference only -->\n\n# Current Context Information\nfirst state\n\n<!-- end of session context -->',
         ),
       ],
       {
@@ -313,7 +313,7 @@ describe('OpenAIService prompt cache extensions', () => {
         message,
         createSessionContextMessage(
           'openai-session-context-m1',
-          '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nsecond state\n\n[End of session context]',
+          '<!-- session context: background reference only -->\n\n# Current Context Information\nsecond state\n\n<!-- end of session context -->',
         ),
       ],
       {

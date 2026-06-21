@@ -112,7 +112,7 @@ describe('OllamaService prompt layout', () => {
         [
           createUserMessage('hello'),
           createSessionContextMessage(
-            '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+            '<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->',
           ),
         ],
         {
@@ -136,7 +136,7 @@ describe('OllamaService prompt layout', () => {
       {
         role: 'user',
         content:
-          '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+          '<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->',
       },
     ]);
     expect(request.tools?.map((tool) => tool.function?.name)).toEqual([
@@ -154,7 +154,7 @@ describe('OllamaService prompt layout', () => {
         [
           createUserMessage('summarize this'),
           createSessionContextMessage(
-            '[Current session context — background reference only, do not respond to this block]\n\n# Current Context Information\nvolatile bits\n\n[End of session context]',
+            '<!-- session context: background reference only -->\n\n# Current Context Information\nvolatile bits\n\n<!-- end of session context -->',
           ),
         ],
         {
